@@ -40,7 +40,8 @@ def test_full_chain_verifies(ca, artifact):
     priv, pub = new_publisher_keypair()
     cert = ca.issue("acme-plugins", pub)
     bundle = sign_artifact(artifact, publisher_priv_hex=priv, cert=cert)
-    res = verify_artifact(artifact, bundle, root_pub=ca.root_pub())
+    res = verify_artifact(artifact, bundle, root_pub=ca.root_pub(),
+                          revoked=ca.revoked_serials())
     assert res.ok and res.publisher == "acme-plugins"
 
 
@@ -50,7 +51,8 @@ def test_wrong_root_refused(ca, artifact, tmp_path):
     bundle = sign_artifact(artifact, publisher_priv_hex=priv, cert=cert)
     other = PluginCA(tmp_path / "other")
     other_pub = other.init_root()
-    res = verify_artifact(artifact, bundle, root_pub=other_pub)
+    res = verify_artifact(artifact, bundle, root_pub=other_pub,
+                          revoked=ca.revoked_serials())
     assert not res.ok and "not signed by the configured root" in res.reason
 
 
@@ -59,7 +61,8 @@ def test_tampered_artifact_refused(ca, artifact):
     cert = ca.issue("acme", pub)
     bundle = sign_artifact(artifact, publisher_priv_hex=priv, cert=cert)
     artifact.write_text("def factory(): return 'evil'\n", encoding="utf-8")
-    res = verify_artifact(artifact, bundle, root_pub=ca.root_pub())
+    res = verify_artifact(artifact, bundle, root_pub=ca.root_pub(),
+                          revoked=ca.revoked_serials())
     assert not res.ok and "digest mismatch" in res.reason
 
 
@@ -69,7 +72,8 @@ def test_signature_by_other_key_refused(ca, artifact):
     cert = ca.issue("acme", pub_a)
     # signed with B's key but cert binds A's pubkey
     bundle = sign_artifact(artifact, publisher_priv_hex=priv_b, cert=cert)
-    res = verify_artifact(artifact, bundle, root_pub=ca.root_pub())
+    res = verify_artifact(artifact, bundle, root_pub=ca.root_pub(),
+                          revoked=ca.revoked_serials())
     assert not res.ok and "artifact signature invalid" in res.reason
 
 
@@ -78,7 +82,8 @@ def test_tampered_cert_refused(ca, artifact):
     cert = ca.issue("acme", pub)
     cert["publisher"] = "evil-corp"  # mutate after issuing
     bundle = sign_artifact(artifact, publisher_priv_hex=priv, cert=cert)
-    res = verify_artifact(artifact, bundle, root_pub=ca.root_pub())
+    res = verify_artifact(artifact, bundle, root_pub=ca.root_pub(),
+                          revoked=ca.revoked_serials())
     assert not res.ok and "not signed by the configured root" in res.reason
 
 
@@ -105,18 +110,27 @@ def test_crl_signature_required(ca, tmp_path):
     priv, pub = new_publisher_keypair()
     cert = ca.issue("acme", pub)
     ca.revoke(cert["serial"])
-    # tamper with the CRL -> its signature no longer verifies -> reads empty
+    # tamper with the CRL -> its signature no longer verifies -> fail closed
     crl_path = tmp_path / "ca" / "revocations.json"
     import json
     crl = json.loads(crl_path.read_text())
     crl["revoked"]["bogus-serial"] = {"at": 0, "reason": "forged"}
     crl_path.write_text(json.dumps(crl))
-    assert ca.revoked_serials() == set()  # unverifiable CRL reads empty
+    with pytest.raises(RuntimeError, match="CRL signature invalid"):
+        ca.revoked_serials()
+
+
+def test_missing_revocation_data_fails_closed(ca, artifact):
+    priv, pub = new_publisher_keypair()
+    cert = ca.issue("acme", pub)
+    bundle = sign_artifact(artifact, publisher_priv_hex=priv, cert=cert)
+    res = verify_artifact(artifact, bundle, root_pub=ca.root_pub())
+    assert not res.ok and "revocation data required" in res.reason
 
 
 def test_missing_cert_fields_fail_closed(ca, artifact):
     res = verify_artifact(artifact, {"digest": "x", "sig": "y", "cert": {}},
-                          root_pub=ca.root_pub())
+                          root_pub=ca.root_pub(), revoked=ca.revoked_serials())
     assert not res.ok and "cert missing" in res.reason
 
 

@@ -233,6 +233,19 @@ _TENANT_UNIQUE_MIGRATION: list[str] = [
 ]
 
 
+# --- Collaborative supervision (migration v13) -------------------------------
+# Fresh databases receive these through SCHEMA above. Existing Postgres
+# databases that already recorded the v1 base migration need a versioned,
+# idempotent migration too; otherwise approval listing/claim/decide paths refer
+# to columns that were never added. Keep the version aligned with SQLite's v13
+# approval-claiming migration.
+_APPROVAL_CLAIMS_MIGRATION: list[str] = [
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_by TEXT;",
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_at DOUBLE PRECISION;",
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS decided_by TEXT;",
+]
+
+
 # Ordered schema migrations: ``(version, statements)``. v1 is the consolidated
 # base schema (idempotent CREATEs, so a fresh DB and a pre-framework DB both
 # converge); higher versions are incremental. The applied set is tracked in the
@@ -242,6 +255,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
     (11, _TENANT_UNIQUE_MIGRATION),
+    (13, _APPROVAL_CLAIMS_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -463,56 +477,98 @@ class PostgresWorldModel:
                 cur.close()
 
     def _set_tenant_guc(self, cur) -> None:
-        """Under RLS, bind the active tenant to a transaction-local GUC so the
-        DB policy filters rows. No-op when RLS is off or no tenant is active
-        (then the policy's 'GUC unset -> all rows' branch applies, preserving
-        the single-tenant install)."""
+        """Under RLS, bind this transaction to the active tenant.
+
+        RLS is fail-closed: when no tenant is active, set an impossible sentinel
+        instead of leaving the GUC unset. Queries that bypass ``_tx`` also fail
+        closed because the policy does not grant access for unset/empty GUCs.
+        """
         if not self._rls:
             return
         tenant = _active_tenant()
-        if tenant is None:
-            return
+        value = str(tenant) if tenant is not None else "__maverick_no_tenant__"
         # set_config(name, value, is_local=true) is the parameterizable form of
         # SET LOCAL — transaction-scoped, cleared at commit/rollback.
-        cur.execute("SELECT set_config('maverick.tenant', %s, true)", (str(tenant),))
+        cur.execute("SELECT set_config('maverick.tenant', %s, true)", (value,))
 
     def _apply_rls(self) -> None:
         """Enable Postgres Row-Level Security on the tenant-scoped tables.
 
-        Policy: a row is visible/writable when its ``tenant_id`` matches the
-        ``maverick.tenant`` session GUC, OR the GUC is unset/empty (single-
-        tenant or admin connection sees everything). ``_tx`` sets the GUC per
-        transaction when a tenant is active. Idempotent (drop-then-create the
-        policy; ENABLE/FORCE are no-ops if already set).
+        Policy: a row is visible/writable only when its ``tenant_id`` equals the
+        transaction-local ``maverick.tenant`` GUC set by ``_tx``. Unset, empty,
+        or no-active-tenant GUC values match no rows. Idempotent
+        (drop-then-create the policy; ENABLE/FORCE are no-ops if already set).
 
-        Only a table's **owner** may ALTER it, but the recommended RLS setup
-        connects the app as a *non-superuser, non-owner* role (a superuser or
-        the owner bypasses RLS unless FORCE is set, and a superuser bypasses it
-        regardless). So each table is attempted in its own transaction and a
-        privilege error is swallowed: a non-owner connection assumes the owner
-        (or a migration step) already applied the policy — enforcement on
-        read/write does not require ownership. Apply RLS as the owner once
-        (e.g. run the backend once with the owning role, or in a migration)."""
+        Only a table's **owner** may ALTER it. A non-owner connection may start
+        only if the owner/migration has already installed and forced the exact
+        fail-closed policy; otherwise RLS startup raises instead of silently
+        running without database-enforced tenant isolation.
+        """
         for table in _TENANT_TABLES:
             try:
                 with self._tx() as cur:
                     cur.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
                     cur.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
                     cur.execute(f"DROP POLICY IF EXISTS mvk_tenant_isolation ON {table}")
-                    cur.execute(
-                        f"CREATE POLICY mvk_tenant_isolation ON {table} "
-                        "USING ("
-                        "  tenant_id IS NOT DISTINCT FROM "
-                        "    nullif(current_setting('maverick.tenant', true), '')"
-                        "  OR nullif(current_setting('maverick.tenant', true), '') IS NULL"
-                        ")"
-                    )
+                    cur.execute(self._rls_policy_sql(table))
             except Exception as e:  # non-owner / insufficient privilege
-                log.warning(
-                    "RLS not applied to %s (%s); assuming the owner already "
-                    "applied it — enforcement still active for this connection",
-                    table, e,
+                if self._rls_policy_is_active(table):
+                    log.info(
+                        "RLS already active on %s; continuing after setup error: %s",
+                        table, e,
+                    )
+                    continue
+                raise RuntimeError(
+                    f"MAVERICK_PG_RLS is enabled but fail-closed RLS could not "
+                    f"be installed or verified on {table}: {e}"
+                ) from e
+
+    @staticmethod
+    def _rls_policy_sql(table: str) -> str:
+        return (
+            f"CREATE POLICY mvk_tenant_isolation ON {table} "
+            "USING ("
+            "  tenant_id = nullif(current_setting('maverick.tenant', true), '')"
+            ") WITH CHECK ("
+            "  tenant_id = nullif(current_setting('maverick.tenant', true), '')"
+            ")"
+        )
+
+    def _rls_policy_is_active(self, table: str) -> bool:
+        """Verify the fail-closed RLS policy is already installed and forced."""
+        try:
+            with self._tx() as cur:
+                cur.execute(
+                    "SELECT relrowsecurity, relforcerowsecurity "
+                    "FROM pg_class WHERE oid = %s::regclass",
+                    (table,),
                 )
+                row = cur.fetchone()
+                if not row or not (row[0] and row[1]):
+                    return False
+                cur.execute(
+                    "SELECT qual, with_check FROM pg_policies "
+                    "WHERE schemaname = current_schema() "
+                    "AND tablename = %s AND policyname = 'mvk_tenant_isolation'",
+                    (table,),
+                )
+                policy = cur.fetchone()
+        except Exception:
+            return False
+        if not policy:
+            return False
+        def fail_closed(expr: object) -> bool:
+            text = " ".join(str(expr).lower().split())
+            return (
+                "tenant_id" in text
+                and "current_setting" in text
+                and "maverick.tenant" in text
+                and "nullif" in text
+                and " or " not in text
+                and "is null" not in text
+            )
+
+        return fail_closed(policy[0]) and fail_closed(policy[1])
 
     def _migrate(self) -> None:
         """Apply pending migrations atomically, recording each in

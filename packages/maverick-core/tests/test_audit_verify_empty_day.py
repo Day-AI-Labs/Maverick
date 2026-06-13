@@ -36,3 +36,22 @@ def test_explicit_missing_file_still_fails(tmp_path, monkeypatch):
     missing = tmp_path / "2020-01-01.ndjson"
     res = _run(tmp_path, monkeypatch, ["--file", str(missing)])
     assert res.exit_code == 1, res.output
+
+
+def test_missing_day_with_audit_artifacts_still_fails(tmp_path, monkeypatch):
+    from maverick import audit
+    from maverick.audit import signing
+
+    monkeypatch.setattr(signing, "_have_crypto", lambda: True)
+    monkeypatch.setattr(
+        audit,
+        "verify_chain",
+        lambda path, **_kwargs: [signing.ChainBreak(0, "missing_file", str(path))],
+    )
+    monkeypatch.setattr(audit, "verify_anchors", lambda *_args, **_kwargs: [])
+    audit_dir = tmp_path / ".maverick" / "audit"
+    (audit_dir / "keys").mkdir(parents=True)
+
+    res = _run(tmp_path, monkeypatch, ["--day", "2026-01-02"])
+    assert res.exit_code == 1, res.output
+    assert "missing_file" in res.output

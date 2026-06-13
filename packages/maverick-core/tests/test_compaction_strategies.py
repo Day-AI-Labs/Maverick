@@ -5,8 +5,12 @@ configured strategy dispatches; a failing strategy falls back (fail-open).
 """
 from __future__ import annotations
 
+import base64
+from types import SimpleNamespace
+
 import maverick.config as cfg
 from maverick.compaction import compact_messages
+from maverick.compaction_plugins import compact_with
 from maverick.compaction_strategies import (
     STRATEGIES,
     compact_with_strategy,
@@ -132,3 +136,43 @@ class TestDispatch:
         monkeypatch.setattr("maverick.compaction_graph.compact_graph", boom)
         msgs = _traj()
         assert compact_with_strategy(msgs) == compact_messages(msgs)
+
+    def test_llm_backed_strategies_receive_budget(self, monkeypatch):
+        class BudgetLLM:
+            def __init__(self):
+                self.calls: list[dict] = []
+
+            def complete(self, **kwargs):
+                self.calls.append(kwargs)
+                return SimpleNamespace(text="alpha | relates_to | beta")
+
+        budget = object()
+        for strategy in ("learned", "streaming", "graph"):
+            llm = BudgetLLM()
+            compact_with_strategy(
+                _traj(big=False),
+                strategy=strategy,
+                llm=llm,
+                budget=budget,
+                conversation_id=f"budget-{strategy}",
+                keep_recent=2,
+            )
+            assert llm.calls
+            assert all(call["budget"] is budget for call in llm.calls)
+
+        monkeypatch.setenv("MAVERICK_COMPACTION_STRATEGY", "multimodal")
+        llm = BudgetLLM()
+        data = base64.b64encode(b"\x00" * 5000).decode("ascii")
+        msgs = [
+            {"role": "user", "content": "brief"},
+            {"role": "user", "content": [{
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": data},
+            }]},
+            {"role": "assistant", "content": "ok"},
+            {"role": "user", "content": "recent"},
+            {"role": "assistant", "content": "done"},
+        ]
+        compact_with(msgs, llm=llm, budget=budget, keep_recent=2)
+        assert llm.calls
+        assert all(call["budget"] is budget for call in llm.calls)

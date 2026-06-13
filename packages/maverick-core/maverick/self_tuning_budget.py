@@ -152,23 +152,25 @@ class SelfTuningBudget:
             log.debug("self-tuning budget save failed", exc_info=True)
 
 
-_shared: SelfTuningBudget | None = None
+_shared: dict[Path, SelfTuningBudget] = {}
 _shared_lock = threading.Lock()
 
 
 def shared() -> SelfTuningBudget:
-    global _shared
+    from .paths import data_dir
+
+    path = data_dir("budget_tuning.json")
     with _shared_lock:
-        if _shared is None:
-            from .paths import data_dir
-            _shared = SelfTuningBudget(path=data_dir("budget_tuning.json"))
-        return _shared
+        learner = _shared.get(path)
+        if learner is None:
+            learner = SelfTuningBudget(path=path)
+            _shared[path] = learner
+        return learner
 
 
 def reset_shared() -> None:
-    global _shared
     with _shared_lock:
-        _shared = None
+        _shared.clear()
 
 
 def suggested_max_dollars(task_class: str, *,

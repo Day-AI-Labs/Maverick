@@ -230,19 +230,22 @@ def compliance_report() -> list[ControlCheck]:
         "Secret redaction in logs", "GDPR Art. 25 & 32", "active",
         "audit events pass through the secret detector before write",
     ))
-    # PII in logs is protected when anon mode REDACTS it OR at-rest encryption
-    # ENCRYPTES it; only when neither is on is PII left in plaintext logs.
+    # PII redaction in logs is active only when anon mode redacts it before the
+    # audit event is serialized. At-rest encryption is reported separately below:
+    # audit sealing intentionally skips the current day-file, so encryption alone
+    # must not satisfy a live log-redaction control.
     if anon_enabled():
         _pii_status, _pii_detail = "active", (
             "anonymization mode redacts PII (email/SSN/phone) from audit events")
-    elif at_rest_enabled():
-        _pii_status, _pii_detail = "active", (
-            "PII in logs is protected by at-rest encryption (not redacted); enable "
-            "[privacy] anonymous = true to also redact it")
     else:
+        _enc_note = (
+            "; at-rest encryption may protect closed sealed audit segments, but "
+            "the current audit day-file remains plaintext until sealed"
+            if at_rest_enabled() else ""
+        )
         _pii_status, _pii_detail = "action_needed", (
-            "PII is NOT redacted from logs by default; enable [privacy] anonymous = true "
-            "(or at-rest encryption) -- secrets are always redacted regardless")
+            "PII is NOT redacted from logs by default; enable [privacy] anonymous = true"
+            f"{_enc_note} -- secrets are always redacted regardless")
     checks.append(ControlCheck(
         "PII redaction in logs", "GDPR Art. 25 & 32", _pii_status, _pii_detail,
     ))

@@ -83,18 +83,35 @@ def test_reference_to_unknown_node_is_untrusted():
     assert untrusted and untrusted[0].peer == "ghost"
 
 
-def test_verify_federation_end_to_end(tmp_path):
-    # No audit dirs on disk -> chain check is a no-op (intact); reciprocity
-    # over the provided rows is what's exercised.
+def test_verify_federation_missing_audit_dirs_are_broken(tmp_path):
     inputs = {
         "A": (tmp_path / "a", [_sent("A", "B", "c1")]),
         "B": (tmp_path / "b", [_recv("B", "A", "c1")]),
     }
     report = fed.verify_federation(inputs)
-    assert report.consistent is True
+    assert report.consistent is False
     assert set(report.nodes) == {"A", "B"}
+    assert {br.reason for rep in report.nodes.values() for br in rep.breaks} == {
+        "missing_audit_dir"
+    }
     out = fed.render(report)
-    assert "CONSISTENT" in out
+    assert "INCONSISTENT" in out
+
+
+def test_verify_federation_empty_audit_dirs_are_broken(tmp_path):
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    inputs = {
+        "A": (a, [_sent("A", "B", "c1")]),
+        "B": (b, [_recv("B", "A", "c1")]),
+    }
+    report = fed.verify_federation(inputs)
+    assert report.consistent is False
+    assert {br.reason for rep in report.nodes.values() for br in rep.breaks} == {
+        "missing_audit_logs"
+    }
 
 
 def test_verify_federation_reports_inconsistency(tmp_path):
@@ -104,8 +121,8 @@ def test_verify_federation_reports_inconsistency(tmp_path):
     }
     report = fed.verify_federation(inputs)
     assert report.consistent is False
-    assert len(report.unreciprocated) == 1
-    assert "UNRECIPROCATED" in fed.render(report)
+    assert len(report.untrusted_peer) == 1
+    assert "UNTRUSTED PEER" in fed.render(report)
 
 
 def test_collect_node_flags_broken_chain(tmp_path, monkeypatch):

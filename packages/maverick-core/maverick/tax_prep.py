@@ -71,6 +71,9 @@ _DOC_SIGNATURES: list[tuple[str, tuple[str, ...]]] = [
 
 _MONEY_RE = re.compile(r"\$?([0-9][0-9,]*(?:\.[0-9]{1,2})?)")
 _STATE_TOKEN_RE = re.compile(r"\b([A-Z]{2})\b")
+_REPORT_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_REPORT_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_REPORT_WHITESPACE_RE = re.compile(r"\s+")
 
 # TY2025 federal constants (One Big Beautiful Bill Act, enacted July 2025).
 # One table per tax year; updating next season is a content release.
@@ -254,10 +257,24 @@ def _state_code(text: str) -> str:
     return ""
 
 
+def _report_safe(value: object, *, fallback: str = "document") -> str:
+    """Normalize untrusted text for one-line report fields.
+
+    Source labels can originate from uploaded filenames. Unix filenames may
+    contain newlines and terminal control bytes, so citations and open items
+    must never render them verbatim into a preparer-facing package.
+    """
+    cleaned = _REPORT_ANSI_RE.sub(" ", str(value))
+    cleaned = _REPORT_CONTROL_RE.sub(" ", cleaned)
+    cleaned = _REPORT_WHITESPACE_RE.sub(" ", cleaned).strip()
+    return cleaned or fallback
+
+
 def extract(text: str, *, label: str = "") -> SourceDoc:
     """Classify + pull the standard boxes from one document's text."""
     doc_type = classify(text)
-    doc = SourceDoc(doc_type=doc_type, label=label or doc_type,
+    doc = SourceDoc(doc_type=doc_type,
+                    label=_report_safe(label or doc_type, fallback=doc_type),
                     raw_excerpt=(text or "")[:160])
     if doc_type == "W-2":
         doc.wages = _amount_after(text, "wages, tips", "box 1")
@@ -311,14 +328,15 @@ def missing_items(wp: Workpaper) -> list[str]:
     if not wp.docs:
         items.append("no source documents provided")
     for d in wp.docs:
+        label = _report_safe(d.label)
         if d.doc_type == "UNKNOWN":
-            items.append(f"unclassified document: {d.label} -- needs "
+            items.append(f"unclassified document: {label} -- needs "
                          "preparer identification")
         flag = _PREPARER_DOC_ITEMS.get(d.doc_type)
         if flag:
-            items.append(f"{d.label}: {flag}")
+            items.append(f"{label}: {flag}")
         if d.doc_type == "W-2" and d.wages <= 0:
-            items.append(f"{d.label}: W-2 with no box-1 wages extracted -- "
+            items.append(f"{label}: W-2 with no box-1 wages extracted -- "
                          "verify the document")
     return items
 
@@ -345,12 +363,14 @@ def compute_first_pass(wp: Workpaper, *, constants: dict = TY2025) -> Draft1040:
     lines: list[tuple[str, float, str]] = []
     for d in wp.docs:
         if d.wages:
-            lines.append(("Wages (1040 line 1a)", d.wages, d.label))
+            lines.append(("Wages (1040 line 1a)", d.wages,
+                          _report_safe(d.label)))
         if d.interest:
-            lines.append(("Taxable interest (line 2b)", d.interest, d.label))
+            lines.append(("Taxable interest (line 2b)", d.interest,
+                          _report_safe(d.label)))
         if d.ordinary_dividends:
             lines.append(("Ordinary dividends (line 3b)",
-                          d.ordinary_dividends, d.label))
+                          d.ordinary_dividends, _report_safe(d.label)))
     total_income = wp.total_wages + wp.total_interest + wp.total_dividends
     std = constants["standard_deduction"][status]
     taxable = max(0.0, total_income - std)
@@ -487,6 +507,8 @@ def render_review_package(draft: Draft1040,
            "=" * 52,
            f"Filing status        : {draft.filing_status.upper()}"]
     for desc, amount, source in draft.lines:
+        desc = _report_safe(desc, fallback="line")
+        source = _report_safe(source)
         out.append(f"  {desc:<34} ${amount:>12,.2f}   [{source}]")
     out += [
         f"Total income         : ${draft.total_income:,.2f}",
@@ -509,7 +531,8 @@ def render_review_package(draft: Draft1040,
     if open_items:
         out.append("")
         out.append("OPEN ITEMS FOR PREPARER (must be resolved before filing):")
-        out += [f"  - {item}" for item in open_items]
+        out += [f"  - {_report_safe(item, fallback='open item')}"
+                for item in open_items]
     return "\n".join(out)
 
 

@@ -79,6 +79,7 @@ _DEFAULT_RISK: dict[str, str] = {
     "elasticsearch": "high",
     "stripe": "high",
     "plaid": "high",
+    "truelayer": "high",
     "shopify": "high",
     "email": "high",
     "gmail": "high",

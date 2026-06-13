@@ -32,8 +32,6 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 # Display math ($$...$$), inline \( ... \), and ```mermaid fences.
-_MATH_BLOCK = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
-_MATH_INLINE = re.compile(r"\\\((.+?)\\\)", re.DOTALL)
 _MERMAID = re.compile(r"```mermaid\s+(.+?)```", re.DOTALL)
 
 _KATEX_CSS = "https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css"
@@ -54,11 +52,47 @@ def enabled() -> bool:
         return False
 
 
+def _count_paired_delimiter(text: str, delimiter: str) -> int:
+    """Count non-overlapping pairs of a symmetric delimiter in one pass."""
+    count = 0
+    open_seen = False
+    index = 0
+    step = len(delimiter)
+    while True:
+        index = text.find(delimiter, index)
+        if index == -1:
+            return count
+        if open_seen:
+            count += 1
+        open_seen = not open_seen
+        index += step
+
+
+def _count_inline_math(text: str) -> int:
+    r"""Count ``\(...\)`` spans without regex backtracking on unmatched opens."""
+    count = 0
+    open_seen = False
+    index = 0
+    while index < len(text) - 1:
+        pair = text[index:index + 2]
+        if not open_seen and pair == r"\(":
+            open_seen = True
+            index += 2
+            continue
+        if open_seen and pair == r"\)":
+            count += 1
+            open_seen = False
+            index += 2
+            continue
+        index += 1
+    return count
+
+
 def detect_rich_blocks(text: str) -> dict[str, int]:
     """Count renderable blocks: ``{"math": n, "mermaid": m}`` (zeros = none)."""
     if not text:
         return {"math": 0, "mermaid": 0}
-    math = len(_MATH_BLOCK.findall(text)) + len(_MATH_INLINE.findall(text))
+    math = _count_paired_delimiter(text, "$$") + _count_inline_math(text)
     return {"math": math, "mermaid": len(_MERMAID.findall(text))}
 
 

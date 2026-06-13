@@ -250,6 +250,44 @@ class TestReviewPackage:
         assert "OPEN ITEMS FOR PREPARER" in text
         assert "PREPARER MUST COMPLETE" in text
 
+    def test_report_sanitizes_untrusted_labels_and_open_items(self):
+        malicious = "evil_w2]\nFORGED REPORT LINE\x1b[31m\n[tail.txt"
+        wp = Workpaper(filing_status="single", docs=[
+            SourceDoc("W-2", malicious, wages=1000.0),
+            SourceDoc("1099-NEC", "nec\n  - forged open item\x1b[0m"),
+        ], notes=["note\nFORGED NOTE\x1b[2J"])
+        text = render_review_package(compute_first_pass(wp))
+        assert "\x1b" not in text
+        assert "\nFORGED REPORT LINE" not in text
+        assert "\n  - forged open item" not in text
+        assert "\nFORGED NOTE" not in text
+        assert "[evil_w2] FORGED REPORT LINE [tail.txt]" in text
+        assert "nec - forged open item" in text
+        assert "note FORGED NOTE" in text
+
+    def test_cli_sanitizes_uploaded_filenames_in_stdout_and_report(self, tmp_path):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "w2]\nFORGED TAX LINE\x1b[31m\n[tail.txt").write_text(
+            W2_TEXT, encoding="utf-8")
+        (docs / "nec\n  - forged open item\x1b[0m.txt").write_text(
+            NEC_TEXT, encoding="utf-8")
+        out = tmp_path / "review.txt"
+
+        result = CliRunner().invoke(main, [
+            "tax", "prepare", str(docs), "--out", str(out),
+            "--state", "PA",
+        ])
+
+        assert result.exit_code == 0, result.output
+        written = out.read_text(encoding="utf-8")
+        for text in (result.output, written):
+            assert "\x1b" not in text
+            assert "\nFORGED TAX LINE" not in text
+            assert "\n  - forged open item" not in text
+            assert "[w2] FORGED TAX LINE [tail.txt]" in text
+            assert "nec - forged open item" in text
+
 
 class TestTaxSuitePacks:
     def test_roster_present_and_sealed(self):
@@ -261,12 +299,13 @@ class TestTaxSuitePacks:
             assert len(p.persona.strip()) >= 200, f"{name}: thin persona"
             assert p.compartment.startswith("tax_"), name
             cap = p.capability(f"agent:{name}")
-            assert cap.permits("read_file") is True, name
             assert "shell" in p.deny_tools and "write_file" in p.deny_tools
             for dangerous in ("shell", "write_file", "code_exec"):
                 assert cap.permits(dangerous) is False, f"{name}: {dangerous}"
             if name == "tax_law_watch":   # inverse seal, asserted below
+                assert cap.permits("read_file") is False, name
                 continue
+            assert cap.permits("read_file") is True, name
             # Client-data packs: taxpayer data never leaves -- no web egress.
             assert p.knowledge_sources == ["tax"], name
             for egress in ("web_search", "browser"):
@@ -279,6 +318,9 @@ class TestTaxSuitePacks:
         p = load_domains(builtin_dir())["tax_law_watch"]
         cap = p.capability("agent:tax_law_watch")
         assert cap.permits("web_search") is True
+        assert cap.permits("knowledge_search") is True
+        assert cap.permits("read_file") is False
+        assert "read_file" in p.deny_tools
         assert p.knowledge_sources == ["tax_law"]   # not the client corpus
         assert "constants" in p.persona and "signed" in p.persona
 
@@ -311,15 +353,21 @@ class TestTaxEngineConnectors:
             assert f"{vendor}_read" in READ_CONNECTOR_NAMES
             assert READ_CONNECTOR_RISKS[f"{vendor}_read"] == "low"
 
-    def test_read_seats_are_get_only_and_low_risk(self):
+    def test_read_seats_are_get_only_low_risk_and_path_limited(self):
         from maverick.safety.tool_risk import tool_risk
         tools = self._tools()
+        blocked_paths = {
+            "cch_axcess": "/api/DocumentService/v1.0/clients/123/documents",
+            "gosystem_tax": "/returns/2025/client/123/full-return",
+        }
         for vendor in ("cch_axcess", "gosystem_tax"):
             seat = tools[f"{vendor}_read"]
             assert seat.input_schema["properties"]["op"]["enum"] == ["get"]
             assert tool_risk(f"{vendor}_read") == "low"
             out = seat.fn({"op": "post", "path": "/api/x", "confirm": True})
             assert "read-only" in out
+            out = seat.fn({"op": "get", "path": blocked_paths[vendor]})
+            assert "read path is not allowed" in out
             # the write connector stays auto-classified high (submission/
             # modification of returns never reachable from a low pack)
             assert tool_risk(vendor) == "high"

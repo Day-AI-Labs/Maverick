@@ -448,13 +448,16 @@ class Agent:
         self.parent = parent
         # Long-horizon review checkpoint (root only; opt-in). Built once per
         # agent from config; None when unconfigured (the common case) so the
-        # turn gate stays a no-op. The reviewer consults the killswitch -- an
-        # operator arming `maverick halt` mid-review is the "stop" vote.
+        # turn gate stays a no-op. The reviewer uses the consent/approval path
+        # with silent auto-approval disabled, so crossing an interval requires
+        # an explicit operator decision to continue.
         self._review_checkpoint = None
         if role == "orchestrator":
             try:
-                from .review_checkpoint import from_config
-                _cp = from_config(review=lambda _e: not killswitch.is_active())
+                from .review_checkpoint import consent_review, from_config
+                _cp = from_config(
+                    review=lambda event: consent_review(event, goal_id=self.ctx.goal_id)
+                )
                 if _cp.policy.is_active():
                     self._review_checkpoint = _cp
             except Exception:  # pragma: no cover -- never block agent construction
@@ -1616,11 +1619,16 @@ class Agent:
         # span (gen_ai.agent.name/id), the third semconv leg alongside the
         # LLM (chat) and tool (execute_tool) spans. No-op when tracing is off.
         try:
-            from .observability import gen_ai_agent_attributes, trace_span
+            from .observability import (
+                gen_ai_agent_attributes,
+                safe_agent_telemetry_label,
+                trace_span,
+            )
         except Exception:  # pragma: no cover -- tracing never blocks a run
             return await self._run_inner()
+        telemetry_role = safe_agent_telemetry_label(self.role)
         with trace_span(
-            f"invoke_agent {self.role}",
+            f"invoke_agent {telemetry_role}",
             attributes=gen_ai_agent_attributes(self.role, agent_id=self.name),
         ):
             return await self._run_inner()
@@ -1785,9 +1793,13 @@ class Agent:
             # on an unknown name. The agent's llm seam + conversation id reach
             # the strategies that use them.
             from .compaction_plugins import compact_with
+            # Some opt-in strategies make provider calls, so apply the same
+            # pre-spend gate and budget object to compaction as the main turn.
+            self.ctx.budget.check()
             messages = compact_with(
                 messages, llm=self.ctx.llm,
                 conversation_id=str(getattr(self.ctx, "goal_id", "") or ""),
+                budget=self.ctx.budget,
                 scope=self.domain,
             )
 

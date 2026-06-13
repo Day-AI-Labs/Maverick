@@ -833,6 +833,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
             if dreaming.enabled():
                 _dreamed = dreaming.recall_insights(
                     f"{goal.title}\n{goal.description or ''}", domain=domain,
+                    channel=channel, user_id=user_id,
                 )
                 _dream_block = dreaming.format_context(_dreamed, shield=shield)
                 if _dream_block:

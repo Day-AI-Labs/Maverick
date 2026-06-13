@@ -23,9 +23,10 @@ here.
 - **Killswitch** — `~/.maverick/HALT` aborts all running goals (`killswitch.py`).
 - **Long-horizon review checkpoint** — opt-in `[safety] review_checkpoint`
   (`review_checkpoint.py`): the root agent fires a human-review heartbeat every
-  N dollars / M tool calls / T wall-seconds; a reviewer vote to halt (an armed
-  killswitch by default) stops the run cleanly. Distinct from the hard budget
-  cap; inert and behavior-identical when unconfigured.
+  N dollars / M tool calls / T wall-seconds; continuation is gated through the
+  consent/approval path with silent auto-approval disabled, so a reviewer denial
+  or missing explicit approval stops the run cleanly. Distinct from the hard
+  budget cap; inert and behavior-identical when unconfigured.
 - **Verifier default-on** across goal types (`verifier.py`); **reflexion** retry
   loop with cross-session failure memory (`reflexion.py`); graded **critic** for
   structured accept/revise/reject feedback (`critic.py`).
@@ -85,11 +86,10 @@ here.
   Reflexions also carry the recording run's department (`reflexion.py`
   `domain` field), and same-department lessons outrank equally-similar
   generic ones at recall time.
-- **Cross-department insight promotion** — a failure pattern recurring in
-  ≥2 distinct departments becomes a *shared* insight every department
-  recalls (`promote_shared_insights`; `[dreaming] promote_shared`).
-  Compartment seals stay intact: only the consolidated lesson crosses the
-  boundary, never raw department trajectories.
+- **Shared generic insight promotion** — when explicitly enabled with
+  `[dreaming] promote_shared`, only recurring *unscoped* failures can become
+  shared insights. Department-scoped failures remain compartment-local and are
+  never synthesized into globally recallable `domain=None` insights.
 - **Skill retirement (the forgetting loop)** — a dream phase moves learned
   skills with a decayed track record (`skill_stats.evictable`: enough uses,
   win rate under the floor) to `learned-skills/retired/` with a logged
@@ -427,7 +427,8 @@ here.
   wildcards, ALLOW/DENY with the granting role), `cidr_check` (firewall-style
   ordered CIDR access-control for an IPv4/IPv6 address — first match wins),
   `semver_check` (does a semver version satisfy a constraint — comparator sets,
-  caret/tilde ranges, prerelease ordering).
+  caret/tilde ranges, prerelease ordering, and prerelease exclusion at
+  final-release upper bounds unless explicitly named).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate. **TypeScript plugin SDK** (`sdks/plugin-ts/`,
@@ -592,6 +593,7 @@ answers land under the message that asked. **Email v2** adds IMAP IDLE (push
 instead of poll) + conversation threading from Message-ID/In-Reply-To/References
 (`email_v2.py`). **Discord Stages voice v2** (`discord_stages.py`): drive Maverick from a
 Stage channel — per-speaker utterance assembly over an injected transcriber,
+the same `DISCORD_ALLOWED_USER_IDS` speaker allowlist as Discord text,
 optional wake-word gating, replies spoken when the bot holds a speaker slot
 and degraded to stage-chat text when it doesn't (or TTS fails), and stage
 etiquette built in: the bot only *requests* a speaker slot, never
@@ -857,8 +859,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   with no imaging dep.
 - **Confidential-compute detection** (`confidential_compute.py`, `maverick
   confidential-compute`) — detects whether the process runs inside a hardware
-  confidential VM (AMD **SEV-SNP** / Intel **TDX**) from the standard guest
-  indicators (`/dev/{tdx,sev}-guest`, firmware sysfs, CPU flags), so a regulated
+  confidential VM (AMD **SEV-SNP** / Intel **TDX**) from standard guest
+  indicators (`/dev/{tdx,sev}-guest`, TDX firmware sysfs, TDX guest CPU flag;
+  AMD SEV CPU capability flags alone are not treated as guest proof), so a regulated
   deployment can verify (and gate on) hardware memory encryption; exits non-zero
   when not confidential.
 - **Air-gap preflight** (`air_gap.py`, `maverick airgap check`) — verifies a
@@ -1040,8 +1043,10 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   strict_tenant_isolation`), opt-in **database-native Row-Level Security**
   (`[world_model] rls` / `MAVERICK_PG_RLS`: a FORCE-RLS policy on every
   tenant-scoped table keyed on a transaction-local `maverick.tenant` GUC, so
-  the database — not just the app-layer predicate — enforces the boundary;
-  applied by the table owner, enforced for non-superuser connections, validated
+  the database — not just the app-layer predicate — enforces the boundary; the
+  policy fails closed when the tenant GUC is unset/empty and startup fails if
+  the requested policy cannot be installed or verified; applied by the table
+  owner, enforced for non-superuser connections, validated
   against a live Postgres under a non-superuser role), and an opt-in
   **`psycopg_pool` connection pool** (`[world_model] pool_size` /
   `MAVERICK_PG_POOL_SIZE`) that hands each transaction its own pooled
@@ -1484,7 +1489,8 @@ tested without spawning py-spy.
   `GET /api/v1/voice/captions`): a rolling caption window over an injected
   transcript source (finalized vs in-flight, word-boundary trimming).
 - **Browser extension** (`extensions/browser/`, opt-in `[dashboard]
-  allow_extension` — fail-closed CORS scoped to extension origins only): a
+  allow_extension` plus `MAVERICK_DASHBOARD_TOKEN` — fail-closed CORS scoped
+  to extension origins only): a
   Manifest-V3 WebExtension (no build step, loopback-only host permissions,
   `script-src 'self'`) with popup chat against the existing goals API and a
   "send this page" action shipping title/URL/selection as goal context;

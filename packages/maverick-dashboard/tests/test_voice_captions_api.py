@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import json
 
+import maverick_dashboard.auth as auth
 import pytest
 from fastapi.testclient import TestClient
 from maverick.live_captions import Segment, register_source, unregister_source
+from maverick.oidc import VerifiedPrincipal
 from maverick_dashboard.app import app
 
 client = TestClient(app)
@@ -28,6 +30,22 @@ def _frames(body: str) -> list[dict]:
     return [json.loads(line[len("data: "):])
             for line in body.splitlines()
             if line.startswith("data: ") and line != "data: {}"]
+
+
+def _enable_oidc_principal_map(monkeypatch):
+    monkeypatch.setattr(auth, "oidc_enabled", lambda: True)
+
+    def _verify(token, **_kw):
+        return VerifiedPrincipal(
+            sub=token, issuer="https://issuer.example", audience="maverick",
+            claims={"sub": token},
+        )
+
+    monkeypatch.setattr(auth, "verify_oidc_token", _verify)
+
+
+def _as(user: str) -> dict:
+    return {"Authorization": f"Bearer {user}"}
 
 
 def test_captions_404_when_no_source_registered():
@@ -80,3 +98,24 @@ def test_captions_off_again_after_unregister(scripted_source):
     async def _gen():
         yield Segment("x")
     register_source("default", lambda: _gen())
+
+
+def test_captions_authenticated_non_admin_cannot_stream_global_source(
+    scripted_source, monkeypatch,
+):
+    _enable_oidc_principal_map(monkeypatch)
+
+    r = client.get("/api/v1/voice/captions", headers=_as("alice"))
+
+    assert r.status_code == 404
+    assert r.json()["detail"] == "no such caption source"
+
+
+def test_captions_dashboard_admin_can_stream_global_source(scripted_source, monkeypatch):
+    _enable_oidc_principal_map(monkeypatch)
+    monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "user:root")
+
+    r = client.get("/api/v1/voice/captions", headers=_as("root"))
+
+    assert r.status_code == 200
+    assert _frames(r.text)[0]["caption"] == "the quick"

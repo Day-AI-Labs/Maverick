@@ -183,6 +183,18 @@ def _is_number(v: Any) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
+def _is_valid_numeric_cap(v: int | float) -> bool:
+    """Return whether a numeric cap is finite and non-negative.
+
+    ``math.isfinite`` coerces arbitrary-size Python ints to float, which can
+    raise ``OverflowError`` for huge TOML integers. Integers are always finite,
+    so handle them before checking floats.
+    """
+    if isinstance(v, int):
+        return v >= 0
+    return math.isfinite(v) and v >= 0
+
+
 def _suggest(name: str, candidates: list[str]) -> str:
     """Return ' (did you mean "X"?)' for the closest candidate, else ''."""
     matches = difflib.get_close_matches(name, candidates, n=1, cutoff=0.6)
@@ -262,7 +274,7 @@ def lint_config(cfg: dict) -> list[Finding]:
                         ),
                     )
                 )
-            elif key in numeric_keys and (not math.isfinite(kval) or kval < 0):
+            elif key in numeric_keys and not _is_valid_numeric_cap(kval):
                 # A negative cap bricks every run (immediate BudgetExceeded); a
                 # non-finite cap (TOML nan/inf) silently DISABLES enforcement.
                 # Both pass an isinstance check but are never valid caps

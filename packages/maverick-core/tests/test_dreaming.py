@@ -133,6 +133,19 @@ class TestInsightStore:
         assert dreaming.append_insights([other_dept], path=path) == 1
         assert len(dreaming.load_insights(path)) == 2
 
+    def test_legacy_insights_without_scope_are_not_recalled(self, tmp_path):
+        path = tmp_path / "insights.ndjson"
+        path.write_text(
+            '{"ts":1.0,"kind":"failure_pattern","domain":"finance_sox",'
+            '"text":"legacy scoped payload","evidence":2}\n',
+            encoding="utf-8",
+        )
+        loaded = dreaming.load_insights(path)
+        assert loaded[0].channel is not None
+        assert dreaming.recall_insights(
+            "Prepare the ICFR walkthrough memo", domain="finance_sox", path=path,
+        ) == []
+
     def test_store_is_capped(self, tmp_path):
         path = tmp_path / "insights.ndjson"
         texts = [
@@ -184,6 +197,52 @@ class TestInsightRecall:
         assert "[redacted by Shield]" in block
         assert "IGNORE ALL PREVIOUS" not in block
 
+    def test_scoped_insights_only_recall_for_same_scope(self, tmp_path):
+        path = tmp_path / "insights.ndjson"
+        dreaming.append_insights([dreaming.DreamInsight(
+            ts=1.0, kind="failure_pattern", domain="finance_sox",
+            text="Recurring failure (budget, seen 2x) on goals about ledger.",
+            evidence=2, channel="api", user_id="attacker",
+        )], path=path)
+
+        assert dreaming.recall_insights(
+            "Prepare the ICFR walkthrough memo", domain="finance_sox",
+            channel="api", user_id="attacker", path=path,
+        )
+        assert dreaming.recall_insights(
+            "Prepare the ICFR walkthrough memo", domain="finance_sox",
+            channel="api", user_id="victim", path=path,
+        ) == []
+        assert dreaming.recall_insights(
+            "Prepare the ICFR walkthrough memo", domain="finance_sox", path=path,
+        ) == []
+
+    def test_dream_cycle_preserves_reflexion_scope_on_insight(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))
+        rpath = tmp_path / "reflexions.ndjson"
+        for goal in ("reconcile the quarterly ledger totals",
+                     "reconcile the monthly ledger totals"):
+            reflexion.record(
+                goal_text=goal, failure_class="budget", failure_msg="cap",
+                reflection="ATTACKER_PAYLOAD_DO_NOT_OBEY",
+                channel="api", user_id="attacker", domain="finance_sox",
+                path=rpath,
+            )
+        ipath = tmp_path / "insights.ndjson"
+        report = dreaming.dream_cycle(
+            None, profiles=PROFILES, reflexion_path=rpath, insights_path=ipath,
+            skill_store=tmp_path / "skills",
+            skill_stats_path=tmp_path / "skill_stats.json",
+        )
+        assert report.insights_written == 1
+        insight = dreaming.load_insights(ipath)[0]
+        assert insight.channel == "api"
+        assert insight.user_id == "attacker"
+        assert dreaming.recall_insights(
+            "Prepare the ICFR walkthrough memo", domain="finance_sox",
+            channel="api", user_id="victim", path=ipath,
+        ) == []
+
     def test_empty_insights_format_to_nothing(self):
         assert dreaming.format_context([]) == ""
 
@@ -193,18 +252,25 @@ class TestSharedPromotion:
         return {"goal_text": goal, "failure_class": "agent_error",
                 "reflection": "connector timed out", "domain": domain, "ts": ts}
 
-    def test_pattern_across_two_departments_is_promoted(self):
+    def test_pattern_across_two_departments_is_not_promoted(self):
         promoted = dreaming.promote_shared_insights([
             self._failure("erp connector export timed out on large batches",
                           "finance_sox"),
             self._failure("erp connector export timed out during demo prep",
                           "gtm_sales_eng"),
         ], min_cluster=2)
+        assert promoted == []
+
+    def test_generic_pattern_can_be_promoted(self):
+        promoted = dreaming.promote_shared_insights([
+            self._failure("erp connector export timed out on large batches", None),
+            self._failure("erp connector export timed out during demo prep", None),
+        ], min_cluster=2)
         assert len(promoted) == 1
         ins = promoted[0]
         assert ins.kind == "shared_pattern"
-        assert ins.domain is None  # shared pool: every department recalls it
-        assert "finance_sox" in ins.text and "gtm_sales_eng" in ins.text
+        assert ins.domain is None
+        assert "finance_sox" not in ins.text and "gtm_sales_eng" not in ins.text
 
     def test_single_department_pattern_is_not_promoted(self):
         promoted = dreaming.promote_shared_insights([
@@ -213,11 +279,11 @@ class TestSharedPromotion:
         ], min_cluster=2)
         assert promoted == []
 
-    def test_cycle_promotes_when_departments_each_saw_it_once(
+    def test_cycle_does_not_promote_when_departments_each_saw_it_once(
         self, tmp_path, monkeypatch,
     ):
-        # One failure per department: below min_cluster within each, but the
-        # cross-department cluster clears it -- only the shared insight lands.
+        # One failure per department stays below min_cluster within each; the
+        # cross-department pattern must not create a globally recallable insight.
         monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))
         rpath = tmp_path / "reflexions.ndjson"
         reflexion.record(goal_text="erp connector export timed out on batches",
@@ -232,10 +298,8 @@ class TestSharedPromotion:
             skill_store=tmp_path / "skills",
             skill_stats_path=tmp_path / "skill_stats.json",
         )
-        assert report.insights_written == 1
-        insights = dreaming.load_insights(tmp_path / "insights.ndjson")
-        assert insights[0].kind == "shared_pattern"
-        assert insights[0].domain is None
+        assert report.insights_written == 0
+        assert dreaming.load_insights(tmp_path / "insights.ndjson") == []
 
 
 class TestReflexionPruning:
@@ -647,6 +711,14 @@ class TestLearningGovernance:
 
     def test_dry_run_reports_without_writing(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))
+        rows: list[dict] = []
+
+        def _capture(kind, **kw):
+            rows.append({"kind": kind, **kw})
+            return True
+
+        import maverick.audit as audit_pkg
+        monkeypatch.setattr(audit_pkg, "record", _capture)
         rpath = tmp_path / "reflexions.ndjson"
         for goal in ("reconcile the quarterly ledger totals",
                      "reconcile the monthly ledger totals"):
@@ -668,6 +740,7 @@ class TestLearningGovernance:
         assert report.insights_written == 1
         # ...but the live store was never touched.
         assert not (tmp_path / "insights.ndjson").exists()
+        assert rows == []
 
     def test_cycle_writes_learning_audit_row(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))

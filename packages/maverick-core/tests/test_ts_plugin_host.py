@@ -161,3 +161,14 @@ def test_load_configured_ts_plugins(fake_cmd, monkeypatch):
 def test_load_configured_ts_plugins_default_empty(monkeypatch):
     monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: {})
     assert load_configured_ts_plugins() == []
+
+
+def test_plugin_file_change_after_manifest_is_blocked(fake_cmd):
+    by_name = _by_name(load_ts_plugin(fake_cmd))
+    script = fake_cmd[1]
+    with open(script, "a", encoding="utf-8") as f:
+        f.write("\n# modified after manifest discovery\n")
+
+    out = by_name["echo"].fn({"text": "hi"})
+    assert out.startswith("ERROR:")
+    assert "changed after manifest discovery" in out

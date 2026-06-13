@@ -895,13 +895,33 @@ _FINANCE_READ_SPECS = _read_specs_for(_FINANCE_READ_VENDORS)
 _READ_SPECS += _FINANCE_READ_SPECS
 _READ_CONNECTOR_RISKS.update({s["name"]: "low" for s in _FINANCE_READ_SPECS})
 
-# Tax-engine read seats: the tax_ suite's read-only packs pull return and
-# e-file status from the firm's professional tax engine (CCH Axcess /
-# GoSystem). GET-only and LOW like the finance read seats -- submitting or
-# modifying a return stays on the write connector (high risk, confirm-gated,
-# unreachable from the low-risk packs by construction).
+# Tax-engine read seats: the tax_ suite's read-only packs may check narrow
+# operational status/locator endpoints in the firm's professional tax engine
+# (CCH Axcess / GoSystem). They must not inherit unrestricted GET access from
+# the write connector because tax-engine APIs also expose taxpayer documents and
+# full returns. Submitting or modifying a return stays on the write connector
+# (high risk, confirm-gated, unreachable from the low-risk packs by construction).
+_TAX_READ_ALLOWLISTS: dict[str, tuple[str, ...]] = {
+    "cch_axcess_read": (
+        "/api/TaxService/v1.0/eFileStatus",
+        "/api/TaxService/v1.0/locators",
+    ),
+    "gosystem_tax_read": (
+        "/e-file-status",
+        "/efile-status",
+        "/locators",
+    ),
+}
 _TAX_READ_VENDORS: list[str] = ["cch_axcess", "gosystem_tax"]
 _TAX_READ_SPECS = _read_specs_for(_TAX_READ_VENDORS)
+for _spec in _TAX_READ_SPECS:
+    _allowed = _TAX_READ_ALLOWLISTS.get(_spec["name"], ())
+    _spec["allowed_read_paths"] = _allowed
+    _spec["description"] += (
+        " Low-risk seat is restricted to these status/locator prefixes: "
+        + ", ".join(_allowed)
+        + ". Use the high-risk write connector for broader tax-engine access."
+    )
 _READ_SPECS += _TAX_READ_SPECS
 _READ_CONNECTOR_RISKS.update({s["name"]: "low" for s in _TAX_READ_SPECS})
 

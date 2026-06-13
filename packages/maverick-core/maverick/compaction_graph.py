@@ -51,7 +51,7 @@ def _heuristic_triples(text: str) -> list[list[str]]:
         return []
 
 
-def _llm_triples(text: str, llm) -> list[list[str]]:
+def _llm_triples(text: str, llm, budget=None) -> list[list[str]]:
     """Extra triples via the injected llm seam; [] on any failure."""
     if llm is None:
         return []
@@ -61,6 +61,7 @@ def _llm_triples(text: str, llm) -> list[list[str]]:
             messages=[{"role": "user", "content": text}],
             max_tokens=_EXTRACT_MAX_TOKENS,
             model=model_for_role("summarizer"),
+            budget=budget,
         )
         # The 'S | R | O' lines are exactly what the heuristic parser accepts.
         return _heuristic_triples(getattr(resp, "text", "") or "")
@@ -70,7 +71,7 @@ def _llm_triples(text: str, llm) -> list[list[str]]:
 
 
 def extract_triples(
-    text: str, *, llm=None, max_triples: int = MAX_TRIPLES,
+    text: str, *, llm=None, budget=None, max_triples: int = MAX_TRIPLES,
 ) -> list[list[str]]:
     """Deduped ``[subject, relation, object]`` triples from ``text``.
 
@@ -79,7 +80,7 @@ def extract_triples(
     """
     out: list[list[str]] = []
     seen: set[tuple[str, str, str]] = set()
-    for triple in _heuristic_triples(text) + _llm_triples(text, llm):
+    for triple in _heuristic_triples(text) + _llm_triples(text, llm, budget=budget):
         if len(triple) != 3:
             continue
         key = (triple[0].lower(), triple[1].lower(), triple[2].lower())
@@ -112,6 +113,7 @@ def compact_graph(
     messages: list[dict], *,
     keep_recent: int = KEEP_RECENT_TURNS,
     llm=None,
+    budget=None,
     max_triples: int = MAX_TRIPLES,
 ) -> list[dict]:
     """Strategy entry: fold ``messages[1:-keep_recent]`` into a graph digest.
@@ -128,7 +130,8 @@ def compact_graph(
     text = "\n".join(_message_text(m) for m in middle)
     if len(text) > _MAX_EXTRACT_CHARS:
         text = text[-_MAX_EXTRACT_CHARS:]
-    triples = extract_triples(text, llm=llm, max_triples=max_triples)
+    triples = extract_triples(
+        text, llm=llm, budget=budget, max_triples=max_triples)
     if not triples:
         return compact_messages(messages, keep_recent=keep_recent)
     digest_msg = {

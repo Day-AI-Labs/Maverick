@@ -76,9 +76,12 @@ def _op_run(args: dict, sandbox) -> str:
     module = (args.get("module") or "").strip()
     if not module:
         return "ERROR: run requires module (.wasm/.wat path)"
+    raw_dirs = args.get("dirs") or []
+    if not isinstance(raw_dirs, list):
+        return "ERROR: dirs must be an array of workdir-relative paths"
     try:
         module = _safe_path(sandbox, module)
-        dirs = [_safe_path(sandbox, d) for d in (args.get("dirs") or [])]
+        dirs = [_safe_path(sandbox, d) for d in raw_dirs]
     except ValueError as e:
         return f"ERROR: {e}"
     cmd = ["wasmtime", "run"]

@@ -89,7 +89,12 @@ def _explain(args: dict[str, Any]) -> str:
             return "ERROR: amount must be a number"
         amount = float(amount)
     risk = args.get("risk")
-    policy = _policy_from_dict(args.get("policy")) if "policy" in args else None
+    # Never pass policy=None here: evaluate(..., policy=None) loads the live
+    # [governance] configuration, which would let ordinary tool callers probe
+    # deployed deny/approval gates.  This explainer is safe for agent exposure
+    # only when it evaluates an explicitly supplied policy snapshot (or the
+    # empty default policy when omitted).
+    policy = _policy_from_dict(args.get("policy"))
 
     verdict = evaluate(action, risk=str(risk) if risk else None, amount=amount,
                        currency=str(args.get("currency") or ""), policy=policy)
@@ -124,8 +129,8 @@ _SCHEMA: dict[str, Any] = {
         "policy": {
             "type": "object",
             "description": "governance Policy as config dict (deny_actions, "
-                           "require_human_actions, *_min_risk, *_above); omit to "
-                           "use the live [governance] config",
+                           "require_human_actions, *_min_risk, *_above); omit for "
+                           "an empty policy (never loads live config)",
         },
     },
     "required": ["action"],

@@ -82,6 +82,36 @@ def test_record_run_cost_noop_when_disabled(tmp_path, monkeypatch):
     assert b.stats("research")["count"] == 0
 
 
+def test_shared_learner_is_tenant_scoped(tmp_path, monkeypatch):
+    import maverick.self_tuning_budget as m
+    from maverick.paths import data_dir, tenant_scope
+
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    monkeypatch.setattr(m, "enabled", lambda: True)
+    m.reset_shared()
+
+    with tenant_scope(tenant="victim"):
+        victim_path = data_dir("budget_tuning.json")
+        for _ in range(8):
+            m.record_run_cost("research", 1.0)
+        assert m.suggested_max_dollars("research") == 1.3
+
+    with tenant_scope(tenant="attacker"):
+        attacker_path = data_dir("budget_tuning.json")
+        assert attacker_path != victim_path
+        assert m.shared().path == attacker_path
+        assert m.suggested_max_dollars("research") is None
+        for _ in range(8):
+            m.record_run_cost("research", 100.0)
+        assert m.suggested_max_dollars("research") == 100.0
+
+    assert victim_path.exists()
+    assert attacker_path.exists()
+    with tenant_scope(tenant="victim"):
+        assert m.shared().path == victim_path
+        assert m.suggested_max_dollars("research") == 1.3
+
+
 def test_budget_from_config_uses_suggestion_as_lowest_precedence(tmp_path, monkeypatch):
     import maverick.self_tuning_budget as stb
     learner = _learner(tmp_path, min_samples=2, margin=1.0, quantile=1.0,

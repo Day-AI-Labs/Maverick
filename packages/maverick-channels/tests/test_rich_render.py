@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from maverick_channels import rich_render as rr
 
@@ -16,6 +17,13 @@ def test_detect_counts():
     assert c["mermaid"] == 1
     assert rr.detect_rich_blocks("plain") == {"math": 0, "mermaid": 0}
     assert rr.has_rich_blocks(_MATHY) and not rr.has_rich_blocks("plain")
+
+
+def test_detect_unmatched_inline_math_is_linear():
+    payload = r"\(" * 20_000
+    start = time.perf_counter()
+    assert rr.detect_rich_blocks(payload) == {"math": 0, "mermaid": 0}
+    assert time.perf_counter() - start < 0.5
 
 
 def test_render_html_escapes_and_embeds():

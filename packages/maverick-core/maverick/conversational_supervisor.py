@@ -85,6 +85,10 @@ _WORD_NUMBERS = {
     "twenty": 20,
 }
 
+# Goal ids are SQLite rowids, so valid numeric references fit in signed 64-bit.
+# Bound digit strings before int() to avoid conversion-limit crashes and CPU churn.
+MAX_GOAL_REF_DIGITS = 19
+
 
 def _normalize(utterance: str) -> str:
     """Collapse whitespace and strip trailing sentence punctuation."""
@@ -118,7 +122,12 @@ def resolve_goal_ref(ref: str) -> int | None:
     """A spoken goal reference ("5", "five", "#5") -> goal id, or None."""
     token = (ref or "").strip().lower().lstrip("#")
     if token.isdigit():
-        return int(token)
+        if len(token) > MAX_GOAL_REF_DIGITS:
+            return None
+        try:
+            return int(token)
+        except (OverflowError, ValueError):
+            return None
     return _WORD_NUMBERS.get(token)
 
 
@@ -305,6 +314,7 @@ __all__ = [
     "DEFAULT_GRAMMAR",
     "MUTATING_INTENTS",
     "HELP_TEXT",
+    "MAX_GOAL_REF_DIGITS",
     "parse_utterance",
     "resolve_goal_ref",
     "Supervisor",

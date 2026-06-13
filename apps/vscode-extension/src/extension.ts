@@ -226,7 +226,7 @@ async function exportCommand() {
 // `maverick.watchRun` tails a run's events live into an output channel via
 // the dashboard's SSE endpoint (GET /api/v1/goals/{id}/events/stream). Plain
 // Node http (no deps), manual SSE parse, exponential backoff reconnect, and
-// a stop command. The dashboard URL/token come from settings.
+// a stop command. The dashboard URL/token come from machine-scoped settings.
 
 let liveAbort: (() => void) | null = null;
 
@@ -235,6 +235,23 @@ function dashboardBase(): string {
     .getConfiguration("maverick")
     .get<string>("dashboardUrl", "http://127.0.0.1:8765")
     .replace(/\/$/, "");
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+}
+
+async function shouldSendDashboardToken(url: URL, token: string): Promise<boolean> {
+  if (!token) return false;
+  if (isLoopbackHost(url.hostname)) return true;
+
+  const choice = await vscode.window.showWarningMessage(
+    `Send the configured Maverick dashboard token to ${url.origin}? Only continue if you trust this dashboard URL.`,
+    { modal: true },
+    "Send token",
+  );
+  return choice === "Send token";
 }
 
 async function watchRunCommand(): Promise<void> {
@@ -250,7 +267,8 @@ async function watchRunCommand(): Promise<void> {
   const channel = vscode.window.createOutputChannel(`Maverick run #${goalId}`);
   channel.show(true);
   const url = new URL(`${dashboardBase()}/api/v1/goals/${goalId.trim()}/events/stream`);
-  const token = vscode.workspace.getConfiguration("maverick").get<string>("dashboardToken", "");
+  const configuredToken = vscode.workspace.getConfiguration("maverick").get<string>("dashboardToken", "");
+  const token = (await shouldSendDashboardToken(url, configuredToken)) ? configuredToken : "";
   const http = url.protocol === "https:" ? await import("https") : await import("http");
   let stopped = false;
   let backoffMs = 1000;

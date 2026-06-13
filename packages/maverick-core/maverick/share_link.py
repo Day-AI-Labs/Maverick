@@ -20,6 +20,7 @@ unsigned mode. Nonce store injectable (defaults to a data_dir JSON, 0600).
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -27,6 +28,8 @@ import os
 import secrets as _secrets
 import time
 from pathlib import Path
+
+_MAX_HANDOFF_BODY_BYTES = 4096
 
 
 def _secret() -> str | None:
@@ -113,6 +116,27 @@ def _save_nonces(path: Path, data: dict) -> None:
         pass
 
 
+@contextlib.contextmanager
+def _nonce_store_lock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        try:
+            os.chmod(lock_path, 0o600)
+        except OSError:  # pragma: no cover
+            pass
+        try:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except (NameError, OSError):  # pragma: no cover
+                pass
+
+
 def pack_handoff(session: dict, *, ttl_seconds: float = 300.0,
                  now: float | None = None) -> str:
     """Mint a one-time handoff code for ``session`` (goal/conversation ids,
@@ -144,24 +168,31 @@ def claim_handoff(code: str, *, now: float | None = None,
     b64, sig = parts
     try:
         pad = "=" * (-len(b64) % 4)
-        body = base64.urlsafe_b64decode(b64 + pad).decode("utf-8")
-        payload = json.loads(body)
+        body_bytes = base64.urlsafe_b64decode(b64 + pad)
+        if len(body_bytes) > _MAX_HANDOFF_BODY_BYTES:
+            raise ValueError("handoff code body too large")
+        body = body_bytes.decode("utf-8")
     except (ValueError, UnicodeDecodeError) as e:
         raise ValueError("malformed handoff code") from e
     if not hmac.compare_digest(sig, _sign(body, secret)):
         raise ValueError("invalid handoff signature")
+    try:
+        payload = json.loads(body)
+    except (RecursionError, ValueError) as e:
+        raise ValueError("malformed handoff code") from e
     if float(now if now is not None else time.time()) >= float(payload.get("expires", 0)):
         raise ValueError("handoff code expired")
     nonce = str(payload.get("nonce") or "")
     path = nonce_path or _nonce_store_path()
-    used = _load_nonces(path)
-    if nonce in used:
-        raise ValueError("handoff code already claimed (one-time use)")
     ts = float(now if now is not None else time.time())
-    # prune expired nonces while we hold the file
-    used = {n: e for n, e in used.items() if float(e) > ts}
-    used[nonce] = payload["expires"]
-    _save_nonces(path, used)
+    with _nonce_store_lock(path):
+        used = _load_nonces(path)
+        if nonce in used:
+            raise ValueError("handoff code already claimed (one-time use)")
+        # prune expired nonces while we hold the file lock
+        used = {n: e for n, e in used.items() if float(e) > ts}
+        used[nonce] = payload["expires"]
+        _save_nonces(path, used)
     payload.pop("nonce", None)
     payload.pop("expires", None)
     return payload

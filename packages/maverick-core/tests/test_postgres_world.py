@@ -448,7 +448,8 @@ def _disable_rls(dsn):
 def test_rls_enforces_tenant_isolation_at_db_level(monkeypatch):
     """With RLS on, a tenant-scoped transaction sees ONLY its own rows even on
     a RAW query that carries no app-layer predicate — i.e. the database, not
-    just _tenant_scope, enforces the boundary. An admin (no tenant) sees all.
+    just _tenant_scope, enforces the boundary. No active tenant sees no rows
+    through the fail-closed policy.
 
     RLS is bypassed for superusers and table owners-without-FORCE, so this must
     connect as a dedicated NON-superuser role to actually exercise the policy
@@ -494,10 +495,10 @@ def test_rls_enforces_tenant_isolation_at_db_level(monkeypatch):
             reset_tenant(tok)
         assert visible == 1, "RLS should expose only the active tenant's row"
 
-        # Admin/no-tenant (GUC unset) sees both via the permissive branch.
+        # No active tenant gets an impossible GUC sentinel, so RLS fails closed.
         with w._tx() as cur:
             cur.execute("SELECT count(*) FROM goals WHERE id IN (%s, %s)", (a, b))
-            assert int(cur.fetchone()[0]) == 2
+            assert int(cur.fetchone()[0]) == 0
     finally:
         w.close()
         _disable_rls(_DSN)

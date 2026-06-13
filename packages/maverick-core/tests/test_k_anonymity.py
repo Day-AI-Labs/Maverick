@@ -61,6 +61,29 @@ def test_missing_qi_value_grouped_as_absent():
     assert "zip=(absent)" in out or "age=(absent)" in out
 
 
+def test_missing_qi_does_not_collide_with_literal_absent_string():
+    rows = [{"age": 30}, {"age": 30, "zip": "(absent)"}]
+    out = _c(rows, ["age", "zip"], 2)
+    assert out.startswith("K-ANONYMITY FAIL")
+    assert "2 of 2 groups below k=2" in out
+    assert "min group size 1" in out
+
+
+def test_qi_grouping_preserves_json_value_types():
+    rows = [{"id": 1}, {"id": "1"}]
+    out = _c(rows, ["id"], 2)
+    assert out.startswith("K-ANONYMITY FAIL")
+    assert "2 of 2 groups below k=2" in out
+    assert "min group size 1" in out
+
+
+def test_l_diversity_preserves_sensitive_value_types():
+    rows = [{"group": "a", "cond": 1}, {"group": "a", "cond": "1"}]
+    out = _c(rows, ["group"], 2, sensitive="cond", l_min=2)
+    assert "K-ANONYMITY PASS" in out
+    assert "L-DIVERSITY PASS" in out
+
+
 def test_errors():
     t = k_anonymity()
     assert t.fn({"op": "check", "rows": [], "quasi_identifiers": ["a"], "k": 2}).startswith("ERROR")

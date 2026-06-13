@@ -1,7 +1,9 @@
 """Federated shield rules updates: signed bundles, fail-closed verification."""
+
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 from maverick import shield_updates
@@ -27,12 +29,18 @@ RULES_V2 = RULES_V1 + [{"id": "block-ptrace", "pattern": "ptrace"}]
 def keypair():
     priv = ed25519.Ed25519PrivateKey.generate()
     priv_hex = priv.private_bytes(
-        serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+        serialization.Encoding.Raw,
+        serialization.PrivateFormat.Raw,
         serialization.NoEncryption(),
     ).hex()
-    pub_hex = priv.public_key().public_bytes(
-        serialization.Encoding.Raw, serialization.PublicFormat.Raw,
-    ).hex()
+    pub_hex = (
+        priv.public_key()
+        .public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+        .hex()
+    )
     return priv_hex, pub_hex
 
 
@@ -42,6 +50,7 @@ def rules_file(tmp_path):
 
 
 # ---- bundle verification (fails CLOSED) ------------------------------------
+
 
 def test_signed_bundle_roundtrip(keypair):
     priv, pub = keypair
@@ -73,9 +82,15 @@ def test_tampered_rules_refused(keypair):
 
 def test_malformed_bundles_refused(keypair):
     _, pub = keypair
-    for bad in (None, [], "x", {"rules": []}, {"version": -1, "rules": [], "sig": "aa"},
-                {"version": True, "rules": [], "sig": "aa"},
-                {"version": 1, "rules": {}, "sig": "aa"}):
+    for bad in (
+        None,
+        [],
+        "x",
+        {"rules": []},
+        {"version": -1, "rules": [], "sig": "aa"},
+        {"version": True, "rules": [], "sig": "aa"},
+        {"version": 1, "rules": {}, "sig": "aa"},
+    ):
         with pytest.raises(UpdateRefused):
             verify_bundle(bad, pub)
 
@@ -96,6 +111,7 @@ def test_missing_crypto_refuses_closed(keypair, monkeypatch):
 
 # ---- apply (atomic staging, downgrade protection) ---------------------------
 
+
 def test_apply_stages_rules_file_0600(keypair, rules_file):
     priv, pub = keypair
     result = apply_update(sign_bundle(1, RULES_V1, priv), pubkey_hex=pub, path=rules_file)
@@ -111,7 +127,9 @@ def test_apply_reports_what_changed(keypair, rules_file):
     priv, pub = keypair
     apply_update(sign_bundle(1, RULES_V1, priv), pubkey_hex=pub, path=rules_file)
     result = apply_update(
-        sign_bundle(2, RULES_V2[1:], priv), pubkey_hex=pub, path=rules_file,
+        sign_bundle(2, RULES_V2[1:], priv),
+        pubkey_hex=pub,
+        path=rules_file,
     )
     assert result.applied and result.previous_version == 1
     assert result.added == ["block-ptrace"]
@@ -136,12 +154,13 @@ def test_same_version_is_noop(keypair, rules_file):
 
 
 def test_current_version_fails_open_on_corrupt_file(rules_file):
-    assert current_version(rules_file) is None       # missing
+    assert current_version(rules_file) is None  # missing
     rules_file.write_text("{not json", encoding="utf-8")
-    assert current_version(rules_file) is None       # corrupt
+    assert current_version(rules_file) is None  # corrupt
 
 
 # ---- pull entry point (default OFF, injected fetcher) ------------------------
+
 
 def _write_config(tmp_path, monkeypatch, body: str):
     cfg = tmp_path / "config.toml"
@@ -162,7 +181,8 @@ def test_check_and_apply_default_off(tmp_path, monkeypatch):
 def test_check_and_apply_fetches_verifies_and_stages(tmp_path, monkeypatch, keypair):
     priv, pub = keypair
     _write_config(
-        tmp_path, monkeypatch,
+        tmp_path,
+        monkeypatch,
         "[shield]\nfederated_updates = true\n"
         f'update_url = "https://rules.example/bundle.json"\nupdate_pubkey = "{pub}"\n',
     )
@@ -182,7 +202,8 @@ def test_check_and_apply_fetches_verifies_and_stages(tmp_path, monkeypatch, keyp
 def test_check_and_apply_refuses_unparseable_or_failed_fetch(tmp_path, monkeypatch, keypair):
     _, pub = keypair
     _write_config(
-        tmp_path, monkeypatch,
+        tmp_path,
+        monkeypatch,
         "[shield]\nfederated_updates = true\n"
         f'update_url = "https://rules.example/b.json"\nupdate_pubkey = "{pub}"\n',
     )
@@ -194,6 +215,49 @@ def test_check_and_apply_refuses_unparseable_or_failed_fetch(tmp_path, monkeypat
 
     with pytest.raises(UpdateRefused, match="fetch failed"):
         check_and_apply(fetcher=boom)
+
+
+def test_check_and_apply_refuses_oversized_injected_bundle(tmp_path, monkeypatch, keypair):
+    _, pub = keypair
+    _write_config(
+        tmp_path,
+        monkeypatch,
+        "[shield]\nfederated_updates = true\n"
+        f'update_url = "https://rules.example/huge.json"\nupdate_pubkey = "{pub}"\n',
+    )
+    oversized = " " * (shield_updates.MAX_BUNDLE_BYTES + 1)
+    with pytest.raises(UpdateRefused, match="maximum size"):
+        check_and_apply(fetcher=lambda url: oversized)
+
+
+def test_default_fetcher_refuses_oversized_stream_before_json(monkeypatch):
+    class FakeResponse:
+        headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self):
+            yield b"{"
+            yield b" " * shield_updates.MAX_BUNDLE_BYTES
+
+    class FakeHttpx:
+        @staticmethod
+        def stream(method, url, *, timeout, follow_redirects):
+            assert method == "GET"
+            assert timeout == 30.0
+            assert follow_redirects is True
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "httpx", FakeHttpx)
+    with pytest.raises(UpdateRefused, match="maximum size"):
+        shield_updates._default_fetcher("https://rules.example/huge.json")
 
 
 def test_module_never_imports_maverick_shield():

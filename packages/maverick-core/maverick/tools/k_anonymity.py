@@ -16,15 +16,40 @@ ops:
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from . import Tool
 
 _MAX_LISTED = 10
+_MISSING = object()
 
 
-def _key_str(qis: list[str], key: tuple) -> str:
-    return ", ".join(f"{q}={v}" for q, v in zip(qis, key, strict=False))
+def _value_key(value: Any) -> tuple[str, str, str]:
+    """Return a hashable, sortable key that preserves JSON value identity."""
+    if value is _MISSING:
+        return ("missing", "", "")
+    return (
+        "present",
+        type(value).__name__,
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
+    )
+
+
+def _display_value(value_key: tuple[str, str, str]) -> str:
+    state, type_name, encoded = value_key
+    if state == "missing":
+        return "(absent)"
+    if type_name == "str":
+        try:
+            return str(json.loads(encoded))
+        except json.JSONDecodeError:
+            return encoded
+    return encoded
+
+
+def _key_str(qis: list[str], key: tuple[tuple[str, str, str], ...]) -> str:
+    return ", ".join(f"{q}={_display_value(v)}" for q, v in zip(qis, key, strict=False))
 
 
 def _check(rows: list, qis: list[str], k: int, sensitive: str | None, l_min: int | None) -> str:
@@ -32,7 +57,7 @@ def _check(rows: list, qis: list[str], k: int, sensitive: str | None, l_min: int
     for i, row in enumerate(rows):
         if not isinstance(row, dict):
             return f"ERROR: row {i} must be an object"
-        key = tuple(str(row.get(q, "(absent)")) for q in qis)
+        key = tuple(_value_key(row[q] if q in row else _MISSING) for q in qis)
         groups.setdefault(key, []).append(row)
 
     sizes = {key: len(members) for key, members in groups.items()}
@@ -59,7 +84,7 @@ def _check(rows: list, qis: list[str], k: int, sensitive: str | None, l_min: int
 
     if sensitive is not None:
         diversity = {
-            key: {str(r.get(sensitive, "(absent)")) for r in members}
+            key: {_value_key(r[sensitive] if sensitive in r else _MISSING) for r in members}
             for key, members in groups.items()
         }
         ldiv_viol = sorted(

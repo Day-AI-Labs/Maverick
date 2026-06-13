@@ -3588,6 +3588,8 @@ def erase_verify(channel: str, user: str, tenant: str | None, as_json: bool) -> 
     report = verify_erasure(user, channel=channel, tenant=tenant)
     if as_json:
         click.echo(_json.dumps(report, default=str))
+        if not report["clean"]:
+            raise SystemExit(1)
         return
     if report["clean"]:
         click.echo(click.style(
@@ -3916,9 +3918,10 @@ def forward_cmd(ctx, days: int) -> None:
     for deadline, g, nq in rows:
         delta = (deadline - now) / 86400.0
         when = f"OVERDUE {-delta:.1f}d" if delta < 0 else f"due in {delta:.1f}d"
-        dept = f" [{g.domain}]" if g.domain else ""
+        title = _strip_terminal_control(g.title)[:70]
+        dept = f" [{_strip_terminal_control(g.domain)}]" if g.domain else ""
         blocked = f"  ({nq} question(s) awaiting you)" if nq else ""
-        click.echo(f"#{g.id:<5} {when:<16} {g.title[:70]}{dept}{blocked}")
+        click.echo(f"#{g.id:<5} {when:<16} {title}{dept}{blocked}")
 
 
 @main.group("tax")
@@ -4632,17 +4635,14 @@ def audit_verify(
         anchor_dir = audit_dir
         day_file = audit_dir / f"{d}.ndjson"
         from .audit.signing import _have_crypto
-        if not day_file.exists() and _have_crypto():
-            # No day-file means no audit events were recorded that day -- the
-            # clean/empty state, NOT tampering (the audit log records security
-            # events; a benign run legitimately writes none). A routine
-            # `audit verify` on a quiet day must not show a scary
-            # "FAIL: missing_file" (client-journey finding). verify_anchors
-            # below stays the authority on a SUSPICIOUS absence: it FAILs when
-            # an anchor claims this day-file existed. Gated on _have_crypto():
-            # with crypto unavailable we cannot make ANY tamper-evidence claim,
-            # so we fall through to the fail-closed no_crypto path instead of
-            # reporting clean.
+        audit_dir_empty = not audit_dir.exists() or not any(audit_dir.iterdir())
+        if not day_file.exists() and _have_crypto() and audit_dir_empty:
+            # A completely absent/empty audit directory means no audit events
+            # have ever been recorded for this tenant, so the requested day is
+            # cleanly empty. If the directory contains any audit artifacts
+            # (keys, anchors, other day-files, etc.), keep verifying the
+            # requested path so verify_chain() can report a missing_file break
+            # instead of allowing deletion of an unanchored day-file to pass.
             click.echo(f"no audit entries for {d} (nothing recorded that day).")
             paths = []
         else:

@@ -60,6 +60,7 @@ def test_dedicated_connectors_high(_home):
     for n in (
         "salesforce", "jira", "servicenow", "snowflake", "oracle", "sap",
         "workday", "database", "bigquery", "http_fetch", "notebook_exec",
+        "plaid", "truelayer",
         "notion", "databricks", "learn_capability", "gdrive", "msgraph",
     ):
         assert tool_risk(n) == "high", n
@@ -80,6 +81,13 @@ def test_builtin_classifications_unaffected(_home):
     assert tool_risk("shell") == "high"
     assert tool_risk("read_file") == "low"
     assert tool_risk("mcp_x__y") == "high"  # MCP rule still applies
+
+
+def test_open_banking_connectors_exceed_medium_ceiling(_home):
+    from maverick.safety.tool_risk import tools_exceeding
+    assert tools_exceeding(["plaid", "truelayer"], "medium") == {
+        "plaid", "truelayer",
+    }
 
 
 # --- overrides still win over the connector defaults ------------------------

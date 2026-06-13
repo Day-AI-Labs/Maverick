@@ -8,6 +8,7 @@ import pytest
 from maverick.safety_bulletins import load_bulletins, parse_bulletin, render_rss
 from maverick.screenshot_seal import (
     SealKeyMissing,
+    _anchor_path,
     seal,
     verify_file,
     verify_ledger,
@@ -156,6 +157,19 @@ def test_ledger_tail_truncation_is_tampered(tmp_path):
     report = verify_ledger(tmp_path, key=KEY)
     assert not report["ok"]
     assert report["anchor"] == "mismatch"
+    assert verify_file(p, key=KEY) == "TAMPERED"
+
+
+@pytest.mark.parametrize("anchor_json", ["[]", "1"])
+def test_malformed_anchor_json_is_tampered_not_crash(tmp_path, anchor_json):
+    p = _capture(tmp_path)
+    seal(p, key=KEY)
+    anchor = _anchor_path(tmp_path)
+    anchor.write_text(anchor_json)
+
+    report = verify_ledger(tmp_path, key=KEY)
+    assert not report["ok"]
+    assert report["anchor"] == "invalid"
     assert verify_file(p, key=KEY) == "TAMPERED"
 
 

@@ -64,6 +64,11 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
 
+_PERF_SLA_CACHE_TTL_SECONDS = 60.0
+_PERF_SLA_LOCK = asyncio.Lock()
+_PERF_SLA_CACHE: tuple[float, list[dict], str | None] | None = None
+_PERF_HISTORY_MAX_FILES = 128
+
 
 
 
@@ -230,6 +235,32 @@ def _sse_event(e) -> str:
 
 _TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled", "blocked", "error"})
 
+# ----- v1 SSE stream resource limits -----
+# Match the legacy dashboard stream hardening: open SSE streams hold an async
+# task and repeatedly poll SQLite, so cap concurrency, enforce a finite stream
+# lifetime, and use a server-controlled polling cadence with idle backoff.
+def _max_sse_streams() -> int:
+    try:
+        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_SSE", "64")))
+    except ValueError:
+        return 64
+
+
+_sse_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_sse_semaphore() -> asyncio.Semaphore:
+    global _sse_semaphore
+    if _sse_semaphore is None:
+        _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
+    return _sse_semaphore
+
+
+_SSE_POLL_INTERVAL = 0.5
+_SSE_MAX_POLL_INTERVAL = 5.0
+_SSE_IDLE_HEARTBEAT_EVERY = 30.0
+_SSE_MAX_STREAM_SECONDS = 300.0
+_SSE_MAX_BATCH = 200
 
 @router.get("/goals/{goal_id}/events/stream")
 async def goal_events_stream(
@@ -242,34 +273,65 @@ async def goal_events_stream(
     process split, unlike an in-process bus): emits each new event as it lands,
     ends when the goal reaches a terminal status with no more events, or on
     client disconnect. ``limit`` (>0) closes after N events — used by tests and
-    bounded consumers; ``poll`` is the tail interval.
+    bounded consumers. ``poll`` is accepted for compatibility but ignored; the
+    server controls polling cadence and idle backoff.
     """
+    del poll
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
 
+    sem = _get_sse_semaphore()
+    if sem.locked():
+        raise HTTPException(
+            status_code=503,
+            detail="too many concurrent event streams; retry shortly",
+            headers={"Retry-After": "5"},
+        )
+    await sem.acquire()
+
     async def _gen():
+        started = asyncio.get_running_loop().time()
         last = since
         sent = 0
-        yield ": connected\n\n"   # open the stream immediately
-        while True:
-            if await request.is_disconnected():
-                break
-            events = await run_in_threadpool(
-                w.goal_events, goal_id, last, 200)  # (goal_id, since_id, limit)
-            for e in events:
-                yield _sse_event(e)
-                last = e.id
-                sent += 1
-                if limit and sent >= limit:
+        idle_for = 0.0
+        poll_interval = _SSE_POLL_INTERVAL
+        try:
+            yield ": connected\n\n"   # open the stream immediately
+            while True:
+                if await request.is_disconnected():
+                    break
+                if (asyncio.get_running_loop().time() - started) >= _SSE_MAX_STREAM_SECONDS:
+                    yield "event: timeout\ndata: {\"detail\": \"stream lifetime exceeded\"}\n\n"
                     return
-            cur = w.get_goal(goal_id)
-            if not events and cur is not None and cur.status in _TERMINAL_STATUSES:
-                yield f"event: end\ndata: {json.dumps({'status': cur.status})}\n\n"
-                return
-            await asyncio.sleep(max(0.0, poll))
+                events = await run_in_threadpool(
+                    w.goal_events, goal_id, last, _SSE_MAX_BATCH)
+                for e in events:
+                    yield _sse_event(e)
+                    last = e.id
+                    sent += 1
+                    if limit and sent >= limit:
+                        return
+                cur = await run_in_threadpool(w.get_goal, goal_id)
+                if events:
+                    idle_for = 0.0
+                    poll_interval = _SSE_POLL_INTERVAL
+                else:
+                    idle_for += poll_interval
+                    if idle_for >= _SSE_IDLE_HEARTBEAT_EVERY:
+                        yield ": heartbeat\n\n"
+                        idle_for = 0.0
+                    poll_interval = min(_SSE_MAX_POLL_INTERVAL, poll_interval * 1.5)
+                if cur is not None and cur.status in _TERMINAL_STATUSES:
+                    yield f"event: end\ndata: {json.dumps({'status': cur.status})}\n\n"
+                    return
+                await asyncio.sleep(poll_interval)
+        except asyncio.CancelledError:
+            return
+        finally:
+            sem.release()
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
 
@@ -473,7 +535,9 @@ async def templates_suggested(request: Request, k: int = 5) -> dict:
 
 
 @router.get("/voice/captions")
-async def voice_captions(source: str = "default", max_chars: int = 160) -> StreamingResponse:
+async def voice_captions(
+    request: Request, source: str = "default", max_chars: int = 160,
+) -> StreamingResponse:
     """Live captions (SSE) over the voice transcript seam.
 
     Streams one ``data: {caption, final, ts}`` frame per transcript segment
@@ -483,6 +547,10 @@ async def voice_captions(source: str = "default", max_chars: int = 160) -> Strea
     pipeline; tests register scripted sources), so an unregistered source
     404s.
     """
+    principal = caller_principal(request)
+    if principal is not None and not is_dashboard_admin(principal):
+        raise HTTPException(status_code=404, detail="no such caption source")
+
     from maverick.live_captions import caption_stream, get_source
     factory = get_source(source)
     if factory is None:
@@ -1424,13 +1492,13 @@ async def redact_preview(payload: RedactIn) -> dict:
 
 
 @router.get("/glance")
-async def watch_glance() -> dict:
+async def watch_glance(request: Request) -> dict:
     """The Apple Watch glance payload (tiny fixed shape; see maverick.glance)."""
     from maverick.glance import build_glance
     from maverick.world_model import open_world
     world = open_world()
     try:
-        return build_glance(world)
+        return build_glance(world, owner=goal_owner_filter(request))
     finally:
         try:
             world.close()
@@ -1461,18 +1529,11 @@ async def perf_dashboard() -> dict:
     """
     out: dict = {"sla": [], "benchmarks": {}, "retrospective": None}
     try:
-        import asyncio
-
-        from maverick.perf_sla import run_all
-        # run_all's dispatch probe drives its own event loop; run it in a
-        # worker thread so it never nests inside the server's running loop.
-        results = await asyncio.to_thread(run_all)
-        out["sla"] = [
-            {"name": r.name, "measured": r.measured, "threshold": r.threshold,
-             "unit": r.unit, "passed": r.passed}
-            for r in results
-        ]
-    except Exception as e:  # measurement must never 500 the dashboard
+        sla, error = await _cached_perf_sla()
+        out["sla"] = sla
+        if error:
+            out["sla_error"] = error
+    except Exception as e:  # measurement/cache must never 500 the dashboard
         out["sla_error"] = f"{type(e).__name__}: {e}"
     try:
         import json as _json
@@ -1482,7 +1543,12 @@ async def perf_dashboard() -> dict:
         store = _store_path()
         history: list[dict] = []
         if store.is_dir():
-            for f in sorted(store.glob("*.json")):
+            files = sorted(
+                store.glob("*.json"),
+                key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
+                reverse=True,
+            )[:_PERF_HISTORY_MAX_FILES]
+            for f in sorted(files):
                 try:
                     rows = _json.loads(f.read_text(encoding="utf-8"))
                     if isinstance(rows, list):
@@ -1511,6 +1577,53 @@ async def perf_dashboard() -> dict:
     except Exception as e:
         out["benchmarks_error"] = f"{type(e).__name__}: {e}"
     return out
+
+
+async def _cached_perf_sla() -> tuple[list[dict], str | None]:
+    """Return perf-SLA rows with a short single-flight cache.
+
+    ``run_all()`` performs live CPU/IO probes.  The dashboard exposes this data
+    via a GET endpoint, so cache the expensive portion and serialize refreshes
+    to keep cross-site/simple GET floods from starting unbounded worker-thread
+    measurements in no-token loopback mode.
+    """
+    global _PERF_SLA_CACHE
+
+    now = time.monotonic()
+    if _PERF_SLA_CACHE is not None:
+        expires_at, rows, error = _PERF_SLA_CACHE
+        if now < expires_at:
+            return rows, error
+
+    async with _PERF_SLA_LOCK:
+        now = time.monotonic()
+        if _PERF_SLA_CACHE is not None:
+            expires_at, rows, error = _PERF_SLA_CACHE
+            if now < expires_at:
+                return rows, error
+
+        try:
+            from maverick.perf_sla import run_all
+
+            # run_all's dispatch probe drives its own event loop; run it in a
+            # worker thread so it never nests inside the server's running loop.
+            results = await asyncio.to_thread(run_all)
+            rows = [
+                {
+                    "name": r.name,
+                    "measured": r.measured,
+                    "threshold": r.threshold,
+                    "unit": r.unit,
+                    "passed": r.passed,
+                }
+                for r in results
+            ]
+            error = None
+        except Exception as e:  # measurement must never 500 the dashboard
+            rows = []
+            error = f"{type(e).__name__}: {e}"
+        _PERF_SLA_CACHE = (now + _PERF_SLA_CACHE_TTL_SECONDS, rows, error)
+        return rows, error
 
 
 @router.get("/cache/stats")

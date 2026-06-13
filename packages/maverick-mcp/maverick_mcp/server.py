@@ -768,7 +768,7 @@ class MCPServer:
 
     def _tool_fleet_ingest(self, args: dict) -> str:
         from maverick import fleet_memory
-        ok, reason = fleet_memory.ingest(dict(args))
+        ok, reason = fleet_memory.ingest(dict(args), shield=self._shield)
         return json.dumps({"ok": bool(ok), "reason": reason})
 
     def _tool_fleet_recall(self, args: dict) -> str:
@@ -778,6 +778,7 @@ class MCPServer:
             agent_id=str(args.get("agent_id", "")),
             vendor=str(args.get("vendor", "")),
             domain=str(args.get("domain", "") or "") or None,
+            shield=self._shield,
         )
         return json.dumps({"context": context, "reason": reason})
 

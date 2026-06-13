@@ -144,6 +144,31 @@ def translate_document(text: str, lang: str, llm) -> str:
     return translated
 
 
+def _resolve_under(base: Path, rel: str) -> Path:
+    """Resolve a caller-supplied relative path under ``base``."""
+    rel_path = Path(rel)
+    if rel_path.is_absolute():
+        raise ValueError(f"docs file must be relative to docs root: {rel!r}")
+    base_resolved = base.resolve()
+    candidate = (base_resolved / rel_path).resolve(strict=False)
+    if not candidate.is_relative_to(base_resolved):
+        raise ValueError(f"docs file escapes docs root: {rel!r}")
+    return candidate
+
+
+def _lang_dir(i18n_root: Path, lang: str) -> Path:
+    """Return the destination directory for one safe language code."""
+    lang_path = Path(lang)
+    if (lang_path.is_absolute() or lang_path.name != lang
+            or lang in {".", ".."}):
+        raise ValueError(f"language code must be a single directory name: {lang!r}")
+    i18n_resolved = i18n_root.resolve(strict=False)
+    candidate = (i18n_resolved / lang_path).resolve(strict=False)
+    if not candidate.is_relative_to(i18n_resolved):
+        raise ValueError(f"language code escapes docs i18n root: {lang!r}")
+    return candidate
+
+
 def header_for(source_rel: str, source_text: str) -> str:
     return (f"<!-- source: {source_rel} sha256:{_sha256(source_text)} "
             f"machine-translated -->\n\n")
@@ -165,10 +190,12 @@ def status(docs_root: Path, langs: list[str],
     convention in docs/i18n/README.md, not by this pipeline.
     """
     out: list[DocStatus] = []
+    i18n_root = docs_root / "i18n"
     for lang in langs:
+        lang_root = _lang_dir(i18n_root, lang)
         for rel in files:
-            src = docs_root / rel
-            dst = docs_root / "i18n" / lang / Path(rel).name
+            src = _resolve_under(docs_root, rel)
+            dst = lang_root / Path(rel).name
             if not dst.exists():
                 out.append(DocStatus(lang, rel, "missing"))
                 continue
@@ -189,13 +216,16 @@ def run(docs_root: Path, langs: list[str], files: list[str], llm) -> list[Path]:
     written: list[Path] = []
     states = {(s.lang, s.file): s.state
               for s in status(docs_root, langs, files)}
+    i18n_root = docs_root / "i18n"
     for lang in langs:
+        lang_root = _lang_dir(i18n_root, lang)
         for rel in files:
             if states[(lang, rel)] in ("current", "unverified"):
                 continue
-            source = (docs_root / rel).read_text(encoding="utf-8")
+            src = _resolve_under(docs_root, rel)
+            source = src.read_text(encoding="utf-8")
             translated = translate_document(source, lang, llm)
-            dst = docs_root / "i18n" / lang / Path(rel).name
+            dst = lang_root / Path(rel).name
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_text(header_for(rel, source) + translated,
                            encoding="utf-8")

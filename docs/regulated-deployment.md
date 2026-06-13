@@ -22,8 +22,8 @@ With the profile below, every load-bearing control is fail-closed at once:
 ## The profile
 
 Put this in `~/.maverick/config.toml`. Enterprise mode alone gives you the egress lock,
-fail-closed consent, capability enforcement, **and** at-rest encryption; signing and
-retention are the two extra knobs.
+fail-closed consent, capability enforcement, **and** at-rest encryption; signing,
+retention, and anonymization are the extra knobs.
 
 ```toml
 [enterprise]
@@ -32,17 +32,26 @@ mode = true            # egress lock + fail-closed consent + capabilities + at-r
 [audit]
 sign = true            # Ed25519 tamper-evident audit chain
 
+[privacy]
+anonymous = true       # redact PII (email/SSN/phone) from audit events before write
+
 [retention]
 audit_days = 365       # storage limitation (GDPR Art. 5(1)(e)) -- tune to your policy
 episodes_days = 90
 events_days = 365
 ```
 
+Anonymization is required, not optional: at-rest encryption protects *closed, sealed*
+audit segments, but the current day-file stays plaintext until it is sealed, so only
+anonymous mode actually redacts PII from the live log. Without it the
+`PII redaction in logs` compliance control reports `action_needed`.
+
 The env equivalents (for containers / CI, where a secrets manager injects the key):
 
 ```bash
 export MAVERICK_ENTERPRISE=1
 export MAVERICK_AUDIT_SIGN=1
+export MAVERICK_ANON=1
 export MAVERICK_ENCRYPTION_KEY=<32-byte key, hex or base64>   # else generated under ~/.maverick/keys
 ```
 

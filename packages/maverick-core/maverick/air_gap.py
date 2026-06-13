@@ -35,7 +35,7 @@ def _audit_providers(config: dict) -> list[str]:
     from .llm import ROLE_MODELS
     from .provider_local_first import is_local
     models = dict(ROLE_MODELS)
-    for role, spec in (config.get("llm") or {}).items():
+    for role, spec in (config.get("models") or {}).items():
         if isinstance(spec, str) and spec.strip():
             models[role] = spec
     remote = sorted({m for m in models.values() if not is_local(m)})
@@ -54,13 +54,43 @@ def _audit_egress(config: dict) -> list[str]:
     return []
 
 
+def _truthy(val) -> bool:
+    return val is True or (isinstance(val, str) and val.strip().lower() in
+                           {"1", "true", "yes", "on"})
+
+
 def _audit_sandbox(config: dict) -> list[str]:
     sb = config.get("sandbox") or {}
+    backend = str(sb.get("backend") or "local").strip().lower()
     val = sb.get("allow_network")
-    if val is True or (isinstance(val, str) and val.strip().lower() in
-                       {"1", "true", "yes", "on"}):
+    if _truthy(val):
         return ["[sandbox] allow_network is on — the sandbox can reach the network"]
-    return []
+    if backend in {"docker", "podman", "gvisor", "kubernetes"}:
+        return []
+    if backend == "devcontainer":
+        if val is False or (isinstance(val, str) and val.strip().lower() in
+                            {"0", "false", "no", "off"}):
+            return []
+        return ["[sandbox] backend=devcontainer defaults to network access — set "
+                "allow_network = false or use a deny-by-default backend"]
+    if backend == "firecracker":
+        network = str(sb.get("network") or "egress-deny").strip().lower()
+        if network == "egress-deny":
+            return []
+        return [f"[sandbox] firecracker network={network!r} can reach the network "
+                "— set network = \"egress-deny\""]
+    if backend == "ssh":
+        return ["[sandbox] backend=ssh uses a remote host with its own network access"]
+    if backend == "modal":
+        return ["[sandbox] backend=modal runs in a cloud sandbox with network access"]
+    if backend.startswith("ep:"):
+        return ["[sandbox] entry-point backends cannot be proven air-gapped by "
+                "static config inspection"]
+    if backend == "local":
+        return ["[sandbox] backend=local uses the host network — choose a sandbox "
+                "backend with network disabled"]
+    return [f"[sandbox] backend={backend!r} is not recognized; air-gap status "
+            "cannot be proven"]
 
 
 __all__ = ["audit"]

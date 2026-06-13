@@ -543,9 +543,9 @@ def get_dreaming() -> dict:
         "max_insights": _int("max_insights", 100),
         "prune": bool(cfg.get("prune", True)),
         "keep_reflexions": _int("keep_reflexions", 500),
-        # Cross-department promotion: a failure pattern recurring in >=2
-        # departments becomes a shared insight recallable by all of them.
-        "promote_shared": bool(cfg.get("promote_shared", True)),
+        # Shared promotion is disabled by default: department-scoped failures
+        # must not be written into globally recallable insights.
+        "promote_shared": bool(cfg.get("promote_shared", False)),
         # Mine verifier critiques out of donated trajectory records (empty
         # unless [telemetry] donate_trajectories has produced any).
         "mine_critiques": bool(cfg.get("mine_critiques", True)),
