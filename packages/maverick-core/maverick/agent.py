@@ -1003,7 +1003,300 @@ class Agent:
         except AttributeError:  # pragma: no cover -- defensive for foreign caps
             return ambient
 
-    async def _run_tool(self, name: str, args: dict) -> str:  # noqa: C901
+    def _capability_revocation_denial(self, name: str, cap) -> str | None:
+        # Revocation kill-switch: a still-valid grant can be revoked out of
+        # band (leaked key / rogue agent / offboard); the registry is re-read
+        # on change so a revoke in another process reaches this running agent.
+        # Fail-open (revocation never bricks a run) and only when a grant
+        # exists (== capability enforcement is on).
+        if cap is None:
+            return None
+        from .revocation import revoked_principal as _revoked_principal
+        principals = (
+            cap.revocation_principals()
+            if hasattr(cap, "revocation_principals") else (cap.principal,)
+        )
+        revoked = _revoked_principal(principals)
+        if revoked is None:
+            return None
+        self.ctx.blackboard.post(
+            self.name, "error",
+            f"tool={name} DENIED: principal {revoked} REVOKED",
+        )
+        try:  # tamper-evident record of the denial; never block on audit
+            from .audit import EventKind, record
+            record(
+                EventKind.CAPABILITY_DENIED,
+                agent=self.name,
+                goal_id=self.ctx.goal_id,
+                tool=name,
+                principal=cap.principal,
+                revoked_principal=revoked,
+                channel=getattr(self.ctx, "channel", None),
+                user_id=getattr(self.ctx, "user_id", None),
+            )
+        except Exception:  # pragma: no cover
+            pass
+        return (
+            f"⚠ DENIED by capability policy: principal {revoked!r} "
+            f"has been revoked. The tool was not executed."
+        )
+
+    def _capability_permits_denial(self, name: str, cap) -> str | None:
+        if cap is None or cap.permits(name):
+            return None
+        self.ctx.blackboard.post(
+            self.name, "error",
+            f"tool={name} DENIED by capability (principal={cap.principal})",
+        )
+        try:  # tamper-evident record of the denial; never block on audit
+            from .audit import EventKind, record
+            record(
+                EventKind.CAPABILITY_DENIED,
+                agent=self.name,
+                goal_id=self.ctx.goal_id,
+                tool=name,
+                principal=cap.principal,
+                channel=getattr(self.ctx, "channel", None),
+                user_id=getattr(self.ctx, "user_id", None),
+            )
+        except Exception:  # pragma: no cover
+            pass
+        return (
+            f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
+            f"not granted tool {name!r}. The tool was not executed."
+        )
+
+    def _capability_path_denial(self, name: str, args: dict, cap) -> str | None:
+        # P0 capability layer (path resource-scopes): for known filesystem
+        # tools, gate the canonical workspace-relative path(s) they will touch.
+        # This mirrors the tools' own resolution behavior, so raw paths like
+        # "allowed/../secret.txt" are checked as "secret.txt". ``list_dir``
+        # gets its schema default of ".", and ``apply_patch`` checks every
+        # file referenced by the unified diff. Malformed calls whose path
+        # cannot be located still fall through to tool validation.
+        if cap is None or not (name in _FILE_TOOL_PATH_ARGS or name == "apply_patch"):
+            return None
+        denied_paths: list[str] = []
+        try:
+            paths = _capability_paths_for_tool(name, args, self.ctx.sandbox)
+        except ValueError as e:
+            denied_paths = [str(e)]
+        else:
+            if paths is not None:
+                denied_paths = [p for p in paths if not cap.permits_path(p)]
+        if not denied_paths:
+            return None
+        denied = ", ".join(denied_paths)
+        self.ctx.blackboard.post(
+            self.name, "error",
+            f"tool={name} path={denied} DENIED by capability "
+            f"(principal={cap.principal})",
+        )
+        try:  # tamper-evident record of the denial; never block on audit
+            from .audit import EventKind, record
+            record(EventKind.CAPABILITY_DENIED, agent=self.name,
+                   goal_id=self.ctx.goal_id, tool=name,
+                   principal=cap.principal, path=denied)
+        except Exception:  # pragma: no cover
+            pass
+        return (
+            f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
+            f"not granted path {denied!r} for tool {name!r}. "
+            "The tool was not executed."
+        )
+
+    def _capability_host_denial(self, name: str, args: dict, cap) -> str | None:
+        # P0 capability layer (host resource-scopes): for a known network tool,
+        # the grant's allow_hosts globs also gate the host its URL reaches.
+        # No-op unless a host-restricted grant is active (empty == all). Fail-
+        # soft: if the URL arg is missing/unparseable (no host) we skip the
+        # check rather than error -- we never deny something we can't
+        # confidently locate the host for.
+        url_arg = _NET_TOOL_URL_ARGS.get(name)
+        if cap is None or url_arg is None:
+            return None
+        raw = args.get(url_arg) if isinstance(args, dict) else None
+        host = None
+        if isinstance(raw, str) and raw:
+            try:  # malformed URLs (e.g. bad IPv6) raise -- skip, don't crash
+                host = urlsplit(raw).hostname
+            except ValueError:
+                host = None
+        if not host or cap.permits_host(host):
+            return None
+        self.ctx.blackboard.post(
+            self.name, "error",
+            f"tool={name} host={host} DENIED by capability "
+            f"(principal={cap.principal})",
+        )
+        try:  # tamper-evident record of the denial; never block on audit
+            from .audit import EventKind, record
+            record(EventKind.CAPABILITY_DENIED, agent=self.name,
+                   goal_id=self.ctx.goal_id, tool=name,
+                   principal=cap.principal, host=host)
+        except Exception:  # pragma: no cover
+            pass
+        return (
+            f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
+            f"not granted host {host!r} for tool {name!r}. "
+            "The tool was not executed."
+        )
+
+    def _autonomy_denial(self, name: str, cap) -> str | None:
+        # Autonomy servo (Loop 2): tighten the leash with live trust. When the
+        # run's trust is low -- a high-disagreement swarm fan-out or a low
+        # verifier verdict -- the effective risk ceiling drops, so an unresolved
+        # disagreement can't drive an irreversible (high-risk) action
+        # unattended. Composes WITH the capability ceiling above (it tightens
+        # from the grant's max_risk, never broadens). No-op unless [autonomy] is
+        # enabled. Fail-open: a bug here must never block a tool.
+        try:
+            from . import autonomy
+            _av = autonomy.gate_tool(
+                name,
+                disagreement=float(getattr(self.ctx, "last_disagreement", 0.0) or 0.0),
+                verifier_confidence=float(
+                    getattr(self.ctx, "last_verifier_confidence", 1.0) or 1.0
+                ),
+                configured_max_risk=getattr(cap, "max_risk", None),
+            )
+        except Exception:  # pragma: no cover -- autonomy gate must never break the loop
+            _av = None
+        if _av is None or _av.allowed:
+            return None
+        self.ctx.blackboard.post(
+            self.name, "error", f"tool={name} GATED by autonomy: {_av.reason}",
+        )
+        try:  # tamper-evident record of the gate; never block on audit
+            from .audit import EventKind, record
+            record(
+                EventKind.AUTONOMY_GATED, agent=self.name,
+                goal_id=self.ctx.goal_id, tool=name,
+                effective_max_risk=_av.effective_max_risk,
+            )
+        except Exception:  # pragma: no cover
+            pass
+        return (
+            f"⚠ GATED by autonomy policy: {_av.reason}. The tool was not "
+            "executed. Resolve the disagreement (reconcile the divergent "
+            "findings) or get human approval via ask_user before retrying."
+        )
+
+    async def _governance_denial(self, name: str, args: dict, cap) -> str | None:
+        # Org oversight control plane (enterprise): on top of the per-principal
+        # capability above, an org-level policy can DENY an action outright or
+        # REQUIRE_HUMAN sign-off (EU AI Act Art 14). Default-open -- an empty
+        # [governance] policy returns ALLOW, so this is a no-op for non-
+        # enterprise installs. Fail behaviour is split (hardening): if a policy
+        # IS configured but evaluating THIS action errors, fail CLOSED + log
+        # loudly -- a config/classifier bug must never silently bypass the
+        # oversight gate. If governance/config can't load at all (can't even
+        # tell a policy is set), fail open + log, so a broken import never wedges
+        # every tool for non-enterprise installs.
+        _gov = None
+        try:
+            from .governance import Decision as _GovDecision
+            from .governance import Policy as _GovPolicy
+            from .governance import Verdict as _GovVerdict
+            from .governance import evaluate as _gov_evaluate
+            _gov_policy = _GovPolicy.from_config()
+        except Exception:  # governance unavailable -> can't enforce; fail open (logged)
+            log.warning("governance: unavailable; enforcement skipped for %r", name)
+            _gov_policy = None
+        if _gov_policy is not None and not _gov_policy.is_empty():
+            try:
+                # Pass the transaction amount/currency so the policy's
+                # dollar-tier gates (deny_above / require_human_above) actually
+                # fire -- without this the finance delegation-of-authority
+                # thresholds are dead at the chokepoint.
+                _gov_currency = args.get("currency") if isinstance(args, dict) else None
+                _gov = _gov_evaluate(
+                    name, policy=_gov_policy,
+                    amount=_governance_amount(args),
+                    currency=_gov_currency if isinstance(_gov_currency, str) else "",
+                )
+            except Exception:
+                log.warning("governance: evaluation failed for %r; failing closed",
+                            name, exc_info=True)
+                self.ctx.blackboard.post(
+                    self.name, "error",
+                    f"tool={name} BLOCKED: governance evaluation error (fail-closed)",
+                )
+                _gov = _GovVerdict(
+                    _GovDecision.DENY,
+                    "governance evaluation error (failed closed)", "error",
+                )
+        if _gov is None or _gov.decision is _GovDecision.ALLOW:
+            return None
+        from .audit import EventKind, record
+        _principal = getattr(cap, "principal", None) if cap is not None else None
+        if _gov.decision is _GovDecision.DENY:
+            self.ctx.blackboard.post(
+                self.name, "error",
+                f"tool={name} DENIED by governance ({_gov.rule})",
+            )
+            try:  # tamper-evident record of the denial; never block on audit
+                record(EventKind.GOVERNANCE_DENIED, agent=self.name,
+                       goal_id=self.ctx.goal_id, tool=name,
+                       principal=_principal, rule=_gov.rule, reason=_gov.reason)
+            except Exception:  # pragma: no cover
+                pass
+            return (
+                f"⚠ DENIED by org policy ({_gov.rule}): {_gov.reason}. "
+                "The tool was not executed."
+            )
+        # REQUIRE_HUMAN: the action runs only with a real human's approval
+        # (Art 14). allow_auto_approve=False means a silent auto-approve mode
+        # counts as a denial -- no human in the loop, no run.
+        import asyncio as _asyncio
+        granted = False
+        try:
+            from .safety.consent import require_consent
+            from .safety.tool_risk import tool_risk
+            decision = await _asyncio.to_thread(
+                require_consent, name,
+                risk=tool_risk(name), detail=_gov.reason,
+                provenance="governance",
+                allow_auto_approve=False,
+                # When the operator opts into per-action oversight, a prior
+                # persistent ledger grant must NOT silently satisfy the
+                # Art-14 gate -- demand a fresh human decision each time.
+                consult_ledger=not _gov_policy.require_fresh_human_approval,
+            )
+            granted = bool(decision.granted)
+        except Exception:  # pragma: no cover -- consent unavailable -> fail closed
+            granted = False
+        if granted:
+            return None
+        self.ctx.blackboard.post(
+            self.name, "error",
+            f"tool={name} BLOCKED: governance requires human approval",
+        )
+        try:
+            record(EventKind.GOVERNANCE_DENIED, agent=self.name,
+                   goal_id=self.ctx.goal_id, tool=name,
+                   principal=_principal, rule=_gov.rule,
+                   reason="human approval not granted")
+        except Exception:  # pragma: no cover
+            pass
+        # Human-override ingestion: the operator's "no" is itself a
+        # learning signal — recallable on the next similar goal and
+        # consolidated by dreaming. No-op unless [reflexion] is on.
+        try:
+            from .reflexion import record_human_override
+            record_human_override(
+                self.brief, name, _gov.reason or _gov.rule,
+                domain=self.domain,
+            )
+        except Exception:  # pragma: no cover -- never block the denial
+            pass
+        return (
+            f"⚠ {name!r} requires human approval (EU AI Act Art 14): "
+            f"{_gov.reason}. Not granted, so the tool was not executed."
+        )
+
+    async def _run_tool(self, name: str, args: dict) -> str:
         # Record the tool name on this agent's action sequence so a parent can
         # capture per-sub-agent trajectories (maverick.credit.build_subtrajectories).
         # Tool NAMES only -- never args -- so this carries no secrets. Lazy-init
@@ -1050,288 +1343,33 @@ class Agent:
         # no-op unless capability enforcement was opted in. Deny wins -- the
         # tool never runs and the model gets a clear, non-leaky refusal.
         cap = self._effective_capability(name)
-        # Revocation kill-switch: a still-valid grant can be revoked out of
-        # band (leaked key / rogue agent / offboard); the registry is re-read
-        # on change so a revoke in another process reaches this running agent.
-        # Fail-open (revocation never bricks a run) and only when a grant
-        # exists (== capability enforcement is on).
-        if cap is not None:
-            from .revocation import revoked_principal as _revoked_principal
-            principals = (
-                cap.revocation_principals()
-                if hasattr(cap, "revocation_principals") else (cap.principal,)
-            )
-            revoked = _revoked_principal(principals)
-            if revoked is not None:
-                self.ctx.blackboard.post(
-                    self.name, "error",
-                    f"tool={name} DENIED: principal {revoked} REVOKED",
-                )
-                try:  # tamper-evident record of the denial; never block on audit
-                    from .audit import EventKind, record
-                    record(
-                        EventKind.CAPABILITY_DENIED,
-                        agent=self.name,
-                        goal_id=self.ctx.goal_id,
-                        tool=name,
-                        principal=cap.principal,
-                        revoked_principal=revoked,
-                        channel=getattr(self.ctx, "channel", None),
-                        user_id=getattr(self.ctx, "user_id", None),
-                    )
-                except Exception:  # pragma: no cover
-                    pass
-                return (
-                    f"⚠ DENIED by capability policy: principal {revoked!r} "
-                    f"has been revoked. The tool was not executed."
-                )
-        if cap is not None and not cap.permits(name):
-            self.ctx.blackboard.post(
-                self.name, "error",
-                f"tool={name} DENIED by capability (principal={cap.principal})",
-            )
-            try:  # tamper-evident record of the denial; never block on audit
-                from .audit import EventKind, record
-                record(
-                    EventKind.CAPABILITY_DENIED,
-                    agent=self.name,
-                    goal_id=self.ctx.goal_id,
-                    tool=name,
-                    principal=cap.principal,
-                    channel=getattr(self.ctx, "channel", None),
-                    user_id=getattr(self.ctx, "user_id", None),
-                )
-            except Exception:  # pragma: no cover
-                pass
-            return (
-                f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
-                f"not granted tool {name!r}. The tool was not executed."
-            )
-
-        # P0 capability layer (path resource-scopes): for known filesystem
-        # tools, gate the canonical workspace-relative path(s) they will touch.
-        # This mirrors the tools' own resolution behavior, so raw paths like
-        # "allowed/../secret.txt" are checked as "secret.txt". ``list_dir``
-        # gets its schema default of ".", and ``apply_patch`` checks every
-        # file referenced by the unified diff. Malformed calls whose path
-        # cannot be located still fall through to tool validation.
-        if cap is not None and (name in _FILE_TOOL_PATH_ARGS or name == "apply_patch"):
-            denied_paths: list[str] = []
-            try:
-                paths = _capability_paths_for_tool(name, args, self.ctx.sandbox)
-            except ValueError as e:
-                denied_paths = [str(e)]
-            else:
-                if paths is not None:
-                    denied_paths = [p for p in paths if not cap.permits_path(p)]
-            if denied_paths:
-                denied = ", ".join(denied_paths)
-                self.ctx.blackboard.post(
-                    self.name, "error",
-                    f"tool={name} path={denied} DENIED by capability "
-                    f"(principal={cap.principal})",
-                )
-                try:  # tamper-evident record of the denial; never block on audit
-                    from .audit import EventKind, record
-                    record(EventKind.CAPABILITY_DENIED, agent=self.name,
-                           goal_id=self.ctx.goal_id, tool=name,
-                           principal=cap.principal, path=denied)
-                except Exception:  # pragma: no cover
-                    pass
-                return (
-                    f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
-                    f"not granted path {denied!r} for tool {name!r}. "
-                    "The tool was not executed."
-                )
-
-        # P0 capability layer (host resource-scopes): for a known network tool,
-        # the grant's allow_hosts globs also gate the host its URL reaches.
-        # No-op unless a host-restricted grant is active (empty == all). Fail-
-        # soft: if the URL arg is missing/unparseable (no host) we skip the
-        # check rather than error -- we never deny something we can't
-        # confidently locate the host for.
-        url_arg = _NET_TOOL_URL_ARGS.get(name)
+        # Capability gates (revocation kill-switch, tool grant, path scopes).
+        # Each returns a non-leaky refusal string when it denies, else None.
+        if (d := self._capability_revocation_denial(name, cap)) is not None:
+            return d
+        if (d := self._capability_permits_denial(name, cap)) is not None:
+            return d
+        if (d := self._capability_path_denial(name, args, cap)) is not None:
+            return d
+        # The browser can follow redirects and later URL-less actions read or
+        # interact with the current page. Pass the active host scope into the
+        # tool so it can gate the final/current page host before returning
+        # content or continuing a restricted session. This must happen before
+        # the host-scope check so the (possibly rewritten) args carry forward.
         if cap is not None and name == "browser" and cap.allow_hosts and isinstance(args, dict):
-            # The browser can follow redirects and later URL-less actions read or
-            # interact with the current page. Pass the active host scope into the
-            # tool so it can gate the final/current page host before returning
-            # content or continuing a restricted session.
             args = dict(args)
             args["_capability_allow_hosts"] = tuple(cap.allow_hosts)
-        if cap is not None and url_arg is not None:
-            raw = args.get(url_arg) if isinstance(args, dict) else None
-            host = None
-            if isinstance(raw, str) and raw:
-                try:  # malformed URLs (e.g. bad IPv6) raise -- skip, don't crash
-                    host = urlsplit(raw).hostname
-                except ValueError:
-                    host = None
-            if host and not cap.permits_host(host):
-                self.ctx.blackboard.post(
-                    self.name, "error",
-                    f"tool={name} host={host} DENIED by capability "
-                    f"(principal={cap.principal})",
-                )
-                try:  # tamper-evident record of the denial; never block on audit
-                    from .audit import EventKind, record
-                    record(EventKind.CAPABILITY_DENIED, agent=self.name,
-                           goal_id=self.ctx.goal_id, tool=name,
-                           principal=cap.principal, host=host)
-                except Exception:  # pragma: no cover
-                    pass
-                return (
-                    f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
-                    f"not granted host {host!r} for tool {name!r}. "
-                    "The tool was not executed."
-                )
+        if (d := self._capability_host_denial(name, args, cap)) is not None:
+            return d
 
-        # Autonomy servo (Loop 2): tighten the leash with live trust. When the
-        # run's trust is low -- a high-disagreement swarm fan-out or a low
-        # verifier verdict -- the effective risk ceiling drops, so an unresolved
-        # disagreement can't drive an irreversible (high-risk) action
-        # unattended. Composes WITH the capability ceiling above (it tightens
-        # from the grant's max_risk, never broadens). No-op unless [autonomy] is
-        # enabled. Fail-open: a bug here must never block a tool.
-        try:
-            from . import autonomy
-            _av = autonomy.gate_tool(
-                name,
-                disagreement=float(getattr(self.ctx, "last_disagreement", 0.0) or 0.0),
-                verifier_confidence=float(
-                    getattr(self.ctx, "last_verifier_confidence", 1.0) or 1.0
-                ),
-                configured_max_risk=getattr(cap, "max_risk", None),
-            )
-        except Exception:  # pragma: no cover -- autonomy gate must never break the loop
-            _av = None
-        if _av is not None and not _av.allowed:
-            self.ctx.blackboard.post(
-                self.name, "error", f"tool={name} GATED by autonomy: {_av.reason}",
-            )
-            try:  # tamper-evident record of the gate; never block on audit
-                from .audit import EventKind, record
-                record(
-                    EventKind.AUTONOMY_GATED, agent=self.name,
-                    goal_id=self.ctx.goal_id, tool=name,
-                    effective_max_risk=_av.effective_max_risk,
-                )
-            except Exception:  # pragma: no cover
-                pass
-            return (
-                f"⚠ GATED by autonomy policy: {_av.reason}. The tool was not "
-                "executed. Resolve the disagreement (reconcile the divergent "
-                "findings) or get human approval via ask_user before retrying."
-            )
+        # Autonomy servo (Loop 2): low run-trust tightens the risk ceiling.
+        if (d := self._autonomy_denial(name, cap)) is not None:
+            return d
 
-        # Org oversight control plane (enterprise): on top of the per-principal
-        # capability above, an org-level policy can DENY an action outright or
-        # REQUIRE_HUMAN sign-off (EU AI Act Art 14). Default-open -- an empty
-        # [governance] policy returns ALLOW, so this is a no-op for non-
-        # enterprise installs. Fail behaviour is split (hardening): if a policy
-        # IS configured but evaluating THIS action errors, fail CLOSED + log
-        # loudly -- a config/classifier bug must never silently bypass the
-        # oversight gate. If governance/config can't load at all (can't even
-        # tell a policy is set), fail open + log, so a broken import never wedges
-        # every tool for non-enterprise installs.
-        _gov = None
-        try:
-            from .governance import Decision as _GovDecision
-            from .governance import Policy as _GovPolicy
-            from .governance import Verdict as _GovVerdict
-            from .governance import evaluate as _gov_evaluate
-            _gov_policy = _GovPolicy.from_config()
-        except Exception:  # governance unavailable -> can't enforce; fail open (logged)
-            log.warning("governance: unavailable; enforcement skipped for %r", name)
-            _gov_policy = None
-        if _gov_policy is not None and not _gov_policy.is_empty():
-            try:
-                # Pass the transaction amount/currency so the policy's
-                # dollar-tier gates (deny_above / require_human_above) actually
-                # fire -- without this the finance delegation-of-authority
-                # thresholds are dead at the chokepoint.
-                _gov_currency = args.get("currency") if isinstance(args, dict) else None
-                _gov = _gov_evaluate(
-                    name, policy=_gov_policy,
-                    amount=_governance_amount(args),
-                    currency=_gov_currency if isinstance(_gov_currency, str) else "",
-                )
-            except Exception:
-                log.warning("governance: evaluation failed for %r; failing closed",
-                            name, exc_info=True)
-                self.ctx.blackboard.post(
-                    self.name, "error",
-                    f"tool={name} BLOCKED: governance evaluation error (fail-closed)",
-                )
-                _gov = _GovVerdict(
-                    _GovDecision.DENY,
-                    "governance evaluation error (failed closed)", "error",
-                )
-        if _gov is not None and _gov.decision is not _GovDecision.ALLOW:
-            from .audit import EventKind, record
-            _principal = getattr(cap, "principal", None) if cap is not None else None
-            if _gov.decision is _GovDecision.DENY:
-                self.ctx.blackboard.post(
-                    self.name, "error",
-                    f"tool={name} DENIED by governance ({_gov.rule})",
-                )
-                try:  # tamper-evident record of the denial; never block on audit
-                    record(EventKind.GOVERNANCE_DENIED, agent=self.name,
-                           goal_id=self.ctx.goal_id, tool=name,
-                           principal=_principal, rule=_gov.rule, reason=_gov.reason)
-                except Exception:  # pragma: no cover
-                    pass
-                return (
-                    f"⚠ DENIED by org policy ({_gov.rule}): {_gov.reason}. "
-                    "The tool was not executed."
-                )
-            # REQUIRE_HUMAN: the action runs only with a real human's approval
-            # (Art 14). allow_auto_approve=False means a silent auto-approve mode
-            # counts as a denial -- no human in the loop, no run.
-            import asyncio as _asyncio
-            granted = False
-            try:
-                from .safety.consent import require_consent
-                from .safety.tool_risk import tool_risk
-                decision = await _asyncio.to_thread(
-                    require_consent, name,
-                    risk=tool_risk(name), detail=_gov.reason,
-                    provenance="governance",
-                    allow_auto_approve=False,
-                    # When the operator opts into per-action oversight, a prior
-                    # persistent ledger grant must NOT silently satisfy the
-                    # Art-14 gate -- demand a fresh human decision each time.
-                    consult_ledger=not _gov_policy.require_fresh_human_approval,
-                )
-                granted = bool(decision.granted)
-            except Exception:  # pragma: no cover -- consent unavailable -> fail closed
-                granted = False
-            if not granted:
-                self.ctx.blackboard.post(
-                    self.name, "error",
-                    f"tool={name} BLOCKED: governance requires human approval",
-                )
-                try:
-                    record(EventKind.GOVERNANCE_DENIED, agent=self.name,
-                           goal_id=self.ctx.goal_id, tool=name,
-                           principal=_principal, rule=_gov.rule,
-                           reason="human approval not granted")
-                except Exception:  # pragma: no cover
-                    pass
-                # Human-override ingestion: the operator's "no" is itself a
-                # learning signal — recallable on the next similar goal and
-                # consolidated by dreaming. No-op unless [reflexion] is on.
-                try:
-                    from .reflexion import record_human_override
-                    record_human_override(
-                        self.brief, name, _gov.reason or _gov.rule,
-                        domain=self.domain,
-                    )
-                except Exception:  # pragma: no cover -- never block the denial
-                    pass
-                return (
-                    f"⚠ {name!r} requires human approval (EU AI Act Art 14): "
-                    f"{_gov.reason}. Not granted, so the tool was not executed."
-                )
+        # Org oversight control plane (enterprise): policy DENY or REQUIRE_HUMAN
+        # sign-off (EU AI Act Art 14). Default-open for non-enterprise installs.
+        if (d := await self._governance_denial(name, args, cap)) is not None:
+            return d
 
         # PreToolUse hooks: any registered hook can BLOCK the call by
         # returning a non-zero exit code (shell hook) or a falsy value
@@ -1595,7 +1633,7 @@ class Agent:
         ):
             return await self._run_inner()
 
-    async def _run_inner(self) -> AgentResult:  # noqa: C901
+    async def _run_inner(self) -> AgentResult:  # noqa: C901  -- core agent turn loop; decompose only under dedicated review (see below)
         bb = self.ctx.blackboard
         bb.post(self.name, "plan", f"role={self.role} depth={self.depth} brief={self.brief}")
 

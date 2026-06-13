@@ -169,7 +169,7 @@ class TestUpdateChannel:
 
     def test_no_url_is_disabled_not_an_error(self, store, monkeypatch):
         from maverick import config as cfg_mod
-        monkeypatch.setattr(cfg_mod, "load_config", lambda: {})
+        monkeypatch.setattr(cfg_mod, "load_config", dict)
         assert tax_constants.check_for_update()[0] == "disabled"
 
     def test_prepare_computes_from_the_applied_bundle(self, store, tmp_path):

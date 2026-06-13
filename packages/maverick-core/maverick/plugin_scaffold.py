@@ -73,7 +73,7 @@ _MANIFEST_TMPL = '''\
 [plugin]
 name             = "{slug}"
 version          = "0.1.0"
-api_version      = "1"
+api_version      = "2"
 kind             = "{kind}"
 author           = "your name"
 license          = "MIT"

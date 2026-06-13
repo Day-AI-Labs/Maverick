@@ -38,8 +38,7 @@ def _canonical_dns_name(name: str) -> str:
     rules cannot be bypassed with the fully-qualified spelling.
     """
     value = (name or "").strip().lower()
-    if value.endswith("."):
-        value = value[:-1]
+    value = value.removesuffix(".")
     labels = []
     for label in value.split("."):
         if any(ch in label for ch in "*?["):

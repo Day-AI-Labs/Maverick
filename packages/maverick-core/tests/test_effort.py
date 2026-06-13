@@ -17,7 +17,7 @@ def _clean_env(monkeypatch):
         if k.startswith("MAVERICK_EFFORT"):
             monkeypatch.delenv(k, raising=False)
     # Default: no config, feature off.
-    monkeypatch.setattr(effort, "_config_effort", lambda: {})
+    monkeypatch.setattr(effort, "_config_effort", dict)
 
 
 # ---- model gating ----------------------------------------------------------

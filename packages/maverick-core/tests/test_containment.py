@@ -60,7 +60,7 @@ def test_profile_from_config_extends_deny_never_shrinks(monkeypatch, tmp_path):
             "no_network = false\nmax_wall_seconds = 60\n")
     p = containment.profile_from_config()
     assert "my_connector" in p.deny_tools
-    assert containment.DEFAULT_DENY_TOOLS <= p.deny_tools  # built-ins kept
+    assert p.deny_tools >= containment.DEFAULT_DENY_TOOLS  # built-ins kept
     assert p.no_network is False
     assert p.max_wall_seconds == 60.0
 
@@ -83,7 +83,7 @@ def test_apply_preserves_existing_acl_denials():
                                registry=reg, sandbox_env=env)
     # set_acl REPLACES, so apply must have re-submitted the old ACL + denials.
     assert "shell" in reg._acl_denied                       # pre-existing kept
-    assert containment.DEFAULT_DENY_TOOLS <= reg._acl_denied  # containment added
+    assert reg._acl_denied >= containment.DEFAULT_DENY_TOOLS  # containment added
     assert reg._acl_allowed == {"read_file", "shell"}       # allow-list intact
     assert reg._acl_max_risk == "medium"                    # ceiling intact
     assert report.preserved_denials == frozenset({"shell"})

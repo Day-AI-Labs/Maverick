@@ -123,7 +123,7 @@ def _op_search(query: str, limit: int) -> str:
         title = h.get("title") or h.get("story_title") or (h.get("comment_text") or "")[:60]
         url = h.get("url") or f"https://news.ycombinator.com/item?id={h.get('objectID')}"
         rows.append(
-            f"  [{str(h.get('points') or '?'):>4}]  {title[:80]}\n      {url}"
+            f"  [{h.get('points') or '?'!s:>4}]  {title[:80]}\n      {url}"
         )
     return "\n".join(rows)
 

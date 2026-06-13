@@ -66,7 +66,7 @@ def bar_chart(
     for label, value in rows:
         v = max(0.0, float(value))
         n = 0 if vmax == 0 else max(1, round(v / vmax * width)) if v > 0 else 0
-        lines.append(f"{str(label):<{labw}}  {'█' * n}{' ' if n else ''}{fmt(v)}")
+        lines.append(f"{label!s:<{labw}}  {'█' * n}{' ' if n else ''}{fmt(v)}")
     return "\n".join(lines)
 
 

@@ -549,7 +549,7 @@ def _deferred_loading_enabled() -> bool:
         return False
 
 
-def base_registry(  # noqa: C901
+def base_registry(
     world,
     sandbox,
     mcp_clients: list | None = None,
@@ -1215,6 +1215,41 @@ def base_registry(  # noqa: C901
         import logging as _logging
         _logging.getLogger(__name__).warning("byo @tool load: %s", e)
 
+    _register_optional_tools(
+        reg, sandbox,
+        enable_web_search=enable_web_search,
+        enable_computer_use=enable_computer_use,
+        enable_browser=enable_browser,
+    )
+
+    _apply_tool_acl(reg, channel=channel, user_id=user_id)
+    _apply_mcp_tools(reg, mcp_clients)
+    # Per-tool rate limits from ~/.maverick/config.toml [rate_limits].
+    # Wrap AFTER MCP + before plugin tools so MCP-exposed tools (which
+    # share the most-abused namespace, mcp_*) are covered; plugins
+    # register below and pick up their own limits via a second pass.
+    _apply_rate_limits(reg)
+    _apply_python_plugins(reg)
+    _apply_ts_plugins(reg)
+    _apply_grpc_plugins(reg)
+    _apply_generated_tools(reg)
+    # Second rate-limit pass to cover plugin-registered tools. Earlier
+    # pass already wrapped core + MCP tools; double-wrapping is avoided
+    # because apply_to_registry walks the current dict snapshot.
+    _apply_rate_limits(reg, fail_silently=True)
+    _apply_deferred_loading(reg)
+
+    return reg
+
+
+def _register_optional_tools(
+    reg: ToolRegistry,
+    sandbox,
+    *,
+    enable_web_search: bool,
+    enable_computer_use: bool,
+    enable_browser: bool,
+) -> None:
     if enable_web_search:
         from .web_search import web_search
         reg.register(web_search())
@@ -1229,6 +1264,8 @@ def base_registry(  # noqa: C901
         reg.register(browser())
         reg.register(aria_navigate())
 
+
+def _apply_tool_acl(reg: ToolRegistry, *, channel: str | None, user_id: str | None) -> None:
     # Apply allow/deny lists from ~/.maverick/config.toml [security].
     # Fail-soft: any error here is logged and the registry is left
     # untouched.
@@ -1239,37 +1276,42 @@ def base_registry(  # noqa: C901
         import logging as _logging
         _logging.getLogger(__name__).warning("tool_acl: %s", e)
 
-    if mcp_clients:
-        from ..mcp_tools import tools_from_mcp
-        for client in mcp_clients:
-            for t in tools_from_mcp(client):
-                # Never let an external MCP server silently SHADOW a built-in
-                # (shell, read_file, ...): every other registration path (plugins,
-                # @tool) checks this, but the MCP loop did not, so a malicious or
-                # misconfigured MCP server could substitute a core tool
-                # (user-testing finding). Built-ins are registered above, so a
-                # name collision here is the MCP tool losing -- skip it.
-                if t.name in reg._tools:
-                    import logging
-                    logging.getLogger(__name__).warning(
-                        "MCP tool %r from %s conflicts with an existing tool; "
-                        "skipping to avoid shadowing a built-in.",
-                        t.name, getattr(client, "name", "?"),
-                    )
-                    continue
-                reg.register(t)
 
-    # Per-tool rate limits from ~/.maverick/config.toml [rate_limits].
-    # Wrap AFTER MCP + before plugin tools so MCP-exposed tools (which
-    # share the most-abused namespace, mcp_*) are covered; plugins
-    # register below and pick up their own limits via a second pass.
+def _apply_mcp_tools(reg: ToolRegistry, mcp_clients: list | None) -> None:
+    if not mcp_clients:
+        return
+    from ..mcp_tools import tools_from_mcp
+    for client in mcp_clients:
+        for t in tools_from_mcp(client):
+            # Never let an external MCP server silently SHADOW a built-in
+            # (shell, read_file, ...): every other registration path (plugins,
+            # @tool) checks this, but the MCP loop did not, so a malicious or
+            # misconfigured MCP server could substitute a core tool
+            # (user-testing finding). Built-ins are registered above, so a
+            # name collision here is the MCP tool losing -- skip it.
+            if t.name in reg._tools:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "MCP tool %r from %s conflicts with an existing tool; "
+                    "skipping to avoid shadowing a built-in.",
+                    t.name, getattr(client, "name", "?"),
+                )
+                continue
+            reg.register(t)
+
+
+def _apply_rate_limits(reg: ToolRegistry, *, fail_silently: bool = False) -> None:
     try:
         from ..safety.rate_limiter import apply_to_registry as _rl_apply
         _rl_apply(reg)
     except Exception as e:  # pragma: no cover
+        if fail_silently:
+            return
         import logging as _logging
         _logging.getLogger(__name__).warning("rate_limiter: %s", e)
 
+
+def _apply_python_plugins(reg: ToolRegistry) -> None:
     # Plugin tools registered via the `maverick.tools` entry point. Each
     # factory is called with no args and must return a Tool. A broken
     # plugin logs but never takes the swarm down.
@@ -1297,6 +1339,8 @@ def base_registry(  # noqa: C901
     except Exception:  # pragma: no cover -- importlib quirks
         pass
 
+
+def _apply_ts_plugins(reg: ToolRegistry) -> None:
     # TypeScript plugins (the NDJSON stdio SDK): each `[plugins] ts` command
     # contributes its described tools. Same no-shadowing rule as Python
     # plugins; a broken plugin logs but never takes the swarm down.
@@ -1314,6 +1358,8 @@ def base_registry(  # noqa: C901
     except Exception:  # pragma: no cover -- plugin failure never blocks boot
         pass
 
+
+def _apply_grpc_plugins(reg: ToolRegistry) -> None:
     # gRPC plugins (the multi-language plugin host): each [plugins] grpc entry
     # contributes its described tools, same no-shadowing rule.
     try:
@@ -1330,6 +1376,8 @@ def base_registry(  # noqa: C901
     except Exception:  # pragma: no cover -- plugin failure never blocks boot
         pass
 
+
+def _apply_generated_tools(reg: ToolRegistry) -> None:
     # Self-learning: tools the agent generated for itself on a prior run
     # live in ~/.maverick/generated_tools/ and load like first-class tools.
     # Only consulted when [self_learning] enable is set — generated tools
@@ -1343,15 +1391,8 @@ def base_registry(  # noqa: C901
         import logging as _logging
         _logging.getLogger(__name__).warning("generated tools load: %s", e)
 
-    # Second rate-limit pass to cover plugin-registered tools. Earlier
-    # pass already wrapped core + MCP tools; double-wrapping is avoided
-    # because apply_to_registry walks the current dict snapshot.
-    try:
-        from ..safety.rate_limiter import apply_to_registry as _rl_apply
-        _rl_apply(reg)
-    except Exception:  # pragma: no cover
-        pass
 
+def _apply_deferred_loading(reg: ToolRegistry) -> None:
     # Deferred tool loading (opt-in): expose only CORE + find_tools to the
     # model; everything else (incl. MCP and plugin tools) is discovered on
     # demand. Enabled last, after every tool is registered, so the long tail
@@ -1360,8 +1401,6 @@ def base_registry(  # noqa: C901
         from .find_tools import find_tools as _find_tools
         reg.register(_find_tools(reg))
         reg.enable_deferred(CORE_TOOL_NAMES)
-
-    return reg
 
 
 default_registry = base_registry

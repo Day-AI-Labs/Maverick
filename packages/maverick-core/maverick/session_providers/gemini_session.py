@@ -109,8 +109,7 @@ def _parse_stream_response(stream_text: str) -> str:
     nested path inside one of those arrays.
     """
     text = stream_text
-    if text.startswith(")]}'"):
-        text = text[len(")]}'"):]
+    text = text.removeprefix(")]}'")
     pieces: list[str] = []
     decoder = json.JSONDecoder()
     idx = 0

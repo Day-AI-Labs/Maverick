@@ -96,7 +96,7 @@ def _op_resize(args: dict, sandbox) -> str:
     h = int(args.get("height") or 0)
     # When neither dimension is given the f-string is "x" (truthy), so the
     # old `or "100%"` fallback never fired and ImageMagick got "-resize x".
-    geom = f"{w if w else ''}x{h if h else ''}"
+    geom = f"{w or ''}x{h or ''}"
     if geom == "x":
         geom = "100%"
     cmd = [b] if b != "magick" else ["magick", "convert"]

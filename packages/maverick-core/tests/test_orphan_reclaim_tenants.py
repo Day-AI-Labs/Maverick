@@ -146,7 +146,7 @@ def test_disabled_does_not_sweep_tenant_worlds(monkeypatch):
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
     monkeypatch.setenv("MAVERICK_ORPHAN_RECLAIM_SECONDS", "0")
     # Tenancy resolution also consults config; force it off there too.
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
 
     a_goals = _stranded_tenant("a")
 

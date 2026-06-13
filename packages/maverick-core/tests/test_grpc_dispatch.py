@@ -126,6 +126,6 @@ def test_install_from_config(monkeypatch):
     assert isinstance(installed["d"], GrpcDispatcher)
     monkeypatch.delenv("MAVERICK_GRPC_DISPATCH_TARGET")
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     assert configured_target() == ""
     assert install_from_config() is False

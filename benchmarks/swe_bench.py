@@ -295,56 +295,11 @@ def _reset_workdir(workdir, base_commit: str = "") -> None:
         raise _ResetWorkdirError(f"workdir reset failed: {e}") from e
 
 
-def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:  # noqa: C901
-    """Spin up a Maverick swarm against the instance brief.
-
-    Wave 8: coding-mode + best-of-N support. The harness sets
-    MAVERICK_CODING_MODE=1 + MAVERICK_BEST_OF_N + MAVERICK_FAIL_TO_PASS /
-    MAVERICK_PASS_TO_PASS so coding_mode.from_env() picks up the
-    benchmark context. The agent then uses the strict diff-only
-    template, self-validates patches via `git apply --check`, runs
-    the test-driven verifier when ground-truth tests are present,
-    and (when n > 1) returns the best-of-N candidate.
-
-    Wave 10: predicted_patch is now the EXTRACTED unified diff (not
-    the orchestrator's prose). Failing-test files are pre-read and
-    prepended to the brief. Cost is summed across all episodes
-    in this goal, not just the last one. Test envs are cleared after
-    the run so they don't leak into adjacent processes.
-
-    Wave 11: LLM is hoisted to a process-wide singleton (no RSS leak),
-    workdir is reset before the run (no state bleed), per-instance
-    cost is hard-capped, Pro `requirements`/`interface` fields are
-    surfaced into the brief, and the 30-turn productivity ceiling is
-    honored (most successful Pro solutions resolve in ~25 turns per
-    Scale Labs' empirical study).
-    """
-    if os.environ.get("MAVERICK_BENCH_DRY_RUN") == "1":
-        return _dry_run_row(instance_id, "maverick")
-
-    import asyncio
-
-    from maverick.budget import Budget
-    from maverick.coding_mode import extract_unified_diff
-    from maverick.orchestrator import run_goal_best_of_n, run_goal_sync
-    from maverick.sandbox import build_sandbox
-    from maverick.world_model import WorldModel
-
-    # Default: turn coding mode ON for any SWE-bench-shaped task. Caller
-    # can disable by setting MAVERICK_CODING_MODE=0 explicitly.
-    os.environ.setdefault("MAVERICK_CODING_MODE", "1")
-    # Best-of-N defaults to 1 (single-shot); SWE-bench Pro headline run
-    # sets MAVERICK_BEST_OF_N=4 explicitly. Anything > 1 changes the
-    # cost profile materially, so don't default it on.
-    best_of_n = int(os.environ.get("MAVERICK_BEST_OF_N", "1"))
-
-    # Wave 10: snapshot prior env so we can restore on exit and not leak
-    # one instance's test sets into the next instance (or into a
-    # follow-on non-bench process sharing the same shell).
-    # May 26 council fix (harness audit #2): capture ALL MAVERICK_*
-    # env vars. The five-key whitelist missed env vars the agent loop
-    # mutated (MAVERICK_TEMPERATURE from BoN, MAVERICK_MODEL_OVERRIDE_*),
-    # which then leaked into the next instance.
+def _maverick_snapshot_and_set_env(kwargs: dict) -> dict:
+    """Snapshot all MAVERICK_* env vars (for later restore) and set the
+    per-instance test-env vars from the manifest. Returns the snapshot."""
+    # Wave 10 council fix: capture ALL MAVERICK_* env vars so any var the
+    # agent loop mutated is restored, not just a five-key whitelist.
     _prior_env = {
         k: v for k, v in os.environ.items()
         if k.startswith("MAVERICK_")
@@ -358,13 +313,6 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:  # noqa: C901
     base_commit = str(kwargs.get("base_commit") or "")
     if base_commit:
         os.environ["MAVERICK_BASE_COMMIT"] = base_commit
-    # Wave 12 hotfix: complete the gold-patch plumbing. The agent's
-    # defensive_validate reads via coding_mode.get_gold_patch() which
-    # pops MAVERICK_GOLD_PATCH from env on first call (security). Before
-    # this fix the harness never SET the env var, so the cheating
-    # detector silently never fired. We set it from the manifest's
-    # `gold_patch` field; coding_mode.reset_gold_patch_cache() is
-    # called below so per-instance values don't bleed across instances.
     gold_patch = str(kwargs.get("gold_patch") or "")
     if gold_patch:
         os.environ["MAVERICK_GOLD_PATCH"] = gold_patch
@@ -373,163 +321,220 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:  # noqa: C901
         reset_gold_patch_cache()
     except Exception:
         pass
+    return _prior_env
 
-    # Wave 11 (D8): reset workdir to a clean state before the run so
-    # state from instance N-1 doesn't pollute. Also strips reflog/tags
-    # that could leak gold (Princeton issue #465).
+
+def _maverick_restore_env(_prior_env: dict) -> None:
+    """Restore the MAVERICK_* env to its exact pre-instance state, dropping
+    any var the agent loop added that wasn't in the prior snapshot."""
+    for k in [k for k in os.environ if k.startswith("MAVERICK_")]:
+        if k not in _prior_env:
+            os.environ.pop(k, None)
+    for k, v in _prior_env.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+
+def _maverick_reset_workdir() -> None:
+    """Reset the sandbox workdir to a clean state before the run so state
+    from instance N-1 doesn't pollute. Best-effort."""
     try:
+        from maverick.sandbox import build_sandbox
         sandbox_pre = build_sandbox()
-        _reset_workdir(sandbox_pre.workdir, base_commit=base_commit)
+        _reset_workdir(sandbox_pre.workdir, base_commit=os.environ.get("MAVERICK_BASE_COMMIT", ""))
     except Exception:
         pass
 
-    # Wave 10 (B2): pre-read failing-test source as initial context so the
-    # agent localises against the actual assertions rather than guessing.
-    # Cap the prepended block so a giant test file doesn't blow the
-    # first-message token budget; the agent can still `read_file` for more.
-    failing_test_context = ""
-    fail_ids = kwargs.get("fail_to_pass") or []
-    if fail_ids:
-        try:
-            sandbox = build_sandbox()
-            sandbox_workdir = Path(sandbox.workdir).resolve()
-            from maverick.tools.fs import _is_opaque_blocked_resolved, _safe_resolve
-            seen: set[str] = set()
-            chunks: list[str] = []
-            for tid in fail_ids[:5]:  # at most 5 distinct files
-                # `tests/foo.py::TestX::test_y` -> tests/foo.py
-                path_part = tid.split("::", 1)[0] if "::" in tid else tid
-                if not path_part or path_part in seen:
-                    continue
-                seen.add(path_part)
-                if _is_opaque_blocked_resolved(sandbox, path_part):
-                    continue
-                try:
-                    tp = _safe_resolve(sandbox, path_part)
-                except ValueError:
-                    continue
-                try:
-                    rel = tp.relative_to(sandbox_workdir).as_posix()
-                except ValueError:
-                    continue
-                if tp.exists() and tp.is_file():
-                    try:
-                        txt = tp.read_text(encoding="utf-8", errors="replace")
-                        chunks.append(
-                            f"--- failing test file: {rel} ---\n"
-                            f"{txt[:6000]}\n"
-                        )
-                    except (OSError, PermissionError):
-                        pass
-            if chunks:
-                failing_test_context = (
-                    "\n\nFailing-test context (ground truth for the fix; "
-                    "do NOT hardcode to these expected values, derive the fix "
-                    "from the production code):\n\n"
-                    + "\n".join(chunks)
-                )
-        except Exception:
-            failing_test_context = ""
 
-    # Wave 11: surface Pro `requirements` + `interface` fields. SWE-bench
-    # Pro adds these as part of issue augmentation; harnesses that drop
-    # them lose easy points because the agent has to infer the spec.
-    pro_block = ""
+def _maverick_failing_test_context(fail_ids: list) -> str:
+    """Pre-read failing-test source as initial context so the agent
+    localises against the actual assertions rather than guessing."""
+    if not fail_ids:
+        return ""
+    try:
+        from maverick.sandbox import build_sandbox
+        sandbox = build_sandbox()
+        sandbox_workdir = Path(sandbox.workdir).resolve()
+        from maverick.tools.fs import _is_opaque_blocked_resolved, _safe_resolve
+        seen: set[str] = set()
+        chunks: list[str] = []
+        for tid in fail_ids[:5]:  # at most 5 distinct files
+            # `tests/foo.py::TestX::test_y` -> tests/foo.py
+            path_part = tid.split("::", 1)[0] if "::" in tid else tid
+            if not path_part or path_part in seen:
+                continue
+            seen.add(path_part)
+            if _is_opaque_blocked_resolved(sandbox, path_part):
+                continue
+            try:
+                tp = _safe_resolve(sandbox, path_part)
+            except ValueError:
+                continue
+            try:
+                rel = tp.relative_to(sandbox_workdir).as_posix()
+            except ValueError:
+                continue
+            if tp.exists() and tp.is_file():
+                try:
+                    txt = tp.read_text(encoding="utf-8", errors="replace")
+                    chunks.append(
+                        f"--- failing test file: {rel} ---\n"
+                        f"{txt[:6000]}\n"
+                    )
+                except (OSError, PermissionError):
+                    pass
+        if chunks:
+            return (
+                "\n\nFailing-test context (ground truth for the fix; "
+                "do NOT hardcode to these expected values, derive the fix "
+                "from the production code):\n\n"
+                + "\n".join(chunks)
+            )
+    except Exception:
+        return ""
+    return ""
+
+
+def _maverick_pro_block(kwargs: dict) -> str:
+    """Surface Pro `requirements` + `interface` fields into the brief."""
     requirements = (kwargs.get("requirements") or "").strip()
     interface = (kwargs.get("interface") or "").strip()
-    if requirements or interface:
-        parts = []
-        if requirements:
-            parts.append(f"REQUIREMENTS (from Pro spec):\n{requirements}")
-        if interface:
-            parts.append(f"INTERFACE (expected class/function signatures):\n{interface}")
-        pro_block = "\n\n" + "\n\n".join(parts)
+    if not (requirements or interface):
+        return ""
+    parts = []
+    if requirements:
+        parts.append(f"REQUIREMENTS (from Pro spec):\n{requirements}")
+    if interface:
+        parts.append(f"INTERFACE (expected class/function signatures):\n{interface}")
+    return "\n\n" + "\n\n".join(parts)
 
-    enriched_brief = brief + pro_block + failing_test_context
 
-    start = time.monotonic()
-    world = WorldModel()
-    llm = _get_shared_llm()
-    gid = world.create_goal(f"swe-bench:{instance_id}", enriched_brief)
-    # Wave 11: per-instance hard cost cap honors operator's
-    # --instance-hard-cap; defaults to $3 to align with Scale's published
-    # Pro budget. Wall is capped at 25 turns x 60s = 25 min effective.
-    instance_cap = float(os.environ.get("MAVERICK_INSTANCE_HARD_CAP", "3.0"))
-    instance_wall = float(os.environ.get("MAVERICK_INSTANCE_WALL_SEC", "1500"))
-    budget = Budget(max_dollars=instance_cap, max_wall_seconds=instance_wall)
-    sandbox = build_sandbox()
-    # Pre-initialize so the post-finally row construction always has
-    # values, even if the agent raises before episode bookkeeping.
-    all_eps: list = []
-    goal_obj = None
-    world_events: list = []
-    result = ""
+def _maverick_episode_accounting(all_eps: list):
+    """Sum cost/tokens across all episodes and pick the reported outcome.
 
+    Returns (total_cost, total_in, total_out, last_outcome). Prefers a
+    successful episode's outcome; falls back to the most recent."""
+    if not all_eps:
+        return 0.0, 0, 0, ""
+    total_cost = sum(getattr(e, "cost_dollars", 0.0) or 0.0 for e in all_eps)
+    total_in = sum(getattr(e, "input_tokens", 0) or 0 for e in all_eps)
+    total_out = sum(getattr(e, "output_tokens", 0) or 0 for e in all_eps)
+    _successes = [
+        e for e in all_eps
+        if (getattr(e, "outcome", "") or "").lower().startswith("success")
+    ]
+    last_outcome = (
+        _successes[0].outcome if _successes else all_eps[0].outcome
+    )
+    return total_cost, total_in, total_out, last_outcome
+
+
+def _maverick_tool_signals(events: list):
+    """Extract tool-use signals from goal_events.
+
+    Returns (str_replace_used, verifier_event_count, tool_names, num_turns)."""
+    str_replace_used = any(
+        "search_replace_used=1" in (e.content or "")
+        for e in events
+    )
+    verifier_events = [
+        e.content for e in events
+        if e.kind == "verify"
+    ]
+    tool_invocations = [
+        e.content for e in events
+        if e.kind == "observation" and (e.content or "").startswith("tool=")
+    ]
+    tool_names = set()
+    for tinv in tool_invocations:
+        if tinv.startswith("tool="):
+            name = tinv.split("=", 1)[1].split(" ", 1)[0].rstrip(",")
+            tool_names.add(name)
+    return str_replace_used, len(verifier_events), tool_names, len(tool_invocations)
+
+
+def _maverick_write_trace(instance_id: str, events: list) -> None:
+    """Optional per-instance JSON sidecar for forensics."""
+    trace_dir = os.environ.get("MAVERICK_TRACE_DIR")
+    if not trace_dir:
+        return
     try:
-        if best_of_n > 1:
-            result = asyncio.run(run_goal_best_of_n(
-                llm, world, budget, gid,
-                sandbox=sandbox, max_depth=3, n=best_of_n,
-            ))
-        else:
-            result = run_goal_sync(
-                llm, world, budget, gid, sandbox=sandbox, max_depth=3,
-            )
-        # Wave 10 (C6): sum cost across ALL episodes for this goal, not
-        # just the most recent one. Best-of-N runs N episodes; prior
-        # code reported only eps[0] (one attempt) and lost the other
-        # N-1. Wave 12 hotfix: all THREE world.* reads (list_episodes,
-        # get_goal, goal_events) MUST happen BEFORE the finally block
-        # closes the WorldModel SQLite connection — otherwise the
-        # harness raises ProgrammingError("Cannot operate on a closed
-        # database") and every instance silently errors with $0 cost.
-        all_eps = world.list_episodes(goal_id=gid)
-        goal_obj = world.get_goal(gid)
-        try:
-            world_events = world.goal_events(gid, limit=2000)
-        except Exception:
-            world_events = []
-    finally:
-        # Wave 10 (D11) + May 26 council fix (harness audit #2): restore
-        # env to the EXACT pre-instance state. Drop any MAVERICK_* var
-        # the agent loop added that wasn't in the prior snapshot — that
-        # was the leak channel for BoN temperature / model overrides
-        # bleeding across instances.
-        for k in [k for k in os.environ if k.startswith("MAVERICK_")]:
-            if k not in _prior_env:
-                os.environ.pop(k, None)
-        for k, v in _prior_env.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
-        # Wave 11 (D18): release the per-instance WorldModel SQLite
-        # connection. Without this, 1865 instances leak 1865 open file
-        # descriptors and SQLite WAL handles.
-        try:
-            world.close()
-        except Exception:
-            pass
-    if all_eps:
-        total_cost = sum(getattr(e, "cost_dollars", 0.0) or 0.0 for e in all_eps)
-        total_in   = sum(getattr(e, "input_tokens", 0) or 0 for e in all_eps)
-        total_out  = sum(getattr(e, "output_tokens", 0) or 0 for e in all_eps)
-        # May 26 council fix (harness audit #4): on best-of-N runs,
-        # `all_eps[0]` is the LAST-started episode (list_episodes
-        # orders started_at DESC). With asyncio.gather BoN, started_at
-        # ordering of N coroutines is non-deterministic — we'd report
-        # an arbitrary attempt's outcome rather than the winning one.
-        # Prefer a successful episode if any exist; fall back to most
-        # recent if none succeeded.
-        _successes = [
-            e for e in all_eps
-            if (getattr(e, "outcome", "") or "").lower().startswith("success")
-        ]
-        last_outcome = (
-            _successes[0].outcome if _successes else all_eps[0].outcome
-        )
+        from dataclasses import asdict as _asdict
+        from pathlib import Path as _Path
+        tp = _Path(trace_dir)
+        tp.mkdir(parents=True, exist_ok=True)
+        safe_id = instance_id.replace("/", "_")
+        sidecar = tp / f"{safe_id}.jsonl"
+        with sidecar.open("w", encoding="utf-8") as f:
+            for e in events:
+                f.write(json.dumps(_asdict(e), default=str) + "\n")
+    except Exception as e:
+        print(f"warning: trace write failed for {instance_id}: {e}",
+              file=sys.stderr)
+
+
+def _maverick_reported_model(llm) -> str:
+    """Report the orchestrator role's actual model, not the shared LLM's
+    default (which is hardcoded to Sonnet and breaks cost attribution)."""
+    try:
+        from maverick.llm import model_for_role
+        return model_for_role("orchestrator") or getattr(llm, "model", "")
+    except Exception:
+        return getattr(llm, "model", "")
+
+
+def _maverick_run_goal(llm, world, budget, gid, sandbox, best_of_n: int):
+    """Run the goal (best-of-N or single-shot) and read back episode/goal/
+    event state from the WorldModel BEFORE its connection is closed.
+
+    Returns (result, all_eps, goal_obj, world_events). All world.* reads
+    happen here, ahead of the caller's world.close(), so a closed-DB
+    ProgrammingError can't blank out the row.
+    """
+    import asyncio
+
+    from maverick.orchestrator import run_goal_best_of_n, run_goal_sync
+
+    if best_of_n > 1:
+        result = asyncio.run(run_goal_best_of_n(
+            llm, world, budget, gid,
+            sandbox=sandbox, max_depth=3, n=best_of_n,
+        ))
     else:
-        total_cost, total_in, total_out, last_outcome = 0.0, 0, 0, ""
+        result = run_goal_sync(
+            llm, world, budget, gid, sandbox=sandbox, max_depth=3,
+        )
+    all_eps = world.list_episodes(goal_id=gid)
+    goal_obj = world.get_goal(gid)
+    try:
+        world_events = world.goal_events(gid, limit=2000)
+    except Exception:
+        world_events = []
+    return result, all_eps, goal_obj, world_events
+
+
+def _maverick_build_row(
+    *,
+    instance_id: str,
+    brief: str,
+    kwargs: dict,
+    llm,
+    gid: int,
+    start: float,
+    instance_cap: float,
+    result: str,
+    all_eps: list,
+    goal_obj,
+    world_events: list,
+) -> Row:
+    """Assemble the final maverick Row from the post-run goal state:
+    episode accounting, budget-overrun annotation, diff extraction, tool
+    signals, contamination guard, and outcome selection."""
+    from maverick.coding_mode import extract_unified_diff
+
+    total_cost, total_in, total_out, last_outcome = _maverick_episode_accounting(all_eps)
 
     # May 26 council fix (harness audit #3): Budget.check() is post-hoc
     # — a single fat API call (cache write surcharge or 100k-token tool
@@ -556,61 +561,27 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:  # noqa: C901
     # data for adoption tripwire + forensics. The agent posts these
     # to the blackboard which mirrors into goal_events.
     events = world_events  # pre-read before close (Wave 12 hotfix)
-    str_replace_used = any(
-        "search_replace_used=1" in (e.content or "")
-        for e in events
+    str_replace_used, verify_event_count, tool_names, num_turns = (
+        _maverick_tool_signals(events)
     )
-    verifier_events = [
-        e.content for e in events
-        if e.kind == "verify"
-    ]
-    tool_invocations = [
-        e.content for e in events
-        if e.kind == "observation" and (e.content or "").startswith("tool=")
-    ]
-    tool_names = set()
-    for tinv in tool_invocations:
-        if tinv.startswith("tool="):
-            name = tinv.split("=", 1)[1].split(" ", 1)[0].rstrip(",")
-            tool_names.add(name)
 
     extra_payload: dict = {
         "goal_id": gid,
         "run_text": (result or "")[:500],
         "str_replace_editor_used": bool(str_replace_used),
         "tool_names": sorted(tool_names),
-        "verify_event_count": len(verifier_events),
-        "num_turns": len(tool_invocations),
+        "verify_event_count": verify_event_count,
+        "num_turns": num_turns,
     }
     # Optional per-instance JSON sidecar for forensics.
-    trace_dir = os.environ.get("MAVERICK_TRACE_DIR")
-    if trace_dir:
-        try:
-            from dataclasses import asdict as _asdict
-            from pathlib import Path as _Path
-            tp = _Path(trace_dir)
-            tp.mkdir(parents=True, exist_ok=True)
-            safe_id = instance_id.replace("/", "_")
-            sidecar = tp / f"{safe_id}.jsonl"
-            with sidecar.open("w", encoding="utf-8") as f:
-                for e in events:
-                    f.write(json.dumps(_asdict(e), default=str) + "\n")
-        except Exception as e:
-            print(f"warning: trace write failed for {instance_id}: {e}",
-                  file=sys.stderr)
+    _maverick_write_trace(instance_id, events)
 
     # Wave 12 hotfix: report the orchestrator role's actual model
     # (resolved via the same role-dispatch the agent loop uses), not
     # the shared LLM's default. The default is hardcoded to Sonnet,
     # which makes Opus-brain runs misleadingly show "claude-sonnet-4-6"
     # in the CSV and breaks downstream cost-per-model attribution.
-    try:
-        from maverick.llm import model_for_role
-        reported_model = model_for_role("orchestrator") or getattr(
-            llm, "model", "",
-        )
-    except Exception:
-        reported_model = getattr(llm, "model", "")
+    reported_model = _maverick_reported_model(llm)
 
     # Run the guard on the RAW diff (the sanitizer may prepend a `'` to
     # neutralize CSV formula-injection, which would mask a byte-for-byte
@@ -619,7 +590,7 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:  # noqa: C901
         instance_id=instance_id,
         brief=brief,
         predicted_patch=diff,
-        gold_patch=gold_patch,
+        gold_patch=str(kwargs.get("gold_patch") or ""),
         model_id=reported_model,
         publication_date=str(kwargs.get("publication_date", "") or ""),
     )
@@ -653,6 +624,129 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:  # noqa: C901
         ),
         contamination=contamination,
         extra=extra_payload,
+    )
+
+
+def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
+    """Spin up a Maverick swarm against the instance brief.
+
+    Wave 8: coding-mode + best-of-N support. The harness sets
+    MAVERICK_CODING_MODE=1 + MAVERICK_BEST_OF_N + MAVERICK_FAIL_TO_PASS /
+    MAVERICK_PASS_TO_PASS so coding_mode.from_env() picks up the
+    benchmark context. The agent then uses the strict diff-only
+    template, self-validates patches via `git apply --check`, runs
+    the test-driven verifier when ground-truth tests are present,
+    and (when n > 1) returns the best-of-N candidate.
+
+    Wave 10: predicted_patch is now the EXTRACTED unified diff (not
+    the orchestrator's prose). Failing-test files are pre-read and
+    prepended to the brief. Cost is summed across all episodes
+    in this goal, not just the last one. Test envs are cleared after
+    the run so they don't leak into adjacent processes.
+
+    Wave 11: LLM is hoisted to a process-wide singleton (no RSS leak),
+    workdir is reset before the run (no state bleed), per-instance
+    cost is hard-capped, Pro `requirements`/`interface` fields are
+    surfaced into the brief, and the 30-turn productivity ceiling is
+    honored (most successful Pro solutions resolve in ~25 turns per
+    Scale Labs' empirical study).
+    """
+    if os.environ.get("MAVERICK_BENCH_DRY_RUN") == "1":
+        return _dry_run_row(instance_id, "maverick")
+
+    from maverick.budget import Budget
+    from maverick.sandbox import build_sandbox
+    from maverick.world_model import WorldModel
+
+    # Default: turn coding mode ON for any SWE-bench-shaped task. Caller
+    # can disable by setting MAVERICK_CODING_MODE=0 explicitly.
+    os.environ.setdefault("MAVERICK_CODING_MODE", "1")
+    # Best-of-N defaults to 1 (single-shot); SWE-bench Pro headline run
+    # sets MAVERICK_BEST_OF_N=4 explicitly. Anything > 1 changes the
+    # cost profile materially, so don't default it on.
+    best_of_n = int(os.environ.get("MAVERICK_BEST_OF_N", "1"))
+
+    # Wave 10: snapshot prior env so we can restore on exit and not leak
+    # one instance's test sets into the next instance (or into a
+    # follow-on non-bench process sharing the same shell).
+    _prior_env = _maverick_snapshot_and_set_env(kwargs)
+
+    # Wave 11 (D8): reset workdir to a clean state before the run so
+    # state from instance N-1 doesn't pollute. Also strips reflog/tags
+    # that could leak gold (Princeton issue #465).
+    _maverick_reset_workdir()
+
+    # Wave 10 (B2): pre-read failing-test source as initial context so the
+    # agent localises against the actual assertions rather than guessing.
+    failing_test_context = _maverick_failing_test_context(kwargs.get("fail_to_pass") or [])
+
+    # Wave 11: surface Pro `requirements` + `interface` fields. SWE-bench
+    # Pro adds these as part of issue augmentation; harnesses that drop
+    # them lose easy points because the agent has to infer the spec.
+    pro_block = _maverick_pro_block(kwargs)
+
+    enriched_brief = brief + pro_block + failing_test_context
+
+    start = time.monotonic()
+    world = WorldModel()
+    llm = _get_shared_llm()
+    gid = world.create_goal(f"swe-bench:{instance_id}", enriched_brief)
+    # Wave 11: per-instance hard cost cap honors operator's
+    # --instance-hard-cap; defaults to $3 to align with Scale's published
+    # Pro budget. Wall is capped at 25 turns x 60s = 25 min effective.
+    instance_cap = float(os.environ.get("MAVERICK_INSTANCE_HARD_CAP", "3.0"))
+    instance_wall = float(os.environ.get("MAVERICK_INSTANCE_WALL_SEC", "1500"))
+    budget = Budget(max_dollars=instance_cap, max_wall_seconds=instance_wall)
+    sandbox = build_sandbox()
+    # Pre-initialize so the post-finally row construction always has
+    # values, even if the agent raises before episode bookkeeping.
+    all_eps: list = []
+    goal_obj = None
+    world_events: list = []
+    result = ""
+
+    try:
+        # Wave 10 (C6): sum cost across ALL episodes for this goal, not
+        # just the most recent one. Best-of-N runs N episodes; prior
+        # code reported only eps[0] (one attempt) and lost the other
+        # N-1. Wave 12 hotfix: all THREE world.* reads (list_episodes,
+        # get_goal, goal_events) MUST happen BEFORE the finally block
+        # closes the WorldModel SQLite connection — otherwise the
+        # harness raises ProgrammingError("Cannot operate on a closed
+        # database") and every instance silently errors with $0 cost.
+        result, all_eps, goal_obj, world_events = _maverick_run_goal(
+            llm, world, budget, gid, sandbox, best_of_n,
+        )
+    finally:
+        # Wave 10 (D11) + May 26 council fix (harness audit #2): restore
+        # env to the EXACT pre-instance state. Drop any MAVERICK_* var
+        # the agent loop added that wasn't in the prior snapshot — that
+        # was the leak channel for BoN temperature / model overrides
+        # bleeding across instances.
+        _maverick_restore_env(_prior_env)
+        # Wave 11 (D18): release the per-instance WorldModel SQLite
+        # connection. Without this, 1865 instances leak 1865 open file
+        # descriptors and SQLite WAL handles.
+        try:
+            world.close()
+        except Exception:
+            pass
+    # May 26 council fix (harness audit #4): on best-of-N runs,
+    # `all_eps[0]` is the LAST-started episode (list_episodes orders
+    # started_at DESC). Prefer a successful episode's outcome; fall back
+    # to most recent if none succeeded.
+    return _maverick_build_row(
+        instance_id=instance_id,
+        brief=brief,
+        kwargs=kwargs,
+        llm=llm,
+        gid=gid,
+        start=start,
+        instance_cap=instance_cap,
+        result=result,
+        all_eps=all_eps,
+        goal_obj=goal_obj,
+        world_events=world_events,
     )
 
 
@@ -1234,25 +1328,8 @@ def _on_sigterm(_signum, _frame) -> None:  # pragma: no cover (signal)
         pass
 
 
-def main() -> int:  # noqa: C901
-    # Wave 12 (F11a): install SIGTERM handler so cloud schedulers
-    # (kubelet, systemd, AWS Batch) get a clean shutdown instead of
-    # an unflushed CSV. SIGINT (Ctrl-C) is already caught by the
-    # KeyboardInterrupt block.
-    # Wave 12 hardening: reset the global flag so reentry (tests calling
-    # main() twice in one process, harness wrappers, etc.) doesn't
-    # immediately short-circuit because a prior call set the flag.
-    global _TERMINATE_REQUESTED
-    _TERMINATE_REQUESTED = False
-    import signal as _signal
-    try:
-        _signal.signal(_signal.SIGTERM, _on_sigterm)
-    except (ValueError, OSError, AttributeError):
-        # Some environments (Windows w/o SIGTERM symbol, embedded threads)
-        # reject signal registration; harness still works, just less
-        # graceful on TERM.
-        pass
-
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Construct the CLI argument parser for the harness."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--instances", type=Path, required=True,
                     help="manifest of instance IDs (one per line or JSON-per-line)")
@@ -1277,6 +1354,180 @@ def main() -> int:  # noqa: C901
                     help="Wave 12 (F11e): abort if N consecutive instances "
                     "error out (likely API outage / quota exhaustion / "
                     "sandbox crash). 0 to disable.")
+    return ap
+
+
+def _shard_instances(instances: list, args) -> list | int:
+    """Apply hash-sharding for parallel workers. Returns the filtered
+    instance list, or an int exit code when resume must be refused.
+
+    Wave 11 (D8): shard by hash(instance_id) % num_workers so two
+    parallel harness processes don't redo each other's work even
+    though both started with the same manifest.
+    """
+    if args.num_workers <= 1:
+        return instances
+    # May 26 council fix (harness audit #5): refuse to resume if
+    # num_workers changed since the last run. The sharding hash
+    # would re-bucket every instance, silently orphaning the ones
+    # that prior workers already processed.
+    prior_meta_path = args.out.parent / "run_meta.json"
+    if prior_meta_path.exists() and not args.no_resume:
+        try:
+            prior_meta = json.loads(prior_meta_path.read_text(encoding="utf-8"))
+            prior_nw = (prior_meta.get("cli_args") or {}).get("num_workers")
+            if prior_nw is not None and int(prior_nw) != args.num_workers:
+                print(
+                    f"REFUSING RESUME: prior run used num_workers="
+                    f"{prior_nw}, this run uses {args.num_workers}. "
+                    f"Re-sharding would orphan instances completed by "
+                    f"the prior shard. Either match num_workers, "
+                    f"pass --no-resume, or delete {prior_meta_path}.",
+                    file=sys.stderr,
+                )
+                return 6
+        except (OSError, ValueError, KeyError):
+            pass
+    import hashlib
+    sharded = [
+        inst for inst in instances
+        if (int(hashlib.sha256(inst["instance_id"].encode()).hexdigest(), 16)
+            % args.num_workers) == args.worker_index
+    ]
+    print(f"shard {args.worker_index}/{args.num_workers}: "
+          f"{len(sharded)} instances assigned", file=sys.stderr)
+    return sharded
+
+
+def _instance_extra(inst: dict) -> dict:
+    """Build the per-instance kwargs passed to each pipeline fn."""
+    return {
+        "fail_to_pass": inst.get("fail_to_pass", []) or [],
+        "pass_to_pass": inst.get("pass_to_pass", []) or [],
+        "gold_patch": inst.get("gold_patch", "") or "",
+        "language": inst.get("language", "") or "",
+        # Wave 11: Pro-specific manifest fields.
+        "base_commit": inst.get("base_commit", "") or "",
+        "requirements": inst.get("requirements", "") or "",
+        "interface": inst.get("interface", "") or "",
+        # Lets the contamination guard fire its train-cutoff-vs-
+        # publication check when the manifest carries the date.
+        "publication_date": inst.get("publication_date", "") or "",
+    }
+
+
+@dataclass
+class _RunState:
+    """Mutable accounting carried across the per-row loop in main()."""
+    total_spend: float = 0.0
+    skipped: int = 0
+    written: int = 0
+    str_replace_uses: int = 0
+    instances_with_str_replace_signal: int = 0
+    consecutive_failures: int = 0
+
+
+def _process_row_outcome(row: Row, pipeline: str, args, state: _RunState) -> int | None:
+    """Update circuit-breaker + adoption-tripwire accounting for a freshly
+    written row. Returns an int exit code when a tripwire fires, else None.
+    """
+    # Wave 12 (F11e) + hardening + smoke-day-2 fix:
+    # consecutive-failure circuit breaker. ANY outcome that
+    # isn't an explicit success/dry-run resets the breaker
+    # AND counts toward the failure budget. The May 26
+    # smoke showed 3/6 instances coming back as "no-diff"
+    # — a state where the agent ran (real spend) but
+    # didn't produce a patch. Earlier logic excluded
+    # "no-diff" from the breaker, letting the harness
+    # burn full budget on a degenerate run. Now: only
+    # `success` (or dry-run) resets; everything else
+    # (error/failure/budget/no-diff/empty) counts.
+    outcome_clean = row.outcome.strip().lower()
+    is_good_outcome = (
+        outcome_clean == "success"
+        or outcome_clean == "dry-run"
+    )
+    if is_good_outcome:
+        state.consecutive_failures = 0
+    else:
+        state.consecutive_failures += 1
+    if (args.max_consecutive_failures > 0
+            and state.consecutive_failures >= args.max_consecutive_failures):
+        print(
+            f"ABORT: {state.consecutive_failures} consecutive errors "
+            f"(>={args.max_consecutive_failures}). Likely API "
+            "outage / quota / sandbox issue — bail before "
+            "burning through the manifest. Last error: "
+            f"{row.outcome}",
+            file=sys.stderr,
+        )
+        return 5
+    # Wave 11: track SEARCH/REPLACE adoption via extra signal.
+    if pipeline == "maverick":
+        if row.extra.get("str_replace_editor_used"):
+            state.str_replace_uses += 1
+        if "str_replace_editor_used" in row.extra:
+            state.instances_with_str_replace_signal += 1
+    print(f"{row.instance_id}\t{pipeline}\t{row.outcome}\t"
+          f"${row.cost_dollars:.3f}\t{row.wall_seconds:.1f}s"
+          f"\ttotal=${state.total_spend:.2f}")
+    # Wave 11: adoption tripwire. After 25 instances, if
+    # SEARCH/REPLACE adoption is below the threshold, abort
+    # so we don't burn $4k on a degenerate run.
+    if (args.adoption_tripwire is not None
+            and state.instances_with_str_replace_signal >= 25):
+        rate = state.str_replace_uses / state.instances_with_str_replace_signal
+        if rate < args.adoption_tripwire:
+            print(
+                f"ABORT: SEARCH/REPLACE adoption {rate:.1%} < "
+                f"{args.adoption_tripwire:.1%} after "
+                f"{state.instances_with_str_replace_signal} instances. "
+                f"Spent: ${state.total_spend:.2f}. Prompt likely "
+                "regressed; check tool-use template before "
+                "scaling up.", file=sys.stderr,
+            )
+            return 4
+    return None
+
+
+def _install_sigterm_handler() -> None:
+    """Install the SIGTERM handler for clean shutdown.
+
+    Wave 12 (F11a): cloud schedulers (kubelet, systemd, AWS Batch) get a
+    clean shutdown instead of an unflushed CSV. SIGINT (Ctrl-C) is already
+    caught by the KeyboardInterrupt block.
+
+    Wave 12 hardening: reset the global flag so reentry (tests calling
+    main() twice in one process, harness wrappers, etc.) doesn't
+    immediately short-circuit because a prior call set the flag.
+    """
+    global _TERMINATE_REQUESTED
+    _TERMINATE_REQUESTED = False
+    import signal as _signal
+    try:
+        _signal.signal(_signal.SIGTERM, _on_sigterm)
+    except (ValueError, OSError, AttributeError):
+        # Some environments (Windows w/o SIGTERM symbol, embedded threads)
+        # reject signal registration; harness still works, just less
+        # graceful on TERM.
+        pass
+
+
+def _write_run_meta_best_effort(args) -> None:
+    """Write run_meta.json before the first instance so a crash mid-run
+    still leaves provenance for replay/audit. Sibling to the results CSV.
+    Best-effort: a write failure must not stop the run."""
+    try:
+        meta_path = _write_run_meta(args.out.parent, args, args.instances)
+        print(f"run_meta: {meta_path}", file=sys.stderr)
+    except Exception as e:
+        print(f"warning: run_meta.json write failed: {e}", file=sys.stderr)
+
+
+def main() -> int:
+    _install_sigterm_handler()
+
+    ap = _build_arg_parser()
     args = ap.parse_args()
 
     if not args.instances.exists():
@@ -1286,14 +1537,8 @@ def main() -> int:  # noqa: C901
     if args.instance_hard_cap is not None:
         os.environ["MAVERICK_INSTANCE_HARD_CAP"] = str(args.instance_hard_cap)
 
-    # Wave 12 (F16): write run_meta.json before the first instance so a
-    # crash mid-run still leaves provenance for replay/audit. Sibling to
-    # the results CSV.
-    try:
-        meta_path = _write_run_meta(args.out.parent, args, args.instances)
-        print(f"run_meta: {meta_path}", file=sys.stderr)
-    except Exception as e:
-        print(f"warning: run_meta.json write failed: {e}", file=sys.stderr)
+    # Wave 12 (F16): provenance snapshot next to the results CSV.
+    _write_run_meta_best_effort(args)
 
     pipelines = [p.strip() for p in args.pipelines.split(",") if p.strip()]
     for p in pipelines:
@@ -1302,53 +1547,17 @@ def main() -> int:  # noqa: C901
             return 2
 
     instances = load_instances(args.instances)
-    # Wave 11 (D8): shard by hash(instance_id) % num_workers so two
-    # parallel harness processes don't redo each other's work even
-    # though both started with the same manifest.
-    if args.num_workers > 1:
-        # May 26 council fix (harness audit #5): refuse to resume if
-        # num_workers changed since the last run. The sharding hash
-        # would re-bucket every instance, silently orphaning the ones
-        # that prior workers already processed.
-        prior_meta_path = args.out.parent / "run_meta.json"
-        if prior_meta_path.exists() and not args.no_resume:
-            try:
-                prior_meta = json.loads(prior_meta_path.read_text(encoding="utf-8"))
-                prior_nw = (prior_meta.get("cli_args") or {}).get("num_workers")
-                if prior_nw is not None and int(prior_nw) != args.num_workers:
-                    print(
-                        f"REFUSING RESUME: prior run used num_workers="
-                        f"{prior_nw}, this run uses {args.num_workers}. "
-                        f"Re-sharding would orphan instances completed by "
-                        f"the prior shard. Either match num_workers, "
-                        f"pass --no-resume, or delete {prior_meta_path}.",
-                        file=sys.stderr,
-                    )
-                    return 6
-            except (OSError, ValueError, KeyError):
-                pass
-        import hashlib
-        instances = [
-            inst for inst in instances
-            if (int(hashlib.sha256(inst["instance_id"].encode()).hexdigest(), 16)
-                % args.num_workers) == args.worker_index
-        ]
-        print(f"shard {args.worker_index}/{args.num_workers}: "
-              f"{len(instances)} instances assigned", file=sys.stderr)
+    sharded = _shard_instances(instances, args)
+    if isinstance(sharded, int):
+        return sharded
+    instances = sharded
 
     done = set() if args.no_resume else already_done(args.out)
     if done:
         print(f"resuming: {len(done)} (instance,pipeline) pairs already in {args.out}",
               file=sys.stderr)
 
-    total_spend = 0.0
-    skipped = 0
-    written = 0
-    # Wave 11: adoption tripwire counters.
-    str_replace_uses = 0
-    instances_with_str_replace_signal = 0
-    # Wave 12 (F11e): consecutive-failure counter for circuit breaker.
-    consecutive_failures = 0
+    state = _RunState()
 
     try:
         for inst in instances:
@@ -1358,28 +1567,16 @@ def main() -> int:  # noqa: C901
                 break
             iid = inst["instance_id"]
             brief = inst.get("brief", "")
-            extra = {
-                "fail_to_pass": inst.get("fail_to_pass", []) or [],
-                "pass_to_pass": inst.get("pass_to_pass", []) or [],
-                "gold_patch": inst.get("gold_patch", "") or "",
-                "language": inst.get("language", "") or "",
-                # Wave 11: Pro-specific manifest fields.
-                "base_commit": inst.get("base_commit", "") or "",
-                "requirements": inst.get("requirements", "") or "",
-                "interface": inst.get("interface", "") or "",
-                # Lets the contamination guard fire its train-cutoff-vs-
-                # publication check when the manifest carries the date.
-                "publication_date": inst.get("publication_date", "") or "",
-            }
+            extra = _instance_extra(inst)
             for pipeline in pipelines:
                 if _TERMINATE_REQUESTED:
                     break
                 if (iid, pipeline) in done:
-                    skipped += 1
+                    state.skipped += 1
                     continue
                 if (args.abort_at_total_dollars is not None
-                        and total_spend >= args.abort_at_total_dollars):
-                    print(f"aborting: total spend ${total_spend:.2f} >= "
+                        and state.total_spend >= args.abort_at_total_dollars):
+                    print(f"aborting: total spend ${state.total_spend:.2f} >= "
                           f"${args.abort_at_total_dollars:.2f} cap",
                           file=sys.stderr)
                     return 0
@@ -1395,80 +1592,27 @@ def main() -> int:  # noqa: C901
                 # Append THIS row immediately so a crash on instance N+1
                 # doesn't lose rows 0..N. fsync via write_csv.
                 write_csv([row], args.out)
-                written += 1
-                total_spend += row.cost_dollars
-                # Wave 12 (F11e) + hardening + smoke-day-2 fix:
-                # consecutive-failure circuit breaker. ANY outcome that
-                # isn't an explicit success/dry-run resets the breaker
-                # AND counts toward the failure budget. The May 26
-                # smoke showed 3/6 instances coming back as "no-diff"
-                # — a state where the agent ran (real spend) but
-                # didn't produce a patch. Earlier logic excluded
-                # "no-diff" from the breaker, letting the harness
-                # burn full budget on a degenerate run. Now: only
-                # `success` (or dry-run) resets; everything else
-                # (error/failure/budget/no-diff/empty) counts.
-                outcome_clean = row.outcome.strip().lower()
-                is_good_outcome = (
-                    outcome_clean == "success"
-                    or outcome_clean == "dry-run"
-                )
-                if is_good_outcome:
-                    consecutive_failures = 0
-                else:
-                    consecutive_failures += 1
-                if (args.max_consecutive_failures > 0
-                        and consecutive_failures >= args.max_consecutive_failures):
-                    print(
-                        f"ABORT: {consecutive_failures} consecutive errors "
-                        f"(>={args.max_consecutive_failures}). Likely API "
-                        "outage / quota / sandbox issue — bail before "
-                        "burning through the manifest. Last error: "
-                        f"{row.outcome}",
-                        file=sys.stderr,
-                    )
-                    return 5
-                # Wave 11: track SEARCH/REPLACE adoption via extra signal.
-                if pipeline == "maverick":
-                    if row.extra.get("str_replace_editor_used"):
-                        str_replace_uses += 1
-                    if "str_replace_editor_used" in row.extra:
-                        instances_with_str_replace_signal += 1
-                print(f"{iid}\t{pipeline}\t{row.outcome}\t"
-                      f"${row.cost_dollars:.3f}\t{row.wall_seconds:.1f}s"
-                      f"\ttotal=${total_spend:.2f}")
-                # Wave 11: adoption tripwire. After 25 instances, if
-                # SEARCH/REPLACE adoption is below the threshold, abort
-                # so we don't burn $4k on a degenerate run.
-                if (args.adoption_tripwire is not None
-                        and instances_with_str_replace_signal >= 25):
-                    rate = str_replace_uses / instances_with_str_replace_signal
-                    if rate < args.adoption_tripwire:
-                        print(
-                            f"ABORT: SEARCH/REPLACE adoption {rate:.1%} < "
-                            f"{args.adoption_tripwire:.1%} after "
-                            f"{instances_with_str_replace_signal} instances. "
-                            f"Spent: ${total_spend:.2f}. Prompt likely "
-                            "regressed; check tool-use template before "
-                            "scaling up.", file=sys.stderr,
-                        )
-                        return 4
+                state.written += 1
+                state.total_spend += row.cost_dollars
+                exit_code = _process_row_outcome(row, pipeline, args, state)
+                if exit_code is not None:
+                    return exit_code
     except KeyboardInterrupt:
-        print(f"\nSIGINT caught; {written} row(s) flushed to {args.out}",
+        print(f"\nSIGINT caught; {state.written} row(s) flushed to {args.out}",
               file=sys.stderr)
         return 130
 
     if _TERMINATE_REQUESTED:
-        print(f"\nSIGTERM exit: {written} row(s) flushed to {args.out}; "
-              f"total ${total_spend:.2f}", file=sys.stderr)
+        print(f"\nSIGTERM exit: {state.written} row(s) flushed to {args.out}; "
+              f"total ${state.total_spend:.2f}", file=sys.stderr)
         return 143  # 128 + SIGTERM(15)
 
-    print(f"\n{written} row(s) appended to {args.out}; "
-          f"{skipped} skipped (already done); total ${total_spend:.2f}")
-    if instances_with_str_replace_signal > 0:
-        rate = str_replace_uses / instances_with_str_replace_signal
+    print(f"\n{state.written} row(s) appended to {args.out}; "
+          f"{state.skipped} skipped (already done); total ${state.total_spend:.2f}")
+    if state.instances_with_str_replace_signal > 0:
+        rate = state.str_replace_uses / state.instances_with_str_replace_signal
         print(f"SEARCH/REPLACE adoption: {rate:.1%} "
-              f"({str_replace_uses}/{instances_with_str_replace_signal})")
+              f"({state.str_replace_uses}/{state.instances_with_str_replace_signal})")
     return 0
 
 

@@ -22,7 +22,7 @@ def test_model_for_role_downgrades_on_low_battery(monkeypatch):
     # No config/override pinned -> default path -> orchestrator is Opus -> Sonnet.
     monkeypatch.setattr(llm, "get_role_model", lambda role: None, raising=False)
     import maverick.config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
     monkeypatch.delenv("MAVERICK_MODEL_OVERRIDE", raising=False)
     monkeypatch.delenv("MAVERICK_MODEL_OVERRIDE_ORCHESTRATOR", raising=False)
     assert llm.model_for_role("orchestrator") == llm.MODEL_SONNET
@@ -35,7 +35,7 @@ def test_model_for_role_no_downgrade_on_wall_power(monkeypatch):
     monkeypatch.setattr(ear, "battery_state",
                         lambda: ear.BatteryState(on_battery=False, percent=100))
     import maverick.config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
     monkeypatch.delenv("MAVERICK_MODEL_OVERRIDE", raising=False)
     assert llm.model_for_role("orchestrator") == llm.MODEL_OPUS
 
@@ -93,7 +93,7 @@ def test_queue_install_noop_without_backend(monkeypatch):
     import maverick.config as cfg
     import maverick.queue_dispatcher as qd
     import maverick.runner as runner
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
     original = runner.get_dispatcher()
     try:
         assert qd.install_from_config() is False
@@ -124,7 +124,7 @@ def test_replay_trace_wired_into_blackboard(tmp_path):
 def test_skill_distillation_local_gate(monkeypatch, enabled):
     import maverick.skill_distillation_local as sdl
     monkeypatch.setattr(sdl, "_env_true", lambda name: enabled)
-    monkeypatch.setattr(sdl, "load_config", lambda: {}, raising=False)
+    monkeypatch.setattr(sdl, "load_config", dict, raising=False)
     import maverick.config as cfg
     monkeypatch.setattr(cfg, "load_config",
                         lambda: {"self_learning": {"distill_local": enabled}})

@@ -12,7 +12,7 @@ from maverick import tiered_storage as ts
 @pytest.fixture(autouse=True)
 def _no_disk_config(monkeypatch):
     # Don't let a real ~/.maverick/config.toml set cold_codec under the tests.
-    monkeypatch.setattr(ts, "_world_cfg", lambda: {})
+    monkeypatch.setattr(ts, "_world_cfg", dict)
     monkeypatch.delenv("MAVERICK_WORLD_COLD_CODEC", raising=False)
 
 

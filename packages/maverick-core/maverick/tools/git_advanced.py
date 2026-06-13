@@ -108,8 +108,136 @@ def _shape(code: int, out: str, err: str, *, label: str) -> str:
     return f"[{label}] FAILED (exit {code})\n{err}".rstrip() if err else f"[{label}] FAILED (exit {code})"
 
 
-def _make_run(sandbox):  # noqa: C901
-    def _run(args: dict[str, Any]) -> str:  # noqa: C901
+def _op_bisect_start(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    return _shape(*_run_git(sandbox, workdir, ["bisect", "start"]), label="bisect start")
+
+
+def _op_bisect_good(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    ref = (args.get("ref") or "HEAD").strip()
+    if err := _reject_option_like(ref):
+        return err
+    return _shape(*_run_git(sandbox, workdir, ["bisect", "good", ref]), label=f"bisect good {ref}")
+
+
+def _op_bisect_bad(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    ref = (args.get("ref") or "HEAD").strip()
+    if err := _reject_option_like(ref):
+        return err
+    return _shape(*_run_git(sandbox, workdir, ["bisect", "bad", ref]), label=f"bisect bad {ref}")
+
+
+def _op_bisect_skip(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    ref = (args.get("ref") or "HEAD").strip()
+    if err := _reject_option_like(ref):
+        return err
+    return _shape(*_run_git(sandbox, workdir, ["bisect", "skip", ref]), label="bisect skip")
+
+
+def _op_bisect_reset(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    return _shape(*_run_git(sandbox, workdir, ["bisect", "reset"]), label="bisect reset")
+
+
+def _op_rebase_onto(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    onto = (args.get("onto") or "").strip()
+    upstream = (args.get("upstream") or "").strip()
+    branch = (args.get("branch") or "").strip()
+    if not onto or not upstream:
+        return "ERROR: rebase_onto requires onto and upstream"
+    if err := _reject_option_like(onto, upstream, branch):
+        return err
+    git_args = ["rebase", "--onto", onto, upstream]
+    if branch:
+        git_args.append(branch)
+    return _shape(*_run_git(sandbox, workdir, git_args), label="rebase --onto")
+
+
+def _op_cherry_pick(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    commit = (args.get("commit") or "").strip()
+    if not commit:
+        return "ERROR: cherry_pick requires commit"
+    if err := _reject_option_like(commit):
+        return err
+    return _shape(*_run_git(sandbox, workdir, ["cherry-pick", commit]), label=f"cherry-pick {commit}")
+
+
+def _op_worktree_add(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    path = (args.get("path") or "").strip()
+    branch = (args.get("branch") or "").strip()
+    if not path:
+        return "ERROR: worktree_add requires path"
+    if err := _reject_option_like(path, branch):
+        return err
+    git_args = ["worktree", "add", path]
+    if branch:
+        git_args.append(branch)
+    return _shape(*_run_git(sandbox, workdir, git_args), label="worktree add")
+
+
+def _op_worktree_remove(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    path = (args.get("path") or "").strip()
+    if not path:
+        return "ERROR: worktree_remove requires path"
+    if err := _reject_option_like(path):
+        return err
+    return _shape(*_run_git(sandbox, workdir, ["worktree", "remove", path]), label="worktree remove")
+
+
+def _op_worktree_list(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    return _shape(*_run_git(sandbox, workdir, ["worktree", "list"]), label="worktree list")
+
+
+def _op_log_oneline(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    limit = max(1, min(int(args.get("limit") or 30), 500))
+    since = (args.get("since_ref") or "").strip()
+    if since and (err := _reject_option_like(since)):
+        return err
+    git_args = ["log", "--oneline", f"-n{limit}"]
+    if since:
+        git_args.append(f"{since}..HEAD")
+    return _shape(*_run_git(sandbox, workdir, git_args), label="log")
+
+
+def _op_show_commit(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    commit = (args.get("commit") or "HEAD").strip()
+    if err := _reject_option_like(commit):
+        return err
+    return _shape(*_run_git(sandbox, workdir, ["show", "--stat", commit]), label=f"show {commit}")
+
+
+def _op_blame_line(sandbox, workdir: Path, args: dict[str, Any]) -> str:
+    path = (args.get("path") or "").strip()
+    line = args.get("line")
+    if not path or line is None:
+        return "ERROR: blame_line requires path and line"
+    line = int(line)
+    # `--` terminates options so a path can't be read as a flag.
+    return _shape(
+        *_run_git(sandbox, workdir, ["blame", "-L", f"{line},{line}", "--", path]),
+        label=f"blame {path}:{line}",
+    )
+
+
+# op -> handler(sandbox, workdir, args) -> str. Dispatch table keeps the
+# per-call _run trivial (and well under ruff's mccabe cap).
+_GIT_OPS = {
+    "bisect_start": _op_bisect_start,
+    "bisect_good": _op_bisect_good,
+    "bisect_bad": _op_bisect_bad,
+    "bisect_skip": _op_bisect_skip,
+    "bisect_reset": _op_bisect_reset,
+    "rebase_onto": _op_rebase_onto,
+    "cherry_pick": _op_cherry_pick,
+    "worktree_add": _op_worktree_add,
+    "worktree_remove": _op_worktree_remove,
+    "worktree_list": _op_worktree_list,
+    "log_oneline": _op_log_oneline,
+    "show_commit": _op_show_commit,
+    "blame_line": _op_blame_line,
+}
+
+
+def _make_run(sandbox):
+    def _run(args: dict[str, Any]) -> str:
         op = args.get("op")
         if not op:
             return "ERROR: op is required"
@@ -120,96 +248,10 @@ def _make_run(sandbox):  # noqa: C901
             # git worktree etc still works with --git-dir, but bisect /
             # rebase require an actual repo.
             return "ERROR: not a git repo at sandbox workdir"
-
-        if op == "bisect_start":
-            return _shape(*_run_git(sandbox, workdir, ["bisect", "start"]), label="bisect start")
-        if op == "bisect_good":
-            ref = (args.get("ref") or "HEAD").strip()
-            if err := _reject_option_like(ref):
-                return err
-            return _shape(*_run_git(sandbox, workdir, ["bisect", "good", ref]), label=f"bisect good {ref}")
-        if op == "bisect_bad":
-            ref = (args.get("ref") or "HEAD").strip()
-            if err := _reject_option_like(ref):
-                return err
-            return _shape(*_run_git(sandbox, workdir, ["bisect", "bad", ref]), label=f"bisect bad {ref}")
-        if op == "bisect_skip":
-            ref = (args.get("ref") or "HEAD").strip()
-            if err := _reject_option_like(ref):
-                return err
-            return _shape(*_run_git(sandbox, workdir, ["bisect", "skip", ref]), label="bisect skip")
-        if op == "bisect_reset":
-            return _shape(*_run_git(sandbox, workdir, ["bisect", "reset"]), label="bisect reset")
-
-        if op == "rebase_onto":
-            onto = (args.get("onto") or "").strip()
-            upstream = (args.get("upstream") or "").strip()
-            branch = (args.get("branch") or "").strip()
-            if not onto or not upstream:
-                return "ERROR: rebase_onto requires onto and upstream"
-            if err := _reject_option_like(onto, upstream, branch):
-                return err
-            git_args = ["rebase", "--onto", onto, upstream]
-            if branch:
-                git_args.append(branch)
-            return _shape(*_run_git(sandbox, workdir, git_args), label="rebase --onto")
-
-        if op == "cherry_pick":
-            commit = (args.get("commit") or "").strip()
-            if not commit:
-                return "ERROR: cherry_pick requires commit"
-            if err := _reject_option_like(commit):
-                return err
-            return _shape(*_run_git(sandbox, workdir, ["cherry-pick", commit]), label=f"cherry-pick {commit}")
-
-        if op == "worktree_add":
-            path = (args.get("path") or "").strip()
-            branch = (args.get("branch") or "").strip()
-            if not path:
-                return "ERROR: worktree_add requires path"
-            if err := _reject_option_like(path, branch):
-                return err
-            git_args = ["worktree", "add", path]
-            if branch:
-                git_args.append(branch)
-            return _shape(*_run_git(sandbox, workdir, git_args), label="worktree add")
-        if op == "worktree_remove":
-            path = (args.get("path") or "").strip()
-            if not path:
-                return "ERROR: worktree_remove requires path"
-            if err := _reject_option_like(path):
-                return err
-            return _shape(*_run_git(sandbox, workdir, ["worktree", "remove", path]), label="worktree remove")
-        if op == "worktree_list":
-            return _shape(*_run_git(sandbox, workdir, ["worktree", "list"]), label="worktree list")
-
-        if op == "log_oneline":
-            limit = max(1, min(int(args.get("limit") or 30), 500))
-            since = (args.get("since_ref") or "").strip()
-            if since and (err := _reject_option_like(since)):
-                return err
-            git_args = ["log", "--oneline", f"-n{limit}"]
-            if since:
-                git_args.append(f"{since}..HEAD")
-            return _shape(*_run_git(sandbox, workdir, git_args), label="log")
-        if op == "show_commit":
-            commit = (args.get("commit") or "HEAD").strip()
-            if err := _reject_option_like(commit):
-                return err
-            return _shape(*_run_git(sandbox, workdir, ["show", "--stat", commit]), label=f"show {commit}")
-        if op == "blame_line":
-            path = (args.get("path") or "").strip()
-            line = args.get("line")
-            if not path or line is None:
-                return "ERROR: blame_line requires path and line"
-            line = int(line)
-            # `--` terminates options so a path can't be read as a flag.
-            return _shape(
-                *_run_git(sandbox, workdir, ["blame", "-L", f"{line},{line}", "--", path]),
-                label=f"blame {path}:{line}",
-            )
-
-        return f"ERROR: unknown op {op!r}"
+        handler = _GIT_OPS.get(op)
+        if handler is None:
+            return f"ERROR: unknown op {op!r}"
+        return handler(sandbox, workdir, args)
 
     return _run
 

@@ -68,143 +68,164 @@ def _view_dir(target: Path) -> str:
     return "\n".join(rows) if rows else "(empty)"
 
 
-def str_replace_editor(sandbox) -> Tool:  # noqa: C901
-    def fn(args: dict) -> str:  # noqa: C901
-        cmd = args.get("command", "")
-        path_arg = args.get("path", "")
-        if not cmd:
-            return "ERROR: missing `command` (one of: view, create, str_replace, insert)"
-        if not path_arg:
-            return "ERROR: missing `path`"
-        try:
-            target = _safe_resolve(sandbox, path_arg)
-        except ValueError as e:
-            return f"ERROR: {e}"
-
-        if cmd == "view":
-            # Wave 12 (council F9b) + hardening pass: str_replace_editor.view
-            # was an opacity bypass — the agent could read test files /
-            # .git via this tool because the gate lived only in
-            # read_file. Mirror read_file's symlink-resolved block here.
-            if _is_opaque_blocked_resolved(sandbox, path_arg):
-                if _is_dotgit_path(path_arg):
-                    return (
-                        f"ERROR: view({path_arg!r}) blocked in benchmark "
-                        "opaque mode (.git internals leak the gold)."
-                    )
-                return (
-                    f"ERROR: view({path_arg!r}) blocked in benchmark "
-                    "opaque mode (test files contain gold expected "
-                    "values). Read the production module under test "
-                    "instead. (Override: MAVERICK_BENCHMARK_OPAQUE=0.)"
-                )
-            if not target.exists():
-                return f"ERROR: {target} not found"
-            if target.is_dir():
-                return _view_dir(target)
-            return _view_file(target)
-
-        if cmd == "create":
-            if target.exists():
-                return (
-                    f"ERROR: {target} already exists; use str_replace or "
-                    "insert instead, or `view` first to confirm intent"
-                )
-            content = args.get("file_text") or args.get("content") or ""
-            try:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(content, encoding="utf-8")
-            except (PermissionError, OSError) as e:
-                return f"ERROR: {e}"
-            return f"created {target} ({len(content)} bytes)"
-
-        if cmd == "str_replace":
-            old = args.get("old_str")
-            new = args.get("new_str")
-            if old is None or new is None:
-                return (
-                    "ERROR: str_replace requires `old_str` and `new_str` "
-                    "(both must be present, even if new_str is empty)"
-                )
-            if not target.exists():
-                return f"ERROR: {target} not found"
-            try:
-                data = target.read_text(encoding="utf-8")
-            except (PermissionError, OSError, UnicodeDecodeError) as e:
-                return f"ERROR: {e}"
-            count = data.count(old)
-            if count == 0:
-                # Try a whitespace-normalised fallback hint without
-                # actually performing the edit: this catches the most
-                # common cause (tabs vs spaces, trailing whitespace).
-                norm_data = "\n".join(line.rstrip() for line in data.split("\n"))
-                norm_old = "\n".join(line.rstrip() for line in old.split("\n"))
-                if norm_old in norm_data:
-                    return (
-                        "ERROR: `old_str` not found EXACTLY in the file, "
-                        "but a whitespace-normalised match exists. The most "
-                        "likely causes are (a) trailing spaces in the file, "
-                        "(b) tabs vs spaces, or (c) Windows line endings. "
-                        "Use `view` to see the exact bytes, then resubmit "
-                        "with `old_str` matching byte-for-byte."
-                    )
-                return (
-                    "ERROR: `old_str` not found in the file. Use `view` to "
-                    "confirm the exact line content before retrying."
-                )
-            if count > 1:
-                return (
-                    f"ERROR: `old_str` is ambiguous: it appears {count} times "
-                    "in the file. Add more surrounding lines to `old_str` so "
-                    "exactly one match remains, then resubmit."
-                )
-            try:
-                new_data = data.replace(old, new, 1)
-                target.write_text(new_data, encoding="utf-8")
-            except (PermissionError, OSError) as e:
-                return f"ERROR: {e}"
-            delta = len(new_data) - len(data)
-            sign = "+" if delta >= 0 else ""
-            return f"edited {target} ({sign}{delta} bytes)"
-
-        if cmd == "insert":
-            after = args.get("insert_line")
-            text = args.get("new_str", "")
-            if after is None:
-                return "ERROR: insert requires `insert_line` (1-based line number)"
-            if not target.exists():
-                return f"ERROR: {target} not found"
-            try:
-                data = target.read_text(encoding="utf-8")
-            except (PermissionError, OSError, UnicodeDecodeError) as e:
-                return f"ERROR: {e}"
-            # Preserve the file's line ending. Splitting/rejoining on "\n"
-            # unconditionally turned a CRLF file into mixed endings (kept lines
-            # keep their trailing \r while the inserted text is bare LF),
-            # corrupting it for later SEARCH/REPLACE and git apply.
-            eol = "\r\n" if "\r\n" in data else "\n"
-            lines = data.replace("\r\n", "\n").split("\n")
-            try:
-                idx = int(after)
-            except (TypeError, ValueError):
-                return f"ERROR: insert_line must be an integer; got {after!r}"
-            if idx < 0 or idx > len(lines):
-                return (
-                    f"ERROR: insert_line={idx} out of range "
-                    f"(file has {len(lines)} lines; 0 = before first line)"
-                )
-            ins = text.replace("\r\n", "\n").split("\n")
-            new_lines = lines[:idx] + ins + lines[idx:]
-            try:
-                target.write_text(eol.join(new_lines), encoding="utf-8")
-            except (PermissionError, OSError) as e:
-                return f"ERROR: {e}"
-            return f"inserted at line {idx} of {target}"
-
+def _cmd_view(sandbox, target: Path, path_arg: str) -> str:
+    # Wave 12 (council F9b) + hardening pass: str_replace_editor.view
+    # was an opacity bypass — the agent could read test files /
+    # .git via this tool because the gate lived only in
+    # read_file. Mirror read_file's symlink-resolved block here.
+    if _is_opaque_blocked_resolved(sandbox, path_arg):
+        if _is_dotgit_path(path_arg):
+            return (
+                f"ERROR: view({path_arg!r}) blocked in benchmark "
+                "opaque mode (.git internals leak the gold)."
+            )
         return (
-            f"ERROR: unknown command {cmd!r}; expected one of: "
-            "view, create, str_replace, insert"
+            f"ERROR: view({path_arg!r}) blocked in benchmark "
+            "opaque mode (test files contain gold expected "
+            "values). Read the production module under test "
+            "instead. (Override: MAVERICK_BENCHMARK_OPAQUE=0.)"
         )
+    if not target.exists():
+        return f"ERROR: {target} not found"
+    if target.is_dir():
+        return _view_dir(target)
+    return _view_file(target)
+
+
+def _cmd_create(target: Path, args: dict) -> str:
+    if target.exists():
+        return (
+            f"ERROR: {target} already exists; use str_replace or "
+            "insert instead, or `view` first to confirm intent"
+        )
+    content = args.get("file_text") or args.get("content") or ""
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    except (PermissionError, OSError) as e:
+        return f"ERROR: {e}"
+    return f"created {target} ({len(content)} bytes)"
+
+
+def _str_replace_count_error(data: str, old: str, count: int) -> str:
+    if count == 0:
+        # Try a whitespace-normalised fallback hint without
+        # actually performing the edit: this catches the most
+        # common cause (tabs vs spaces, trailing whitespace).
+        norm_data = "\n".join(line.rstrip() for line in data.split("\n"))
+        norm_old = "\n".join(line.rstrip() for line in old.split("\n"))
+        if norm_old in norm_data:
+            return (
+                "ERROR: `old_str` not found EXACTLY in the file, "
+                "but a whitespace-normalised match exists. The most "
+                "likely causes are (a) trailing spaces in the file, "
+                "(b) tabs vs spaces, or (c) Windows line endings. "
+                "Use `view` to see the exact bytes, then resubmit "
+                "with `old_str` matching byte-for-byte."
+            )
+        return (
+            "ERROR: `old_str` not found in the file. Use `view` to "
+            "confirm the exact line content before retrying."
+        )
+    return (
+        f"ERROR: `old_str` is ambiguous: it appears {count} times "
+        "in the file. Add more surrounding lines to `old_str` so "
+        "exactly one match remains, then resubmit."
+    )
+
+
+def _cmd_str_replace(target: Path, args: dict) -> str:
+    old = args.get("old_str")
+    new = args.get("new_str")
+    if old is None or new is None:
+        return (
+            "ERROR: str_replace requires `old_str` and `new_str` "
+            "(both must be present, even if new_str is empty)"
+        )
+    if not target.exists():
+        return f"ERROR: {target} not found"
+    try:
+        data = target.read_text(encoding="utf-8")
+    except (PermissionError, OSError, UnicodeDecodeError) as e:
+        return f"ERROR: {e}"
+    count = data.count(old)
+    if count != 1:
+        return _str_replace_count_error(data, old, count)
+    try:
+        new_data = data.replace(old, new, 1)
+        target.write_text(new_data, encoding="utf-8")
+    except (PermissionError, OSError) as e:
+        return f"ERROR: {e}"
+    delta = len(new_data) - len(data)
+    sign = "+" if delta >= 0 else ""
+    return f"edited {target} ({sign}{delta} bytes)"
+
+
+def _cmd_insert(target: Path, args: dict) -> str:
+    after = args.get("insert_line")
+    text = args.get("new_str", "")
+    if after is None:
+        return "ERROR: insert requires `insert_line` (1-based line number)"
+    if not target.exists():
+        return f"ERROR: {target} not found"
+    try:
+        data = target.read_text(encoding="utf-8")
+    except (PermissionError, OSError, UnicodeDecodeError) as e:
+        return f"ERROR: {e}"
+    # Preserve the file's line ending. Splitting/rejoining on "\n"
+    # unconditionally turned a CRLF file into mixed endings (kept lines
+    # keep their trailing \r while the inserted text is bare LF),
+    # corrupting it for later SEARCH/REPLACE and git apply.
+    eol = "\r\n" if "\r\n" in data else "\n"
+    lines = data.replace("\r\n", "\n").split("\n")
+    try:
+        idx = int(after)
+    except (TypeError, ValueError):
+        return f"ERROR: insert_line must be an integer; got {after!r}"
+    if idx < 0 or idx > len(lines):
+        return (
+            f"ERROR: insert_line={idx} out of range "
+            f"(file has {len(lines)} lines; 0 = before first line)"
+        )
+    ins = text.replace("\r\n", "\n").split("\n")
+    new_lines = lines[:idx] + ins + lines[idx:]
+    try:
+        target.write_text(eol.join(new_lines), encoding="utf-8")
+    except (PermissionError, OSError) as e:
+        return f"ERROR: {e}"
+    return f"inserted at line {idx} of {target}"
+
+
+def _dispatch_editor_command(sandbox, args: dict) -> str:
+    cmd = args.get("command", "")
+    path_arg = args.get("path", "")
+    if not cmd:
+        return "ERROR: missing `command` (one of: view, create, str_replace, insert)"
+    if not path_arg:
+        return "ERROR: missing `path`"
+    try:
+        target = _safe_resolve(sandbox, path_arg)
+    except ValueError as e:
+        return f"ERROR: {e}"
+
+    if cmd == "view":
+        return _cmd_view(sandbox, target, path_arg)
+    if cmd == "create":
+        return _cmd_create(target, args)
+    if cmd == "str_replace":
+        return _cmd_str_replace(target, args)
+    if cmd == "insert":
+        return _cmd_insert(target, args)
+
+    return (
+        f"ERROR: unknown command {cmd!r}; expected one of: "
+        "view, create, str_replace, insert"
+    )
+
+
+def str_replace_editor(sandbox) -> Tool:
+    def fn(args: dict) -> str:
+        return _dispatch_editor_command(sandbox, args)
 
     return Tool(
         name="str_replace_editor",

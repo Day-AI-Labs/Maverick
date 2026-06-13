@@ -38,7 +38,7 @@ def _traj(big: bool = True) -> list[dict]:
 class TestConfiguredStrategy:
     def test_default_is_empty(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_COMPACTION_STRATEGY", raising=False)
-        monkeypatch.setattr(cfg, "load_config", lambda: {})
+        monkeypatch.setattr(cfg, "load_config", dict)
         assert configured_strategy() == ""
 
     def test_env_selects_each_strategy(self, monkeypatch):
@@ -48,7 +48,7 @@ class TestConfiguredStrategy:
 
     def test_env_invalid_value_means_default(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_COMPACTION_STRATEGY", "lerned")
-        monkeypatch.setattr(cfg, "load_config", lambda: {})
+        monkeypatch.setattr(cfg, "load_config", dict)
         assert configured_strategy() == ""
 
     def test_config_selects(self, monkeypatch):
@@ -79,7 +79,7 @@ class TestConfiguredStrategy:
 class TestDispatch:
     def test_unconfigured_is_byte_identical_to_default(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_COMPACTION_STRATEGY", raising=False)
-        monkeypatch.setattr(cfg, "load_config", lambda: {})
+        monkeypatch.setattr(cfg, "load_config", dict)
         msgs = _traj()
         assert compact_with_strategy(msgs) == compact_messages(msgs)
         out = compact_with_strategy(msgs, keep_recent=2, max_tool_bytes=100)

@@ -14,7 +14,7 @@ from maverick.tools import _execute_tool_fn
 def test_off_by_default(monkeypatch):
     monkeypatch.delenv("MAVERICK_PLUGIN_TELEMETRY", raising=False)
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     assert pt.enabled() is False
     monkeypatch.setenv("MAVERICK_PLUGIN_TELEMETRY", "1")
     assert pt.enabled() is True
@@ -71,7 +71,7 @@ def test_discovery_wraps_when_enabled(tmp_path, monkeypatch):
     monkeypatch.setenv("MAVERICK_PLUGIN_TELEMETRY", "1")
     monkeypatch.delenv("MAVERICK_PLUGIN_ISOLATION", raising=False)
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
 
     class _EP:
         name = "counted_tool"
@@ -97,7 +97,7 @@ def test_cli_stats(tmp_path, monkeypatch):
     monkeypatch.setattr(pt, "telemetry_path", lambda: tmp_path / "t.json")
     monkeypatch.delenv("MAVERICK_PLUGIN_TELEMETRY", raising=False)
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     r = CliRunner().invoke(cli_mod.main, ["plugin", "stats"])
     assert r.exit_code == 0 and "telemetry is OFF" in r.output
     pt.record("acme_search", "acme-tools", path=tmp_path / "t.json")

@@ -25,7 +25,7 @@ def test_doctor_exits_nonzero_when_a_check_fails(monkeypatch, tmp_path):
 
 def test_diagnose_returns_zero_when_every_check_is_green(monkeypatch):
     # Force every check to emit no ✗ row; diagnose() must return 0 (exit 0).
-    monkeypatch.setattr(h, "_check_config", lambda: {})
+    monkeypatch.setattr(h, "_check_config", dict)
     monkeypatch.setattr(h, "_check_anthropic", lambda: h._row(h.GREEN, "anthropic", "ok"))
     monkeypatch.setattr(h, "_check_openai", lambda: None)
     monkeypatch.setattr(h, "_check_sandbox", lambda cfg: None)
@@ -36,7 +36,7 @@ def test_diagnose_returns_zero_when_every_check_is_green(monkeypatch):
 
 
 def test_diagnose_counts_each_failed_check(monkeypatch):
-    monkeypatch.setattr(h, "_check_config", lambda: {})
+    monkeypatch.setattr(h, "_check_config", dict)
     monkeypatch.setattr(h, "_check_anthropic", lambda: h._row(h.RED, "anthropic", "no key"))
     monkeypatch.setattr(h, "_check_openai", lambda: None)
     monkeypatch.setattr(h, "_check_sandbox", lambda cfg: h._row(h.RED, "sandbox", "broken"))

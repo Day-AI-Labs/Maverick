@@ -135,7 +135,7 @@ def next_run(expr: str, *, after: float | None = None) -> float:
     t = base.replace(second=0, microsecond=0) + _dt.timedelta(minutes=1)
 
     dom_restricted = dom != set(range(1, 32))
-    dow_restricted = dow != set(range(0, 7))
+    dow_restricted = dow != set(range(7))
 
     def _day_matches(d: _dt.datetime) -> bool:
         if d.month not in mon:

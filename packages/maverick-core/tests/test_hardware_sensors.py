@@ -48,9 +48,9 @@ def test_injected_reader_op_filtering():
 
 
 def test_unknown_op_is_error():
-    out = hardware_sensors(lambda: {}).fn({"op": "explode"})
+    out = hardware_sensors(dict).fn({"op": "explode"})
     assert out.startswith("ERROR: unknown op")
-    assert hardware_sensors(lambda: {}).fn({}).startswith("ERROR")
+    assert hardware_sensors(dict).fn({}).startswith("ERROR")
 
 
 def test_psutil_temps_fans_battery(monkeypatch):

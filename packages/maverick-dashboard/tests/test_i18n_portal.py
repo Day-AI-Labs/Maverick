@@ -88,6 +88,6 @@ def test_available_languages(tmp_path):
 
 def test_no_portal_dir_is_empty(monkeypatch):
     monkeypatch.delenv("MAVERICK_I18N_DIR", raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     assert p.load_external_catalogs() == {}
     assert p.available_languages() == sorted(i18n.LANGS)

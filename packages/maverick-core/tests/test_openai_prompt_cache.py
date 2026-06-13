@@ -111,7 +111,7 @@ class TestCacheFriendlyOrdering:
             _UNSORTED_TOOLS, max_tokens=256, model="gpt-4.1",
         )
         # sorted() returns a new list; the caller's list is unchanged.
-        assert _UNSORTED_TOOLS == original
+        assert original == _UNSORTED_TOOLS
 
 
 class TestReasoningEffortMapping:

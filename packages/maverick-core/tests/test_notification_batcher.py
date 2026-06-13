@@ -110,7 +110,7 @@ def test_policy_from_config_env(monkeypatch):
 def test_policy_off_by_default(monkeypatch):
     for k in ("MAVERICK_NOTIFY_BATCH_WINDOW", "MAVERICK_NOTIFY_BATCH_MAX"):
         monkeypatch.delenv(k, raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     assert policy_from_config().is_active() is False
 
 

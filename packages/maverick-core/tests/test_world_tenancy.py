@@ -102,7 +102,7 @@ def _build_server(monkeypatch):
     from maverick import server as server_mod
     from maverick.world_model import WorldModel
 
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     shared = WorldModel(maverick_home() / "world.db")
     srv = server_mod.Server.__new__(server_mod.Server)
     srv.world = shared

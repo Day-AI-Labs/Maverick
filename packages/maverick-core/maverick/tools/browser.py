@@ -299,7 +299,243 @@ def _is_safe_browser_url(url: str) -> bool:
     return not is_blocked_host(host)
 
 
-def _run_browser_action(args: dict[str, Any]) -> str:  # noqa: C901
+def _browser_navigate(session, page, args, timeout, allow_hosts) -> str:
+    url = args.get("url") or ""
+    if not _is_safe_browser_url(url):
+        return (
+            "ERROR: URL must be http(s) and must not target localhost or "
+            f"non-public IP ranges; got {url!r}"
+        )
+    log.info("browser.navigate %s", url)
+    page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+    denial = _deny_and_close_current_page(page, allow_hosts)
+    if denial is not None:
+        return denial
+    session.save_state()  # checkpoint cookies after each navigation
+    return f"navigated to {page.url} (status: loaded)"
+
+
+def _browser_go_back(page, args, timeout, allow_hosts) -> str:
+    page.go_back(timeout=timeout)
+    denial = _deny_and_close_current_page(page, allow_hosts)
+    if denial is not None:
+        return denial
+    return f"back -> {page.url}"
+
+
+def _browser_go_forward(page, args, timeout, allow_hosts) -> str:
+    page.go_forward(timeout=timeout)
+    denial = _deny_and_close_current_page(page, allow_hosts)
+    if denial is not None:
+        return denial
+    return f"forward -> {page.url}"
+
+
+def _browser_click(page, args, timeout, allow_hosts) -> str:
+    selector = args.get("selector")
+    if not selector:
+        return "ERROR: click requires selector"
+    log.info("browser.click %s", selector)
+    page.click(selector, timeout=timeout)
+    denial = _deny_and_close_current_page(page, allow_hosts)
+    if denial is not None:
+        return denial
+    return f"clicked {selector!r} on {page.url}"
+
+
+def _browser_type(page, args, timeout) -> str:
+    selector = args.get("selector")
+    text = args.get("text") or ""
+    if not selector:
+        return "ERROR: type requires selector"
+    log.info("browser.type len=%d into %s", len(text), selector)
+    page.fill(selector, text, timeout=timeout)
+    return f"typed {len(text)} chars into {selector!r}"
+
+
+def _browser_fill_form(page, args, timeout) -> str:
+    fields = args.get("fields")
+    if not isinstance(fields, dict) or not fields:
+        return "ERROR: fill_form requires a non-empty 'fields' object {selector: value}"
+    if len(fields) > _MAX_FILL_FORM_FIELDS:
+        return f"ERROR: fill_form supports at most {_MAX_FILL_FORM_FIELDS} fields"
+
+    filled: list[str] = []
+    errors: list[str] = []
+    field_timeout = min(timeout, _MAX_FILL_FORM_FIELD_TIMEOUT_MS)
+    total_timeout = min(timeout, _MAX_FILL_FORM_TOTAL_TIMEOUT_MS)
+    deadline = time.monotonic() + (total_timeout / 1000)
+
+    for selector, value in fields.items():
+        selector = str(selector)
+        value = str(value)
+        if len(selector) > _MAX_FILL_FORM_SELECTOR_LENGTH:
+            errors.append(f"{selector[:80]}: selector too long")
+            continue
+        if len(value) > _MAX_FILL_FORM_VALUE_LENGTH:
+            errors.append(f"{selector}: value too long")
+            continue
+
+        remaining_ms = int((deadline - time.monotonic()) * 1000)
+        if remaining_ms <= 0:
+            errors.append("batch timeout")
+            break
+        try:
+            page.fill(selector, value, timeout=min(field_timeout, remaining_ms))
+            filled.append(selector)
+        except Exception as e:
+            errors.append(f"{selector}: {type(e).__name__}")
+    log.info("browser.fill_form filled=%d errors=%d", len(filled), len(errors))
+    summary = f"filled {len(filled)}/{len(fields)} field(s)"
+    if errors:
+        summary += "; failed: " + ", ".join(errors[:10])
+    return summary
+
+
+def _browser_press(page, args, timeout, allow_hosts) -> str:
+    text = args.get("text") or ""
+    selector = args.get("selector")
+    if not text:
+        return "ERROR: press requires text (key name, e.g. 'Enter')"
+    if selector:
+        page.press(selector, text, timeout=timeout)
+    else:
+        page.keyboard.press(text)
+    denial = _deny_and_close_current_page(page, allow_hosts)
+    if denial is not None:
+        return denial
+    return f"pressed {text!r}"
+
+
+def _browser_scroll(page, args) -> str:
+    dy = int(args.get("delta_y") or 400)
+    page.evaluate(f"window.scrollBy(0, {dy})")
+    return f"scrolled by {dy}"
+
+
+def _browser_screenshot(page) -> str:
+    png_bytes = page.screenshot(full_page=False)
+    b64 = base64.b64encode(png_bytes).decode("ascii")
+    log.info("browser.screenshot len=%d url=%s", len(b64), page.url)
+    return f"<screenshot mime=image/png base64>{b64}</screenshot>"
+
+
+def _browser_extract_text(page, args) -> str:
+    selector = args.get("selector")
+    if selector:
+        els = page.query_selector_all(selector)
+        text = "\n".join((el.inner_text() or "").strip() for el in els)[:50_000]
+    else:
+        # Whole-page text fallback.
+        body = page.query_selector("body")
+        text = (body.inner_text() or "").strip()[:50_000] if body else ""
+    cleaned, warning = _scan_fetched(text)
+    return warning + cleaned
+
+
+def _browser_extract_html(page, args) -> str:
+    selector = args.get("selector")
+    if selector:
+        el = page.query_selector(selector)
+        return (el.inner_html() if el else "")[:100_000]
+    return page.content()[:100_000]
+
+
+def _browser_find_text(page, args) -> str:
+    text = args.get("text") or ""
+    if not text:
+        return "ERROR: find_text requires text"
+    loc = page.get_by_text(text, exact=False)
+    count = loc.count()
+    if count == 0:
+        return f"text {text!r} not found on {page.url}"
+    # Return location summary for the first match.
+    try:
+        box = loc.first.bounding_box()
+        if box:
+            return (
+                f"found {count} match(es); first at "
+                f"({box['x']:.0f}, {box['y']:.0f}, "
+                f"{box['width']:.0f}x{box['height']:.0f})"
+            )
+    except Exception:
+        pass
+    return f"found {count} match(es) for {text!r}"
+
+
+def _browser_wait_for(page, args, timeout) -> str:
+    selector = args.get("selector")
+    if not selector:
+        return "ERROR: wait_for requires selector"
+    page.wait_for_selector(selector, timeout=timeout)
+    return f"selector {selector!r} appeared"
+
+
+def _browser_list_links(page) -> str:
+    anchors = page.query_selector_all("a[href]")
+    links = []
+    for a in anchors[:100]:
+        href = a.get_attribute("href") or ""
+        text = (a.inner_text() or "").strip()[:80]
+        links.append(f"{text!r} -> {href}")
+    return "\n".join(links) if links else "no links on page"
+
+
+def _browser_save_session(session) -> str:
+    ok = session.save_state()
+    return "session saved" if ok else "session not saved (persistence disabled or no active context)"
+
+
+def _parse_allow_hosts(args: dict[str, Any]) -> tuple[str, ...]:
+    raw_allow_hosts = args.get("_capability_allow_hosts")
+    return (
+        tuple(str(pat).lower() for pat in raw_allow_hosts)
+        if isinstance(raw_allow_hosts, (list, tuple, set, frozenset))
+        else ()
+    )
+
+
+def _dispatch_browser_action(
+    action: str, session, page, args, timeout, allow_hosts,
+) -> str:
+    """Run a single browser action against the live page. Behavior identical
+    to the prior inline if/elif chain (same order, same returns)."""
+    if action == "navigate":
+        return _browser_navigate(session, page, args, timeout, allow_hosts)
+    if action == "current_url":
+        return page.url
+    if action == "go_back":
+        return _browser_go_back(page, args, timeout, allow_hosts)
+    if action == "go_forward":
+        return _browser_go_forward(page, args, timeout, allow_hosts)
+    if action == "click":
+        return _browser_click(page, args, timeout, allow_hosts)
+    if action == "type":
+        return _browser_type(page, args, timeout)
+    if action == "fill_form":
+        return _browser_fill_form(page, args, timeout)
+    if action == "press":
+        return _browser_press(page, args, timeout, allow_hosts)
+    if action == "scroll":
+        return _browser_scroll(page, args)
+    if action == "screenshot":
+        return _browser_screenshot(page)
+    if action == "extract_text":
+        return _browser_extract_text(page, args)
+    if action == "extract_html":
+        return _browser_extract_html(page, args)
+    if action == "find_text":
+        return _browser_find_text(page, args)
+    if action == "wait_for":
+        return _browser_wait_for(page, args, timeout)
+    if action == "list_links":
+        return _browser_list_links(page)
+    if action == "save_session":
+        return _browser_save_session(session)
+    return f"ERROR: unknown action {action!r}"
+
+
+def _run_browser_action(args: dict[str, Any]) -> str:
     if os.environ.get("MAVERICK_BROWSER_DISABLE") == "1":
         return "ERROR: browser tool disabled by MAVERICK_BROWSER_DISABLE=1"
     action = args.get("action")
@@ -317,194 +553,16 @@ def _run_browser_action(args: dict[str, Any]) -> str:  # noqa: C901
         return f"ERROR: {e}"
 
     timeout = int(args.get("timeout_ms") or 30_000)
-    raw_allow_hosts = args.get("_capability_allow_hosts")
-    allow_hosts = (
-        tuple(str(pat).lower() for pat in raw_allow_hosts)
-        if isinstance(raw_allow_hosts, (list, tuple, set, frozenset))
-        else ()
-    )
+    allow_hosts = _parse_allow_hosts(args)
 
     if action != "navigate":
         denial = _deny_and_close_current_page(page, allow_hosts)
         if denial is not None:
             return denial
 
-    if action == "navigate":
-        url = args.get("url") or ""
-        if not _is_safe_browser_url(url):
-            return (
-                "ERROR: URL must be http(s) and must not target localhost or "
-                f"non-public IP ranges; got {url!r}"
-            )
-        log.info("browser.navigate %s", url)
-        page.goto(url, timeout=timeout, wait_until="domcontentloaded")
-        denial = _deny_and_close_current_page(page, allow_hosts)
-        if denial is not None:
-            return denial
-        session.save_state()  # checkpoint cookies after each navigation
-        return f"navigated to {page.url} (status: loaded)"
-
-    if action == "current_url":
-        return page.url
-
-    if action == "go_back":
-        page.go_back(timeout=timeout)
-        denial = _deny_and_close_current_page(page, allow_hosts)
-        if denial is not None:
-            return denial
-        return f"back -> {page.url}"
-
-    if action == "go_forward":
-        page.go_forward(timeout=timeout)
-        denial = _deny_and_close_current_page(page, allow_hosts)
-        if denial is not None:
-            return denial
-        return f"forward -> {page.url}"
-
-    if action == "click":
-        selector = args.get("selector")
-        if not selector:
-            return "ERROR: click requires selector"
-        log.info("browser.click %s", selector)
-        page.click(selector, timeout=timeout)
-        denial = _deny_and_close_current_page(page, allow_hosts)
-        if denial is not None:
-            return denial
-        return f"clicked {selector!r} on {page.url}"
-
-    if action == "type":
-        selector = args.get("selector")
-        text = args.get("text") or ""
-        if not selector:
-            return "ERROR: type requires selector"
-        log.info("browser.type len=%d into %s", len(text), selector)
-        page.fill(selector, text, timeout=timeout)
-        return f"typed {len(text)} chars into {selector!r}"
-
-    if action == "fill_form":
-        fields = args.get("fields")
-        if not isinstance(fields, dict) or not fields:
-            return "ERROR: fill_form requires a non-empty 'fields' object {selector: value}"
-        if len(fields) > _MAX_FILL_FORM_FIELDS:
-            return f"ERROR: fill_form supports at most {_MAX_FILL_FORM_FIELDS} fields"
-
-        filled: list[str] = []
-        errors: list[str] = []
-        field_timeout = min(timeout, _MAX_FILL_FORM_FIELD_TIMEOUT_MS)
-        total_timeout = min(timeout, _MAX_FILL_FORM_TOTAL_TIMEOUT_MS)
-        deadline = time.monotonic() + (total_timeout / 1000)
-
-        for selector, value in fields.items():
-            selector = str(selector)
-            value = str(value)
-            if len(selector) > _MAX_FILL_FORM_SELECTOR_LENGTH:
-                errors.append(f"{selector[:80]}: selector too long")
-                continue
-            if len(value) > _MAX_FILL_FORM_VALUE_LENGTH:
-                errors.append(f"{selector}: value too long")
-                continue
-
-            remaining_ms = int((deadline - time.monotonic()) * 1000)
-            if remaining_ms <= 0:
-                errors.append("batch timeout")
-                break
-            try:
-                page.fill(selector, value, timeout=min(field_timeout, remaining_ms))
-                filled.append(selector)
-            except Exception as e:
-                errors.append(f"{selector}: {type(e).__name__}")
-        log.info("browser.fill_form filled=%d errors=%d", len(filled), len(errors))
-        summary = f"filled {len(filled)}/{len(fields)} field(s)"
-        if errors:
-            summary += "; failed: " + ", ".join(errors[:10])
-        return summary
-
-    if action == "press":
-        text = args.get("text") or ""
-        selector = args.get("selector")
-        if not text:
-            return "ERROR: press requires text (key name, e.g. 'Enter')"
-        if selector:
-            page.press(selector, text, timeout=timeout)
-        else:
-            page.keyboard.press(text)
-        denial = _deny_and_close_current_page(page, allow_hosts)
-        if denial is not None:
-            return denial
-        return f"pressed {text!r}"
-
-    if action == "scroll":
-        dy = int(args.get("delta_y") or 400)
-        page.evaluate(f"window.scrollBy(0, {dy})")
-        return f"scrolled by {dy}"
-
-    if action == "screenshot":
-        png_bytes = page.screenshot(full_page=False)
-        b64 = base64.b64encode(png_bytes).decode("ascii")
-        log.info("browser.screenshot len=%d url=%s", len(b64), page.url)
-        return f"<screenshot mime=image/png base64>{b64}</screenshot>"
-
-    if action == "extract_text":
-        selector = args.get("selector")
-        if selector:
-            els = page.query_selector_all(selector)
-            text = "\n".join((el.inner_text() or "").strip() for el in els)[:50_000]
-        else:
-            # Whole-page text fallback.
-            body = page.query_selector("body")
-            text = (body.inner_text() or "").strip()[:50_000] if body else ""
-        cleaned, warning = _scan_fetched(text)
-        return warning + cleaned
-
-    if action == "extract_html":
-        selector = args.get("selector")
-        if selector:
-            el = page.query_selector(selector)
-            return (el.inner_html() if el else "")[:100_000]
-        return page.content()[:100_000]
-
-    if action == "find_text":
-        text = args.get("text") or ""
-        if not text:
-            return "ERROR: find_text requires text"
-        loc = page.get_by_text(text, exact=False)
-        count = loc.count()
-        if count == 0:
-            return f"text {text!r} not found on {page.url}"
-        # Return location summary for the first match.
-        try:
-            box = loc.first.bounding_box()
-            if box:
-                return (
-                    f"found {count} match(es); first at "
-                    f"({box['x']:.0f}, {box['y']:.0f}, "
-                    f"{box['width']:.0f}x{box['height']:.0f})"
-                )
-        except Exception:
-            pass
-        return f"found {count} match(es) for {text!r}"
-
-    if action == "wait_for":
-        selector = args.get("selector")
-        if not selector:
-            return "ERROR: wait_for requires selector"
-        page.wait_for_selector(selector, timeout=timeout)
-        return f"selector {selector!r} appeared"
-
-    if action == "list_links":
-        anchors = page.query_selector_all("a[href]")
-        links = []
-        for a in anchors[:100]:
-            href = a.get_attribute("href") or ""
-            text = (a.inner_text() or "").strip()[:80]
-            links.append(f"{text!r} -> {href}")
-        return "\n".join(links) if links else "no links on page"
-
-    if action == "save_session":
-        ok = session.save_state()
-        return "session saved" if ok else "session not saved (persistence disabled or no active context)"
-
-    return f"ERROR: unknown action {action!r}"
+    return _dispatch_browser_action(
+        action, session, page, args, timeout, allow_hosts,
+    )
 
 
 def browser() -> Tool:

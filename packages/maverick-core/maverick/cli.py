@@ -2749,7 +2749,7 @@ def ps(ctx, limit: int, as_json: bool) -> None:
     click.echo(f"{'TYPE':4}  {'ID':>5}  {'STATE':9}  {'WHEN (UTC)':16}  WHAT")
     for p in procs:
         what = _strip_terminal_control(str(p["what"]))
-        click.echo(f"{p['type']:4}  {str(p['id']):>5}  {p['state']:9}  "
+        click.echo(f"{p['type']:4}  {p['id']!s:>5}  {p['state']:9}  "
                    f"{p['when']:16}  {what}")
 
 

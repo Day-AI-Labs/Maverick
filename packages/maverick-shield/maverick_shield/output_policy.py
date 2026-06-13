@@ -70,7 +70,7 @@ def detect_system_prompt_regurgitation(
         return True
     # Fuzzy: a long contiguous window of the prompt appearing verbatim is
     # still regurgitation even if the model omitted the head/tail.
-    for i in range(0, len(snippet) - min_chars + 1):
+    for i in range(len(snippet) - min_chars + 1):
         if snippet[i : i + min_chars] in haystack:
             return True
     return False

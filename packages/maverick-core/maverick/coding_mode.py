@@ -772,7 +772,171 @@ def _ast_check_python_files(workdir: Path, paths: list[str]) -> list[str]:
     return errors
 
 
-def defensive_validate(patch: str, *, fail_to_pass: list[str] = None,  # noqa: C901
+def _classify_diff_paths(paths, test_id_paths, result) -> None:
+    for p in paths:
+        # Test files + lock files — these are hard-blocked.
+        if any(pat.search(p) for pat in _FORBIDDEN_PATH_PATTERNS):
+            result.ok = False
+            result.blocked_paths.append(p)
+            continue
+        # Paths mentioned directly in FAIL_TO_PASS / PASS_TO_PASS.
+        if p in test_id_paths:
+            result.ok = False
+            result.blocked_paths.append(p)
+            continue
+        # conftest.py / pyproject.toml / requirements*.txt etc — WARN
+        # but don't block (council F8a, see _WARN_PATH_PATTERNS).
+        if any(pat.search(p) for pat in _WARN_PATH_PATTERNS):
+            result.warnings.append(
+                f"patch touches {p!r}; SWE-bench grader may overwrite or "
+                "ignore changes to this file — prefer editing only the "
+                "production module under test"
+            )
+            if result.fn_risk == "low":
+                result.fn_risk = "medium"
+
+
+def _has_substantive_change(patch: str) -> bool:
+    for line in patch.splitlines():
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---")):
+            if line[1:].strip():
+                return True
+    return False
+
+
+def _cheating_overlap_check(patch: str, gold_patch: str, result) -> None:
+    # Verbatim-overlap cheating-detector simulator.
+    # Wave 12 (council F8b): switch from character-level SequenceMatcher
+    # to token-level. Char-level mis-flags coincidental whitespace and
+    # under-flags semantically-identical code that differs in
+    # whitespace/punctuation. Tokens capture identifiers, numeric and
+    # string literals — the canonical "stuff a cheating detector cares
+    # about". Cap at 5000 tokens (was 50_000 chars) since SequenceMatcher
+    # is O(n*m) and longer inputs blow up wall-clock for per-candidate
+    # validation that runs N times in best-of-N.
+    #
+    # Threshold raised from 20% to 50% to match Scale's published Nov-2025
+    # cheating-detector heuristic (structural overlap >= 50%). At
+    # token-level, common Python/JS keywords inflate the baseline ratio
+    # for any two real patches in the same language; 20% on tokens flags
+    # too many legitimately-different fixes.
+    from difflib import SequenceMatcher
+
+    def _substantive(p: str) -> str:
+        lines = []
+        for line in p.splitlines():
+            if line.startswith("+") and not line.startswith("+++"):
+                stripped = line[1:].strip()
+                if stripped:
+                    lines.append(stripped)
+        return "\n".join(lines)
+
+    # Identifiers + numeric/string literals; case-sensitive.
+    _TOKEN_RE = re.compile(r'\w+|"[^"]*"|\'[^\']*\'')
+
+    ours_text = _substantive(patch)
+    theirs_text = _substantive(gold_patch)
+    if not (ours_text and theirs_text):
+        return
+    ours_all = _TOKEN_RE.findall(ours_text)
+    theirs_all = _TOKEN_RE.findall(theirs_text)
+    # Wave 12 hardening (agent 5 #1 + agent 1 review): measure
+    # "what fraction of the GOLD appears as a verbatim run in
+    # ours?", not symmetric ratio. The symmetric metric is
+    # defeated by prepending unrelated noise: noise dilutes the
+    # denominator below the 50% threshold even when 100% of the
+    # gold tokens appear in ours.
+    #
+    # The cheating-detection signal we want: "did the candidate
+    # copy more than half the gold patch token-for-token?". We
+    # use SequenceMatcher.get_matching_blocks() to find the
+    # total length of matched subsequence vs len(gold).
+    #
+    # Cap inputs at 10000 tokens to bound SequenceMatcher's
+    # O(n*m) cost. For inputs above the cap, sample uniformly
+    # so a large patch's matching region is still represented.
+    def _sample(tokens: list[str], k: int = 10_000) -> list[str]:
+        if len(tokens) <= k:
+            return tokens
+        step = len(tokens) / k
+        return [tokens[int(i * step)] for i in range(k)]
+
+    ours_tokens = _sample(ours_all)
+    theirs_tokens = _sample(theirs_all)
+    # May 26 smoke fix (pallets/flask-5014 false positive):
+    # the cheating detector was rejecting tiny obvious fixes
+    # where any agent would independently produce the same
+    # code (e.g. adding a one-line empty-name guard). Require
+    # a MINIMUM gold patch size before applying the detector
+    # — a 5-token gold patch can't meaningfully signal
+    # cheating because the match is forced. 30 tokens
+    # corresponds to roughly a 5-line non-trivial change.
+    _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK = 30
+    # Forensic signal: even below the threshold, when the
+    # candidate's substantive content is byte-identical to the
+    # gold patch, log a non-blocking warning. Independent
+    # reproductions of obvious fixes almost never come out
+    # byte-for-byte identical (whitespace, ordering, naming
+    # diverge), so this captures the rare leak case without
+    # re-introducing false positives the threshold was added
+    # to prevent.
+    if (len(theirs_tokens) < _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK
+            and ours_text == theirs_text):
+        result.warnings.append(
+            "tiny gold patch matched byte-for-byte by candidate; "
+            "below cheating-detector threshold but flagged for "
+            "manual review"
+        )
+    if not (ours_tokens and theirs_tokens
+            and len(theirs_tokens) >= _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK):
+        return
+    # Signal 1: longest contiguous matching block. Verbatim
+    # copies produce one long block. Trivial bypass: insert
+    # `_=None;` between every 5-6 gold tokens to break the
+    # contiguous run.
+    matcher = SequenceMatcher(
+        None, ours_tokens, theirs_tokens, autojunk=False,
+    )
+    blocks = matcher.get_matching_blocks()
+    longest = max((b.size for b in blocks), default=0)
+    gold_fraction = longest / max(1, len(theirs_tokens))
+
+    # Signal 2 (May 26 council fix, Princeton-perspective
+    # audit #5): n-gram Jaccard. Closes the splice-bypass
+    # of signal 1 by working at the 3-gram-set level —
+    # inserting noise between gold tokens breaks the
+    # CONTIGUOUS run but preserves the 3-gram overlap.
+    # Threshold 0.35 calibrated against Scale's published
+    # Nov-2025 cheating-detector methodology.
+    def _ngrams(seq: list[str], n: int = 3) -> set:
+        if len(seq) < n:
+            return set()
+        return {tuple(seq[i:i + n]) for i in range(len(seq) - n + 1)}
+    ours_ngrams = _ngrams(ours_tokens)
+    theirs_ngrams = _ngrams(theirs_tokens)
+    if theirs_ngrams:
+        jaccard = len(ours_ngrams & theirs_ngrams) / len(
+            ours_ngrams | theirs_ngrams
+        )
+    else:
+        jaccard = 0.0
+
+    if gold_fraction >= 0.50 or jaccard >= 0.35:
+        result.ok = False
+        metric = (
+            f"longest verbatim run = {gold_fraction:.0%}"
+            if gold_fraction >= 0.50
+            else f"3-gram Jaccard overlap = {jaccard:.0%}"
+        )
+        result.warnings.append(
+            f"{metric} of gold patch — cheating-detector "
+            "threshold exceeded; reformulate in your own "
+            "structure"
+        )
+        result.fn_risk = "high"
+
+
+def defensive_validate(patch: str, *, fail_to_pass: list[str] = None,
                        pass_to_pass: list[str] = None,
                        gold_patch: str = "",
                        opaque: bool = True) -> DefensiveValidation:
@@ -803,167 +967,17 @@ def defensive_validate(patch: str, *, fail_to_pass: list[str] = None,  # noqa: C
         elif tid:
             test_id_paths.add(tid)
 
-    for p in paths:
-        # Test files + lock files — these are hard-blocked.
-        if any(pat.search(p) for pat in _FORBIDDEN_PATH_PATTERNS):
-            result.ok = False
-            result.blocked_paths.append(p)
-            continue
-        # Paths mentioned directly in FAIL_TO_PASS / PASS_TO_PASS.
-        if p in test_id_paths:
-            result.ok = False
-            result.blocked_paths.append(p)
-            continue
-        # conftest.py / pyproject.toml / requirements*.txt etc — WARN
-        # but don't block (council F8a, see _WARN_PATH_PATTERNS).
-        if any(pat.search(p) for pat in _WARN_PATH_PATTERNS):
-            result.warnings.append(
-                f"patch touches {p!r}; SWE-bench grader may overwrite or "
-                "ignore changes to this file — prefer editing only the "
-                "production module under test"
-            )
-            if result.fn_risk == "low":
-                result.fn_risk = "medium"
+    _classify_diff_paths(paths, test_id_paths, result)
 
     # Whitespace-only diff warning.
-    has_substantive_change = False
-    for line in patch.splitlines():
-        if line.startswith(("+", "-")) and not line.startswith(("+++", "---")):
-            if line[1:].strip():
-                has_substantive_change = True
-                break
-    if not has_substantive_change and patch.strip():
+    if not _has_substantive_change(patch) and patch.strip():
         result.warnings.append("patch contains no non-whitespace changes")
         result.fn_risk = "high"
 
-    # Verbatim-overlap cheating-detector simulator.
-    # Wave 12 (council F8b): switch from character-level SequenceMatcher
-    # to token-level. Char-level mis-flags coincidental whitespace and
-    # under-flags semantically-identical code that differs in
-    # whitespace/punctuation. Tokens capture identifiers, numeric and
-    # string literals — the canonical "stuff a cheating detector cares
-    # about". Cap at 5000 tokens (was 50_000 chars) since SequenceMatcher
-    # is O(n*m) and longer inputs blow up wall-clock for per-candidate
-    # validation that runs N times in best-of-N.
-    #
-    # Threshold raised from 20% to 50% to match Scale's published Nov-2025
-    # cheating-detector heuristic (structural overlap >= 50%). At
-    # token-level, common Python/JS keywords inflate the baseline ratio
-    # for any two real patches in the same language; 20% on tokens flags
-    # too many legitimately-different fixes.
+    # Verbatim-overlap cheating-detector simulator (token-level; see
+    # _cheating_overlap_check for the full rationale).
     if gold_patch and patch:
-        from difflib import SequenceMatcher
-
-        def _substantive(p: str) -> str:
-            lines = []
-            for line in p.splitlines():
-                if line.startswith("+") and not line.startswith("+++"):
-                    stripped = line[1:].strip()
-                    if stripped:
-                        lines.append(stripped)
-            return "\n".join(lines)
-
-        # Identifiers + numeric/string literals; case-sensitive.
-        _TOKEN_RE = re.compile(r'\w+|"[^"]*"|\'[^\']*\'')
-
-        ours_text = _substantive(patch)
-        theirs_text = _substantive(gold_patch)
-        if ours_text and theirs_text:
-            ours_all = _TOKEN_RE.findall(ours_text)
-            theirs_all = _TOKEN_RE.findall(theirs_text)
-            # Wave 12 hardening (agent 5 #1 + agent 1 review): measure
-            # "what fraction of the GOLD appears as a verbatim run in
-            # ours?", not symmetric ratio. The symmetric metric is
-            # defeated by prepending unrelated noise: noise dilutes the
-            # denominator below the 50% threshold even when 100% of the
-            # gold tokens appear in ours.
-            #
-            # The cheating-detection signal we want: "did the candidate
-            # copy more than half the gold patch token-for-token?". We
-            # use SequenceMatcher.get_matching_blocks() to find the
-            # total length of matched subsequence vs len(gold).
-            #
-            # Cap inputs at 10000 tokens to bound SequenceMatcher's
-            # O(n*m) cost. For inputs above the cap, sample uniformly
-            # so a large patch's matching region is still represented.
-            def _sample(tokens: list[str], k: int = 10_000) -> list[str]:
-                if len(tokens) <= k:
-                    return tokens
-                step = len(tokens) / k
-                return [tokens[int(i * step)] for i in range(k)]
-
-            ours_tokens = _sample(ours_all)
-            theirs_tokens = _sample(theirs_all)
-            # May 26 smoke fix (pallets/flask-5014 false positive):
-            # the cheating detector was rejecting tiny obvious fixes
-            # where any agent would independently produce the same
-            # code (e.g. adding a one-line empty-name guard). Require
-            # a MINIMUM gold patch size before applying the detector
-            # — a 5-token gold patch can't meaningfully signal
-            # cheating because the match is forced. 30 tokens
-            # corresponds to roughly a 5-line non-trivial change.
-            _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK = 30
-            # Forensic signal: even below the threshold, when the
-            # candidate's substantive content is byte-identical to the
-            # gold patch, log a non-blocking warning. Independent
-            # reproductions of obvious fixes almost never come out
-            # byte-for-byte identical (whitespace, ordering, naming
-            # diverge), so this captures the rare leak case without
-            # re-introducing false positives the threshold was added
-            # to prevent.
-            if (len(theirs_tokens) < _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK
-                    and ours_text == theirs_text):
-                result.warnings.append(
-                    "tiny gold patch matched byte-for-byte by candidate; "
-                    "below cheating-detector threshold but flagged for "
-                    "manual review"
-                )
-            if (ours_tokens and theirs_tokens
-                    and len(theirs_tokens) >= _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK):
-                # Signal 1: longest contiguous matching block. Verbatim
-                # copies produce one long block. Trivial bypass: insert
-                # `_=None;` between every 5-6 gold tokens to break the
-                # contiguous run.
-                matcher = SequenceMatcher(
-                    None, ours_tokens, theirs_tokens, autojunk=False,
-                )
-                blocks = matcher.get_matching_blocks()
-                longest = max((b.size for b in blocks), default=0)
-                gold_fraction = longest / max(1, len(theirs_tokens))
-
-                # Signal 2 (May 26 council fix, Princeton-perspective
-                # audit #5): n-gram Jaccard. Closes the splice-bypass
-                # of signal 1 by working at the 3-gram-set level —
-                # inserting noise between gold tokens breaks the
-                # CONTIGUOUS run but preserves the 3-gram overlap.
-                # Threshold 0.35 calibrated against Scale's published
-                # Nov-2025 cheating-detector methodology.
-                def _ngrams(seq: list[str], n: int = 3) -> set:
-                    if len(seq) < n:
-                        return set()
-                    return {tuple(seq[i:i + n]) for i in range(len(seq) - n + 1)}
-                ours_ngrams = _ngrams(ours_tokens)
-                theirs_ngrams = _ngrams(theirs_tokens)
-                if theirs_ngrams:
-                    jaccard = len(ours_ngrams & theirs_ngrams) / len(
-                        ours_ngrams | theirs_ngrams
-                    )
-                else:
-                    jaccard = 0.0
-
-                if gold_fraction >= 0.50 or jaccard >= 0.35:
-                    result.ok = False
-                    metric = (
-                        f"longest verbatim run = {gold_fraction:.0%}"
-                        if gold_fraction >= 0.50
-                        else f"3-gram Jaccard overlap = {jaccard:.0%}"
-                    )
-                    result.warnings.append(
-                        f"{metric} of gold patch — cheating-detector "
-                        "threshold exceeded; reformulate in your own "
-                        "structure"
-                    )
-                    result.fn_risk = "high"
+        _cheating_overlap_check(patch, gold_patch, result)
 
     return result
 
@@ -1286,14 +1300,14 @@ def _parse_gotest(out: str) -> tuple[int, int, bool]:
     # isn't a real test pass. Anchor on `\nFAIL\t` (the canonical go
     # test failure-status line) instead of substring "PASS not in out".
     out = _strip_ansi(out)
-    p = len(re.findall(r"^\s*--- PASS:", out, re.M))
-    f = len(re.findall(r"^\s*--- FAIL:", out, re.M))
+    p = len(re.findall(r"^\s*--- PASS:", out, re.MULTILINE))
+    f = len(re.findall(r"^\s*--- FAIL:", out, re.MULTILINE))
     # Build failures: `FAIL\t...\t[build failed]` or "cannot find package".
     build_fail = (
         re.search(r"\bFAIL\b.*\[build failed\]", out) is not None
         or "cannot find package" in out
         or (
-            re.search(r"^\s*\S+\.go:\d+:\d+:", out, re.M) is not None
+            re.search(r"^\s*\S+\.go:\d+:\d+:", out, re.MULTILINE) is not None
             and "\nFAIL\t" in out
             and p == 0
         )
@@ -1327,8 +1341,8 @@ def _parse_gradle(out: str) -> tuple[int, int, bool]:
     # counts arbitrarily. Anchor on gradle's test-report format:
     # `ClassName > methodName PASSED` (or FAILED / SKIPPED).
     out = _strip_ansi(out)
-    p = len(re.findall(r"^\S.*?\s>\s.*?\sPASSED\s*$", out, re.M))
-    f = len(re.findall(r"^\S.*?\s>\s.*?\sFAILED\s*$", out, re.M))
+    p = len(re.findall(r"^\S.*?\s>\s.*?\sPASSED\s*$", out, re.MULTILINE))
+    f = len(re.findall(r"^\S.*?\s>\s.*?\sFAILED\s*$", out, re.MULTILINE))
     # Detect compile / build failures: BUILD FAILED with no tests is
     # a real failure regardless of the PASSED/FAILED line counts.
     if "BUILD FAILED" in out and p == 0 and f == 0:
@@ -1385,7 +1399,7 @@ _FAILURE_PATTERNS = [
     # a clear assert expression with a comparison operator.
     ("AssertionError",   re.compile(
         r"\bAssertionError\b|^\s*assert\s+\S+\s*(?:[=!<>]|is\s|not\s|in\s)",
-        re.M,
+        re.MULTILINE,
     )),
     ("SyntaxError",      re.compile(r"\bSyntaxError\b|invalid syntax")),
     ("IndentationError", re.compile(r"\bIndentationError\b")),
@@ -1406,7 +1420,7 @@ _FAILURE_PATTERNS = [
     ("GoBuildError", re.compile(
         r"\.go:\d+:\d+:|undefined: \w|(?:not enough|too many) arguments\b"
     )),
-    ("GoPanic", re.compile(r"^panic: ", re.M)),
+    ("GoPanic", re.compile(r"^panic: ", re.MULTILINE)),
     ("TypeScriptError", re.compile(
         r"error TS\d+|Cannot find name |is not assignable to|"
         r"Property '[^']+' does not exist|Expected \d+ arguments?, but got \d+"

@@ -361,7 +361,42 @@ def _sse_stream(
     return _stream()
 
 
-def build_app(server) -> FastAPI:  # noqa: C901
+def _supplied_session_id(request, resource_sessions: OrderedDict) -> str | None:
+    supplied = (
+        request.headers.get("Mcp-Session-Id")
+        or request.cookies.get("maverick_mcp_session")
+    )
+    if supplied and supplied in resource_sessions:
+        resource_sessions.move_to_end(supplied)
+        return supplied
+    return None
+
+
+def _store_session(
+    resource_sessions: OrderedDict, sid: str, subscriptions: set[str],
+) -> None:
+    resource_sessions[sid] = subscriptions
+    resource_sessions.move_to_end(sid)
+    while len(resource_sessions) > _max_resource_sessions():
+        resource_sessions.popitem(last=False)
+
+
+def _attach_session(response, sid: str | None, request):
+    if sid is None:
+        return response
+    response.headers["Mcp-Session-Id"] = sid
+    response.set_cookie(
+        "maverick_mcp_session",
+        sid,
+        max_age=_SESSION_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=not _is_loopback_request(request),
+    )
+    return response
+
+
+def build_app(server) -> FastAPI:
     """Wrap an MCPServer instance in a Streamable HTTP transport.
 
     `server` is an instance of `maverick_mcp.server.MCPServer`. We
@@ -402,36 +437,6 @@ def build_app(server) -> FastAPI:  # noqa: C901
     resource_sessions: OrderedDict[str, set[str]] = OrderedDict()
     app.state.resource_sessions = resource_sessions
 
-    def _supplied_session_id(request: Request) -> str | None:
-        supplied = (
-            request.headers.get("Mcp-Session-Id")
-            or request.cookies.get("maverick_mcp_session")
-        )
-        if supplied and supplied in resource_sessions:
-            resource_sessions.move_to_end(supplied)
-            return supplied
-        return None
-
-    def _store_session(sid: str, subscriptions: set[str]) -> None:
-        resource_sessions[sid] = subscriptions
-        resource_sessions.move_to_end(sid)
-        while len(resource_sessions) > _max_resource_sessions():
-            resource_sessions.popitem(last=False)
-
-    def _attach_session(response, sid: str | None, request: Request):
-        if sid is None:
-            return response
-        response.headers["Mcp-Session-Id"] = sid
-        response.set_cookie(
-            "maverick_mcp_session",
-            sid,
-            max_age=_SESSION_COOKIE_MAX_AGE,
-            httponly=True,
-            samesite="lax",
-            secure=not _is_loopback_request(request),
-        )
-        return response
-
     @app.post("/mcp")
     async def mcp_endpoint(
         request: Request,
@@ -466,7 +471,7 @@ def build_app(server) -> FastAPI:  # noqa: C901
         if not isinstance(params, dict):
             raise HTTPException(status_code=400, detail="params must be a JSON object")
         accepts_sse = "text/event-stream" in (request.headers.get("accept") or "")
-        sid = _supplied_session_id(request)
+        sid = _supplied_session_id(request, resource_sessions)
         subscriptions = resource_sessions[sid] if sid is not None else set()
         is_task_request = (
             server._tasks_enabled
@@ -500,7 +505,7 @@ def build_app(server) -> FastAPI:  # noqa: C901
                 request_id=request_id,
                 should_persist_session=should_persist_session,
                 sid=sid,
-                store_session=_store_session,
+                store_session=lambda s, subs: _store_session(resource_sessions, s, subs),
             )
             response = StreamingResponse(stream, media_type="text/event-stream")
             return _attach_session(response, sid, request)
@@ -529,7 +534,7 @@ def build_app(server) -> FastAPI:  # noqa: C901
             )
 
         if should_persist_session and sid is not None:
-            _store_session(sid, subscriptions)
+            _store_session(resource_sessions, sid, subscriptions)
 
         if is_notification:
             # 204 must carry no body (see above).

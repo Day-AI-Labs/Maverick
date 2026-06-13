@@ -58,7 +58,7 @@ def test_from_config_unchanged_when_no_profiles(monkeypatch):
     import maverick.compliance_profiles as cpmod
     from maverick.governance import Policy
 
-    monkeypatch.setattr(cpmod, "configured_profiles", lambda: [])
+    monkeypatch.setattr(cpmod, "configured_profiles", list)
     pol = Policy.from_config()
     assert pol.require_human_min_risk is None
     assert not pol.require_human_actions

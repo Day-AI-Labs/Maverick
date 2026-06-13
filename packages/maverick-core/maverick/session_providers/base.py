@@ -134,8 +134,7 @@ def iter_sse_data_payloads(stream_text: str) -> Iterator[str]:
             # A single leading space after the colon is part of the
             # framing, not the value; strip only that.
             value = line[len("data:"):]
-            if value.startswith(" "):
-                value = value[1:]
+            value = value.removeprefix(" ")
             # No blank-line separator was emitted but the buffer is already
             # a complete event: dispatch it before starting the next.
             if _looks_complete(data_lines):

@@ -108,7 +108,7 @@ def test_wrapper_proxies_inner_attributes(tmp_path):
 
 def test_maybe_wrap_off_by_default(monkeypatch):
     monkeypatch.delenv("MAVERICK_CHANNELS_RICH_RENDER", raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     inner = _Chan()
     assert rr.maybe_wrap(inner) is inner
 

@@ -27,7 +27,7 @@ class Remedy:
 # failure class -> (detector regex over the failure text, remedies)
 _CATALOG: dict[str, tuple[re.Pattern, list[Remedy]]] = {
     "budget_exceeded": (
-        re.compile(r"budget|BudgetExceeded|\$\d+.*>\s*\$\d+|over.*cap", re.I),
+        re.compile(r"budget|BudgetExceeded|\$\d+.*>\s*\$\d+|over.*cap", re.IGNORECASE),
         [
             Remedy("Re-run with a higher cap for this goal",
                    "maverick start \"...\" --max-dollars <higher>"),
@@ -39,7 +39,7 @@ _CATALOG: dict[str, tuple[re.Pattern, list[Remedy]]] = {
         ],
     ),
     "provider_auth": (
-        re.compile(r"401|403|invalid.*api.?key|authentication|unauthorized", re.I),
+        re.compile(r"401|403|invalid.*api.?key|authentication|unauthorized", re.IGNORECASE),
         [
             Remedy("Check the provider key in the env file",
                    "edit ~/.maverick/.env (chmod 600) and re-run"),
@@ -48,7 +48,7 @@ _CATALOG: dict[str, tuple[re.Pattern, list[Remedy]]] = {
         ],
     ),
     "rate_limited": (
-        re.compile(r"429|rate.?limit|overloaded|quota.*exceeded", re.I),
+        re.compile(r"429|rate.?limit|overloaded|quota.*exceeded", re.IGNORECASE),
         [
             Remedy("Enable provider failover on 429s",
                    "[failover] enabled = true", auto_safe=True),
@@ -57,7 +57,7 @@ _CATALOG: dict[str, tuple[re.Pattern, list[Remedy]]] = {
         ],
     ),
     "shield_blocked": (
-        re.compile(r"blocked by shield|BLOCKED by Shield", re.I),
+        re.compile(r"blocked by shield|BLOCKED by Shield", re.IGNORECASE),
         [
             Remedy("Review what fired and why",
                    "maverick audit verify && check the dashboard oversight page"),
@@ -67,7 +67,7 @@ _CATALOG: dict[str, tuple[re.Pattern, list[Remedy]]] = {
     ),
     "sandbox_missing": (
         re.compile(r"docker not available|sandbox.*not available|"
-                   r"wasmtime not on PATH|libreoffice not on PATH", re.I),
+                   r"wasmtime not on PATH|libreoffice not on PATH", re.IGNORECASE),
         [
             Remedy("Install the backend the config selects, or switch",
                    "[sandbox] backend = \"local\"  # least isolated; prefer "
@@ -75,7 +75,7 @@ _CATALOG: dict[str, tuple[re.Pattern, list[Remedy]]] = {
         ],
     ),
     "timeout": (
-        re.compile(r"timeout|timed out|deadline", re.I),
+        re.compile(r"timeout|timed out|deadline", re.IGNORECASE),
         [
             Remedy("Raise the per-command sandbox timeout",
                    "[sandbox] timeout = 300", auto_safe=True),
@@ -85,7 +85,7 @@ _CATALOG: dict[str, tuple[re.Pattern, list[Remedy]]] = {
         ],
     ),
     "killswitch": (
-        re.compile(r"killswitch|HALT", re.I),
+        re.compile(r"killswitch|HALT", re.IGNORECASE),
         [
             Remedy("The hard stop was used; clear it deliberately",
                    "rm ~/.maverick/HALT  # then re-run the goal"),

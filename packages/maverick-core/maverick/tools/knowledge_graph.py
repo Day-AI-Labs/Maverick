@@ -70,7 +70,7 @@ def _extract(text: str) -> list[list[str]]:
             subj = _clean(line[: m.start()])
             obj = _clean(line[m.end():])
             # Drop a leading article on the object ("a/an/the").
-            obj = re.sub(r"^(a|an|the)\s+", "", obj, flags=re.I)
+            obj = re.sub(r"^(a|an|the)\s+", "", obj, flags=re.IGNORECASE)
             if subj and obj:
                 triples.append([subj, rel, obj])
             break

@@ -122,7 +122,7 @@ def test_child_env_is_scrubbed(monkeypatch):
 
 def test_should_isolate_off_by_default(monkeypatch):
     monkeypatch.delenv("MAVERICK_ISOLATE_PARSERS", raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     assert pi.should_isolate() is False
     monkeypatch.setenv("MAVERICK_ISOLATE_PARSERS", "1")
     assert pi.should_isolate() is True

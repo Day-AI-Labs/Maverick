@@ -51,7 +51,7 @@ def plugin_on_path(tmp_path, monkeypatch):
 def test_mode_default_none(monkeypatch):
     monkeypatch.delenv("MAVERICK_PLUGIN_ISOLATION", raising=False)
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     assert isolation_mode() == "none"
     monkeypatch.setenv("MAVERICK_PLUGIN_ISOLATION", "subprocess")
     assert isolation_mode() == "subprocess"
@@ -209,7 +209,7 @@ def test_discover_tools_direct_when_isolation_off(tmp_path, monkeypatch):
     monkeypatch.setattr(plugins_mod, "_permission_policy", lambda: (set(), False))
     monkeypatch.delenv("MAVERICK_PLUGIN_ISOLATION", raising=False)
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
 
     tools = plugins_mod.discover_tools()
     assert tools[0][1]().fn({}) == "direct"

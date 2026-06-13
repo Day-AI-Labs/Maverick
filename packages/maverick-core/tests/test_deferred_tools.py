@@ -129,7 +129,7 @@ class TestEnvKnob:
         import maverick.config as config
         from maverick.tools import _deferred_loading_enabled
         monkeypatch.delenv("MAVERICK_DEFERRED_TOOLS", raising=False)
-        monkeypatch.setattr(config, "load_config", lambda: {})
+        monkeypatch.setattr(config, "load_config", dict)
         assert _deferred_loading_enabled() is False
 
 

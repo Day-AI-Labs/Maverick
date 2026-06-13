@@ -34,7 +34,7 @@ class TestClassify:
 
 class TestPolicyShouldRetry:
     def test_no_policy_table_keeps_v1_semantics(self, monkeypatch):
-        monkeypatch.setattr(fp, "_policy_cfg", lambda: {})
+        monkeypatch.setattr(fp, "_policy_cfg", dict)
         # v1: ANY non-control exception fails over -- even auth.
         assert fp.policy_should_retry(_StatusErr(401)) is True
         assert fp.policy_should_retry(RuntimeError("boom")) is True
@@ -115,7 +115,7 @@ class TestSharedLedger:
         assert led.window_s == 30 and led.threshold == 1
         assert fp.shared_ledger() is led  # cached
         fp.reset_shared_ledger()
-        monkeypatch.setattr(fp, "_policy_cfg", lambda: {})
+        monkeypatch.setattr(fp, "_policy_cfg", dict)
         led2 = fp.shared_ledger()
         assert led2.window_s == 0  # cooldowns off by default
         fp.reset_shared_ledger()
