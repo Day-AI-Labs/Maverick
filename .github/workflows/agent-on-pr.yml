@@ -93,10 +93,12 @@ jobs:
           max_dollars = float(os.environ["AGENT_MAX_DOLLARS"])
           max_wall_seconds = int(float(os.environ["AGENT_TIMEOUT_MINUTES"]) * 60)
 
+          # The provider API key is NOT written into this config: Maverick reads
+          # it straight from the environment (ANTHROPIC_API_KEY / OPENAI_API_KEY,
+          # exported above from secrets) via maverick.llm. That avoids both a
+          # GitHub Actions expression in the run block (a bare name fails to
+          # compile) and ever writing the secret into the run-script text.
           config = f"""\
-          [providers.anthropic]
-          api_key = "${{ANTHROPIC_API_KEY}}"
-
           [models]
           orchestrator = {model}
           coder        = {model}
