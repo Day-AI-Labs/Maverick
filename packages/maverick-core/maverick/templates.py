@@ -199,6 +199,59 @@ def load_template(name: str) -> Template:
     )
 
 
+def save_user_template(
+    name: str,
+    *,
+    title: str,
+    body: str,
+    params: list[str] | None = None,
+    budget_dollars: float = 5.0,
+    budget_wall_seconds: float = 3600.0,
+    overwrite: bool = True,
+) -> Template:
+    """Persist a user-authored (or AI-drafted) workflow as a user template.
+
+    Writes ``~/.maverick/templates/<name>.md`` with frontmatter that
+    :meth:`Template.parse` round-trips, then returns the parsed Template. This
+    is the local write path behind the dashboard's "save workflow" — the
+    counterpart to ``install_template_from_catalog`` (remote, hash-pinned),
+    here for content the operator authored or drafted from their own brief.
+
+    Validates the name, requires a non-empty body, collapses the title to a
+    single line (frontmatter is line-oriented), and keeps only identifier-like
+    param names. Refuses to clobber an existing file when ``overwrite`` is
+    False.
+    """
+    _validate_template_name(name)
+    title = " ".join((title or name).split()) or name
+    body = (body or "").strip()
+    if not body:
+        raise ValueError("template body must not be empty")
+    clean_params = [
+        p for p in (str(p).strip() for p in (params or []))
+        if re.match(r"^[A-Za-z_]\w*$", p)
+    ]
+    try:
+        bd = float(budget_dollars)
+        bw = float(budget_wall_seconds)
+    except (TypeError, ValueError):
+        raise ValueError("budget_dollars and budget_wall_seconds must be numbers") from None
+
+    USER_TEMPLATES.mkdir(parents=True, exist_ok=True)
+    dest = USER_TEMPLATES / f"{name}.md"
+    if dest.exists() and not overwrite:
+        raise FileExistsError(f"template {name!r} already exists")
+
+    front = [f"title: {title}", f"budget_dollars: {bd}", f"budget_wall_seconds: {bw}"]
+    if clean_params:
+        front.append("params:")
+        front.extend(f"  - {p}" for p in clean_params)
+    content = "---\n" + "\n".join(front) + "\n---\n" + body + "\n"
+    dest.write_text(content, encoding="utf-8")
+    return Template.parse(content, name, path=dest)
+
+
+
 # ---- v2 community registry (federated catalog) ------------------------------
 #
 # Goal templates v2: discover + install templates by name from a self-hostable

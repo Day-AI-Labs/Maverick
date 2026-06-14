@@ -53,6 +53,8 @@ from .api_schemas import (
     RoleOverrideIn,
     SkillInstallIn,
     SkillOut,
+    WorkflowDraftIn,
+    WorkflowSaveIn,
 )
 from .auth import (
     assert_goal_access,
@@ -1970,6 +1972,91 @@ async def compose_goal(request: Request, payload: ComposeIn, bg: BackgroundTasks
     if g is None:
         raise HTTPException(status_code=500, detail="goal vanished after create")
     return _to_goal_out(g)
+
+
+# ---------- AI workflow builder ----------
+#
+# Draft a reusable, parameterized workflow from a natural-language brief or an
+# uploaded document, then persist the (edited) draft as a user Template that
+# runs like any other. Drafting is one budget-capped LLM call (see
+# maverick_dashboard.workflow_ai); saving writes ~/.maverick/templates/<name>.md.
+
+_WORKFLOW_DOC_MAX_BYTES = 512_000  # ample for a spec/runbook; the model sees a truncated head
+
+
+def _require_provider_for_drafting() -> None:
+    if not _any_provider_key_set():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No LLM provider configured. Run 'maverick init', export a "
+                "provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+                "GEMINI_API_KEY), or set [providers.<name>] in config before "
+                "drafting a workflow."
+            ),
+        )
+
+
+@router.post("/workflows/draft")
+async def draft_workflow_from_brief(request: Request, payload: WorkflowDraftIn) -> dict:
+    """Chat path: a natural-language brief -> a drafted workflow (not saved)."""
+    require_permission(request, "operate")
+    _require_provider_for_drafting()
+    brief = (payload.description or "").strip()
+    if not brief:
+        raise HTTPException(status_code=400, detail="describe the workflow you want")
+    from .workflow_ai import draft_workflow
+    try:
+        return draft_workflow(brief)
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=f"workflow drafting failed: {e}") from e
+
+
+@router.post("/workflows/draft-from-file")
+async def draft_workflow_from_upload(request: Request, file: UploadFile = File(...)) -> dict:
+    """Upload path: extract a workflow from a text / markdown / JSON document."""
+    require_permission(request, "operate")
+    _require_provider_for_drafting()
+    raw = await file.read(_WORKFLOW_DOC_MAX_BYTES + 1)
+    if len(raw) > _WORKFLOW_DOC_MAX_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail="file too large to draft from; paste the key parts into the brief instead",
+        )
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail=("could not read this file as text — upload a .txt / .md / .json "
+                    "document, or describe the workflow in the brief"),
+        ) from None
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="the uploaded file was empty")
+    from .workflow_ai import draft_workflow
+    try:
+        return draft_workflow("", source_text=text)
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=f"workflow drafting failed: {e}") from e
+
+
+@router.post("/workflows", status_code=201)
+async def save_workflow(request: Request, payload: WorkflowSaveIn) -> dict:
+    """Persist an (AI-drafted, edited) workflow as a runnable user template."""
+    require_permission(request, "operate")
+    from maverick.templates import save_user_template
+    try:
+        tpl = save_user_template(
+            payload.name,
+            title=payload.title,
+            body=payload.body,
+            params=payload.params,
+            budget_dollars=payload.budget_dollars,
+            budget_wall_seconds=payload.budget_wall_seconds,
+        )
+    except (ValueError, FileExistsError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"name": tpl.name, "title": tpl.title, "params": tpl.params, "saved": True}
 
 
 # ---------- continuous-benchmark history ----------
