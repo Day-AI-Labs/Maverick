@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% block title %}goals · Maverick{% endblock %}
 {% block content %}
-  <h2>all goals</h2>
-  <div class="panel">
+  <h1 class="page-title">Goals</h1>
+  <p class="page-subtitle">Every run this deployment has executed — search, then open a plan, replay, or errors.</p>
+  <div class="panel{% if not goals %} empty{% endif %}">
     {% if goals %}
     <input id="run-search-q" type="search" placeholder="Search across runs…"
            aria-label="Search runs by title or description"
            autocomplete="off"
-           style="width: 100%; max-width: 30rem; padding: 0.5rem 0.65rem; margin-bottom: 1rem;">
+           class="input" style="max-width: 30rem; margin-bottom: var(--space-4);">
     <table>
       <thead><tr><th scope="col">id</th><th scope="col">status</th><th scope="col">title</th><th scope="col">description</th><th scope="col"></th></tr></thead>
       <tbody>
@@ -27,13 +28,11 @@
       </tbody>
     </table>
     {% else %}
-      <div style="text-align: center; padding: 2.5rem 1rem;">
-        <h3 style="margin: 0 0 0.75rem; text-transform: none; letter-spacing: 0; font-size: 1.1rem; color: var(--text);">No goals yet</h3>
-        <p class="muted" style="margin-bottom: 1.5rem;">
-          Start one from the <a href="/chat">chat</a> or from the command line.
-        </p>
-        <pre style="background: var(--bg); padding: 0.85rem 1rem; border-radius: 6px; display: inline-block; text-align: left; margin: 0;">maverick start "Plan a 3-day trip to Lisbon under $1500"</pre>
-      </div>
+      <h2 class="empty__title">No goals yet</h2>
+      <p class="muted" style="margin-bottom: var(--space-5);">
+        Start one from the <a href="/chat">chat</a> or from the command line.
+      </p>
+      <pre style="background: var(--surface-sunken); color: var(--text); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); display: inline-block; text-align: start; margin: 0;">maverick start "Plan a 3-day trip to Lisbon under $1500"</pre>
     {% endif %}
   </div>
   <script>
