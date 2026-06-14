@@ -281,72 +281,27 @@ def _verify_registry_template_signature(
     enabled, remote templates must carry an Ed25519 signature from a trusted
     publisher. With no trust policy configured, unsigned installs remain
     allowed for backward compatibility.
+
+    Template policy (stricter than free-text skills): a configured
+    ``trusted_pubkeys`` anchor by itself forces a signature, so ``must_verify``
+    and the no-anchor guard share the same condition.
     """
     from . import config as _config
-    from .audit import signing
+    from .catalog_trust import verify_signed_catalog_item
 
     cfg = _config.get_skills()
     trusted = cfg["trusted_pubkeys"]
     must_verify = bool(cfg["require_signed_catalog"] or trusted or require_signature)
-    signed = bool(template.sig and template.pubkey)
-
-    if not signed:
-        if must_verify:
-            raise ValueError(
-                "template rejected: catalog template is unsigned, but trusted "
-                "publishers or require_signed_catalog are configured."
-            )
-        return False
-    if not signing._have_crypto():
-        raise ValueError(
-            "template rejected: cryptography is required to verify signed "
-            "registry templates."
-        )
-    if not trusted:
-        if must_verify:
-            raise ValueError(
-                "template rejected: signed registry template has no configured "
-                "[skills].trusted_pubkeys trust anchor."
-            )
-        return False
-    if template.pubkey not in trusted:
-        raise ValueError(
-            "template rejected: signed by an untrusted publisher key "
-            f"{template.pubkey[:16]!r} (not in [skills].trusted_pubkeys)."
-        )
-    if not signing.verify_ed25519(
-        template.pubkey, template.sig, _canonical_template_signed_bytes(template)
-    ):
-        raise ValueError(
-            "template rejected: Ed25519 signature does not verify over the "
-            "template's signed fields (title/params/body)."
-        )
-    return True
-
-
-def _shield_scan_registry_template(template: Template) -> None:
-    """Reject catalog templates blocked by Shield before writing them."""
-    try:
-        from maverick_shield import Shield  # type: ignore
-    except ImportError:
-        return
-    try:
-        verdict = Shield.from_config().scan_input(
-            f"Template title: {template.title}\n\nTemplate body:\n{template.body}"
-        )
-    except ValueError:
-        raise
-    except Exception as exc:  # pragma: no cover -- scanner bugs should not brick install
-        log.warning(
-            "Shield raised %s during template install; failing open",
-            type(exc).__name__,
-        )
-        return
-    if not verdict.allowed:
-        raise ValueError(
-            f"template rejected by Shield ({verdict.severity}): "
-            f"{'; '.join(verdict.reasons)}"
-        )
+    return verify_signed_catalog_item(
+        item="template",
+        sig=template.sig,
+        pubkey=template.pubkey,
+        canonical_bytes_fn=lambda: _canonical_template_signed_bytes(template),
+        trusted=trusted,
+        must_verify=must_verify,
+        require_anchor=must_verify,
+        fields="title/params/body",
+    )
 
 
 def install_template_from_catalog(
@@ -380,7 +335,12 @@ def install_template_from_catalog(
     content = _strip_registry_budget_frontmatter(content)
     template = Template.parse(content, name)  # validate it parses before writing
     template.verified = _verify_registry_template_signature(template)
-    _shield_scan_registry_template(template)
+    from .catalog_trust import shield_scan
+
+    shield_scan(
+        f"Template title: {template.title}\n\nTemplate body:\n{template.body}",
+        label="template",
+    )
     target_dir = dest if dest is not None else USER_TEMPLATES
     target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / f"{name}.md").write_text(content, encoding="utf-8")
