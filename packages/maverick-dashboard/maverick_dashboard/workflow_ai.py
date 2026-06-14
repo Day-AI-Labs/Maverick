@@ -96,6 +96,19 @@ def build_prompt(brief: str, source_text: str = "", *, produce: str = "the workf
     return "\n\n".join(parts)
 
 
+def build_refine_prompt(current: dict[str, Any], instruction: str) -> str:
+    """Compose the user turn for a *refinement*: the current draft plus the
+    change to apply. The model returns the FULL revised draft in the same JSON
+    shape (the system prompt is unchanged), so the same parser normalizes it."""
+    return (
+        "Here is the current draft as JSON:\n"
+        + json.dumps(current or {}, ensure_ascii=False)
+        + "\n\nApply this change and return the COMPLETE revised draft in the "
+        "same JSON shape (not a diff, not only the changed fields):\n"
+        + (instruction or "").strip()
+    )
+
+
 def _slugify(name: str, fallback: str = "workflow") -> str:
     s = _SLUG.sub("-", (name or "").strip().lower()).strip("-")
     return (s or fallback)[:48]
@@ -172,6 +185,34 @@ def parse_workflow(raw: str) -> dict[str, Any]:
     }
 
 
+def _run_completion(
+    system: str,
+    user_content: str,
+    *,
+    complete: Callable[..., Any] | None,
+    max_tokens: int,
+) -> str:
+    """One structured completion under the hard ``DRAFT_MAX_DOLLARS`` cap, used
+    by every draft/refine path. ``complete`` (an ``LLM.complete``-style callable)
+    is injectable for tests; by default a fresh role-resolved LLM is used — never
+    a hard-coded model (kernel rule 2). Returns the raw reply text."""
+    from maverick.budget import Budget
+
+    if complete is None:
+        from maverick.llm import LLM, model_for_role
+        complete = LLM(model=model_for_role("orchestrator")).complete
+
+    budget = Budget(max_dollars=DRAFT_MAX_DOLLARS)
+    resp = complete(
+        system=system,
+        messages=[{"role": "user", "content": user_content}],
+        budget=budget,
+        max_tokens=max_tokens,
+        model=None,
+    )
+    return getattr(resp, "text", "") or ""
+
+
 def draft_workflow(
     brief: str,
     source_text: str = "",
@@ -181,24 +222,26 @@ def draft_workflow(
     """Draft a workflow from a brief and/or document text.
 
     Makes one LLM completion under a hard ``DRAFT_MAX_DOLLARS`` cap and returns
-    the normalized draft. ``complete`` (an ``LLM.complete``-style callable) is
-    injectable for tests; by default a fresh role-resolved LLM is used — never
-    a hard-coded model (kernel rule 2)."""
-    from maverick.budget import Budget
+    the normalized draft."""
+    return parse_workflow(_run_completion(
+        WORKFLOW_SYSTEM, build_prompt(brief, source_text),
+        complete=complete, max_tokens=1200,
+    ))
 
-    if complete is None:
-        from maverick.llm import LLM, model_for_role
-        complete = LLM(model=model_for_role("orchestrator")).complete
 
-    budget = Budget(max_dollars=DRAFT_MAX_DOLLARS)
-    resp = complete(
-        system=WORKFLOW_SYSTEM,
-        messages=[{"role": "user", "content": build_prompt(brief, source_text)}],
-        budget=budget,
-        max_tokens=1200,
-        model=None,
-    )
-    return parse_workflow(getattr(resp, "text", "") or "")
+def refine_workflow(
+    current: dict[str, Any],
+    instruction: str,
+    *,
+    complete: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Revise an existing workflow draft per a natural-language ``instruction``
+    (e.g. "add a step to email the summary"). Same cap and parser as
+    :func:`draft_workflow`; returns the full normalized, revised draft."""
+    return parse_workflow(_run_completion(
+        WORKFLOW_SYSTEM, build_refine_prompt(current, instruction),
+        complete=complete, max_tokens=1200,
+    ))
 
 
 def parse_playbook(raw: str) -> dict[str, Any]:
@@ -281,21 +324,23 @@ def draft_playbook(
 
     The playbook counterpart to :func:`draft_workflow`: one LLM completion under
     the same hard ``DRAFT_MAX_DOLLARS`` cap, returning a normalized draft the
-    operator edits and saves as a domain pack. ``complete`` is injectable for
-    tests; by default a fresh role-resolved LLM is used (kernel rule 2)."""
-    from maverick.budget import Budget
+    operator edits and saves as a domain pack."""
+    return parse_playbook(_run_completion(
+        PLAYBOOK_SYSTEM, build_prompt(brief, source_text, produce="the playbook JSON"),
+        complete=complete, max_tokens=1500,
+    ))
 
-    if complete is None:
-        from maverick.llm import LLM, model_for_role
-        complete = LLM(model=model_for_role("orchestrator")).complete
 
-    budget = Budget(max_dollars=DRAFT_MAX_DOLLARS)
-    resp = complete(
-        system=PLAYBOOK_SYSTEM,
-        messages=[{"role": "user",
-                   "content": build_prompt(brief, source_text, produce="the playbook JSON")}],
-        budget=budget,
-        max_tokens=1500,
-        model=None,
-    )
-    return parse_playbook(getattr(resp, "text", "") or "")
+def refine_playbook(
+    current: dict[str, Any],
+    instruction: str,
+    *,
+    complete: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Revise an existing playbook draft per a natural-language ``instruction``
+    (e.g. "require approval before any payment"). Same cap and parser as
+    :func:`draft_playbook`; returns the full normalized, revised draft."""
+    return parse_playbook(_run_completion(
+        PLAYBOOK_SYSTEM, build_refine_prompt(current, instruction),
+        complete=complete, max_tokens=1500,
+    ))

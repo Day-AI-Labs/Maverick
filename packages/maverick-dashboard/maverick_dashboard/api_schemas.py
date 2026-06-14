@@ -165,6 +165,14 @@ class WorkflowDraftIn(BaseModel):
     form: str = Field("template", max_length=16)
 
 
+class WorkflowRefineIn(BaseModel):
+    """Refine an existing draft with a follow-up instruction. ``current`` is the
+    draft as last shown/edited; ``form`` selects template vs playbook parsing."""
+    form: str = Field("template", max_length=16)
+    instruction: str = Field(..., max_length=2000)
+    current: dict = Field(default_factory=dict)
+
+
 class WorkflowSaveIn(BaseModel):
     """Persist an (AI-drafted, possibly edited) workflow as a user template."""
     name: str = Field(..., max_length=48)
