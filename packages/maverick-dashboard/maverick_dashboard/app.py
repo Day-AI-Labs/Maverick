@@ -2445,13 +2445,9 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
     persist_theme middleware (the form GETs back here with the params); the
     model choice is saved to the dashboard-owned runtime overlay."""
     require_permission(request, "admin")
-    from maverick.llm import (
-        MODEL_HAIKU,
-        MODEL_OPUS,
-        MODEL_OPUS_FAST,
-        MODEL_SONNET,
-        model_for_role,
-    )
+    import re as _re
+
+    from maverick.llm import catalog_specs, model_for_role
     from maverick.runner import DEFAULT_MAX_DOLLARS
     from maverick.runtime_overrides import (
         budget_override,
@@ -2468,12 +2464,17 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
         (label, role, model_for_role(role), role_model_override(role))
         for label, role in roles
     ]
-    known_models = [
-        (MODEL_OPUS, "Claude Opus 4.8 — most capable"),
-        (MODEL_OPUS_FAST, "Claude Opus 4.8 (fast) — 2x faster, 2x price"),
-        (MODEL_SONNET, "Claude Sonnet 4.6 — balanced"),
-        (MODEL_HAIKU, "Claude Haiku 4.5 — fastest, cheapest"),
-    ]
+    model_options = list(catalog_specs())
+    seen = {s for s, _ in model_options}
+    try:  # admins extend the picker via [models] catalog in config.toml
+        from maverick.config import load_config
+        for spec in (load_config().get("models", {}) or {}).get("catalog") or []:
+            s = str(spec).strip()
+            if s and s not in seen and _re.fullmatch(r"[A-Za-z0-9_.:/-]{1,128}", s):
+                model_options.append((s, "Custom (config)"))
+                seen.add(s)
+    except Exception:  # pragma: no cover -- config read fails soft
+        pass
     from maverick_dashboard import settings_store
     cfg_state = settings_store.state()
     saved_msg = {
@@ -2487,7 +2488,7 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
     }.get(saved, "")
     return templates.TemplateResponse(request, "settings.html", {
         "role_models": role_models,
-        "known_models": known_models,
+        "model_options": model_options,
         "pinned_model": default_model_override(),
         "providers": cfg_state["providers"],
         "capabilities": cfg_state["capabilities"],

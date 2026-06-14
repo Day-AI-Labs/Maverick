@@ -120,6 +120,43 @@ MODEL_PRICES: dict[str, tuple[float, float]] = {
 }
 
 
+# Curated model catalog for the dashboard's model pickers: provider -> model
+# ids. The dashboard renders these as ``provider:<id>`` specs (bare for
+# anthropic, the default provider) and also lets the operator type any other
+# id. Admins extend the list via ``[models] catalog`` in config.toml. Prices
+# live in MODEL_PRICES; a model here without a price bills at the Sonnet
+# fallback until added there.
+MODEL_CATALOG: dict[str, list[str]] = {
+    "anthropic":  [MODEL_OPUS, MODEL_OPUS_FAST, MODEL_SONNET, MODEL_HAIKU],
+    "openai":     ["gpt-5.5", "gpt-5.4", "gpt-5.4-pro", "gpt-5.4-mini", "gpt-5.4-nano"],
+    "gemini":     ["gemini-3.5-pro", "gemini-3.5-flash", "gemini-3-pro", "gemini-3-flash"],
+    "xai":        ["grok-4-latest", "grok-4.3", "grok-4-mini", "grok-code-fast", "grok-3"],
+    "deepseek":   ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro", "deepseek-v4-flash"],
+    "moonshot":   ["kimi-k2", "kimi-k1.5", "moonshot-v1-128k"],
+    "openrouter": ["minimax/minimax-m2.5", "qwen/qwen3-coder-next"],
+    "ollama":     ["qwen3-coder-next", "qwen3-32b", "llama-4-maverick"],
+}
+
+PROVIDER_LABELS: dict[str, str] = {
+    "anthropic": "Anthropic (Claude)", "openai": "OpenAI", "gemini": "Google Gemini",
+    "xai": "xAI (Grok)", "deepseek": "DeepSeek", "moonshot": "Moonshot",
+    "openrouter": "OpenRouter", "ollama": "Ollama (local)",
+}
+
+
+def catalog_specs() -> list[tuple[str, str]]:
+    """Every built-in model as ``(spec, provider_label)``. Anthropic ids stay
+    bare (the default provider); others carry the ``provider:`` prefix the
+    resolver expects. The dashboard merges ``[models] catalog`` on top."""
+    out: list[tuple[str, str]] = []
+    for provider, ids in MODEL_CATALOG.items():
+        plabel = PROVIDER_LABELS.get(provider, provider)
+        for mid in ids:
+            spec = mid if provider == "anthropic" else f"{provider}:{mid}"
+            out.append((spec, plabel))
+    return out
+
+
 @dataclass
 class ToolCall:
     id: str
