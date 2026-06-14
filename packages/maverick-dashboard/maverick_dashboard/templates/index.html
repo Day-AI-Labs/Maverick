@@ -4,9 +4,9 @@
   <div id="tour" role="region" aria-label="How to start a goal" hidden
        class="panel" style="position: relative; border-color: var(--brand);">
     <button type="button" id="tour-dismiss" aria-label="Dismiss tour"
-            style="position: absolute; top: 0.6rem; right: 0.6rem; background: transparent; color: var(--muted); border: 0; font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0.25rem 0.4rem;">&times;</button>
+            style="position: absolute; top: 0.6rem; inset-inline-end: 0.6rem; background: transparent; color: var(--muted); border: 0; font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0.25rem 0.4rem;">&times;</button>
     <h2 style="color: var(--brand);">Three ways to start a goal · 60-second tour</h2>
-    <ol style="margin: 0; padding-left: 1.2rem; display: grid; gap: 0.75rem;">
+    <ol style="margin: 0; padding-inline-start: 1.2rem; display: grid; gap: var(--space-3);">
       <li>
         <strong>Web UI</strong> — use the goal box on this page or open the
         <a href="/chat">chat</a>.
@@ -22,8 +22,8 @@
   </div>
 
   {% if counts.total == 0 %}
-    <div class="panel" style="text-align: center; padding: 3rem 1.5rem;">
-      <h2 style="font-size: 1.5rem; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 600; margin-bottom: 0.75rem;">Start your first goal</h2>
+    <div class="panel empty">
+      <h2 class="empty__title">Start your first goal</h2>
       <p class="muted" style="max-width: 540px; margin: 0 auto 1.75rem;">
         Maverick will plan a sub-agent swarm, run it under a budget cap, and
         stream results back here.
@@ -32,9 +32,8 @@
         <input type="text" name="title" required autofocus
                aria-label="Describe a goal for Maverick to run"
                placeholder="Plan a 2-week trip to Japan"
-               style="flex: 1 1 320px; padding: 0.65rem 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem;" />
-        <button type="submit"
-                style="padding: 0.65rem 1.5rem; background: var(--brand); color: var(--brand-fg); border: 0; border-radius: var(--radius-md); cursor: pointer; font-weight: 500; font-size: 0.95rem;">
+               class="input" style="flex: 1 1 320px;" />
+        <button type="submit" class="btn btn--primary">
           Start goal
         </button>
       </form>
