@@ -159,8 +159,10 @@ class ComposeIn(BaseModel):
 
 
 class WorkflowDraftIn(BaseModel):
-    """Chat-path workflow drafting: a natural-language brief."""
+    """Chat-path drafting: a natural-language brief. ``form`` selects the
+    artifact — a reusable ``"template"`` (default) or an agent ``"playbook"``."""
     description: str = Field("", max_length=8000)
+    form: str = Field("template", max_length=16)
 
 
 class WorkflowSaveIn(BaseModel):

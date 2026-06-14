@@ -10,16 +10,31 @@
   .wf__row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; margin-top: var(--space-3); }
   .wf__file-input { display: none; }
   .wf__hint { color: var(--muted); font-size: var(--text-sm); }
+  .wf__forms { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); flex-wrap: wrap; }
   .wf [hidden] { display: none !important; }
+  /* playbook step cards */
+  .pb-persona { width: 100%; min-height: 96px; resize: vertical; line-height: 1.5; }
+  .pb-step { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); margin-bottom: var(--space-3); background: var(--surface); }
+  .pb-step__head { display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-2); }
+  .pb-step__num { flex: 0 0 1.5rem; height: 1.5rem; border-radius: 999px; background: var(--bg); color: var(--muted); font-size: var(--text-sm); display: inline-flex; align-items: center; justify-content: center; }
+  .pb-step__name { flex: 1 1 auto; }
+  .pb-step__gate { flex: 0 0 8.5rem; }
+  .pb-step__inst { width: 100%; resize: vertical; line-height: 1.5; margin-bottom: var(--space-2); }
+  .pb-step__tools { width: 100%; }
 </style>
 
   <h1 class="page-title">Workflow builder</h1>
-  <p class="page-subtitle">Describe a workflow or drop in a document — Maverick drafts a reusable, parameterized template you can edit, save, and run. Prefer to build by hand? Use the <a href="/goal-builder">manual builder</a>.</p>
+  <p class="page-subtitle">Describe what you want or drop in a document — Maverick drafts it for you to edit, save, and run. Build a <strong>reusable template</strong> (a parameterized goal anyone can run) or an <strong>agent playbook</strong> (a specialist with a persona, a tool allowlist, and ordered steps that can pause for human approval). Prefer to build by hand? Use the <a href="/goal-builder">manual builder</a>.</p>
 
   <div class="wf">
+    <div class="wf__forms" role="group" aria-label="What to build">
+      <button type="button" id="wf-form-template" class="btn btn--primary" aria-pressed="true">Reusable template</button>
+      <button type="button" id="wf-form-playbook" class="btn" aria-pressed="false">Agent playbook</button>
+    </div>
+
     <div class="panel">
       <div class="wf__field">
-        <label for="wf-brief">Describe the workflow</label>
+        <label for="wf-brief">Describe the <span id="wf-noun">workflow</span></label>
         <textarea id="wf-brief" class="input wf__brief"
           placeholder="e.g. Weekly competitive-intel report — gather recent news on {{ competitor }}, summarize the notable moves, and draft an email to the team."></textarea>
       </div>
@@ -28,7 +43,7 @@
         <button type="button" id="wf-file-btn" class="btn">Upload a document…</button>
         <input type="file" id="wf-file" class="wf__file-input"
                accept=".txt,.md,.markdown,.json,.csv,.yaml,.yml,text/*,application/json"
-               aria-label="Upload a document to draft a workflow from" />
+               aria-label="Upload a document to draft from" />
         <span class="wf__hint" id="wf-file-name"></span>
       </div>
     </div>
@@ -68,11 +83,58 @@
       </div>
     </div>
 
+    <div class="panel" id="pb-preview" hidden>
+      <h2>Review &amp; edit the playbook</h2>
+      <div class="wf__row" style="margin-top: 0; align-items: flex-start;">
+        <div class="wf__field" style="flex: 0 0 24rem; margin-bottom: var(--space-3);">
+          <label for="pb-name">Name (id)</label>
+          <input type="text" id="pb-name" class="input" aria-label="Agent id" />
+        </div>
+        <div class="wf__field" style="flex: 0 0 8.5rem; margin-bottom: var(--space-3);">
+          <label for="pb-risk">Max risk</label>
+          <select id="pb-risk" class="input" aria-label="Risk ceiling">
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+        </div>
+      </div>
+      <div class="wf__field">
+        <label for="pb-desc">Description</label>
+        <input type="text" id="pb-desc" class="input" aria-label="Agent description" />
+      </div>
+      <div class="wf__field">
+        <label for="pb-persona">Persona</label>
+        <textarea id="pb-persona" class="input pb-persona" aria-label="Agent persona"></textarea>
+      </div>
+      <div class="wf__row" style="margin-top: 0; align-items: flex-start;">
+        <div class="wf__field" style="flex: 1 1 240px; margin: 0;">
+          <label for="pb-allow">Allowed tools (comma-separated)</label>
+          <input type="text" id="pb-allow" class="input" placeholder="web_search, send_email"
+                 aria-label="Allowed tools" />
+        </div>
+        <div class="wf__field" style="flex: 1 1 240px; margin: 0;">
+          <label for="pb-deny">Denied tools (comma-separated)</label>
+          <input type="text" id="pb-deny" class="input" placeholder="shell, delete_file"
+                 aria-label="Denied tools" />
+        </div>
+      </div>
+      <div class="wf__field">
+        <label>Steps (each can pause for a human gate)</label>
+        <div id="pb-steps"></div>
+        <button type="button" id="pb-add-step" class="btn">+ Add step</button>
+      </div>
+      <div class="wf__row">
+        <button type="button" id="pb-save-btn" class="btn btn--primary">Save playbook</button>
+        <span class="wf__hint">Saved playbooks become specialists on <a href="/agents">Agents</a>; an empty tool allowlist or an unset risk ceiling is rejected.</span>
+      </div>
+    </div>
+
     <div class="panel" id="wf-saved" hidden style="border-color: var(--brand-border);">
-      <h2 style="color: var(--brand);">Workflow saved</h2>
+      <h2 style="color: var(--brand);">Saved</h2>
       <p id="wf-saved-msg" class="muted" style="margin-top: 0;"></p>
       <div class="wf__row" style="margin-top: 0;">
-        <a class="btn btn--primary" href="/templates">Open Templates</a>
+        <a class="btn btn--primary" id="wf-saved-link" href="/templates">Open Templates</a>
         <a class="btn" href="/chat">Start a goal</a>
       </div>
     </div>
@@ -80,78 +142,93 @@
 
   <script>
   (function () {
+    var mode = 'template';
     var brief = document.getElementById('wf-brief');
+    var noun = document.getElementById('wf-noun');
     var draftBtn = document.getElementById('wf-draft-btn');
     var fileBtn = document.getElementById('wf-file-btn');
     var fileInput = document.getElementById('wf-file');
     var fileName = document.getElementById('wf-file-name');
     var status = document.getElementById('wf-status');
+    var formTplBtn = document.getElementById('wf-form-template');
+    var formPbBtn = document.getElementById('wf-form-playbook');
+    // template editor
     var preview = document.getElementById('wf-preview');
-    var savedBox = document.getElementById('wf-saved');
-    var savedMsg = document.getElementById('wf-saved-msg');
     var elName = document.getElementById('wf-name');
     var elTitle = document.getElementById('wf-title');
     var elSteps = document.getElementById('wf-steps');
     var elParams = document.getElementById('wf-params');
     var elBudget = document.getElementById('wf-budget');
     var saveBtn = document.getElementById('wf-save-btn');
+    // playbook editor
+    var pbPreview = document.getElementById('pb-preview');
+    var pbName = document.getElementById('pb-name');
+    var pbDesc = document.getElementById('pb-desc');
+    var pbPersona = document.getElementById('pb-persona');
+    var pbAllow = document.getElementById('pb-allow');
+    var pbDeny = document.getElementById('pb-deny');
+    var pbRisk = document.getElementById('pb-risk');
+    var pbSteps = document.getElementById('pb-steps');
+    var pbAddBtn = document.getElementById('pb-add-step');
+    var pbSaveBtn = document.getElementById('pb-save-btn');
+    // shared saved box
+    var savedBox = document.getElementById('wf-saved');
+    var savedMsg = document.getElementById('wf-saved-msg');
+    var savedLink = document.getElementById('wf-saved-link');
 
     function setStatus(msg, isErr) {
       status.textContent = msg || '';
       status.style.color = isErr ? 'var(--danger)' : 'var(--muted)';
     }
+    function splitList(s) {
+      return (s || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+    }
+    function hidePanels() { preview.hidden = true; pbPreview.hidden = true; savedBox.hidden = true; }
+
+    function setForm(next) {
+      mode = next;
+      var isTpl = mode === 'template';
+      formTplBtn.classList.toggle('btn--primary', isTpl);
+      formTplBtn.setAttribute('aria-pressed', String(isTpl));
+      formPbBtn.classList.toggle('btn--primary', !isTpl);
+      formPbBtn.setAttribute('aria-pressed', String(!isTpl));
+      noun.textContent = isTpl ? 'workflow' : 'agent';
+      hidePanels();
+      setStatus('');
+    }
+    formTplBtn.addEventListener('click', function () { setForm('template'); });
+    formPbBtn.addEventListener('click', function () { setForm('playbook'); });
 
     fileBtn.addEventListener('click', function () { fileInput.click(); });
     fileInput.addEventListener('change', function () {
       fileName.textContent = fileInput.files.length ? ('Will draft from: ' + fileInput.files[0].name) : '';
     });
 
+    function showSaved(href, label) {
+      savedLink.setAttribute('href', href);
+      savedLink.textContent = label;
+      preview.hidden = true; pbPreview.hidden = true;
+      savedBox.hidden = false;
+      savedBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // ---- template form ----
     function renderDraft(d) {
       elName.value = d.name || '';
       elTitle.value = d.title || '';
       elSteps.value = d.body || '';
       elParams.value = (d.params || []).join(', ');
       elBudget.value = (d.budget_dollars != null) ? d.budget_dollars : 5;
-      preview.hidden = false;
-      savedBox.hidden = true;
+      preview.hidden = false; pbPreview.hidden = true; savedBox.hidden = true;
       preview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-
-    async function draft() {
-      draftBtn.disabled = true;
-      setStatus('Drafting the workflow…');
-      try {
-        var resp;
-        if (fileInput.files.length) {
-          var fd = new FormData();
-          fd.append('file', fileInput.files[0]);
-          resp = await fetch('/api/v1/workflows/draft-from-file', { method: 'POST', body: fd });
-        } else {
-          if (!brief.value.trim()) { setStatus('Describe the workflow, or upload a document.', true); return; }
-          resp = await fetch('/api/v1/workflows/draft', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ description: brief.value.trim() }),
-          });
-        }
-        var data = await resp.json().catch(function () { return {}; });
-        if (!resp.ok) { setStatus(data.detail || ('Draft failed: ' + resp.status), true); return; }
-        renderDraft(data);
-        setStatus('Draft ready — review and edit below, then save.');
-      } catch (e) {
-        setStatus('Could not reach the drafting service.', true);
-      } finally {
-        draftBtn.disabled = false;
-      }
-    }
-    draftBtn.addEventListener('click', draft);
 
     saveBtn.addEventListener('click', async function () {
       saveBtn.disabled = true;
       setStatus('Saving…');
-      var params = elParams.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
       var payload = {
         name: elName.value.trim(), title: elTitle.value.trim(), body: elSteps.value,
-        params: params, budget_dollars: parseFloat(elBudget.value) || 5.0,
+        params: splitList(elParams.value), budget_dollars: parseFloat(elBudget.value) || 5.0,
       };
       try {
         var resp = await fetch('/api/v1/workflows', {
@@ -163,15 +240,140 @@
         setStatus('');
         savedMsg.textContent = 'Saved “' + (data.title || data.name) + '” as a reusable workflow'
           + ((data.params && data.params.length) ? ' (parameters: ' + data.params.join(', ') + ').' : '.');
-        preview.hidden = true;
-        savedBox.hidden = false;
-        savedBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        showSaved('/templates', 'Open Templates');
       } catch (e) {
         setStatus('Could not save the workflow.', true);
       } finally {
         saveBtn.disabled = false;
       }
     });
+
+    // ---- playbook form ----
+    function renumber() {
+      pbSteps.querySelectorAll('.pb-step').forEach(function (row, i) {
+        row.querySelector('.pb-step__num').textContent = (i + 1);
+      });
+    }
+    function addStep(step) {
+      step = step || {};
+      var row = document.createElement('div');
+      row.className = 'pb-step';
+      row.innerHTML =
+        '<div class="pb-step__head">'
+        + '<span class="pb-step__num"></span>'
+        + '<input class="input pb-step__name" placeholder="Step name" aria-label="Step name" />'
+        + '<select class="input pb-step__gate" aria-label="Human gate">'
+        + '<option value="">no gate</option>'
+        + '<option value="review">review</option>'
+        + '<option value="approval">approval</option>'
+        + '</select>'
+        + '<button type="button" class="btn pb-step__rm" aria-label="Remove step">Remove</button>'
+        + '</div>'
+        + '<textarea class="input pb-step__inst" rows="2" placeholder="What the agent does at this step" aria-label="Step instruction"></textarea>'
+        + '<input class="input pb-step__tools" placeholder="tools used here (comma-separated)" aria-label="Step tools" />';
+      // assign untrusted values via properties (never string-interpolated into HTML)
+      row.querySelector('.pb-step__name').value = step.name || '';
+      row.querySelector('.pb-step__inst').value = step.instruction || '';
+      row.querySelector('.pb-step__tools').value = (step.tools || []).join(', ');
+      row.querySelector('.pb-step__gate').value = step.gate || '';
+      row.querySelector('.pb-step__rm').addEventListener('click', function () { row.remove(); renumber(); });
+      pbSteps.appendChild(row);
+    }
+    pbAddBtn.addEventListener('click', function () { addStep(); renumber(); });
+
+    function renderPlaybook(d) {
+      pbName.value = d.name || '';
+      pbDesc.value = d.description || '';
+      pbPersona.value = d.persona || '';
+      pbAllow.value = (d.allow_tools || []).join(', ');
+      pbDeny.value = (d.deny_tools || []).join(', ');
+      pbRisk.value = d.max_risk || 'medium';
+      pbSteps.innerHTML = '';
+      (d.workflow || []).forEach(function (s) { addStep(s); });
+      if (!pbSteps.children.length) addStep();
+      renumber();
+      pbPreview.hidden = false; preview.hidden = true; savedBox.hidden = true;
+      pbPreview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function collectPlaybook() {
+      var steps = [];
+      pbSteps.querySelectorAll('.pb-step').forEach(function (row) {
+        var name = row.querySelector('.pb-step__name').value.trim();
+        if (!name) return;
+        steps.push({
+          name: name,
+          instruction: row.querySelector('.pb-step__inst').value.trim(),
+          tools: splitList(row.querySelector('.pb-step__tools').value),
+          gate: row.querySelector('.pb-step__gate').value || null,
+        });
+      });
+      return {
+        description: pbDesc.value.trim(), persona: pbPersona.value,
+        allow_tools: splitList(pbAllow.value), deny_tools: splitList(pbDeny.value),
+        max_risk: pbRisk.value, workflow: steps,
+      };
+    }
+
+    pbSaveBtn.addEventListener('click', async function () {
+      var name = pbName.value.trim();
+      if (!name) { setStatus('Give the agent a name (id).', true); return; }
+      pbSaveBtn.disabled = true;
+      setStatus('Saving the playbook…');
+      try {
+        var resp = await fetch('/api/v1/agents/' + encodeURIComponent(name) + '/override', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(collectPlaybook()),
+        });
+        var data = await resp.json().catch(function () { return {}; });
+        if (!resp.ok) { setStatus(data.detail || ('Save failed: ' + resp.status), true); return; }
+        setStatus('');
+        var warns = data.warnings || [];
+        savedMsg.textContent = 'Saved “' + (data.name || name) + '” as an agent playbook'
+          + ((data.workflow && data.workflow.length) ? ' (' + data.workflow.length + ' steps).' : '.')
+          + (warns.length ? ' Heads up: ' + warns[0] : '');
+        showSaved('/agents', 'Open Agents');
+      } catch (e) {
+        setStatus('Could not save the playbook.', true);
+      } finally {
+        pbSaveBtn.disabled = false;
+      }
+    });
+
+    // ---- shared draft action ----
+    async function draft() {
+      draftBtn.disabled = true;
+      setStatus(mode === 'playbook' ? 'Drafting the playbook…' : 'Drafting the workflow…');
+      try {
+        var resp;
+        if (fileInput.files.length) {
+          var fd = new FormData();
+          fd.append('file', fileInput.files[0]);
+          fd.append('form', mode);
+          resp = await fetch('/api/v1/workflows/draft-from-file', { method: 'POST', body: fd });
+        } else {
+          if (!brief.value.trim()) { setStatus('Describe it, or upload a document.', true); return; }
+          resp = await fetch('/api/v1/workflows/draft', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description: brief.value.trim(), form: mode }),
+          });
+        }
+        var data = await resp.json().catch(function () { return {}; });
+        if (!resp.ok) { setStatus(data.detail || ('Draft failed: ' + resp.status), true); return; }
+        if (mode === 'playbook') {
+          renderPlaybook(data);
+          setStatus('Draft ready — review the persona, tools, and gated steps, then save.');
+        } else {
+          renderDraft(data);
+          setStatus('Draft ready — review and edit below, then save.');
+        }
+      } catch (e) {
+        setStatus('Could not reach the drafting service.', true);
+      } finally {
+        draftBtn.disabled = false;
+      }
+    }
+    draftBtn.addEventListener('click', draft);
   })();
   </script>
 {% endblock %}
