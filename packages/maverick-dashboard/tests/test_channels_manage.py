@@ -92,11 +92,11 @@ def test_overlay_deep_merges_into_load_config():
 
 def test_channel_coexists_with_provider_keys():
     from maverick_dashboard import settings_store as ss
-    ss.set_provider("anthropic", api_key="sk-ant-xxx")
+    ss.set_provider("anthropic", api_key="sk-ant-xxx")  # pragma: allowlist secret
     ss.set_channel("slack", True, {"app_token": "xapp", "bot_token": "xoxb"})
     overlay = ss.load_overlay()
     # one file, full-state writes: neither clobbers the other
-    assert overlay["providers"]["anthropic"]["api_key"] == "sk-ant-xxx"
+    assert overlay["providers"]["anthropic"]["api_key"] == "sk-ant-xxx"  # pragma: allowlist secret
     assert overlay["channels"]["slack"]["enabled"] is True
 
 
