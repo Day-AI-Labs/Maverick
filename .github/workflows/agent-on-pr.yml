@@ -11,6 +11,10 @@ name: Maverick agent on PR (reusable)
 #         with:
 #           goal: "Review this PR for logic bugs and missing edge cases."
 #           max_dollars: 0.50
+#           # Optional: run as your customized workforce by committing a bundle
+#           # (domains/*.toml + roles.toml, e.g. via `maverick overrides export`)
+#           # and pointing at it:
+#           overrides_path: ".maverick"
 #         secrets:
 #           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
@@ -36,6 +40,14 @@ on:
         required: false
         default: 15
         type: number
+      overrides_path:
+        description: >-
+          Optional path (relative to the calling repo) to a Maverick override
+          bundle: a directory with domains/*.toml and/or roles.toml, applied
+          before the run so the review uses this client's customized agents.
+        required: false
+        default: ''
+        type: string
     secrets:
       ANTHROPIC_API_KEY:
         required: false
@@ -80,6 +92,7 @@ jobs:
           AGENT_MAX_DOLLARS: ${{ inputs.max_dollars }}
           AGENT_TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}
           AGENT_WORKDIR: ${{ github.workspace }}
+          AGENT_OVERRIDES_PATH: ${{ inputs.overrides_path }}
         run: |
           set -e
           mkdir -p ~/.maverick
@@ -124,6 +137,15 @@ jobs:
           path = pathlib.Path.home() / ".maverick" / "config.toml"
           path.write_text(config, encoding="utf-8")
           PY
+
+          # Apply this client's customization bundle, if the caller shipped one
+          # in their repo (domains/*.toml + roles.toml). The path arrives via env
+          # (never interpolated into the script) and is relative to the checked-
+          # out repo; a missing or invalid bundle is reported, never fatal.
+          if [ -n "${AGENT_OVERRIDES_PATH:-}" ]; then
+            maverick overrides load "${AGENT_WORKDIR}/${AGENT_OVERRIDES_PATH}" \
+              || echo "::warning::maverick overrides load failed; continuing with defaults"
+          fi
 
           # Run; capture output for the PR comment.
           python - <<'PY' 2>&1 | tee /tmp/agent-output.txt
