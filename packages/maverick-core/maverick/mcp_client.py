@@ -1138,8 +1138,17 @@ def load_mcp_specs_from_config() -> list[MCPServerSpec]:
         from .config import load_config
         cfg = load_config()
     except Exception:
-        return []
-    servers = cfg.get("mcp_servers", {}) or {}
+        cfg = {}
+    servers = dict(cfg.get("mcp_servers", {}) or {})
+    # Dashboard-added servers (runtime overlay, never config.toml). config wins
+    # on a name clash so the overlay can't shadow a hand-tuned entry; otherwise a
+    # server added from the dashboard runs on the next goal with no config edit.
+    try:
+        from .runtime_overrides import mcp_overlay
+        for name, spec in mcp_overlay().items():
+            servers.setdefault(name, spec)
+    except Exception:  # pragma: no cover -- overlay never breaks MCP loading
+        pass
     out: list[MCPServerSpec] = []
     for name, server_cfg in servers.items():
         if not isinstance(server_cfg, dict):
