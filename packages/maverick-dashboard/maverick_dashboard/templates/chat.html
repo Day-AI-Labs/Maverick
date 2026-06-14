@@ -2,26 +2,30 @@
 {% block title %}chat · Maverick{% endblock %}
 {% block content %}
 <style>
-  /* Chat composer — page-scoped. Uses the design-system tokens from base. */
-  .chat-home { max-width: 740px; margin-inline: auto; padding-top: clamp(var(--space-6), 7vh, 88px); }
-  .chat-hero { display: flex; align-items: center; justify-content: center; gap: var(--space-3); margin-bottom: var(--space-6); }
-  .chat-hero__mark { flex: none; }
+  /* Chat landing — page-scoped. Uses the design-system tokens from base. */
+  .chat-home { max-width: 760px; margin-inline: auto; padding-top: clamp(var(--space-6), 7vh, 92px); }
+  .chat-hero { text-align: center; margin-bottom: var(--space-6); }
+  .chat-hero__mark { display: inline-block; margin-bottom: var(--space-4); }
+  .chat-greeting { color: var(--muted); font-size: var(--text-sm); letter-spacing: 0.01em; margin: 0 0 var(--space-2); }
   .display {
     font-family: var(--font-serif); font-weight: 400;
-    font-size: clamp(1.8rem, 4.2vw, 2.5rem); line-height: 1.1;
-    letter-spacing: -0.01em; color: var(--text); margin: 0; text-align: center;
+    font-size: clamp(1.9rem, 4.4vw, 2.6rem); line-height: 1.12;
+    letter-spacing: -0.012em; color: var(--text); margin: 0;
   }
   .composer {
     background: var(--surface-1); border: 1px solid var(--border);
-    border-radius: 18px; box-shadow: var(--shadow-md);
-    padding: var(--space-3) var(--space-4) var(--space-3);
-    transition: border-color 0.15s ease;
+    border-radius: 20px; box-shadow: var(--shadow-md);
+    padding: var(--space-4) var(--space-4) var(--space-3);
+    transition: border-color 0.16s ease, box-shadow 0.16s ease;
   }
-  .composer:focus-within { border-color: var(--border-strong); }
+  .composer:focus-within {
+    border-color: var(--brand-border);
+    box-shadow: 0 0 0 4px var(--brand-subtle), var(--shadow-md);
+  }
   .composer__field {
     width: 100%; border: 0; background: transparent; color: var(--text);
-    font: inherit; font-size: var(--text-lg); padding: var(--space-2) var(--space-1);
-    outline: none;
+    font: inherit; font-size: var(--text-lg); line-height: 1.4;
+    padding: var(--space-2) var(--space-1); outline: none;
   }
   .composer__field::placeholder { color: var(--muted); }
   .composer details { margin-top: var(--space-1); }
@@ -40,43 +44,71 @@
   }
   .composer__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-2); }
   .composer__hint { color: var(--muted); font-size: var(--text-xs); }
+  .composer__icon {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 50%;
+    background: var(--surface-1); color: var(--muted); cursor: pointer;
+    transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+  }
+  .composer__icon:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-2); }
   .composer__send {
     flex: none; display: inline-flex; align-items: center; justify-content: center;
-    width: 38px; height: 38px; border: 0; border-radius: 50%; cursor: pointer;
+    width: 40px; height: 40px; border: 0; border-radius: 50%; cursor: pointer;
     background: var(--brand); color: var(--brand-fg);
+    transition: background 0.14s ease, transform 0.14s ease;
   }
-  .composer__send:hover { background: var(--brand-hi); }
-  .composer__send:disabled { opacity: 0.5; cursor: default; }
+  .composer__send:hover { background: var(--brand-hi); transform: translateY(-1px); }
+  .composer__send:active { transform: none; }
+  .composer__send:disabled { opacity: 0.5; cursor: default; transform: none; }
   .chip-row { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; margin-top: var(--space-5); }
   .chip {
     display: inline-flex; align-items: center; gap: var(--space-2);
     padding: 0.5rem 0.9rem; border: 1px solid var(--border); border-radius: var(--radius-pill);
     background: var(--surface-1); color: var(--text); cursor: pointer; font-size: var(--text-sm);
+    transition: border-color 0.14s ease, background 0.14s ease, transform 0.14s ease;
   }
-  .chip:hover { border-color: var(--border-strong); background: var(--surface-2); }
+  .chip:hover { border-color: var(--border-strong); background: var(--surface-2); transform: translateY(-1px); }
   .chip svg { color: var(--muted); }
   .recents { margin-top: var(--space-7); }
-  .recents h2 { margin-bottom: var(--space-3); }
+  .recents__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+  .recents__head h2 { margin: 0; }
+  .recents__all { font-size: var(--text-sm); color: var(--muted); }
+  .recents__all:hover { color: var(--brand); text-decoration: none; }
+  .recent-list { display: flex; flex-direction: column; gap: var(--space-2); }
   .recent-row {
     display: flex; align-items: center; gap: var(--space-3);
-    padding: var(--space-3); border-radius: var(--radius-md);
-    color: var(--text); text-decoration: none; border: 1px solid transparent;
+    padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+    color: var(--text); text-decoration: none;
+    border: 1px solid var(--border); background: var(--surface-1);
+    transition: border-color 0.14s ease, background 0.14s ease, transform 0.14s ease;
   }
-  .recent-row:hover { background: var(--surface-2); text-decoration: none; }
-  .recent-row + .recent-row { border-top: 1px solid var(--hairline); border-radius: 0; }
-  .recent-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .recent-row:hover { background: var(--surface-2); border-color: var(--border-strong); transform: translateY(-1px); text-decoration: none; }
+  .recent-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .recent-time { color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
+  .recent-chevron { flex: none; color: var(--muted); }
+  [dir="rtl"] .recent-chevron { transform: scaleX(-1); }
+
+  /* Subtle, staggered entrance — skipped entirely for reduced-motion users. */
+  @media (prefers-reduced-motion: no-preference) {
+    .chat-anim { opacity: 0; transform: translateY(8px); animation: chatUp 0.45s ease forwards; }
+    .chat-anim-2 { animation-delay: 0.06s; }
+    .chat-anim-3 { animation-delay: 0.12s; }
+    .chat-anim-4 { animation-delay: 0.18s; }
+  }
+  @keyframes chatUp { to { opacity: 1; transform: none; } }
 </style>
 
 <div class="chat-home">
-  <div class="chat-hero">
-    <svg class="chat-hero__mark" width="30" height="30" viewBox="0 0 22 22" aria-hidden="true">
+  <div class="chat-hero chat-anim">
+    <svg class="chat-hero__mark" width="34" height="34" viewBox="0 0 22 22" aria-hidden="true">
       <rect x="1" y="1" width="20" height="20" rx="6.5" fill="var(--brand)"/>
       <circle cx="11" cy="11" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/>
     </svg>
+    <p class="chat-greeting" id="chat-greeting">Welcome back</p>
     <h1 class="display">What should Maverick take on?</h1>
   </div>
 
-  <form method="post" action="/chat/send" class="composer" enctype="multipart/form-data">
+  <form method="post" action="/chat/send" class="composer chat-anim chat-anim-2" enctype="multipart/form-data">
     <input
       type="text"
       name="title"
@@ -101,8 +133,7 @@
            style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); border: 0;" />
     <div class="composer__bar">
       <div style="display: flex; align-items: center; gap: var(--space-2); min-width: 0;">
-        <button type="button" id="attach-btn" aria-label="Attach files"
-                style="flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 50%; background: var(--surface-1); color: var(--muted); cursor: pointer;">
+        <button type="button" id="attach-btn" class="composer__icon" aria-label="Attach files">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11.7 5.3 6 11a2 2 0 0 1-2.83-2.83l5.66-5.66a3 3 0 0 1 4.24 4.24l-5.65 5.66" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <span class="composer__hint" id="composer-hint" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Maverick plans a sub-agent swarm and runs it under a budget cap.</span>
@@ -117,7 +148,7 @@
   <p id="goal-error" role="alert" aria-live="assertive"
      style="display: none; margin: var(--space-3) 0 0; color: var(--danger); font-size: var(--text-sm); text-align: center;"></p>
 
-  <div class="chip-row">
+  <div class="chip-row chat-anim chat-anim-3">
     <button type="button" class="chip example-chip" data-text="Summarize my unread emails from this morning">
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 4h12v8H2zM2 4l6 4 6-4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
       Summarize email
@@ -136,15 +167,22 @@
     </button>
   </div>
 
-  <div class="recents">
-    <h2>Recent goals</h2>
+  <div class="recents chat-anim chat-anim-4">
+    <div class="recents__head">
+      <h2>Recent goals</h2>
+      {% if recent %}<a class="recents__all" href="/goals">View all</a>{% endif %}
+    </div>
     {% if recent %}
+      <div class="recent-list">
       {% for g in recent %}
-      <a class="recent-row" href="/chat/goal/{{ g.id }}">
-        <span class="badge {{ g.status }}">{{ g.status }}</span>
-        <span class="recent-title">{{ g.title }}</span>
-      </a>
+        <a class="recent-row" href="/chat/goal/{{ g.id }}">
+          <span class="badge {{ g.status }}">{{ g.status }}</span>
+          <span class="recent-title">{{ g.title }}</span>
+          <span class="recent-time" data-ts="{{ g.updated_at }}">{{ g.updated_at | datetime }}</span>
+          <svg class="recent-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
       {% endfor %}
+      </div>
     {% else %}
       <p class="muted">No goals yet — describe one above to get started.</p>
     {% endif %}
@@ -152,6 +190,29 @@
 </div>
 
 <script>
+  // Time-of-day greeting (progressive — a static "Welcome back" ships in markup).
+  (function () {
+    var el = document.getElementById('chat-greeting');
+    if (!el) return;
+    var h = new Date().getHours();
+    el.textContent = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  })();
+
+  // Absolute recent-goal timestamps -> relative ("3h ago"); absolute stays on hover.
+  (function () {
+    function rel(ts) {
+      var s = Math.floor(Date.now() / 1000 - parseFloat(ts));
+      if (s < 60) return 'just now';
+      if (s < 3600) return Math.floor(s / 60) + 'm ago';
+      if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+      return Math.floor(s / 86400) + 'd ago';
+    }
+    document.querySelectorAll('.recent-time[data-ts]').forEach(function (el) {
+      var ts = el.getAttribute('data-ts');
+      if (ts) { if (!el.title) el.title = el.textContent.trim(); el.textContent = rel(ts); }
+    });
+  })();
+
   // Example chips fill the goal field. (The submit handler — fetch + inline
   // errors — lives in base.html, shared with the overview first-run form.)
   document.querySelectorAll('.example-chip').forEach(function (btn) {
