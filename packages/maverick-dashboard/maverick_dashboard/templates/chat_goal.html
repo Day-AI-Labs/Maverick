@@ -9,11 +9,13 @@
   .convo__head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0 var(--space-5); }
   .convo__back { color: var(--muted); font-size: var(--text-sm); margin-inline-end: auto; }
   .convo__cancel {
-    padding: 0.35rem 0.8rem; background: var(--surface-1); border: 1px solid var(--border);
-    color: var(--text); border-radius: var(--radius-md); cursor: pointer; font-size: var(--text-sm);
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    padding: 0.4rem 0.85rem; background: transparent; border: 1px solid var(--border);
+    color: var(--muted); border-radius: var(--radius-md); cursor: pointer; font-size: var(--text-sm);
+    transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
   }
-  .convo__cancel:hover { border-color: var(--border-strong); }
-  .convo__cancel:disabled { opacity: 0.5; cursor: default; }
+  .convo__cancel:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-subtle); }
+  .convo__cancel:disabled { opacity: 0.5; cursor: default; color: var(--muted); border-color: var(--border); background: transparent; }
 
   .msg { margin-bottom: var(--space-5); }
   .msg--user { display: flex; justify-content: flex-end; }
@@ -30,6 +32,8 @@
     padding: var(--space-3) var(--space-4); font-size: var(--text-sm); color: var(--muted);
   }
   #events { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; }
+  #events > div { padding: var(--space-1) 0; line-height: 1.5; }
+  #events > div + div { border-top: 1px solid var(--hairline); }
   .answer { margin-top: var(--space-4); font-size: var(--text-md); line-height: 1.65; color: var(--text); }
   .answer #result { font-family: inherit; }  /* the result reads as prose, not code */
   .spinner {
@@ -45,21 +49,27 @@
     position: sticky; bottom: var(--space-4); margin-top: var(--space-5);
     background: var(--surface-1); border: 1px solid var(--border);
     border-radius: 16px; box-shadow: var(--shadow-md); padding: var(--space-3) var(--space-4);
+    transition: border-color 0.16s ease, box-shadow 0.16s ease;
   }
+  .ask:focus-within { border-color: var(--brand-border); box-shadow: 0 0 0 4px var(--brand-subtle), var(--shadow-md); }
   .ask__text { margin: 0 0 var(--space-2); color: var(--text); font-size: var(--text-sm); }
   .ask__row { display: flex; gap: var(--space-2); align-items: center; }
   .ask__field { flex: 1; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--text-base); outline: none; padding: var(--space-2); }
   .ask__send {
-    flex: none; width: 36px; height: 36px; border: 0; border-radius: 50%; cursor: pointer;
+    flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; cursor: pointer;
     background: var(--brand); color: var(--brand-fg); display: inline-flex; align-items: center; justify-content: center;
+    transition: background 0.14s ease, transform 0.14s ease;
   }
-  .ask__send:hover { background: var(--brand-hi); }
+  .ask__send:hover { background: var(--brand-hi); transform: translateY(-1px); }
+  .ask__send:active { transform: none; }
   .halt-card {
     margin-top: var(--space-4); padding: var(--space-4) var(--space-5);
     background: var(--warn-subtle); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
     border-radius: var(--radius-lg);
   }
   .halt-card__title { font-weight: var(--font-semibold); color: var(--text); }
+  @media (prefers-reduced-motion: no-preference) { .convo { animation: convoIn 0.4s ease; } }
+  @keyframes convoIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 </style>
 
