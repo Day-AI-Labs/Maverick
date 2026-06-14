@@ -2354,9 +2354,6 @@ async def shield_calibration_api() -> JSONResponse:
     return JSONResponse(calibration_report(cases))
 
 
-# The dashboard lands on the chat page (the primary working surface), so the
-# bare root renders it too; the overview/stats view lives at /overview.
-@app.get("/", response_class=HTMLResponse)
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
     recent = _world().list_goals(owner=goal_owner_filter(request), limit=10, order="desc")
@@ -2369,6 +2366,15 @@ async def chat_page(request: Request) -> HTMLResponse:
         {"recent": recent, "prefill_title": prefill_title,
          "prefill_description": prefill_description},
     )
+
+
+# The dashboard lands on the chat page (the primary working surface), so the
+# bare root renders it too; the overview/stats view lives at /overview. This is
+# a distinct handler rather than a second decorator on chat_page so the route
+# name stays unique (duplicate names collide as OpenAPI operationIds).
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request) -> HTMLResponse:
+    return await chat_page(request)
 
 
 @app.post("/chat/send")
