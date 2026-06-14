@@ -62,20 +62,26 @@
   <h2>Models</h2>
   <div class="panel">
     <p class="muted" style="margin-top: 0;">
-      Choose the model Maverick uses by default. This is saved to a dashboard-owned
-      file (<code>~/.maverick/runtime-overrides.toml</code>) — your <code>config.toml</code>
-      is never touched. A model pinned per role in <code>config.toml</code> still wins.
+      Pick any configured provider's model (see Provider keys below) or type any model
+      id — e.g. <code>openai:gpt-5.4</code>, <code>gemini:gemini-3.5-pro</code>,
+      <code>ollama:llama-4-maverick</code>. Saved to a dashboard-owned file
+      (<code>~/.maverick/runtime-overrides.toml</code>), never your <code>config.toml</code>;
+      a model pinned per role in config still wins. Admins extend the list via
+      <code>[models] catalog</code> in config.toml.
     </p>
+    <datalist id="model-catalog">
+      {% for spec, plabel in model_options %}
+      <option value="{{ spec }}">{{ plabel }}</option>
+      {% endfor %}
+    </datalist>
     <form method="post" action="/settings/models"
           style="display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-end;">
       <label style="display: flex; flex-direction: column; gap: var(--space-1); min-width: 20rem;">
         <span>Default model</span>
-        <select class="ctl" name="model">
-          <option value="" {% if not pinned_model %}selected{% endif %}>Use config.toml / built-in defaults</option>
-          {% for spec, label in known_models %}
-          <option value="{{ spec }}" {% if pinned_model == spec %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
+        <input class="ctl" type="text" name="model" list="model-catalog"
+               value="{{ pinned_model or '' }}"
+               placeholder="Use config.toml / defaults — type or pick"
+               aria-label="Default model" />
       </label>
       <button type="submit" class="btn btn--primary">Save model</button>
     </form>
@@ -104,12 +110,9 @@
           <tr>
             <td>{{ label }}</td>
             <td>
-              <select class="ctl" name="{{ role }}" aria-label="Model for {{ label }}">
-                <option value="" {% if not override %}selected{% endif %}>Use default</option>
-                {% for spec, mlabel in known_models %}
-                <option value="{{ spec }}" {% if override == spec %}selected{% endif %}>{{ mlabel }}</option>
-                {% endfor %}
-              </select>
+              <input class="ctl" type="text" name="{{ role }}" list="model-catalog"
+                     value="{{ override or '' }}" placeholder="Use default"
+                     aria-label="Model for {{ label }}" style="min-width: 13rem;" />
             </td>
             <td><code>{{ effective }}</code></td>
           </tr>
