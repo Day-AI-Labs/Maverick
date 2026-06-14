@@ -30,7 +30,10 @@ def _prep(monkeypatch, tmp_path):
 def test_current_page_link_is_marked_active(monkeypatch, tmp_path, path, label):
     _prep(monkeypatch, tmp_path)
     r = _client().get(path)
-    assert f'<a href="{path}" class="active" aria-current="page">{label}</a>' in r.text
+    # Active link carries the href + state; the label rides in a .nav-label span
+    # (an icon now precedes it), so assert the two parts rather than one literal.
+    assert f'<a href="{path}" class="active" aria-current="page">' in r.text
+    assert f'<span class="nav-label">{label}</span>' in r.text
 
 
 def test_exactly_one_nav_link_is_active(monkeypatch, tmp_path):
@@ -38,8 +41,9 @@ def test_exactly_one_nav_link_is_active(monkeypatch, tmp_path):
     _prep(monkeypatch, tmp_path)
     r = _client().get("/goals")
     assert r.text.count('aria-current="page"') == 1
-    # The Overview link is rendered in its inactive form on a non-overview page.
-    assert '<a href="/overview">Overview</a>' in r.text
+    # The Overview link renders in its inactive form on a non-overview page.
+    assert '<a href="/overview"><svg' in r.text
+    assert '<a href="/overview" class="active"' not in r.text
 
 
 def test_home_link_not_active_on_other_pages(monkeypatch, tmp_path):
