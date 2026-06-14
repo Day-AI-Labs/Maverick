@@ -134,12 +134,149 @@ smarter every day, across every vendor, and you can prove it and take it with yo
 
 ---
 
-### How the two bets relate
+## Bet 3 — Safe Recursive Self-Improvement: the alignment-frontier "wow"
 
-Bet 1 = *prove the past was safe* (trust / attestation / insurability).
-Bet 2 = *own the accumulating future* (memory / compounding / data gravity).
-They share the same neutral-Switzerland moat and the same signed Operating Record
-capsule as the connective tissue — ship the capsule format once and both bets
-ride it. Bet 1 is the wedge that gets you in the door of regulated buyers; Bet 2
-is the thing that makes them unable to leave.
+**Thesis.** The most important — and most feared — capability in AI is an agent
+that improves *itself*. Every frontier lab wants it and is terrified to ship it
+ungoverned, because ungoverned self-improvement reward-hacks, escapes its
+envelope, and can't be rolled back. Maverick is the only platform that already
+ships a *bounded, auditable, reversible* self-improvement loop. Productize that
+into the credentialed path to recursive self-improvement: **agents that
+provably get better without ever escaping their capability envelope.** This is
+the bet that makes *Anthropic specifically* go wow — it's their deepest research
+interest, de-risked and made shippable.
+
+**The one feature.** Turn the existing loop into a demonstrable, certified
+**"safe self-improvement" engine** and then climb one rung past everyone else.
+Pieces already in the repo: `maverick-evolve` (config-only evolution; code
+mutation deliberately deferred), `adopt.py` (adoption can never widen a
+capability scope — `ADOPTABLE_KEYS` excludes `allow_*`/`max_risk`),
+`calibration.py` (freezes learning the moment the verifier drifts —
+anti-reward-hacking interlock), `hindsight.py` (proves it improved, or regressed),
+the signed learning audit (`dreaming._audit_cycle`, snapshot + rollback). Three
+properties that make it singular:
+
+1. **Bounded.** Self-improvement runs inside a capability envelope it can never
+   widen — proven, not asserted (`adopt.py` + capability attenuation).
+2. **Non-reward-hacking.** The calibration interlock freezes evolution when the
+   judge stops discriminating, so the system can't learn to game its own grader.
+3. **Reversible + audited.** Every learning cycle is snapshotted, rollback-able,
+   and written to the signed audit chain — you can undo what the AI taught
+   itself and prove what changed.
+
+**Bleeding edge.** Ship the rung the labs deferred: **bounded code
+self-modification** — the agent proposes changes to its *own* tools/policies, but
+only inside an out-of-process sandbox, under capability bounds, with
+human-gated promotion (the Darwin-Gödel step `maverick-evolve` explicitly
+parked). Done *with* the governance rails, not without them. That is the frontier
+capability every lab wants and no one dares ship raw.
+
+**Why $50M pre-ARR.** This is the safety-credentialed path to RSI. Whoever owns a
+*demonstrably bounded* self-improvement loop owns the most valuable and most
+dangerous capability in AI, done in the one way regulators and boards will
+tolerate. It is also un-buildable in a hurry: the moat is the *interlocks*
+(calibration freeze, capability-never-widens, signed rollback), which took this
+codebase years of safety-first design to assemble correctly.
+
+**Per-buyer wow.** Anthropic: bounded RSI is their north-star research problem,
+arriving pre-governed and demoable. Google/Microsoft: a self-improving workforce
+they can put in front of a board without the liability — the thing their own legal
+teams won't let them ship ungoverned.
+
+**Build path (~1 quarter to demo).**
+1. Wire `maverick-evolve` continuous loop → live "improvement certificate":
+   each round emits a signed proof that capabilities never widened and
+   calibration never unfroze (chains into the Bet 1 capsule).
+2. Dashboard the cold-vs-warm improvement curve per department with the rollback
+   button visible — "undo what it learned" is the trust unlock.
+3. Moonshot: the sandboxed, human-gated code-self-mod rung, with every proposal
+   diffed, capability-checked, and promotion-gated.
+
+**Centerpiece demo.** An agent system measurably rewrites its own playbooks over a
+week and gets cheaper and more reliable — then you show, cryptographically, that
+it never granted itself a single new permission and never gamed its grader, and
+you roll one bad lesson back with one click. "Self-improving AI you can actually
+sleep next to."
+
+---
+
+## Bet 4 — The Agent Security Plane: "CrowdStrike for AI agents"
+
+**Thesis.** Bet 1 *proves* compliance after the fact; Bet 4 *actively defends* in
+real time. The number-one reason enterprises won't deploy autonomous agents is
+fear of compromise: prompt injection, tool abuse, data exfiltration, poisoned
+RAG, malicious MCP servers and plugins, runaway swarms. Maverick already contains
+the most complete agent-runtime defense stack in existence — but it's buried as
+internal plumbing. Surface it as a standalone, vendor-neutral **runtime security
+product** for agent fleets: detection, containment, and continuous adversarial
+evaluation. This bet also *diversifies the acquirer pool* beyond the three —
+Microsoft Security/Defender, Google Mandiant/Chronicle, CrowdStrike, Palo Alto.
+
+**The one feature.** A live **agent detection-and-response (agent-EDR) plane**
+that watches every agent — yours or any vendor's, via MCP — and detects, contains,
+and proves compromise in flight. Pieces already in the repo: the shield (3
+chokepoints, ~35 de-obfuscating rules, cross-family lockstep-jailbreak defense),
+capability attenuation + revocation, `honeytokens.py` + `canaries.py` (exfil/
+escape tripwires), `quarantine.py`/compartments (seal a compromised agent
+mid-run, withhold its output from the swarm), `leak_quarantine.py`, the SSRF
+guards, Shield-scanning of untrusted MCP/plugin schemas, `threat_hunt.py` over the
+audit trail, `ebpf_monitor.py`, and the offensive side — the red-team corpus +
+calibration runner + `capability_leak_fuzzer`. Productize as:
+
+1. **Detect.** Continuous adversarial evaluation (red-team corpus as a live
+   regression gate) + runtime injection/exfil detection across the fleet.
+2. **Respond.** Mid-run containment — quarantine-seal a compromised agent, revoke
+   its capability subtree, black-hole its egress — without killing the swarm.
+3. **Prove.** Every detection + response written to the signed audit chain (the
+   forensic record insurers and IR teams need; ties to Bet 1).
+
+**Bleeding edge.** Make it the neutral "agent-EDR telemetry standard" — any
+vendor's agent emits Maverick-format security telemetry over MCP, and the plane
+scores/contains across all of them. Own the format, own the category.
+
+**Why $50M pre-ARR.** Security is the highest-willingness-to-pay budget in the
+enterprise, with its own buyer and its own acquirer set — so this bet is both a
+moat and a hedge: if the model vendors don't move, the security platforms will.
+And the assets (a coherent, tested, fail-closed agent-defense stack with offense +
+defense + forensics) cannot be assembled quickly; it took this codebase's
+safety-first posture to build correctly.
+
+**Per-buyer wow.** Microsoft: Defender for AI agents, cross-vendor, day one.
+Google: Mandiant/Chronicle gain an agent-runtime sensor + IR capability. Anthropic:
+a runtime that can *prove* it defeated an attack class (cross-family verifier vs
+lockstep jailbreak) — a verifiable security claim.
+
+**Build path (~1 quarter to demo).**
+1. Expose the defense stack as a **security telemetry + control API** over MCP
+   (detections, seals, revocations) — fleet-wide, vendor-neutral.
+2. Ship the **containment demo**: inject a compromised tool/MCP server, watch the
+   honeytoken trip, the agent get sealed mid-run, its capability subtree revoked,
+   and the whole incident land in the signed audit trail.
+3. Wrap the red-team corpus + capability fuzzer as a **continuous adversarial
+   eval** product (CI gate + scheduled fleet scans).
+
+**Centerpiece demo.** A malicious MCP server tries to exfiltrate secrets through a
+compromised agent. The honeytoken trips, the agent is quarantine-sealed mid-run,
+its output is withheld from the swarm, its capability subtree is revoked, egress is
+black-holed — and the analyst gets a signed forensic timeline. "Your agents get
+attacked. Ours fight back and prove it — no matter whose model they run."
+
+---
+
+### How the four bets relate
+
+| Bet | One-liner | Tense | Primary buyer pull |
+|---|---|---|---|
+| 1 — Trust Layer | prove the past was safe | past | regulated entry wedge; insurability |
+| 2 — Institutional Memory | own the accumulating future | future | data gravity; can't-leave lock-in |
+| 3 — Safe Self-Improvement | the AI improves itself, safely | forward | alignment-frontier / Anthropic wow |
+| 4 — Agent Security Plane | defend agents in real time | present | security budget; widens acquirer pool |
+
+All four ride the **same signed Operating Record / capsule format** as connective
+tissue — build that once and every bet attaches to it. They also share the one
+moat the model vendors structurally can't clone: **neutrality.** Sequencing
+instinct: Bet 1 is the wedge (gets you in the door), Bet 2 is the lock (makes them
+stay), Bet 3 is the halo (makes the labs covet you), Bet 4 is the hedge (a second
+buyer universe if the labs stall). Pick the wedge first; the capsule format is the
+shared spine that keeps all four optionalities open.
 
