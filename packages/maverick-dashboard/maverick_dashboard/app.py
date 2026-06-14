@@ -1123,7 +1123,6 @@ async def agents_page(request: Request) -> HTMLResponse:
     pack_editing is off. The roster + the selected agent's merged view are
     rendered server-side; the page JS only drives the save/validate/reset
     calls to /api/v1/agents."""
-    import json
     agents: list = []
     selected = None
     editable = True
@@ -1137,11 +1136,9 @@ async def agents_page(request: Request) -> HTMLResponse:
             selected = resolved_view(name)
     except Exception:  # never 500 the page if the factory layer is unavailable
         agents = []
-    workflow_json = json.dumps(selected["workflow"], indent=2) if selected else "[]"
     return templates.TemplateResponse(
         request, "agents.html",
-        {"agents": agents, "selected": selected, "editable": editable,
-         "workflow_json": workflow_json},
+        {"agents": agents, "selected": selected, "editable": editable},
     )
 
 
