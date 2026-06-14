@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block title %}benchmarks · Maverick{% endblock %}
 {% block content %}
-<h2>benchmark history</h2>
-<div class="panel">
+<h1 class="page-title">Benchmarks</h1>
+<p class="page-subtitle">This deployment's recorded runs — latest vs. baseline, with regression flags.</p>
+<div class="panel{% if not suites %} empty{% endif %}">
   {% if suites %}
     <table>
       <thead>
@@ -49,20 +50,18 @@
       <code>maverick.continuous_benchmark.detect_regression</code>.
     </p>
   {% else %}
-    <div style="text-align: center; padding: 2.5rem 1rem;">
-      <h3 style="margin: 0 0 0.75rem; text-transform: none; letter-spacing: 0; font-size: 1.1rem; color: var(--text);">No benchmark runs recorded</h3>
-      <p class="muted" style="margin-bottom: 1.5rem;">
-        Scores land here when a run records them with the
-        <code>bench_track</code> tool, e.g.:
-      </p>
-      <pre style="background: var(--bg); padding: 0.85rem 1rem; border-radius: 6px; display: inline-block; text-align: start; margin: 0;">bench_track op=record name=swe_bench score=0.42 commit=abc123</pre>
-      <p class="muted" style="margin-top: 1.5rem; font-size: 0.85rem;">
-        or from Python:
-        <code>maverick.continuous_benchmark.record_result(...)</code> +
-        <code>save_history(...)</code>. History persists at
-        <code>{{ history_path }}</code>.
-      </p>
-    </div>
+    <h2 class="empty__title">No benchmark runs recorded</h2>
+    <p class="muted" style="margin-bottom: var(--space-5);">
+      Scores land here when a run records them with the
+      <code>bench_track</code> tool, e.g.:
+    </p>
+    <pre style="background: var(--surface-sunken); color: var(--text); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); display: inline-block; text-align: start; margin: 0;">bench_track op=record name=swe_bench score=0.42 commit=abc123</pre>
+    <p class="muted" style="margin-top: var(--space-5); font-size: var(--text-sm);">
+      or from Python:
+      <code>maverick.continuous_benchmark.record_result(...)</code> +
+      <code>save_history(...)</code>. History persists at
+      <code>{{ history_path }}</code>.
+    </p>
   {% endif %}
 </div>
 <p class="muted" style="font-size: 0.8rem;">
