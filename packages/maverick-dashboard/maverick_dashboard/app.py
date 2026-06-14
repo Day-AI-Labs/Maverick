@@ -1451,12 +1451,14 @@ async def plugins_page(request: Request) -> HTMLResponse:
     """Discovered + enabled plugins."""
     try:
         from maverick.plugins import _allowed_plugin_names, _entry_points
+        from maverick.runtime_overrides import plugin_overlay
     except Exception:
         return templates.TemplateResponse(
             request, "plugins.html",
             {"groups": {}, "allowlist_active": False, "error": "plugin discovery failed"},
         )
     allow = _allowed_plugin_names()
+    on, off = plugin_overlay()
     groups: dict[str, list[dict]] = {}
     for label, group in (
         ("tools",    "maverick.tools"),
@@ -1471,6 +1473,7 @@ async def plugins_page(request: Request) -> HTMLResponse:
                     "name": ep.name,
                     "module": getattr(ep, "value", str(ep)),
                     "enabled": allow is None or ep.name in allow,
+                    "forced": "on" if ep.name in on else "off" if ep.name in off else None,
                 })
         except Exception:
             pass
@@ -1479,6 +1482,29 @@ async def plugins_page(request: Request) -> HTMLResponse:
         request, "plugins.html",
         {"groups": groups, "allowlist_active": allow is not None, "error": None},
     )
+
+
+@app.post("/plugins/toggle")
+async def plugins_toggle(request: Request, name: str = Form(...),
+                         action: str = Form(...)) -> RedirectResponse:
+    """Enable / disable / reset a plugin from the dashboard. Writes the runtime
+    overlay, never config.toml. Enabling loads the plugin's code on the next goal."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    from maverick.runtime_overrides import (
+        disable_plugin,
+        enable_plugin,
+        reset_plugin,
+    )
+    fn = {"enable": enable_plugin, "disable": disable_plugin,
+          "reset": reset_plugin}.get(action)
+    if fn is None:
+        raise HTTPException(status_code=400, detail="unknown action")
+    try:
+        fn(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid plugin name") from exc
+    return RedirectResponse("/plugins", status_code=303)
 
 
 @app.get("/mcp", response_class=HTMLResponse)

@@ -11,11 +11,14 @@
 
   <div class="panel">
     <p class="muted">
+      Toggle plugins on or off here — this writes a dashboard-owned overlay
+      (<code>~/.maverick/runtime-overrides.toml</code>), never your <code>config.toml</code>.
       {% if allowlist_active %}
-        <code>[plugins].enabled</code> is set in <code>~/.maverick/config.toml</code> &mdash; only listed plugins load.
+        <code>[plugins].enabled</code> in config sets the baseline; toggles here override it.
       {% else %}
-        No <code>[plugins].enabled</code> allowlist; pip-installed plugins load by default. Set the allowlist in <code>config.toml</code> to lock down.
+        With no <code>[plugins].enabled</code> allowlist, pip-installed plugins load by default — disable any you don't want.
       {% endif %}
+      Enabling a plugin loads its code on the next goal.
     </p>
   </div>
 
@@ -24,7 +27,7 @@
     <div class="panel">
       {% if items %}
         <table>
-          <thead><tr><th scope="col">name</th><th scope="col">module</th><th scope="col">status</th></tr></thead>
+          <thead><tr><th scope="col">name</th><th scope="col">module</th><th scope="col">status</th><th scope="col">action</th></tr></thead>
           <tbody>
           {% for p in items %}
             <tr>
@@ -34,6 +37,20 @@
                 <span class="badge {{ 'active' if p.enabled else 'blocked' }}">
                   {{ 'enabled' if p.enabled else 'disabled' }}
                 </span>
+                {% if p.forced %}<span class="muted" style="font-size: 0.72rem;">(set here)</span>{% endif %}
+              </td>
+              <td>
+                <form method="post" action="/plugins/toggle" style="display: inline-flex; gap: var(--space-2);">
+                  <input type="hidden" name="name" value="{{ p.name }}" />
+                  {% if p.enabled %}
+                  <button type="submit" name="action" value="disable" class="btn btn--ghost">Disable</button>
+                  {% else %}
+                  <button type="submit" name="action" value="enable" class="btn btn--primary">Enable</button>
+                  {% endif %}
+                  {% if p.forced %}
+                  <button type="submit" name="action" value="reset" class="btn btn--ghost" title="Revert to config.toml">Reset</button>
+                  {% endif %}
+                </form>
               </td>
             </tr>
           {% endfor %}
@@ -53,6 +70,6 @@
       <code>maverick.personas</code> entry points. Install with:
     </p>
     <pre style="background: var(--bg); padding: 0.75rem; border-radius: 4px; overflow-x: auto;">pipx inject maverick-agent &lt;package-name&gt;</pre>
-    <p class="muted">Then add the plugin's name to <code>[plugins].enabled</code> if your install uses an allowlist.</p>
+    <p class="muted">Then enable it from the list above — no <code>config.toml</code> editing needed.</p>
   </div>
 {% endblock %}

@@ -127,15 +127,33 @@ def budget_override() -> float | None:
     return v if math.isfinite(v) and v > 0 else None
 
 
-def _write_state(denied: set[str], models: dict[str, str] | None,
-                 budget: float | None) -> None:
-    """Serialise the whole overlay: [security] denied_tools + optional [models]
-    (default + per-role) + optional [budget] max_dollars. One file holds every
-    surface, so each write renders the full state -- changing one must not drop
-    the others. Atomic write at 0o600; no tomli-w dependency.
+# Plugin / entry-point name: alnum plus _.@- (covers "weather", "weather@dist").
+_VALID_PLUGIN = re.compile(r"^[A-Za-z0-9_.@-]{1,128}$")
 
-    With ``models`` and ``budget`` both empty/None the [security] block is
-    byte-identical to the historical writer, so tool-only callers are unaffected.
+
+def plugin_overlay() -> tuple[set[str], set[str]]:
+    """The dashboard's ``[plugins]`` overlay as ``(force_enabled, force_disabled)``
+    name sets. Consulted by ``plugins._allowed_plugin_names`` -- ``enabled`` adds
+    to the config allowlist, ``disabled`` removes from it (disable wins).
+    Re-validated on read; junk entries dropped."""
+    p = _load().get("plugins") or {}
+
+    def _clean(key: str) -> set[str]:
+        return {n.strip() for n in (p.get(key) or [])
+                if isinstance(n, str) and _VALID_PLUGIN.fullmatch(n.strip())}
+    on, off = _clean("enabled"), _clean("disabled")
+    return on - off, off  # disable wins if a name appears in both
+
+
+def _write_state(denied: set[str], models: dict[str, str] | None,
+                 budget: float | None,
+                 plugins: tuple[set[str], set[str]] | None = None) -> None:
+    """Serialise the whole overlay: [security] denied_tools + optional [models]
+    (default + per-role) + [budget] max_dollars + [plugins] enabled/disabled.
+    One file holds every surface, so each write renders the full state --
+    changing one must not drop the others. ``plugins`` defaults to the on-disk
+    overlay so the existing tool/model/budget callers preserve it untouched.
+    Atomic write at 0o600; no tomli-w dependency.
     """
     OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
     rendered = ", ".join(_toml_string(n) for n in sorted(denied))
@@ -155,6 +173,13 @@ def _write_state(denied: set[str], models: dict[str, str] | None,
             body += f"{k} = {_toml_string(models[k])}\n"
     if budget is not None:
         body += f"\n[budget]\nmax_dollars = {float(budget)}\n"
+    on, off = plugin_overlay() if plugins is None else plugins
+    if on or off:
+        body += "\n[plugins]\n"
+        if on:
+            body += f"enabled = [{', '.join(_toml_string(n) for n in sorted(on))}]\n"
+        if off:
+            body += f"disabled = [{', '.join(_toml_string(n) for n in sorted(off))}]\n"
     tmp_path = OVERRIDES_PATH.with_suffix(".toml.tmp")
     fd = os.open(tmp_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -260,10 +285,51 @@ def clear_budget() -> None:
     _write_state(denied_tools(), _models_overlay() or None, None)
 
 
+def _validate_plugin(name: str) -> str:
+    n = (name or "").strip()
+    if not _VALID_PLUGIN.fullmatch(n):
+        raise ValueError("invalid plugin name")
+    return n
+
+
+def _set_plugins(on: set[str], off: set[str]) -> None:
+    _write_state(denied_tools(), _models_overlay() or None, budget_override(),
+                 (on, off))
+
+
+def enable_plugin(name: str) -> None:
+    """Force-enable a plugin from the dashboard (adds it to the allowlist)."""
+    n = _validate_plugin(name)
+    on, off = plugin_overlay()
+    on.add(n)
+    off.discard(n)
+    _set_plugins(on, off)
+
+
+def disable_plugin(name: str) -> None:
+    """Force-disable a plugin from the dashboard (removes it from the allowlist,
+    even when config.toml enables it)."""
+    n = _validate_plugin(name)
+    on, off = plugin_overlay()
+    off.add(n)
+    on.discard(n)
+    _set_plugins(on, off)
+
+
+def reset_plugin(name: str) -> None:
+    """Clear any dashboard plugin override, reverting to config.toml."""
+    n = _validate_plugin(name)
+    on, off = plugin_overlay()
+    on.discard(n)
+    off.discard(n)
+    _set_plugins(on, off)
+
+
 __all__ = [
     "denied_tools", "disable_tool", "enable_tool",
     "default_model_override", "set_default_model", "clear_default_model",
     "role_model_override", "set_role_models",
     "budget_override", "set_budget", "clear_budget",
+    "plugin_overlay", "enable_plugin", "disable_plugin", "reset_plugin",
     "OVERRIDES_PATH",
 ]
