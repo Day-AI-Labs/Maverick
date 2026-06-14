@@ -1,7 +1,27 @@
 {% extends "base.html" %}
 {% block title %}spend · Maverick{% endblock %}
 {% block content %}
-  <h2>spend overview</h2>
+<style>
+  /* Spend visualizations — page-scoped, built from the design-system tokens.
+     Everything is derived in-template from `episodes` + `total`; no new data. */
+  .spend-bars { display: flex; align-items: flex-end; gap: 2px; height: 168px; }
+  .spend-bars__col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; align-items: flex-end; }
+  .spend-bars__bar {
+    width: 100%; min-height: 2px;
+    background: linear-gradient(180deg, var(--brand-hi), var(--brand));
+    border-radius: 3px 3px 0 0; transition: opacity 0.13s ease;
+  }
+  .spend-bars__col:hover .spend-bars__bar { opacity: 0.72; }
+  .spend-axis { display: flex; justify-content: space-between; margin-top: var(--space-2); color: var(--muted); font-size: var(--text-xs); }
+  .cost-cell { display: flex; flex-direction: column; gap: 3px; min-width: 84px; }
+  .cost-cell__bar { height: 3px; border-radius: var(--radius-pill); background: var(--brand); opacity: 0.5; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); }
+  .toolbar h2 { margin: 0; }
+</style>
+
+  <h1 class="page-title">Spend</h1>
+  <p class="page-subtitle">Cost, tokens, and per-run economics across completed episodes.</p>
+
   <div class="grid">
     <div class="stat">
       <div class="num">${{ '%.2f'|format(total.dollars) }}</div>
@@ -21,12 +41,29 @@
     </div>
   </div>
 
-  <p style="margin: 0.5rem 0;">
-    <a href="/api/v1/cost.csv" download style="color: var(--brand);">⤓ Download CSV</a>
-    <span class="muted" style="font-size: 0.8rem;">— append <code>?month=YYYY-MM</code> for a single month</span>
-  </p>
+  {% set _max = (episodes | map(attribute='cost_dollars') | max) if episodes else 0 %}
 
-  <h2>recent episodes</h2>
+  <h2>Cost per run</h2>
+  <div class="panel">
+    {% if episodes %}
+      <div class="spend-bars" role="img"
+           aria-label="Cost of the {{ episodes|length }} most recent runs, oldest on the left to most recent on the right; peak ${{ '%.4f'|format(_max) }}.">
+        {% for e in episodes | reverse %}
+          <div class="spend-bars__col" title="#{{ e.id }} · ${{ '%.4f'|format(e.cost_dollars) }}">
+            <div class="spend-bars__bar" style="height: {{ ((e.cost_dollars / _max * 100) if _max else 0) | round(1) }}%;"></div>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="spend-axis"><span>oldest</span><span>most recent</span></div>
+    {% else %}
+      <p class="muted">No completed episodes yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="toolbar">
+    <h2>Recent episodes</h2>
+    <a class="btn" href="/api/v1/cost.csv" download>⤓ Download CSV</a>
+  </div>
   <div class="panel">
     {% if episodes %}
     <table>
@@ -48,7 +85,12 @@
                 <span class="badge active">running</span>
               {% endif %}
             </td>
-            <td>${{ '%.4f'|format(e.cost_dollars) }}</td>
+            <td>
+              <div class="cost-cell">
+                <span>${{ '%.4f'|format(e.cost_dollars) }}</span>
+                <span class="cost-cell__bar" style="width: {{ ((e.cost_dollars / _max * 100) if _max else 0) | round(1) }}%;"></span>
+              </div>
+            </td>
             <td>{{ '{:,}'.format(e.input_tokens) }}</td>
             <td>{{ '{:,}'.format(e.output_tokens) }}</td>
             <td>{{ e.tool_calls }}</td>
@@ -59,5 +101,8 @@
     {% else %}
       <p class="muted">No completed episodes yet.</p>
     {% endif %}
+    <p class="muted" style="margin: var(--space-3) 0 0; font-size: var(--text-xs);">
+      Append <code>?month=YYYY-MM</code> to the CSV link for a single month.
+    </p>
   </div>
 {% endblock %}
