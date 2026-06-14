@@ -155,16 +155,71 @@ def allowed_models() -> set[str]:
             if isinstance(s, str) and _VALID_MODEL.fullmatch(s.strip())}
 
 
+# MCP server name: bare TOML key charset (no dots, so the ``[mcp_servers.<name>]``
+# header is unambiguous). The kernel revalidates the whole spec at load time.
+_VALID_SERVER_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def mcp_overlay() -> dict[str, dict]:
+    """Dashboard-added MCP servers as ``{name: spec_dict}`` (overlay
+    ``[mcp_servers.<name>]``). Unioned into ``mcp_client.load_mcp_specs_from_config``
+    so a server added from the dashboard runs on the next goal with no config.toml
+    edit -- config wins on a name clash. Re-validated on read: a name must be a
+    bare key and the spec a dict carrying ``command`` (stdio) or ``url`` (http)."""
+    raw = _load().get("mcp_servers") or {}
+    out: dict[str, dict] = {}
+    for name, spec in raw.items():
+        if (isinstance(name, str) and _VALID_SERVER_NAME.fullmatch(name)
+                and isinstance(spec, dict)
+                and ("command" in spec or "url" in spec)):
+            out[name] = spec
+    return out
+
+
+def _toml_inline(value) -> str:
+    """Render a scalar / list / string-map as a TOML inline value. Used for the
+    ``[mcp_servers.<name>]`` blocks (args list, env/headers/oauth inline tables)
+    -- the rest of the overlay is plain string lists handled inline above."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return _toml_string(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_inline(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ", ".join(
+            f"{_toml_string(str(k))} = {_toml_inline(v)}" for k, v in value.items()) + "}"
+    raise ValueError(f"cannot serialise {type(value).__name__} to TOML")
+
+
+def _render_mcp(servers: dict[str, dict]) -> str:
+    """Render ``[mcp_servers.<name>]`` tables. Names are bare keys (validated by
+    add_mcp_server) so the header is unambiguous; these tables come LAST in the
+    file so no top-level key is captured by a subtable."""
+    body = ""
+    for name in sorted(servers):
+        body += f"\n[mcp_servers.{name}]\n"
+        for key, val in servers[name].items():
+            if key == "name":  # the table key already carries the name
+                continue
+            body += f"{key} = {_toml_inline(val)}\n"
+    return body
+
+
 def _write_state(denied: set[str], models: dict[str, str] | None,
                  budget: float | None,
                  plugins: tuple[set[str], set[str]] | None = None,
-                 allowed: set[str] | None = None) -> None:
+                 allowed: set[str] | None = None,
+                 mcp: dict[str, dict] | None = None) -> None:
     """Serialise the whole overlay: [security] denied_tools + optional [models]
-    (default + per-role) + [budget] max_dollars + [plugins] enabled/disabled.
-    One file holds every surface, so each write renders the full state --
-    changing one must not drop the others. ``plugins`` defaults to the on-disk
-    overlay so the existing tool/model/budget callers preserve it untouched.
-    Atomic write at 0o600; no tomli-w dependency.
+    (default + per-role) + [budget] max_dollars + [plugins] enabled/disabled +
+    [access] allowed_models + [mcp_servers.<name>] tables. One file holds every
+    surface, so each write renders the full state -- changing one must not drop
+    the others. Optional params default to the on-disk overlay so the existing
+    callers preserve what they don't touch. Atomic write at 0o600; no tomli-w
+    dependency.
     """
     OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
     rendered = ", ".join(_toml_string(n) for n in sorted(denied))
@@ -195,6 +250,11 @@ def _write_state(denied: set[str], models: dict[str, str] | None,
     if allow:
         body += ("\n[access]\nallowed_models = ["
                  f"{', '.join(_toml_string(s) for s in sorted(allow))}]\n")
+    # MCP server tables come last: once a subtable header is emitted every
+    # following key belongs to it, so no top-level section may follow.
+    servers = mcp_overlay() if mcp is None else mcp
+    if servers:
+        body += _render_mcp(servers)
     tmp_path = OVERRIDES_PATH.with_suffix(".toml.tmp")
     fd = os.open(tmp_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -356,6 +416,38 @@ def set_allowed_models(specs) -> set[str]:
     return allow
 
 
+def add_mcp_server(name: str, spec: dict) -> dict:
+    """Add (or replace) a dashboard-managed MCP server. Validates the spec the
+    same way the kernel will at load time (``MCPServerSpec.from_config`` -- the
+    subprocess-injection / url guards), stores the normalised dict, and returns
+    it. Raises ValueError on a bad name or spec; config.toml is never touched."""
+    n = (name or "").strip()
+    if not _VALID_SERVER_NAME.fullmatch(n):
+        raise ValueError("invalid MCP server name")
+    if not isinstance(spec, dict) or ("command" not in spec and "url" not in spec):
+        raise ValueError("MCP server needs a command (stdio) or url (http)")
+    from .mcp_client import MCPServerSpec  # lazy: avoid an import cycle
+    stored = MCPServerSpec.from_config(n, spec).to_dict()
+    servers = mcp_overlay()
+    servers[n] = stored
+    _write_state(denied_tools(), _models_overlay() or None, budget_override(),
+                 mcp=servers)
+    return stored
+
+
+def remove_mcp_server(name: str) -> bool:
+    """Remove a dashboard-managed MCP server. Returns True if one was removed.
+    Only clears a dashboard-added server; a config.toml server is not touched."""
+    n = (name or "").strip()
+    servers = mcp_overlay()
+    if n not in servers:
+        return False
+    del servers[n]
+    _write_state(denied_tools(), _models_overlay() or None, budget_override(),
+                 mcp=servers)
+    return True
+
+
 __all__ = [
     "denied_tools", "disable_tool", "enable_tool",
     "default_model_override", "set_default_model", "clear_default_model",
@@ -363,5 +455,6 @@ __all__ = [
     "budget_override", "set_budget", "clear_budget",
     "plugin_overlay", "enable_plugin", "disable_plugin", "reset_plugin",
     "allowed_models", "set_allowed_models",
+    "mcp_overlay", "add_mcp_server", "remove_mcp_server",
     "OVERRIDES_PATH",
 ]

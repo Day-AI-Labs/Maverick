@@ -1,33 +1,127 @@
 {% extends "base.html" %}
 {% block title %}MCP servers · Maverick{% endblock %}
 {% block content %}
-  <h2>MCP servers</h2>
+  <h1 class="page-title">MCP servers</h1>
+
+  {% if saved %}
+  <div class="panel" role="status"
+       style="border-color: var(--brand-border); background: var(--brand-subtle); margin-bottom: var(--space-4);">
+    <strong>Saved.</strong> {{ saved }}
+  </div>
+  {% endif %}
 
   <div class="panel">
     {% if servers %}
       <table>
-        <thead><tr><th scope="col">name</th><th scope="col">command</th><th scope="col">args</th></tr></thead>
+        <thead><tr>
+          <th scope="col">Name</th>
+          <th scope="col">Transport</th>
+          <th scope="col">Command / URL</th>
+          <th scope="col">Args</th>
+          <th scope="col">Source</th>
+          <th scope="col">Action</th>
+        </tr></thead>
         <tbody>
-        {% for name, s in servers.items() %}
+        {% for s in servers %}
           <tr>
-            <td><code>{{ name }}</code></td>
-            <td><code>{{ s.command or '-' }}</code></td>
-            <td class="muted" style="font-size: 0.85rem;">{{ s.args | join(' ') if s.args else '-' }}</td>
+            <td><code>{{ s.name }}</code></td>
+            <td>{{ s.transport }}</td>
+            <td><code>{{ s.url if s.transport == 'http' else (s.command or '-') }}</code></td>
+            <td class="muted" style="font-size: var(--text-sm);">{{ s.args | join(' ') if s.args else '-' }}</td>
+            <td>
+              {% if s.source == 'dashboard' %}<span class="badge active">dashboard</span>
+              {% else %}<span class="muted">config.toml</span>{% endif %}
+            </td>
+            <td>
+              {% if s.removable %}
+              <form method="post" action="/mcp/remove" style="margin: 0;">
+                <input type="hidden" name="name" value="{{ s.name }}" />
+                <button type="submit" class="btn btn--ghost" title="Remove this dashboard-added server">Remove</button>
+              </form>
+              {% else %}<span class="muted">—</span>{% endif %}
+            </td>
           </tr>
         {% endfor %}
         </tbody>
       </table>
     {% else %}
-      <p class="muted">
-        No MCP servers configured. Add one via <code>maverick init</code>
-        or by editing <code>[mcp_servers.&lt;name&gt;]</code> in <code>~/.maverick/config.toml</code>.
-      </p>
+      <p class="muted" style="margin: 0;">No MCP servers configured yet. Add one below.</p>
     {% endif %}
   </div>
 
+  <h2>Add a local (stdio) server</h2>
   <div class="panel">
-    <h3 style="margin-top: 0;">what is MCP?</h3>
-    <p class="muted">
+    <p class="muted" style="margin-top: 0;">
+      Runs a local command that speaks MCP over stdio. Saved to the dashboard
+      overlay (<code>~/.maverick/runtime-overrides.toml</code>), never your
+      <code>config.toml</code>; effective on the next goal.
+    </p>
+    <form method="post" action="/mcp/add"
+          style="display: flex; flex-direction: column; gap: var(--space-3); max-width: 36rem;">
+      <input type="hidden" name="transport" value="stdio" />
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Name</span>
+        <input class="ctl" type="text" name="name" required
+               placeholder="e.g. filesystem" aria-label="MCP server name" />
+      </label>
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Command</span>
+        <input class="ctl" type="text" name="command" required
+               placeholder="e.g. npx" aria-label="MCP server command" />
+      </label>
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Arguments <span class="muted">(one per line)</span></span>
+        <textarea class="ctl" name="args" rows="3"
+                  placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/path/to/dir"
+                  aria-label="MCP server arguments, one per line"></textarea>
+      </label>
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Environment <span class="muted">(KEY=VALUE, one per line)</span></span>
+        <textarea class="ctl" name="env" rows="2"
+                  placeholder="API_BASE=https://example.com"
+                  aria-label="MCP server environment variables, KEY=VALUE per line"></textarea>
+      </label>
+      <p style="margin: 0;"><button type="submit" class="btn btn--primary">Add local server</button></p>
+    </form>
+  </div>
+
+  <h2>Add a remote (HTTP) server</h2>
+  <div class="panel">
+    <p class="muted" style="margin-top: 0;">
+      Connects to a server over Streamable HTTP. Saved to the dashboard overlay,
+      never your <code>config.toml</code>; effective on the next goal.
+    </p>
+    <form method="post" action="/mcp/add"
+          style="display: flex; flex-direction: column; gap: var(--space-3); max-width: 36rem;">
+      <input type="hidden" name="transport" value="http" />
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Name</span>
+        <input class="ctl" type="text" name="name" required
+               placeholder="e.g. github" aria-label="Remote MCP server name" />
+      </label>
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>URL</span>
+        <input class="ctl" type="text" name="url" required
+               placeholder="https://host/mcp" aria-label="Remote MCP server URL" />
+      </label>
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Auth token <span class="muted">(optional, sent as a bearer)</span></span>
+        <input class="ctl" type="password" name="auth_token" autocomplete="off"
+               placeholder="Paste a static token" aria-label="Remote MCP server auth token" />
+      </label>
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Headers <span class="muted">(KEY=VALUE, one per line)</span></span>
+        <textarea class="ctl" name="headers" rows="2"
+                  placeholder="X-Org=acme"
+                  aria-label="Remote MCP server headers, KEY=VALUE per line"></textarea>
+      </label>
+      <p style="margin: 0;"><button type="submit" class="btn btn--primary">Add remote server</button></p>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top: 0;">What is MCP?</h3>
+    <p class="muted" style="margin-bottom: 0;">
       Model Context Protocol servers expose tools (filesystem access, GitHub, databases, etc.)
       over a JSON-RPC channel. Maverick consumes them as <code>mcp_&lt;server&gt;__&lt;tool&gt;</code>.
       See <a href="https://modelcontextprotocol.io" rel="noopener noreferrer" style="color: var(--brand);">modelcontextprotocol.io</a>

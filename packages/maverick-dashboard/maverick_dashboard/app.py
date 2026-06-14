@@ -1505,16 +1505,108 @@ async def plugins_toggle(request: Request, name: str = Form(...),
 
 
 @app.get("/mcp", response_class=HTMLResponse)
-async def mcp_page(request: Request) -> HTMLResponse:
-    """Configured MCP servers."""
+async def mcp_page(request: Request, saved: str = "") -> HTMLResponse:
+    """MCP servers: config.toml entries (read-only here) plus dashboard-added
+    servers (overlay, removable). Admins add a new server from the form below —
+    no config.toml editing needed."""
+    require_permission(request, "admin")
     try:
         from maverick.config import load_config
-        servers = (load_config() or {}).get("mcp_servers") or {}
+        cfg_servers = (load_config() or {}).get("mcp_servers") or {}
     except Exception:
-        servers = {}
+        cfg_servers = {}
+    try:
+        from maverick.runtime_overrides import mcp_overlay
+        overlay = mcp_overlay()
+    except Exception:
+        overlay = {}
+
+    def _row(name: str, s: dict, source: str) -> dict:
+        return {
+            "name": name,
+            "transport": "http" if s.get("url") else "stdio",
+            "command": s.get("command") or "",
+            "args": s.get("args") or [],
+            "url": s.get("url") or "",
+            "source": source,
+            "removable": source == "dashboard",
+        }
+    rows = [_row(n, s, "config") for n, s in cfg_servers.items()
+            if isinstance(s, dict)]
+    # overlay servers not shadowed by config (config wins, matching the kernel)
+    rows += [_row(n, s, "dashboard") for n, s in overlay.items()
+             if n not in cfg_servers]
+    saved_msg = {"add": "MCP server added.", "remove": "MCP server removed."}.get(saved, "")
     return templates.TemplateResponse(
-        request, "mcp.html", {"servers": servers},
+        request, "mcp.html", {"servers": rows, "saved": saved_msg},
     )
+
+
+def _parse_kv_lines(text: str) -> dict[str, str]:
+    """Parse ``KEY=VALUE`` lines (env / headers from the MCP add form) into a
+    dict, skipping blanks and lines without an ``=``."""
+    out: dict[str, str] = {}
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        if k.strip():
+            out[k.strip()] = v.strip()
+    return out
+
+
+@app.post("/mcp/add")
+async def mcp_add(request: Request) -> RedirectResponse:
+    """Add a dashboard-managed MCP server from the form. Builds a stdio
+    (command/args/env) or http (url/headers/auth) spec and stores it in the
+    runtime overlay; the kernel validates + unions it on the next goal."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    require_permission(request, "admin")
+    from maverick.runtime_overrides import add_mcp_server
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    transport = (form.get("transport") or "stdio").strip()
+    spec: dict = {}
+    if transport == "http":
+        url = (form.get("url") or "").strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="a URL is required for an http server")
+        spec["url"] = url
+        token = (form.get("auth_token") or "").strip()
+        if token:
+            spec["auth_token"] = token
+        headers = _parse_kv_lines(form.get("headers") or "")
+        if headers:
+            spec["headers"] = headers
+    else:
+        command = (form.get("command") or "").strip()
+        if not command:
+            raise HTTPException(status_code=400, detail="a command is required for a stdio server")
+        spec["command"] = command
+        args = [a.strip() for a in (form.get("args") or "").splitlines() if a.strip()]
+        if args:
+            spec["args"] = args
+        env = _parse_kv_lines(form.get("env") or "")
+        if env:
+            spec["env"] = env
+    try:
+        add_mcp_server(name, spec)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid MCP server: {exc}") from exc
+    return RedirectResponse("/mcp?saved=add", status_code=303)
+
+
+@app.post("/mcp/remove")
+async def mcp_remove(request: Request, name: str = Form(...)) -> RedirectResponse:
+    """Remove a dashboard-added MCP server (config.toml servers are untouched)."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    require_permission(request, "admin")
+    from maverick.runtime_overrides import remove_mcp_server
+    remove_mcp_server((name or "").strip())
+    return RedirectResponse("/mcp?saved=remove", status_code=303)
 
 
 @app.get("/tools", response_class=HTMLResponse)
