@@ -1,12 +1,70 @@
 {% extends "base.html" %}
 {% block title %}channels · Maverick{% endblock %}
 {% block content %}
-  <h2>channels</h2>
+  <h1 class="page-title">Channels</h1>
 
+  {% if saved %}
+  <div class="panel" role="status"
+       style="border-color: var(--brand-border); background: var(--brand-subtle); margin-bottom: var(--space-4);">
+    <strong>Saved.</strong> {{ saved }}
+  </div>
+  {% endif %}
+
+  <p class="muted">
+    Connect Maverick to a chat or messaging service so people can reach the
+    agent there. Enable a channel and paste its credentials below — saved to the
+    dashboard overlay (<code>~/.maverick/runtime-overrides</code>'s sibling
+    <code>dashboard-config.toml</code>), never your <code>config.toml</code>.
+    Secrets are stored locally (chmod 600) and never shown again. Effective on
+    the next <code>maverick serve</code>.
+  </p>
+
+  {% for c in managed %}
+  <h2>{{ c.label }}</h2>
+  <div class="panel">
+    <form method="post" action="/channels/save"
+          style="display: flex; flex-direction: column; gap: var(--space-3); max-width: 36rem;">
+      <input type="hidden" name="channel" value="{{ c.name }}" />
+      <label style="display: flex; align-items: center; gap: var(--space-2);">
+        <input type="checkbox" name="enabled" {% if c.enabled %}checked{% endif %}
+               style="width: 18px; height: 18px; accent-color: var(--brand);" />
+        <span>Enabled</span>
+        {% if c.via %}<span class="muted" style="font-size: var(--text-sm);">· configured via {{ c.via }}</span>{% endif %}
+      </label>
+      {% for f in c.fields %}
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>{{ f.label }}{% if f.hint %} <span class="muted">· saved {{ f.hint }}</span>{% elif f.configured and not f.secret %}{% endif %}</span>
+        {% if f.secret %}
+        <input class="ctl" type="password" name="{{ f.key }}" autocomplete="off"
+               placeholder="{% if f.configured %}Leave blank to keep current{% else %}Paste value{% endif %}"
+               aria-label="{{ c.label }} {{ f.label }}" />
+        {% elif f.type == 'int' %}
+        <input class="ctl" type="number" name="{{ f.key }}" value="{{ f.value }}"
+               aria-label="{{ c.label }} {{ f.label }}" />
+        {% else %}
+        <input class="ctl" type="text" name="{{ f.key }}" value="{{ f.value }}"
+               aria-label="{{ c.label }} {{ f.label }}" />
+        {% endif %}
+      </label>
+      {% endfor %}
+      <div style="display: flex; gap: var(--space-3); align-items: center;">
+        <button type="submit" class="btn btn--primary">Save {{ c.label }}</button>
+      </div>
+    </form>
+    {% if c.dashboard_set %}
+    <form method="post" action="/channels/clear" style="margin-top: var(--space-3);">
+      <input type="hidden" name="channel" value="{{ c.name }}" />
+      <button type="submit" class="btn btn--ghost" title="Remove dashboard settings for this channel">Reset {{ c.label }}</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <h2>All configured channels</h2>
   <div class="panel">
     {% if channels %}
       <table>
-        <thead><tr><th scope="col">name</th><th scope="col">status</th><th scope="col">detail</th></tr></thead>
+        <thead><tr><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Detail</th></tr></thead>
         <tbody>
         {% for name, cfg in channels.items() %}
           <tr>
@@ -28,15 +86,13 @@
         </tbody>
       </table>
     {% else %}
-      <p class="muted">
-        No channels configured. Run <code>maverick init</code> to enable Telegram, Discord, Slack, Signal, etc.
-      </p>
+      <p class="muted" style="margin: 0;">No channels configured yet. Enable one above.</p>
     {% endif %}
   </div>
 
   <div class="panel">
-    <h3 style="margin-top: 0;">start the channel server</h3>
+    <h3 style="margin-top: 0;">Start the channel server</h3>
     <pre style="background: var(--bg); padding: 0.75rem; border-radius: 4px; overflow-x: auto;">maverick serve</pre>
-    <p class="muted">Channels poll/listen in the background; goals arrive over the network and run through the same swarm.</p>
+    <p class="muted" style="margin-bottom: 0;">Channels poll/listen in the background; goals arrive over the network and run through the same swarm.</p>
   </div>
 {% endblock %}

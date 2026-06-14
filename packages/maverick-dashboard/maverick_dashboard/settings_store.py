@@ -40,6 +40,47 @@ CAPABILITY_DEFAULTS = {
 }
 FEATURE_DEFAULTS = {"skills": True, "world_model": True, "streaming": True}
 
+# Channels offered in the UI: name + per-field spec. Keys MUST match what
+# server.py's _wire_<name> reads from [channels.<name>] (verified against the
+# wiring), so a value saved here actually configures the channel via the
+# load_config() deep-merge. ``secret`` fields are masked + never echoed back;
+# ``type: int`` fields are stored as numbers.
+CHANNELS: list[dict] = [
+    {"name": "telegram", "label": "Telegram", "fields": [
+        {"key": "bot_token", "label": "Bot token", "secret": True},
+    ]},
+    {"name": "discord", "label": "Discord", "fields": [
+        {"key": "bot_token", "label": "Bot token", "secret": True},
+    ]},
+    {"name": "slack", "label": "Slack", "fields": [
+        {"key": "app_token", "label": "App-level token", "secret": True},
+        {"key": "bot_token", "label": "Bot token", "secret": True},
+    ]},
+    {"name": "whatsapp_cloud", "label": "WhatsApp (Cloud API)", "fields": [
+        {"key": "access_token", "label": "Access token", "secret": True},
+        {"key": "phone_number_id", "label": "Phone number ID", "secret": False},
+        {"key": "verify_token", "label": "Verify token", "secret": True},
+        {"key": "app_secret", "label": "App secret", "secret": True},
+        {"key": "port", "label": "Webhook port", "secret": False, "type": "int"},
+    ]},
+    {"name": "sms", "label": "SMS (Twilio)", "fields": [
+        {"key": "account_sid", "label": "Account SID", "secret": False},
+        {"key": "auth_token", "label": "Auth token", "secret": True},
+        {"key": "from_number", "label": "From number", "secret": False},
+        {"key": "port", "label": "Webhook port", "secret": False, "type": "int"},
+    ]},
+    {"name": "email", "label": "Email (IMAP/SMTP)", "fields": [
+        {"key": "imap_host", "label": "IMAP host", "secret": False},
+        {"key": "imap_user", "label": "IMAP user", "secret": False},
+        {"key": "imap_password", "label": "IMAP password", "secret": True},
+        {"key": "smtp_host", "label": "SMTP host", "secret": False},
+        {"key": "smtp_user", "label": "SMTP user", "secret": False},
+        {"key": "smtp_password", "label": "SMTP password", "secret": True},
+        {"key": "smtp_port", "label": "SMTP port", "secret": False, "type": "int"},
+    ]},
+]
+_CHANNELS_BY_NAME = {c["name"]: c for c in CHANNELS}
+
 
 def _tomllib():
     try:
@@ -86,6 +127,23 @@ def _dump(data: dict) -> str:
         lines.append(f"[providers.{name}]")
         for field, val in fields:
             lines.append(f"{field} = {_toml_str(val)}")
+        lines.append("")
+    for name in sorted(data.get("channels") or {}):
+        ccfg = data["channels"][name] or {}
+        if not ccfg:
+            continue
+        lines.append(f"[channels.{name}]")
+        lines.append(f"enabled = {'true' if ccfg.get('enabled') else 'false'}")
+        for k in sorted(ccfg):
+            if k == "enabled":
+                continue
+            v = ccfg[k]
+            if isinstance(v, bool):
+                lines.append(f"{k} = {'true' if v else 'false'}")
+            elif isinstance(v, int):
+                lines.append(f"{k} = {v}")
+            else:
+                lines.append(f"{k} = {_toml_str(v)}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -139,10 +197,56 @@ def set_toggle(section: str, name: str, enabled: bool) -> None:
     _write(data)
 
 
+def set_channel(name: str, enabled: bool, values: dict | None = None) -> None:
+    """Enable/disable a channel and set its credentials in the overlay. A blank
+    field value is left unchanged (so toggling enabled never wipes a secret you
+    can't see). Writes [channels.<name>] to dashboard-config.toml, which
+    load_config() deep-merges -- so `maverick serve` picks it up with no
+    config.toml edit. Use ``clear_channel`` to remove."""
+    spec = _CHANNELS_BY_NAME.get(name)
+    if spec is None:
+        raise ValueError("unknown channel")
+    values = values or {}
+    data = load_overlay()
+    ccfg = data.setdefault("channels", {}).setdefault(name, {})
+    ccfg["enabled"] = bool(enabled)
+    for field in spec["fields"]:
+        key = field["key"]
+        raw = values.get(key)
+        val = raw.strip() if isinstance(raw, str) else raw
+        if val in (None, ""):
+            continue  # blank -> keep the stored value (don't wipe a hidden secret)
+        if field.get("type") == "int":
+            try:
+                ccfg[key] = int(val)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{field['label']} must be a number") from exc
+        else:
+            ccfg[key] = str(val)
+    _write(data)
+
+
+def clear_channel(name: str) -> None:
+    """Remove a channel's overlay table entirely (reverts to config.toml/env)."""
+    if name not in _CHANNELS_BY_NAME:
+        raise ValueError("unknown channel")
+    data = load_overlay()
+    (data.get("channels") or {}).pop(name, None)
+    _write(data)
+
+
 def _raw_config_providers() -> dict:
     """Providers from config.toml ONLY (no overlay), to attribute the source."""
     try:
         return config._load_config_file(config.config_path()).get("providers", {}) or {}
+    except Exception:
+        return {}
+
+
+def _raw_config_channels() -> dict:
+    """Channels from config.toml ONLY (no overlay), to attribute the source."""
+    try:
+        return config._load_config_file(config.config_path()).get("channels", {}) or {}
     except Exception:
         return {}
 
@@ -196,7 +300,42 @@ def state() -> dict:
     return {"providers": providers, "capabilities": capabilities, "features": features}
 
 
+def channels_state() -> list[dict]:
+    """Redacted snapshot for the channels page. NEVER returns a raw secret:
+    secret fields are blanked (with a masked hint), non-secret fields prefill so
+    the form shows the current host/port/etc."""
+    overlay = load_overlay()
+    ov_ch = overlay.get("channels") or {}
+    raw_ch = _raw_config_channels()
+    out = []
+    for spec in CHANNELS:
+        name = spec["name"]
+        ov = ov_ch.get(name) or {}
+        raw = raw_ch.get(name) or {}
+        fields = []
+        for f in spec["fields"]:
+            ov_v = ov.get(f["key"])
+            raw_v = raw.get(f["key"])
+            v = ov_v if ov_v not in (None, "") else raw_v
+            configured = v not in (None, "")
+            fields.append({
+                "key": f["key"], "label": f["label"],
+                "secret": bool(f.get("secret")), "type": f.get("type", "text"),
+                "value": "" if f.get("secret") else (str(v) if configured else ""),
+                "hint": _mask(v) if (configured and f.get("secret")) else "",
+                "configured": configured,
+            })
+        out.append({
+            "name": name, "label": spec["label"],
+            "enabled": bool(ov.get("enabled", raw.get("enabled", False))),
+            "fields": fields, "dashboard_set": bool(ov),
+            "via": "dashboard" if ov else ("config.toml" if raw else None),
+        })
+    return out
+
+
 __all__ = [
-    "PROVIDERS", "CAPABILITY_DEFAULTS", "FEATURE_DEFAULTS",
+    "PROVIDERS", "CAPABILITY_DEFAULTS", "FEATURE_DEFAULTS", "CHANNELS",
     "load_overlay", "set_provider", "clear_provider", "set_toggle", "state",
+    "set_channel", "clear_channel", "channels_state",
 ]
