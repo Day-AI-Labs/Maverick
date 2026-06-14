@@ -70,10 +70,16 @@
       <code>[models] catalog</code> in config.toml.
     </p>
     <datalist id="model-catalog">
-      {% for spec, plabel in model_options %}
+      {% for spec, plabel in picker_options %}
       <option value="{{ spec }}">{{ plabel }}</option>
       {% endfor %}
     </datalist>
+    {% if allowed_models %}
+    <p class="muted" style="margin-top: 0;">
+      An admin allow-list is active — pickers are limited to the
+      {{ allowed_models|length }} model(s) approved below.
+    </p>
+    {% endif %}
     <form method="post" action="/settings/models"
           style="display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-end;">
       <label style="display: flex; flex-direction: column; gap: var(--space-1); min-width: 20rem;">
@@ -120,6 +126,31 @@
         </tbody>
       </table>
       <button type="submit" class="btn btn--primary" style="margin-top: var(--space-3);">Save per-role models</button>
+    </form>
+  </div>
+
+  <h2>Allowed models</h2>
+  <div class="panel">
+    <p class="muted" style="margin-top: 0;">
+      Restrict which models anyone may use. Check the ones you approve and save;
+      the default and per-role pickers above are then limited to your selection,
+      and <strong>every agent is hard-capped to it</strong> — a model pinned in
+      <code>config.toml</code> or the environment cannot run outside this list.
+      Leave every box unchecked to allow all models. Saved to the dashboard
+      overlay (<code>~/.maverick/runtime-overrides.toml</code>), never
+      <code>config.toml</code>.
+    </p>
+    <form method="post" action="/settings/models/allowed">
+      {% for spec, plabel in model_options %}
+      <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--hairline);">
+        <span><code>{{ spec }}</code> <span class="muted">· {{ plabel }}</span></span>
+        <input type="checkbox" name="models" value="{{ spec }}"{% if spec in allowed_models %} checked{% endif %} style="width: 18px; height: 18px; accent-color: var(--brand);" />
+      </label>
+      {% endfor %}
+      <p style="margin-bottom: 0; margin-top: var(--space-3);">
+        <button type="submit" class="btn btn--primary">Save allowed models</button>
+        {% if allowed_models %}<span class="muted" style="margin-left: var(--space-3);">{{ allowed_models|length }} model(s) allowed. Uncheck all and save to allow every model.</span>{% endif %}
+      </p>
     </form>
   </div>
 
