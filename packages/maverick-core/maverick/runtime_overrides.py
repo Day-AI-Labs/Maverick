@@ -145,9 +145,20 @@ def plugin_overlay() -> tuple[set[str], set[str]]:
     return on - off, off  # disable wins if a name appears in both
 
 
+def allowed_models() -> set[str]:
+    """The admin allow-list of model specs (dashboard ``[access] allowed_models``).
+    When non-empty, ``llm.model_for_role`` caps every role to this set and the
+    settings pickers offer only these. Empty = no restriction. Re-validated on
+    read so a tampered file can't inject junk."""
+    raw = (_load().get("access") or {}).get("allowed_models") or []
+    return {s.strip() for s in raw
+            if isinstance(s, str) and _VALID_MODEL.fullmatch(s.strip())}
+
+
 def _write_state(denied: set[str], models: dict[str, str] | None,
                  budget: float | None,
-                 plugins: tuple[set[str], set[str]] | None = None) -> None:
+                 plugins: tuple[set[str], set[str]] | None = None,
+                 allowed: set[str] | None = None) -> None:
     """Serialise the whole overlay: [security] denied_tools + optional [models]
     (default + per-role) + [budget] max_dollars + [plugins] enabled/disabled.
     One file holds every surface, so each write renders the full state --
@@ -180,6 +191,10 @@ def _write_state(denied: set[str], models: dict[str, str] | None,
             body += f"enabled = [{', '.join(_toml_string(n) for n in sorted(on))}]\n"
         if off:
             body += f"disabled = [{', '.join(_toml_string(n) for n in sorted(off))}]\n"
+    allow = allowed_models() if allowed is None else allowed
+    if allow:
+        body += ("\n[access]\nallowed_models = ["
+                 f"{', '.join(_toml_string(s) for s in sorted(allow))}]\n")
     tmp_path = OVERRIDES_PATH.with_suffix(".toml.tmp")
     fd = os.open(tmp_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -325,11 +340,28 @@ def reset_plugin(name: str) -> None:
     _set_plugins(on, off)
 
 
+def set_allowed_models(specs) -> set[str]:
+    """Set the admin model allow-list (an empty list clears it). Validates each
+    spec before writing; returns the stored set."""
+    allow: set[str] = set()
+    for s in (specs or []):
+        m = (str(s) or "").strip()
+        if not m:
+            continue
+        if not _VALID_MODEL.fullmatch(m):
+            raise ValueError("invalid model id")
+        allow.add(m)
+    _write_state(denied_tools(), _models_overlay() or None, budget_override(),
+                 allowed=allow)
+    return allow
+
+
 __all__ = [
     "denied_tools", "disable_tool", "enable_tool",
     "default_model_override", "set_default_model", "clear_default_model",
     "role_model_override", "set_role_models",
     "budget_override", "set_budget", "clear_budget",
     "plugin_overlay", "enable_plugin", "disable_plugin", "reset_plugin",
+    "allowed_models", "set_allowed_models",
     "OVERRIDES_PATH",
 ]
