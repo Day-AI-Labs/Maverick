@@ -1917,8 +1917,12 @@ async def templates_market_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/channels", response_class=HTMLResponse)
-async def channels_page(request: Request) -> HTMLResponse:
-    """Configured + enabled channels."""
+async def channels_page(request: Request, saved: str = "") -> HTMLResponse:
+    """Channels: manage the common ones (enable + credentials) from the form
+    sections, plus a read-only, secret-redacted view of everything configured.
+    Saved to the dashboard overlay, never config.toml; effective on the next
+    `maverick serve`."""
+    require_permission(request, "admin")
     sensitive_markers = (
         "token", "secret", "password", "passwd", "api_key", "apikey", "auth",
         "credential", "cookie", "session",
@@ -1945,9 +1949,47 @@ async def channels_page(request: Request) -> HTMLResponse:
         channels = _display_channels((load_config() or {}).get("channels") or {})
     except Exception:
         channels = {}
+    from maverick_dashboard import settings_store
+    managed = settings_store.channels_state()
+    saved_msg = {"save": "Channel updated.", "clear": "Channel reset."}.get(saved, "")
     return templates.TemplateResponse(
-        request, "channels.html", {"channels": channels},
+        request, "channels.html",
+        {"channels": channels, "managed": managed, "saved": saved_msg},
     )
+
+
+@app.post("/channels/save")
+async def channels_save(request: Request) -> RedirectResponse:
+    """Enable/disable a channel and set its credentials from the form. Stored in
+    the dashboard overlay (dashboard-config.toml), never config.toml; blank
+    fields keep the current value so a toggle never wipes a hidden secret."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    require_permission(request, "admin")
+    from maverick_dashboard import settings_store
+    form = await request.form()
+    name = (form.get("channel") or "").strip()
+    enabled = form.get("enabled") is not None  # checkbox present == on
+    values = {k: v for k, v in form.items() if k not in ("channel", "enabled")}
+    try:
+        settings_store.set_channel(name, enabled, values)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse("/channels?saved=save", status_code=303)
+
+
+@app.post("/channels/clear")
+async def channels_clear(request: Request, channel: str = Form(...)) -> RedirectResponse:
+    """Remove a channel's dashboard overlay (reverts to config.toml / env)."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    require_permission(request, "admin")
+    from maverick_dashboard import settings_store
+    try:
+        settings_store.clear_channel((channel or "").strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse("/channels?saved=clear", status_code=303)
 
 
 @app.get("/api/v1/providers")
