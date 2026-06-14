@@ -83,7 +83,7 @@ def _plugins_config() -> dict:
         return {}
 
 
-def _allowed_plugin_names() -> set[str] | None:
+def _config_allowed_plugin_names() -> set[str] | None:
     """Return the set of enabled plugin names, or None if all are enabled.
 
     Resolution order:
@@ -117,6 +117,40 @@ def _allowed_plugin_names() -> set[str] | None:
     if "*" in items:
         return None
     return items
+
+
+def _all_installed_names() -> set[str]:
+    """Every installed plugin entry-point name across the discovered groups.
+    Used to concretise the allowlist when config enables all (``*``) but the
+    dashboard has force-disabled one or more."""
+    names: set[str] = set()
+    for group in ("maverick.tools", "maverick.channels",
+                  "maverick.skills", "maverick.personas"):
+        try:
+            for ep in _entry_points(group):
+                names.add(ep.name)
+        except Exception:
+            pass
+    return names
+
+
+def _allowed_plugin_names() -> set[str] | None:
+    """The config/env allowlist with the dashboard ``[plugins]`` overlay applied:
+    ``enabled`` adds to it, ``disabled`` removes from it (disable wins). The
+    overlay lives in ~/.maverick/runtime-overrides.toml (the dashboard plugins
+    page), never config.toml."""
+    base = _config_allowed_plugin_names()
+    try:
+        from .runtime_overrides import plugin_overlay
+        on, off = plugin_overlay()
+    except Exception:  # pragma: no cover -- overlay never breaks discovery
+        on, off = set(), set()
+    if not on and not off:
+        return base
+    if base is None:
+        # config enables all; a disable is the only thing that narrows it.
+        return (_all_installed_names() - off) if off else None
+    return (base | on) - off
 
 
 def _permission_policy() -> tuple[set[str], bool]:
