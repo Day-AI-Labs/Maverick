@@ -213,12 +213,12 @@ def _probe_audit_chain() -> dict[str, Any]:
         return result
     result["audit_dir"] = str(audit_dir)
 
-    day_files = _safe(
-        lambda: sorted(
-            p for p in audit_dir.glob("*.ndjson") if p.name != "anchors.ndjson"
-        ),
-        [],
-    )
+    # The shared reader defines "what counts as a day-file" (date-named
+    # ``*.ndjson``, anchor ledger excluded) once; the cross-file
+    # ``anchors.ndjson`` is checked separately by ``verify_anchors`` below.
+    from .audit import reader
+
+    day_files = _safe(lambda: reader.day_files(audit_dir), [])
     real_breaks = 0  # genuine tamper/verify failures
     unsigned_rows = 0  # rows missing hash/sig/key_id (signing simply off)
     first_reason: str | None = None

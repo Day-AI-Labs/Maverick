@@ -377,59 +377,26 @@ def _verify_skill_signature(parsed: Skill, *, require_signature: bool = False) -
     installed unsigned under TOFU/no-trust. Raises ``ValueError`` on any
     policy violation. If ``cryptography`` is absent, signed skills are
     rejected because trust cannot be established safely.
+
+    Skill policy: an unsigned skill is rejected only under ``require_signed``
+    (global) or the caller's ``require_signature`` (the catalog
+    ``require_signed_catalog`` / configured-anchor path) -- a bare
+    ``trusted_pubkeys`` does NOT force signing for free-text installs (TOFU).
     """
     from . import config as _config
-    from .audit import signing
+    from .catalog_trust import verify_signed_catalog_item
 
     cfg = _config.get_skills()
-    trusted = cfg["trusted_pubkeys"]
-    must_verify = bool(cfg["require_signed"]) or require_signature
-    signed = bool(parsed.sig and parsed.pubkey)
-
-    if not signed:
-        if must_verify:
-            raise ValueError(
-                "skill rejected: require_signed (or require_signed_catalog) is "
-                "set but the SKILL.md has no 'sig'/'pubkey' frontmatter."
-            )
-        return False
-
-    if not signing._have_crypto():
-        raise ValueError(
-            "skill rejected: cryptography is required to verify signed skills. "
-            "Install 'maverick-agent[audit-signing]' to enable signature verification."
-        )
-
-    # With no configured trust anchor, a self-asserted pubkey verifies its own
-    # signature -- that is integrity, not authenticity. When the caller demands
-    # a verified signature (require_signed_catalog), refuse unless we can anchor
-    # the pubkey to a trusted publisher.
-    if not trusted:
-        if require_signature:
-            raise ValueError(
-                "skill rejected: require_signed_catalog is set but no "
-                "[skills].trusted_pubkeys are configured to anchor trust. "
-                "A self-asserted signature cannot be verified as authentic."
-            )
-        # No trust configured and none required: a self-signed skill provides
-        # no authenticity guarantee, so report it as NOT verified even though
-        # the signature is internally consistent.
-        return False
-
-    if parsed.pubkey not in trusted:
-        raise ValueError(
-            "skill rejected: signed by an untrusted publisher key "
-            f"{parsed.pubkey[:16]!r} (not in [skills].trusted_pubkeys)."
-        )
-
-    if not signing.verify_ed25519(
-        parsed.pubkey, parsed.sig, _canonical_signed_bytes(parsed)
-    ):
-        raise ValueError(
-            "skill rejected: Ed25519 signature does not verify over the skill's "
-            "signed fields (name/triggers/tools_needed/body)."
-        )
-    return True
+    return verify_signed_catalog_item(
+        item="skill",
+        sig=parsed.sig,
+        pubkey=parsed.pubkey,
+        canonical_bytes_fn=lambda: _canonical_signed_bytes(parsed),
+        trusted=cfg["trusted_pubkeys"],
+        must_verify=bool(cfg["require_signed"]) or require_signature,
+        require_anchor=require_signature,
+        fields="name/triggers/tools_needed/body",
+    )
 
 
 def _validate_and_write(
@@ -471,32 +438,9 @@ def _validate_and_write(
     # installed) and reject on block. If shield isn't installed, the
     # builtin rules in maverick_shield (when available) still cover
     # the common jailbreak patterns; fail-open with a warning otherwise.
-    try:
-        from maverick_shield import Shield  # type: ignore
-    except ImportError:
-        pass
-    else:
-        try:
-            shield = Shield.from_config()
-            verdict = shield.scan_input(parsed.body or "")
-        except ValueError:
-            # ValueError from Shield.scan_input → re-raise as our own
-            # rejection (test fixtures rely on this). Anything else
-            # (Shield.from_config bad-config, runtime error inside the
-            # shield) falls into the fail-open branch below.
-            raise
-        except Exception as exc:  # pragma: no cover
-            import logging
-            logging.getLogger(__name__).warning(
-                "Shield raised %s during skill install; failing open",
-                type(exc).__name__,
-            )
-        else:
-            if not verdict.allowed:
-                raise ValueError(
-                    f"skill body rejected by Shield ({verdict.severity}): "
-                    f"{'; '.join(verdict.reasons)}"
-                )
+    from .catalog_trust import shield_scan
+
+    shield_scan(parsed.body or "", label="skill body")
 
     name = _safe_name(parsed.name) if parsed.name else "imported-skill"
     target = skills_dir / f"{name}.md"
