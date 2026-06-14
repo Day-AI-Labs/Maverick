@@ -39,6 +39,12 @@ class TestRosterAndView:
         assert body["role"] == "coder"
         assert body["is_override"] is False
 
+    def test_page_renders_editable_model_effort(self):
+        html = client.get("/roles?role=coder").text
+        assert 'id="f-model"' in html and 'name="model"' in html
+        assert 'id="f-effort"' in html and 'name="effort"' in html
+        assert "(inherit" in html   # the "no override" effort option
+
     def test_unknown_role_404(self):
         assert client.get("/api/v1/roles/not_a_role").status_code == 404
 
@@ -56,6 +62,20 @@ class TestOverrideLifecycle:
     def test_overlong_addendum_rejected_422(self):
         r = client.post("/api/v1/roles/coder/override",
                         json={"system_addendum": "x" * 5000})
+        assert r.status_code == 422
+        assert client.get("/api/v1/roles/coder").json()["is_override"] is False
+
+    def test_save_model_and_effort(self):
+        r = client.post("/api/v1/roles/coder/override",
+                        json={"model": "anthropic:claude-opus-4-8", "effort": "high"})
+        assert r.status_code == 200
+        got = client.get("/api/v1/roles/coder").json()
+        assert got["model_override"] == "anthropic:claude-opus-4-8"
+        assert got["effort_override"] == "high"
+        assert got["is_override"] is True
+
+    def test_invalid_effort_rejected_422(self):
+        r = client.post("/api/v1/roles/coder/override", json={"effort": "bogus"})
         assert r.status_code == 422
         assert client.get("/api/v1/roles/coder").json()["is_override"] is False
 

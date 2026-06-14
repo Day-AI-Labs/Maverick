@@ -39,11 +39,26 @@
       <p class="muted">
         model: <code>{{ selected.model or '—' }}</code>
         {% if selected.effort %}· effort: <code>{{ selected.effort }}</code>{% endif %}
-        {% if selected.is_override %}· <span class="badge">addendum customized</span>{% endif %}
+        {% if selected.is_override %}· <span class="badge">customized</span>{% endif %}
       </p>
       <div id="role-msg" role="status" aria-live="polite" class="muted" style="min-height: 1.2rem;"></div>
 
       <form id="role-form" data-role="{{ selected.role }}">
+        <p>
+          <label for="f-model">Model <span class="muted">(provider:model-id; empty = inherit the
+            configured default)</span></label><br>
+          <input id="f-model" name="model" type="text" style="width: 100%;"
+                 value="{{ selected.model_override }}" placeholder="{{ selected.model or '' }}">
+        </p>
+        <p>
+          <label for="f-effort">Reasoning effort <span class="muted">(empty = inherit)</span></label><br>
+          <select id="f-effort" name="effort">
+            <option value="">(inherit{% if selected.effort %} — {{ selected.effort }}{% endif %})</option>
+            {% for lvl in ['low', 'medium', 'high', 'xhigh', 'max'] %}
+            <option value="{{ lvl }}"{% if selected.effort_override == lvl %} selected{% endif %}>{{ lvl }}</option>
+            {% endfor %}
+          </select>
+        </p>
         <p>
           <label for="f-addendum">System-prompt addendum
             <span class="muted">(appended to this role's base template; leave empty to clear)</span></label><br>
@@ -52,7 +67,7 @@
         </p>
         {% if editable %}
         <p>
-          <button type="button" id="btn-save">Save addendum</button>
+          <button type="button" id="btn-save">Save</button>
           <button type="button" id="btn-reset">Reset to built-in</button>
         </p>
         {% else %}
@@ -97,7 +112,11 @@
       }
 
       document.getElementById('btn-save').addEventListener('click', async () => {
-        const body = { system_addendum: document.getElementById('f-addendum').value };
+        const body = {
+          system_addendum: document.getElementById('f-addendum').value,
+          model: document.getElementById('f-model').value,
+          effort: document.getElementById('f-effort').value,
+        };
         const { status, data } = await call('POST', `/api/v1/roles/${role}/override`, body);
         if (status === 200) { show('Saved.', true); window.location.search = '?role=' + encodeURIComponent(role); }
         else show('Rejected: ' + (data.detail || ('HTTP ' + status)), false);

@@ -33,9 +33,13 @@ class AgentOverrideIn(BaseModel):
 
 
 class RoleOverrideIn(BaseModel):
-    """A per-tenant override for a core agent role: an editable system-prompt
-    addendum appended to the role's base template. Empty clears the override."""
+    """A per-tenant override for a core agent role: a system-prompt addendum
+    appended to the role's base template, plus optional model/effort overrides
+    that win over the global [models]/[effort] config. Empty fields clear; an
+    all-empty patch clears the role's override."""
     system_addendum: str | None = None
+    model: str | None = None
+    effort: str | None = None
 
 
 class GoalIn(BaseModel):

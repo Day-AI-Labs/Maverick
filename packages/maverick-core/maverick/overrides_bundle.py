@@ -98,13 +98,14 @@ def load_overrides(src: str | Path) -> dict:
             out["skipped"].append(f"roles.toml: {e}")
             tables = {}
         for role, tbl in tables.items():
-            addendum = str((tbl or {}).get("system_addendum") or "")
-            errs = validate_role(role, {"system_addendum": addendum})
+            patch = {k: str((tbl or {}).get(k) or "")
+                     for k in ("system_addendum", "model", "effort")}
+            errs = validate_role(role, patch)
             if errs:
                 out["skipped"].append(f"roles.toml[{role}]: {errs[0]}")
                 continue
             try:
-                write_role_override(role, {"system_addendum": addendum})
+                write_role_override(role, patch)
                 out["roles"] += 1
             except ValueError as e:  # defensive; validate_role already gated
                 out["skipped"].append(f"roles.toml[{role}]: {e}")
