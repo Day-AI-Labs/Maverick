@@ -141,7 +141,17 @@ def load_config(path: Path | None = None) -> dict:
 
 
 def get_role_model(role: str) -> str | None:
-    """Return the model spec ("provider:model-id") for a role, or None."""
+    """Return the model spec ("provider:model-id") for a role, or None.
+
+    A per-tenant override (the dashboard roles editor, persisted to roles.toml)
+    wins over the global [models] config; absent one, the config value is used."""
+    try:
+        from .role_edit import override_model
+        ov = override_model(role)
+        if ov:
+            return ov
+    except Exception:  # role layer is optional; never block model resolution
+        pass
     cfg = load_config()
     spec = cfg.get("models", {}).get(role)
     return spec if isinstance(spec, str) and spec else None
@@ -236,9 +246,9 @@ def get_features() -> dict:
                       override TOML on the host is unaffected.
     - ``role_editing`` allow editing the core agent roles (orchestrator, coder,
                       ...) from the dashboard -- a per-tenant system-prompt
-                      addendum per role. Off = the roles editor is read-only and
-                      its mutating endpoints 403. Role model/effort routing is
-                      configured separately ([models]/[effort]).
+                      addendum plus model/effort overrides per role (which win
+                      over the global [models]/[effort] config). Off = the roles
+                      editor is read-only and its mutating endpoints 403.
 
     All default on.
     """

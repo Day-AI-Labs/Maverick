@@ -86,6 +86,15 @@ def _configured_level(role: str) -> str | None:
     env_global = os.environ.get("MAVERICK_EFFORT")
     if env_global:
         return env_global
+    # Per-tenant role override (dashboard roles editor / roles.toml) wins over
+    # the global [effort] config, but still defers to an explicit env override.
+    try:
+        from .role_edit import override_effort
+        ov = override_effort(role_l)
+        if ov:
+            return ov
+    except Exception:
+        pass
     cfg = _config_effort()
     if role_l in cfg and isinstance(cfg[role_l], str):
         return cfg[role_l]
