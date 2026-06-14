@@ -195,47 +195,23 @@ def _export_world(world: Any, user_id: str, channel: str | None) -> dict[str, An
     return {"conversations": conversations, "goals": goals}
 
 
-def _audit_dir_for_tenant(tenant: str | None) -> Any:
-    """Resolve the audit directory for ``tenant`` fail-softly."""
-    try:
-        from .paths import data_dir
-
-        return data_dir("audit", tenant=tenant) if tenant else data_dir("audit")
-    except Exception as e:  # pragma: no cover - defensive
-        log.warning("dsar: could not resolve audit dir: %s", e)
-        return None
-
-
 def _iter_audit_events(tenant: str | None) -> list[dict[str, Any]]:
-    """Read audit NDJSON rows as dicts, skipping malformed/unreadable input."""
-    audit_dir = _audit_dir_for_tenant(tenant)
-    if audit_dir is None or not audit_dir.exists() or not audit_dir.is_dir():
-        return []
+    """Read audit NDJSON rows as dicts, skipping malformed/unreadable input.
+
+    Delegates to the shared :func:`maverick.audit.reader.iter_events` (the
+    single day-file enumeration + parsing path used by export and SOC 2 too), so
+    the cross-file ``anchors.ndjson`` tip-ledger is excluded and at-rest-sealed
+    segments are transparently decrypted — neither of which this module did when
+    it had its own ad-hoc glob. Fail-soft: a missing dir or unreadable/malformed
+    line is skipped, never raised.
+    """
+    from .audit import reader
 
     try:
-        files = sorted(audit_dir.glob("*.ndjson"))
-    except OSError as e:  # pragma: no cover - defensive
-        log.warning("dsar: could not list audit dir %s: %s", audit_dir, e)
+        return list(reader.iter_events(tenant=tenant, all_days=True))
+    except Exception as e:  # pragma: no cover - defensive
+        log.warning("dsar: could not read audit events: %s", e)
         return []
-
-    events: list[dict[str, Any]] = []
-    for path in files:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as e:  # pragma: no cover - defensive
-            log.warning("dsar: could not read %s: %s", path, e)
-            continue
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict):
-                events.append(event)
-    return events
 
 
 def _audit_channels_for_user(user_id: str, tenant: str | None) -> set[str]:

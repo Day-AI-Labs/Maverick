@@ -438,8 +438,12 @@ def _file_tip_and_count(path: Path) -> tuple[str, int]:
     return tip, count
 
 
-def _day_files(audit_dir: Path) -> list[Path]:
-    """Date-named day-files (YYYY-MM-DD.ndjson), excluding the anchor ledger."""
+def day_files(audit_dir: Path) -> list[Path]:
+    """Date-named day-files (YYYY-MM-DD.ndjson), excluding the anchor ledger.
+
+    The single definition of "what counts as an audit day-file"; the read-side
+    consumers (export / dsar / soc2) reach it via :mod:`maverick.audit.reader`.
+    """
     return sorted(
         p for p in audit_dir.glob("*.ndjson") if _DAY_RE.fullmatch(p.stem)
     )
@@ -544,7 +548,7 @@ def ensure_anchors(audit_dir: Path) -> int:
     today = _today_utc()
     anchored = _anchored_days(audit_dir)
     written = 0
-    for day_file in _day_files(audit_dir):
+    for day_file in day_files(audit_dir):
         day = day_file.stem
         if day >= today or day in anchored:
             continue
@@ -579,7 +583,7 @@ def verify_anchors(audit_dir: Path, pubkey_hex: str | None = None) -> list[Chain
     """
     anchor_path = audit_dir / ANCHOR_FILENAME
     if not anchor_path.exists():
-        has_completed_days = any(p.stem < _today_utc() for p in _day_files(audit_dir))
+        has_completed_days = any(p.stem < _today_utc() for p in day_files(audit_dir))
         if has_completed_days or _anchor_marker_path(audit_dir).exists():
             return [
                 ChainBreak(

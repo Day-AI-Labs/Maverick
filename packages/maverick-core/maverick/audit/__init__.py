@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from .erase import delete_user, scrub_user  # noqa: F401
 from .events import AuditEvent, EventKind  # noqa: F401
+from .reader import day_files, event_paths, iter_events  # noqa: F401
 from .signing import (  # noqa: F401
     AuditSigner,
     ChainBreak,
@@ -51,4 +52,7 @@ __all__ = [
     "reanchor_file",
     "ensure_anchors",
     "verify_anchors",
+    "day_files",
+    "event_paths",
+    "iter_events",
 ]

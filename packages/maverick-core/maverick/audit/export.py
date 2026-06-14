@@ -10,14 +10,13 @@ Event shape and tenant-aware path resolution are reused from the writer
 """
 from __future__ import annotations
 
-import datetime as _dt
 import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from .events import is_valid_day
+from . import reader
 
 log = logging.getLogger(__name__)
 
@@ -50,36 +49,14 @@ def audit_event_paths(
     since: str | None = None, until: str | None = None,
     tenant: str | None = None,
 ) -> list[Path]:
-    """Return tenant-aware audit day-files selected for export."""
-    # Validate the path-forming input first -- before any filesystem check that
-    # could otherwise short-circuit (an empty dir) and let a crafted ``day``
-    # slip past. (``since``/``until`` are only compared lexically below, never
-    # built into a path.)
-    if day is not None and not is_valid_day(day):
-        raise ValueError(f"invalid audit day {day!r}: expected YYYY-MM-DD")
-    from ..paths import data_dir
+    """Return tenant-aware audit day-files selected for export.
 
-    audit_dir = data_dir("audit", tenant=tenant) if tenant else data_dir("audit")
-    if not audit_dir.exists() or not audit_dir.is_dir():
-        return []
-
-    if since or until:
-        # Inclusive [since, until] window over day-file dates. ISO YYYY-MM-DD
-        # sorts lexically, so a plain string compare on the file stem works.
-        lo = since or "0000-00-00"
-        hi = until or "9999-99-99"
-        return [
-            p for p in sorted(audit_dir.glob("*.ndjson"))
-            if p.name != "anchors.ndjson" and lo <= p.stem <= hi
-        ]
-    if all_days:
-        return [
-            p for p in sorted(audit_dir.glob("*.ndjson")) if p.name != "anchors.ndjson"
-        ]
-
-    # ``day`` was validated up front; default to today (UTC) when unset.
-    d = day or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
-    return [audit_dir / f"{d}.ndjson"]
+    Thin wrapper over :func:`maverick.audit.reader.event_paths` (the single
+    day-file-selection definition shared with the DSAR and SOC 2 readers).
+    """
+    return reader.event_paths(
+        day=day, all_days=all_days, since=since, until=until, tenant=tenant,
+    )
 
 
 def iter_audit_events(
@@ -89,31 +66,16 @@ def iter_audit_events(
 ) -> Iterator[dict[str, Any]]:
     """Yield audit event dicts from the tenant-aware audit dir.
 
-    Selection precedence: a ``since``/``until`` window (inclusive, over day-file
-    dates) wins; then ``all_days`` sweeps every ``*.ndjson`` day-file except the
-    cross-file ``anchors.ndjson`` tip-ledger (matching ``audit verify``);
-    otherwise a single day-file is read (``day`` or today, UTC).
-    Malformed/unreadable lines and a missing dir are skipped silently
-    (fail-soft).
+    Thin wrapper over :func:`maverick.audit.reader.iter_events`. Selection
+    precedence: a ``since``/``until`` window (inclusive, over day-file dates)
+    wins; then ``all_days`` sweeps every day-file except the cross-file
+    ``anchors.ndjson`` tip-ledger (matching ``audit verify``); otherwise a
+    single day-file is read (``day`` or today, UTC). Malformed/unreadable lines
+    and a missing dir are skipped silently (fail-soft).
     """
-    paths = audit_event_paths(
+    return reader.iter_events(
         day=day, all_days=all_days, since=since, until=until, tenant=tenant,
     )
-
-    from .sealing import segment_text
-    for path in paths:
-        # segment_text transparently decrypts a sealed (at-rest) segment and is
-        # fail-soft (returns "" on a read/decrypt error).
-        for line in segment_text(path).splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict):
-                yield event
 
 
 def to_jsonl(event: dict[str, Any]) -> str:
