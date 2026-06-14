@@ -195,7 +195,7 @@ def test_oversight_audit_events_are_owner_scoped(monkeypatch, tmp_path):
     assert "alice-secret-tool" in text
     assert "bob.agent.internal" not in text
     assert "prod-admin-shell" not in text
-    assert '<p style="font-size: 1.4rem; margin: 0.2rem 0;">1</p>' in text
+    assert '<div class="num">1</div>' in text
 
 
 def test_oversight_admin_still_sees_all_audit_events(monkeypatch, tmp_path):
