@@ -656,6 +656,38 @@ def capability_revocations_cmd(as_json: bool) -> None:
                    + (f"  — {r.reason}" if r.reason else ""))
 
 
+@main.group("overrides")
+def overrides_group() -> None:
+    """Export / load this workspace's agent customizations as a portable bundle.
+
+    A bundle is a plain directory carrying the workspace's domain-pack overrides
+    (``domains/*.toml``) and per-role system-prompt addendums (``roles.toml``).
+    Commit it to a repo and ``maverick overrides load`` it in CI so the
+    ``agent-on-pr`` review runs as your customized workforce."""
+
+
+@overrides_group.command("export")
+@click.argument("dest", type=click.Path(file_okay=False))
+def overrides_export_cmd(dest: str) -> None:
+    """Write this workspace's overrides (domain packs + role addendums) into DEST."""
+    from .overrides_bundle import export_overrides
+    n = export_overrides(dest)
+    click.echo(f"exported {n['domains']} domain override(s), "
+               f"{n['roles']} role addendum(s) to {dest}")
+
+
+@overrides_group.command("load")
+@click.argument("src", type=click.Path(exists=True, file_okay=False))
+def overrides_load_cmd(src: str) -> None:
+    """Apply a bundle from SRC into this workspace (each item re-validated)."""
+    from .overrides_bundle import load_overrides
+    n = load_overrides(src)
+    click.echo(f"loaded {n['domains']} domain override(s), "
+               f"{n['roles']} role addendum(s)")
+    for s in n["skipped"]:
+        click.echo(click.style(f"  skipped {s}", fg="yellow"))
+
+
 @main.group()
 def governance() -> None:
     """Inspect the oversight control-plane policy (enterprise)."""
