@@ -292,12 +292,12 @@ def test_footer_no_longer_leaks_world_db_path(monkeypatch, tmp_path):
 # ---------- index hero empty state ----------
 
 def test_index_empty_state_shows_hero(monkeypatch, tmp_path):
-    """A fresh install lands on the hero CTA, not 4 zeros + 3 'No X yet' rows."""
+    """The overview shows the hero CTA on a fresh install, not 4 zeros + 3 'No X yet' rows."""
     from maverick import world_model
     monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
     monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
     client = _client()
-    r = client.get("/")
+    r = client.get("/overview")
     text = r.text
     assert "Start your first goal" in text
     # The 4-zeros graveyard should be absent on a fresh install.

@@ -866,8 +866,8 @@ async def public_demo(request: Request) -> HTMLResponse:
     )
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request) -> HTMLResponse:
+@app.get("/overview", response_class=HTMLResponse)
+async def overview(request: Request) -> HTMLResponse:
     w = _world()
     # Use SQL aggregation instead of pulling every goal into Python. Owner-scope
     # the rollup to the caller (auth-off/admin -> all; see goal_owner_filter).
@@ -2354,6 +2354,9 @@ async def shield_calibration_api() -> JSONResponse:
     return JSONResponse(calibration_report(cases))
 
 
+# The dashboard lands on the chat page (the primary working surface), so the
+# bare root renders it too; the overview/stats view lives at /overview.
+@app.get("/", response_class=HTMLResponse)
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
     recent = _world().list_goals(owner=goal_owner_filter(request), limit=10, order="desc")
