@@ -55,6 +55,7 @@ from .api_schemas import (
     SkillInstallIn,
     SkillOut,
     WorkflowDraftIn,
+    WorkflowRefineIn,
     WorkflowSaveIn,
 )
 from .auth import (
@@ -2052,6 +2053,23 @@ async def draft_workflow_from_upload(
         return _drafter_for(form)("", source_text=text)
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"workflow drafting failed: {e}") from e
+
+
+@router.post("/workflows/refine")
+async def refine_workflow_draft(request: Request, payload: WorkflowRefineIn) -> dict:
+    """Revise the current draft (template or playbook, per ``form``) with a
+    natural-language follow-up — the iterative loop in the builder."""
+    require_permission(request, "operate")
+    _require_provider_for_drafting()
+    instruction = (payload.instruction or "").strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="describe the change you want")
+    from .workflow_ai import refine_playbook, refine_workflow
+    refiner = refine_playbook if payload.form == "playbook" else refine_workflow
+    try:
+        return refiner(payload.current or {}, instruction)
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=f"refining the draft failed: {e}") from e
 
 
 @router.post("/workflows", status_code=201)

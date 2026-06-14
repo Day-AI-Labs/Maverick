@@ -147,6 +147,51 @@ def test_draft_playbook_uses_injected_complete_under_cap():
     assert "AGENT PLAYBOOKS" in seen["system"]
 
 
+# --- refine (iterate on an existing draft) ----------------------------------
+
+def test_build_refine_prompt_includes_current_and_instruction():
+    from maverick_dashboard.workflow_ai import build_refine_prompt
+    p = build_refine_prompt({"title": "Weekly report", "params": ["topic"]}, "make it daily")
+    assert "Weekly report" in p and "make it daily" in p
+    assert "COMPLETE" in p  # asks for a full revision, not a diff
+
+
+def test_refine_workflow_revises_under_cap():
+    from maverick_dashboard import workflow_ai
+    seen = {}
+
+    class _Resp:
+        text = '{"name":"r","title":"R","steps":["a","email the team"]}'
+
+    def fake_complete(*, system, messages, budget, max_tokens, model):
+        seen["system"] = system
+        seen["budget"] = budget
+        seen["content"] = messages[0]["content"]
+        return _Resp()
+
+    d = workflow_ai.refine_workflow(
+        {"title": "R", "body": "## Steps\n1. a"}, "add a step to email the team",
+        complete=fake_complete,
+    )
+    assert d["steps"] == ["a", "email the team"]
+    assert seen["budget"].max_dollars == workflow_ai.DRAFT_MAX_DOLLARS
+    assert "WORKFLOWS" in seen["system"]                  # same system prompt as drafting
+    assert "email the team" in seen["content"]            # instruction reached the model
+
+
+def test_refine_playbook_uses_playbook_parser():
+    from maverick_dashboard import workflow_ai
+
+    class _Resp:
+        text = ('{"name":"bot","allow_tools":["pay"],"max_risk":"high",'
+                '"steps":[{"name":"Pay","gate":"approval"}]}')
+
+    d = workflow_ai.refine_playbook({"name": "bot"}, "require approval before paying",
+                                    complete=lambda **k: _Resp())
+    assert d["form"] == "playbook"
+    assert d["workflow"][0]["gate"] == "approval" and d["max_risk"] == "high"
+
+
 # --- core writer ------------------------------------------------------------
 
 def test_save_user_template_round_trips(monkeypatch, tmp_path):
@@ -353,6 +398,37 @@ def test_save_playbook_rejects_lint_failure(monkeypatch, tmp_path):
     assert "allow_tools" in r.json()["detail"]
 
 
+def test_refine_endpoint_routes_by_form(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _provider(monkeypatch, True)
+    from maverick_dashboard import workflow_ai
+    monkeypatch.setattr(workflow_ai, "refine_workflow",
+                        lambda cur, instr: {"name": "t", "title": "T", "params": [],
+                                            "steps": ["s"], "body": "b", "budget_dollars": 5.0})
+    monkeypatch.setattr(workflow_ai, "refine_playbook", lambda cur, instr: _PB_DRAFT)
+    rt = _client().post("/api/v1/workflows/refine",
+                        json={"form": "template", "instruction": "make it weekly", "current": {}})
+    assert rt.status_code == 200 and rt.json()["name"] == "t"
+    rp = _client().post("/api/v1/workflows/refine",
+                        json={"form": "playbook", "instruction": "require approval", "current": {}})
+    assert rp.status_code == 200 and rp.json()["form"] == "playbook"
+
+
+def test_refine_endpoint_requires_an_instruction(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _provider(monkeypatch, True)
+    r = _client().post("/api/v1/workflows/refine", json={"instruction": "   ", "current": {}})
+    assert r.status_code == 400
+
+
+def test_refine_endpoint_needs_provider_key(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _provider(monkeypatch, False)
+    r = _client().post("/api/v1/workflows/refine", json={"instruction": "x", "current": {}})
+    assert r.status_code == 400
+    assert "provider" in r.json()["detail"].lower()
+
+
 def test_workflow_builder_page_renders(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     r = _client().get("/workflow-builder")
@@ -363,5 +439,10 @@ def test_workflow_builder_page_renders(monkeypatch, tmp_path):
     # Both forms are offered, and the playbook saves via the agent-override path.
     assert 'id="wf-form-playbook"' in r.text and 'id="pb-preview"' in r.text
     assert "/api/v1/agents/" in r.text
+    # Level-100 affordances: refine loop, live governance check, starter examples.
+    assert "/api/v1/workflows/refine" in r.text
+    assert 'id="pb-refine"' in r.text and 'id="wf-refine"' in r.text
+    assert 'id="pb-govern"' in r.text and "/api/v1/agents/" in r.text
+    assert 'id="wf-examples"' in r.text
     # Reachable from the primary nav (Operate group).
     assert '<span class="nav-label">Workflows</span>' in r.text
