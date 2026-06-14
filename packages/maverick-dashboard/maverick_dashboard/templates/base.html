@@ -460,6 +460,7 @@
       <symbol id="i-agents" viewBox="0 0 16 16"><rect x="3.4" y="5" width="9.2" height="7" rx="2.2"/><path d="M8 2.6V5M6.4 8.2v.9M9.6 8.2v.9"/></symbol>
       <symbol id="i-roles" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2.2"/><circle cx="8" cy="6.6" r="1.6"/><path d="M5.4 11.4a2.7 2.7 0 0 1 5.2 0"/></symbol>
       <symbol id="i-builder" viewBox="0 0 16 16"><path d="M3.5 12.5 10 6"/><path d="M11 2.6l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z"/></symbol>
+      <symbol id="i-workflow" viewBox="0 0 16 16"><rect x="2.5" y="2.6" width="4.6" height="3.4" rx="1"/><rect x="8.9" y="10" width="4.6" height="3.4" rx="1"/><path d="M4.8 6v3.2a1.2 1.2 0 0 0 1.2 1.2h2.9"/></symbol>
       <symbol id="i-graph" viewBox="0 0 16 16"><circle cx="4" cy="4.2" r="1.7"/><circle cx="12" cy="5" r="1.7"/><circle cx="7" cy="12" r="1.7"/><path d="M5.5 4.7 10.5 5M5.3 5.6 6.4 10.4M8.4 11 10.8 6.5"/></symbol>
       <symbol id="i-fleets" viewBox="0 0 16 16"><path d="M8 2.6 14 5.6 8 8.6 2 5.6z"/><path d="M2.6 8.6 8 11.4 13.4 8.6"/></symbol>
       <symbol id="i-overview" viewBox="0 0 16 16"><rect x="2.6" y="2.6" width="4.8" height="4.8" rx="1.2"/><rect x="8.6" y="2.6" width="4.8" height="4.8" rx="1.2"/><rect x="2.6" y="8.6" width="4.8" height="4.8" rx="1.2"/><rect x="8.6" y="8.6" width="4.8" height="4.8" rx="1.2"/></symbol>
@@ -568,7 +569,8 @@
       {% set _active_path = '/chat' if _path == '/' else _path %}
       {% set _icons = {
         '/chat': 'chat', '/goals': 'target', '/agents': 'agents', '/roles': 'roles',
-        '/goal-builder': 'builder', '/graph-editor': 'graph', '/fleets': 'fleets',
+        '/goal-builder': 'builder', '/workflow-builder': 'workflow',
+        '/graph-editor': 'graph', '/fleets': 'fleets',
         '/overview': 'overview', '/oversight': 'eye', '/spend': 'spend',
         '/providers': 'providers', '/benchmarks': 'bench', '/learned': 'learned',
         '/plan-tree-3d': 'cube', '/approvals': 'check', '/permissions': 'key',
@@ -579,7 +581,7 @@
         '/facts': 'facts', '/walkthroughs': 'walkthroughs', '/embed-demo': 'embed',
       } %}
       {% set _nav_groups = [
-        ('Operate', [('/chat', 'Chat'), ('/goals', 'Goals'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
+        ('Operate', [('/chat', 'Chat'), ('/goals', 'Goals'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/workflow-builder', 'Workflows'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
         ('Observe', [('/overview', 'Overview'), ('/oversight', 'Oversight'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
         ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'), ('/safety', 'Safety'), ('/compliance', 'Compliance'), ('/compartments', 'Compartments'), ('/audit', 'Audit')]),
         ('Extend', [('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'), ('/tools', 'Tools'), ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/channels', 'Channels')]),

@@ -156,3 +156,18 @@ class ComposeIn(BaseModel):
     budget_dollars: float | None = Field(None, ge=0.0, le=100.0)
     channel: str | None = Field(None, max_length=64)
     priority: str | None = Field(None, max_length=16)
+
+
+class WorkflowDraftIn(BaseModel):
+    """Chat-path workflow drafting: a natural-language brief."""
+    description: str = Field("", max_length=8000)
+
+
+class WorkflowSaveIn(BaseModel):
+    """Persist an (AI-drafted, possibly edited) workflow as a user template."""
+    name: str = Field(..., max_length=48)
+    title: str = Field(..., max_length=200)
+    body: str = Field(..., max_length=20000)
+    params: list[str] = Field(default_factory=list)
+    budget_dollars: float = Field(5.0, ge=0.0, le=100.0)
+    budget_wall_seconds: float = Field(3600.0, ge=1.0, le=86400.0)
