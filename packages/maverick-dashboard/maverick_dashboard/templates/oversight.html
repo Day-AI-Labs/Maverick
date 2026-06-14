@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}oversight · Maverick{% endblock %}
 {% block content %}
-  <h2>oversight</h2>
-  <p class="muted">
+  <h1 class="page-title">Oversight</h1>
+  <p class="page-subtitle">
     Mission control for the agent fleet — every control-plane intervention in one
     place: org-policy holds (governance), shield blocks, capability + egress
     denials, consent denials, and killswitch halts. Deep dives:
@@ -10,31 +10,32 @@
     <a href="/fleets">fleets</a>, <a href="/audit">audit</a>.
   </p>
 
-  <div class="panel" style="display: flex; gap: 2rem; flex-wrap: wrap; align-items: center;">
-    <div>
-      <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">killswitch</div>
+  <div class="grid">
+    <div class="stat">
       {% if halted %}
-        <p style="font-size: 1.4rem; margin: 0.2rem 0; color: var(--danger);"><strong>HALTED</strong></p>
+      <div class="num" style="color: var(--danger);"><strong>HALTED</strong></div>
       {% else %}
-        <p style="font-size: 1.4rem; margin: 0.2rem 0;">running</p>
+      <div class="num">Running</div>
       {% endif %}
+      <div class="label">Killswitch</div>
     </div>
-    <div>
-      <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">active agents</div>
-      <p style="font-size: 1.4rem; margin: 0.2rem 0;">{{ active }}</p>
+    <div class="stat">
+      <div class="num">{{ active }}</div>
+      <div class="label">Active agents</div>
     </div>
-    <div>
-      <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">pending approvals</div>
-      <p style="font-size: 1.4rem; margin: 0.2rem 0;"><a href="/approvals">{{ pending }}</a></p>
+    <div class="stat">
+      <div class="num"><a href="/approvals" style="color: inherit; text-decoration: none;">{{ pending }}</a></div>
+      <div class="label">Pending approvals</div>
     </div>
-    <div>
-      <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">interventions {% if ranged %}({{ since or '…' }} → {{ until or '…' }}){% elif day %}({{ day }}){% else %}(today){% endif %}</div>
-      <p style="font-size: 1.4rem; margin: 0.2rem 0;">{{ total }}</p>
+    <div class="stat">
+      <div class="num">{{ total }}</div>
+      <div class="label">Interventions {% if ranged %}({{ since or '…' }} → {{ until or '…' }}){% elif day %}({{ day }}){% else %}(today){% endif %}</div>
     </div>
   </div>
 
+  <h2>Active now</h2>
   <div class="panel">
-    <h3 style="margin-top: 0;">Active now <span class="muted" style="font-size: 0.85rem; font-weight: normal;">— agents running right now (live)</span></h3>
+    <p class="muted" style="margin-top: 0;">Agents running right now (live).</p>
     <div id="active-now" aria-live="polite"><p class="muted">loading…</p></div>
     <div id="why-panel" aria-live="polite"></div>
   </div>
@@ -65,7 +66,7 @@
           if (!r.ok) { why.innerHTML = '<p class="muted">No drill-down available for #' + esc(id) + '.</p>'; return; }
           const d = await r.json();
           const sum = Object.entries(d.summary || {}).map(function(kv) { return esc(kv[0]) + ': ' + esc(kv[1]); }).join(' · ');
-          let h = '<div class="panel" style="border-color: var(--accent);">'
+          let h = '<div class="panel" style="border-color: var(--brand);">'
                 + '<div style="display:flex; justify-content:space-between; align-items:center;">'
                 + '<strong>Why #' + esc(id) + ' — ' + esc(d.title) + '</strong>'
                 + '<button onclick="document.getElementById(\'why-panel\').innerHTML=\'\'" '
@@ -104,7 +105,7 @@
                + '<td><code>' + esc(g.activity || '—') + '</code></td>'
                + '<td class="muted" style="white-space:nowrap;">' + esc(ago(g.updated_at)) + '</td>'
                + '<td><button type="button" data-why="' + esc(g.id) + '" '
-               + 'style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent);cursor:pointer;padding:0.1rem 0.5rem;">why?</button></td></tr>';
+               + 'style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--brand);cursor:pointer;padding:0.1rem 0.5rem;">why?</button></td></tr>';
           }
           box.innerHTML = h + '</tbody></table>';
         } catch (e) { /* keep last render on a transient error */ }
@@ -114,13 +115,14 @@
     })();
   </script>
 
+  <h2>Pending approvals</h2>
   <div class="panel">
-    <h3 style="margin-top: 0;">Pending approvals <span class="muted" style="font-size: 0.85rem; font-weight: normal;">— act on REQUIRE_HUMAN holds (EU AI Act Art 14)</span></h3>
+    <p class="muted" style="margin-top: 0;">Act on REQUIRE_HUMAN holds (EU AI Act Art 14).</p>
     {% include "_approvals_queue.html" %}
   </div>
 
+  <h2>By guardrail</h2>
   <div class="panel">
-    <h3 style="margin-top: 0;">By guardrail</h3>
     <div class="muted" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
       <span>governance: <strong>{{ by_kind.get('governance_denied', 0) }}</strong></span>
       <span>shield: <strong>{{ by_kind.get('shield_block', 0) }}</strong></span>
@@ -131,30 +133,30 @@
     </div>
   </div>
 
+  <h2>Filter</h2>
   <div class="panel">
     <form method="get" action="/oversight" style="display: flex; gap: 1rem; align-items: end; flex-wrap: wrap;">
       <label>
         <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">events scanned</div>
         <input type="number" name="n" value="{{ n }}" min="1" max="5000"
-               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+               class="ctl" />
       </label>
       <label>
         <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">day (YYYY-MM-DD)</div>
         <input type="text" name="day" value="{{ day or '' }}" placeholder="today"
-               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+               class="ctl" />
       </label>
       <label>
         <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">since (YYYY-MM-DD)</div>
         <input type="text" name="since" value="{{ since or '' }}" placeholder="open"
-               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+               class="ctl" />
       </label>
       <label>
         <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">until (YYYY-MM-DD)</div>
         <input type="text" name="until" value="{{ until or '' }}" placeholder="open"
-               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+               class="ctl" />
       </label>
-      <button type="submit"
-              style="padding: 0.45rem 1rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
+      <button type="submit" class="btn">
         load
       </button>
     </form>
@@ -163,8 +165,8 @@
     </p>
   </div>
 
+  <h2>Recent interventions</h2>
   <div class="panel">
-    <h3 style="margin-top: 0;">Recent interventions</h3>
     {% if events %}
       <table>
         <thead>
