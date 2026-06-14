@@ -1,6 +1,15 @@
 {% extends "base.html" %}
 {% block title %}oversight · Maverick{% endblock %}
 {% block content %}
+<style>
+  /* By-guardrail breakdown — horizontal bars scaled to the busiest guardrail. */
+  .gbars { display: flex; flex-direction: column; gap: var(--space-3); }
+  .gbar { display: grid; grid-template-columns: 96px 1fr 2.5rem; align-items: center; gap: var(--space-3); }
+  .gbar__label { color: var(--muted); font-size: var(--text-sm); }
+  .gbar__track { height: 10px; border-radius: var(--radius-pill); background: var(--surface-sunken); overflow: hidden; }
+  .gbar__fill { display: block; height: 100%; border-radius: var(--radius-pill); min-width: 2px; background: linear-gradient(90deg, var(--brand), var(--brand-hi)); }
+  .gbar__count { text-align: end; font-variant-numeric: tabular-nums; font-weight: var(--font-semibold); }
+</style>
   <h1 class="page-title">Oversight</h1>
   <p class="page-subtitle">
     Mission control for the agent fleet — every control-plane intervention in one
@@ -123,14 +132,28 @@
 
   <h2>By guardrail</h2>
   <div class="panel">
-    <div class="muted" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
-      <span>governance: <strong>{{ by_kind.get('governance_denied', 0) }}</strong></span>
-      <span>shield: <strong>{{ by_kind.get('shield_block', 0) }}</strong></span>
-      <span>capability: <strong>{{ by_kind.get('capability_denied', 0) }}</strong></span>
-      <span>egress: <strong>{{ by_kind.get('egress_blocked', 0) }}</strong></span>
-      <span>consent: <strong>{{ by_kind.get('consent_result', 0) }}</strong></span>
-      <span>halt: <strong>{{ by_kind.get('halt', 0) }}</strong></span>
+    {% set _gk = [
+      ('governance', by_kind.get('governance_denied', 0)),
+      ('shield', by_kind.get('shield_block', 0)),
+      ('capability', by_kind.get('capability_denied', 0)),
+      ('egress', by_kind.get('egress_blocked', 0)),
+      ('consent', by_kind.get('consent_result', 0)),
+      ('halt', by_kind.get('halt', 0)),
+    ] %}
+    {% set _gmax = ([by_kind.get('governance_denied', 0), by_kind.get('shield_block', 0), by_kind.get('capability_denied', 0), by_kind.get('egress_blocked', 0), by_kind.get('consent_result', 0), by_kind.get('halt', 0)] | max) or 1 %}
+    {% if total %}
+    <div class="gbars">
+      {% for _label, _count in _gk %}
+      <div class="gbar">
+        <span class="gbar__label">{{ _label }}</span>
+        <span class="gbar__track"><span class="gbar__fill" style="width: {{ (_count / _gmax * 100) | round(1) }}%;"></span></span>
+        <span class="gbar__count">{{ _count }}</span>
+      </div>
+      {% endfor %}
     </div>
+    {% else %}
+    <p class="muted" style="margin: 0;">No interventions in this window.</p>
+    {% endif %}
   </div>
 
   <h2>Filter</h2>
