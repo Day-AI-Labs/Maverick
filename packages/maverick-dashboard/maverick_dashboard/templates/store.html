@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}skill store · Maverick{% endblock %}
 {% block content %}
-  <h2>skill store</h2>
+  <h1 class="page-title">Store</h1>
 
   <div class="panel">
     <p class="muted">
@@ -34,8 +34,8 @@
       {% endfor %}
     </div>
   {% else %}
-    <div class="panel" style="text-align: center; padding: 2.5rem 1rem;">
-      <h3 style="text-transform: none; letter-spacing: 0; color: var(--text); margin: 0 0 0.5rem;">No catalog entries</h3>
+    <div class="panel empty">
+      <h2 class="empty__title">No catalog entries</h2>
       <p class="muted">
         The configured catalog index is empty or unreachable. Once a
         community index is published (or you point at your own), curated

@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block title %}compartments · Maverick{% endblock %}
 {% block content %}
-  <h2>compartments</h2>
+  <h1 class="page-title">Compartments</h1>
   <p class="muted" style="max-width: 48rem;">
     The agent factory's roster — each domain pack and the bulkhead it runs in.
     If one domain is attacked it can be sealed off (a sector seal) while the
     others keep running and become immune.
   </p>
-  <div class="panel">
+  <div class="panel{% if not domains %} empty{% endif %}">
     {% if domains %}
     <table>
       <thead><tr>
@@ -41,11 +41,9 @@
       </tbody>
     </table>
     {% else %}
-      <div style="text-align: center; padding: 2.5rem 1rem;">
-        <h3 style="margin: 0 0 0.75rem; text-transform: none; letter-spacing: 0; font-size: 1.1rem; color: var(--text);">No domain agents yet</h3>
-        <p class="muted" style="margin-bottom: 1.5rem;">Onboard a business to mint its first sealed agent.</p>
-        <pre style="background: var(--bg); padding: 0.85rem 1rem; border-radius: 6px; display: inline-block; text-align: left; margin: 0;">maverick onboard</pre>
-      </div>
+      <h2 class="empty__title">No domain agents yet</h2>
+      <p class="muted" style="margin-bottom: var(--space-5);">Onboard a business to mint its first sealed agent.</p>
+      <pre style="background: var(--surface-sunken); color: var(--text); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); display: inline-block; text-align: start; margin: 0;">maverick onboard</pre>
     {% endif %}
   </div>
 {% endblock %}
