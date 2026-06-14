@@ -429,6 +429,19 @@ def test_refine_endpoint_needs_provider_key(monkeypatch, tmp_path):
     assert "provider" in r.json()["detail"].lower()
 
 
+def test_tools_endpoint_includes_risk(monkeypatch, tmp_path):
+    """The connector picker reads /api/v1/tools; each entry carries a risk level."""
+    _isolate(monkeypatch, tmp_path)
+    r = _client().get("/api/v1/tools")
+    assert r.status_code == 200, r.text
+    tools = r.json()["tools"]
+    assert tools and all("name" in t and "risk" in t for t in tools)
+    assert {t["risk"] for t in tools} <= {"low", "medium", "high"}
+    by_name = {t["name"]: t for t in tools}
+    if "shell" in by_name:                 # a known-high tool is classified high
+        assert by_name["shell"]["risk"] == "high"
+
+
 def test_workflow_builder_page_renders(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     r = _client().get("/workflow-builder")
@@ -444,5 +457,8 @@ def test_workflow_builder_page_renders(monkeypatch, tmp_path):
     assert 'id="pb-refine"' in r.text and 'id="wf-refine"' in r.text
     assert 'id="pb-govern"' in r.text and "/api/v1/agents/" in r.text
     assert 'id="wf-examples"' in r.text
+    # Connector picker: browse real tools (with risk) instead of typing names.
+    assert 'id="tool-picker"' in r.text and "/api/v1/tools" in r.text
+    assert 'data-browse="allow"' in r.text and 'data-browse="deny"' in r.text
     # Reachable from the primary nav (Operate group).
     assert '<span class="nav-label">Workflows</span>' in r.text
