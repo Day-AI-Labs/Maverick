@@ -21,7 +21,7 @@ def _prep(monkeypatch, tmp_path):
 # ---------- active nav highlighting ----------
 
 @pytest.mark.parametrize("path,label", [
-    ("/", "Overview"),
+    ("/overview", "Overview"),
     ("/goals", "Goals"),
     ("/facts", "Facts"),
     ("/tools", "Tools"),
@@ -38,8 +38,8 @@ def test_exactly_one_nav_link_is_active(monkeypatch, tmp_path):
     _prep(monkeypatch, tmp_path)
     r = _client().get("/goals")
     assert r.text.count('aria-current="page"') == 1
-    # The home link is rendered in its inactive form on a non-home page.
-    assert '<a href="/">Overview</a>' in r.text
+    # The Overview link is rendered in its inactive form on a non-overview page.
+    assert '<a href="/overview">Overview</a>' in r.text
 
 
 def test_home_link_not_active_on_other_pages(monkeypatch, tmp_path):

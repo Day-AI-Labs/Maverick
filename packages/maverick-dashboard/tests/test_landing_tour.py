@@ -17,7 +17,7 @@ def _client(monkeypatch, tmp_path):
 
 
 def test_landing_tour_shows_three_entry_points(monkeypatch, tmp_path):
-    body = _client(monkeypatch, tmp_path).get("/").text
+    body = _client(monkeypatch, tmp_path).get("/overview").text
     # 1) web UI, 2) REST API, 3) CLI.
     assert "/chat" in body
     assert "POST /api/v1/goals" in body
@@ -27,7 +27,7 @@ def test_landing_tour_shows_three_entry_points(monkeypatch, tmp_path):
 
 
 def test_landing_tour_is_dismissible_and_persists(monkeypatch, tmp_path):
-    body = _client(monkeypatch, tmp_path).get("/").text
+    body = _client(monkeypatch, tmp_path).get("/overview").text
     assert 'id="tour-dismiss"' in body
     assert 'aria-label="Dismiss tour"' in body
     # Dismissal persists via localStorage under this key.

@@ -866,8 +866,8 @@ async def public_demo(request: Request) -> HTMLResponse:
     )
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request) -> HTMLResponse:
+@app.get("/overview", response_class=HTMLResponse)
+async def overview(request: Request) -> HTMLResponse:
     w = _world()
     # Use SQL aggregation instead of pulling every goal into Python. Owner-scope
     # the rollup to the caller (auth-off/admin -> all; see goal_owner_filter).
@@ -2366,6 +2366,15 @@ async def chat_page(request: Request) -> HTMLResponse:
         {"recent": recent, "prefill_title": prefill_title,
          "prefill_description": prefill_description},
     )
+
+
+# The dashboard lands on the chat page (the primary working surface), so the
+# bare root renders it too; the overview/stats view lives at /overview. This is
+# a distinct handler rather than a second decorator on chat_page so the route
+# name stays unique (duplicate names collide as OpenAPI operationIds).
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request) -> HTMLResponse:
+    return await chat_page(request)
 
 
 @app.post("/chat/send")

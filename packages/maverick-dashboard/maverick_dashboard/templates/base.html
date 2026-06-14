@@ -203,9 +203,6 @@
     .sidebar nav a.active {
       color: var(--brand); background: var(--brand-subtle); font-weight: var(--font-medium);
     }
-    /* The home/Overview link is the only direct child link of the nav. */
-    .sidebar nav > a { color: var(--text); font-weight: var(--font-medium); margin-bottom: var(--space-2); }
-    .sidebar nav > a.active { color: var(--brand); }
     .navgrp { display: flex; flex-direction: column; }
     .navgrp + .navgrp { margin-top: var(--space-2); }
     .navgrp__toggle {
@@ -465,11 +462,11 @@
   <aside class="sidebar" id="sidebar">
     <nav aria-label="Primary">
       {% set _path = request.url.path if request else '' %}
-      {% set _home_active = (_path == '/') %}
-      <a href="/"{% if _home_active %} class="active" aria-current="page"{% endif %}>Overview</a>
+      {# The dashboard lands on /chat, so highlight Chat when at the bare root. #}
+      {% set _active_path = '/chat' if _path == '/' else _path %}
       {% set _nav_groups = [
         ('Operate', [('/chat', 'Chat'), ('/goals', 'Goals'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
-        ('Observe', [('/oversight', 'Oversight'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
+        ('Observe', [('/overview', 'Overview'), ('/oversight', 'Oversight'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
         ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'), ('/safety', 'Safety'), ('/compliance', 'Compliance'), ('/compartments', 'Compartments'), ('/audit', 'Audit')]),
         ('Extend', [('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'), ('/tools', 'Tools'), ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/channels', 'Channels')]),
         ('Admin', [('/settings', 'Settings'), ('/users', 'Users'), ('/tenants', 'Tenants'), ('/cache', 'Cache'), ('/facts', 'Facts'), ('/walkthroughs', 'Walkthroughs'), ('/embed-demo', 'Embed')]),
@@ -483,7 +480,7 @@
           </button>
           <ul class="navgrp__items" id="navgrp-{{ loop.index0 }}">
             {% for _href, _label in _group[1] %}
-              {% set _active = (_path == _href or _path.startswith(_href ~ '/')) %}
+              {% set _active = (_active_path == _href or _active_path.startswith(_href ~ '/')) %}
               <li><a href="{{ _href }}"{% if _active %} class="active" aria-current="page"{% endif %}>{{ _label }}</a></li>
             {% endfor %}
           </ul>

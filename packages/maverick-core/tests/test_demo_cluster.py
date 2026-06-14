@@ -97,7 +97,7 @@ def test_dashboard_public_demo_route_is_redacted():
     text = (_REPO_ROOT / "packages" / "maverick-dashboard" / "maverick_dashboard" / "app.py").read_text()
     assert '@app.get("/demo", response_class=HTMLResponse)' in text
     assert 'owner="demo"' in text
-    route = text[text.index('async def public_demo'):text.index('@app.get("/", response_class=HTMLResponse)')]
+    route = text[text.index('async def public_demo'):text.index('@app.get("/overview", response_class=HTMLResponse)')]
     assert "get_facts" not in route
     assert "UsageLedger" not in route
     assert "default_audit_log" not in route
