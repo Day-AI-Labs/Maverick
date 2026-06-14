@@ -16,6 +16,7 @@ from fastapi import (
     APIRouter,
     BackgroundTasks,
     File,
+    Form,
     HTTPException,
     Request,
     Response,
@@ -1976,10 +1977,13 @@ async def compose_goal(request: Request, payload: ComposeIn, bg: BackgroundTasks
 
 # ---------- AI workflow builder ----------
 #
-# Draft a reusable, parameterized workflow from a natural-language brief or an
-# uploaded document, then persist the (edited) draft as a user Template that
-# runs like any other. Drafting is one budget-capped LLM call (see
-# maverick_dashboard.workflow_ai); saving writes ~/.maverick/templates/<name>.md.
+# Draft from a natural-language brief or an uploaded document, in one of two
+# forms (selected by `form`): a reusable, parameterized **template** (saved as a
+# user Template that runs like any other), or a specialist **agent playbook** (a
+# domain pack with persona, tool allowlist, risk ceiling, and gated steps).
+# Drafting is one budget-capped LLM call (see maverick_dashboard.workflow_ai);
+# templates save here (writes ~/.maverick/templates/<name>.md), while a playbook
+# saves via the existing POST /agents/<name>/override (write_override).
 
 _WORKFLOW_DOC_MAX_BYTES = 512_000  # ample for a spec/runbook; the model sees a truncated head
 
@@ -1997,24 +2001,35 @@ def _require_provider_for_drafting() -> None:
         )
 
 
+def _drafter_for(form: str):
+    """The drafting function for the requested form (default: template)."""
+    from .workflow_ai import draft_playbook, draft_workflow
+    return draft_playbook if form == "playbook" else draft_workflow
+
+
 @router.post("/workflows/draft")
 async def draft_workflow_from_brief(request: Request, payload: WorkflowDraftIn) -> dict:
-    """Chat path: a natural-language brief -> a drafted workflow (not saved)."""
+    """Chat path: a natural-language brief -> a drafted workflow or playbook
+    (per ``form``; not saved)."""
     require_permission(request, "operate")
     _require_provider_for_drafting()
     brief = (payload.description or "").strip()
     if not brief:
         raise HTTPException(status_code=400, detail="describe the workflow you want")
-    from .workflow_ai import draft_workflow
     try:
-        return draft_workflow(brief)
+        return _drafter_for(payload.form)(brief)
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"workflow drafting failed: {e}") from e
 
 
 @router.post("/workflows/draft-from-file")
-async def draft_workflow_from_upload(request: Request, file: UploadFile = File(...)) -> dict:
-    """Upload path: extract a workflow from a text / markdown / JSON document."""
+async def draft_workflow_from_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    form: str = Form("template"),
+) -> dict:
+    """Upload path: extract a workflow or playbook (per ``form``) from a
+    text / markdown / JSON document."""
     require_permission(request, "operate")
     _require_provider_for_drafting()
     raw = await file.read(_WORKFLOW_DOC_MAX_BYTES + 1)
@@ -2033,9 +2048,8 @@ async def draft_workflow_from_upload(request: Request, file: UploadFile = File(.
         ) from None
     if not text.strip():
         raise HTTPException(status_code=400, detail="the uploaded file was empty")
-    from .workflow_ai import draft_workflow
     try:
-        return draft_workflow("", source_text=text)
+        return _drafter_for(form)("", source_text=text)
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"workflow drafting failed: {e}") from e
 

@@ -1,9 +1,17 @@
 """AI-drafted workflows.
 
-Turn a natural-language brief (or the text of an uploaded document) into a
-reusable, parameterized **workflow** the operator can edit, save (as a
-Template), and run. One short structured LLM completion under a hard budget
-cap; the JSON it returns is parsed forgivingly into a normalized draft.
+Turn a natural-language brief (or the text of an uploaded document) into one of
+two editable artifacts the operator can save and run:
+
+  * a reusable, parameterized **template** (:func:`draft_workflow`) — saved via
+    ``maverick.templates.save_user_template`` and run from the goal box, and
+  * a specialist **agent playbook** (:func:`draft_playbook`) — a domain pack
+    with a persona, a tool allowlist, a risk ceiling, and an ordered procedure
+    whose steps can carry human gates; saved via the existing
+    ``/agents/<name>/override`` path (``maverick.domain_edit.write_override``).
+
+Each is one short structured LLM completion under a hard budget cap; the JSON
+it returns is parsed forgivingly into a normalized draft.
 
 The LLM call is isolated behind an injectable ``complete`` callable so the
 parsing/normalizing — the part with all the edge cases — is unit-testable
@@ -25,7 +33,14 @@ log = logging.getLogger(__name__)
 DRAFT_MAX_DOLLARS = 0.50
 _MAX_PARAMS = 12
 _MAX_STEPS = 20
+_MAX_TOOLS = 40
 _MAX_DOC_CHARS = 12_000
+
+# Playbook gates and risk levels mirror maverick.domain (_VALID_GATES /
+# _VALID_RISKS); kept local so this dashboard module stays self-contained and
+# the loader stays the single source of truth at save time.
+_PLAYBOOK_GATES = frozenset({"approval", "review"})
+_RISKS = frozenset({"low", "medium", "high"})
 
 WORKFLOW_SYSTEM = (
     "You design reusable, parameterized agent WORKFLOWS for Maverick. From the "
@@ -42,24 +57,72 @@ WORKFLOW_SYSTEM = (
     "JSON object only — no prose, no code fence."
 )
 
+PLAYBOOK_SYSTEM = (
+    "You design specialist AGENT PLAYBOOKS for Maverick: a governed domain "
+    "agent with a persona, a tool allowlist, a risk ceiling, and an ordered "
+    "procedure whose steps can require a human gate. From the user's brief (and "
+    "any provided document) produce ONE playbook as STRICT JSON with exactly "
+    "this shape:\n"
+    '{"name": "<slug: lowercase letters, digits, hyphens>", '
+    '"description": "<one sentence: what this specialist is for>", '
+    '"persona": "<a few sentences addressed to the agent: who it is, how it '
+    'works, the standards it holds>", '
+    '"allow_tools": ["<tool the agent may use>", ...], '
+    '"deny_tools": ["<tool it must never use>", ...], '
+    '"max_risk": "low" | "medium" | "high", '
+    '"steps": [{"name": "<short step name>", "instruction": "<what to do>", '
+    '"tools": ["<tool used at this step>", ...], '
+    '"gate": "approval" | "review" | null}]}\n'
+    "Rules: 4-9 concrete, ordered steps. Put an \"approval\" gate on any step "
+    "that takes an irreversible or outbound action (sending, paying, "
+    "publishing, deleting) and a \"review\" gate where a human should check the "
+    "work before it continues; otherwise gate is null. List in allow_tools only "
+    "the tools the steps actually use. Set max_risk to the most sensitive "
+    "action's level. Output the JSON object only — no prose, no code fence."
+)
+
 _SLUG = re.compile(r"[^a-z0-9-]+")
 _IDENT = re.compile(r"^[A-Za-z_]\w*$")
 
 
-def build_prompt(brief: str, source_text: str = "") -> str:
+def build_prompt(brief: str, source_text: str = "", *, produce: str = "the workflow JSON") -> str:
     """Compose the user-turn prompt from the brief and optional document text."""
     brief = (brief or "").strip()
     parts = [f"BRIEF:\n{brief or '(none provided)'}"]
     doc = (source_text or "").strip()
     if doc:
         parts.append("DOCUMENT (extract the workflow from this):\n" + doc[:_MAX_DOC_CHARS])
-    parts.append("Produce the workflow JSON.")
+    parts.append(f"Produce {produce}.")
     return "\n\n".join(parts)
 
 
 def _slugify(name: str, fallback: str = "workflow") -> str:
     s = _SLUG.sub("-", (name or "").strip().lower()).strip("-")
     return (s or fallback)[:48]
+
+
+def _strip_fence(raw: str) -> str:
+    """Drop a leading ``` / ```json code fence the model may wrap JSON in."""
+    raw = (raw or "").strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`").strip()
+        if raw[:4].lower() == "json":
+            raw = raw[4:].strip()
+    return raw
+
+
+def _clean_tools(raw: object) -> list[str]:
+    """Trimmed, de-duplicated, bounded list of tool names (drops blanks)."""
+    out: list[str] = []
+    if not isinstance(raw, list):
+        return out
+    for t in raw:
+        t = str(t).strip()
+        if t and t not in out:
+            out.append(t)
+        if len(out) >= _MAX_TOOLS:
+            break
+    return out
 
 
 def parse_workflow(raw: str) -> dict[str, Any]:
@@ -69,11 +132,7 @@ def parse_workflow(raw: str) -> dict[str, Any]:
     the budget, keeps only identifier-like params, and renders the steps into a
     numbered markdown body. Raises ``ValueError`` only when there's nothing
     usable (non-JSON, or no steps)."""
-    raw = (raw or "").strip()
-    if raw.startswith("```"):
-        raw = raw.strip("`").strip()
-        if raw[:4].lower() == "json":
-            raw = raw[4:].strip()
+    raw = _strip_fence(raw)
     try:
         data = json.loads(raw)
     except (ValueError, TypeError) as e:
@@ -140,3 +199,103 @@ def draft_workflow(
         model=None,
     )
     return parse_workflow(getattr(resp, "text", "") or "")
+
+
+def parse_playbook(raw: str) -> dict[str, Any]:
+    """Parse the model's reply into a normalized agent-playbook draft.
+
+    Forgiving like :func:`parse_workflow`: strips a code fence, coerces types,
+    validates the gate and risk vocabularies (an unknown gate is dropped, an
+    unknown risk defaults to ``"medium"``), keeps only non-empty tool names, and
+    derives a starting allowlist from the steps' own tools when the model gave
+    none. Raises ``ValueError`` only when there's nothing usable (non-JSON, or
+    no steps). The returned dict matches the shape the ``/agents/<name>/override``
+    save path (``AgentOverrideIn``) accepts — ``workflow`` is the editable
+    playbook, each step ``{name, instruction, tools, gate}``."""
+    raw = _strip_fence(raw)
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError) as e:
+        raise ValueError("the model did not return valid playbook JSON") from e
+    if not isinstance(data, dict):
+        raise ValueError("playbook JSON must be a single object")
+
+    # Accept "steps" (our prompt) or "workflow" (the pack's own key) for resilience.
+    raw_steps = data.get("steps")
+    if not isinstance(raw_steps, list):
+        raw_steps = data.get("workflow")
+    steps: list[dict[str, Any]] = []
+    for item in (raw_steps or []):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        gate = str(item.get("gate") or "").strip().lower()
+        steps.append({
+            "name": name[:80],
+            "instruction": " ".join(str(item.get("instruction") or "").split())[:600],
+            "tools": _clean_tools(item.get("tools")),
+            "gate": gate if gate in _PLAYBOOK_GATES else None,
+        })
+        if len(steps) >= _MAX_STEPS:
+            break
+    if not steps:
+        raise ValueError("the drafted playbook had no steps")
+
+    description = " ".join(str(data.get("description") or "").split())[:300]
+    name = _slugify(str(data.get("name") or description or "agent"), fallback="agent")
+    persona = str(data.get("persona") or "").strip()[:4000]
+
+    allow = _clean_tools(data.get("allow_tools"))
+    if not allow:  # fall back to the union of the steps' own tool hints
+        for s in steps:
+            for t in s["tools"]:
+                if t not in allow:
+                    allow.append(t)
+        allow = allow[:_MAX_TOOLS]
+
+    risk = str(data.get("max_risk") or "").strip().lower()
+    if risk not in _RISKS:
+        risk = "medium"
+
+    return {
+        "form": "playbook",
+        "name": name,
+        "description": description,
+        "persona": persona,
+        "allow_tools": allow,
+        "deny_tools": _clean_tools(data.get("deny_tools")),
+        "max_risk": risk,
+        "workflow": steps,
+    }
+
+
+def draft_playbook(
+    brief: str,
+    source_text: str = "",
+    *,
+    complete: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Draft a specialist agent playbook from a brief and/or document text.
+
+    The playbook counterpart to :func:`draft_workflow`: one LLM completion under
+    the same hard ``DRAFT_MAX_DOLLARS`` cap, returning a normalized draft the
+    operator edits and saves as a domain pack. ``complete`` is injectable for
+    tests; by default a fresh role-resolved LLM is used (kernel rule 2)."""
+    from maverick.budget import Budget
+
+    if complete is None:
+        from maverick.llm import LLM, model_for_role
+        complete = LLM(model=model_for_role("orchestrator")).complete
+
+    budget = Budget(max_dollars=DRAFT_MAX_DOLLARS)
+    resp = complete(
+        system=PLAYBOOK_SYSTEM,
+        messages=[{"role": "user",
+                   "content": build_prompt(brief, source_text, produce="the playbook JSON")}],
+        budget=budget,
+        max_tokens=1500,
+        model=None,
+    )
+    return parse_playbook(getattr(resp, "text", "") or "")
