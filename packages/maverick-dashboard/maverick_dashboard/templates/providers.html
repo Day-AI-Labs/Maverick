@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block title %}providers · Maverick{% endblock %}
 {% block content %}
+  <h1 class="page-title">Providers</h1>
+  <p class="page-subtitle">Live provider health — calls, error rates, latency, and spend (in-memory, resets on restart).</p>
 <section class="panel">
-  <h2>provider health</h2>
   {% if not rows %}
     <p class="muted">No provider calls recorded yet. Stats are in-memory and reset on restart.</p>
   {% else %}
