@@ -374,4 +374,15 @@ def tools_exceeding(
     }
 
 
-__all__ = ["RISK_LEVELS", "risk_rank", "tool_risk", "tools_exceeding"]
+def risk_map(tool_names, overrides: dict[str, str] | None = None) -> dict[str, str]:
+    """Risk level for each name, loading the config overrides once.
+
+    The efficient way to classify a whole registry: per-name :func:`tool_risk`
+    re-reads config every call (it is uncached), so a UI listing ~1000 tools
+    would re-parse config ~1000 times. This reads the overrides a single time
+    and reuses them."""
+    overrides = _load_overrides() if overrides is None else overrides
+    return {n: tool_risk(n, overrides) for n in tool_names}
+
+
+__all__ = ["RISK_LEVELS", "risk_rank", "tool_risk", "tools_exceeding", "risk_map"]

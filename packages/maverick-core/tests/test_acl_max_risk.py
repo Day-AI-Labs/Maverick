@@ -62,6 +62,23 @@ read_file = "high"
     assert tool_risk("mcp_github__list") == "high"     # glob override
 
 
+def test_risk_map_classifies_each_name():
+    from maverick.safety.tool_risk import risk_map
+    m = risk_map(["shell", "read_file", "some_unknown_tool"])
+    assert m == {"shell": "high", "read_file": "low", "some_unknown_tool": "medium"}
+
+
+def test_risk_map_honors_config_override_loaded_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_config(tmp_path, '''
+[security.tool_risk]
+read_file = "high"
+''')
+    from maverick.safety.tool_risk import risk_map
+    # The override is applied (loaded a single time for the whole sweep).
+    assert risk_map(["read_file", "shell"]) == {"read_file": "high", "shell": "high"}
+
+
 # ---------- resolve_max_risk: most restrictive wins ----------
 
 def test_resolve_max_risk_unset_is_none(tmp_path, monkeypatch):

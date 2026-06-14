@@ -975,10 +975,14 @@ async def list_tools() -> dict:
         reg = base_registry(world=wm, sandbox=sb)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"registry build failed: {e}") from e
+    from maverick.safety.tool_risk import risk_map
+    tools = reg.all()
+    risks = risk_map([t.name for t in tools])
     return {
         "tools": [
-            {"name": t.name, "description": (t.description or "")[:200]}
-            for t in reg.all()
+            {"name": t.name, "description": (t.description or "")[:200],
+             "risk": risks.get(t.name, "medium")}
+            for t in tools
         ],
     }
 
