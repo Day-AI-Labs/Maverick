@@ -2450,6 +2450,7 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
     from maverick.llm import catalog_specs, model_for_role
     from maverick.runner import DEFAULT_MAX_DOLLARS
     from maverick.runtime_overrides import (
+        allowed_models,
         budget_override,
         default_model_override,
         role_model_override,
@@ -2475,6 +2476,14 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
                 seen.add(s)
     except Exception:  # pragma: no cover -- config read fails soft
         pass
+    # Admin allow-list: when set, every model picker is capped to it (and the
+    # resolver enforces it as a hard cap). Empty = no restriction. The checkbox
+    # section lets the admin pick which catalogue models everyone may use; the
+    # default/per-role pickers then offer only those.
+    allow = allowed_models()
+    label_by_spec = dict(model_options)
+    allow_options = [(s, label_by_spec.get(s, "Allowed")) for s in sorted(allow)]
+    picker_options = allow_options if allow else model_options
     from maverick_dashboard import settings_store
     cfg_state = settings_store.state()
     saved_msg = {
@@ -2482,6 +2491,7 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
         "models": "Default model updated.",
         "roles": "Per-role models updated.",
         "budget": "Spend cap updated.",
+        "allowed": "Allowed models updated.",
         "providers": "Provider keys updated.",
         "capabilities": "Capabilities updated.",
         "features": "Features updated.",
@@ -2489,6 +2499,8 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
     return templates.TemplateResponse(request, "settings.html", {
         "role_models": role_models,
         "model_options": model_options,
+        "picker_options": picker_options,
+        "allowed_models": sorted(allow),
         "pinned_model": default_model_override(),
         "providers": cfg_state["providers"],
         "capabilities": cfg_state["capabilities"],
@@ -2508,8 +2520,15 @@ async def settings_set_model(request: Request, model: str = Form("")) -> Redirec
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
     require_permission(request, "admin")
-    from maverick.runtime_overrides import clear_default_model, set_default_model
+    from maverick.runtime_overrides import (
+        allowed_models,
+        clear_default_model,
+        set_default_model,
+    )
     model = (model or "").strip()
+    allow = allowed_models()
+    if model and allow and model not in allow:
+        raise HTTPException(status_code=400, detail="model not in the allowed list")
     try:
         if model:
             set_default_model(model)
@@ -2549,16 +2568,39 @@ async def settings_set_role_models(request: Request) -> RedirectResponse:
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
     require_permission(request, "admin")
-    from maverick.runtime_overrides import set_role_models
+    from maverick.runtime_overrides import allowed_models, set_role_models
     roles = ("orchestrator", "coder", "researcher", "writer",
              "analyst", "verifier", "summarizer")
     form = await request.form()
     updates = {r: (form.get(r) or "").strip() for r in roles}
+    allow = allowed_models()
+    if allow:
+        for spec in updates.values():
+            if spec and spec not in allow:
+                raise HTTPException(
+                    status_code=400, detail="model not in the allowed list")
     try:
         set_role_models(updates)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="invalid model id") from exc
     return RedirectResponse("/settings?saved=roles", status_code=303)
+
+@app.post("/settings/models/allowed")
+async def settings_set_allowed_models(request: Request) -> RedirectResponse:
+    """Set the admin model allow-list from the settings page. Each checked
+    ``models`` field is an allowed spec; none checked clears the restriction
+    (every model allowed again). Saved to the dashboard overlay, never
+    config.toml; ``llm.model_for_role`` then caps every role to this set."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    require_permission(request, "admin")
+    from maverick.runtime_overrides import set_allowed_models
+    form = await request.form()
+    try:
+        set_allowed_models(form.getlist("models"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid model id") from exc
+    return RedirectResponse("/settings?saved=allowed", status_code=303)
 
 
 @app.post("/settings/providers")

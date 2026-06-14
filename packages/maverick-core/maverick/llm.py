@@ -206,7 +206,7 @@ class LLMResponse:
                 self.thinking_blocks = []
 
 
-def model_for_role(role: str) -> str:
+def _resolve_model_for_role(role: str) -> str:
     """Return the model spec for a role (may be 'provider:id' or bare id).
 
     Resolution order:
@@ -288,6 +288,22 @@ def model_for_role(role: str) -> str:
         if cheaper != final:
             final = _energy_route(final, cheaper)
     except Exception:  # pragma: no cover -- never let energy routing break resolution
+        pass
+    return final
+
+
+def model_for_role(role: str) -> str:
+    """Resolve the model for ``role`` (see ``_resolve_model_for_role``), then
+    enforce the admin allow-list: if one is set and the resolved model isn't in
+    it, fall back to an allowed model (DEFAULT_MODEL if allowed, else the first).
+    A hard cap -- a config.toml or env pin outside the allow-list can't run."""
+    final = _resolve_model_for_role(role)
+    try:
+        from .runtime_overrides import allowed_models
+        allow = allowed_models()
+        if allow and final not in allow:
+            final = DEFAULT_MODEL if DEFAULT_MODEL in allow else sorted(allow)[0]
+    except Exception:  # pragma: no cover -- allow-list never breaks resolution
         pass
     return final
 
