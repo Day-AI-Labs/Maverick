@@ -74,6 +74,21 @@ class TestOverrideLifecycle:
         assert r.status_code == 200
         assert [s["name"] for s in r.json()["workflow"]] == ["intake"]
 
+    def test_page_renders_workflow_as_editable_rows(self):
+        name = _clean_builtin_name()
+        client.post(f"/api/v1/agents/{name}/override", json={"workflow": [
+            {"name": "intake", "instruction": "Read the request.", "tools": [], "gate": None},
+            {"name": "review", "instruction": "Check it.", "tools": [], "gate": "approval"},
+        ]})
+        html = client.get(f"/agents?name={name}").text
+        # The playbook renders as structured rows (not a raw JSON textarea),
+        # with an add-step control and a clone template for new rows.
+        assert 'class="wf-name"' in html
+        assert 'value="intake"' in html and "Read the request." in html
+        assert "Check it." in html
+        assert "+ Add step" in html and 'id="wf-row-tpl"' in html
+        assert 'name="workflow"' not in html   # the old JSON textarea is gone
+
     def test_invalid_override_rejected_422(self):
         # Empty allow_tools makes the merged pack fail lint -> rejected, not written.
         name = _clean_builtin_name()

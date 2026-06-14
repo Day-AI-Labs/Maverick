@@ -1,5 +1,38 @@
 {% extends "base.html" %}
 {% block title %}agents · Maverick{% endblock %}
+
+{# One workflow-step row. ``s`` is a step dict (server-rendered existing step)
+   or ``none`` (the empty row cloned for "Add step"). Kept as a macro so the
+   live rows and the <template> can't drift. #}
+{% macro wf_row(s) %}
+  <div class="wf-step" style="border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem; margin: 0.5rem 0;">
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end;">
+      <label style="flex: 1; min-width: 12rem;">Step name<br>
+        <input type="text" class="wf-name" style="width: 100%;" value="{{ s.name if s else '' }}">
+      </label>
+      <label style="min-width: 9rem;">Gate<br>
+        <select class="wf-gate" style="width: 100%;">
+          <option value="">(none)</option>
+          {% for g in ['approval', 'review'] %}
+          <option value="{{ g }}"{% if s and s.gate == g %} selected{% endif %}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div style="display: flex; gap: 0.25rem;">
+        <button type="button" class="wf-up" aria-label="Move step up">↑</button>
+        <button type="button" class="wf-down" aria-label="Move step down">↓</button>
+        <button type="button" class="wf-del" aria-label="Remove step">✕</button>
+      </div>
+    </div>
+    <label style="display: block; margin-top: 0.4rem;">Instruction
+      <textarea class="wf-instruction" rows="2" style="width: 100%;">{{ s.instruction if s else '' }}</textarea>
+    </label>
+    <label style="display: block; margin-top: 0.4rem;">Tools <span class="muted">(space-separated)</span>
+      <input type="text" class="wf-tools" style="width: 100%;" value="{{ (s.tools | join(' ')) if s else '' }}">
+    </label>
+  </div>
+{% endmacro %}
+
 {% block content %}
   <h2>agents</h2>
   <p class="muted" style="max-width: 48rem;">
@@ -73,12 +106,15 @@
             {% endfor %}
           </select>
         </p>
-        <p>
-          <label for="f-workflow">Workflow playbook <span class="muted">(JSON list of steps:
-            name, instruction, tools, gate)</span></label><br>
-          <textarea id="f-workflow" name="workflow" rows="12"
-                    style="width: 100%; font-family: var(--mono, monospace);">{{ workflow_json }}</textarea>
-        </p>
+        <fieldset style="border: 1px solid var(--border); border-radius: 6px; margin: 0.5rem 0; padding: 0.6rem 0.8rem;">
+          <legend>Workflow playbook <span class="muted">— ordered steps the agent follows</span></legend>
+          <div id="wf-steps">
+            {% for s in selected.workflow %}{{ wf_row(s) }}{% endfor %}
+          </div>
+          {% if editable %}
+          <button type="button" id="wf-add">+ Add step</button>
+          {% endif %}
+        </fieldset>
         {% if editable %}
         <p>
           <button type="button" id="btn-validate">Validate</button>
@@ -103,6 +139,8 @@
   </div>
 
   {% if selected and editable %}
+  {# Empty-row template for "Add step" (cloned client-side). #}
+  <template id="wf-row-tpl">{{ wf_row(none) }}</template>
   <script>
     (function () {
       const form = document.getElementById('agent-form');
@@ -116,21 +154,45 @@
         msg.style.color = ok ? 'var(--ok, green)' : 'var(--danger, crimson)';
       }
 
+      // ---- workflow rows ----
+      const stepsEl = document.getElementById('wf-steps');
+      document.getElementById('wf-add').addEventListener('click', () => {
+        stepsEl.appendChild(document.getElementById('wf-row-tpl').content.cloneNode(true));
+      });
+      stepsEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const row = btn.closest('.wf-step');
+        if (btn.classList.contains('wf-del')) row.remove();
+        else if (btn.classList.contains('wf-up') && row.previousElementSibling)
+          row.parentNode.insertBefore(row, row.previousElementSibling);
+        else if (btn.classList.contains('wf-down') && row.nextElementSibling)
+          row.parentNode.insertBefore(row.nextElementSibling, row);
+      });
+
+      function gatherWorkflow() {
+        const steps = [];
+        stepsEl.querySelectorAll('.wf-step').forEach((row) => {
+          const stepName = row.querySelector('.wf-name').value.trim();
+          if (!stepName) return;  // skip an unnamed (e.g. blank new) row
+          steps.push({
+            name: stepName,
+            instruction: row.querySelector('.wf-instruction').value,
+            tools: words(row.querySelector('.wf-tools').value),
+            gate: row.querySelector('.wf-gate').value || null,
+          });
+        });
+        return steps;
+      }
+
       function payload() {
-        // Workflow is edited as JSON; surface a parse error rather than POSTing junk.
-        let workflow;
-        try {
-          workflow = JSON.parse(document.getElementById('f-workflow').value || '[]');
-        } catch (e) {
-          throw new Error('Workflow is not valid JSON: ' + e.message);
-        }
         return {
           description: document.getElementById('f-description').value,
           persona: document.getElementById('f-persona').value,
           allow_tools: words(document.getElementById('f-allow').value),
           deny_tools: words(document.getElementById('f-deny').value),
           max_risk: document.getElementById('f-risk').value,
-          workflow: workflow,
+          workflow: gatherWorkflow(),
         };
       }
 
@@ -147,20 +209,16 @@
       }
 
       document.getElementById('btn-validate').addEventListener('click', async () => {
-        try {
-          const { data } = await call('POST', `/api/v1/agents/${name}/validate`, payload());
-          if (data.errors && data.errors.length) show('Invalid: ' + data.errors.join('; '), false);
-          else if (data.warnings && data.warnings.length) show('OK, with warnings: ' + data.warnings.join('; '), true);
-          else show('Looks good.', true);
-        } catch (e) { show(e.message, false); }
+        const { data } = await call('POST', `/api/v1/agents/${name}/validate`, payload());
+        if (data.errors && data.errors.length) show('Invalid: ' + data.errors.join('; '), false);
+        else if (data.warnings && data.warnings.length) show('OK, with warnings: ' + data.warnings.join('; '), true);
+        else show('Looks good.', true);
       });
 
       document.getElementById('btn-save').addEventListener('click', async () => {
-        try {
-          const { status, data } = await call('POST', `/api/v1/agents/${name}/override`, payload());
-          if (status === 200) { show('Saved.', true); window.location.search = '?name=' + encodeURIComponent(name); }
-          else show('Rejected: ' + (data.detail || ('HTTP ' + status)), false);
-        } catch (e) { show(e.message, false); }
+        const { status, data } = await call('POST', `/api/v1/agents/${name}/override`, payload());
+        if (status === 200) { show('Saved.', true); window.location.search = '?name=' + encodeURIComponent(name); }
+        else show('Rejected: ' + (data.detail || ('HTTP ' + status)), false);
       });
 
       document.getElementById('btn-reset').addEventListener('click', async () => {
