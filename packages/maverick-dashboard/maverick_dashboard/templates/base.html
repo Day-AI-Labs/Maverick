@@ -570,6 +570,7 @@
       {% set _icons = {
         '/chat': 'chat', '/goals': 'target', '/agents': 'agents', '/roles': 'roles',
         '/goal-builder': 'builder', '/workflow-builder': 'workflow',
+        '/automations': 'workflow',
         '/graph-editor': 'graph', '/fleets': 'fleets',
         '/overview': 'overview', '/oversight': 'eye', '/spend': 'spend',
         '/providers': 'providers', '/benchmarks': 'bench', '/learned': 'learned',
@@ -581,7 +582,7 @@
         '/facts': 'facts', '/walkthroughs': 'walkthroughs', '/embed-demo': 'embed',
       } %}
       {% set _nav_groups = [
-        ('Operate', [('/chat', 'Chat'), ('/goals', 'Goals'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/workflow-builder', 'Workflows'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
+        ('Operate', [('/chat', 'Chat'), ('/goals', 'Goals'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/workflow-builder', 'Workflows'), ('/automations', 'Automations'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
         ('Observe', [('/overview', 'Overview'), ('/oversight', 'Oversight'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
         ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'), ('/safety', 'Safety'), ('/compliance', 'Compliance'), ('/compartments', 'Compartments'), ('/audit', 'Audit')]),
         ('Extend', [('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'), ('/tools', 'Tools'), ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/channels', 'Channels')]),

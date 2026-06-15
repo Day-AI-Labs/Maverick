@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}automations · Maverick{% endblock %}
+{% block content %}
+<style>
+  .auto { max-width: 880px; margin-inline: auto; }
+  .auto :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--radius-sm); }
+  .auto__head { margin-bottom: var(--space-6); }
+  .auto__head h1 { margin: 0 0 var(--space-1); font-size: var(--text-xl); }
+  .auto__section { margin-bottom: var(--space-7); }
+  .auto__section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+  .auto__section-head h2 { margin: 0; font-size: var(--text-lg); }
+  .auto__hint { color: var(--muted); font-size: var(--text-sm); margin: 0 0 var(--space-3); }
+  .auto__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+  .auto__item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); }
+  .auto__item-main { flex: 1 1 auto; min-width: 0; }
+  .auto__item-title { font-weight: var(--font-semibold); }
+  .auto__item-sub { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; word-break: break-word; }
+  .auto__item .btn { flex: none; }
+  .auto__url { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; font-size: var(--text-xs); }
+  .auto__empty { color: var(--muted); padding: var(--space-4); border: 1px dashed var(--border); border-radius: var(--radius-md); }
+  .auto__warn { color: var(--text); background: var(--surface-2); border: 1px solid var(--border-strong); border-left: 3px solid var(--ring); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); margin-bottom: var(--space-3); }
+</style>
+
+<div class="auto">
+  <div class="auto__head">
+    <h1>Automations</h1>
+    <p class="auto__hint">Every way your workflows run on their own — on a schedule, or from an inbound event. Create them in the <a href="/workflow-builder">Workflow Builder</a>’s saved view.</p>
+  </div>
+
+  {% if scheduling_enabled %}
+  <section class="auto__section" id="auto-sched-section" aria-labelledby="auto-sched-h">
+    <div class="auto__section-head">
+      <h2 id="auto-sched-h">Schedules</h2>
+      <span class="muted" id="auto-sched-count"></span>
+    </div>
+    <p class="auto__hint">Cron schedules run while <code>maverick worker</code> is active.</p>
+    <ul class="auto__list" id="auto-sched-list" aria-label="Schedules"></ul>
+    <div class="auto__empty" id="auto-sched-empty" hidden>No schedules yet — open a saved workflow in the <a href="/workflow-builder">builder</a> and add one.</div>
+  </section>
+  {% endif %}
+
+  {% if triggers_enabled %}
+  <section class="auto__section" id="auto-trig-section" aria-labelledby="auto-trig-h">
+    <div class="auto__section-head">
+      <h2 id="auto-trig-h">Webhook triggers</h2>
+      <span class="muted" id="auto-trig-count"></span>
+    </div>
+    <div class="auto__warn" id="auto-trig-nosecret" hidden>No <code>[webhooks]</code> secret is configured, so triggers won’t fire. Set one in <code>~/.maverick/config.toml</code> or <code>MAVERICK_WEBHOOK_SECRET</code>.</div>
+    <ul class="auto__list" id="auto-trig-list" aria-label="Webhook triggers"></ul>
+    <div class="auto__empty" id="auto-trig-empty" hidden>No triggers yet — open a saved workflow in the <a href="/workflow-builder">builder</a> and add one.</div>
+  </section>
+  {% endif %}
+
+  {% if not scheduling_enabled and not triggers_enabled %}
+  <div class="auto__empty">Automations are disabled. Enable <code>[features] scheduling</code> and/or <code>[features] triggers</code> in config to use this page.</div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  function fmtWhen(ts) { try { return new Date((ts || 0) * 1000).toLocaleString(); } catch (e) { return ''; } }
+  function cronText(cron) {
+    var map = { '* * *': 'every day', '* * 1-5': 'on weekdays', '* * 1': 'every Monday' };
+    var m = /^(\d+)\s+(\d+)\s+(.+)$/.exec(cron || '');
+    if (!m) return cron || '';
+    var when = map[m[3]];
+    if (!when) return cron;
+    return when + ' at ' + ('0' + m[2]).slice(-2) + ':' + ('0' + m[1]).slice(-2);
+  }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function delBtn(label, onClick) {
+    var b = el('button', 'btn btn--ghost', '✕'); b.type = 'button';
+    b.setAttribute('aria-label', label); b.title = 'Delete';
+    b.addEventListener('click', onClick); return b;
+  }
+
+  var schedList = document.getElementById('auto-sched-list');
+  var schedEmpty = document.getElementById('auto-sched-empty');
+  var schedCount = document.getElementById('auto-sched-count');
+  async function loadSchedules() {
+    if (!schedList) return;
+    var data = {};
+    try { data = await (await fetch('/api/v1/schedules')).json(); } catch (e) { return; }
+    var items = data.schedules || [];
+    schedList.textContent = '';
+    if (schedCount) schedCount.textContent = items.length ? (items.length + (items.length === 1 ? ' schedule' : ' schedules')) : '';
+    if (schedEmpty) schedEmpty.hidden = items.length > 0;
+    items.forEach(function (s) {
+      var li = el('li', 'auto__item');
+      var main = el('div', 'auto__item-main');
+      main.appendChild(el('div', 'auto__item-title', s.title || '(goal)'));
+      main.appendChild(el('div', 'auto__item-sub', cronText(s.cron) + ' · next ' + fmtWhen(s.next_run)));
+      li.appendChild(main);
+      li.appendChild(delBtn('Delete schedule ' + (s.title || s.id), function () { delSchedule(s.id); }));
+      schedList.appendChild(li);
+    });
+  }
+  async function delSchedule(id) {
+    try { var r = await fetch('/api/v1/schedules/' + encodeURIComponent(id), { method: 'DELETE' }); if (r.ok) loadSchedules(); } catch (e) {}
+  }
+
+  var trigList = document.getElementById('auto-trig-list');
+  var trigEmpty = document.getElementById('auto-trig-empty');
+  var trigCount = document.getElementById('auto-trig-count');
+  var trigNoSecret = document.getElementById('auto-trig-nosecret');
+  async function loadTriggers() {
+    if (!trigList) return;
+    var data = {};
+    try { data = await (await fetch('/api/v1/triggers')).json(); } catch (e) { return; }
+    var items = data.triggers || [];
+    if (trigNoSecret) trigNoSecret.hidden = !!data.secret_configured || items.length === 0;
+    trigList.textContent = '';
+    if (trigCount) trigCount.textContent = items.length ? (items.length + (items.length === 1 ? ' trigger' : ' triggers')) : '';
+    if (trigEmpty) trigEmpty.hidden = items.length > 0;
+    var base = window.location.origin + (data.webhook_url || '/webhook/run');
+    items.forEach(function (t) {
+      var li = el('li', 'auto__item');
+      var main = el('div', 'auto__item-main');
+      main.appendChild(el('div', 'auto__item-title', t.name));
+      var pcount = t.params ? Object.keys(t.params).length : 0;
+      var sub = el('div', 'auto__item-sub');
+      sub.appendChild(document.createTextNode('template ' + (t.template || '') + (pcount ? (' · ' + pcount + ' param' + (pcount === 1 ? '' : 's')) : '') + ' · '));
+      sub.appendChild(el('span', 'auto__url', 'POST ' + base + ' {"trigger":"' + t.name + '"}'));
+      main.appendChild(sub);
+      li.appendChild(main);
+      li.appendChild(delBtn('Delete trigger ' + t.name, function () { delTrigger(t.name); }));
+      trigList.appendChild(li);
+    });
+  }
+  async function delTrigger(name) {
+    try { var r = await fetch('/api/v1/triggers/' + encodeURIComponent(name), { method: 'DELETE' }); if (r.ok) loadTriggers(); } catch (e) {}
+  }
+
+  loadSchedules();
+  loadTriggers();
+})();
+</script>
+{% endblock %}
