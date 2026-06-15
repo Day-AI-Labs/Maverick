@@ -62,28 +62,41 @@ Core unit tests: `cd rust && cargo test -p mvk-scan`.
 
 ## Modules carved so far
 
-| core module | Python it accelerates | engine |
-|---|---|---|
-| `unicode` | `safety.unicode_filter` | `unicode-normalization` |
-| `secret` | `safety.secret_detector.scan` (22 patterns) | `fancy-regex` |
-| `pii` | `safety.pii_detector.scan` (emails/SSN/IP/cards/…) | `fancy-regex` |
+| core module | role | Python hot path | engine |
+|---|---|---|---|
+| `unicode` | accelerator | **wired in** (3–50× faster) | `unicode-normalization` |
+| `secret` | edge/TS + parity | **pure `re`** (native was slower) | `fancy-regex` |
+| `pii` | edge/TS + parity | **pure `re`** (native ~break-even) | `fancy-regex` |
 
-The secret/PII carve is **carve #2**. The `regex` crate can't do the PII phone /
-SSN look-behind / look-ahead, so these route through `fancy-regex` (which
-delegates non-fancy patterns to the linear `regex` backend). The detectors are
-security-critical, so the Rust side **fails safe**: any engine error — or a
-Luhn-ambiguous non-ASCII-digit card candidate — raises, and the Python shim
-falls back to pure Python (err toward over-redaction, never silently under).
+The secret/PII carve is **carve #2**, and it taught a real lesson: not every hot
+CPU module is a Rust win. Unlike the unicode scanner (a per-char *Python* loop),
+the detectors already run on CPython's compiled `re`. Measured on the same
+machine, the native port — 21 separate `fancy-regex` passes — was **~3× slower
+for secrets** and roughly break-even for PII:
+
+| scan | input | pure-Python `re` | native | result |
+|---|---|---|---|---|
+| `secret` | 2 KB / 60 KB (clean) | 0.44 / 12.9 ms | 1.31 / 39.4 ms | native **0.33×** |
+| `pii` | 60 KB clean / dense | 32.6 / 30.1 ms | 30.8 / 27.6 ms | native ~1.06–1.09× |
+
+So the detectors **stay pure `re` on the Python hot path** (the shield, the audit
+log). The native build is retained for the **TypeScript / edge** runtimes
+(Workers, Deno, browser) that have no `re` at all, where it's the only option —
+and `test_native_detect_parity.py` keeps it byte-for-byte identical to Python so
+the two never drift. The `regex` crate can't do the PII phone/SSN look-behind /
+look-ahead, hence `fancy-regex`; and the detectors are security-critical, so the
+native side **fails safe** — any engine error, or a Luhn-ambiguous
+non-ASCII-digit card candidate, raises rather than guessing.
 
 ## Parity
 
 Spans are reported as **codepoint** indices (Python `re.span()` semantics), not
 byte offsets, so redaction is byte-identical on non-ASCII text.
 
-- `tests/test_native_unicode_parity.py` — unicode path == pure Python.
-- `tests/test_native_detect_parity.py` — secret + PII path == pure Python, plus
-  a deterministic differential fuzz (and an offline run over 24k inputs found
-  zero mismatches).
+- `tests/test_native_unicode_parity.py` — unicode native path == pure Python.
+- `tests/test_native_detect_parity.py` — the native extension's secret + PII
+  output == pure-Python `scan`, plus a deterministic differential fuzz (an
+  offline run over 24k inputs found zero mismatches).
 - `mvk-scan-wasm/test/{parity,detect.parity}.test.mjs` — the WASM path == pure
   Python too.
 

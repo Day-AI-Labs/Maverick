@@ -162,34 +162,11 @@ def redact_iter(items: Iterable[str]) -> list[tuple[str, list[SecretMatch]]]:
     return [redact(t) for t in items]
 
 
-# --- Native acceleration (optional) ----------------------------------------
-# When the `maverick_native` extension (rust/mvk-scan, PyO3) is installed, route
-# scan() through it: the SAME patterns, order, exact-span de-dup and codepoint
-# spans, byte-for-byte (proven by tests/test_native_detect_parity.py plus a
-# differential fuzz over 24k inputs). The extension returns
-# (name, codepoint_start, codepoint_end); we rebuild SecretMatch (incl. its
-# preview) here so behaviour is identical to the pure-Python path. ANY failure
-# falls back to pure Python -- fail-safe, never under-redact. redact() and
-# redact_iter() call scan() by name, so they accelerate automatically.
-try:
-    import maverick_native as _native
-except Exception:  # pragma: no cover - extension is optional
-    _native = None
-
-if _native is not None and hasattr(_native, "secret_scan_spans"):
-    _scan_py = scan
-
-    def scan(text: str) -> list[SecretMatch]:  # noqa: F811
-        """Native-accelerated :func:`scan`; identical output, pure-Python fallback."""
-        if not text:
-            return []
-        try:
-            spans = _native.secret_scan_spans(text)
-        except Exception:
-            return _scan_py(text)
-        out: list[SecretMatch] = []
-        for name, a, b in spans:
-            raw = text[a:b]
-            preview = raw[:6] + "..." if len(raw) > 12 else "..."
-            out.append(SecretMatch(name=name, span=(a, b), value_preview=preview))
-        return out
+# NOTE on the native engine: rust/mvk-scan ships a byte-for-byte port of this
+# scanner (maverick_native.secret_scan_spans), but it is NOT wired into this
+# Python hot path. CPython's `re` is compiled C, and the 21-pattern sweep
+# measured ~3x FASTER in pure Python than the native port (21 separate
+# fancy-regex passes); see rust/README.md. The native build exists for the
+# TypeScript / edge runtimes (Workers, Deno, browser) that have no `re`, and
+# tests/test_native_detect_parity.py keeps it byte-for-byte identical to this
+# module so the two never diverge.
