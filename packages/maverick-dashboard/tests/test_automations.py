@@ -74,6 +74,14 @@ def test_page_includes_run_history_loader(monkeypatch, tmp_path):
     assert "/api/v1/automation-runs" in _client().get("/automations").text
 
 
+def test_base_provides_shared_confirm_and_toast(monkeypatch, tmp_path):
+    # The reusable feedback primitives ship from base.html on every page.
+    _isolate(monkeypatch, tmp_path)
+    t = _client().get("/automations").text
+    assert 'id="mv-confirm"' in t and 'id="mv-toasts"' in t
+    assert "window.mvConfirm" in t and "window.mvToast" in t
+
+
 def test_nav_has_automations_link(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     # The primary nav renders on every page, so the page links to itself.

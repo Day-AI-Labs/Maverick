@@ -326,10 +326,11 @@
             </select>
           </div>
           <div class="wf__field wf__field--sm">
-            <label for="sched-time">Time</label>
-            <input type="time" id="sched-time" class="input" value="09:00" aria-label="Schedule time" />
+            <label for="sched-time">Time (UTC)</label>
+            <input type="time" id="sched-time" class="input" value="09:00" aria-label="Schedule time (UTC)" />
           </div>
         </div>
+        <p class="wf__hint" id="sched-local-hint" hidden></p>
         <div class="wf__field" id="sched-params-wrap" hidden>
           <label>Parameter values for each run</label>
           <div id="sched-params"></div>
@@ -617,7 +618,22 @@
     function updateSchedBtn() {
       var cron = currentCron();
       schedBtn.disabled = !cron || schedParamValues() === null;
-      schedCronPreview.textContent = cron ? ('cron: ' + cron) : '';
+      schedCronPreview.textContent = cron ? ('cron: ' + cron + ' (UTC)') : '';
+      updateSchedLocalHint();
+    }
+    function updateSchedLocalHint() {
+      // Schedules fire in UTC; show what the chosen UTC time is locally so an
+      // operator isn't surprised when "09:00" runs at a different wall-clock hour.
+      var hint = document.getElementById('sched-local-hint');
+      if (!hint) return;
+      if (!schedCadence.value) { hint.hidden = true; return; }
+      var p = (schedTime.value || '09:00').split(':');
+      var h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+      if (isNaN(h) || isNaN(m)) { hint.hidden = true; return; }
+      var d = new Date(); d.setUTCHours(h, m, 0, 0);
+      var local = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      hint.textContent = ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2) + ' UTC = ' + local + ' your time';
+      hint.hidden = false;
     }
     function showScheduling(tpl) {
       if (!schedWrap) return;             // no-op when [features] scheduling is off
@@ -641,9 +657,10 @@
           body: JSON.stringify({ cron: cron, template: lastSavedTemplate.name, params: params }),
         });
         var data = await resp.json().catch(function () { return {}; });
-        if (!resp.ok) { schedCronPreview.textContent = data.detail || ('Failed: ' + resp.status); return; }
+        if (!resp.ok) { schedCronPreview.textContent = data.detail || ('Failed: ' + resp.status); mvToast(data.detail || 'Could not arm schedule', { error: true }); return; }
         schedCadence.value = '';
         schedCronPreview.textContent = 'Scheduled — next run ' + fmtWhen(data.next_run) + '.';
+        mvToast('Schedule armed — next run ' + fmtWhen(data.next_run));
         loadSchedules();
       } catch (e) {
         schedCronPreview.textContent = 'Could not reach the scheduler.';
@@ -683,10 +700,11 @@
       });
     }
     async function cancelSchedule(id, li) {
+      if (!(await mvConfirm('Delete this schedule? It will stop running.'))) return;
       try {
         var resp = await fetch('/api/v1/schedules/' + encodeURIComponent(id), { method: 'DELETE' });
-        if (resp.ok && li) li.remove();
-      } catch (e) { /* leave it; the next load reflects truth */ }
+        if (resp.ok) { if (li) li.remove(); mvToast('Schedule deleted'); } else { mvToast('Could not delete schedule', { error: true }); }
+      } catch (e) { mvToast('Could not delete schedule', { error: true }); }
     }
     if (schedWrap) {
       schedCadence.addEventListener('change', updateSchedBtn);
@@ -744,8 +762,9 @@
           body: JSON.stringify({ template: trigTpl.name, params: params, name: trigName.value.trim() || null }),
         });
         var data = await resp.json().catch(function () { return {}; });
-        if (!resp.ok) { trigMsg.textContent = data.detail || ('Failed: ' + resp.status); return; }
+        if (!resp.ok) { trigMsg.textContent = data.detail || ('Failed: ' + resp.status); mvToast(data.detail || 'Could not create trigger', { error: true }); return; }
         trigMsg.textContent = 'Created.';
+        mvToast('Trigger “' + data.name + '” created');
         showHowto(data);
         loadTriggers();
       } catch (e) {
@@ -796,10 +815,11 @@
       });
     }
     async function deleteTrigger(name, li) {
+      if (!(await mvConfirm('Delete trigger “' + name + '”? Its webhook URL will stop working.'))) return;
       try {
         var resp = await fetch('/api/v1/triggers/' + encodeURIComponent(name), { method: 'DELETE' });
-        if (resp.ok && li) li.remove();
-      } catch (e) { /* the next load reflects truth */ }
+        if (resp.ok) { if (li) li.remove(); mvToast('Trigger deleted'); } else { mvToast('Could not delete trigger', { error: true }); }
+      } catch (e) { mvToast('Could not delete trigger', { error: true }); }
     }
     if (trigWrap) {
       trigName.addEventListener('input', updateTrigBtn);

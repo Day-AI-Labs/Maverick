@@ -464,6 +464,8 @@ def test_workflow_builder_page_renders(monkeypatch, tmp_path):
     assert "pb-flow__start" in r.text and 'id="pb-flow-end"' in r.text
     # Schedule panel: arm a saved template on a cron (feature defaults on).
     assert 'id="wf-sched"' in r.text and "/api/v1/schedules" in r.text
+    # Schedules fire in UTC: the time field labels it + a local-time hint exists.
+    assert "Time (UTC)" in r.text and 'id="sched-local-hint"' in r.text
     # Webhook-trigger panel: bind a saved template to an inbound webhook.
     assert 'id="wf-trig"' in r.text and "/api/v1/triggers" in r.text
     # Reachable from the primary nav (Operate group).
