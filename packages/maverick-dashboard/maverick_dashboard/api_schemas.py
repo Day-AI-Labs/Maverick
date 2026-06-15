@@ -77,6 +77,9 @@ class ScheduleOut(BaseModel):
     kind: str
     title: str
     next_run: float
+    # Stable across cron re-arms (the job id changes each occurrence); used to
+    # group a schedule's run history. Empty for schedules armed before v15.
+    schedule_id: str = ""
 
 
 class TriggerIn(BaseModel):

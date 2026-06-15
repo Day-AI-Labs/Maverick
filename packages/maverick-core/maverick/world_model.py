@@ -25,7 +25,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -52,6 +52,15 @@ CREATE TABLE IF NOT EXISTS goals (
 
 CREATE INDEX IF NOT EXISTS idx_goals_status     ON goals(status);
 CREATE INDEX IF NOT EXISTS idx_goals_updated_at ON goals(updated_at);
+
+CREATE TABLE IF NOT EXISTS goal_origins (
+    goal_id INTEGER PRIMARY KEY REFERENCES goals(id),
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_origins_ref ON goal_origins(kind, ref);
 
 CREATE TABLE IF NOT EXISTS episodes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -288,6 +297,10 @@ MIGRATIONS: dict[int, list[str]] = {
     # orchestrator). Exact success-side attribution for the learning loops
     # (dreaming, role stats, budget priors) instead of lexical matching.
     14: ["ALTER TABLE goals ADD COLUMN domain TEXT NOT NULL DEFAULT ''"],
+    # v15 automation provenance: the goal_origins table (which schedule/trigger
+    # spawned a goal) is in SCHEMA (idempotent CREATE). Listed here so existing
+    # DBs bump the version and pick it up on next open, matching the v9 pattern.
+    15: [],
 }
 
 
@@ -830,6 +843,37 @@ class WorldModel:
                  owner, domain or ""),
             )
             return cur.lastrowid
+
+    def record_goal_origin(self, goal_id: int, kind: str, ref: str) -> None:
+        """Record which automation spawned a goal, so the Automations page can
+        show each automation's run history. ``kind`` is 'schedule' or 'trigger';
+        ``ref`` is the stable schedule_id or trigger name. One row per goal."""
+        with self._writing() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO goal_origins(goal_id, kind, ref, created_at) "
+                "VALUES(?, ?, ?, ?)",
+                (int(goal_id), str(kind), str(ref), time.time()),
+            )
+
+    def goals_for_origin(self, kind: str, ref: str, *, limit: int = 20) -> list[Goal]:
+        """Goals an automation spawned, most-recent first. ``SELECT g.*`` (not
+        ``*``) so goal_origins.created_at doesn't shadow goals.created_at."""
+        rows = self._read_all(
+            "SELECT g.* FROM goals g JOIN goal_origins o ON o.goal_id = g.id "
+            "WHERE o.kind = ? AND o.ref = ? ORDER BY g.id DESC LIMIT ?",
+            (str(kind), str(ref), max(1, int(limit))),
+        )
+        return [_goal_from_row(r) for r in rows]
+
+    def origin_status_counts(self, kind: str, ref: str) -> dict[str, int]:
+        """An automation's spawned-goal counts keyed by status (run summary)."""
+        rows = self._read_all(
+            "SELECT g.status AS status, COUNT(*) AS n FROM goals g "
+            "JOIN goal_origins o ON o.goal_id = g.id "
+            "WHERE o.kind = ? AND o.ref = ? GROUP BY g.status",
+            (str(kind), str(ref)),
+        )
+        return {r["status"]: int(r["n"]) for r in rows}
 
     def set_goal_domain(self, goal_id: int, domain: str) -> None:
         """Record the department (domain pack) a goal is running as.

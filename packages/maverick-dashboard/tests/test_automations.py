@@ -56,6 +56,24 @@ def test_one_section_when_only_scheduling_on(monkeypatch, tmp_path):
     assert "Automations are disabled" not in r.text
 
 
+def test_automation_runs_validates_input(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    c = _client()
+    # an unknown kind is a 400
+    assert c.get("/api/v1/automation-runs",
+                 params={"kind": "bogus", "ref": "x"}).status_code == 400
+    # an empty ref is an empty result, not an error (and touches no DB)
+    r = c.get("/api/v1/automation-runs", params={"kind": "schedule", "ref": ""})
+    assert r.status_code == 200
+    assert r.json() == {"runs": [], "summary": {}}
+
+
+def test_page_includes_run_history_loader(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    # the page wires the provenance endpoint for per-automation run history
+    assert "/api/v1/automation-runs" in _client().get("/automations").text
+
+
 def test_nav_has_automations_link(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     # The primary nav renders on every page, so the page links to itself.

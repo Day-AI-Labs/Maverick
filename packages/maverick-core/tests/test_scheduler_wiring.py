@@ -202,6 +202,51 @@ def test_start_goal_handler_creates_fresh_goal_and_runs_it(tmp_path, monkeypatch
     assert seen["run_kwargs"] == {"channel": "api", "user_id": "alice"}
 
 
+def test_start_goal_records_schedule_provenance(tmp_path, monkeypatch):
+    # A scheduled run stamps goal_origins so the dashboard can show the
+    # schedule's run history; only when the payload carries a schedule_id.
+    monkeypatch.setattr("maverick.world_model.DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.setattr(
+        "maverick.runner.run_goal_in_thread", lambda goal_id, *a, **k: "done")
+
+    from maverick.job_queue import Job
+    from maverick.worker import Worker
+    w = Worker(db_path=tmp_path / "jobs.db")
+    w._handlers["start_goal"](Job(
+        id=1, kind="start_goal",
+        payload={"text": "Summarize emails", "title": "Digest",
+                 "schedule_id": "sched-xyz"},
+        run_at=0.0, status="running", attempts=1,
+    ))
+
+    from maverick.world_model import open_world
+    world = open_world(tmp_path / "world.db")
+    try:
+        runs = world.goals_for_origin("schedule", "sched-xyz")
+    finally:
+        world.close()
+    assert len(runs) == 1 and runs[0].title == "Digest"
+
+
+def test_start_goal_without_schedule_id_records_no_origin(tmp_path, monkeypatch):
+    # A one-off (non-schedule) start_goal must not leave a provenance row.
+    monkeypatch.setattr("maverick.world_model.DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.setattr(
+        "maverick.runner.run_goal_in_thread", lambda goal_id, *a, **k: "done")
+    from maverick.job_queue import Job
+    from maverick.worker import Worker
+    Worker(db_path=tmp_path / "jobs.db")._handlers["start_goal"](Job(
+        id=1, kind="start_goal", payload={"text": "one-off"},
+        run_at=0.0, status="running", attempts=1,
+    ))
+    from maverick.world_model import open_world
+    world = open_world(tmp_path / "world.db")
+    try:
+        assert world.goals_for_origin("schedule", "") == []
+    finally:
+        world.close()
+
+
 def test_start_goal_idempotent_across_retries(tmp_path, monkeypatch):
     # A transient run failure requeues the job; the retry must REUSE the goal
     # created on the first attempt rather than mint a duplicate goal row each

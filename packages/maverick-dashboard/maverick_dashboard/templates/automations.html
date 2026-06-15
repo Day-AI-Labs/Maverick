@@ -17,6 +17,7 @@
   .auto__item-sub { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; word-break: break-word; }
   .auto__item .btn { flex: none; }
   .auto__url { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; font-size: var(--text-xs); }
+  .auto__runs { color: var(--muted); font-size: var(--text-xs); margin-top: 4px; }
   .auto__empty { color: var(--muted); padding: var(--space-4); border: 1px dashed var(--border); border-radius: var(--radius-md); }
   .auto__warn { color: var(--text); background: var(--surface-2); border: 1px solid var(--border-strong); border-left: 3px solid var(--ring); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); margin-bottom: var(--space-3); }
 </style>
@@ -90,6 +91,7 @@
       var main = el('div', 'auto__item-main');
       main.appendChild(el('div', 'auto__item-title', s.title || '(goal)'));
       main.appendChild(el('div', 'auto__item-sub', cronText(s.cron) + ' · next ' + fmtWhen(s.next_run)));
+      if (s.schedule_id) { var runs = el('div', 'auto__runs'); main.appendChild(runs); loadRuns('schedule', s.schedule_id, runs); }
       li.appendChild(main);
       li.appendChild(delBtn('Delete schedule ' + (s.title || s.id), function () { delSchedule(s.id); }));
       schedList.appendChild(li);
@@ -122,6 +124,7 @@
       sub.appendChild(document.createTextNode('template ' + (t.template || '') + (pcount ? (' · ' + pcount + ' param' + (pcount === 1 ? '' : 's')) : '') + ' · '));
       sub.appendChild(el('span', 'auto__url', 'POST ' + base + ' {"trigger":"' + t.name + '"}'));
       main.appendChild(sub);
+      var runs = el('div', 'auto__runs'); main.appendChild(runs); loadRuns('trigger', t.name, runs);
       li.appendChild(main);
       li.appendChild(delBtn('Delete trigger ' + t.name, function () { delTrigger(t.name); }));
       trigList.appendChild(li);
@@ -129,6 +132,24 @@
   }
   async function delTrigger(name) {
     try { var r = await fetch('/api/v1/triggers/' + encodeURIComponent(name), { method: 'DELETE' }); if (r.ok) loadTriggers(); } catch (e) {}
+  }
+
+  // Run history (provenance): a compact "N runs · ✓X · ✗Y · last <when>" summary.
+  async function loadRuns(kind, ref, into) {
+    if (!ref || !into) return;
+    var data = {};
+    try {
+      data = await (await fetch('/api/v1/automation-runs?kind=' + encodeURIComponent(kind) + '&ref=' + encodeURIComponent(ref))).json();
+    } catch (e) { return; }
+    var sum = data.summary || {}, runs = data.runs || [];
+    var total = Object.keys(sum).reduce(function (a, k) { return a + sum[k]; }, 0);
+    if (!total) { into.textContent = 'No runs yet'; return; }
+    var failed = (sum.failed || 0) + (sum.error || 0);
+    var parts = [total + (total === 1 ? ' run' : ' runs')];
+    if (sum.done) parts.push('✓ ' + sum.done);
+    if (failed) parts.push('✗ ' + failed);
+    if (runs[0]) parts.push('last ' + fmtWhen(runs[0].created_at));
+    into.textContent = parts.join(' · ');
   }
 
   loadSchedules();

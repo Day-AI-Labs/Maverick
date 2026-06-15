@@ -134,6 +134,20 @@ def test_webhook_run_fires_registered_template(monkeypatch, tmp_path, _no_real_r
     assert g is not None and g.title == "Weekly rivals report"   # rendered defaults
 
 
+def test_webhook_run_records_trigger_provenance(monkeypatch, tmp_path, _no_real_run):
+    # v2: firing a trigger stamps goal_origins, so /automation-runs (same _world)
+    # surfaces the spawned goal for the Automations run-history view.
+    _isolate(monkeypatch, tmp_path)
+    _configured(monkeypatch)
+    c = _client()
+    name = _register(c)
+    body = json.dumps({"trigger": name}).encode()
+    gid = c.post("/webhook/run", content=body, headers=_sign_headers(body)).json()["goal_id"]
+    data = c.get("/api/v1/automation-runs", params={"kind": "trigger", "ref": name}).json()
+    assert any(r["goal_id"] == gid for r in data["runs"])
+    assert sum(data["summary"].values()) >= 1
+
+
 def test_webhook_run_inbound_overrides_declared_param(monkeypatch, tmp_path, _no_real_run):
     _isolate(monkeypatch, tmp_path)
     _configured(monkeypatch)

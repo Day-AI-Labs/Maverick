@@ -135,6 +135,12 @@ class Worker:
                 try:
                     owner = str(job.payload.get("owner") or "")
                     goal_id = world.create_goal(title, text, owner=owner)
+                    # Provenance: link this run to its schedule so the dashboard
+                    # Automations page can show the schedule's run history. Only
+                    # on first creation (not retries, which reuse goal_id).
+                    schedule_id = job.payload.get("schedule_id")
+                    if schedule_id:
+                        world.record_goal_origin(goal_id, "schedule", str(schedule_id))
                 finally:
                     world.close()
                 job.payload["goal_id"] = goal_id

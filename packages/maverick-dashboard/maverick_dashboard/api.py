@@ -1016,6 +1016,7 @@ def _schedule_out(job) -> ScheduleOut:
         kind=job.kind,
         title=(str(p.get("title") or p.get("text") or ""))[:200],
         next_run=job.run_at,
+        schedule_id=str(p.get("schedule_id") or ""),
     )
 
 
@@ -1056,7 +1057,13 @@ async def create_schedule(request: Request, payload: ScheduleIn) -> ScheduleOut:
             raise HTTPException(
                 status_code=400, detail="provide a template or text to schedule")
     title = (title or text)[:200]
-    job_payload = {"text": text, "title": title, "__cron__": cron}
+    # A stable id carried in the payload across cron re-arms (each occurrence is
+    # a fresh job with a new id), so the worker can stamp provenance and the
+    # Automations page can group this schedule's run history.
+    from uuid import uuid4
+    schedule_id = uuid4().hex
+    job_payload = {"text": text, "title": title, "__cron__": cron,
+                   "schedule_id": schedule_id}
     owner = caller_principal(request) or ""
     if owner:
         job_payload["owner"] = owner
@@ -1069,7 +1076,8 @@ async def create_schedule(request: Request, payload: ScheduleIn) -> ScheduleOut:
     job_id, run_at = schedule_cron(
         JobQueue(), cron, "start_goal", job_payload,
     )
-    return ScheduleOut(id=job_id, cron=cron, kind="start_goal", title=title, next_run=run_at)
+    return ScheduleOut(id=job_id, cron=cron, kind="start_goal", title=title,
+                       next_run=run_at, schedule_id=schedule_id)
 
 
 @router.delete("/schedules/{job_id}")
@@ -1151,6 +1159,30 @@ async def delete_trigger_endpoint(request: Request, name: str) -> dict:
     if not triggers_store.delete_trigger(name):
         raise HTTPException(status_code=404, detail="no trigger with that name")
     return {"deleted": name}
+
+
+# ---- automation run history (provenance): goals a schedule/trigger spawned ---
+# Read-only, behind the dashboard middleware like the other GETs. Powers the
+# "last N runs · X done / Y failed" summary on the Automations page.
+
+
+@router.get("/automation-runs")
+async def automation_runs(kind: str, ref: str, limit: int = 8) -> dict:
+    """Recent goals an automation spawned + a status summary. ``kind`` is
+    'schedule' or 'trigger'; ``ref`` is the schedule_id or trigger name."""
+    if kind not in ("schedule", "trigger"):
+        raise HTTPException(status_code=400, detail="kind must be 'schedule' or 'trigger'")
+    ref = (ref or "").strip()
+    if not ref:
+        return {"runs": [], "summary": {}}
+    w = _world()
+    goals = w.goals_for_origin(kind, ref, limit=max(1, min(int(limit), 50)))
+    runs = [
+        {"goal_id": g.id, "title": g.title, "status": g.status,
+         "created_at": g.created_at}
+        for g in goals
+    ]
+    return {"runs": runs, "summary": w.origin_status_counts(kind, ref)}
 
 
 # ---- agents (domain packs): per-client view + override editor ---------------
