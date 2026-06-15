@@ -1580,32 +1580,35 @@ class Agent:
         No-op unless a non-Null PRM is configured. Never raises: a scoring
         failure is observability noise, not a reason to fail the agent loop.
         """
-        if not self._prm_enabled:
-            return
-        try:
-            from .prm import StepContext
-            reward = self._prm.score(StepContext(
-                goal_id=self.ctx.goal_id or 0,
-                step_index=step_index,
-                role=self.role,
-                tool_name=tool_name,
-                tool_succeeded=tool_succeeded,
-                is_final=is_final,
-                error=error,
-                prior_step_score=self._last_step_score,
-            ))
-            self._last_step_score = reward.promise
-            self._promise_window.push(reward.promise)
-            self._capture_trajectory_step(
-                step_index, tool_name, tool_succeeded, is_final, error,
-                reward.promise, reward.progress)
-            self.ctx.blackboard.post(
-                self.name, "prm",
-                f"step={step_index} promise={reward.promise:.2f} "
-                f"progress={reward.progress:+.2f} conf={reward.confidence:.2f}",
-            )
-        except Exception as e:  # pragma: no cover - PRM must never break the loop
-            log.debug("PRM scoring skipped: %s", e)
+        promise = progress = None
+        if self._prm_enabled:
+            try:
+                from .prm import StepContext
+                reward = self._prm.score(StepContext(
+                    goal_id=self.ctx.goal_id or 0,
+                    step_index=step_index,
+                    role=self.role,
+                    tool_name=tool_name,
+                    tool_succeeded=tool_succeeded,
+                    is_final=is_final,
+                    error=error,
+                    prior_step_score=self._last_step_score,
+                ))
+                promise, progress = reward.promise, reward.progress
+                self._last_step_score = reward.promise
+                self._promise_window.push(reward.promise)
+                self.ctx.blackboard.post(
+                    self.name, "prm",
+                    f"step={step_index} promise={reward.promise:.2f} "
+                    f"progress={reward.progress:+.2f} conf={reward.confidence:.2f}",
+                )
+            except Exception as e:  # pragma: no cover - PRM must never break the loop
+                log.debug("PRM scoring skipped: %s", e)
+        # Capture is DECOUPLED from the PRM (Karpathy): cheap and unconditional,
+        # a no-op unless [self_improvement] capture is on. A deployment shouldn't
+        # need a reward model configured just to record what its agents did.
+        self._capture_trajectory_step(
+            step_index, tool_name, tool_succeeded, is_final, error, promise, progress)
 
     def _capture_trajectory_step(self, step_index, tool_name, tool_succeeded,
                                  is_final, error, promise, progress) -> None:
