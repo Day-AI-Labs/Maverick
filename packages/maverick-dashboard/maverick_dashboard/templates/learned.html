@@ -80,7 +80,7 @@
       document.querySelectorAll('button.gt-remove').forEach(function(btn) {
         btn.addEventListener('click', async function() {
           const name = btn.dataset.name;
-          if (!confirm('Remove generated tool ' + name + '?')) return;
+          if (!(await mvConfirm('Remove generated tool ' + name + '?', { okText: 'Remove tool' }))) return;
           btn.disabled = true;
           msg.style.color = 'var(--muted)';
           msg.textContent = 'Removing ' + name + '…';
