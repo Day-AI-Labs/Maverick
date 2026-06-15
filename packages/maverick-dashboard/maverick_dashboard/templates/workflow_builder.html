@@ -1238,10 +1238,16 @@
 
     renderExamples();
 
-    // Deep-link (?template=<name>) from the Templates page: jump straight to
-    // automating an existing saved template, reusing the schedule/trigger panels.
+    // Deep-links from the Templates page:
+    //   ?edit=<name>     -> rehydrate the editor; Save overwrites (edit/inspect).
+    //   ?template=<name> -> jump to automating it (schedule / webhook trigger).
+    var WF_EDIT = {{ edit_prefill | tojson }};
     var WF_PREFILL = {{ prefill | tojson }};
-    if (WF_PREFILL && WF_PREFILL.name) {
+    if (WF_EDIT && WF_EDIT.name) {
+      setForm('template');
+      renderDraft(WF_EDIT);
+      setStatus('Editing “' + (WF_EDIT.title || WF_EDIT.name) + '” — change it and Save to overwrite (or rename to save a copy).');
+    } else if (WF_PREFILL && WF_PREFILL.name) {
       setForm('template');
       savedMsg.textContent = 'Automate “' + (WF_PREFILL.title || WF_PREFILL.name) + '” — schedule it, or trigger it from a webhook.';
       showSaved('/templates', 'Open Templates');

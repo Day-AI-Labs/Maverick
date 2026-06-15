@@ -3799,17 +3799,29 @@ async def goal_builder_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/workflow-builder", response_class=HTMLResponse)
-async def workflow_builder_page(request: Request, template: str | None = None) -> HTMLResponse:
+async def workflow_builder_page(request: Request, template: str | None = None,
+                                edit: str | None = None) -> HTMLResponse:
     """AI workflow builder: draft a reusable workflow from a brief or an
     uploaded document, edit it, then save it as a runnable template.
 
     ``?template=<name>`` deep-links from the Templates page: jump straight to
     automating an existing saved template (schedule / webhook trigger) without
-    re-drafting it. An unknown/invalid name simply yields no prefill."""
+    re-drafting it. ``?edit=<name>`` rehydrates the full editor for that template
+    so Save overwrites it (closing the create-only gap). An unknown/invalid name
+    simply yields no prefill."""
     from maverick.config import get_features
     feats = get_features()
     prefill = None
-    if template:
+    edit_prefill = None
+    if edit:
+        from maverick.templates import load_template
+        try:
+            t = load_template(edit)
+            edit_prefill = {"name": t.name, "title": t.title, "body": t.body,
+                            "params": list(t.params), "budget_dollars": t.budget_dollars}
+        except (ValueError, FileNotFoundError):
+            edit_prefill = None
+    elif template:
         from maverick.templates import load_template
         try:
             tpl = load_template(template)
@@ -3822,6 +3834,7 @@ async def workflow_builder_page(request: Request, template: str | None = None) -
             "scheduling_enabled": feats.get("scheduling", True),
             "triggers_enabled": feats.get("triggers", True),
             "prefill": prefill,
+            "edit_prefill": edit_prefill,
         },
     )
 

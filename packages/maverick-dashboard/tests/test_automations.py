@@ -90,6 +90,14 @@ def test_templates_page_shows_automate_cta(monkeypatch, tmp_path):
     assert "/workflow-builder?template=weekly-report" in r.text
 
 
+def test_templates_page_shows_edit_cta(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    import maverick_dashboard.app as appmod
+    monkeypatch.setattr(appmod, "template_market_entries",
+                        lambda: [{"name": "weekly-report", "title": "T", "body": "b", "params": []}])
+    assert "/workflow-builder?edit=weekly-report" in _client().get("/templates").text
+
+
 def test_templates_automate_cta_hidden_when_automation_off(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     import maverick_dashboard.app as appmod
