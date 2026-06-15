@@ -2540,6 +2540,33 @@ async def chat_send(
     # The optional "Add details" textarea gives the agent a real brief; fall
     # back to the title when empty (prior behavior was description == title).
     description = (description or "").strip()
+    # Validate uploads before creating the goal so rejected attachments do not
+    # leave behind a partial goal. Read at most one byte beyond the per-file
+    # limit; store() repeats the same checks before writing to disk.
+    pending_attachments = []
+    real_files = [f for f in files if f and (f.filename or "").strip()]
+    if real_files:
+        from maverick import attachments as _att
+        total = 0
+        for f in real_files:
+            filename = f.filename or "upload"
+            mime = f.content_type or "application/octet-stream"
+            try:
+                _att.validate_upload(filename, mime, 1, existing_total=total)
+                data = await f.read(_att.MAX_FILE_BYTES + 1)
+                if not data:
+                    continue  # an unfilled file input still posts an empty part
+                _att.validate_upload(
+                    filename, mime, len(data), existing_total=total,
+                )
+            except _att.AttachmentRejected as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Attachment '{filename}': {exc}",
+                ) from exc
+            pending_attachments.append((filename, mime, data, total))
+            total += len(data)
+
     goal_id = w.create_goal(
         title[:200], (description or title)[:8000],
         owner=caller_principal(request) or "",
@@ -2548,28 +2575,20 @@ async def chat_send(
     # via its list_attachments + read_file tools (images are also delivered as
     # vision blocks). Size/mime caps + on-disk storage live in
     # maverick.attachments.store; we just record each one against the goal.
-    real_files = [f for f in files if f and (f.filename or "").strip()]
-    if real_files:
+    if pending_attachments:
         from maverick import attachments as _att
-        total = 0
-        for f in real_files:
-            data = await f.read()
-            if not data:
-                continue  # an unfilled file input still posts an empty part
+        for filename, mime, data, existing_total in pending_attachments:
             try:
                 rec = _att.store(
-                    goal_id, f.filename,
-                    f.content_type or "application/octet-stream",
-                    data, existing_total=total,
+                    goal_id, filename, mime, data, existing_total=existing_total,
                 )
             except _att.AttachmentRejected as exc:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Attachment '{f.filename}': {exc}",
+                    detail=f"Attachment '{filename}': {exc}",
                 ) from exc
             w.add_attachment(goal_id, rec.filename, rec.mime, rec.size_bytes,
                              rec.sha256, str(rec.path))
-            total += rec.size_bytes
     # Use the shared runner so this path gets the same concurrency cap,
     # budget defaults, and error handling as the REST API and MCP server.
     from maverick.runner import run_goal_in_thread

@@ -200,6 +200,34 @@ def s3_fetch(goal_id: int, name: str, *, root: Path | None = None) -> Path | Non
     return dest
 
 
+def validate_upload(filename: str, mime: str, size: int, *, existing_total: int = 0) -> None:
+    """Validate attachment metadata, MIME type, size, and per-goal quota."""
+    if not filename:
+        raise AttachmentRejected("filename is required")
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise AttachmentRejected(f"invalid filename: {filename!r}")
+    if any(ord(c) < 0x20 or ord(c) == 0x7f for c in filename):
+        # A null byte truncates the path at the C layer in downstream
+        # consumers; other control chars enable log/terminal injection.
+        # Real filenames never contain them.
+        raise AttachmentRejected(f"control character in filename: {filename!r}")
+    if not mime:
+        raise AttachmentRejected("mime type is required")
+    if not any(mime.startswith(p) for p in ALLOWED_MIME_PREFIXES):
+        raise AttachmentRejected(f"mime type not allowed: {mime}")
+    if size == 0:
+        raise AttachmentRejected("empty file")
+    if size > MAX_FILE_BYTES:
+        raise AttachmentRejected(
+            f"file too large: {size} bytes (limit {MAX_FILE_BYTES})"
+        )
+    if existing_total + size > MAX_GOAL_BYTES:
+        raise AttachmentRejected(
+            f"per-goal attachment quota exceeded: "
+            f"{existing_total + size} > {MAX_GOAL_BYTES}"
+        )
+
+
 def store(
     goal_id: int,
     filename: str,
@@ -215,32 +243,8 @@ def store(
     on this goal; the caller passes it in so the per-goal cap is enforced
     even when uploads arrive across requests.
     """
-    if not filename:
-        raise AttachmentRejected("filename is required")
-    if "/" in filename or "\\" in filename or filename.startswith("."):
-        raise AttachmentRejected(f"invalid filename: {filename!r}")
-    if any(ord(c) < 0x20 or ord(c) == 0x7f for c in filename):
-        # A null byte truncates the path at the C layer in downstream
-        # consumers; other control chars enable log/terminal injection.
-        # Real filenames never contain them.
-        raise AttachmentRejected(f"control character in filename: {filename!r}")
-    if not mime:
-        raise AttachmentRejected("mime type is required")
-    if not any(mime.startswith(p) for p in ALLOWED_MIME_PREFIXES):
-        raise AttachmentRejected(f"mime type not allowed: {mime}")
-
     size = len(data)
-    if size == 0:
-        raise AttachmentRejected("empty file")
-    if size > MAX_FILE_BYTES:
-        raise AttachmentRejected(
-            f"file too large: {size} bytes (limit {MAX_FILE_BYTES})"
-        )
-    if existing_total + size > MAX_GOAL_BYTES:
-        raise AttachmentRejected(
-            f"per-goal attachment quota exceeded: "
-            f"{existing_total + size} > {MAX_GOAL_BYTES}"
-        )
+    validate_upload(filename, mime, size, existing_total=existing_total)
 
     sha256 = hashlib.sha256(data).hexdigest()
     dest_dir = _root_for_goal(goal_id, root)

@@ -8,7 +8,7 @@ _ORIGIN = {"origin": "http://testserver"}
 
 def _client():
     from maverick_dashboard.app import app
-    return TestClient(app)
+    return TestClient(app, headers={"Origin": "http://testserver"})
 
 
 def _prep(monkeypatch, tmp_path):
@@ -72,6 +72,39 @@ def test_chat_send_rejects_disallowed_type(monkeypatch, tmp_path):
     )
     assert r.status_code == 400
     assert "Attachment" in r.json()["detail"]
+
+
+def test_chat_send_rejects_oversized_upload_without_goal(monkeypatch, tmp_path):
+    _prep(monkeypatch, tmp_path)
+    import maverick.attachments as att
+    monkeypatch.setattr(att, "MAX_FILE_BYTES", 4)
+
+    r = _client().post(
+        "/chat/send",
+        data={"title": "too large", "description": ""},
+        files={"files": ("notes.txt", b"12345", "text/plain")},
+        headers=_ORIGIN, follow_redirects=False,
+    )
+
+    assert r.status_code == 400
+    assert "file too large" in r.json()["detail"]
+    from maverick_dashboard import app as dash
+    assert dash._world().list_goals() == []
+
+
+def test_chat_send_rejects_disallowed_type_without_goal(monkeypatch, tmp_path):
+    _prep(monkeypatch, tmp_path)
+    r = _client().post(
+        "/chat/send",
+        data={"title": "bad upload", "description": ""},
+        files={"files": ("evil.exe", b"MZ\x90\x00", "application/x-msdownload")},
+        headers=_ORIGIN, follow_redirects=False,
+    )
+
+    assert r.status_code == 400
+    assert "Attachment" in r.json()["detail"]
+    from maverick_dashboard import app as dash
+    assert dash._world().list_goals() == []
 
 
 def test_chat_page_has_attach_control(monkeypatch, tmp_path):
