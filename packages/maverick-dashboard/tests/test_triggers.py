@@ -16,7 +16,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-SECRET = "test-webhook-secret"
+SECRET = "test-webhook-secret"  # pragma: allowlist secret
 
 
 def _client():
