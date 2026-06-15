@@ -1,13 +1,13 @@
-"""Privacy-budget accountant (roadmap: 2027 H1 safety — "privacy budget per user").
+"""Stateless privacy-budget calculator.
 
-Tracks how much of a user's differential-privacy budget (total epsilon) has
-been spent across queries, and decides whether a proposed new query fits in
-what's left — the bookkeeping half of the ``differential_privacy`` tool.
-Deterministic and offline.
+Given a trusted cumulative differential-privacy spend (total epsilon), report
+the remaining budget and whether a proposed new query fits in that remainder.
+This tool deliberately does not store per-user state or consume budget; callers
+must provide authoritative spend from their own ledger.
 
 ops:
   - check(budget, spent[, request])  — remaining budget, and (if 'request'
-    given) whether the next query at that epsilon is ALLOWED.
+    given) whether the next query at that epsilon fits.
 """
 from __future__ import annotations
 
@@ -36,13 +36,16 @@ def _check(args: dict[str, Any]) -> str:
     budget = args.get("budget")
     if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
         return "ERROR: budget must be a number > 0"
-    spent_total, err = _sum_spent(args.get("spent", 0))
+    if "spent" not in args:
+        return "ERROR: spent is required from a trusted cumulative ledger"
+    spent_total, err = _sum_spent(args.get("spent"))
     if err:
         return err
     assert spent_total is not None
     remaining = float(budget) - spent_total
 
     lines = [
+        "WARNING: stateless estimate only; does not persist or consume privacy budget",
         f"budget: {budget:g}",
         f"spent: {spent_total:g}",
         f"remaining: {remaining:g}",
@@ -52,7 +55,7 @@ def _check(args: dict[str, Any]) -> str:
         if isinstance(req, bool) or not isinstance(req, (int, float)) or req < 0:
             return "ERROR: request must be a number >= 0"
         allowed = float(req) <= remaining + _EPS
-        verdict = "ALLOWED" if allowed else "DENIED"
+        verdict = "FITS" if allowed else "DENIED"
         lines.append(
             f"request: {req:g} -> {verdict}"
             + ("" if allowed else f" (exceeds remaining by {float(req) - remaining:g})")
@@ -81,7 +84,7 @@ _SCHEMA: dict[str, Any] = {
         },
         "request": {"type": "number", "description": "epsilon of a proposed next query (optional)"},
     },
-    "required": ["budget"],
+    "required": ["budget", "spent"],
 }
 
 
@@ -89,11 +92,12 @@ def privacy_budget() -> Tool:
     return Tool(
         name="privacy_budget",
         description=(
-            "Account a user's differential-privacy budget. op=check with "
-            "'budget' (total epsilon), 'spent' (a number or array of consumed "
-            "epsilons), and optional 'request' (epsilon of a proposed query). "
-            "Reports remaining budget and, for a request, ALLOWED/DENIED. "
-            "Pairs with the differential_privacy tool."
+            "Stateless differential-privacy budget calculator. op=check with "
+            "'budget' (total epsilon), required trusted cumulative 'spent' "
+            "(a number or array of consumed epsilons), and optional 'request' "
+            "(epsilon of a proposed query). Reports remaining budget and, for "
+            "a request, FITS/DENIED. Does not persist or consume per-user "
+            "budget; pair with an authoritative ledger for enforcement."
         ),
         input_schema=_SCHEMA,
         fn=_run,
