@@ -60,16 +60,38 @@ node --test test/parity.test.mjs                          # parity vs Python
 
 Core unit tests: `cd rust && cargo test -p mvk-scan`.
 
+## Modules carved so far
+
+| core module | Python it accelerates | engine |
+|---|---|---|
+| `unicode` | `safety.unicode_filter` | `unicode-normalization` |
+| `secret` | `safety.secret_detector.scan` (22 patterns) | `fancy-regex` |
+| `pii` | `safety.pii_detector.scan` (emails/SSN/IP/cards/…) | `fancy-regex` |
+
+The secret/PII carve is **carve #2**. The `regex` crate can't do the PII phone /
+SSN look-behind / look-ahead, so these route through `fancy-regex` (which
+delegates non-fancy patterns to the linear `regex` backend). The detectors are
+security-critical, so the Rust side **fails safe**: any engine error — or a
+Luhn-ambiguous non-ASCII-digit card candidate — raises, and the Python shim
+falls back to pure Python (err toward over-redaction, never silently under).
+
 ## Parity
 
-`packages/maverick-core/tests/test_native_unicode_parity.py` proves the Python
-native path equals the pure-Python path; `mvk-scan-wasm/test/parity.test.mjs`
-proves the WASM path equals it too. All three run off the same `mvk-scan` core,
-so they cannot diverge.
+Spans are reported as **codepoint** indices (Python `re.span()` semantics), not
+byte offsets, so redaction is byte-identical on non-ASCII text.
+
+- `tests/test_native_unicode_parity.py` — unicode path == pure Python.
+- `tests/test_native_detect_parity.py` — secret + PII path == pure Python, plus
+  a deterministic differential fuzz (and an offline run over 24k inputs found
+  zero mismatches).
+- `mvk-scan-wasm/test/{parity,detect.parity}.test.mjs` — the WASM path == pure
+  Python too.
+
+All run off the same `mvk-scan` core, so they cannot diverge.
 
 ## Carve order (next)
 
-Same pattern, profiler-gated: secret/PII detectors -> world-model access ->
-blackboard/budget -> compaction/tokenization -> the native agent-host daemon
-(density / cold-start). The ~80-90% that stays Python+TS: tools, packs, skills,
-providers, dashboard, channels.
+Same pattern, profiler-gated: ~~secret/PII detectors~~ (done) -> world-model
+access -> blackboard/budget -> compaction/tokenization -> the native agent-host
+daemon (density / cold-start). The ~80-90% that stays Python+TS: tools, packs,
+skills, providers, dashboard, channels.

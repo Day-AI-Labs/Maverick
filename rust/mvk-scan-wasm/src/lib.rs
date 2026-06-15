@@ -31,3 +31,36 @@ pub fn normalize(text: &str, nfkc: Option<bool>) -> Result<JsValue, JsValue> {
     };
     serde_wasm_bindgen::to_value(&out).map_err(|e| JsValue::from_str(&e.to_string()))
 }
+
+#[derive(Serialize)]
+struct Span {
+    /// detector name (secrets) / kind (PII)
+    name: String,
+    /// codepoint start (matches Python `Match.span()`), not byte offset
+    start: usize,
+    end: usize,
+}
+
+fn spans_to_js(spans: Vec<(String, usize, usize)>) -> Result<JsValue, JsValue> {
+    let out: Vec<Span> = spans
+        .into_iter()
+        .map(|(name, start, end)| Span { name, start, end })
+        .collect();
+    serde_wasm_bindgen::to_value(&out).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// `secretScanSpans(text): [{ name, start, end }]` — parity with
+/// `secret_detector.scan` (order + dedup preserved). Throws on engine error.
+#[wasm_bindgen(js_name = secretScanSpans)]
+pub fn secret_scan_spans(text: &str) -> Result<JsValue, JsValue> {
+    let spans = mvk_scan::secret::scan_spans(text).map_err(|e| JsValue::from_str(&e))?;
+    spans_to_js(spans)
+}
+
+/// `piiScanSpans(text): [{ name, start, end }]` — parity with `pii_detector.scan`
+/// (coalesced). Throws on engine error or Luhn ambiguity.
+#[wasm_bindgen(js_name = piiScanSpans)]
+pub fn pii_scan_spans(text: &str) -> Result<JsValue, JsValue> {
+    let spans = mvk_scan::pii::scan_spans(text).map_err(|e| JsValue::from_str(&e))?;
+    spans_to_js(spans)
+}

@@ -16,7 +16,10 @@ on:
     paths:
       - "rust/**"
       - "packages/maverick-core/maverick/safety/unicode_filter.py"
+      - "packages/maverick-core/maverick/safety/secret_detector.py"
+      - "packages/maverick-core/maverick/safety/pii_detector.py"
       - "packages/maverick-core/tests/test_native_unicode_parity.py"
+      - "packages/maverick-core/tests/test_native_detect_parity.py"
       - ".github/workflows/native.yml"
 
 permissions:
@@ -85,14 +88,20 @@ jobs:
           python - <<'PY'
           import maverick_native
           from maverick.safety import unicode_filter as uf
+          from maverick.safety import secret_detector as sd
+          from maverick.safety import pii_detector as pd
           assert uf._native is not None, "shim did not pick up maverick_native"
           assert uf.normalize is not uf._normalize_py, "native normalize not engaged"
           assert uf.has_dangerous_unicode is not uf._has_dangerous_unicode_py, (
               "native has_dangerous_unicode not engaged"
           )
+          assert sd.scan is not sd._scan_py, "native secret scan not engaged"
+          assert pd.scan is not pd._scan_py, "native pii scan not engaged"
           print("native engaged:", maverick_native.__file__)
           PY
-          python -m pytest packages/maverick-core/tests/test_native_unicode_parity.py -vv
+          python -m pytest \
+            packages/maverick-core/tests/test_native_unicode_parity.py \
+            packages/maverick-core/tests/test_native_detect_parity.py -vv
       - uses: actions/upload-artifact@v4
         with:
           name: maverick-native-wheel-${{ matrix.os }}
@@ -116,8 +125,8 @@ jobs:
           node-version: "22"
       - name: Build the wasm package (wasm-opt disabled in Cargo metadata)
         run: wasm-pack build rust/mvk-scan-wasm --target nodejs --out-dir pkg --release
-      - name: Node parity test (proves WASM == pure Python)
-        run: node --test rust/mvk-scan-wasm/test/parity.test.mjs
+      - name: Node parity tests (prove WASM == pure Python)
+        run: node --test rust/mvk-scan-wasm/test/parity.test.mjs rust/mvk-scan-wasm/test/detect.parity.test.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: mvk-scan-wasm-pkg

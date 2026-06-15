@@ -7,3 +7,8 @@ description = "Maverick native safety scanners (pure logic; shared by the Python
 
 [dependencies]
 unicode-normalization = "0.1"
+# Backtracking engine: needed for the PII phone/SSN patterns' lookbehind /
+# lookahead (the `regex` crate can't do those). For patterns WITHOUT fancy
+# features fancy-regex delegates to `regex` (linear), so this is also the safest
+# single engine for byte-for-byte parity with Python's backtracking `re`.
+fancy-regex = "0.14"
