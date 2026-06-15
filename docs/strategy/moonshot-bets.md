@@ -364,6 +364,89 @@ capture consent decision — the same four moves the council said convert the
 platform into a $50M asset. The deterministic half of every rung is now built,
 tested (~130 self-improvement tests total), and off by default.
 
+## Bet 5 — Consequence-Proven Autonomy → "Earned Autonomy" (the breakthrough)
+
+**Thesis.** The biggest blocker to enterprise agents isn't quality, it's **trust
+to take irreversible action** (move money, change prod, file, send). Everyone
+ships agents that draft/suggest; almost no one ships agents that *act*, because
+the downside is catastrophic and unprovable. Bet 5 is the layer that makes
+autonomous high-stakes action safe — and it's the synthesis of everything
+Maverick already has (sandbox, connectors' single egress chokepoint, verifier,
+governance, audit chain, autonomy slider, the self-improvement controller), not
+a fifth silo.
+
+**The capability — the Consequence Engine.** Every high-stakes plan is run
+through a preview + reversible-execution layer: (a) **dry-run** the irreversible
+action types (the ~10 high-risk tools in `tool_risk`: wire_transfer,
+post_journal_entry, run_payroll, deploy, send, file_*, ...) via the connector
+chokepoint; (b) where dry-run is impossible, a **compensating-action** layer —
+every action ships its inverse and executes inside a saga that rolls back on any
+failure or human rejection; (c) emit a **signed consequence card** ("this would
+move $240k, close these 3 tickets, change this config"); (d) gate real execution
+on policy/human approval of the *simulated* outcome; (e) sign the whole
+sim → approve → execute chain into the audit record.
+
+**One engine, three moats:**
+1. **Trust to act** — clients let agents *do* the work, not just suggest it
+   (where the real dollars are).
+2. **The safe RL environment** — you can't RL on real money movement; you *can*
+   against dry-run/compensating execution. The shadow layer is the practice
+   ground that makes high-stakes self-improvement possible. The
+   **predicted-vs-actual gap is the training signal** that improves the predictor.
+3. **Compounding trust** — every real outcome makes the predictor more faithful,
+   which unlocks more autonomy, which generates more data.
+
+**The 10x reframe — Earned Autonomy.** Trust is the product and it compounds. As
+the consequence-predictor proves accurate (measured: predicted vs actual, per
+action type, per customer), the system **progressively earns autonomy**: an
+action type predicted correctly N times graduates from "human approves" to
+"policy auto-approves." Not a scary binary switch — an **autonomy dial driven by
+evidence**, wired to the existing `autonomy.py` slider + `calibration`. One line:
+*"your agents earn the right to act, action type by action type, by proving they
+predict consequences correctly, with a guaranteed undo until they have."*
+
+**3-round council evolution (how it got here):**
+- **R1 (attack):** a faithful full-system digital twin is research-grade; a wrong
+  sim trusted is worse than no agent; per-tool what-if already exists; Musk: just
+  build a perfect undo. → Drop "simulate everything"; do dry-run of the
+  irreversible action types + a compensating-rollback saga (undo fused with
+  preview).
+- **R2 (moat):** novelty = a *uniform, cross-tool, governed, signed*
+  consequence+rollback layer over every connector (per-tool what-if isn't that).
+  Karpathy: it's also the safe RL environment; predicted-vs-actual is the
+  learning signal. Underwriter: signed preview + guaranteed rollback = insurable.
+  → MVP: "Shadow Mode for the ~10 irreversible action types."
+- **R3 (10x):** trust compounds → Earned Autonomy: agents measurably graduate
+  from human-approved to policy-auto-approved per action type. The autonomy dial
+  is driven by proven prediction accuracy.
+
+**Why the named buyers beg.** ServiceNow: their platform is execution; this is the
+only safe way to turn their workflows autonomous — they can't ship it without
+this layer. Clients: "show me what it'll do, let me approve, guarantee the undo,
+and let it earn more trust over time" is a painkiller. Anthropic: a verifiable
+safety story for autonomous action.
+
+**Defensibility.** Requires governance + connectors + sandbox + verifier + audit +
+the self-improvement loop + the autonomy slider — Maverick has all of them; a
+competitor must build the entire stack. The earned-autonomy ledger + the
+per-customer consequence-predictor are non-portable. Multi-year moat.
+
+**Honest critique (kept in view).** A faithful twin of arbitrary systems is hard —
+so don't build one; dry-run only the irreversible action types through the
+connector chokepoint and lean on the compensating-rollback saga for the
+sim-to-real gap (the gap is itself a learnable signal). Start narrow (the
+high-risk tool list), expand. And it still needs a design partner to be real.
+
+**Karpathy on the self-improvement architecture (recorded):** approves the
+*shape* — thin governed spine, model-agnostic verifier head, freeze-on-drift
+anti-reward-hacking interlock, cheap rungs first, reversibility. Two caveats:
+(1) it's "an empty gym" until real trajectories + a calibrated reward model run
+through it — prove the verifier-head rung end-to-end on one real workload before
+declaring victory; (2) make the calibrated verifier central (not optional) and
+**decouple capture from PRM-enabled** (capture should be unconditional/cheap).
+Bet 5's shadow layer is also his answer to "you can't RL high-stakes actions on
+production" — it's the safe environment that makes the architecture trainable.
+
 ### How the four bets relate
 
 | Bet | One-liner | Tense | Primary buyer pull |
