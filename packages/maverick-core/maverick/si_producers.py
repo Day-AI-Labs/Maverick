@@ -33,6 +33,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .promotion_effect import EffectEstimate
 from .self_improvement import (
     Candidate,
     GateResult,
@@ -147,6 +148,46 @@ def propose_tool(name, tracker: ToolOutcomeTracker, baseline_success, *, rollbac
     )
 
 
+def propose_with_effect(rung, summary, effect: EffectEstimate, *, rollback,
+                        capability_widens=False, approved=False, controller=None,
+                        **prov) -> Verdict:
+    """Promote a change on its estimated CAUSAL effect (``maverick.promotion_effect``).
+
+    Replaces the correlational ``baseline``/``candidate`` evidence with a
+    confounder-adjusted effect: the candidate carries ``effect_ci_low`` so the
+    controller's evidence gate requires the LOWER confidence bound of the causal
+    effect to clear the margin. Every promotion records the effect, its CI, the
+    naive (confounded) number for contrast, and the confounders adjusted for --
+    a regulator-grade "why". Fail-closed: an untrustworthy estimate (too little
+    overlap, or a placebo that leaked a non-zero effect) never reaches the gate.
+    """
+    provenance = {
+        "kind": "causal_effect",
+        "ci": [round(effect.ci_low, 6), round(effect.ci_high, 6)],
+        "naive": round(effect.naive_effect, 6),
+        "adjusted_for": list(effect.adjusted_for),
+        "n": effect.n_used,
+        "overlap": round(effect.overlap, 4),
+        "placebo": round(effect.placebo_effect, 6),
+        "trustworthy": effect.trustworthy,
+        **prov,
+    }
+    cand = Candidate(
+        rung=rung, summary=summary, baseline_score=0.0,
+        candidate_score=effect.effect, samples=effect.n_used,
+        effect_ci_low=effect.ci_low, capability_widens=capability_widens,
+        approved=approved, rollback=rollback, provenance=provenance,
+    )
+    if not effect.trustworthy:
+        return Verdict(
+            cand.id, rung, False,
+            (GateResult("effect_calibration", False,
+                        "effect estimate not trustworthy: low overlap or placebo leak"),),
+            "effect estimate not trustworthy",
+        )
+    return consider(cand, controller=controller)
+
+
 def propose_verifier(summary, baseline_discrimination, candidate_discrimination, samples,
                      *, rollback, controller=None, **prov) -> Verdict:
     """Phase 1: adopt a retrained verifier head only if it discriminates better.
@@ -215,4 +256,5 @@ __all__ = [
     "ToolOutcomeTracker", "shared_tracker", "reset_shared_tracker",
     "propose_prompt", "propose_policy", "propose_tool",
     "propose_verifier", "propose_code", "propose_weights",
+    "propose_with_effect",
 ]

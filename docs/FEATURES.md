@@ -107,6 +107,19 @@ here.
   (`role_stats.py` `<domain>::<role>` keys); a domain run's routing guidance
   prefers its own department's track record and falls back to the global
   signal when history is thin.
+- **Counterfactual promotion** — the self-improvement controller can judge a
+  learned change (tool/prompt/policy) on its confounder-adjusted *causal*
+  effect on outcomes, not a correlation that merely co-occurred with success
+  (`promotion_effect.py`: stratified/subclassification ATE with a confidence
+  interval over the logged trajectory population). The evidence gate then
+  requires the effect's lower confidence bound to clear the margin, and every
+  promotion records the effect, its CI, the naive (confounded) number for
+  contrast, and the confounders adjusted for. Fail-closed by calibration: an
+  estimate with too little overlap, or one that leaks a non-zero effect under a
+  within-stratum placebo permutation, is refused. Distinct from per-swarm CSCA
+  (`credit.py`) — this is offline, corpus-level, for promotion decisions. Opt-in
+  via `[self_improvement] causal_promotion`; applies only when self-improvement
+  is enabled.
 - **Human-override ingestion** — when a human declines an Art-14 approval
   gate, the refusal is persisted as a recallable lesson
   (`reflexion.record_human_override`, failure class `human_override`,
