@@ -23,6 +23,7 @@
        accent drives their chrome.
        ===================================================================== */
     :root {
+      --scrim: rgba(0, 0, 0, 0.45);   /* one overlay backdrop for modals / drawers / pickers */
       /* ---- spacing (8px system, 4px-quantised) ---- */
       --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
       --space-5: 24px; --space-6: 32px; --space-7: 48px;
@@ -422,7 +423,7 @@
       body.nav-open .sidebar { inset-inline-start: 0; }
       .nav-backdrop {
         position: fixed; inset: var(--topbar-h) 0 0 0; z-index: 55;
-        background: rgba(0,0,0,0.5);
+        background: var(--scrim);
       }
       body.nav-open .nav-backdrop { display: block; }
     }
@@ -447,7 +448,7 @@
     .mv-toast--error { border-left: 4px solid var(--danger); }
     @keyframes mv-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     .mv-confirm { border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 0; max-width: 28rem; width: calc(100vw - 2rem); background: var(--panel); color: var(--text); box-shadow: 0 12px 40px rgba(0,0,0,0.28); }
-    .mv-confirm::backdrop { background: rgba(0,0,0,0.45); }
+    .mv-confirm::backdrop { background: var(--scrim); }
     .mv-confirm__body { padding: var(--space-5); }
     .mv-confirm__msg { margin: 0 0 var(--space-4); }
     .mv-confirm__row { display: flex; justify-content: flex-end; gap: var(--space-2); }
@@ -642,10 +643,12 @@
     </div>
   </dialog>
   <script>
-    // Reusable feedback primitives, available to every page.
+    // Reusable feedback primitives, on every page that extends base.html.
+    // Prefer these over the browser's native dialogs. Contract: docs/ui-primitives.md.
     //   window.mvToast(message, {error}) -> transient status/alert toast
     //   window.mvConfirm(message, {okText}) -> Promise<bool> (native <dialog>;
-    //   falls back to window.confirm where <dialog> is unsupported).
+    //     focus-returning, not re-entrant; falls back to window.confirm)
+    //   window.mvCopy(text) -> copy to clipboard with a toast (+ fallback)
     (function () {
       var region = document.getElementById('mv-toasts');
       var alertRegion = document.getElementById('mv-toasts-alert');
@@ -738,7 +741,7 @@
         if (armed) {
           await fetch('/api/v1/halt', { method: 'DELETE' });
         } else {
-          if (!confirm('Arm the killswitch? Every running goal stops at its next tool-call boundary.')) return;
+          if (!(await mvConfirm('Arm the killswitch? Every running goal stops at its next tool-call boundary.', { okText: 'Arm killswitch' }))) return;
           await fetch('/api/v1/halt', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},

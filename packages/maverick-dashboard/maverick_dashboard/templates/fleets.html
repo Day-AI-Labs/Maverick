@@ -234,13 +234,13 @@
       document.querySelectorAll('button.fleet-remove-btn').forEach(function(btn) {
         btn.addEventListener('click', async function() {
           const fleet = btn.dataset.fleet;
-          if (!confirm('Remove fleet "' + fleet + '"? Its roster and run index are deleted.')) return;
+          if (!(await mvConfirm('Remove fleet "' + fleet + '"? Its roster and run index are deleted.', { okText: 'Remove fleet' }))) return;
           btn.disabled = true;
           try {
             const r = await fetch('/api/v1/fleets/' + encodeURIComponent(fleet), { method: 'DELETE' });
             if (r.ok || r.status === 204) { window.location.reload(); return; }
-            btn.disabled = false; alert('Remove failed: ' + r.status);
-          } catch (err) { btn.disabled = false; alert(String(err)); }
+            btn.disabled = false; mvToast('Remove failed: ' + r.status, { error: true });
+          } catch (err) { btn.disabled = false; mvToast(String(err), { error: true }); }
         });
       });
     })();

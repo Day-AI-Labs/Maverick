@@ -124,6 +124,26 @@ def test_p0_council_fixes_automations(monkeypatch, tmp_path):
     assert 'id="i-clock"' in t and "#i-clock" in t     # Automations has its own nav icon
 
 
+def test_p2_shared_primitives_and_scrim(monkeypatch, tmp_path):
+    # P2 hygiene: one --scrim token (defined + used), mvCopy shipped, and the
+    # killswitch dogfoods mvConfirm rather than native confirm().
+    _isolate(monkeypatch, tmp_path)
+    t = _client().get("/automations").text
+    assert "--scrim:" in t and "var(--scrim)" in t
+    assert "window.mvCopy" in t
+    assert "mvConfirm('Arm the killswitch" in t
+
+
+def test_p2_native_confirm_alert_migrated_to_primitives():
+    # Guard against native confirm()/alert() creeping back into these pages.
+    import pathlib
+    base = pathlib.Path(__file__).resolve().parents[1] / "maverick_dashboard" / "templates"
+    for f in ["base.html", "chat_goal.html", "fleets.html", "learned.html"]:
+        src = (base / f).read_text()
+        assert "confirm('" not in src and 'confirm("' not in src, f
+        assert "alert('" not in src and 'alert("' not in src, f
+
+
 def test_base_provides_shared_confirm_and_toast(monkeypatch, tmp_path):
     # The reusable feedback primitives ship from base.html on every page.
     _isolate(monkeypatch, tmp_path)

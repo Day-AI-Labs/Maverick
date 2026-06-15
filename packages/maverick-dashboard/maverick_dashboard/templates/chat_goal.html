@@ -277,7 +277,7 @@
       });
 
       cancelBtn.addEventListener('click', async function() {
-        if (!confirm('Cancel this goal? The agent stops at its next tool-call boundary.')) return;
+        if (!(await mvConfirm('Cancel this goal? The agent stops at its next tool-call boundary.', { okText: 'Cancel goal' }))) return;
         cancelBtn.disabled = true;
         actionMsg.textContent = '';
         const r = await fetch('/api/v1/goals/' + goalId + '/cancel', { method: 'POST' });
