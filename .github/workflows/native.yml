@@ -22,6 +22,15 @@ on:
 permissions:
   contents: read
 
+# A new push to the same ref supersedes in-flight runs (tags excepted — those
+# feed publish and must each complete).
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  RUST_BACKTRACE: "1"
+
 jobs:
   core:
     name: cargo test (core crate)
@@ -29,6 +38,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      # Just the core crate: all behaviour + unit tests live here. The binding
+      # crates (pyo3 cdylib, wasm-bindgen) have no host-target tests and are
+      # exercised by the python/wasm parity jobs below.
       - run: cargo test -p mvk-scan --manifest-path rust/Cargo.toml
 
   python:
@@ -44,18 +59,39 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
       - name: Build the maverick_native wheel
         uses: PyO3/maturin-action@v1
         with:
           command: build
           args: --release -m rust/mvk-scan-py/Cargo.toml --out dist
-      - name: Install wheel + run native parity (proves native == pure Python)
+      - name: Install wheel + assert native engaged + run parity
         shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip pytest
+          # --no-index forces the install to use the wheel we just built; if no
+          # wheel matches this OS/Python the install fails hard (not a silent skip).
           python -m pip install --no-index --find-links dist maverick-native
-          # Make `maverick` importable so the shim under test loads.
+          # Make `maverick` importable so the shim under test loads (deps-free:
+          # maverick.safety.unicode_filter pulls only stdlib).
           python -m pip install -e packages/maverick-core --no-deps
+          # HARD GATE: the parity test self-skips when the native module is
+          # absent. After explicitly building+installing it, a skip would be a
+          # false green — so prove the extension imported AND the shim swapped in
+          # the native callables before we let pytest run.
+          python - <<'PY'
+          import maverick_native
+          from maverick.safety import unicode_filter as uf
+          assert uf._native is not None, "shim did not pick up maverick_native"
+          assert uf.normalize is not uf._normalize_py, "native normalize not engaged"
+          assert uf.has_dangerous_unicode is not uf._has_dangerous_unicode_py, (
+              "native has_dangerous_unicode not engaged"
+          )
+          print("native engaged:", maverick_native.__file__)
+          PY
           python -m pytest packages/maverick-core/tests/test_native_unicode_parity.py -vv
       - uses: actions/upload-artifact@v4
         with:
@@ -71,6 +107,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
       - uses: jetli/wasm-pack-action@v0.4.0
       - uses: actions/setup-node@v4
         with:
