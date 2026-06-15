@@ -698,6 +698,21 @@
           cancelBtn.focus();
         });
       };
+      // Copy text to the clipboard with a toast; falls back for old browsers.
+      window.mvCopy = function (text) {
+        function ok() { mvToast('Copied to clipboard'); }
+        function fail() { mvToast('Copy failed — select and copy manually', { error: true }); }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(String(text)).then(ok, fail);
+          return;
+        }
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = String(text); ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); ta.remove(); ok();
+        } catch (e) { fail(); }
+      };
     })();
   </script>
   <script>
