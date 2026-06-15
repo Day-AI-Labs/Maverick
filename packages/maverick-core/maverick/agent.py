@@ -1596,6 +1596,9 @@ class Agent:
             ))
             self._last_step_score = reward.promise
             self._promise_window.push(reward.promise)
+            self._capture_trajectory_step(
+                step_index, tool_name, tool_succeeded, is_final, error,
+                reward.promise, reward.progress)
             self.ctx.blackboard.post(
                 self.name, "prm",
                 f"step={step_index} promise={reward.promise:.2f} "
@@ -1603,6 +1606,26 @@ class Agent:
             )
         except Exception as e:  # pragma: no cover - PRM must never break the loop
             log.debug("PRM scoring skipped: %s", e)
+
+    def _capture_trajectory_step(self, step_index, tool_name, tool_succeeded,
+                                 is_final, error, promise, progress) -> None:
+        """Append this step to the governed trajectory store -- the data
+        foundation for self-improvement. No-op unless [self_improvement] capture
+        is on; best-effort, never raises into the loop."""
+        try:
+            import time as _t
+
+            from .trajectory_store import TrajectoryStep, capture_step
+            capture_step(TrajectoryStep(
+                ts=_t.time(), goal_id=int(self.ctx.goal_id or 0),
+                episode_id=int(getattr(self.ctx, "episode_id", 0) or 0),
+                step=int(step_index), role=self.role, tool=tool_name or "",
+                tool_succeeded=tool_succeeded, is_final=bool(is_final),
+                error=error or "", promise=promise, progress=progress,
+                domain=self.domain or "",
+            ))
+        except Exception:  # pragma: no cover -- capture must never break the loop
+            pass
 
     def _mirror_live_spend(self, episode_id: int) -> None:
         """Throttled write of running totals onto the open episode row (#614).

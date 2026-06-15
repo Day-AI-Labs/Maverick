@@ -1137,6 +1137,37 @@ def analytics_cmd(ctx, sql: str | None, top: int) -> None:
         wa.close()
 
 
+@main.command("compounding")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.option("--window", type=int, default=5, help="Cold/warm window per task class.")
+@click.pass_context
+def compounding(ctx, as_json: bool, window: int) -> None:
+    """Does the workforce get cheaper and better with use? (the compounding moat).
+
+    Per task class, compares the earliest runs (cold) against the most recent
+    (warm) and reports the cost and reliability deltas -- the live, per-customer
+    proof that learning compounds. Read-only.
+    """
+    import json as _json
+
+    from .compounding_metric import report_from_world
+    world = open_world(ctx.obj["db"])
+    reps = report_from_world(world, window=window)
+    if as_json:
+        click.echo(_json.dumps([r.to_dict() for r in reps]))
+        return
+    if not reps:
+        click.echo("Not enough runs yet to measure compounding "
+                   "(need several runs of the same task class).")
+        return
+    click.echo(click.style("Compounding — cold vs warm by task class", bold=True))
+    for r in reps:
+        arrow = "improving" if r.improving else "flat/regressing"
+        click.echo(
+            f"  {r.task_class}: {r.runs} runs  "
+            f"cost {r.cost_delta_pct:+.0f}%  success {r.success_delta:+.2f}  [{arrow}]")
+
+
 @main.command("cost-retro")
 @click.option("--top", type=int, default=10, help="How many costliest goals to show.")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")

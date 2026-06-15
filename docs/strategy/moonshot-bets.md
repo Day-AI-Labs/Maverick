@@ -331,6 +331,39 @@ Every phase now flows through the merged controller's gates. Status:
 ~67 new deterministic tests across the tranche; ruff + vulture clean; full core
 suite collects (8,289 tests, no errors). Everything off by default.
 
+### Build log — update 3 (model-agnostic completion + the OS-model decision)
+
+**Decision (consistent with prior guidance and the council): no open-weights
+base model.** The default reasoning brain stays a frontier closed model and is
+swappable per role (kernel rule 2: `ROLE_MODELS` defaults are last-resort,
+overridable across 13 providers within the admin allow-list). The moat is
+governance + per-customer compounding *on top of* the best model — not owning
+one. So real self-improvement is the **model-agnostic** rungs; weight-level
+fine-tuning (Phases 2/6) is demoted to an *optional, sovereign-/air-gap-only*
+seam, never the default and never the strategy.
+
+Model-agnostic completion glue shipped (`self_improvement_runner.py`,
+`trajectory_store` wired into `agent._score_step`, `maverick compounding` CLI):
+
+- **Capture is live** — the agent now writes governed, redacted trajectory steps
+  (off by default).
+- **Judgment** — `build_prm_examples` turns trajectories into training rows for
+  the small reward *head* (an MLP, not an LLM — no open-weights model implied).
+- **Tools** — `review_generated_tools` promotes a synthesized tool that earns it
+  and retires one that doesn't (the FORGET half).
+- **Strategy** — `emit_strategy_candidate` routes prompt/skill/policy changes
+  through the gate.
+- **Calibration** — `collect_calibration` arms the verifier-drift interlock from
+  any ground-truth source.
+- **Proof** — `maverick compounding` reports the live cold→warm cost/reliability
+  delta per task class.
+
+What remains for full *training* completion is infra/business, not code: a real
+workload (design partner) for the eval signal + data, GPU/compute, and a raw-text
+capture consent decision — the same four moves the council said convert the
+platform into a $50M asset. The deterministic half of every rung is now built,
+tested (~130 self-improvement tests total), and off by default.
+
 ### How the four bets relate
 
 | Bet | One-liner | Tense | Primary buyer pull |

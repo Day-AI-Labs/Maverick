@@ -32,7 +32,7 @@ def test_record_and_iter_roundtrip(tmp_path):
 
 
 def test_secrets_are_redacted_before_disk(tmp_path):
-    secret = "sk-ant-" + "a" * 30
+    secret = "sk-ant-" + "a" * 30  # pragma: allowlist secret  (fabricated test fixture)
     store = TrajectoryStore(path=tmp_path / "t.ndjson")
     store.record(_step(error=f"failed with key {secret}"))
     raw = (tmp_path / "t.ndjson").read_text(encoding="utf-8")
