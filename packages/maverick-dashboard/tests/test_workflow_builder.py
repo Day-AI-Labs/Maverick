@@ -494,6 +494,27 @@ def test_p0_council_fixes_builder(monkeypatch, tmp_path):
     assert "label.htmlFor" in t                        # param inputs associate their label
 
 
+def test_builder_edit_agent_rehydrates_playbook(monkeypatch, tmp_path):
+    # ?edit_agent=<name> rehydrates the playbook editor and round-trips the
+    # override fields the builder can't show (so a save can't silently drop them).
+    _isolate(monkeypatch, tmp_path)
+    import maverick.domain_edit as de
+    monkeypatch.setattr(de, "resolved_view", lambda name: ({
+        "name": name, "description": "d", "persona": "p",
+        "allow_tools": ["a"], "deny_tools": [], "max_risk": "medium",
+        "workflow": [{"name": "s1", "instruction": "do", "tools": [], "gate": "approval"}],
+    } if name == "invoice-clerk" else None))
+    monkeypatch.setattr(de, "read_override",
+                        lambda name: {"persona": "p", "knowledge_sources": ["kb1"], "compartment": "finance"})
+    t = _client().get("/workflow-builder?edit_agent=invoice-clerk").text
+    assert "PB_EDIT = null" not in t and "invoice-clerk" in t
+    assert "renderPlaybook(PB_EDIT)" in t and "Editing agent" in t
+    assert "knowledge_sources" in t and "finance" in t   # preserved on the round-trip
+    # an unknown agent yields no prefill
+    monkeypatch.setattr(de, "resolved_view", lambda name: None)
+    assert "PB_EDIT = null" in _client().get("/workflow-builder?edit_agent=nope").text
+
+
 def test_builder_edit_deeplink_rehydrates_editor(monkeypatch, tmp_path):
     # ?edit=<name> rehydrates the full editor so Save overwrites (the create-only
     # gap Maya flagged); takes precedence over the automate ?template= jump.

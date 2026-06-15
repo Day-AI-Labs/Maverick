@@ -121,6 +121,9 @@
           <button type="button" id="btn-save">Save override</button>
           <button type="button" id="btn-reset">Reset to built-in</button>
         </p>
+        {% if selected.workflow %}
+        <p><a class="btn btn--ghost" href="/workflow-builder?edit_agent={{ selected.name | urlencode }}">Edit playbook in builder</a></p>
+        {% endif %}
         {% else %}
         <p class="muted">Editing is disabled in this deployment.</p>
         {% endif %}
