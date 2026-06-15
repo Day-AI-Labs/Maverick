@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}workflows · Maverick{% endblock %}
+{% block content %}
+<style>
+  .wfx { max-width: 880px; margin-inline: auto; }
+  .wfx :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--radius-sm); }
+  .wfx__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-1); }
+  .wfx__head h1 { margin: 0; }
+  .wfx__sub { color: var(--muted); margin: 0 0 var(--space-6); }
+  .wfx__section { margin-bottom: var(--space-7); }
+  .wfx__section h2 { font-size: var(--text-lg); margin: 0 0 var(--space-3); }
+  .wfx__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+  .wfx__item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); }
+  .wfx__item-main { flex: 1 1 auto; min-width: 0; }
+  .wfx__item-title { font-weight: var(--font-semibold); }
+  .wfx__item-sub { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; word-break: break-word; }
+  .wfx__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; flex: none; }
+  .wfx__empty { color: var(--muted); padding: var(--space-4); border: 1px dashed var(--border); border-radius: var(--radius-md); }
+</style>
+
+<div class="wfx">
+  <div class="wfx__head">
+    <h1 class="page-title">Workflows</h1>
+    <a class="btn btn--primary" href="/workflow-builder">New workflow</a>
+  </div>
+  <p class="wfx__sub">Workflows and agent playbooks you've built — edit them, or put them on a schedule / webhook. Browse the full catalog on <a href="/templates">Templates</a>.</p>
+
+  <section class="wfx__section" aria-labelledby="wfx-tpl-h">
+    <h2 id="wfx-tpl-h">Templates</h2>
+    {% if templates %}
+    <ul class="wfx__list" aria-label="Your templates">
+      {% for t in templates %}
+      <li class="wfx__item">
+        <div class="wfx__item-main">
+          <div class="wfx__item-title">{{ t.title or t.name }}</div>
+          <div class="wfx__item-sub">{{ t.name }}{% if t.params %} · params: {{ t.params|join(', ') }}{% endif %}</div>
+        </div>
+        <div class="wfx__actions">
+          <a class="btn btn--ghost" href="/workflow-builder?edit={{ t.name | urlencode }}">Edit</a>
+          {% if scheduling_enabled or triggers_enabled %}<a class="btn btn--ghost" href="/workflow-builder?template={{ t.name | urlencode }}">Automate</a>{% endif %}
+          <a class="btn btn--ghost" href="/chat?title={{ t.title | urlencode }}">Use</a>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="wfx__empty">No saved templates yet — <a href="/workflow-builder">build one</a>.</div>
+    {% endif %}
+  </section>
+
+  <section class="wfx__section" aria-labelledby="wfx-pb-h">
+    <h2 id="wfx-pb-h">Agent playbooks</h2>
+    {% if playbooks %}
+    <ul class="wfx__list" aria-label="Your agent playbooks">
+      {% for p in playbooks %}
+      <li class="wfx__item">
+        <div class="wfx__item-main">
+          <div class="wfx__item-title">{{ p.name }}</div>
+          <div class="wfx__item-sub">{% if p.description %}{{ p.description }}{% endif %}{% if p.suite %} · {{ p.suite }}{% endif %}</div>
+        </div>
+        <div class="wfx__actions">
+          <a class="btn btn--ghost" href="/workflow-builder?edit_agent={{ p.name | urlencode }}">Edit</a>
+          <a class="btn btn--ghost" href="/agents?name={{ p.name | urlencode }}">Open in Agents</a>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="wfx__empty">No agent playbooks yet — <a href="/workflow-builder">build one</a> (choose “Agent playbook”).</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

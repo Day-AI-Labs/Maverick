@@ -3868,6 +3868,42 @@ async def workflow_builder_page(request: Request, template: str | None = None,
     )
 
 
+@app.get("/workflows", response_class=HTMLResponse)
+async def workflows_index_page(request: Request) -> HTMLResponse:
+    """Your saved workflows: templates you authored + agent playbooks you built,
+    with quick edit / automate actions. The builder is reached via 'New'. (This
+    is the management index; /templates remains the browse-the-catalog page.)"""
+    from maverick.config import get_features
+    from maverick.templates import USER_TEMPLATES, load_template
+    feats = get_features()
+    tpls: list[dict] = []
+    try:
+        names = sorted(p.stem for p in USER_TEMPLATES.glob("*.md"))
+    except OSError:
+        names = []
+    for name in names:
+        try:
+            t = load_template(name)
+            tpls.append({"name": t.name, "title": t.title, "params": list(t.params)})
+        except (ValueError, FileNotFoundError):
+            continue
+    try:
+        from maverick.domain_edit import list_agents
+        playbooks = [a for a in list_agents()
+                     if a.get("is_override") and a.get("has_workflow")]
+    except Exception:
+        playbooks = []
+    return templates.TemplateResponse(
+        request, "workflows_index.html",
+        {
+            "templates": tpls,
+            "playbooks": playbooks,
+            "scheduling_enabled": feats.get("scheduling", True),
+            "triggers_enabled": feats.get("triggers", True),
+        },
+    )
+
+
 @app.get("/automations", response_class=HTMLResponse)
 async def automations_page(request: Request) -> HTMLResponse:
     """One place to see and manage every automation: cron schedules and inbound
