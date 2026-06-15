@@ -620,6 +620,31 @@ def get_dreaming() -> dict:
     }
 
 
+def get_self_improvement() -> dict:
+    """Return the ``[self_improvement]`` section (governed learning promotion).
+
+    OFF by default and a no-op while off: when ``enable`` is false the
+    Self-Improvement Controller never promotes a self-change, so a default
+    deployment is unaffected. ``min_improvement`` is the eval margin a candidate
+    must beat its own baseline by before any rung is eligible; ``max_auto_rung``
+    is the highest rung that may be promoted without a human (anything above it
+    -- e.g. ``code``/``weights`` -- always requires explicit approval).
+    """
+    cfg = load_config().get("self_improvement", {})
+
+    def _ratio(key: str, default: float) -> float:
+        try:
+            return max(0.0, float(cfg.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "min_improvement": _ratio("min_improvement", 0.0),
+        "max_auto_rung": str(cfg.get("max_auto_rung", "policy")).strip().lower() or "policy",
+    }
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 
