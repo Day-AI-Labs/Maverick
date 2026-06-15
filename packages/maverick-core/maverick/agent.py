@@ -515,6 +515,9 @@ class Agent:
         self._prm = build_from_env()
         self._prm_enabled = type(self._prm).__name__ != "NullPRM"
         self._last_step_score = 0.5
+        from .prm_guidance import PromiseWindow
+        self._promise_window = PromiseWindow()
+        self._last_prm_nudge_step = -100
         # Live-spend mirror throttle (#614): the root agent periodically
         # mirrors running totals onto its open episode row so `maverick runs`
         # / `maverick budget` reflect accruing mid-run spend instead of
@@ -1592,6 +1595,10 @@ class Agent:
                 prior_step_score=self._last_step_score,
             ))
             self._last_step_score = reward.promise
+            self._promise_window.push(reward.promise)
+            self._capture_trajectory_step(
+                step_index, tool_name, tool_succeeded, is_final, error,
+                reward.promise, reward.progress)
             self.ctx.blackboard.post(
                 self.name, "prm",
                 f"step={step_index} promise={reward.promise:.2f} "
@@ -1599,6 +1606,26 @@ class Agent:
             )
         except Exception as e:  # pragma: no cover - PRM must never break the loop
             log.debug("PRM scoring skipped: %s", e)
+
+    def _capture_trajectory_step(self, step_index, tool_name, tool_succeeded,
+                                 is_final, error, promise, progress) -> None:
+        """Append this step to the governed trajectory store -- the data
+        foundation for self-improvement. No-op unless [self_improvement] capture
+        is on; best-effort, never raises into the loop."""
+        try:
+            import time as _t
+
+            from .trajectory_store import TrajectoryStep, capture_step
+            capture_step(TrajectoryStep(
+                ts=_t.time(), goal_id=int(self.ctx.goal_id or 0),
+                episode_id=int(getattr(self.ctx, "episode_id", 0) or 0),
+                step=int(step_index), role=self.role, tool=tool_name or "",
+                tool_succeeded=tool_succeeded, is_final=bool(is_final),
+                error=error or "", promise=promise, progress=progress,
+                domain=self.domain or "",
+            ))
+        except Exception:  # pragma: no cover -- capture must never break the loop
+            pass
 
     def _mirror_live_spend(self, episode_id: int) -> None:
         """Throttled write of running totals onto the open episode row (#614).
@@ -1805,6 +1832,16 @@ class Agent:
             # one compaction_plugins dispatcher, which fails safe to heuristic
             # on an unknown name. The agent's llm seam + conversation id reach
             # the strategies that use them.
+            # Process-reward guidance (opt-in, default off): if the PRM has
+            # judged the last few steps unpromising, nudge a course-change. A
+            # no-op unless [self_improvement] prm_guidance is on AND a PRM is
+            # configured, so default behaviour is unchanged.
+            from .prm_guidance import maybe_nudge
+            _prm_note = maybe_nudge(self._promise_window.values())
+            if _prm_note and step - self._last_prm_nudge_step >= 3:
+                messages.append({"role": "user", "content": _prm_note})
+                self._last_prm_nudge_step = step
+
             from .compaction_plugins import compact_with
             # Some opt-in strategies make provider calls, so apply the same
             # pre-spend gate and budget object to compaction as the main turn.
