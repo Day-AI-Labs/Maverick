@@ -18,6 +18,20 @@ def test_count_is_seeded_reproducible():
     assert a == b and a.startswith("OK")
 
 
+def test_private_release_omits_exact_aggregate():
+    count = dp_stats().fn({"op": "count", "value": 12345, "epsilon": 1.0, "seed": 5})
+    total = dp_stats().fn({
+        "op": "sum",
+        "values": [1000, 5, 3.5],
+        "clamp": 10,
+        "epsilon": 1.0,
+        "seed": 5,
+    })
+
+    assert "true=" not in count
+    assert "true=" not in total
+
+
 def test_smaller_epsilon_larger_scale():
     tight = dp_stats().fn({"op": "count", "value": 0, "epsilon": 0.1, "seed": 1})
     loose = dp_stats().fn({"op": "count", "value": 0, "epsilon": 10.0, "seed": 1})
