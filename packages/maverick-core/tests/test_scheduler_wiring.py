@@ -169,6 +169,7 @@ def test_start_goal_handler_creates_fresh_goal_and_runs_it(tmp_path, monkeypatch
 
     def _fake_run(goal_id, *a, **k):
         seen["goal_id"] = goal_id
+        seen["run_kwargs"] = k
         return "done"
 
     monkeypatch.setattr("maverick.runner.run_goal_in_thread", _fake_run)
@@ -178,7 +179,13 @@ def test_start_goal_handler_creates_fresh_goal_and_runs_it(tmp_path, monkeypatch
     w = Worker(db_path=tmp_path / "jobs.db")
     w._handlers["start_goal"](Job(
         id=1, kind="start_goal",
-        payload={"title": "Digest", "text": "Summarize overnight emails"},
+        payload={
+            "title": "Digest",
+            "text": "Summarize overnight emails",
+            "owner": "user:alice",
+            "channel": "api",
+            "user_id": "alice",
+        },
         run_at=0.0, status="running", attempts=1,
     ))
 
@@ -191,6 +198,8 @@ def test_start_goal_handler_creates_fresh_goal_and_runs_it(tmp_path, monkeypatch
     assert g is not None
     assert g.title == "Digest"
     assert g.description == "Summarize overnight emails"
+    assert g.owner == "user:alice"
+    assert seen["run_kwargs"] == {"channel": "api", "user_id": "alice"}
 
 
 def test_start_goal_idempotent_across_retries(tmp_path, monkeypatch):

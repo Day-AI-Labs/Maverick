@@ -43,6 +43,32 @@ def test_create_list_cancel_text_schedule(monkeypatch, tmp_path):
     assert all(s["id"] != sid for s in c.get("/api/v1/schedules").json()["schedules"])
 
 
+def test_create_schedule_preserves_proxy_identity(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    import maverick_dashboard.auth as auth
+
+    monkeypatch.setattr(auth, "proxy_auth_enabled", lambda: True)
+    monkeypatch.setattr(auth, "proxy_trusts", lambda _host: True)
+    monkeypatch.setattr(auth, "proxy_header_name", lambda: "X-Forwarded-User")
+    monkeypatch.setattr(auth, "oidc_enabled", lambda: False)
+
+    c = _client()
+    r = c.post(
+        "/api/v1/schedules",
+        headers={"X-Forwarded-User": "alice"},
+        json={"cron": "0 9 * * *", "text": "Run restricted task", "title": "Restricted"},
+    )
+    assert r.status_code == 201, r.text
+
+    from maverick.job_queue import JobQueue
+
+    job = JobQueue().get(r.json()["id"])
+    assert job is not None
+    assert job.payload["owner"] == "user:alice"
+    assert job.payload["channel"] == "api"
+    assert job.payload["user_id"] == "alice"
+
+
 def test_create_schedule_from_template_renders_params(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     tdir = tmp_path / ".maverick" / "templates"

@@ -1054,10 +1054,18 @@ async def create_schedule(request: Request, payload: ScheduleIn) -> ScheduleOut:
             raise HTTPException(
                 status_code=400, detail="provide a template or text to schedule")
     title = (title or text)[:200]
+    job_payload = {"text": text, "title": title, "__cron__": cron}
+    owner = caller_principal(request) or ""
+    if owner:
+        job_payload["owner"] = owner
+    user_id = execution_user_id_from_request(request)
+    if user_id:
+        job_payload["channel"] = "api"
+        job_payload["user_id"] = user_id
+
     from maverick.job_queue import JobQueue
     job_id, run_at = schedule_cron(
-        JobQueue(), cron, "start_goal",
-        {"text": text, "title": title, "__cron__": cron},
+        JobQueue(), cron, "start_goal", job_payload,
     )
     return ScheduleOut(id=job_id, cron=cron, kind="start_goal", title=title, next_run=run_at)
 
