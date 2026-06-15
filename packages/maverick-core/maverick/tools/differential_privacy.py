@@ -68,8 +68,8 @@ def _run(args: dict[str, Any]) -> str:
 
     return (
         f"{op}: {result}\n"
-        f"(true={value:g}, epsilon={eps:g}, sensitivity={sens:g}, laplace_scale={scale:g})\n"
-        f"— {eps:g}-differentially-private; report the noisy value, not the true one."
+        f"(epsilon={eps:g}, sensitivity={sens:g}, laplace_scale={scale:g})\n"
+        f"— {eps:g}-differentially-private noisy value; true aggregate omitted."
     )
 
 

@@ -16,6 +16,13 @@ def test_seed_makes_noise_reproducible():
     assert "0.5-differentially-private" in a
 
 
+def test_output_omits_true_aggregate():
+    out = _run(op="noisy_count", value=12345, epsilon=0.5, seed=42)
+    assert "true=" not in out
+    assert "12345" not in out
+    assert "true aggregate omitted" in out
+
+
 def test_count_is_nonnegative_integer():
     out = _run(op="noisy_count", value=0, epsilon=0.1, seed=1)
     val = int(out.split("\n")[0].split(":")[1].strip())
