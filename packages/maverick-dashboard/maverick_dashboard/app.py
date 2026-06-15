@@ -3070,6 +3070,8 @@ async def webhook_run(request: Request, bg: BackgroundTasks) -> JSONResponse:
     goal_id = w.create_goal(
         title[:200], description[:8000], owner=caller_principal(request) or "",
     )
+    # Provenance: link this run to its trigger for the Automations run history.
+    w.record_goal_origin(goal_id, "trigger", name)
     from maverick.runner import run_goal_in_thread
     bg.add_task(run_goal_in_thread, goal_id)
     return JSONResponse({"goal_id": goal_id, "trigger": name}, status_code=201)

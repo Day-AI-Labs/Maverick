@@ -69,6 +69,21 @@ def test_create_schedule_preserves_proxy_identity(monkeypatch, tmp_path):
     assert job.payload["user_id"] == "alice"
 
 
+def test_create_schedule_returns_stable_schedule_id(monkeypatch, tmp_path):
+    # v2 provenance: a stable schedule_id is minted, carried in the job payload
+    # (so it survives cron re-arms), surfaced by the API, and used to group runs.
+    _isolate(monkeypatch, tmp_path)
+    c = _client()
+    r = c.post("/api/v1/schedules", json={"cron": "0 9 * * *", "text": "x", "title": "t"})
+    assert r.status_code == 201, r.text
+    sid = r.json()["schedule_id"]
+    assert sid
+    from maverick.job_queue import JobQueue
+    assert JobQueue().get(r.json()["id"]).payload["schedule_id"] == sid
+    listed = c.get("/api/v1/schedules").json()["schedules"]
+    assert any(s["schedule_id"] == sid for s in listed)
+
+
 def test_create_schedule_from_template_renders_params(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     tdir = tmp_path / ".maverick" / "templates"
