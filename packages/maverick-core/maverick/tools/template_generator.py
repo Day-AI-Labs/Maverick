@@ -11,6 +11,7 @@ always importable / parseable.
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -31,14 +32,18 @@ def _skill(name: str, triggers: list[str], tools: list[str]) -> str:
     if not slug:
         return "ERROR: name must contain at least one alphanumeric character"
     trig = triggers or [f"use {slug}"]
-    trig_arr = ", ".join(f'"{t}"' for t in trig)
-    tools_arr = ", ".join(f'"{t}"' for t in tools)
+    # YAML frontmatter accepts JSON-style flow sequences. Serialize the
+    # user-provided strings instead of interpolating them so embedded quotes,
+    # backslashes, newlines, and frontmatter delimiters cannot reshape the
+    # generated SKILL.md or inject body content.
+    trig_arr = json.dumps(trig, ensure_ascii=False)
+    tools_arr = json.dumps(tools, ensure_ascii=False)
     title = name.strip().title()
     return (
         "---\n"
         f"name: {slug}\n"
-        f"triggers: [{trig_arr}]\n"
-        f"tools_needed: [{tools_arr}]\n"
+        f"triggers: {trig_arr}\n"
+        f"tools_needed: {tools_arr}\n"
         "---\n"
         f"# {title}\n\n"
         f"Describe, step by step, how the agent should accomplish "
