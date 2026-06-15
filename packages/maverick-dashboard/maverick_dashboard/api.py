@@ -1219,7 +1219,11 @@ async def delete_agent_override(name: str) -> dict:
 # read-only here.
 
 
-def _require_role_editing() -> None:
+def _require_role_editing(request: Request) -> None:
+    principal = caller_principal(request)
+    if principal is not None and not is_dashboard_admin(principal):
+        raise HTTPException(status_code=403, detail="role editing requires dashboard admin")
+
     from maverick.config import get_features
     if not get_features().get("role_editing", True):
         raise HTTPException(
@@ -1247,10 +1251,11 @@ async def get_role_endpoint(role: str) -> dict:
 
 
 @router.post("/roles/{role}/override")
-async def save_role_override(role: str, payload: RoleOverrideIn) -> dict:
-    """Persist a role's system-prompt addendum. 403 if role editing is disabled,
+async def save_role_override(role: str, payload: RoleOverrideIn, request: Request) -> dict:
+    """Persist a role's system-prompt addendum. 403 unless role editing is
+    enabled and the caller is an admin (auth-off local mode remains allowed),
     422 if validation fails (unknown role, over-long addendum)."""
-    _require_role_editing()
+    _require_role_editing(request)
     from maverick.role_edit import resolved_role, write_role_override
     try:
         write_role_override(role, payload.model_dump(exclude_unset=True))
@@ -1260,9 +1265,9 @@ async def save_role_override(role: str, payload: RoleOverrideIn) -> dict:
 
 
 @router.delete("/roles/{role}/override")
-async def delete_role_override(role: str) -> dict:
+async def delete_role_override(role: str, request: Request) -> dict:
     """Drop a role's override, reverting it to the built-in template."""
-    _require_role_editing()
+    _require_role_editing(request)
     from maverick.role_edit import remove_role_override, resolved_role
     removed = remove_role_override(role)
     view = resolved_role(role)

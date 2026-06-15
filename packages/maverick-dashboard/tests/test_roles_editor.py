@@ -87,6 +87,29 @@ class TestOverrideLifecycle:
         assert client.get("/api/v1/roles/writer").json()["is_override"] is False
 
 
+class TestRoleEditingAuthorization:
+    def test_authenticated_non_admin_cannot_mutate_roles(self, monkeypatch):
+        import maverick_dashboard.api as api
+        monkeypatch.setattr(api, "caller_principal", lambda request: "user:alice")
+        monkeypatch.setattr(api, "is_dashboard_admin", lambda principal: False)
+
+        assert client.post("/api/v1/roles/orchestrator/override",
+                           json={"system_addendum": "poison"}).status_code == 403
+        assert client.delete("/api/v1/roles/orchestrator/override").status_code == 403
+        assert client.get("/api/v1/roles/orchestrator").status_code == 200
+
+    def test_authenticated_admin_can_mutate_roles(self, monkeypatch):
+        import maverick_dashboard.api as api
+        monkeypatch.setattr(api, "caller_principal", lambda request: "user:admin")
+        monkeypatch.setattr(api, "is_dashboard_admin", lambda principal: principal == "user:admin")
+
+        r = client.post("/api/v1/roles/orchestrator/override",
+                        json={"system_addendum": "Admin-approved addendum."})
+        assert r.status_code == 200
+        assert r.json()["is_override"] is True
+        assert client.delete("/api/v1/roles/orchestrator/override").status_code == 200
+
+
 class TestRoleEditingGate:
     def test_mutations_403_when_disabled(self, monkeypatch):
         import maverick.config as cfg
