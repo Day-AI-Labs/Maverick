@@ -1935,8 +1935,15 @@ async def templates_market_page(request: Request) -> HTMLResponse:
     """Visual goal-templates marketplace: browse the catalog with ratings and
     one-click "use template" (prefills the chat form via query params — the
     goal never auto-starts)."""
+    from maverick.config import get_features
+    feats = get_features()
     return templates.TemplateResponse(
-        request, "templates_market.html", {"entries": template_market_entries()},
+        request, "templates_market.html",
+        {
+            "entries": template_market_entries(),
+            "scheduling_enabled": feats.get("scheduling", True),
+            "triggers_enabled": feats.get("triggers", True),
+        },
     )
 
 
@@ -3792,16 +3799,29 @@ async def goal_builder_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/workflow-builder", response_class=HTMLResponse)
-async def workflow_builder_page(request: Request) -> HTMLResponse:
+async def workflow_builder_page(request: Request, template: str | None = None) -> HTMLResponse:
     """AI workflow builder: draft a reusable workflow from a brief or an
-    uploaded document, edit it, then save it as a runnable template."""
+    uploaded document, edit it, then save it as a runnable template.
+
+    ``?template=<name>`` deep-links from the Templates page: jump straight to
+    automating an existing saved template (schedule / webhook trigger) without
+    re-drafting it. An unknown/invalid name simply yields no prefill."""
     from maverick.config import get_features
     feats = get_features()
+    prefill = None
+    if template:
+        from maverick.templates import load_template
+        try:
+            tpl = load_template(template)
+            prefill = {"name": tpl.name, "params": list(tpl.params), "title": tpl.title}
+        except (ValueError, FileNotFoundError):
+            prefill = None
     return templates.TemplateResponse(
         request, "workflow_builder.html",
         {
             "scheduling_enabled": feats.get("scheduling", True),
             "triggers_enabled": feats.get("triggers", True),
+            "prefill": prefill,
         },
     )
 

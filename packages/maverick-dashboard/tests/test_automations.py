@@ -74,6 +74,34 @@ def test_page_includes_run_history_loader(monkeypatch, tmp_path):
     assert "/api/v1/automation-runs" in _client().get("/automations").text
 
 
+def test_run_history_links_drill_into_trajectory(monkeypatch, tmp_path):
+    # Run-history entries link to each goal's trajectory ("what it did").
+    _isolate(monkeypatch, tmp_path)
+    assert "/trajectory" in _client().get("/automations").text
+
+
+def test_templates_page_shows_automate_cta(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    import maverick_dashboard.app as appmod
+    monkeypatch.setattr(appmod, "template_market_entries",
+                        lambda: [{"name": "weekly-report", "title": "T", "body": "b", "params": []}])
+    r = _client().get("/templates")
+    assert r.status_code == 200
+    assert "/workflow-builder?template=weekly-report" in r.text
+
+
+def test_templates_automate_cta_hidden_when_automation_off(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    import maverick_dashboard.app as appmod
+    monkeypatch.setattr(appmod, "template_market_entries",
+                        lambda: [{"name": "x", "title": "T", "body": "b", "params": []}])
+    from maverick import config
+    real = config.get_features
+    monkeypatch.setattr(config, "get_features",
+                        lambda: {**real(), "scheduling": False, "triggers": False})
+    assert "/workflow-builder?template=" not in _client().get("/templates").text
+
+
 def test_base_provides_shared_confirm_and_toast(monkeypatch, tmp_path):
     # The reusable feedback primitives ship from base.html on every page.
     _isolate(monkeypatch, tmp_path)

@@ -121,6 +121,9 @@
   /* schedule panel (in the saved state, for templates) */
   .wf__sched { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--hairline); }
   .wf__sched-title { margin: 0 0 var(--space-1); font-size: var(--text-md); color: var(--text); }
+  summary.wf__sched-title { cursor: pointer; margin: 0; }
+  details.wf__sched[open] > summary.wf__sched-title { margin-bottom: var(--space-3); }
+  summary.wf__sched-title:hover { color: var(--brand); }
   .wf__sched-list { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
   .wf__sched-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); font-size: var(--text-sm); }
   .wf__sched-item > span { flex: 1 1 auto; min-width: 0; }
@@ -312,8 +315,8 @@
         <a class="btn btn--ghost" href="/chat">Start a goal</a>
       </div>
       {% if scheduling_enabled %}
-      <div class="wf__sched" id="wf-sched" hidden>
-        <h3 class="wf__sched-title">Run it on a schedule</h3>
+      <details class="wf__sched" id="wf-sched" hidden>
+        <summary class="wf__sched-title">Run it on a schedule</summary>
         <p class="wf__hint">Maverick starts this workflow automatically. Schedules run while <code>maverick worker</code> is active.</p>
         <div class="wf-grid">
           <div class="wf__field">
@@ -340,11 +343,11 @@
           <span class="wf__hint" id="sched-cron-preview" aria-live="polite"></span>
         </div>
         <ul class="wf__sched-list" id="sched-list" aria-label="Active schedules"></ul>
-      </div>
+      </details>
       {% endif %}
       {% if triggers_enabled %}
-      <div class="wf__sched" id="wf-trig" hidden>
-        <h3 class="wf__sched-title">Trigger from a webhook</h3>
+      <details class="wf__sched" id="wf-trig" hidden>
+        <summary class="wf__sched-title">Trigger from a webhook</summary>
         <p class="wf__hint">Run this workflow on demand by POSTing to a URL — wire it to GitHub, Slack, Zapier, or anything that can send a signed webhook.</p>
         <div class="wf-grid">
           <div class="wf__field">
@@ -362,7 +365,7 @@
         </div>
         <p class="wf__hint" id="trig-howto" hidden>POST to <code id="trig-url"></code> with body <code id="trig-body"></code>, signed with your <code>[webhooks]</code> secret (header <code>X-Maverick-Signature</code>).<span id="trig-secret-warn" hidden> ⚠ No <code>[webhooks]</code> secret is set yet — configure one before the URL will accept calls.</span></p>
         <ul class="wf__sched-list" id="trig-list" aria-label="Webhook triggers"></ul>
-      </div>
+      </details>
       {% endif %}
     </div>
 
@@ -1160,6 +1163,17 @@
     pbRefine.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); refine('playbook'); } });
 
     renderExamples();
+
+    // Deep-link (?template=<name>) from the Templates page: jump straight to
+    // automating an existing saved template, reusing the schedule/trigger panels.
+    var WF_PREFILL = {{ prefill | tojson }};
+    if (WF_PREFILL && WF_PREFILL.name) {
+      setForm('template');
+      savedMsg.textContent = 'Automate “' + (WF_PREFILL.title || WF_PREFILL.name) + '” — schedule it, or trigger it from a webhook.';
+      showSaved('/templates', 'Open Templates');
+      showScheduling({ name: WF_PREFILL.name, params: WF_PREFILL.params || [] });
+      showTriggers({ name: WF_PREFILL.name, params: WF_PREFILL.params || [] });
+    }
   })();
   </script>
 {% endblock %}
