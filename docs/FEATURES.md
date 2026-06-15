@@ -360,8 +360,8 @@ here.
   allow/deny policy check — ISO codes or groups EU/EEA/FIVE_EYES, deny-precedence), `two_person_rule` (validate
   dual-control sign-off — distinct approvers, separation of duties, optional roles), `differential_privacy` (Laplace
   mechanism for (epsilon)-DP noisy counts/sums on published stats), `watermark_detector` (find hidden
-  text watermarks/steganography — zero-width, tag chars, variation selectors, homoglyphs), `privacy_budget` (account a
-  user's differential-privacy budget — remaining epsilon + allow/deny a query),
+  text watermarks/steganography — zero-width, tag chars, variation selectors, homoglyphs), `privacy_budget` (stateless differential-privacy budget calculator — remaining epsilon +
+  fit/deny estimate from trusted cumulative spend; not an enforcement ledger),
   `collusion_detector` (flag collusion between independent swarm agents —
   op=scan: echoed reasoning + rubber-stamping in messages; op=detect:
   voting-collusion blocs whose agreement defeats independent-quorum
