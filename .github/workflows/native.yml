@@ -1,0 +1,136 @@
+name: Native (Rust)
+
+# Builds and tests the native scanner core (rust/). Two outputs from one core:
+#   - the `maverick_native` Python wheel (PyO3, abi3) — accelerates the shield
+#     scanners; absent => pure-Python fallback, so this is additive.
+#   - the `mvk-scan-wasm` package (wasm-bindgen) — TypeScript / edge.
+# The whole point: CI here *exercises the native path* (the parity tests skip in
+# the main suite because the wheel isn't built there) and produces installable
+# artifacts. Publish is gated on a tag + configured registry credentials.
+
+on:
+  push:
+    branches: [main]
+    tags: ["native-v*"]
+  pull_request:
+    paths:
+      - "rust/**"
+      - "packages/maverick-core/maverick/safety/unicode_filter.py"
+      - "packages/maverick-core/tests/test_native_unicode_parity.py"
+      - ".github/workflows/native.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: cargo test (core crate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p mvk-scan --manifest-path rust/Cargo.toml
+
+  python:
+    name: wheel + native parity (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the maverick_native wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release -m rust/mvk-scan-py/Cargo.toml --out dist
+      - name: Install wheel + run native parity (proves native == pure Python)
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip pytest
+          python -m pip install --no-index --find-links dist maverick-native
+          # Make `maverick` importable so the shim under test loads.
+          python -m pip install -e packages/maverick-core --no-deps
+          python -m pytest packages/maverick-core/tests/test_native_unicode_parity.py -vv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maverick-native-wheel-${{ matrix.os }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  wasm:
+    name: wasm package + node parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build the wasm package (wasm-opt disabled in Cargo metadata)
+        run: wasm-pack build rust/mvk-scan-wasm --target nodejs --out-dir pkg --release
+      - name: Node parity test (proves WASM == pure Python)
+        run: node --test rust/mvk-scan-wasm/test/parity.test.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mvk-scan-wasm-pkg
+          path: rust/mvk-scan-wasm/pkg
+          if-no-files-found: error
+
+  # --- Publish (tag-gated) ---------------------------------------------------
+  # Runs only on a `native-v*` tag. PyPI uses OIDC trusted publishing (no token
+  # to store) — register the `maverick-native` project + this repo as a trusted
+  # publisher first, or this job is a no-op skip. npm needs NPM_TOKEN in repo
+  # secrets. Until those are configured, only build + parity + artifacts run.
+  publish-pypi:
+    name: publish wheels to PyPI
+    needs: [core, python, wasm]
+    if: startsWith(github.ref, 'refs/tags/native-v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: maverick-native-wheel-*
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true
+
+  publish-npm:
+    name: publish wasm package to npm
+    needs: [core, python, wasm]
+    if: startsWith(github.ref, 'refs/tags/native-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - run: wasm-pack build rust/mvk-scan-wasm --target bundler --out-dir pkg --release
+      - name: Publish (skips cleanly if NPM_TOKEN is unset)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_TOKEN not configured; skipping npm publish."; exit 0
+          fi
+          (cd rust/mvk-scan-wasm/pkg && npm publish --access public)
