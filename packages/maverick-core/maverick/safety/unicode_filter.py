@@ -120,6 +120,35 @@ def has_dangerous_unicode(text: str) -> bool:
     return False
 
 
+# --- Native fast path (optional) -------------------------------------------
+# A Rust implementation (the ``maverick_native`` extension, built from
+# ``rust/mvk-scan``) does exactly this work GIL-free and far faster on the hot
+# shield path. It is OPTIONAL: when the wheel isn't installed the pure-Python
+# functions above are used unchanged, so behaviour is identical either way --
+# the native module is a drop-in accelerator, never a new dependency.
+try:  # pragma: no cover - import guard
+    import maverick_native as _native
+except Exception:  # pragma: no cover
+    _native = None
+
+if _native is not None:  # pragma: no cover - active only when the wheel is built
+    _normalize_py = normalize
+    _has_dangerous_unicode_py = has_dangerous_unicode
+
+    def normalize(text: str, *, nfkc: bool = True) -> UnicodeScanResult:  # noqa: F811
+        try:
+            cleaned, removed, categories = _native.normalize(text, nfkc)
+            return UnicodeScanResult(cleaned, list(removed), list(categories))
+        except Exception:
+            return _normalize_py(text, nfkc=nfkc)
+
+    def has_dangerous_unicode(text: str) -> bool:  # noqa: F811
+        try:
+            return _native.has_dangerous_unicode(text)
+        except Exception:
+            return _has_dangerous_unicode_py(text)
+
+
 __all__ = [
     "UnicodeScanResult",
     "normalize",

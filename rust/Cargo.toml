@@ -1,0 +1,21 @@
+# Maverick native core — the Rust "engine" carve.
+#
+# Council verdict (Karpathy / Cloudflare / Pydantic / ServiceNow / Palo Alto):
+# rewrite the hot ENGINE in Rust, keep the ecosystem in Python + TypeScript.
+# One pure-logic core crate (`mvk-scan`) is exposed to BOTH runtimes via thin
+# bindings:
+#   - `mvk-scan-py`   -> PyO3 module `maverick_native` (Python; GIL-free hot path)
+#   - `mvk-scan-wasm` -> wasm-bindgen package (TypeScript / edge / Workers)
+#
+# Pilot module: the unicode safety scanner (pure, security-critical, runs on
+# every input/output). It's a faithful port of
+# maverick.safety.unicode_filter, with the Python kept as a fallback shim so a
+# build without the native module is byte-identical to today.
+[workspace]
+resolver = "2"
+members = ["mvk-scan", "mvk-scan-py", "mvk-scan-wasm"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "LicenseRef-Proprietary"
