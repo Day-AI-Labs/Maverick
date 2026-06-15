@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .tools import as_bool
-from .tools.voice_command_grammar import _compile
+from .tools.voice_command_grammar import _compile, _match
 
 log = logging.getLogger(__name__)
 
@@ -111,10 +111,9 @@ def parse_utterance(
         compiled = _compile(pattern)
         if compiled is None:
             raise ValueError(f"duplicate slot in grammar pattern {pattern!r}")
-        rx, slots = compiled
-        m = rx.match(text)
-        if m:
-            return intent, {s: m.group(s).strip() for s in slots}
+        captures = _match(compiled, text)
+        if captures is not None:
+            return intent, captures
     return None
 
 
