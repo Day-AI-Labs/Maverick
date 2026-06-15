@@ -43,6 +43,20 @@ def test_grammar_validation():
     assert t.fn({"grammar": [{"intent": "x", "pattern": "{a} {a}"}], "utterance": "1 2"}).startswith("ERROR")
 
 
+def test_grammar_rejects_adjacent_slots_without_backtracking():
+    t = voice_command_grammar()
+    grammar = [{"intent": "bad", "pattern": "{s0}{s1}{s2}{s3}{s4}{s5}{s6}{s7}{s8}{s9}{s10}{s11}X"}]
+    out = t.fn({"grammar": grammar, "utterance": "a" * 30})
+    assert out.startswith("ERROR: invalid pattern")
+
+
+def test_grammar_input_limits():
+    t = voice_command_grammar()
+    assert t.fn({"grammar": _GRAMMAR * 22, "utterance": "pause goal 12"}).startswith("ERROR")
+    assert t.fn({"grammar": _GRAMMAR, "utterance": "x" * 2049}).startswith("ERROR")
+    assert t.fn({"grammar": [{"intent": "x", "pattern": "x" * 513}], "utterance": "x"}).startswith("ERROR")
+
+
 # ---- what_changed_digest ----
 
 def test_digest_added_removed_changed():
