@@ -66,6 +66,12 @@ class TrajectoryStep:
     promise: float | None = None
     progress: float | None = None
     domain: str = ""
+    # Decision-DAG edge + terminal label, for counterfactual credit
+    # (maverick.promotion_effect). ``parent_step`` is the step this one descends
+    # from (None at a root); ``outcome`` is the episode's terminal task outcome in
+    # [0,1], carried on the final step. Both optional and absent in old rows.
+    parent_step: int | None = None
+    outcome: float | None = None
 
     def redacted(self) -> TrajectoryStep:
         """A copy safe to persist: scrub free-text fields."""
@@ -75,6 +81,7 @@ class TrajectoryStep:
             tool_succeeded=self.tool_succeeded, is_final=self.is_final,
             error=_scrub(self.error)[:500], verifier_confidence=self.verifier_confidence,
             promise=self.promise, progress=self.progress, domain=_scrub(self.domain)[:64],
+            parent_step=self.parent_step, outcome=self.outcome,
         )
 
 

@@ -110,6 +110,11 @@ class Candidate:
     candidate_score: float
     samples: int = 0
     payload: Any = None
+    # When set, the evidence gate judges the change on the LOWER confidence bound
+    # of its estimated *causal* effect (maverick.promotion_effect) instead of the
+    # raw candidate-vs-baseline difference: promote only when we're confident the
+    # change actually *caused* the improvement, not merely correlated with it.
+    effect_ci_low: float | None = None
     capability_widens: bool | None = None
     capability_before: Any = None
     capability_after: Any = None
@@ -235,17 +240,26 @@ class SelfImprovementController:
         gates.append(GateResult("calibration", not frozen,
                                 "" if not frozen else "learning frozen: verifier mis-calibrated"))
 
-        # 2. Evidence: must beat its own baseline by the margin, with enough samples.
+        # 2. Evidence: must beat its own baseline by the margin, with enough
+        #    samples. For a causal candidate (effect_ci_low set) the bar is the
+        #    LOWER confidence bound of the estimated effect -- promote only when
+        #    we're confident the change *caused* the win, not merely correlated.
         improvement = cand.candidate_score - cand.baseline_score
         enough = cand.samples >= int(policy["min_samples"])
-        beats = improvement > self.min_improvement
+        if cand.effect_ci_low is not None:
+            beats = cand.effect_ci_low > self.min_improvement
+            beats_reason = (f"causal effect CI lower bound {cand.effect_ci_low:.4f} <= margin "
+                            f"{self.min_improvement:.4f}")
+        else:
+            beats = improvement > self.min_improvement
+            beats_reason = (f"no improvement: +{improvement:.4f} <= margin "
+                            f"{self.min_improvement:.4f}")
         ev_ok = enough and beats
         ev_reason = ""
         if not enough:
             ev_reason = f"insufficient evidence: {cand.samples} < {policy['min_samples']} samples"
         elif not beats:
-            ev_reason = (f"no improvement: +{improvement:.4f} <= margin "
-                         f"{self.min_improvement:.4f}")
+            ev_reason = beats_reason
         gates.append(GateResult("evidence", ev_ok, ev_reason))
 
         # 3. Capability non-escalation -- the core safety property of the moat.

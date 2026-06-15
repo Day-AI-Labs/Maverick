@@ -1233,6 +1233,14 @@ def pick_advanced() -> dict[str, Any]:
             "routing. Costs extra verifier calls per swarm.",
             default=False,
         ),
+        "causal_promotion": _q_confirm(
+            "Counterfactual promotion? When governed self-improvement is on, promote a "
+            "learned change (tool/prompt/policy) only if its confounder-adjusted CAUSAL "
+            "effect on outcomes clears the bar -- not just a correlation that co-occurred "
+            "with success. Each promotion records the effect, its confidence interval, and "
+            "what it adjusted for. Requires self-improvement enabled.",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2490,6 +2498,13 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[credit]")
         lines.append("enable = true")
+    if advanced.get("causal_promotion"):
+        lines.append("")
+        lines.append("[self_improvement]")
+        lines.append("# Promote learned changes on their confounder-adjusted causal")
+        lines.append("# effect (maverick.promotion_effect), not a correlation. Applies")
+        lines.append("# when self-improvement is enabled.")
+        lines.append("causal_promotion = true")
     if advanced.get("enforce_quotas"):
         lines.append("")
         lines.append("[quotas]")

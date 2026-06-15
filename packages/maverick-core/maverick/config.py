@@ -659,6 +659,11 @@ def get_self_improvement() -> dict:
         # off by default; see maverick.trajectory_store / maverick.prm_guidance.
         "capture": bool(cfg.get("capture", False)),
         "prm_guidance": bool(cfg.get("prm_guidance", False)),
+        # Counterfactual promotion: judge a self-change on its confounder-adjusted
+        # CAUSAL effect (maverick.promotion_effect) rather than a correlational
+        # baseline/candidate diff. Off by default; the controller only consults a
+        # causal effect when this is set.
+        "causal_promotion": bool(cfg.get("causal_promotion", False)),
     }
 
 
