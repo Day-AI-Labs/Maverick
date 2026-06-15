@@ -125,3 +125,52 @@ class TestPackEditingGate:
         assert client.delete(f"/api/v1/agents/{name}/override").status_code == 403
         # Read-only access still works.
         assert client.get(f"/api/v1/agents/{name}").status_code == 200
+
+class TestPackEditingAuthorization:
+    def test_authenticated_non_admin_cannot_mutate_overrides(self, monkeypatch):
+        import maverick_dashboard.api as api
+        monkeypatch.setattr(api, "caller_principal", lambda request: "user:alice")
+        monkeypatch.setattr(api, "is_dashboard_admin", lambda principal: False)
+        name = _clean_builtin_name()
+
+        assert client.post(f"/api/v1/agents/{name}/override",
+                           json={"description": "blocked"}).status_code == 403
+        assert client.delete(f"/api/v1/agents/{name}/override").status_code == 403
+        assert client.get(f"/api/v1/agents/{name}").status_code == 200
+
+    def test_dashboard_admin_can_mutate_overrides(self, monkeypatch):
+        import maverick_dashboard.api as api
+        monkeypatch.setattr(api, "caller_principal", lambda request: "user:root")
+        monkeypatch.setattr(api, "is_dashboard_admin", lambda principal: True)
+        name = _clean_builtin_name()
+
+        r = client.post(f"/api/v1/agents/{name}/override",
+                        json={"description": "admin tuned"})
+
+        assert r.status_code == 200
+        assert r.json()["description"] == "admin tuned"
+
+
+def _pack_with_denied_tool_and_risk_below_high() -> tuple[str, str]:
+    from maverick.domain import builtin_dir, lint_profile, load_domains
+    for name, prof in sorted(load_domains(builtin_dir()).items()):
+        if not lint_profile(prof)[0] and prof.deny_tools and prof.max_risk != "high":
+            return name, prof.deny_tools[0]
+    raise AssertionError("no suitable built-in pack found")
+
+
+class TestPackEditingSafetyEnvelope:
+    def test_override_cannot_widen_tools_or_raise_risk(self):
+        name, denied_tool = _pack_with_denied_tool_and_risk_below_high()
+        r = client.post(f"/api/v1/agents/{name}/override", json={
+            "allow_tools": [denied_tool],
+            "deny_tools": [],
+            "max_risk": "high",
+        })
+
+        assert r.status_code == 422
+        detail = r.json()["detail"]
+        assert "allow_tools cannot add tools" in detail
+        assert "deny_tools cannot remove" in detail
+        assert "max_risk cannot be raised" in detail
+        assert client.get(f"/api/v1/agents/{name}").json()["is_override"] is False

@@ -85,10 +85,53 @@ def _resolve(name: str, patch: dict) -> DomainProfile:
     return overlay_profile(base, patch) if base else _coerce(name, patch)
 
 
+_RISK_RANK = {"low": 0, "medium": 1, "high": 2}
+
+
+def _base_profile(name: str, patch: dict) -> DomainProfile | None:
+    """Built-in profile an override inherits from, if one exists."""
+    base_name = str(patch.get("extends") or name)
+    return load_domains(builtin_dir()).get(base_name)
+
+
+def _envelope_errors(base: DomainProfile | None, merged: DomainProfile) -> list[str]:
+    """Reject overrides that broaden a built-in pack's capability envelope."""
+    if base is None:
+        return []
+    errors: list[str] = []
+    base_allow = set(base.allow_tools)
+    merged_allow = set(merged.allow_tools)
+    added_tools = sorted(merged_allow - base_allow)
+    if added_tools:
+        errors.append(
+            "allow_tools cannot add tools beyond the built-in pack: "
+            + ", ".join(added_tools)
+        )
+    missing_denies = sorted(set(base.deny_tools) - set(merged.deny_tools))
+    if missing_denies:
+        errors.append(
+            "deny_tools cannot remove built-in denied tools: "
+            + ", ".join(missing_denies)
+        )
+    base_rank = _RISK_RANK.get(str(base.max_risk or ""))
+    merged_rank = _RISK_RANK.get(str(merged.max_risk or ""))
+    if base_rank is not None and merged_rank is not None and merged_rank > base_rank:
+        errors.append(
+            f"max_risk cannot be raised above the built-in pack ({base.max_risk})"
+        )
+    if merged.compartment != base.compartment:
+        errors.append("compartment cannot differ from the built-in pack")
+    return errors
+
+
 def validate_override(name: str, patch: dict) -> tuple[list[str], list[str]]:
     """Lint the *merged* result of applying ``patch`` to its base. Returns
     ``(errors, warnings)`` -- the editor blocks a save on any error."""
-    return lint_profile(_resolve(name, dict(patch)))
+    patch = dict(patch)
+    merged = _resolve(name, patch)
+    errors, warnings = lint_profile(merged)
+    errors.extend(_envelope_errors(_base_profile(name, patch), merged))
+    return errors, warnings
 
 
 def write_override(name: str, patch: dict, directory: str | Path | None = None) -> str:
