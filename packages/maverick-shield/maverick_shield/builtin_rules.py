@@ -67,6 +67,7 @@ _B64_BLOB = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 # Cap how much work the pre-pass does on hostile input (the scanner runs on
 # untrusted text; keep it linear and bounded).
 _MAX_B64_BLOBS = 20
+_MAX_B64_WINDOWS_PER_BLOB = 20
 
 # Decode base64 in bounded, overlapping windows. A window is capped so a
 # hostile blob cannot create one giant re-scan candidate, but windows continue
@@ -93,8 +94,9 @@ def _shell_deobfuscate(text: str) -> str:
 
 def _decode_b64_blobs(text: str) -> list[str]:
     out: list[str] = []
+    useful_blobs = 0
     for m in _B64_BLOB.finditer(text):
-        if len(out) >= _MAX_B64_BLOBS:
+        if useful_blobs >= _MAX_B64_BLOBS:
             break
         # Decode bounded, overlapping windows across the whole blob. Decoding
         # only the leading slice let attackers prepend benign bytes and hide a
@@ -104,7 +106,10 @@ def _decode_b64_blobs(text: str) -> list[str]:
         window = _MAX_B64_DECODE_CHARS & ~3
         step = _B64_DECODE_STEP_CHARS & ~3
         starts = range(0, len(blob), step) if step else (0,)
-        for start in starts:
+        blob_had_text = False
+        for window_idx, start in enumerate(starts):
+            if window_idx >= _MAX_B64_WINDOWS_PER_BLOB:
+                break
             chunk = blob[start:start + window]
             if not chunk:
                 continue
@@ -116,8 +121,9 @@ def _decode_b64_blobs(text: str) -> list[str]:
             # Only keep decodes that look like text (the attack is in the words).
             if decoded and any(c.isalpha() for c in decoded):
                 out.append(decoded)
-                if len(out) >= _MAX_B64_BLOBS:
-                    break
+                blob_had_text = True
+        if blob_had_text:
+            useful_blobs += 1
     return out
 
 
