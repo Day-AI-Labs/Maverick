@@ -18,6 +18,10 @@
   .auto__item .btn { flex: none; }
   .auto__url { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; font-size: var(--text-xs); }
   .auto__runs { color: var(--muted); font-size: var(--text-xs); margin-top: 4px; }
+  .auto__run { text-decoration: none; border-bottom: 1px dashed currentColor; }
+  .auto__run--done { color: var(--muted); }
+  .auto__run--failed, .auto__run--error { color: #d92d20; }
+  .auto__run:hover { border-bottom-style: solid; }
   .auto__empty { color: var(--muted); padding: var(--space-4); border: 1px dashed var(--border); border-radius: var(--radius-md); }
   .auto__warn { color: var(--text); background: var(--surface-2); border: 1px solid var(--border-strong); border-left: 3px solid var(--ring); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); margin-bottom: var(--space-3); }
 </style>
@@ -151,13 +155,24 @@
     } catch (e) { return; }
     var sum = data.summary || {}, runs = data.runs || [];
     var total = Object.keys(sum).reduce(function (a, k) { return a + sum[k]; }, 0);
+    into.textContent = '';
     if (!total) { into.textContent = 'No runs yet'; return; }
     var failed = (sum.failed || 0) + (sum.error || 0);
-    var parts = [total + (total === 1 ? ' run' : ' runs')];
-    if (sum.done) parts.push('✓ ' + sum.done);
-    if (failed) parts.push('✗ ' + failed);
-    if (runs[0]) parts.push('last ' + fmtWhen(runs[0].created_at));
-    into.textContent = parts.join(' · ');
+    var bits = [total + (total === 1 ? ' run' : ' runs')];
+    if (sum.done) bits.push('✓ ' + sum.done);
+    if (failed) bits.push('✗ ' + failed);
+    into.appendChild(document.createTextNode(bits.join(' · ') + ' · '));
+    // Recent runs as drill-down links to each goal's trajectory ("what it did").
+    runs.slice(0, 5).forEach(function (r, i) {
+      if (i) into.appendChild(document.createTextNode(' '));
+      var a = document.createElement('a');
+      a.href = '/goals/' + encodeURIComponent(r.goal_id) + '/trajectory';
+      a.className = 'auto__run auto__run--' + (r.status || 'pending');
+      a.textContent = '#' + r.goal_id;
+      a.setAttribute('aria-label', 'Run #' + r.goal_id + ' — ' + (r.status || 'pending') + ' — ' + fmtWhen(r.created_at));
+      a.title = (r.title || '') + ' · ' + (r.status || '') + ' · ' + fmtWhen(r.created_at);
+      into.appendChild(a);
+    });
   }
 
   loadSchedules();

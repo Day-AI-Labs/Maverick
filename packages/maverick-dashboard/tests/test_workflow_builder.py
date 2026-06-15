@@ -468,5 +468,25 @@ def test_workflow_builder_page_renders(monkeypatch, tmp_path):
     assert "Time (UTC)" in r.text and 'id="sched-local-hint"' in r.text
     # Webhook-trigger panel: bind a saved template to an inbound webhook.
     assert 'id="wf-trig"' in r.text and "/api/v1/triggers" in r.text
+    # Decluttered: the automate panels are collapsible <details>, not always-open.
+    assert '<details class="wf__sched" id="wf-sched"' in r.text
+    assert '<summary class="wf__sched-title">' in r.text
     # Reachable from the primary nav (Operate group).
     assert '<span class="nav-label">Workflows</span>' in r.text
+
+
+def test_builder_prefill_deeplink_jumps_to_automate(monkeypatch, tmp_path):
+    # ?template=<name> from the Templates page injects a prefill so the JS jumps
+    # straight to automating an existing template (reusing the schedule/trigger
+    # panels), instead of the draft flow.
+    _isolate(monkeypatch, tmp_path)
+    tdir = tmp_path / ".maverick" / "templates"
+    tdir.mkdir(parents=True, exist_ok=True)
+    (tdir / "weekly-report.md").write_text(
+        "---\ntitle: Weekly report\nparams:\n  - topic\n---\nbody\n", encoding="utf-8")
+    r = _client().get("/workflow-builder?template=weekly-report")
+    assert r.status_code == 200
+    assert "weekly-report" in r.text and "WF_PREFILL = null" not in r.text
+    # an unknown template (and no query) yields no prefill; the page still renders
+    assert "WF_PREFILL = null" in _client().get("/workflow-builder?template=nope").text
+    assert "WF_PREFILL = null" in _client().get("/workflow-builder").text
