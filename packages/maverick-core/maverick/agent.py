@@ -723,8 +723,8 @@ class Agent:
         # Skills from prior runs (existing logic).
         if self.ctx.use_skills:
             try:
-                from .skills import load_skills, relevant_skills, render_for_prompt
-                skills = relevant_skills(self.brief, load_skills())
+                from .skills import available_skills, relevant_skills, render_for_prompt
+                skills = relevant_skills(self.brief, available_skills())
                 if skills:
                     base = base + "\n\n" + render_for_prompt(skills)
                     # Record the recall and remember the names so the

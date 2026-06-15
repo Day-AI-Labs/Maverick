@@ -2,12 +2,14 @@
 
 > The first-party **`SKILL.md` library** the 2026 expansion council recommended
 > (see [`proposals/council-expansion-2026.md`](proposals/council-expansion-2026.md)).
-> Source files live at [`/skills`](../skills/); each is reusable procedural
-> know-how any agent can follow mechanically, validated by
+> Source files ship inside the package at
+> `packages/maverick-core/maverick/skills_builtin/*.md`; each is reusable
+> procedural know-how any agent can follow mechanically, validated by
 > `maverick.skills.validate_skill_file` (test: `test_skills_library.py`).
-> Loading at runtime is via the skills system (`maverick/skills.py`,
-> `~/.maverick/skills`) and the catalog/marketplace; wiring this in-repo library
-> into the shipped catalog index is a tracked follow-up.
+> **Wired at runtime:** `skills.available_skills()` recalls this library plus
+> any user-installed skills (`~/.maverick/skills`, which override by name) into
+> the agent's prompt (`agent.py`); opt out with `MAVERICK_BUILTIN_SKILLS=0` or
+> `[skills] builtin = false`.
 
 **61 skills** — 20 cross-cutting (inherited by hundreds of packs via the
 `relevant_skills` trigger mechanism) + 41 suite-specific.

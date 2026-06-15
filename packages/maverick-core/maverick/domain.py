@@ -286,6 +286,16 @@ SUITE_PREFIXES: dict[str, str] = {
     "gov_": "government_contracting",
     "edu_": "education_nonprofit",
     "tax_": "tax",
+    # Council-expansion verticals (2026): new business suites the factory can
+    # spawn from. Each maps to a SUITE_DISCIPLINE block (domain_discipline) and
+    # a wizard AGENT_SUITES entry, so a Rung-2 seal + the [suites] toggle reach
+    # the whole vertical at once.
+    "util_": "utilities",
+    "re_": "real_estate",
+    "pharma_": "pharma_lifesciences",
+    "tmt_": "telecom_media",
+    "hosp_": "hospitality",
+    "cap_": "capital_markets",
 }
 
 

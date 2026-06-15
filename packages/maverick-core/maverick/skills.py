@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import urllib.error
 from dataclasses import dataclass
@@ -23,6 +24,9 @@ from .llm import LLM, model_for_role
 log = logging.getLogger(__name__)
 
 SKILLS_DIR = Path.home() / ".maverick" / "skills"
+# First-party skills shipped INSIDE the package (vs. user-installed skills under
+# SKILLS_DIR). Resolved via __file__ so it works from an installed wheel too.
+BUILTIN_SKILLS_DIR = Path(__file__).parent / "skills_builtin"
 INSTALL_TIMEOUT = 30.0
 MAX_SKILL_DOWNLOAD_BYTES = 256 * 1024
 
@@ -212,6 +216,50 @@ def load_skills(skills_dir: Path = SKILLS_DIR) -> list[Skill]:
         except Exception:
             continue
     return out
+
+
+def builtin_skills_dir() -> Path:
+    """Directory of the first-party skills shipped with the package."""
+    return BUILTIN_SKILLS_DIR
+
+
+def load_builtin_skills() -> list[Skill]:
+    """The shipped first-party skills library. Always readable (no env gate);
+    the enablement check is applied by :func:`available_skills`."""
+    return load_skills(BUILTIN_SKILLS_DIR)
+
+
+def _builtin_skills_enabled() -> bool:
+    """Whether the shipped skills library is recalled at runtime.
+
+    ``MAVERICK_BUILTIN_SKILLS`` wins when set; otherwise the ``[skills].builtin``
+    config toggle (default on). Fail-soft to on so an unreadable config never
+    silently drops the library. The test suite sets the env to ``0`` (the
+    package dir is NOT isolated by ``$HOME`` the way the user dir is), so tests
+    behave exactly as before the library shipped."""
+    env = os.environ.get("MAVERICK_BUILTIN_SKILLS")
+    if env is not None:
+        return env.strip().lower() not in ("0", "false", "no", "off")
+    try:
+        from . import config as _config
+        return bool(_config.get_skills().get("builtin", True))
+    except Exception:  # pragma: no cover -- config never blocks skill recall
+        return True
+
+
+def available_skills(skills_dir: Path = SKILLS_DIR) -> list[Skill]:
+    """Every skill an agent may recall: the shipped library (unless disabled)
+    plus user-installed skills, with a user skill of the same name overriding
+    the built-in. Mirrors ``domain.available_domains`` (builtin + user overlay).
+    This is the runtime entry point; ``load_skills`` stays the single-dir loader
+    the CLI/MCP/search paths use unchanged."""
+    by_name: dict[str, Skill] = {}
+    if _builtin_skills_enabled():
+        for s in load_builtin_skills():
+            by_name[s.name] = s
+    for s in load_skills(skills_dir):  # user dir wins on a name collision
+        by_name[s.name] = s
+    return list(by_name.values())
 
 
 def _decay_weights(names: list[str]) -> dict[str, float]:
