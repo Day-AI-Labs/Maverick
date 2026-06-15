@@ -91,7 +91,7 @@ def _source_locator(tool_use: dict | None) -> tuple[str, str]:
 
 
 def _canonical_tool_result_text(text: str) -> str:
-    """Return the stable tool payload for hashing/previews.
+    """Return the stable tool payload for hashing.
 
     Agent._run_tool stores model-facing results inside a ``<tool_output ...>``
     frame with a fresh random nonce per call. Structural compaction references
@@ -109,6 +109,23 @@ def _canonical_tool_result_text(text: str) -> str:
     if close == -1:
         return text
     return inner[:close]
+
+
+def _framed_tool_result_preview(preview: str, nonce: str) -> str:
+    """Wrap compacted tool-output preview bytes so they remain data.
+
+    Tool results can contain attacker-controlled text.  Agent._run_tool uses a
+    nonce-delimited frame for full outputs; compacted previews need the same
+    kind of boundary so raw preview bytes do not re-enter context as
+    authoritative instructions.  The full canonical SHA is deterministic for
+    idempotence and long enough that a payload cannot practically forge the
+    matching close delimiter in its first preview bytes.
+    """
+    return (
+        f"<tool_output_preview id={nonce}>\n"
+        f"{preview}\n"
+        f"</tool_output_preview {nonce}>"
+    )
 
 
 def _shrink_tool_result(
@@ -140,7 +157,8 @@ def _shrink_tool_result(
         return block
     canonical = _canonical_tool_result_text(joined)
     import hashlib
-    sha = hashlib.sha256(canonical.encode("utf-8", "replace")).hexdigest()[:12]
+    full_sha = hashlib.sha256(canonical.encode("utf-8", "replace")).hexdigest()
+    sha = full_sha[:12]
     name, locator = source or ("", "")
     if name and locator:
         src = f"{name}({locator}) "
@@ -148,8 +166,9 @@ def _shrink_tool_result(
         src = f"{name} "
     else:
         src = ""
+    preview = _framed_tool_result_preview(canonical[:160].rstrip(), full_sha)
     digest = (
-        canonical[:160].rstrip()
+        preview
         + f" ... [{src}output {len(canonical)}B truncated, sha256:{sha} — dropped from"
         " context; re-run the tool to retrieve the full output]"
     )
