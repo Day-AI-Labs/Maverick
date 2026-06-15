@@ -154,3 +154,6 @@ include = ["maverick*"]
 # Ship the gRPC contract so the server can generate stubs from the installed
 # wheel (the [grpc] extra compiles it on demand).
 "maverick.grpc_api" = ["*.proto"]
+# Ship the domain packs and the first-party skills library as package data so
+# they are present in a built wheel, not only an editable/source checkout.
+"maverick" = ["domains/*.toml", "skills_builtin/*.md"]

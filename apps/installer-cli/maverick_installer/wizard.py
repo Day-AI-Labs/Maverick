@@ -2241,6 +2241,13 @@ AGENT_SUITES: list[tuple[str, str]] = [
     ("government_contracting", "Government Contracting"),
     ("education_nonprofit", "Education / Nonprofit"),
     ("tax", "Tax Preparation (CPA Firms)"),
+    # Council-expansion verticals (2026).
+    ("utilities", "Energy / Utilities"),
+    ("real_estate", "Real Estate / Property Management"),
+    ("pharma_lifesciences", "Pharma / Life Sciences"),
+    ("telecom_media", "Telecom / Media & Entertainment"),
+    ("hospitality", "Hospitality / Travel"),
+    ("capital_markets", "Capital Markets / Asset Management"),
 ]
 
 

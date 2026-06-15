@@ -320,6 +320,8 @@ def get_skills() -> dict:
         "trusted_pubkeys": [str(k) for k in pubkeys] if isinstance(pubkeys, list) else [],
         "require_signed": bool(cfg.get("require_signed", False)),
         "require_signed_catalog": require_catalog,
+        # Recall the shipped first-party skills library at runtime (opt-out).
+        "builtin": bool(cfg.get("builtin", True)),
     }
 
 

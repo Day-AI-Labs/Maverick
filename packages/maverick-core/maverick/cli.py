@@ -2937,10 +2937,10 @@ def skills(ctx: click.Context) -> None:
     """
     if ctx.invoked_subcommand is not None:
         return
-    from .skills import SKILLS_DIR, load_skills
-    items = load_skills()
+    from .skills import available_skills, builtin_skills_dir
+    items = available_skills()
     if not items:
-        click.echo(f"no skills yet (in {SKILLS_DIR}).")
+        click.echo(f"no skills yet (in {builtin_skills_dir()} or ~/.maverick/skills).")
         return
     for s in items:
         click.echo(f"  {s.name}")

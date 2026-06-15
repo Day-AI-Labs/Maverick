@@ -38,6 +38,11 @@ def _isolate_maverick_home(tmp_path, monkeypatch):
     # platform (on Windows Path.home() reads USERPROFILE, set here too).
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows: what Path.home() reads
+    # The shipped first-party skills library lives INSIDE the package, so unlike
+    # the user skills dir it is not isolated by HOME. Disable it by default so
+    # the suite sees only the (empty, isolated) user dir -- behaviour unchanged
+    # from before the library shipped. Tests opt in with MAVERICK_BUILTIN_SKILLS=1.
+    monkeypatch.setenv("MAVERICK_BUILTIN_SKILLS", "0")
     return tmp_path
 
 
