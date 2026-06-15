@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .tools import as_bool
-from .tools.voice_command_grammar import _WS, _compile
+from .tools.voice_command_grammar import _WS, _compile, _match
 
 log = logging.getLogger(__name__)
 
@@ -62,10 +62,9 @@ def match_utterance(
         compiled = _compile(str(rule["pattern"]))
         if compiled is None:
             raise ValueError(f"duplicate slot in pattern {rule['pattern']!r}")
-        rx, slots = compiled
-        m = rx.match(text)
-        if m:
-            return str(rule["intent"]), {s: m.group(s).strip() for s in slots}
+        captures = _match(compiled, text)
+        if captures is not None:
+            return str(rule["intent"]), captures
     return None
 
 
