@@ -5,7 +5,7 @@
   .auto { max-width: 880px; margin-inline: auto; }
   .auto :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--radius-sm); }
   .auto__head { margin-bottom: var(--space-6); }
-  .auto__head h1 { margin: 0 0 var(--space-1); font-size: var(--text-xl); }
+  .auto__section-head h2:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   .auto__section { margin-bottom: var(--space-7); }
   .auto__section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
   .auto__section-head h2 { margin: 0; font-size: var(--text-lg); }
@@ -20,7 +20,8 @@
   .auto__runs { color: var(--muted); font-size: var(--text-xs); margin-top: 4px; }
   .auto__run { text-decoration: none; border-bottom: 1px dashed currentColor; }
   .auto__run--done { color: var(--muted); }
-  .auto__run--failed, .auto__run--error { color: #d92d20; }
+  .auto__run--failed, .auto__run--error { color: var(--danger); font-weight: var(--font-semibold); }
+  .auto__runs-fail { color: var(--danger); font-weight: var(--font-semibold); }
   .auto__run:hover { border-bottom-style: solid; }
   .auto__empty { color: var(--muted); padding: var(--space-4); border: 1px dashed var(--border); border-radius: var(--radius-md); }
   .auto__warn { color: var(--text); background: var(--surface-2); border: 1px solid var(--border-strong); border-left: 3px solid var(--ring); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); margin-bottom: var(--space-3); }
@@ -28,14 +29,14 @@
 
 <div class="auto">
   <div class="auto__head">
-    <h1>Automations</h1>
+    <h1 class="page-title">Automations</h1>
     <p class="auto__hint">Every way your workflows run on their own — on a schedule, or from an inbound event. Create them in the <a href="/workflow-builder">Workflow Builder</a>’s saved view.</p>
   </div>
 
   {% if scheduling_enabled %}
   <section class="auto__section" id="auto-sched-section" aria-labelledby="auto-sched-h">
     <div class="auto__section-head">
-      <h2 id="auto-sched-h">Schedules</h2>
+      <h2 id="auto-sched-h" tabindex="-1">Schedules</h2>
       <span class="muted" id="auto-sched-count"></span>
     </div>
     <p class="auto__hint">Cron schedules run while <code>maverick worker</code> is active.</p>
@@ -47,7 +48,7 @@
   {% if triggers_enabled %}
   <section class="auto__section" id="auto-trig-section" aria-labelledby="auto-trig-h">
     <div class="auto__section-head">
-      <h2 id="auto-trig-h">Webhook triggers</h2>
+      <h2 id="auto-trig-h" tabindex="-1">Webhook triggers</h2>
       <span class="muted" id="auto-trig-count"></span>
     </div>
     <div class="auto__warn" id="auto-trig-nosecret" hidden>No <code>[webhooks]</code> secret is configured, so triggers won’t fire. Set one in <code>~/.maverick/config.toml</code> or <code>MAVERICK_WEBHOOK_SECRET</code>.</div>
@@ -101,11 +102,16 @@
       schedList.appendChild(li);
     });
   }
+  function refocus(id) {   // re-home focus after a row is removed (it held focus)
+    var h = document.getElementById(id);
+    if (h) h.focus();
+  }
   async function delSchedule(id) {
     if (!(await mvConfirm('Delete this schedule? It will stop running.'))) return;
     try {
       var r = await fetch('/api/v1/schedules/' + encodeURIComponent(id), { method: 'DELETE' });
-      if (r.ok) { mvToast('Schedule deleted'); loadSchedules(); } else { mvToast('Could not delete schedule', { error: true }); }
+      if (r.ok) { mvToast('Schedule deleted'); loadSchedules(); refocus('auto-sched-h'); }
+      else { mvToast('Could not delete schedule', { error: true }); }
     } catch (e) { mvToast('Could not delete schedule', { error: true }); }
   }
 
@@ -142,33 +148,46 @@
     if (!(await mvConfirm('Delete trigger “' + name + '”? Its webhook URL will stop working.'))) return;
     try {
       var r = await fetch('/api/v1/triggers/' + encodeURIComponent(name), { method: 'DELETE' });
-      if (r.ok) { mvToast('Trigger deleted'); loadTriggers(); } else { mvToast('Could not delete trigger', { error: true }); }
+      if (r.ok) { mvToast('Trigger deleted'); loadTriggers(); refocus('auto-trig-h'); }
+      else { mvToast('Could not delete trigger', { error: true }); }
     } catch (e) { mvToast('Could not delete trigger', { error: true }); }
   }
 
-  // Run history (provenance): a compact "N runs · ✓X · ✗Y · last <when>" summary.
+  // Run history (provenance): "N runs · ✓X · ✗Y · #ids" with drill-down links.
+  function isFail(s) { return s === 'failed' || s === 'error'; }
   async function loadRuns(kind, ref, into) {
     if (!ref || !into) return;
-    var data = {};
+    into.textContent = 'Loading runs…';   // visible loading state (not a silent blank)
+    var resp, data;
     try {
-      data = await (await fetch('/api/v1/automation-runs?kind=' + encodeURIComponent(kind) + '&ref=' + encodeURIComponent(ref))).json();
-    } catch (e) { return; }
+      resp = await fetch('/api/v1/automation-runs?kind=' + encodeURIComponent(kind) + '&ref=' + encodeURIComponent(ref));
+      if (!resp.ok) throw new Error('status ' + resp.status);
+      data = await resp.json();
+    } catch (e) {
+      // Surface failure instead of leaving a blank that reads as "no runs".
+      into.textContent = 'Run history unavailable';
+      return;
+    }
     var sum = data.summary || {}, runs = data.runs || [];
     var total = Object.keys(sum).reduce(function (a, k) { return a + sum[k]; }, 0);
     into.textContent = '';
     if (!total) { into.textContent = 'No runs yet'; return; }
     var failed = (sum.failed || 0) + (sum.error || 0);
-    var bits = [total + (total === 1 ? ' run' : ' runs')];
-    if (sum.done) bits.push('✓ ' + sum.done);
-    if (failed) bits.push('✗ ' + failed);
-    into.appendChild(document.createTextNode(bits.join(' · ') + ' · '));
+    into.appendChild(document.createTextNode(total + (total === 1 ? ' run' : ' runs')));
+    if (sum.done) into.appendChild(document.createTextNode(' · ✓ ' + sum.done));
+    if (failed) {
+      into.appendChild(document.createTextNode(' · '));
+      into.appendChild(el('span', 'auto__runs-fail', '✗ ' + failed));   // fail count in --danger
+    }
+    into.appendChild(document.createTextNode(' · '));
     // Recent runs as drill-down links to each goal's trajectory ("what it did").
     runs.slice(0, 5).forEach(function (r, i) {
       if (i) into.appendChild(document.createTextNode(' '));
       var a = document.createElement('a');
       a.href = '/goals/' + encodeURIComponent(r.goal_id) + '/trajectory';
       a.className = 'auto__run auto__run--' + (r.status || 'pending');
-      a.textContent = '#' + r.goal_id;
+      // Non-color cue so failed runs are distinguishable without relying on hue.
+      a.textContent = (isFail(r.status) ? '✗#' : '#') + r.goal_id;
       a.setAttribute('aria-label', 'Run #' + r.goal_id + ' — ' + (r.status || 'pending') + ' — ' + fmtWhen(r.created_at));
       a.title = (r.title || '') + ' · ' + (r.status || '') + ' · ' + fmtWhen(r.created_at);
       into.appendChild(a);

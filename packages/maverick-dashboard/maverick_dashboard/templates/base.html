@@ -442,8 +442,9 @@
 
     /* Reusable feedback primitives: window.mvToast() + window.mvConfirm(). */
     .mv-toasts { position: fixed; left: 50%; bottom: var(--space-5); transform: translateX(-50%); z-index: 90; display: flex; flex-direction: column; gap: var(--space-2); align-items: center; pointer-events: none; max-width: 92vw; }
+    .mv-toasts__list { display: flex; flex-direction: column; gap: var(--space-2); align-items: center; }
     .mv-toast { pointer-events: auto; background: var(--text); color: var(--bg); padding: var(--space-2) var(--space-4); border-radius: var(--radius-pill); font-size: var(--text-sm); box-shadow: 0 4px 16px rgba(0,0,0,0.18); animation: mv-toast-in 160ms ease-out; }
-    .mv-toast--error { border-left: 4px solid #d92d20; }
+    .mv-toast--error { border-left: 4px solid var(--danger); }
     @keyframes mv-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     .mv-confirm { border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 0; max-width: 28rem; width: calc(100vw - 2rem); background: var(--panel); color: var(--text); box-shadow: 0 12px 40px rgba(0,0,0,0.28); }
     .mv-confirm::backdrop { background: rgba(0,0,0,0.45); }
@@ -473,6 +474,7 @@
       <symbol id="i-roles" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2.2"/><circle cx="8" cy="6.6" r="1.6"/><path d="M5.4 11.4a2.7 2.7 0 0 1 5.2 0"/></symbol>
       <symbol id="i-builder" viewBox="0 0 16 16"><path d="M3.5 12.5 10 6"/><path d="M11 2.6l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z"/></symbol>
       <symbol id="i-workflow" viewBox="0 0 16 16"><rect x="2.5" y="2.6" width="4.6" height="3.4" rx="1"/><rect x="8.9" y="10" width="4.6" height="3.4" rx="1"/><path d="M4.8 6v3.2a1.2 1.2 0 0 0 1.2 1.2h2.9"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4.6V8l2.4 1.5"/></symbol>
       <symbol id="i-graph" viewBox="0 0 16 16"><circle cx="4" cy="4.2" r="1.7"/><circle cx="12" cy="5" r="1.7"/><circle cx="7" cy="12" r="1.7"/><path d="M5.5 4.7 10.5 5M5.3 5.6 6.4 10.4M8.4 11 10.8 6.5"/></symbol>
       <symbol id="i-fleets" viewBox="0 0 16 16"><path d="M8 2.6 14 5.6 8 8.6 2 5.6z"/><path d="M2.6 8.6 8 11.4 13.4 8.6"/></symbol>
       <symbol id="i-overview" viewBox="0 0 16 16"><rect x="2.6" y="2.6" width="4.8" height="4.8" rx="1.2"/><rect x="8.6" y="2.6" width="4.8" height="4.8" rx="1.2"/><rect x="2.6" y="8.6" width="4.8" height="4.8" rx="1.2"/><rect x="8.6" y="8.6" width="4.8" height="4.8" rx="1.2"/></symbol>
@@ -582,7 +584,7 @@
       {% set _icons = {
         '/chat': 'chat', '/goals': 'target', '/agents': 'agents', '/roles': 'roles',
         '/goal-builder': 'builder', '/workflow-builder': 'workflow',
-        '/automations': 'workflow',
+        '/automations': 'clock',
         '/graph-editor': 'graph', '/fleets': 'fleets',
         '/overview': 'overview', '/oversight': 'eye', '/spend': 'spend',
         '/providers': 'providers', '/benchmarks': 'bench', '/learned': 'learned',
@@ -624,8 +626,12 @@
     <span class="muted">Maverick · {{ t('footer.local') }} · proprietary software</span>
   </footer>
 
-  <!-- Reusable toast region + confirm dialog (window.mvToast / window.mvConfirm). -->
-  <div id="mv-toasts" class="mv-toasts" aria-live="polite" aria-atomic="false"></div>
+  <!-- Reusable toast regions + confirm dialog (window.mvToast / window.mvConfirm).
+       Two pre-existing live regions: errors announce assertively, status politely. -->
+  <div class="mv-toasts">
+    <div id="mv-toasts-alert" class="mv-toasts__list" role="alert" aria-live="assertive" aria-atomic="false"></div>
+    <div id="mv-toasts" class="mv-toasts__list" aria-live="polite" aria-atomic="false"></div>
+  </div>
   <dialog id="mv-confirm" class="mv-confirm" aria-labelledby="mv-confirm-msg">
     <div class="mv-confirm__body">
       <p class="mv-confirm__msg" id="mv-confirm-msg"></p>
@@ -642,14 +648,18 @@
     //   falls back to window.confirm where <dialog> is unsupported).
     (function () {
       var region = document.getElementById('mv-toasts');
+      var alertRegion = document.getElementById('mv-toasts-alert');
       window.mvToast = function (message, opts) {
-        if (!region) return;
         opts = opts || {};
+        // Route to a region whose live politeness is fixed at load (an injected
+        // role can't reliably upgrade a polite region to assertive); prefix
+        // errors so the state survives grayscale / color-blindness.
+        var target = opts.error ? alertRegion : region;
+        if (!target) return;
         var t = document.createElement('div');
         t.className = 'mv-toast' + (opts.error ? ' mv-toast--error' : '');
-        t.setAttribute('role', opts.error ? 'alert' : 'status');
-        t.textContent = String(message);
-        region.appendChild(t);
+        t.textContent = (opts.error ? '⚠ ' : '') + String(message);
+        target.appendChild(t);
         setTimeout(function () {
           t.style.transition = 'opacity 200ms'; t.style.opacity = '0';
           setTimeout(function () { t.remove(); }, 220);
@@ -664,6 +674,8 @@
         if (!dlg || typeof dlg.showModal !== 'function') {
           return Promise.resolve(window.confirm(String(message)));
         }
+        if (dlg.open) return Promise.resolve(false);   // not re-entrant (shared dialog)
+        var opener = document.activeElement;           // restore focus on close
         msgEl.textContent = String(message);
         okBtn.textContent = opts.okText || 'Confirm';
         return new Promise(function (resolve) {
@@ -672,6 +684,9 @@
             cancelBtn.removeEventListener('click', onCancel);
             dlg.removeEventListener('cancel', onCancel);
             if (dlg.open) dlg.close();
+            // Return focus to the opener when it survives; a delete that removed
+            // its own row leaves the caller to re-home focus to a stable spot.
+            if (opener && opener.isConnected && typeof opener.focus === 'function') opener.focus();
             resolve(val);
           }
           function onOk() { done(true); }
