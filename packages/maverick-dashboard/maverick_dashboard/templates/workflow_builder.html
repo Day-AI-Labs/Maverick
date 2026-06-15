@@ -45,7 +45,7 @@
   .wf__refine .input { flex: 1 1 auto; }
 
   /* playbook step cards — the gate is the visible governance signal */
-  .pb-step { position: relative; border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); margin-bottom: var(--space-3); background: var(--surface-2); transition: border-color .12s ease, box-shadow .12s ease; }
+  .pb-step { position: relative; border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); background: var(--surface-2); transition: border-color .12s ease, box-shadow .12s ease; }
   .pb-step:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
   .pb-step[data-gate="approval"] { border-left-color: var(--warn); }
   .pb-step[data-gate="review"] { border-left-color: var(--info); }
@@ -57,6 +57,22 @@
   .pb-step__move { display: inline-flex; flex: none; }
   .pb-step__btn { padding: 0.3rem 0.5rem; font-size: var(--text-sm); line-height: 1; }
   .pb-gatebadge { margin-left: auto; }
+
+  /* flow canvas: steps connected into a governed top-to-bottom pipeline */
+  .pb-flow { display: flex; flex-direction: column; gap: 1.75rem; }
+  #pb-steps { display: flex; flex-direction: column; gap: 1.75rem; }
+  .pb-flow__node { position: relative; align-self: center; display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); border: 1px dashed var(--border-strong); border-radius: var(--radius-pill); background: var(--surface-sunken); color: var(--muted); font-size: var(--text-sm); }
+  .pb-flow__node .dot { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; }
+  .pb-flow__start .dot { background: var(--brand); }
+  .pb-flow__end .dot { background: var(--success); }
+  /* connector + chevron, drawn into the 1.75rem gap above each node */
+  .pb-step::before, .pb-flow__end::before { content: ""; position: absolute; left: 50%; top: -1.75rem; width: 2px; height: 1.75rem; background: var(--border-strong); transform: translateX(-50%); }
+  .pb-step::after, .pb-flow__end::after { content: ""; position: absolute; left: 50%; top: -0.42rem; width: 7px; height: 7px; border-right: 2px solid var(--border-strong); border-bottom: 2px solid var(--border-strong); transform: translateX(-50%) rotate(45deg); }
+  /* the gate is a checkpoint in the flow: color the connector arriving at a gated step */
+  .pb-step[data-gate="approval"]::before { background: var(--warn); }
+  .pb-step[data-gate="approval"]::after { border-color: var(--warn); }
+  .pb-step[data-gate="review"]::before { background: var(--info); }
+  .pb-step[data-gate="review"]::after { border-color: var(--info); }
 
   /* live governance check */
   .wf__govern { margin-top: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-sunken); padding: var(--space-3) var(--space-4); }
@@ -245,9 +261,13 @@
         </div>
       </div>
       <div class="wf__field">
-        <label>Steps <span class="wf__hint" style="text-transform: none; letter-spacing: 0;">— each can pause for a human gate</span></label>
-        <div id="pb-steps"></div>
-        <button type="button" id="pb-add-step" class="btn btn--ghost">+ Add step</button>
+        <label>Steps <span class="wf__hint" style="text-transform: none; letter-spacing: 0;">— a top-to-bottom flow; each step can pause for a human gate</span></label>
+        <div class="pb-flow">
+          <div class="pb-flow__node pb-flow__start"><span class="dot" aria-hidden="true"></span>Trigger — the agent starts here</div>
+          <div id="pb-steps"></div>
+          <div class="pb-flow__node pb-flow__end" id="pb-flow-end" hidden><span class="dot" aria-hidden="true"></span>Goal complete</div>
+        </div>
+        <button type="button" id="pb-add-step" class="btn btn--ghost" style="margin-top: var(--space-4);">+ Add step</button>
       </div>
       <div class="wf__field">
         <label for="pb-refine">Refine with a follow-up</label>
@@ -335,6 +355,7 @@
     var pbDeny = document.getElementById('pb-deny');
     var pbRisk = document.getElementById('pb-risk');
     var pbSteps = document.getElementById('pb-steps');
+    var pbFlowEnd = document.getElementById('pb-flow-end');
     var pbAddBtn = document.getElementById('pb-add-step');
     var pbSaveBtn = document.getElementById('pb-save-btn');
     var pbRefine = document.getElementById('pb-refine');
@@ -481,9 +502,11 @@
       badge.className = 'badge pb-gatebadge ' + (gate === 'approval' ? 'blocked' : 'info');
     }
     function renumber() {
-      pbSteps.querySelectorAll('.pb-step').forEach(function (row, i) {
+      var steps = pbSteps.querySelectorAll('.pb-step');
+      steps.forEach(function (row, i) {
         row.querySelector('.pb-step__num').textContent = (i + 1);
       });
+      pbFlowEnd.hidden = !steps.length;   // the "Goal complete" node appears once there are steps
     }
     function moveStep(row, dir) {
       if (dir < 0 && row.previousElementSibling) pbSteps.insertBefore(row, row.previousElementSibling);

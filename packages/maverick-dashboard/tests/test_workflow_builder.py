@@ -460,5 +460,7 @@ def test_workflow_builder_page_renders(monkeypatch, tmp_path):
     # Connector picker: browse real tools (with risk) instead of typing names.
     assert 'id="tool-picker"' in r.text and "/api/v1/tools" in r.text
     assert 'data-browse="allow"' in r.text and 'data-browse="deny"' in r.text
+    # Visual flow canvas: start/end nodes bracket the connected, gated steps.
+    assert "pb-flow__start" in r.text and 'id="pb-flow-end"' in r.text
     # Reachable from the primary nav (Operate group).
     assert '<span class="nav-label">Workflows</span>' in r.text
