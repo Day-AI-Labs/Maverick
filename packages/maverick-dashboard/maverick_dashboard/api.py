@@ -2170,6 +2170,12 @@ def _drafter_for(form: str):
     return draft_playbook if form == "playbook" else draft_workflow
 
 
+def _check_workflow_draft_rate_limit(request: Request) -> None:
+    """Apply the paid-LLM sliding-window limiter to workflow drafting calls."""
+    from maverick_dashboard.app import check_goal_rate_limit
+    check_goal_rate_limit(request)
+
+
 @router.post("/workflows/draft")
 async def draft_workflow_from_brief(request: Request, payload: WorkflowDraftIn) -> dict:
     """Chat path: a natural-language brief -> a drafted workflow or playbook
@@ -2179,8 +2185,9 @@ async def draft_workflow_from_brief(request: Request, payload: WorkflowDraftIn) 
     brief = (payload.description or "").strip()
     if not brief:
         raise HTTPException(status_code=400, detail="describe the workflow you want")
+    _check_workflow_draft_rate_limit(request)
     try:
-        return _drafter_for(payload.form)(brief)
+        return await run_in_threadpool(_drafter_for(payload.form), brief)
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"workflow drafting failed: {e}") from e
 
@@ -2211,8 +2218,9 @@ async def draft_workflow_from_upload(
         ) from None
     if not text.strip():
         raise HTTPException(status_code=400, detail="the uploaded file was empty")
+    _check_workflow_draft_rate_limit(request)
     try:
-        return _drafter_for(form)("", source_text=text)
+        return await run_in_threadpool(_drafter_for(form), "", source_text=text)
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"workflow drafting failed: {e}") from e
 
@@ -2226,10 +2234,11 @@ async def refine_workflow_draft(request: Request, payload: WorkflowRefineIn) -> 
     instruction = (payload.instruction or "").strip()
     if not instruction:
         raise HTTPException(status_code=400, detail="describe the change you want")
+    _check_workflow_draft_rate_limit(request)
     from .workflow_ai import refine_playbook, refine_workflow
     refiner = refine_playbook if payload.form == "playbook" else refine_workflow
     try:
-        return refiner(payload.current or {}, instruction)
+        return await run_in_threadpool(refiner, payload.current or {}, instruction)
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"refining the draft failed: {e}") from e
 

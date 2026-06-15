@@ -241,6 +241,44 @@ def test_draft_endpoint_returns_draft(monkeypatch, tmp_path):
     assert r.json()["name"] == "x"
 
 
+def test_draft_endpoint_applies_paid_rate_limit(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _provider(monkeypatch, True)
+    calls = []
+    import maverick_dashboard.api as api
+    _stub_draft(monkeypatch, {"name": "x", "title": "X", "params": [],
+                              "steps": ["s"], "body": "b", "budget_dollars": 5.0})
+    monkeypatch.setattr(api, "_check_workflow_draft_rate_limit",
+                        lambda request: calls.append(request.url.path))
+
+    r = _client().post("/api/v1/workflows/draft", json={"description": "x"})
+
+    assert r.status_code == 200, r.text
+    assert calls == ["/api/v1/workflows/draft"]
+
+
+def test_draft_endpoint_rate_limit_blocks_llm_call(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _provider(monkeypatch, True)
+    import maverick_dashboard.api as api
+    from fastapi import HTTPException
+    from maverick_dashboard import workflow_ai
+
+    def blocked(_request):
+        raise HTTPException(status_code=429, detail="slow down")
+
+    def should_not_run(*_args, **_kwargs):
+        raise AssertionError("draft_workflow should not run after a 429")
+
+    monkeypatch.setattr(api, "_check_workflow_draft_rate_limit", blocked)
+    monkeypatch.setattr(workflow_ai, "draft_workflow", should_not_run)
+
+    r = _client().post("/api/v1/workflows/draft", json={"description": "x"})
+
+    assert r.status_code == 429
+    assert r.json()["detail"] == "slow down"
+
+
 def test_draft_endpoint_needs_provider_key(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _provider(monkeypatch, False)
@@ -275,6 +313,29 @@ def test_draft_from_file_feeds_text(monkeypatch, tmp_path):
     assert r.status_code == 200, r.text
     assert r.json()["name"] == "doc-wf"
     assert "weekly report" in captured["src"].lower()
+
+
+def test_draft_from_file_applies_paid_rate_limit(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _provider(monkeypatch, True)
+    calls = []
+    import maverick_dashboard.api as api
+    from maverick_dashboard import workflow_ai
+
+    monkeypatch.setattr(api, "_check_workflow_draft_rate_limit",
+                        lambda request: calls.append(request.url.path))
+    monkeypatch.setattr(workflow_ai, "draft_workflow",
+                        lambda *a, **k: {"name": "doc", "title": "Doc", "params": [],
+                                         "steps": ["s"], "body": "b",
+                                         "budget_dollars": 5.0})
+
+    r = _client().post(
+        "/api/v1/workflows/draft-from-file",
+        files={"file": ("spec.md", b"Build a thing", "text/markdown")},
+    )
+
+    assert r.status_code == 200, r.text
+    assert calls == ["/api/v1/workflows/draft-from-file"]
 
 
 def test_draft_from_file_rejects_binary(monkeypatch, tmp_path):
