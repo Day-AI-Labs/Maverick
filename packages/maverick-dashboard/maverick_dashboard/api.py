@@ -1081,10 +1081,11 @@ async def get_role_endpoint(role: str) -> dict:
 
 
 @router.post("/roles/{role}/override")
-async def save_role_override(role: str, payload: RoleOverrideIn) -> dict:
+async def save_role_override(request: Request, role: str, payload: RoleOverrideIn) -> dict:
     """Persist a role's system-prompt addendum. 403 if role editing is disabled,
     422 if validation fails (unknown role, over-long addendum)."""
     _require_role_editing()
+    require_permission(request, "admin")
     from maverick.role_edit import resolved_role, write_role_override
     try:
         write_role_override(role, payload.model_dump(exclude_unset=True))
@@ -1094,9 +1095,10 @@ async def save_role_override(role: str, payload: RoleOverrideIn) -> dict:
 
 
 @router.delete("/roles/{role}/override")
-async def delete_role_override(role: str) -> dict:
+async def delete_role_override(request: Request, role: str) -> dict:
     """Drop a role's override, reverting it to the built-in template."""
     _require_role_editing()
+    require_permission(request, "admin")
     from maverick.role_edit import remove_role_override, resolved_role
     removed = remove_role_override(role)
     view = resolved_role(role)

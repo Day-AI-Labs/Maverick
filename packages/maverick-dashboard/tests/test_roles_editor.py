@@ -97,3 +97,32 @@ class TestRoleEditingGate:
                            json={"system_addendum": "x"}).status_code == 403
         assert client.delete("/api/v1/roles/coder/override").status_code == 403
         assert client.get("/api/v1/roles/coder").status_code == 200  # read-only still ok
+
+
+class TestRoleOverrideRbac:
+    def test_viewer_cannot_save_model_override(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "")
+        from maverick_dashboard import auth, rbac
+        rbac.set_role("user:viewer", "viewer")
+        monkeypatch.setattr(auth, "caller_principal", lambda request: "user:viewer")
+
+        r = client.post("/api/v1/roles/coder/override",
+                        json={"model": "anthropic:claude-opus-4-8", "effort": "max"})
+
+        assert r.status_code == 403
+        assert not (tmp_path / "roles.toml").exists()
+
+    def test_admin_can_save_model_override(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "user:admin")
+        from maverick_dashboard import auth
+        monkeypatch.setattr(auth, "caller_principal", lambda request: "user:admin")
+
+        r = client.post("/api/v1/roles/coder/override",
+                        json={"model": "anthropic:claude-opus-4-8", "effort": "max"})
+
+        assert r.status_code == 200
+        got = client.get("/api/v1/roles/coder").json()
+        assert got["model_override"] == "anthropic:claude-opus-4-8"
+        assert got["effort_override"] == "max"
