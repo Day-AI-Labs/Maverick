@@ -141,8 +141,18 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
     w = _world()
     goal_id = w.create_goal(title[:200], description, owner=caller_principal(request) or "")
     from maverick.runner import run_goal_in_thread
-    # Enforce server-side execution caps even when callers request larger values.
-    max_dollars = min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
+    # Enforce server-side execution caps when callers request larger values.
+    # If max_dollars is omitted, preserve None so budget_from_config can apply
+    # operator-controlled runtime/config caps instead of treating the schema
+    # default as an explicit API override.
+    fields_set = getattr(payload, "model_fields_set", None)
+    if fields_set is None:  # Pydantic v1 compatibility
+        fields_set = getattr(payload, "__fields_set__", set())
+    max_dollars = (
+        min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
+        if "max_dollars" in fields_set
+        else None
+    )
     max_wall_seconds = min(payload.max_wall_seconds, DEFAULT_MAX_WALL_SECONDS)
     max_depth = min(payload.max_depth, DEFAULT_MAX_DEPTH)
 

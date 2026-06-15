@@ -73,6 +73,24 @@ class TestGoals:
         # 422 = Pydantic validation error
         assert resp.status_code == 422
 
+    def test_create_omitted_max_dollars_uses_runtime_budget_cap(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+        import maverick.runner as runner_mod
+        import maverick.runtime_overrides as ro
+
+        monkeypatch.setattr(ro, "OVERRIDES_PATH", tmp_path / "runtime-overrides.toml")
+        ro.set_budget(0.1)
+        called = []
+
+        def fake_run(goal_id, max_dollars=2.0, max_wall_seconds=1800.0, max_depth=3):
+            called.append((goal_id, max_dollars, max_wall_seconds, max_depth))
+
+        monkeypatch.setattr(runner_mod, "run_goal_in_thread", fake_run)
+        resp = client.post("/api/v1/goals", json={"title": "default budget"})
+        assert resp.status_code == 201
+        assert len(called) == 1
+        assert called[0][1] is None
+
     def test_list_returns_array(self):
         resp = client.get("/api/v1/goals")
         assert resp.status_code == 200
