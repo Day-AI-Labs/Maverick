@@ -3672,7 +3672,11 @@ async def goal_builder_page(request: Request) -> HTMLResponse:
 async def workflow_builder_page(request: Request) -> HTMLResponse:
     """AI workflow builder: draft a reusable workflow from a brief or an
     uploaded document, edit it, then save it as a runnable template."""
-    return templates.TemplateResponse(request, "workflow_builder.html", {})
+    from maverick.config import get_features
+    return templates.TemplateResponse(
+        request, "workflow_builder.html",
+        {"scheduling_enabled": get_features().get("scheduling", True)},
+    )
 
 
 @app.get("/embed-demo", response_class=HTMLResponse)

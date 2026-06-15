@@ -60,6 +60,25 @@ class GoalOut(BaseModel):
     result: str | None = None
 
 
+class ScheduleIn(BaseModel):
+    """Arm a recurring run on a 5-field cron expression. Provide either a saved
+    ``template`` (rendered with ``params`` each fire) or a raw ``text`` prompt.
+    Executed by ``maverick worker`` as a ``start_goal`` job."""
+    cron: str = Field(..., max_length=120)
+    template: str | None = None
+    params: dict[str, str] | None = None
+    text: str | None = None
+    title: str | None = Field(None, max_length=200)
+
+
+class ScheduleOut(BaseModel):
+    id: int
+    cron: str
+    kind: str
+    title: str
+    next_run: float
+
+
 class GoalEventOut(BaseModel):
     id: int
     agent: str

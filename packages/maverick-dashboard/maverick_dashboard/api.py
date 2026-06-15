@@ -52,6 +52,8 @@ from .api_schemas import (
     ReparentIn,
     RetitleIn,
     RoleOverrideIn,
+    ScheduleIn,
+    ScheduleOut,
     SkillInstallIn,
     SkillOut,
     WorkflowDraftIn,
@@ -985,6 +987,90 @@ async def list_tools() -> dict:
             for t in tools
         ],
     }
+
+
+# ---- schedules: arm a saved template (or a prompt) to run on a cron ----------
+# A schedule enqueues a recurring "start_goal" job (worker.py) that mints a fresh
+# goal on every fire. Nothing runs until `maverick worker` drains the queue. The
+# mutating routes are gated by [features] scheduling (like pack/role editing); the
+# read-only list is always available.
+
+
+def _require_scheduling() -> None:
+    from maverick.config import get_features
+    if not get_features().get("scheduling", True):
+        raise HTTPException(
+            status_code=403,
+            detail=("scheduling is disabled ([features] scheduling = false). "
+                    "Re-enable it in config, or use `maverick schedule` on the host."),
+        )
+
+
+def _schedule_out(job) -> ScheduleOut:
+    p = job.payload or {}
+    return ScheduleOut(
+        id=job.id,
+        cron=str(p.get("__cron__") or ""),
+        kind=job.kind,
+        title=(str(p.get("title") or p.get("text") or ""))[:200],
+        next_run=job.run_at,
+    )
+
+
+@router.get("/schedules")
+async def list_schedules() -> dict:
+    """Armed recurring schedules: pending cron jobs in the worker queue."""
+    from maverick.job_queue import JobQueue
+    jobs = [j for j in JobQueue().list(status="pending") if (j.payload or {}).get("__cron__")]
+    jobs.sort(key=lambda j: j.run_at)
+    return {"schedules": [_schedule_out(j).model_dump() for j in jobs]}
+
+
+@router.post("/schedules", response_model=ScheduleOut, status_code=201)
+async def create_schedule(request: Request, payload: ScheduleIn) -> ScheduleOut:
+    require_permission(request, "operate")
+    _require_scheduling()
+    from maverick.scheduler import CronError, next_run, schedule_cron
+    cron = (payload.cron or "").strip()
+    try:
+        next_run(cron)  # validate up front; CronError -> 400
+    except CronError as e:
+        raise HTTPException(status_code=400, detail=f"bad cron expression: {e}") from e
+    # Resolve the goal text: render a saved template (with params), or a prompt.
+    title = (payload.title or "").strip()
+    if payload.template:
+        from maverick.templates import load_template
+        try:
+            tpl = load_template(payload.template)
+            rtitle, body = tpl.render(**(payload.params or {}))
+        except ValueError as e:           # unknown template / missing params
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        text, title = body, (title or rtitle)
+    else:
+        text = (payload.text or "").strip()
+        if not text:
+            raise HTTPException(
+                status_code=400, detail="provide a template or text to schedule")
+    title = (title or text)[:200]
+    from maverick.job_queue import JobQueue
+    job_id, run_at = schedule_cron(
+        JobQueue(), cron, "start_goal",
+        {"text": text, "title": title, "__cron__": cron},
+    )
+    return ScheduleOut(id=job_id, cron=cron, kind="start_goal", title=title, next_run=run_at)
+
+
+@router.delete("/schedules/{job_id}")
+async def delete_schedule(request: Request, job_id: int) -> dict:
+    require_permission(request, "operate")
+    _require_scheduling()
+    from maverick.job_queue import JobQueue
+    if not JobQueue().cancel(job_id):
+        raise HTTPException(
+            status_code=404, detail="no pending schedule with that id")
+    return {"cancelled": job_id}
 
 
 # ---- agents (domain packs): per-client view + override editor ---------------

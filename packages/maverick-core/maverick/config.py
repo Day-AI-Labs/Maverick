@@ -249,6 +249,11 @@ def get_features() -> dict:
                       addendum plus model/effort overrides per role (which win
                       over the global [models]/[effort] config). Off = the roles
                       editor is read-only and its mutating endpoints 403.
+    - ``scheduling`` allow arming recurring schedules (cron) from the dashboard
+                      workflow builder -- each fire enqueues a ``start_goal`` job
+                      run by ``maverick worker``. Off = the schedule endpoints
+                      return 403 and the UI hides; the ``maverick schedule`` CLI
+                      on the host is unaffected.
 
     All default on.
     """
@@ -259,6 +264,7 @@ def get_features() -> dict:
         "streaming": bool(cfg.get("streaming", True)),
         "pack_editing": bool(cfg.get("pack_editing", True)),
         "role_editing": bool(cfg.get("role_editing", True)),
+        "scheduling": bool(cfg.get("scheduling", True)),
     }
 
 
