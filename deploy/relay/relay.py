@@ -7,8 +7,8 @@ forwards it as a properly HMAC-signed request to a Maverick dashboard's
 (e.g. the glasses/wearable adapter): run it on your own box/VPS/edge instead of
 depending on someone's cloud function.
 
-It signs exactly the way ``maverick.webhooks`` verifies:
-    material   = f"{timestamp}.".encode() + body
+It signs exactly the way ``maverick.webhooks`` verifies for ``POST /webhook/start``:
+    material   = b"ts=<timestamp>\npurpose=POST /webhook/start\n" + body
     signature  = "sha256=" + hmac_sha256(secret, material).hexdigest()
 sent as ``X-Maverick-Signature`` + ``X-Maverick-Timestamp``.
 
@@ -43,7 +43,7 @@ _MAX_BODY = 64 * 1024
 
 
 def sign(body: bytes, secret: str, timestamp: str) -> str:
-    material = f"{timestamp}.".encode() + body
+    material = f"ts={timestamp}\npurpose=POST /webhook/start\n".encode() + body
     return "sha256=" + hmac.new(secret.encode("utf-8"), material, hashlib.sha256).hexdigest()
 
 

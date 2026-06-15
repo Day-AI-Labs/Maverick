@@ -34,7 +34,6 @@ the Worker and the local-service shapes.
 """
 from __future__ import annotations
 
-import hashlib
 import hmac
 import logging
 import re
@@ -111,16 +110,16 @@ def classify_request(text: str, config: RelayConfig | None = None) -> RequestKin
 
 
 def sign_body(body: bytes, secret: str, *, timestamp: str | None = None) -> tuple[str, str | None]:
-    """HMAC-SHA256 over the (optionally timestamp-bound) body.
+    """HMAC-SHA256 over the ``POST /webhook/start`` scoped body.
 
     Mirrors ``maverick.webhooks._sign`` so the relay's forward to
-    ``/webhook/start`` carries a signature the existing inbound receiver
-    already knows how to verify. Returns ``(signature, timestamp)``.
+    ``/webhook/start`` carries a route-scoped signature the inbound receiver
+    knows how to verify. Returns ``(signature, timestamp)``.
     """
+    from maverick.webhooks import _sign
+
     ts = timestamp if timestamp is not None else str(int(time.time()))
-    material = f"{ts}.".encode() + body
-    mac = hmac.new(secret.encode("utf-8"), material, hashlib.sha256)
-    return "sha256=" + mac.hexdigest(), ts
+    return _sign(body, secret, timestamp=ts, purpose="POST /webhook/start"), ts
 
 
 # Injected transport seams. Each is pure-ish from the relay's POV:

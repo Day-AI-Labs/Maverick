@@ -358,6 +358,13 @@ def test_webhooks_timestamped_signature_replay_window():
     sig = _sign(body, "k", timestamp=fresh)
     # fresh -> accepted
     assert verify_signature(body, sig, "k", timestamp=fresh, max_age=300) is True
+    scoped = _sign(body, "k", timestamp=fresh, purpose="POST /webhook/run")
+    assert verify_signature(
+        body, scoped, "k", timestamp=fresh, max_age=300, purpose="POST /webhook/run",
+    ) is True
+    assert verify_signature(
+        body, scoped, "k", timestamp=fresh, max_age=300, purpose="POST /webhook/start",
+    ) is False
     # stale -> rejected even though the HMAC matches the (stale) timestamp
     stale = str(int(time.time()) - 10_000)
     stale_sig = _sign(body, "k", timestamp=stale)

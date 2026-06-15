@@ -256,8 +256,8 @@ def get_features() -> dict:
                       on the host is unaffected.
     - ``triggers`` allow binding a saved template to an inbound webhook (POST
                       /webhook/run) so an external event runs it as a goal. The
-                      inbound route is HMAC-signed exactly like /webhook/start
-                      and fails closed without a [webhooks] secret. Off = the
+                      inbound route uses a route-scoped HMAC signature and fails
+                      closed without a [webhooks] secret. Off = the
                       /api/v1/triggers editor and the /webhook/run route 404/403
                       and the builder panel hides.
 

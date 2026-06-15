@@ -32,7 +32,9 @@ def test_relay_signature_is_accepted_by_webhooks():
     sig = relay.sign(body, secret, ts)
     assert sig.startswith("sha256=")
     # The receiver must accept it (timestamp-bound, within freshness window).
-    assert verify_signature(body, sig, secret, timestamp=ts) is True
+    assert verify_signature(
+        body, sig, secret, timestamp=ts, purpose="POST /webhook/start",
+    ) is True
 
 
 @pytest.mark.skipif(not _RELAY.exists(), reason="relay reference not present")
@@ -42,7 +44,9 @@ def test_relay_signature_rejects_tamper():
     ts = str(int(time.time()))
     sig = relay.sign(b'{"title": "a"}', secret, ts)
     # A different body under the same signature must fail.
-    assert verify_signature(b'{"title": "b"}', sig, secret, timestamp=ts) is False
+    assert verify_signature(
+        b'{"title": "b"}', sig, secret, timestamp=ts, purpose="POST /webhook/start",
+    ) is False
 
 
 @pytest.mark.skipif(not _RELAY.exists(), reason="relay reference not present")

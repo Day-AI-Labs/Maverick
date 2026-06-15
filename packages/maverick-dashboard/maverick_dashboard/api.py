@@ -1078,7 +1078,7 @@ async def delete_schedule(request: Request, job_id: int) -> dict:
 # ---- triggers: bind a saved template to an inbound webhook (POST /webhook/run)
 # These routes MANAGE triggers (dashboard-authed, operate-gated, feature-knobbed).
 # The inbound firing route lives in app.py (/webhook/run) and authenticates with
-# its own HMAC signature -- exactly like /webhook/start, but strictly narrower:
+# its own route-scoped HMAC signature and is strictly narrower:
 # it runs only an operator-registered template, never arbitrary text.
 
 _WEBHOOK_RUN_PATH = "/webhook/run"

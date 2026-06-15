@@ -330,7 +330,7 @@ _AUTH_EXEMPT = {
     # the dashboard bearer / same-origin checks (external senders have
     # neither), so it must bypass the centralized middleware.
     "/webhook/start",
-    # /webhook/run fires a registered trigger; same HMAC auth as /webhook/start
+    # /webhook/run fires a registered trigger with a route-scoped HMAC
     # (strictly narrower -- runs only an operator-registered template).
     "/webhook/run",
     # Linear/Jira/GitHub issue webhooks authenticate the same way (their
@@ -2906,7 +2906,9 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
     if not signature or not timestamp:
         raise HTTPException(status_code=403, detail="bad webhook signature")
     body = await _read_limited_webhook_body(request)
-    if not verify_signature(body, signature, secret, timestamp=timestamp):
+    if not verify_signature(
+        body, signature, secret, timestamp=timestamp, purpose="POST /webhook/start",
+    ):
         raise HTTPException(status_code=403, detail="bad webhook signature")
 
     if not _any_provider_key_set():
@@ -2961,10 +2963,11 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
 async def webhook_run(request: Request, bg: BackgroundTasks) -> JSONResponse:
     """Fire a registered trigger: render its saved template and run it as a goal.
 
-    Body is JSON ``{"trigger": "<name>", "data"?: {...}}``. Authenticated by the
-    same HMAC signature as ``/webhook/start`` (``X-Maverick-Signature`` over the
-    ``X-Maverick-Timestamp`` + raw body, with the ``[webhooks]`` secret) and the
-    same replay-freshness window. We fail closed -- a missing secret yields 401.
+    Body is JSON ``{"trigger": "<name>", "data"?: {...}}``. Authenticated by an
+    HMAC signature scoped to ``POST /webhook/run`` (``X-Maverick-Signature`` over
+    the ``X-Maverick-Timestamp``, route purpose, and raw body, with the
+    ``[webhooks]`` secret) and the same replay-freshness window. We fail closed
+    -- a missing secret yields 401.
 
     This is deliberately NARROWER than ``/webhook/start``: it runs only a
     template an operator registered via the dashboard (with operator-set default
@@ -2993,7 +2996,9 @@ async def webhook_run(request: Request, bg: BackgroundTasks) -> JSONResponse:
     if not signature or not timestamp:
         raise HTTPException(status_code=403, detail="bad webhook signature")
     body = await _read_limited_webhook_body(request)
-    if not verify_signature(body, signature, secret, timestamp=timestamp):
+    if not verify_signature(
+        body, signature, secret, timestamp=timestamp, purpose="POST /webhook/run",
+    ):
         raise HTTPException(status_code=403, detail="bad webhook signature")
 
     if not _any_provider_key_set():

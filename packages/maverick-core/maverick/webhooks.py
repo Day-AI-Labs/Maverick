@@ -59,25 +59,46 @@ def _load_config_outbound() -> tuple[list[str], str | None]:
     return urls, secret
 
 
-def _sign(body: bytes, secret: str, *, timestamp: str | None = None) -> str:
-    """HMAC-SHA256 of the request body, optionally binding a timestamp.
+def _sign(
+    body: bytes,
+    secret: str,
+    *,
+    timestamp: str | None = None,
+    purpose: str | None = None,
+) -> str:
+    """HMAC-SHA256 of the request body, optionally binding metadata.
 
     When ``timestamp`` is given it is prepended to the signed material
     (``"<ts>.".encode() + body``). This is the Maverick-CONTROLLED replay
     defence: the sender sends the same ``timestamp`` in an ``X-Maverick-
     Timestamp`` header, so a captured request can't be replayed past the
-    freshness window without breaking the signature. Body-only signing
-    (``timestamp=None``) is preserved for the existing receiver round-trip.
+    freshness window without breaking the signature. Inbound callers may also
+    bind a route-specific ``purpose`` to prevent one signed webhook request from
+    authorizing a different endpoint. Body-only signing (``timestamp=None`` and
+    ``purpose=None``) is preserved for the existing receiver round-trip.
     """
-    mac = hmac.new(secret.encode("utf-8"), _signed_material(body, timestamp),
-                   hashlib.sha256)
+    mac = hmac.new(
+        secret.encode("utf-8"),
+        _signed_material(body, timestamp, purpose=purpose),
+        hashlib.sha256,
+    )
     return "sha256=" + mac.hexdigest()
 
 
-def _signed_material(body: bytes, timestamp: str | None) -> bytes:
-    if timestamp is None:
+def _signed_material(
+    body: bytes,
+    timestamp: str | None,
+    *,
+    purpose: str | None = None,
+) -> bytes:
+    if timestamp is None and purpose is None:
         return body
-    return f"{timestamp}.".encode() + body
+    parts = []
+    if timestamp is not None:
+        parts.append(f"ts={timestamp}")
+    if purpose is not None:
+        parts.append(f"purpose={purpose}")
+    return ("\n".join(parts) + "\n").encode() + body
 
 
 def _default_max_age() -> int:
@@ -210,6 +231,7 @@ def verify_signature(
     *,
     timestamp: str | None = None,
     max_age: int | None = None,
+    purpose: str | None = None,
 ) -> bool:
     """Verify an inbound webhook signature (mirror of _sign()).
 
@@ -218,16 +240,18 @@ def verify_signature(
     When ``timestamp`` is supplied the signature must cover that timestamp
     (replay defence for the Maverick-CONTROLLED format) AND the timestamp must
     be within ``max_age`` seconds of now -- a captured-but-stale request is
-    rejected even though its HMAC is otherwise valid. ``max_age`` defaults to
-    ``_default_max_age()``. With ``timestamp=None`` this is the original
-    body-only check, unchanged.
+    rejected even though its HMAC is otherwise valid. ``purpose`` optionally
+    binds a route/action namespace into the MAC so a signature for one inbound
+    webhook cannot be replayed to another. ``max_age`` defaults to
+    ``_default_max_age()``. With ``timestamp=None`` and ``purpose=None`` this is
+    the original body-only check, unchanged.
     """
     if not signature or not signature.startswith("sha256="):
         return False
     if timestamp is not None:
         if not _timestamp_fresh(timestamp, max_age):
             return False
-    expected = _sign(body, secret, timestamp=timestamp)
+    expected = _sign(body, secret, timestamp=timestamp, purpose=purpose)
     return hmac.compare_digest(signature, expected)
 
 

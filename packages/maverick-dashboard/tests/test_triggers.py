@@ -1,15 +1,13 @@
 """Inbound webhook triggers: manage via /api/v1/triggers, fire via /webhook/run.
 
 Management is dashboard-authed + operate-gated + feature-knobbed; firing is
-HMAC-signed exactly like /webhook/start and strictly narrower (it runs only an
-operator-registered template, never arbitrary text). Hermetic: HOME is isolated
+HMAC-signed with its own route scope and strictly narrower than /webhook/start
+(it runs only an operator-registered template, never arbitrary text). Hermetic: HOME is isolated
 to tmp so the trigger registry, templates, and world model all live under tmp;
 the background runner is stubbed so no real goal runs.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import time
 
@@ -26,10 +24,10 @@ def _client():
     return TestClient(app, headers={"Origin": "http://testserver"})
 
 
-def _sign_headers(body: bytes) -> dict:
+def _sign_headers(body: bytes, *, purpose: str = "POST /webhook/run") -> dict:
     ts = str(int(time.time()))
-    material = f"{ts}.".encode() + body
-    sig = "sha256=" + hmac.new(SECRET.encode(), material, hashlib.sha256).hexdigest()
+    from maverick.webhooks import _sign
+    sig = _sign(body, SECRET, timestamp=ts, purpose=purpose)
     return {"X-Maverick-Signature": sig, "X-Maverick-Timestamp": ts}
 
 
@@ -146,6 +144,41 @@ def test_webhook_run_inbound_overrides_declared_param(monkeypatch, tmp_path, _no
     from maverick.world_model import DEFAULT_DB, WorldModel
     g = WorldModel(DEFAULT_DB).get_goal(r.json()["goal_id"])
     assert g.title == "Weekly acme report"
+
+
+def test_webhook_run_signature_cannot_be_replayed_to_start(monkeypatch, tmp_path, _no_real_run):
+    _isolate(monkeypatch, tmp_path)
+    _configured(monkeypatch)
+    c = _client()
+    name = _register(c)
+    body = json.dumps({
+        "trigger": name,
+        "title": "attacker arbitrary goal",
+        "description": "must not be authorized by a trigger signature",
+    }).encode()
+    headers = _sign_headers(body, purpose="POST /webhook/run")
+
+    r = c.post("/webhook/run", content=body, headers=headers)
+    assert r.status_code == 201, r.text
+
+    replay = c.post("/webhook/start", content=body, headers=headers)
+    assert replay.status_code == 403
+    assert len(_no_real_run) == 1
+
+
+def test_webhook_run_rejects_start_scoped_signature(monkeypatch, tmp_path, _no_real_run):
+    _isolate(monkeypatch, tmp_path)
+    _configured(monkeypatch)
+    c = _client()
+    name = _register(c)
+    body = json.dumps({"trigger": name}).encode()
+    r = c.post(
+        "/webhook/run",
+        content=body,
+        headers=_sign_headers(body, purpose="POST /webhook/start"),
+    )
+    assert r.status_code == 403
+    assert _no_real_run == []
 
 
 def test_webhook_run_unknown_trigger_404(monkeypatch, tmp_path, _no_real_run):

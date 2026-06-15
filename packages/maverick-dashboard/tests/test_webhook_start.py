@@ -25,9 +25,9 @@ SECRET = "test-webhook-secret"
 
 
 def _sign_at(body: bytes, ts: str) -> str:
-    """Sign timestamp+body, mirroring webhooks._sign(timestamp=...)."""
-    material = f"{ts}.".encode() + body
-    return "sha256=" + hmac.new(SECRET.encode("utf-8"), material, hashlib.sha256).hexdigest()
+    """Sign the route-scoped timestamped /webhook/start material."""
+    from maverick.webhooks import _sign
+    return _sign(body, SECRET, timestamp=ts, purpose="POST /webhook/start")
 
 
 def _headers(body: bytes, ts: str | None = None) -> dict[str, str]:

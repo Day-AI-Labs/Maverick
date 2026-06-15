@@ -6,8 +6,6 @@ seam; an injected clock drives the deadline logic deterministically.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 
 import pytest
@@ -210,9 +208,10 @@ class TestSigning:
     def test_sign_body_matches_webhooks_construction(self):
         body = b'{"goal":"x"}'
         sig, ts = sign_body(body, "secret", timestamp="1700000000")
-        material = b"1700000000." + body
-        expected = "sha256=" + hmac.new(b"secret", material, hashlib.sha256).hexdigest()
-        assert sig == expected
+        from maverick.webhooks import _sign
+        assert sig == _sign(
+            body, "secret", timestamp="1700000000", purpose="POST /webhook/start",
+        )
         assert ts == "1700000000"
 
     def test_build_start_request_signs_when_secret_set(self):
@@ -222,9 +221,14 @@ class TestSigning:
         assert "X-Maverick-Timestamp" in headers
         # body is valid JSON and the signature covers it
         assert json.loads(body)["goal"] == "research X"
-        material = (headers["X-Maverick-Timestamp"] + ".").encode() + body
-        expected = "sha256=" + hmac.new(b"k", material, hashlib.sha256).hexdigest()
-        assert headers["X-Maverick-Signature"] == expected
+        from maverick.webhooks import verify_signature
+        assert verify_signature(
+            body,
+            headers["X-Maverick-Signature"],
+            "k",
+            timestamp=headers["X-Maverick-Timestamp"],
+            purpose="POST /webhook/start",
+        ) is True
 
     def test_build_start_request_unsigned_without_secret(self):
         body, headers = build_start_request({"goal": "x"}, _cfg())
