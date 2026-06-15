@@ -45,6 +45,17 @@ Handler = Callable[[Job], None]
 BUILTIN_JOB_KINDS = frozenset({"run_goal", "start_goal"})
 
 
+def _run_identity_kwargs(payload: dict) -> dict[str, str]:
+    """Extract optional runner identity context from a queue payload."""
+    run_kwargs: dict[str, str] = {}
+    channel = str(payload.get("channel") or "").strip()
+    user_id = str(payload.get("user_id") or "").strip()
+    if channel:
+        run_kwargs["channel"] = channel
+    if user_id:
+        run_kwargs["user_id"] = user_id
+    return run_kwargs
+
 class UnknownJobKind(Exception):
     """Raised when no handler is registered for a job.kind."""
 
@@ -88,7 +99,7 @@ class Worker:
                 raise ValueError("run_goal payload requires goal_id")
             # Sync run so the queue waits before claiming the next job.
             from .runner import run_goal_in_thread
-            status = run_goal_in_thread(int(goal_id))
+            status = run_goal_in_thread(int(goal_id), **_run_identity_kwargs(job.payload))
             # Retry only genuinely transient outcomes: couldn't start (None) or
             # an internal crash ('error'/'failed'). A goal that ended 'blocked'
             # is a DELIBERATE stop -- budget cap hit, killswitch armed, or
@@ -122,14 +133,15 @@ class Worker:
                 from .world_model import DEFAULT_DB, open_world
                 world = open_world(DEFAULT_DB)
                 try:
-                    goal_id = world.create_goal(title, text)
+                    owner = str(job.payload.get("owner") or "")
+                    goal_id = world.create_goal(title, text, owner=owner)
                 finally:
                     world.close()
                 job.payload["goal_id"] = goal_id
                 self.queue.set_payload(job.id, job.payload)
             # Same retry contract as run_goal: only transient outcomes requeue.
             from .runner import run_goal_in_thread
-            status = run_goal_in_thread(int(goal_id))
+            status = run_goal_in_thread(int(goal_id), **_run_identity_kwargs(job.payload))
             if status is None or status in ("error", "failed"):
                 raise GoalRunFailed(
                     f"scheduled goal {goal_id} terminal status={status!r}"
