@@ -22,9 +22,14 @@ look-alikes are canonicalized.
 """
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
 import logging
+import os
+import sys
 import unicodedata
 from dataclasses import dataclass
+from types import ModuleType
 
 log = logging.getLogger(__name__)
 
@@ -126,10 +131,55 @@ def has_dangerous_unicode(text: str) -> bool:
 # shield path. It is OPTIONAL: when the wheel isn't installed the pure-Python
 # functions above are used unchanged, so behaviour is identical either way --
 # the native module is a drop-in accelerator, never a new dependency.
-try:  # pragma: no cover - import guard
-    import maverick_native as _native
-except Exception:  # pragma: no cover
-    _native = None
+def _safe_native_search_path() -> list[str]:
+    """Return import paths that cannot be the current workspace directory."""
+    cwd = os.path.realpath(os.getcwd())
+    safe_path: list[str] = []
+    for entry in sys.path:
+        # ``""`` is the interpreter's current working directory. An attacker
+        # controlled workspace can place ``maverick_native.py`` there and shadow
+        # the optional native extension before safety scanning is initialized.
+        if not entry:
+            continue
+        try:
+            real_entry = os.path.realpath(entry)
+        except OSError:
+            continue
+        try:
+            is_workspace_path = os.path.commonpath([cwd, real_entry]) == cwd
+        except ValueError:
+            is_workspace_path = False
+        if is_workspace_path:
+            continue
+        safe_path.append(entry)
+    return safe_path
+
+
+def _load_native() -> ModuleType | None:
+    """Load the optional compiled scanner without importing cwd shadows."""
+    spec = importlib.machinery.PathFinder.find_spec(
+        "maverick_native", _safe_native_search_path()
+    )
+    if spec is None or spec.origin is None or spec.loader is None:
+        return None
+    if not any(
+        spec.origin.endswith(suffix)
+        for suffix in importlib.machinery.EXTENSION_SUFFIXES
+    ):
+        log.warning(
+            "Ignoring non-extension maverick_native module at %s", spec.origin
+        )
+        return None
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except (ImportError, OSError) as exc:  # pragma: no cover - platform dependent
+        log.warning("Unable to load optional maverick_native extension: %s", exc)
+        return None
+    return module
+
+
+_native = _load_native()
 
 if _native is not None:  # pragma: no cover - active only when the wheel is built
     _normalize_py = normalize

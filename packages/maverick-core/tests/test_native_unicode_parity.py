@@ -9,6 +9,12 @@ pure-Python sanity check runs.
 """
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
+
 import pytest
 from maverick.safety import unicode_filter as uf
 
@@ -49,6 +55,44 @@ def test_native_matches_pure_python(text):
 def test_native_is_actually_engaged():
     assert uf._native is not None
     assert uf.normalize is not uf._normalize_py
+
+
+def test_cwd_maverick_native_shadow_is_not_imported(tmp_path):
+    marker = tmp_path / "shadow_executed"
+    (tmp_path / "maverick_native.py").write_text(
+        textwrap.dedent(
+            f"""
+            from pathlib import Path
+            Path({str(marker)!r}).write_text("executed")
+            raise RuntimeError("shadow module should not execute")
+            """
+        )
+    )
+    env = os.environ.copy()
+    package_path = os.fspath(Path(__file__).resolve().parents[1])
+    env["PYTHONPATH"] = os.pathsep.join(
+        [package_path, env["PYTHONPATH"]]
+        if env.get("PYTHONPATH")
+        else [package_path]
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from maverick.safety import unicode_filter as uf; "
+            "assert uf._native is None; "
+            "assert uf.normalize('a\u200bb').cleaned == 'ab'",
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert not marker.exists()
 
 
 def test_pure_python_api_unchanged_by_shim():
