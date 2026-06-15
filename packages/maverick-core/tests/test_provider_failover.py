@@ -121,8 +121,60 @@ def test_complete_async_routes_through_afailover_when_chain_set(monkeypatch):
 
     monkeypatch.setattr(pf, "afailover", _fake_afailover)
     labels = asyncio.run(
-        LLM(model="a:m1").complete_async("sys", [{"role": "user", "content": "hi"}]))
+        LLM(model="a:m1").complete_async("sys", [{"role": "user", "content": "hi"}])
+    )
     assert labels == ["a:m1", "b:m2"]
+
+
+def test_complete_caps_explicit_model_to_allowlist(monkeypatch):
+    monkeypatch.setattr("maverick.llm._allowed_model_set", lambda: {"a:m1"})
+    monkeypatch.setattr(pf, "fallback_models", lambda primary: [])
+    monkeypatch.setattr("maverick.llm._run_preflight", lambda *a, **k: None)
+    seen = []
+
+    class _Client:
+        def complete(self, **kwargs):
+            seen.append(kwargs["model"])
+            return "ok"
+
+    monkeypatch.setattr(LLM, "_get_client", lambda self, provider: _Client())
+
+    assert LLM(model="a:m1").complete(
+        "sys", [{"role": "user", "content": "hi"}], model="b:m2"
+    ) == "ok"
+    assert seen == ["m1"]
+
+
+def test_complete_filters_disallowed_failover_models(monkeypatch):
+    monkeypatch.setattr("maverick.llm._allowed_model_set", lambda: {"a:m1", "c:m3"})
+    monkeypatch.setattr(pf, "fallback_models", lambda primary: ["b:m2", "c:m3"])
+    seen = {}
+
+    def _fake(attempts, **kw):
+        seen["labels"] = [a[0] for a in attempts]
+        return "ROUTED"
+
+    monkeypatch.setattr(pf, "failover", _fake)
+
+    assert (
+        LLM(model="a:m1").complete("sys", [{"role": "user", "content": "hi"}])
+        == "ROUTED"
+    )
+    assert seen["labels"] == ["a:m1", "c:m3"]
+
+
+def test_complete_async_filters_disallowed_failover_models(monkeypatch):
+    monkeypatch.setattr("maverick.llm._allowed_model_set", lambda: {"a:m1", "c:m3"})
+    monkeypatch.setattr(pf, "fallback_models", lambda primary: ["b:m2", "c:m3"])
+
+    async def _fake_afailover(attempts, **kw):
+        return [a[0] for a in attempts]
+
+    monkeypatch.setattr(pf, "afailover", _fake_afailover)
+    labels = asyncio.run(
+        LLM(model="a:m1").complete_async("sys", [{"role": "user", "content": "hi"}])
+    )
+    assert labels == ["a:m1", "c:m3"]
 
 
 def test_llm_failover_does_not_retry_budget_exceeded(monkeypatch):

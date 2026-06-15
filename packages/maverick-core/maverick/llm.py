@@ -292,20 +292,41 @@ def _resolve_model_for_role(role: str) -> str:
     return final
 
 
+def _allowed_model_set() -> set[str]:
+    """Read the admin model allow-list, failing open if the overlay is broken."""
+    try:
+        from .runtime_overrides import allowed_models
+        return allowed_models()
+    except Exception:  # pragma: no cover -- allow-list never breaks dispatch
+        return set()
+
+
+def _allowed_model_or_fallback(model: str) -> str:
+    """Return ``model`` when allowed, otherwise the deterministic allowed fallback.
+
+    The dashboard allow-list is a hard execution cap, so enforce it at the LLM
+    dispatch boundary as well as role resolution.  We intentionally mirror the
+    role resolver's fallback behavior to preserve existing call paths that pass
+    explicit model overrides while preventing disallowed models from running.
+    """
+    allow = _allowed_model_set()
+    if not allow or model in allow:
+        return model
+    return DEFAULT_MODEL if DEFAULT_MODEL in allow else sorted(allow)[0]
+
+
+def _model_allowed_for_dispatch(model: str) -> bool:
+    """Whether ``model`` may be attempted by central LLM dispatch/failover."""
+    allow = _allowed_model_set()
+    return not allow or model in allow
+
+
 def model_for_role(role: str) -> str:
     """Resolve the model for ``role`` (see ``_resolve_model_for_role``), then
     enforce the admin allow-list: if one is set and the resolved model isn't in
     it, fall back to an allowed model (DEFAULT_MODEL if allowed, else the first).
     A hard cap -- a config.toml or env pin outside the allow-list can't run."""
-    final = _resolve_model_for_role(role)
-    try:
-        from .runtime_overrides import allowed_models
-        allow = allowed_models()
-        if allow and final not in allow:
-            final = DEFAULT_MODEL if DEFAULT_MODEL in allow else sorted(allow)[0]
-    except Exception:  # pragma: no cover -- allow-list never breaks resolution
-        pass
-    return final
+    return _allowed_model_or_fallback(_resolve_model_for_role(role))
 
 
 def _record_provider_call(provider: str) -> None:
@@ -549,22 +570,25 @@ class LLM:
         # Provider failover (opt-in, default off): when a fallback chain is
         # configured for this model, try each in turn. No chain -> this block is
         # skipped and the original single-call path below runs unchanged.
+        dispatch_model = _allowed_model_or_fallback(model or self.model)
         if not _no_failover:
             from .failover_policy import order_chain, policy_should_retry
             from .provider_failover import failover, fallback_models
-            _chain = fallback_models(model or self.model)
+            _chain = [m for m in fallback_models(dispatch_model)
+                      if _model_allowed_for_dispatch(m)]
             if _chain:
                 # The policy engine narrows WHICH errors fail over and skips
                 # cooling-down models; with no [provider_failover.policy] both
-                # collapse to the v1 behavior.
+                # collapse to the v1 behavior.  The admin allow-list is also
+                # applied to every fallback so failover cannot bypass the cap.
                 return failover([
                     (m, (lambda m=m: self.complete(
                         system, messages, tools=tools, budget=budget,
                         max_tokens=max_tokens, thinking_budget=thinking_budget,
                         model=m, on_delta=on_delta, effort=effort, _no_failover=True)))
-                    for m in order_chain([model or self.model, *_chain])
+                    for m in order_chain([dispatch_model, *_chain])
                 ], should_retry=policy_should_retry)
-        provider, model_id = _parse_spec(model or self.model)
+        provider, model_id = _parse_spec(dispatch_model)
         # Egress lock (no-op unless enterprise mode is on): refuse to send data to a
         # non-local provider so sensitive data never leaves the boundary. Raises
         # EgressBlocked before any prompt is dispatched.
@@ -672,19 +696,21 @@ class LLM:
     ) -> LLMResponse:
         # Provider failover (opt-in, default off) — see complete(). No configured
         # chain -> skipped, and the original single-call path below is unchanged.
+        dispatch_model = _allowed_model_or_fallback(model or self.model)
         if not _no_failover:
             from .failover_policy import order_chain, policy_should_retry
             from .provider_failover import afailover, fallback_models
-            _chain = fallback_models(model or self.model)
+            _chain = [m for m in fallback_models(dispatch_model)
+                      if _model_allowed_for_dispatch(m)]
             if _chain:
                 return await afailover([
                     (m, (lambda m=m: self.complete_async(
                         system, messages, tools=tools, budget=budget,
                         max_tokens=max_tokens, thinking_budget=thinking_budget,
                         model=m, effort=effort, _no_failover=True)))
-                    for m in order_chain([model or self.model, *_chain])
+                    for m in order_chain([dispatch_model, *_chain])
                 ], should_retry=policy_should_retry)
-        provider, model_id = _parse_spec(model or self.model)
+        provider, model_id = _parse_spec(dispatch_model)
         # Egress lock (no-op unless enterprise mode is on): see complete().
         from .enterprise import assert_provider_allowed
         assert_provider_allowed(provider)
