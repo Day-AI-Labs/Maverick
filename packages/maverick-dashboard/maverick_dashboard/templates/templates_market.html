@@ -27,6 +27,7 @@
             </p>
           {% endif %}
           <a class="tpl-use" href="/chat?title={{ e.title | urlencode }}&description={{ e.body | urlencode }}">Use template</a>
+          <a class="tpl-use" href="/workflow-builder?edit={{ e.name | urlencode }}">Edit</a>
           {% if scheduling_enabled or triggers_enabled %}
           <a class="tpl-use" href="/workflow-builder?template={{ e.name | urlencode }}">Automate</a>
           {% endif %}

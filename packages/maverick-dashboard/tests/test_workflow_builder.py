@@ -494,6 +494,22 @@ def test_p0_council_fixes_builder(monkeypatch, tmp_path):
     assert "label.htmlFor" in t                        # param inputs associate their label
 
 
+def test_builder_edit_deeplink_rehydrates_editor(monkeypatch, tmp_path):
+    # ?edit=<name> rehydrates the full editor so Save overwrites (the create-only
+    # gap Maya flagged); takes precedence over the automate ?template= jump.
+    _isolate(monkeypatch, tmp_path)
+    tdir = tmp_path / ".maverick" / "templates"
+    tdir.mkdir(parents=True, exist_ok=True)
+    (tdir / "weekly-report.md").write_text(
+        "---\ntitle: Weekly report\nparams:\n  - topic\n---\nResearch {{topic}}.\n", encoding="utf-8")
+    t = _client().get("/workflow-builder?edit=weekly-report").text
+    assert "WF_EDIT = null" not in t and "weekly-report" in t
+    assert "renderDraft(WF_EDIT)" in t and "Editing" in t
+    # unknown / absent -> no edit prefill, page still renders
+    assert "WF_EDIT = null" in _client().get("/workflow-builder?edit=nope").text
+    assert "WF_EDIT = null" in _client().get("/workflow-builder").text
+
+
 def test_builder_prefill_deeplink_jumps_to_automate(monkeypatch, tmp_path):
     # ?template=<name> injects a prefill so the JS jumps straight to automating
     # an existing template (reusing the schedule/trigger panels), not the draft flow.
