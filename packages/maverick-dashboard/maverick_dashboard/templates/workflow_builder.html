@@ -1004,6 +1004,12 @@
         max_risk: pbRisk.value, workflow: steps,
       };
     }
+    // When editing an existing agent, carry forward the override fields the
+    // builder can't show (set by ?edit_agent=) so saving doesn't drop them.
+    var pbEditPreserve = null;
+    function playbookPayload() {
+      return Object.assign(collectPlaybook(), pbEditPreserve || {});
+    }
 
     // --- live governance feedback (reuses the agent-override lint endpoint) ---
     async function loadRoster() {
@@ -1046,7 +1052,7 @@
       try {
         var resp = await fetch('/api/v1/agents/' + encodeURIComponent(name) + '/validate', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(collectPlaybook()),
+          body: JSON.stringify(playbookPayload()),
         });
         var data = await resp.json().catch(function () { return null; });
         renderLint(resp.ok ? data : null, name);
@@ -1064,7 +1070,7 @@
       try {
         var resp = await fetch('/api/v1/agents/' + encodeURIComponent(name) + '/override', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(collectPlaybook()),
+          body: JSON.stringify(playbookPayload()),
         });
         var data = await resp.json().catch(function () { return {}; });
         if (!resp.ok) { setStatus(data.detail || ('Save failed: ' + resp.status), true); return; }
@@ -1238,12 +1244,19 @@
 
     renderExamples();
 
-    // Deep-links from the Templates page:
-    //   ?edit=<name>     -> rehydrate the editor; Save overwrites (edit/inspect).
-    //   ?template=<name> -> jump to automating it (schedule / webhook trigger).
+    // Deep-links from the Templates / Agents pages:
+    //   ?edit_agent=<name> -> rehydrate the PLAYBOOK editor; Save overwrites.
+    //   ?edit=<name>       -> rehydrate the TEMPLATE editor; Save overwrites.
+    //   ?template=<name>   -> jump to automating it (schedule / webhook trigger).
+    var PB_EDIT = {{ edit_agent_prefill | tojson }};
     var WF_EDIT = {{ edit_prefill | tojson }};
     var WF_PREFILL = {{ prefill | tojson }};
-    if (WF_EDIT && WF_EDIT.name) {
+    if (PB_EDIT && PB_EDIT.name) {
+      setForm('playbook');
+      pbEditPreserve = PB_EDIT.preserve || null;
+      renderPlaybook(PB_EDIT);
+      setStatus('Editing agent “' + PB_EDIT.name + '” — change the persona, tools, or steps, then Save to overwrite.');
+    } else if (WF_EDIT && WF_EDIT.name) {
       setForm('template');
       renderDraft(WF_EDIT);
       setStatus('Editing “' + (WF_EDIT.title || WF_EDIT.name) + '” — change it and Save to overwrite (or rename to save a copy).');

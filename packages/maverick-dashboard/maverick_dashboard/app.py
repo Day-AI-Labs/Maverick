@@ -3800,20 +3800,48 @@ async def goal_builder_page(request: Request) -> HTMLResponse:
 
 @app.get("/workflow-builder", response_class=HTMLResponse)
 async def workflow_builder_page(request: Request, template: str | None = None,
-                                edit: str | None = None) -> HTMLResponse:
+                                edit: str | None = None,
+                                edit_agent: str | None = None) -> HTMLResponse:
     """AI workflow builder: draft a reusable workflow from a brief or an
     uploaded document, edit it, then save it as a runnable template.
 
     ``?template=<name>`` deep-links from the Templates page: jump straight to
     automating an existing saved template (schedule / webhook trigger) without
-    re-drafting it. ``?edit=<name>`` rehydrates the full editor for that template
-    so Save overwrites it (closing the create-only gap). An unknown/invalid name
-    simply yields no prefill."""
+    re-drafting it. ``?edit=<name>`` rehydrates the full template editor so Save
+    overwrites it; ``?edit_agent=<name>`` rehydrates the playbook editor for an
+    existing agent (round-tripping override fields the builder can't show, so
+    editing can't silently clear them). An unknown name yields no prefill."""
     from maverick.config import get_features
     feats = get_features()
     prefill = None
     edit_prefill = None
-    if edit:
+    edit_agent_prefill = None
+    if edit_agent:
+        from maverick.domain_edit import read_override, resolved_view
+        try:
+            view = resolved_view(edit_agent)
+        except Exception:
+            view = None
+        if view:
+            try:
+                raw = read_override(edit_agent) or {}
+            except Exception:
+                raw = {}
+            # Preserve the explicitly-overridden fields the builder doesn't
+            # expose, so a save (which replaces the override) can't drop them.
+            preserve = {k: raw[k] for k in ("knowledge_sources", "models",
+                                            "compartment", "extends") if k in raw}
+            edit_agent_prefill = {
+                "name": view.get("name", edit_agent),
+                "description": view.get("description", ""),
+                "persona": view.get("persona", ""),
+                "allow_tools": view.get("allow_tools", []),
+                "deny_tools": view.get("deny_tools", []),
+                "max_risk": view.get("max_risk", "medium"),
+                "workflow": view.get("workflow", []),
+                "preserve": preserve,
+            }
+    elif edit:
         from maverick.templates import load_template
         try:
             t = load_template(edit)
@@ -3835,6 +3863,7 @@ async def workflow_builder_page(request: Request, template: str | None = None,
             "triggers_enabled": feats.get("triggers", True),
             "prefill": prefill,
             "edit_prefill": edit_prefill,
+            "edit_agent_prefill": edit_agent_prefill,
         },
     )
 
