@@ -39,6 +39,23 @@ def test_distinct_roles_required():
     assert diff_role.startswith("SATISFIED")
 
 
+def test_duplicate_approver_cannot_add_distinct_role():
+    out = _check(
+        require_distinct_roles=True,
+        signoffs=[
+            {"approver": "alice", "role": "ops"},
+            {"approver": "bob", "role": "ops"},
+            {"approver": "alice", "role": "security"},
+        ],
+    )
+    assert out.startswith("BLOCKED") and "distinct role" in out
+
+
+def test_min_approvers_cannot_weaken_dual_control():
+    out = _check(min_approvers=1, signoffs=[{"approver": "alice"}])
+    assert out.startswith("BLOCKED") and "need 2" in out
+
+
 def test_custom_min_approvers():
     out = _check(min_approvers=3,
                  signoffs=[{"approver": "a"}, {"approver": "b"}])

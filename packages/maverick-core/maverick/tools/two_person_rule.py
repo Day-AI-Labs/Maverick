@@ -25,11 +25,10 @@ def _check(args: dict[str, Any]) -> str:
         need = int(args.get("min_approvers", 2))
     except (TypeError, ValueError):
         need = 2
-    need = max(1, need)
+    need = max(2, need)
     require_roles = bool(args.get("require_distinct_roles", False))
 
-    valid_approvers: set[str] = set()
-    valid_roles: set[str] = set()
+    approver_roles: dict[str, str] = {}
     self_approved = False
     for s in signoffs:
         if not isinstance(s, dict):
@@ -40,10 +39,12 @@ def _check(args: dict[str, Any]) -> str:
         if who == requester:
             self_approved = True
             continue  # separation of duties: requester can't approve their own action
-        valid_approvers.add(who)
-        role = str(s.get("role") or "").strip().lower()
-        if role:
-            valid_roles.add(role)
+        if who in approver_roles:
+            continue
+        approver_roles[who] = str(s.get("role") or "").strip().lower()
+
+    valid_approvers = set(approver_roles)
+    valid_roles = {role for role in approver_roles.values() if role}
 
     notes = []
     if self_approved:
