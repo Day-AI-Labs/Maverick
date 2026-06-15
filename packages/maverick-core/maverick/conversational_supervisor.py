@@ -67,6 +67,30 @@ DEFAULT_GRAMMAR: list[tuple[str, str]] = [
     ("prioritize", "prioritize the {title} goal"),
 ]
 
+
+def _precompile(grammar: list[tuple[str, str]]) -> list[tuple[str, Any, list[str]]]:
+    """Compile a grammar to ``[(intent, regex, slots)]`` up front.
+
+    Done once for ``DEFAULT_GRAMMAR`` at import (below) so the hot path never
+    re-invokes the template compiler per utterance -- and so the static default
+    grammar is captured against the real compiler at import time, immune to any
+    later test that swaps the imported ``_compile`` reference out from under us
+    (a cross-test isolation hazard, since the default path is otherwise the only
+    runtime caller of a sibling module's private function).
+    """
+    rules: list[tuple[str, Any, list[str]]] = []
+    for intent, pattern in grammar:
+        compiled = _compile(pattern)
+        if compiled is None:
+            raise ValueError(f"duplicate slot in grammar pattern {pattern!r}")
+        rx, slots = compiled
+        rules.append((intent, rx, slots))
+    return rules
+
+
+_COMPILED_DEFAULT = _precompile(DEFAULT_GRAMMAR)
+
+
 MUTATING_INTENTS = frozenset({"pause", "resume", "cancel", "prioritize"})
 
 HELP_TEXT = (
@@ -107,11 +131,10 @@ def parse_utterance(
     text = _normalize(utterance)
     if not text:
         return None
-    for intent, pattern in (grammar if grammar is not None else DEFAULT_GRAMMAR):
-        compiled = _compile(pattern)
-        if compiled is None:
-            raise ValueError(f"duplicate slot in grammar pattern {pattern!r}")
-        rx, slots = compiled
+    # Default grammar uses the import-time precompiled rules (fast + isolation-
+    # safe); a caller-supplied grammar is compiled on demand.
+    rules = _COMPILED_DEFAULT if grammar is None else _precompile(grammar)
+    for intent, rx, slots in rules:
         m = rx.match(text)
         if m:
             return intent, {s: m.group(s).strip() for s in slots}
