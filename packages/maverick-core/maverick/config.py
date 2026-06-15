@@ -642,6 +642,10 @@ def get_self_improvement() -> dict:
         "enable": bool(cfg.get("enable", False)),
         "min_improvement": _ratio("min_improvement", 0.0),
         "max_auto_rung": str(cfg.get("max_auto_rung", "policy")).strip().lower() or "policy",
+        # Phase-0 capture (raw-trajectory store) and PRM-in-loop guidance, both
+        # off by default; see maverick.trajectory_store / maverick.prm_guidance.
+        "capture": bool(cfg.get("capture", False)),
+        "prm_guidance": bool(cfg.get("prm_guidance", False)),
     }
 
 

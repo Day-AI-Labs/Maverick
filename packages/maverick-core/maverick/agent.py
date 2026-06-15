@@ -515,6 +515,9 @@ class Agent:
         self._prm = build_from_env()
         self._prm_enabled = type(self._prm).__name__ != "NullPRM"
         self._last_step_score = 0.5
+        from .prm_guidance import PromiseWindow
+        self._promise_window = PromiseWindow()
+        self._last_prm_nudge_step = -100
         # Live-spend mirror throttle (#614): the root agent periodically
         # mirrors running totals onto its open episode row so `maverick runs`
         # / `maverick budget` reflect accruing mid-run spend instead of
@@ -1592,6 +1595,7 @@ class Agent:
                 prior_step_score=self._last_step_score,
             ))
             self._last_step_score = reward.promise
+            self._promise_window.push(reward.promise)
             self.ctx.blackboard.post(
                 self.name, "prm",
                 f"step={step_index} promise={reward.promise:.2f} "
@@ -1805,6 +1809,16 @@ class Agent:
             # one compaction_plugins dispatcher, which fails safe to heuristic
             # on an unknown name. The agent's llm seam + conversation id reach
             # the strategies that use them.
+            # Process-reward guidance (opt-in, default off): if the PRM has
+            # judged the last few steps unpromising, nudge a course-change. A
+            # no-op unless [self_improvement] prm_guidance is on AND a PRM is
+            # configured, so default behaviour is unchanged.
+            from .prm_guidance import maybe_nudge
+            _prm_note = maybe_nudge(self._promise_window.values())
+            if _prm_note and step - self._last_prm_nudge_step >= 3:
+                messages.append({"role": "user", "content": _prm_note})
+                self._last_prm_nudge_step = step
+
             from .compaction_plugins import compact_with
             # Some opt-in strategies make provider calls, so apply the same
             # pre-spend gate and budget object to compaction as the main turn.

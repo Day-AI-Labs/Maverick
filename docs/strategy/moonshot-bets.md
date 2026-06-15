@@ -302,6 +302,35 @@ Phases 2/5/6 require GPUs / real model training / safety review and cannot be
 validated in a keyless CI sandbox — they land behind the controller's gates as
 the deployment matures.
 
+### Build log — update 2 (all phases wired to the controller)
+
+Every phase now flows through the merged controller's gates. Status:
+
+- **Phase 0 capture — BUILT & TESTED.** `maverick.trajectory_store` (governed,
+  per-tenant, secret-redacted, consent-gated raw-trajectory store, off by
+  default); `maverick.prm_guidance` + a default-off `agent.py` hook that lets the
+  process-reward model *steer* the loop (it was observe-only); and
+  `maverick.compounding_metric` — the live cold→warm cost/quality signal (the
+  un-fakeable moat proof).
+- **Phase 3 action space — BUILT & TESTED.** `si_producers.ToolOutcomeTracker`
+  measures whether a synthesized tool actually helps; `propose_tool` promotes it
+  only when its success rate beats baseline and it doesn't widen capability.
+- **Phase 4 strategy — BUILT & TESTED.** `propose_prompt`/`propose_policy` route
+  prompt/playbook/policy changes through the gate.
+- **Phases 1, 2, 6 — pipeline + seam BUILT & TESTED; training is the seam.**
+  `propose_verifier` (adopt a retrained head only if it discriminates better),
+  `propose_policy` (an RL/DPO adapter), `propose_weights` (a fine-tuned
+  checkpoint, human-gated). The governance/adoption path is real and tested; the
+  GPU training that *produces* the artifact is an injected callable — never
+  faked — and lands when a GPU/model is available.
+- **Phase 5 code self-mod — safe pipeline BUILT & TESTED; generation gated.**
+  `propose_code` runs an out-of-process `validate` seam *before* the gate, which
+  then forces human approval + non-escalation + reversibility. The diff
+  *generation* stays behind a hard flag + human gate.
+
+~67 new deterministic tests across the tranche; ruff + vulture clean; full core
+suite collects (8,289 tests, no errors). Everything off by default.
+
 ### How the four bets relate
 
 | Bet | One-liner | Tense | Primary buyer pull |
