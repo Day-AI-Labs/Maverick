@@ -3804,6 +3804,22 @@ async def workflow_builder_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/automations", response_class=HTMLResponse)
+async def automations_page(request: Request) -> HTMLResponse:
+    """One place to see and manage every automation: cron schedules and inbound
+    webhook triggers. The page lists the existing /api/v1/schedules and
+    /api/v1/triggers; each section is hidden when its [features] knob is off."""
+    from maverick.config import get_features
+    feats = get_features()
+    return templates.TemplateResponse(
+        request, "automations.html",
+        {
+            "scheduling_enabled": feats.get("scheduling", True),
+            "triggers_enabled": feats.get("triggers", True),
+        },
+    )
+
+
 @app.get("/embed-demo", response_class=HTMLResponse)
 async def embed_demo_page(request: Request) -> HTMLResponse:
     """Demo + honest usage notes for the <maverick-analytics> web component."""
