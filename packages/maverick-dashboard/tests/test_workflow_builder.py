@@ -475,10 +475,18 @@ def test_workflow_builder_page_renders(monkeypatch, tmp_path):
     assert '<span class="nav-label">Workflows</span>' in r.text
 
 
+def test_p0_council_fixes_builder(monkeypatch, tmp_path):
+    # Design-council P0 fixes on the builder page.
+    _isolate(monkeypatch, tmp_path)
+    t = _client().get("/workflow-builder").text
+    assert 'role="heading" aria-level="3"' in t      # <summary> regained heading semantics
+    assert "shifts with daylight saving" in t          # UTC->local hint is DST-honest
+    assert "label.htmlFor" in t                        # param inputs associate their label
+
+
 def test_builder_prefill_deeplink_jumps_to_automate(monkeypatch, tmp_path):
-    # ?template=<name> from the Templates page injects a prefill so the JS jumps
-    # straight to automating an existing template (reusing the schedule/trigger
-    # panels), instead of the draft flow.
+    # ?template=<name> injects a prefill so the JS jumps straight to automating
+    # an existing template (reusing the schedule/trigger panels), not the draft flow.
     _isolate(monkeypatch, tmp_path)
     tdir = tmp_path / ".maverick" / "templates"
     tdir.mkdir(parents=True, exist_ok=True)
