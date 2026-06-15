@@ -21,6 +21,23 @@ faithful port, and Python keeps a **fallback shim** so a build *without* the
 native wheel is byte-identical to today. The native module is a drop-in
 accelerator, never a new hard dependency.
 
+## Measured speedup (native vs pure Python, same machine)
+
+The reason the carve is worth it — the unicode scanner alone:
+
+| call | input | speedup |
+|---|---|---|
+| `normalize` | ~30 B (a command) | **3.0×** |
+| `normalize` | ~2 KB (a prompt) | **5.0×** |
+| `normalize` | ~54 KB (a tool output) | **5.4×** |
+| `has_dangerous_unicode` | ~54 KB | **50.7×** |
+
+`has_dangerous_unicode` runs on *every* input; the per-char Python loop is the
+worst case and Rust's short-circuit scan is ~50× faster. Even the smallest input
+(where FFI overhead is highest) is 3×. This is per-call latency; the bigger win
+is density — the native path is GIL-free, so parallel swarm scanning no longer
+serializes.
+
 ## Build
 
 Python wheel (the `maverick_native` extension):
