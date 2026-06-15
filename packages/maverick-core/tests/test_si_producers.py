@@ -1,7 +1,7 @@
 """Tests for the per-rung self-improvement producers (Phases 1-6 -> one gate)."""
 from __future__ import annotations
 
-from maverick.self_improvement import SelfImprovementController, PromotionLedger
+from maverick.self_improvement import PromotionLedger, SelfImprovementController
 from maverick.si_producers import (
     ToolOutcomeTracker,
     propose_code,

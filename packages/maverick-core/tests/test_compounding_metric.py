@@ -7,7 +7,7 @@ from maverick.compounding_metric import Row, compute, report_from_world
 def _rows(cls, costs, successes=None):
     successes = successes or [True] * len(costs)
     return [Row(task_class=cls, cost=c, success=s, ts=float(i))
-            for i, (c, s) in enumerate(zip(costs, successes))]
+            for i, (c, s) in enumerate(zip(costs, successes, strict=True))]
 
 
 def test_improving_class_is_flagged():
