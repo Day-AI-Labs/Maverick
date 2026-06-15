@@ -122,3 +122,33 @@ def test_hedge_race_bounded_by_wall_budget(monkeypatch):
     # SpanBudget caps the race at the remaining wall budget -> TimeoutError.
     with pytest.raises(asyncio.TimeoutError):
         asyncio.run(run())
+
+
+def test_hedge_backup_requires_its_own_budget_reservation(monkeypatch):
+    monkeypatch.setenv("MAVERICK_LLM_HEDGE_MS", "10")
+    from maverick.budget import Budget
+
+    est_cost = llm_mod._estimate_call_cost(
+        OPUS, "sys", [{"role": "user", "content": "hi"}], None, 4096
+    )
+    dispatches = 0
+
+    class FakeClient:
+        async def complete_async(self, **kwargs):
+            nonlocal dispatches
+            dispatches += 1
+            await asyncio.sleep(0.05)
+            return _resp("primary")
+
+    monkeypatch.setattr(LLM, "_get_client", lambda self, provider: FakeClient())
+    budget = Budget(max_dollars=est_cost * 1.5, max_wall_seconds=1.0)
+
+    out = asyncio.run(
+        LLM(model=OPUS).complete_async(
+            "sys", [{"role": "user", "content": "hi"}], budget=budget
+        )
+    )
+
+    assert out.text == "primary"
+    assert dispatches == 1
+    assert getattr(budget, "_reserved", 0.0) == 0.0
