@@ -79,6 +79,24 @@ class ScheduleOut(BaseModel):
     next_run: float
 
 
+class TriggerIn(BaseModel):
+    """Bind a saved template to an inbound webhook. ``params`` are the operator's
+    default values (baked at registration); an HMAC-signed POST to /webhook/run
+    may override declared params at fire time. ``name`` defaults to the template
+    name (slugified)."""
+    template: str = Field(..., max_length=80)
+    params: dict[str, str] | None = None
+    name: str | None = Field(None, max_length=48)
+
+
+class TriggerOut(BaseModel):
+    name: str
+    template: str
+    params: dict[str, str] = Field(default_factory=dict)
+    webhook_url: str
+    secret_configured: bool
+
+
 class GoalEventOut(BaseModel):
     id: int
     agent: str

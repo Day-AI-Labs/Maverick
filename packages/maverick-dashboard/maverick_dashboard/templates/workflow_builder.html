@@ -341,6 +341,28 @@
         <ul class="wf__sched-list" id="sched-list" aria-label="Active schedules"></ul>
       </div>
       {% endif %}
+      {% if triggers_enabled %}
+      <div class="wf__sched" id="wf-trig" hidden>
+        <h3 class="wf__sched-title">Trigger from a webhook</h3>
+        <p class="wf__hint">Run this workflow on demand by POSTing to a URL — wire it to GitHub, Slack, Zapier, or anything that can send a signed webhook.</p>
+        <div class="wf-grid">
+          <div class="wf__field">
+            <label for="trig-name">Trigger name</label>
+            <input type="text" id="trig-name" class="input" placeholder="(defaults to the workflow name)" aria-label="Trigger name" />
+          </div>
+        </div>
+        <div class="wf__field" id="trig-params-wrap" hidden>
+          <label>Default parameter values</label>
+          <div id="trig-params"></div>
+        </div>
+        <div class="wf__row">
+          <button type="button" id="trig-btn" class="btn btn--primary" disabled>Create webhook trigger</button>
+          <span class="wf__hint" id="trig-msg" aria-live="polite"></span>
+        </div>
+        <p class="wf__hint" id="trig-howto" hidden>POST to <code id="trig-url"></code> with body <code id="trig-body"></code>, signed with your <code>[webhooks]</code> secret (header <code>X-Maverick-Signature</code>).<span id="trig-secret-warn" hidden> ⚠ No <code>[webhooks]</code> secret is set yet — configure one before the URL will accept calls.</span></p>
+        <ul class="wf__sched-list" id="trig-list" aria-label="Webhook triggers"></ul>
+      </div>
+      {% endif %}
     </div>
 
     <!-- connector picker (shared, for allow/deny/step tool fields) -->
@@ -416,6 +438,15 @@
     var schedCronPreview = document.getElementById('sched-cron-preview');
     var schedList = document.getElementById('sched-list');
     var lastSavedTemplate = null;
+    // webhook-trigger panel (null when [features] triggers is off)
+    var trigWrap = document.getElementById('wf-trig');
+    var trigName = document.getElementById('trig-name');
+    var trigParamsWrap = document.getElementById('trig-params-wrap');
+    var trigParams = document.getElementById('trig-params');
+    var trigBtn = document.getElementById('trig-btn');
+    var trigMsg = document.getElementById('trig-msg');
+    var trigHowto = document.getElementById('trig-howto');
+    var trigList = document.getElementById('trig-list');
     // connector picker
     var tpBackdrop = document.getElementById('tool-picker');
     var tpTitle = document.getElementById('tp-title');
@@ -497,6 +528,7 @@
       savedLink.textContent = label;
       preview.hidden = true; pbPreview.hidden = true;
       if (schedWrap) schedWrap.hidden = true;   // template saves re-show it; playbooks don't
+      if (trigWrap) trigWrap.hidden = true;
       savedBox.hidden = false;
       savedBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -533,6 +565,7 @@
           + ((data.params && data.params.length) ? ' (parameters: ' + data.params.join(', ') + ').' : '.');
         showSaved('/templates', 'Open Templates');
         showScheduling({ name: data.name, params: data.params || [] });
+        showTriggers({ name: data.name, params: data.params || [] });
       } catch (e) {
         setStatus('Could not save the workflow.', true);
       } finally {
@@ -659,6 +692,118 @@
       schedCadence.addEventListener('change', updateSchedBtn);
       schedTime.addEventListener('input', updateSchedBtn);
       schedBtn.addEventListener('click', scheduleIt);
+    }
+
+    // ---- create a webhook trigger for a saved template (feature-gated) ----
+    var trigTpl = null;
+    function renderTrigParams(params) {
+      trigParams.textContent = '';
+      if (!params || !params.length) { trigParamsWrap.hidden = true; return; }
+      trigParamsWrap.hidden = false;
+      params.forEach(function (p) {
+        var label = document.createElement('label');
+        label.style.cssText = 'display:block; font-size: var(--text-xs); color: var(--muted); margin: var(--space-2) 0 2px;';
+        label.textContent = p;
+        var inp = document.createElement('input');
+        inp.className = 'input trig-param';
+        inp.dataset.param = p;
+        inp.setAttribute('aria-label', 'Default value for ' + p);
+        inp.addEventListener('input', updateTrigBtn);
+        trigParams.appendChild(label);
+        trigParams.appendChild(inp);
+      });
+    }
+    function trigParamValues() {
+      var out = {}; var ok = true;
+      trigParams.querySelectorAll('.trig-param').forEach(function (i) {
+        var v = i.value.trim(); out[i.dataset.param] = v;
+        if (!v) ok = false;
+      });
+      return ok ? out : null;   // null => some default is still blank
+    }
+    function updateTrigBtn() { trigBtn.disabled = trigParamValues() === null; }
+    function showTriggers(tpl) {
+      if (!trigWrap) return;            // no-op when [features] triggers is off
+      trigTpl = tpl;
+      trigName.value = '';
+      trigMsg.textContent = '';
+      trigHowto.hidden = true;
+      renderTrigParams(tpl.params);
+      updateTrigBtn();
+      trigWrap.hidden = false;
+      loadTriggers();
+    }
+    async function createTrigger() {
+      if (!trigTpl) return;
+      var params = trigParamValues(); if (params === null) return;
+      trigBtn.disabled = true;
+      trigMsg.textContent = 'Creating…';
+      try {
+        var resp = await fetch('/api/v1/triggers', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ template: trigTpl.name, params: params, name: trigName.value.trim() || null }),
+        });
+        var data = await resp.json().catch(function () { return {}; });
+        if (!resp.ok) { trigMsg.textContent = data.detail || ('Failed: ' + resp.status); return; }
+        trigMsg.textContent = 'Created.';
+        showHowto(data);
+        loadTriggers();
+      } catch (e) {
+        trigMsg.textContent = 'Could not reach the server.';
+      } finally {
+        updateTrigBtn();
+      }
+    }
+    function showHowto(data) {
+      var urlEl = document.getElementById('trig-url');
+      var bodyEl = document.getElementById('trig-body');
+      var warn = document.getElementById('trig-secret-warn');
+      urlEl.textContent = window.location.origin + (data.webhook_url || '/webhook/run');
+      bodyEl.textContent = JSON.stringify({ trigger: data.name });
+      if (warn) warn.hidden = !!data.secret_configured;
+      trigHowto.hidden = false;
+    }
+    async function loadTriggers() {
+      if (!trigList) return;
+      try {
+        var resp = await fetch('/api/v1/triggers');
+        var data = await resp.json().catch(function () { return {}; });
+        renderTrigList(data.triggers || []);
+      } catch (e) { /* the list is best-effort */ }
+    }
+    function renderTrigList(items) {
+      trigList.textContent = '';
+      items.forEach(function (t) {
+        var li = document.createElement('li');
+        li.className = 'wf__sched-item';
+        var span = document.createElement('span');
+        var title = document.createElement('strong');
+        title.textContent = t.name;
+        var sub = document.createElement('span');
+        sub.className = 'wf__sched-when';
+        var pcount = t.params ? Object.keys(t.params).length : 0;
+        sub.textContent = ' · ' + (t.template || '') + (pcount ? (' · ' + pcount + ' param' + (pcount === 1 ? '' : 's')) : '');
+        span.appendChild(title); span.appendChild(sub);
+        var rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'btn btn--ghost pb-step__btn';
+        rm.setAttribute('aria-label', 'Delete this trigger');
+        rm.title = 'Delete';
+        rm.textContent = '✕';
+        rm.addEventListener('click', function () { deleteTrigger(t.name, li); });
+        li.appendChild(span); li.appendChild(rm);
+        trigList.appendChild(li);
+      });
+    }
+    async function deleteTrigger(name, li) {
+      try {
+        var resp = await fetch('/api/v1/triggers/' + encodeURIComponent(name), { method: 'DELETE' });
+        if (resp.ok && li) li.remove();
+      } catch (e) { /* the next load reflects truth */ }
+    }
+    if (trigWrap) {
+      trigName.addEventListener('input', updateTrigBtn);
+      trigBtn.addEventListener('click', createTrigger);
     }
 
     // ---- playbook form ----
