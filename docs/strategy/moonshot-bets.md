@@ -263,6 +263,45 @@ attacked. Ours fight back and prove it — no matter whose model they run."
 
 ---
 
+### Build log — the moat spine (shipped)
+
+The council's verdict: none of the four bets is a moat on its own; the moat is
+**safe, governed, deployable self-improvement** — the interlocks that make
+self-modification shippable into a regulated buyer. Step one of that is built:
+
+- **`maverick.self_improvement`** — the Self-Improvement Controller: a governed
+  promotion ladder (`config → prompt → tool → policy → code → weights`). A
+  proposed self-change is promoted only if it (a) beats its own baseline by a
+  margin with enough evidence, (b) **never widens the capability envelope**
+  (declared, or proven via a before/after grant probe), (c) is human-approved at
+  `code`/`weights` and above the `max_auto_rung` ceiling, (d) is reversible, and
+  (e) is refused while `calibration.learning_frozen()` (the verifier-drift
+  interlock). Every promotion is signed into the audit chain
+  (`EventKind.LEARNING_UPDATE`) and recorded in a reversible ledger. OFF by
+  default, fail-open while off, fail-**closed** when deciding. 20 deterministic
+  tests, ruff/vulture clean. Config: `[self_improvement]` (`config.get_self_improvement`).
+
+This is the spine every rung hangs on. Remaining work to reach *real* (not
+config-only) self-improvement, in order — each rung plugs into the controller as
+an opaque candidate payload and inherits the gates above:
+
+1. **Phase 0 capture** — governed raw-trajectory store; wire `prm.py` into the
+   agent loop (today it's observability-only); auto-collect calibration samples;
+   live cold→warm compounding metric.
+2. **Phase 1 judgment** — train the verifier/PRM (`training/prm_train.py`) on
+   labeled outcomes.
+3. **Phase 2 policy** — stand up real `training/rlaif.py` (per-tenant LoRA/DPO).
+4. **Phase 3 action space** — close the loop on `self_learning.write_generated_tool`
+   (measure/promote/retire by outcome).
+5. **Phase 4 strategy** — expand `maverick-evolve` beyond 5 config knobs to
+   prompts/playbooks/policies.
+6. **Phase 5 code** — sandboxed, human-gated code self-modification (Darwin-Gödel).
+7. **Phase 6 weights** — periodic per-tenant fine-tune on accumulated trajectories.
+
+Phases 2/5/6 require GPUs / real model training / safety review and cannot be
+validated in a keyless CI sandbox — they land behind the controller's gates as
+the deployment matures.
+
 ### How the four bets relate
 
 | Bet | One-liner | Tense | Primary buyer pull |
