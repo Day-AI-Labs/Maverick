@@ -44,6 +44,23 @@ def test_read_connector_blocks_unapproved_modern_treasury_paths_before_auth():
         assert "Allowed prefixes" in out
 
 
+def test_read_connector_blocks_dot_segment_allowlist_bypasses_before_auth():
+    fn = _tools()["modern_treasury_read"].fn
+
+    blocked_paths = (
+        "/api/internal_accounts/../counterparties",
+        "/api/transactions/../payment_orders",
+        "/api/internal_accounts/%2e%2e/counterparties",
+        "/api/internal_accounts%2f..%2fcounterparties",
+        "/api/internal_accounts/./counterparties",
+    )
+    for path in blocked_paths:
+        out = fn({"path": path})
+        assert "read path is not allowed" in out
+        assert "Allowed prefixes" in out
+        assert "requires MODERN_TREASURY_BASE_URL" not in out
+
+
 def test_read_connector_advertises_cash_positioning_allowlist():
     tool = _tools()["modern_treasury_read"]
 

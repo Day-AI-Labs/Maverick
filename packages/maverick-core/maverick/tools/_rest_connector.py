@@ -18,7 +18,7 @@ import base64
 import json
 import os
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from . import Tool, as_bool
 
@@ -178,17 +178,24 @@ def make_rest_tool(
 
     read_prefixes = tuple(_norm(p) for p in (allowed_read_paths or ()))
 
-    def _request_path(path: str) -> str:
+    def _request_path(path: str) -> str | None:
         # Keep endpoint authorization independent from query strings. Agents may
         # pass query params separately via ``params``; embedding a query in path
-        # must not help bypass or broaden endpoint checks.
+        # must not help bypass or broaden endpoint checks. Percent-decode before
+        # checking segments so encoded dot-segment traversal cannot pass the
+        # allowlist and be normalized by the HTTP stack or upstream service.
         parsed = urlsplit(_norm(path))
-        return parsed.path or "/"
+        request_path = unquote(parsed.path or "/")
+        if any(segment in (".", "..") for segment in request_path.split("/")):
+            return None
+        return request_path
 
     def _read_path_allowed(path: str) -> bool:
         if not read_prefixes:
             return True
         request_path = _request_path(path)
+        if request_path is None:
+            return False
         return any(
             request_path == prefix or request_path.startswith(f"{prefix}/")
             for prefix in read_prefixes
