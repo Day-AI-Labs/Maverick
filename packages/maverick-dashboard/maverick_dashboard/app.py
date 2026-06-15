@@ -449,6 +449,23 @@ def _is_loopback_client(host: str) -> bool:
         return False
 
 
+def _is_loopback_request_host(request: Request) -> bool:
+    """True when the user-controlled Host header names a loopback host.
+
+    No-token mode is intentionally limited to local dashboards.  Checking only
+    the socket peer is not enough for browser requests: a DNS-rebinding page can
+    connect to 127.0.0.1 while preserving an attacker-controlled Host/Origin
+    pair, which would otherwise satisfy Host-derived same-origin checks.
+    """
+    host = (request.url.hostname or "").rstrip(".").lower()
+    if host in ("localhost", "testserver"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 # Standard headers a reverse proxy adds when forwarding a request.
 _PROXY_FORWARD_HEADERS = ("x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded")
 
@@ -481,7 +498,11 @@ async def bearer_auth(request: Request, call_next):
         # run history, spend, and the control surface unauthenticated to
         # the network. Set MAVERICK_DASHBOARD_TOKEN to allow remote access.
         client_host = request.client.host if request.client else ""
-        if _is_loopback_client(client_host) and not _is_proxied(request):
+        if (
+            _is_loopback_client(client_host)
+            and _is_loopback_request_host(request)
+            and not _is_proxied(request)
+        ):
             # Loopback is served without a bearer, so a malicious page open in
             # the user's browser could otherwise drive mutating endpoints via an
             # ambient cross-site request (CSRF): cancel/resume goals, disable

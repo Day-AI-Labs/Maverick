@@ -81,3 +81,15 @@ def test_toggle_blocks_cross_origin(monkeypatch, tmp_path):
                        headers={"origin": "http://evil.example"},
                        follow_redirects=False)
     assert r.status_code == 403
+
+
+def test_toggle_blocks_dns_rebinding_host(monkeypatch, tmp_path):
+    _prep(monkeypatch, tmp_path)
+    c = _client()
+    r = c.post(
+        "/plugins/toggle",
+        data={"name": "weather", "action": "enable"},
+        headers={"host": "attacker.example:8000", "origin": "http://attacker.example:8000"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 401
