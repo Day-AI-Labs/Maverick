@@ -8,6 +8,65 @@
 
 use unicode_normalization::UnicodeNormalization;
 
+pub mod pii;
+pub mod secret;
+
+/// Compile a detector pattern with a generous delegate size limit.
+///
+/// The `private_key_pem` pattern's `{0,8192}` bounds expand past the `regex`
+/// crate's default NFA size limit; Python's backtracking `re` has no such
+/// pre-build cost, so we raise the limit (fancy-regex delegates non-fancy
+/// patterns to `regex`) rather than weaken the ReDoS-guarding bounds and lose
+/// byte-for-byte parity. Applied uniformly so every pattern compiles the same way.
+// `fancy_regex::Error` is a large enum, but this is called once per pattern at
+// startup behind `.expect`, so the size is irrelevant.
+#[allow(clippy::result_large_err)]
+pub(crate) fn compile_pattern(pattern: &str) -> Result<fancy_regex::Regex, fancy_regex::Error> {
+    fancy_regex::RegexBuilder::new(pattern)
+        .delegate_size_limit(64 * (1 << 20))
+        .build()
+}
+
+/// Convert regex byte offsets to **codepoint** indices, preserving input order.
+///
+/// Python's `re` reports `Match.span()` as indices into the `str` (a sequence of
+/// Unicode codepoints); Rust's regex engines report byte offsets into the UTF-8
+/// string. For ASCII they coincide, but any multi-byte char makes them diverge —
+/// and the Python redactors splice with codepoint indices, so the native path
+/// MUST return codepoint indices or redaction would corrupt non-ASCII text. One
+/// pass over `char_indices` maps every needed byte offset (all of which fall on
+/// char boundaries, since regex matches respect them) to its codepoint index.
+pub(crate) fn byte_spans_to_char(
+    text: &str,
+    spans: Vec<(&'static str, usize, usize)>,
+) -> Vec<(String, usize, usize)> {
+    if spans.is_empty() {
+        return Vec::new();
+    }
+    let mut wanted: Vec<usize> = spans.iter().flat_map(|s| [s.1, s.2]).collect();
+    wanted.sort_unstable();
+    wanted.dedup();
+    let mut map: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut char_idx = 0usize;
+    let mut wi = 0usize;
+    for (byte, _) in text.char_indices() {
+        while wi < wanted.len() && wanted[wi] == byte {
+            map.insert(byte, char_idx);
+            wi += 1;
+        }
+        char_idx += 1;
+    }
+    // Any remaining wanted offsets are at end-of-string (== text.len()).
+    while wi < wanted.len() {
+        map.insert(wanted[wi], char_idx);
+        wi += 1;
+    }
+    spans
+        .into_iter()
+        .map(|(name, a, b)| (name.to_string(), map[&a], map[&b]))
+        .collect()
+}
+
 /// Zero-width / invisible code points.
 const ZERO_WIDTH: [u32; 5] = [0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF];
 
@@ -53,7 +112,11 @@ pub fn normalize(text: &str, nfkc: bool) -> UnicodeScanResult {
             categories: Vec::new(),
         };
     }
-    let source: String = if nfkc { text.nfkc().collect() } else { text.to_string() };
+    let source: String = if nfkc {
+        text.nfkc().collect()
+    } else {
+        text.to_string()
+    };
     let mut cleaned = String::with_capacity(source.len());
     let mut removed: Vec<u32> = Vec::new();
     let mut categories: Vec<String> = Vec::new();
@@ -69,7 +132,11 @@ pub fn normalize(text: &str, nfkc: bool) -> UnicodeScanResult {
             None => cleaned.push(ch),
         }
     }
-    UnicodeScanResult { cleaned, removed_codepoints: removed, categories }
+    UnicodeScanResult {
+        cleaned,
+        removed_codepoints: removed,
+        categories,
+    }
 }
 
 /// Cheap boolean check used by the shield's input scan; allocates nothing.
