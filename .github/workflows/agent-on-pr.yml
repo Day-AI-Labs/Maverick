@@ -13,7 +13,8 @@ name: Maverick agent on PR (reusable)
 #           max_dollars: 0.50
 #           # Optional: run as your customized workforce by committing a bundle
 #           # (domains/*.toml + roles.toml, e.g. via `maverick overrides export`)
-#           # and pointing at it:
+#           # and pointing at it. Pull request runs read this bundle from the
+#           # trusted base ref, not from attacker-controlled PR changes:
 #           overrides_path: ".maverick"
 #         secrets:
 #           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -43,8 +44,9 @@ on:
       overrides_path:
         description: >-
           Optional path (relative to the calling repo) to a Maverick override
-          bundle: a directory with domains/*.toml and/or roles.toml, applied
-          before the run so the review uses this client's customized agents.
+          bundle: a directory with domains/*.toml and/or roles.toml. For
+          pull_request events, this path is loaded from the trusted base ref,
+          not from the PR checkout.
         required: false
         default: ''
         type: string
@@ -67,6 +69,15 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Checkout trusted overrides source
+        if: ${{ inputs.overrides_path != '' && github.event_name == 'pull_request' }}
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted-overrides-base
 
       - uses: actions/setup-python@v6
         with:
@@ -92,6 +103,7 @@ jobs:
           AGENT_MAX_DOLLARS: ${{ inputs.max_dollars }}
           AGENT_TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}
           AGENT_WORKDIR: ${{ github.workspace }}
+          AGENT_TRUSTED_OVERRIDES_ROOT: ${{ github.workspace }}/trusted-overrides-base
           AGENT_OVERRIDES_PATH: ${{ inputs.overrides_path }}
         run: |
           set -e
@@ -140,10 +152,31 @@ jobs:
 
           # Apply this client's customization bundle, if the caller shipped one
           # in their repo (domains/*.toml + roles.toml). The path arrives via env
-          # (never interpolated into the script) and is relative to the checked-
-          # out repo; a missing or invalid bundle is reported, never fatal.
+          # (never interpolated into the script). On pull_request events, a
+          # second checkout above pins this bundle to the trusted base ref so PR
+          # changes cannot inject active agent instructions. For non-PR callers,
+          # fall back to the normal workspace. Reject paths that escape the
+          # selected root; a missing or invalid bundle is reported, never fatal.
           if [ -n "${AGENT_OVERRIDES_PATH:-}" ]; then
-            maverick overrides load "${AGENT_WORKDIR}/${AGENT_OVERRIDES_PATH}" \
+            OVERRIDES_ROOT="${AGENT_WORKDIR}"
+            if [ -d "${AGENT_TRUSTED_OVERRIDES_ROOT}" ]; then
+              OVERRIDES_ROOT="${AGENT_TRUSTED_OVERRIDES_ROOT}"
+            fi
+            export OVERRIDES_ROOT
+            OVERRIDES_BUNDLE=$(python - <<'PY'
+          import os, pathlib, sys
+
+          root = pathlib.Path(os.environ["OVERRIDES_ROOT"]).resolve()
+          rel = os.environ["AGENT_OVERRIDES_PATH"]
+          candidate = (root / rel).resolve()
+          try:
+              candidate.relative_to(root)
+          except ValueError:
+              print(f"::warning::overrides_path escapes repository root: {rel!r}", file=sys.stderr)
+              raise SystemExit(1)
+          print(candidate)
+          PY
+            ) && maverick overrides load "${OVERRIDES_BUNDLE}" \
               || echo "::warning::maverick overrides load failed; continuing with defaults"
           fi
 

@@ -67,6 +67,18 @@ def test_reusable_agent_on_pr_workflow_exists():
     assert "createComment" in body or "pull-requests: write" in body
 
 
+def test_reusable_agent_on_pr_loads_pr_overrides_from_base_ref():
+    """PR override bundles must not be loaded from attacker-controlled checkout."""
+    p = REPO_ROOT / ".github" / "workflows" / "agent-on-pr.yml"
+    body = p.read_text()
+
+    assert "github.event.pull_request.base.sha" in body
+    assert "path: trusted-overrides-base" in body
+    assert "AGENT_TRUSTED_OVERRIDES_ROOT" in body
+    assert "PR\n          # changes cannot inject active agent instructions" in body
+    assert "candidate.relative_to(root)" in body
+
+
 def test_publish_workflow_still_present():
     """Earlier PyPI publish workflow shouldn't have been clobbered."""
     p = REPO_ROOT / ".github" / "workflows" / "publish.yml"
