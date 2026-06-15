@@ -81,23 +81,24 @@ jobs:
           # Make `maverick` importable so the shim under test loads (deps-free:
           # maverick.safety.unicode_filter pulls only stdlib).
           python -m pip install -e packages/maverick-core --no-deps
-          # HARD GATE: the parity test self-skips when the native module is
+          # HARD GATE: the parity tests self-skip when the native module is
           # absent. After explicitly building+installing it, a skip would be a
-          # false green — so prove the extension imported AND the shim swapped in
-          # the native callables before we let pytest run.
+          # false green — so prove the extension imported and exposes every entry
+          # point before we let pytest run. The unicode scanner IS wired into the
+          # Python hot path (a real accelerator), so assert its shim swapped in;
+          # the secret/PII detectors are deliberately NOT (CPython `re` is faster
+          # — see rust/README.md), so assert the extension functions merely exist.
           python - <<'PY'
-          import maverick_native
+          import maverick_native as n
           from maverick.safety import unicode_filter as uf
-          from maverick.safety import secret_detector as sd
-          from maverick.safety import pii_detector as pd
           assert uf._native is not None, "shim did not pick up maverick_native"
           assert uf.normalize is not uf._normalize_py, "native normalize not engaged"
           assert uf.has_dangerous_unicode is not uf._has_dangerous_unicode_py, (
               "native has_dangerous_unicode not engaged"
           )
-          assert sd.scan is not sd._scan_py, "native secret scan not engaged"
-          assert pd.scan is not pd._scan_py, "native pii scan not engaged"
-          print("native engaged:", maverick_native.__file__)
+          assert hasattr(n, "secret_scan_spans"), "missing native secret_scan_spans"
+          assert hasattr(n, "pii_scan_spans"), "missing native pii_scan_spans"
+          print("native present:", n.__file__)
           PY
           python -m pytest \
             packages/maverick-core/tests/test_native_unicode_parity.py \

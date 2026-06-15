@@ -164,32 +164,11 @@ def redact(text: str) -> tuple[str, list[PIIMatch]]:
     return out, matches
 
 
-# --- Native acceleration (optional) ----------------------------------------
-# When the `maverick_native` extension (rust/mvk-scan, PyO3) is installed, route
-# scan() through it: the SAME six patterns + Luhn-checked cards + overlap
-# coalescing, with codepoint spans byte-for-byte identical to pure Python (proven
-# by tests/test_native_detect_parity.py plus a differential fuzz). The extension
-# returns (kind, codepoint_start, codepoint_end); we reattach the constant mask
-# here. ANY failure -- including a non-ASCII Unicode digit in a card candidate,
-# where the native Luhn deliberately abstains -- falls back to pure Python
-# (fail-safe). redact() calls scan() by name, so it accelerates automatically.
-try:
-    import maverick_native as _native
-except Exception:  # pragma: no cover - extension is optional
-    _native = None
-
-if _native is not None and hasattr(_native, "pii_scan_spans"):
-    _scan_py = scan
-
-    def scan(text: str) -> list[PIIMatch]:  # noqa: F811
-        """Native-accelerated :func:`scan`; identical output, pure-Python fallback."""
-        if not text:
-            return []
-        try:
-            spans = _native.pii_scan_spans(text)
-        except Exception:
-            return _scan_py(text)
-        return [PIIMatch(kind=kind, span=(a, b), value_preview=_MASK) for kind, a, b in spans]
-
+# NOTE on the native engine: rust/mvk-scan ships a byte-for-byte port of this
+# scanner (maverick_native.pii_scan_spans), but it is NOT wired into this Python
+# hot path -- CPython's compiled `re` measured at parity / slightly faster than
+# the native port here (see rust/README.md). The native build serves the
+# TypeScript / edge runtimes that have no `re`; tests/test_native_detect_parity.py
+# keeps it byte-for-byte identical to this module.
 
 __all__ = ["scan", "redact", "PIIMatch"]
