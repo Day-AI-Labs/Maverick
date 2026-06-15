@@ -462,5 +462,7 @@ def test_workflow_builder_page_renders(monkeypatch, tmp_path):
     assert 'data-browse="allow"' in r.text and 'data-browse="deny"' in r.text
     # Visual flow canvas: start/end nodes bracket the connected, gated steps.
     assert "pb-flow__start" in r.text and 'id="pb-flow-end"' in r.text
+    # Schedule panel: arm a saved template on a cron (feature defaults on).
+    assert 'id="wf-sched"' in r.text and "/api/v1/schedules" in r.text
     # Reachable from the primary nav (Operate group).
     assert '<span class="nav-label">Workflows</span>' in r.text

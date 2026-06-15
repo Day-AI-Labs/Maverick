@@ -118,6 +118,14 @@
   .wf-saved__check { flex: none; width: 2rem; height: 2rem; border-radius: var(--radius-pill); background: var(--brand); color: var(--brand-fg); display: inline-flex; align-items: center; justify-content: center; font-weight: var(--font-semibold); }
   .wf-saved h2 { margin: 0; color: var(--brand); font-size: var(--text-lg); }
 
+  /* schedule panel (in the saved state, for templates) */
+  .wf__sched { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--hairline); }
+  .wf__sched-title { margin: 0 0 var(--space-1); font-size: var(--text-md); color: var(--text); }
+  .wf__sched-list { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+  .wf__sched-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); font-size: var(--text-sm); }
+  .wf__sched-item > span { flex: 1 1 auto; min-width: 0; }
+  .wf__sched-when { color: var(--muted); }
+
   @media (prefers-reduced-motion: reduce) {
     .spinner { animation: none; }
     .wf-card, .wf-saved { animation: none; }
@@ -303,6 +311,36 @@
         <a class="btn btn--primary" id="wf-saved-link" href="/templates">Open Templates</a>
         <a class="btn btn--ghost" href="/chat">Start a goal</a>
       </div>
+      {% if scheduling_enabled %}
+      <div class="wf__sched" id="wf-sched" hidden>
+        <h3 class="wf__sched-title">Run it on a schedule</h3>
+        <p class="wf__hint">Maverick starts this workflow automatically. Schedules run while <code>maverick worker</code> is active.</p>
+        <div class="wf-grid">
+          <div class="wf__field">
+            <label for="sched-cadence">Cadence</label>
+            <select id="sched-cadence" class="input" aria-label="Schedule cadence">
+              <option value="">Off</option>
+              <option value="daily">Every day</option>
+              <option value="weekdays">Weekdays (Mon–Fri)</option>
+              <option value="weekly">Weekly (Monday)</option>
+            </select>
+          </div>
+          <div class="wf__field wf__field--sm">
+            <label for="sched-time">Time</label>
+            <input type="time" id="sched-time" class="input" value="09:00" aria-label="Schedule time" />
+          </div>
+        </div>
+        <div class="wf__field" id="sched-params-wrap" hidden>
+          <label>Parameter values for each run</label>
+          <div id="sched-params"></div>
+        </div>
+        <div class="wf__row">
+          <button type="button" id="sched-btn" class="btn btn--primary" disabled>Schedule it</button>
+          <span class="wf__hint" id="sched-cron-preview" aria-live="polite"></span>
+        </div>
+        <ul class="wf__sched-list" id="sched-list" aria-label="Active schedules"></ul>
+      </div>
+      {% endif %}
     </div>
 
     <!-- connector picker (shared, for allow/deny/step tool fields) -->
@@ -368,6 +406,16 @@
     var savedBox = document.getElementById('wf-saved');
     var savedMsg = document.getElementById('wf-saved-msg');
     var savedLink = document.getElementById('wf-saved-link');
+    // schedule panel (null when [features] scheduling is off)
+    var schedWrap = document.getElementById('wf-sched');
+    var schedCadence = document.getElementById('sched-cadence');
+    var schedTime = document.getElementById('sched-time');
+    var schedParamsWrap = document.getElementById('sched-params-wrap');
+    var schedParams = document.getElementById('sched-params');
+    var schedBtn = document.getElementById('sched-btn');
+    var schedCronPreview = document.getElementById('sched-cron-preview');
+    var schedList = document.getElementById('sched-list');
+    var lastSavedTemplate = null;
     // connector picker
     var tpBackdrop = document.getElementById('tool-picker');
     var tpTitle = document.getElementById('tp-title');
@@ -448,6 +496,7 @@
       savedLink.setAttribute('href', href);
       savedLink.textContent = label;
       preview.hidden = true; pbPreview.hidden = true;
+      if (schedWrap) schedWrap.hidden = true;   // template saves re-show it; playbooks don't
       savedBox.hidden = false;
       savedBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -483,12 +532,134 @@
         savedMsg.textContent = 'Saved “' + (data.title || data.name) + '” as a reusable workflow'
           + ((data.params && data.params.length) ? ' (parameters: ' + data.params.join(', ') + ').' : '.');
         showSaved('/templates', 'Open Templates');
+        showScheduling({ name: data.name, params: data.params || [] });
       } catch (e) {
         setStatus('Could not save the workflow.', true);
       } finally {
         saveBtn.disabled = false;
       }
     });
+
+    // ---- schedule a saved template to run on a cron (feature-gated) ----
+    function currentCron() {
+      var cad = schedCadence.value;
+      if (!cad) return null;
+      var parts = (schedTime.value || '09:00').split(':');
+      var h = parseInt(parts[0], 10); var m = parseInt(parts[1], 10);
+      if (isNaN(h)) h = 9;
+      if (isNaN(m)) m = 0;
+      if (cad === 'daily') return m + ' ' + h + ' * * *';
+      if (cad === 'weekdays') return m + ' ' + h + ' * * 1-5';
+      if (cad === 'weekly') return m + ' ' + h + ' * * 1';
+      return null;
+    }
+    function fmtWhen(ts) {
+      try { return new Date((ts || 0) * 1000).toLocaleString(); } catch (e) { return ''; }
+    }
+    function renderSchedParams(params) {
+      schedParams.textContent = '';
+      if (!params || !params.length) { schedParamsWrap.hidden = true; return; }
+      schedParamsWrap.hidden = false;
+      params.forEach(function (p) {
+        var label = document.createElement('label');
+        label.style.cssText = 'display:block; font-size: var(--text-xs); color: var(--muted); margin: var(--space-2) 0 2px;';
+        label.textContent = p;
+        var inp = document.createElement('input');
+        inp.className = 'input sched-param';
+        inp.dataset.param = p;
+        inp.setAttribute('aria-label', 'Value for ' + p);
+        inp.addEventListener('input', updateSchedBtn);
+        schedParams.appendChild(label);
+        schedParams.appendChild(inp);
+      });
+    }
+    function schedParamValues() {
+      var out = {}; var ok = true;
+      schedParams.querySelectorAll('.sched-param').forEach(function (i) {
+        var v = i.value.trim(); out[i.dataset.param] = v;
+        if (!v) ok = false;
+      });
+      return ok ? out : null;   // null => some required value is still blank
+    }
+    function updateSchedBtn() {
+      var cron = currentCron();
+      schedBtn.disabled = !cron || schedParamValues() === null;
+      schedCronPreview.textContent = cron ? ('cron: ' + cron) : '';
+    }
+    function showScheduling(tpl) {
+      if (!schedWrap) return;             // no-op when [features] scheduling is off
+      lastSavedTemplate = tpl;
+      schedCadence.value = '';
+      schedCronPreview.textContent = '';
+      renderSchedParams(tpl.params);
+      updateSchedBtn();
+      schedWrap.hidden = false;
+      loadSchedules();
+    }
+    async function scheduleIt() {
+      if (!lastSavedTemplate) return;
+      var cron = currentCron(); if (!cron) return;
+      var params = schedParamValues(); if (params === null) return;
+      schedBtn.disabled = true;
+      schedCronPreview.textContent = 'Scheduling…';
+      try {
+        var resp = await fetch('/api/v1/schedules', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cron: cron, template: lastSavedTemplate.name, params: params }),
+        });
+        var data = await resp.json().catch(function () { return {}; });
+        if (!resp.ok) { schedCronPreview.textContent = data.detail || ('Failed: ' + resp.status); return; }
+        schedCadence.value = '';
+        schedCronPreview.textContent = 'Scheduled — next run ' + fmtWhen(data.next_run) + '.';
+        loadSchedules();
+      } catch (e) {
+        schedCronPreview.textContent = 'Could not reach the scheduler.';
+      } finally {
+        updateSchedBtn();
+      }
+    }
+    async function loadSchedules() {
+      if (!schedList) return;
+      try {
+        var resp = await fetch('/api/v1/schedules');
+        var data = await resp.json().catch(function () { return {}; });
+        renderSchedList(data.schedules || []);
+      } catch (e) { /* the list is best-effort */ }
+    }
+    function renderSchedList(items) {
+      schedList.textContent = '';
+      items.forEach(function (s) {
+        var li = document.createElement('li');
+        li.className = 'wf__sched-item';
+        var span = document.createElement('span');
+        var title = document.createElement('strong');
+        title.textContent = s.title || '(goal)';
+        var when = document.createElement('span');
+        when.className = 'wf__sched-when';
+        when.textContent = ' · ' + s.cron + ' · next ' + fmtWhen(s.next_run);
+        span.appendChild(title); span.appendChild(when);
+        var rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'btn btn--ghost pb-step__btn';
+        rm.setAttribute('aria-label', 'Cancel this schedule');
+        rm.title = 'Cancel';
+        rm.textContent = '✕';
+        rm.addEventListener('click', function () { cancelSchedule(s.id, li); });
+        li.appendChild(span); li.appendChild(rm);
+        schedList.appendChild(li);
+      });
+    }
+    async function cancelSchedule(id, li) {
+      try {
+        var resp = await fetch('/api/v1/schedules/' + encodeURIComponent(id), { method: 'DELETE' });
+        if (resp.ok && li) li.remove();
+      } catch (e) { /* leave it; the next load reflects truth */ }
+    }
+    if (schedWrap) {
+      schedCadence.addEventListener('change', updateSchedBtn);
+      schedTime.addEventListener('input', updateSchedBtn);
+      schedBtn.addEventListener('click', scheduleIt);
+    }
 
     // ---- playbook form ----
     var GATE_LABEL = { review: 'review', approval: 'needs approval' };
