@@ -439,6 +439,18 @@
       .skeleton { animation: none; }
       tbody tr { transition: none; }
     }
+
+    /* Reusable feedback primitives: window.mvToast() + window.mvConfirm(). */
+    .mv-toasts { position: fixed; left: 50%; bottom: var(--space-5); transform: translateX(-50%); z-index: 90; display: flex; flex-direction: column; gap: var(--space-2); align-items: center; pointer-events: none; max-width: 92vw; }
+    .mv-toast { pointer-events: auto; background: var(--text); color: var(--bg); padding: var(--space-2) var(--space-4); border-radius: var(--radius-pill); font-size: var(--text-sm); box-shadow: 0 4px 16px rgba(0,0,0,0.18); animation: mv-toast-in 160ms ease-out; }
+    .mv-toast--error { border-left: 4px solid #d92d20; }
+    @keyframes mv-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .mv-confirm { border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 0; max-width: 28rem; width: calc(100vw - 2rem); background: var(--panel); color: var(--text); box-shadow: 0 12px 40px rgba(0,0,0,0.28); }
+    .mv-confirm::backdrop { background: rgba(0,0,0,0.45); }
+    .mv-confirm__body { padding: var(--space-5); }
+    .mv-confirm__msg { margin: 0 0 var(--space-4); }
+    .mv-confirm__row { display: flex; justify-content: flex-end; gap: var(--space-2); }
+    @media (prefers-reduced-motion: reduce) { .mv-toast { animation: none; } }
   </style>
   {% if custom_theme_css %}
   <style>
@@ -611,6 +623,68 @@
   <footer>
     <span class="muted">Maverick · {{ t('footer.local') }} · proprietary software</span>
   </footer>
+
+  <!-- Reusable toast region + confirm dialog (window.mvToast / window.mvConfirm). -->
+  <div id="mv-toasts" class="mv-toasts" aria-live="polite" aria-atomic="false"></div>
+  <dialog id="mv-confirm" class="mv-confirm" aria-labelledby="mv-confirm-msg">
+    <div class="mv-confirm__body">
+      <p class="mv-confirm__msg" id="mv-confirm-msg"></p>
+      <div class="mv-confirm__row">
+        <button type="button" class="btn btn--ghost" id="mv-confirm-cancel">Cancel</button>
+        <button type="button" class="btn btn--primary" id="mv-confirm-ok">Confirm</button>
+      </div>
+    </div>
+  </dialog>
+  <script>
+    // Reusable feedback primitives, available to every page.
+    //   window.mvToast(message, {error}) -> transient status/alert toast
+    //   window.mvConfirm(message, {okText}) -> Promise<bool> (native <dialog>;
+    //   falls back to window.confirm where <dialog> is unsupported).
+    (function () {
+      var region = document.getElementById('mv-toasts');
+      window.mvToast = function (message, opts) {
+        if (!region) return;
+        opts = opts || {};
+        var t = document.createElement('div');
+        t.className = 'mv-toast' + (opts.error ? ' mv-toast--error' : '');
+        t.setAttribute('role', opts.error ? 'alert' : 'status');
+        t.textContent = String(message);
+        region.appendChild(t);
+        setTimeout(function () {
+          t.style.transition = 'opacity 200ms'; t.style.opacity = '0';
+          setTimeout(function () { t.remove(); }, 220);
+        }, opts.error ? 5000 : 3200);
+      };
+      var dlg = document.getElementById('mv-confirm');
+      var msgEl = document.getElementById('mv-confirm-msg');
+      var okBtn = document.getElementById('mv-confirm-ok');
+      var cancelBtn = document.getElementById('mv-confirm-cancel');
+      window.mvConfirm = function (message, opts) {
+        opts = opts || {};
+        if (!dlg || typeof dlg.showModal !== 'function') {
+          return Promise.resolve(window.confirm(String(message)));
+        }
+        msgEl.textContent = String(message);
+        okBtn.textContent = opts.okText || 'Confirm';
+        return new Promise(function (resolve) {
+          function done(val) {
+            okBtn.removeEventListener('click', onOk);
+            cancelBtn.removeEventListener('click', onCancel);
+            dlg.removeEventListener('cancel', onCancel);
+            if (dlg.open) dlg.close();
+            resolve(val);
+          }
+          function onOk() { done(true); }
+          function onCancel(e) { if (e) e.preventDefault(); done(false); }
+          okBtn.addEventListener('click', onOk);
+          cancelBtn.addEventListener('click', onCancel);
+          dlg.addEventListener('cancel', onCancel);   // Esc / backdrop
+          dlg.showModal();
+          cancelBtn.focus();
+        });
+      };
+    })();
+  </script>
   <script>
     // Halt indicator + arm/clear via /api/v1/halt.
     (function() {

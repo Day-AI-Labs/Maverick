@@ -98,7 +98,11 @@
     });
   }
   async function delSchedule(id) {
-    try { var r = await fetch('/api/v1/schedules/' + encodeURIComponent(id), { method: 'DELETE' }); if (r.ok) loadSchedules(); } catch (e) {}
+    if (!(await mvConfirm('Delete this schedule? It will stop running.'))) return;
+    try {
+      var r = await fetch('/api/v1/schedules/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (r.ok) { mvToast('Schedule deleted'); loadSchedules(); } else { mvToast('Could not delete schedule', { error: true }); }
+    } catch (e) { mvToast('Could not delete schedule', { error: true }); }
   }
 
   var trigList = document.getElementById('auto-trig-list');
@@ -131,7 +135,11 @@
     });
   }
   async function delTrigger(name) {
-    try { var r = await fetch('/api/v1/triggers/' + encodeURIComponent(name), { method: 'DELETE' }); if (r.ok) loadTriggers(); } catch (e) {}
+    if (!(await mvConfirm('Delete trigger “' + name + '”? Its webhook URL will stop working.'))) return;
+    try {
+      var r = await fetch('/api/v1/triggers/' + encodeURIComponent(name), { method: 'DELETE' });
+      if (r.ok) { mvToast('Trigger deleted'); loadTriggers(); } else { mvToast('Could not delete trigger', { error: true }); }
+    } catch (e) { mvToast('Could not delete trigger', { error: true }); }
   }
 
   // Run history (provenance): a compact "N runs · ✓X · ✗Y · last <when>" summary.
