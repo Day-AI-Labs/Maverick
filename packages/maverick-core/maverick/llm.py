@@ -385,6 +385,11 @@ def _run_preflight(model_id, system, messages, tools, max_tokens) -> None:
     )
 
 
+def _release_budget_hold(budget: Budget | None, held: float) -> None:
+    if budget is not None and held:
+        budget.release(held)
+
+
 def _estimate_call_cost(model_id, system, messages, tools, max_tokens) -> float:
     """Rough $ for one call BEFORE dispatch: estimated input tokens at the
     model's input rate + max_tokens at the output rate (chars/4 heuristic,
@@ -553,9 +558,8 @@ class LLM:
         # check() and then collectively overshoot -- the same defense the async
         # path uses. reserve() raises BudgetExceeded if the call won't fit;
         # released in `finally` once the actual spend lands.
-        _held = budget.reserve(
-            _estimate_call_cost(model_id, system, messages, tools, max_tokens)
-        ) if budget is not None else 0.0
+        _est_cost = _estimate_call_cost(model_id, system, messages, tools, max_tokens)
+        _held = budget.reserve(_est_cost) if budget is not None else 0.0
         try:
             with _trace_span(
                 _gen_ai_span_name("chat", model_id),
@@ -661,9 +665,8 @@ class LLM:
         # check and then collectively overshoot (a $2.50 cap reached $6+ with a
         # wide parallel fan-out). reserve() raises BudgetExceeded here if the
         # call won't fit; released in `finally` once the actual spend lands.
-        _held = budget.reserve(
-            _estimate_call_cost(model_id, system, messages, tools, max_tokens)
-        ) if budget is not None else 0.0
+        _est_cost = _estimate_call_cost(model_id, system, messages, tools, max_tokens)
+        _held = budget.reserve(_est_cost) if budget is not None else 0.0
         try:
             with _trace_span(
                 _gen_ai_span_name("chat", model_id),
@@ -709,7 +712,13 @@ class LLM:
 
                 async def _backup():
                     await _asyncio.sleep(hedge / 1000.0)
-                    return await _call()
+                    _backup_held = (
+                        budget.reserve(_est_cost) if budget is not None else 0.0
+                    )
+                    try:
+                        return await _call()
+                    finally:
+                        _release_budget_hold(budget, _backup_held)
 
                 try:
                     return await race_first_success(
