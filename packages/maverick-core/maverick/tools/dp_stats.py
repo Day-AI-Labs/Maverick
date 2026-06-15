@@ -32,7 +32,7 @@ def _noisy(true_value: float, sensitivity: float, epsilon: float,
     scale = sensitivity / epsilon
     rng = random.Random(seed)
     noisy = true_value + _laplace(scale, rng)
-    return (f"OK noisy={noisy:.4f} (true={true_value:g}, epsilon={epsilon:g}, "
+    return (f"OK noisy={noisy:.4f} (epsilon={epsilon:g}, "
             f"sensitivity={sensitivity:g}, laplace_scale={scale:.4f})")
 
 
