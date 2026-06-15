@@ -330,6 +330,9 @@ _AUTH_EXEMPT = {
     # the dashboard bearer / same-origin checks (external senders have
     # neither), so it must bypass the centralized middleware.
     "/webhook/start",
+    # /webhook/run fires a registered trigger; same HMAC auth as /webhook/start
+    # (strictly narrower -- runs only an operator-registered template).
+    "/webhook/run",
     # Linear/Jira/GitHub issue webhooks authenticate the same way (their
     # own HMAC signature), so they bypass the bearer/same-origin checks too.
     "/webhook/linear",
@@ -2954,6 +2957,103 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
     return JSONResponse({"goal_id": goal_id}, status_code=201)
 
 
+@app.post("/webhook/run")
+async def webhook_run(request: Request, bg: BackgroundTasks) -> JSONResponse:
+    """Fire a registered trigger: render its saved template and run it as a goal.
+
+    Body is JSON ``{"trigger": "<name>", "data"?: {...}}``. Authenticated by the
+    same HMAC signature as ``/webhook/start`` (``X-Maverick-Signature`` over the
+    ``X-Maverick-Timestamp`` + raw body, with the ``[webhooks]`` secret) and the
+    same replay-freshness window. We fail closed -- a missing secret yields 401.
+
+    This is deliberately NARROWER than ``/webhook/start``: it runs only a
+    template an operator registered via the dashboard (with operator-set default
+    params), never arbitrary text. ``data`` may override only the template's
+    *declared* params (undeclared keys are ignored, values are length-bounded),
+    so an external caller can fill declared slots but cannot inject new ones.
+
+    Gated by ``[features] triggers``; 404s when triggers are disabled.
+    """
+    from maverick.config import get_features
+    if not get_features().get("triggers", True):
+        raise HTTPException(status_code=404, detail="triggers are disabled")
+
+    from maverick.webhooks import inbound_secret, verify_signature
+    secret = inbound_secret()
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "inbound webhooks are not configured. Set a [webhooks] "
+                "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
+            ),
+        )
+    signature = request.headers.get("X-Maverick-Signature") or ""
+    timestamp = request.headers.get("X-Maverick-Timestamp") or ""
+    if not signature or not timestamp:
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+    body = await _read_limited_webhook_body(request)
+    if not verify_signature(body, signature, secret, timestamp=timestamp):
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+
+    if not _any_provider_key_set():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No LLM provider key or endpoint configured. Run 'maverick "
+                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
+                "[providers.<name>] api_key/base_url to "
+                "~/.maverick/config.toml before starting the dashboard."
+            ),
+        )
+    try:
+        payload = json.loads(body or b"{}")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="body must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    name = str(payload.get("trigger") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="trigger is required")
+
+    from maverick_dashboard import triggers_store
+    trig = triggers_store.get_trigger(name)
+    if trig is None:
+        raise HTTPException(status_code=404, detail="unknown trigger")
+
+    from maverick.templates import load_template
+    try:
+        tpl = load_template(trig["template"])
+    except (ValueError, FileNotFoundError) as exc:
+        # The template was deleted/renamed after the trigger was registered.
+        raise HTTPException(
+            status_code=409, detail=f"trigger template unavailable: {exc}") from exc
+    # Merge: operator defaults, then inbound overrides for DECLARED params only,
+    # each coerced to a length-bounded string. This bounds what an external
+    # caller can inject -- they fill declared slots, never add new ones.
+    declared = set(tpl.params)
+    params = dict(trig.get("params") or {})
+    inbound = payload.get("data")
+    if isinstance(inbound, dict):
+        for k, v in inbound.items():
+            if k in declared:
+                params[str(k)] = str(v)[:2000]
+    try:
+        title, description = tpl.render(**params)
+    except ValueError as exc:                 # a required param still missing
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    check_goal_rate_limit(request, source="webhook")
+    w = _world()
+    # HMAC webhooks carry no OIDC principal -> unowned, same as /webhook/start.
+    goal_id = w.create_goal(
+        title[:200], description[:8000], owner=caller_principal(request) or "",
+    )
+    from maverick.runner import run_goal_in_thread
+    bg.add_task(run_goal_in_thread, goal_id)
+    return JSONResponse({"goal_id": goal_id, "trigger": name}, status_code=201)
+
+
 @app.post("/webhook/linear")
 async def webhook_linear(request: Request, bg: BackgroundTasks) -> JSONResponse:
     """Linear issue-assigned webhook -> goal. Signature in ``Linear-Signature``."""
@@ -3673,9 +3773,13 @@ async def workflow_builder_page(request: Request) -> HTMLResponse:
     """AI workflow builder: draft a reusable workflow from a brief or an
     uploaded document, edit it, then save it as a runnable template."""
     from maverick.config import get_features
+    feats = get_features()
     return templates.TemplateResponse(
         request, "workflow_builder.html",
-        {"scheduling_enabled": get_features().get("scheduling", True)},
+        {
+            "scheduling_enabled": feats.get("scheduling", True),
+            "triggers_enabled": feats.get("triggers", True),
+        },
     )
 
 

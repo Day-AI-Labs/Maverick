@@ -56,6 +56,8 @@ from .api_schemas import (
     ScheduleOut,
     SkillInstallIn,
     SkillOut,
+    TriggerIn,
+    TriggerOut,
     WorkflowDraftIn,
     WorkflowRefineIn,
     WorkflowSaveIn,
@@ -1071,6 +1073,76 @@ async def delete_schedule(request: Request, job_id: int) -> dict:
         raise HTTPException(
             status_code=404, detail="no pending schedule with that id")
     return {"cancelled": job_id}
+
+
+# ---- triggers: bind a saved template to an inbound webhook (POST /webhook/run)
+# These routes MANAGE triggers (dashboard-authed, operate-gated, feature-knobbed).
+# The inbound firing route lives in app.py (/webhook/run) and authenticates with
+# its own HMAC signature -- exactly like /webhook/start, but strictly narrower:
+# it runs only an operator-registered template, never arbitrary text.
+
+_WEBHOOK_RUN_PATH = "/webhook/run"
+
+
+def _require_triggers() -> None:
+    from maverick.config import get_features
+    if not get_features().get("triggers", True):
+        raise HTTPException(
+            status_code=403,
+            detail=("triggers are disabled ([features] triggers = false). "
+                    "Re-enable it in config to manage inbound webhook triggers."),
+        )
+
+
+def _inbound_secret_set() -> bool:
+    from maverick.webhooks import inbound_secret
+    return bool(inbound_secret())
+
+
+@router.get("/triggers")
+async def list_triggers_endpoint() -> dict:
+    """Registered inbound webhook triggers (read-only; always available)."""
+    from maverick_dashboard import triggers_store
+    return {
+        "triggers": triggers_store.list_triggers(),
+        "webhook_url": _WEBHOOK_RUN_PATH,
+        "secret_configured": _inbound_secret_set(),
+    }
+
+
+@router.post("/triggers", response_model=TriggerOut, status_code=201)
+async def create_trigger(request: Request, payload: TriggerIn) -> TriggerOut:
+    require_permission(request, "operate")
+    _require_triggers()
+    # Validate now: the template must exist and render with the given defaults,
+    # so a trigger can't be armed against a missing/incompatible template.
+    from maverick.templates import load_template
+    try:
+        load_template(payload.template).render(**(payload.params or {}))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    from maverick_dashboard import triggers_store
+    try:
+        rec = triggers_store.set_trigger(
+            payload.name or payload.template, payload.template, payload.params or {})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return TriggerOut(
+        name=rec["name"], template=rec["template"], params=rec["params"],
+        webhook_url=_WEBHOOK_RUN_PATH, secret_configured=_inbound_secret_set(),
+    )
+
+
+@router.delete("/triggers/{name}")
+async def delete_trigger_endpoint(request: Request, name: str) -> dict:
+    require_permission(request, "operate")
+    _require_triggers()
+    from maverick_dashboard import triggers_store
+    if not triggers_store.delete_trigger(name):
+        raise HTTPException(status_code=404, detail="no trigger with that name")
+    return {"deleted": name}
 
 
 # ---- agents (domain packs): per-client view + override editor ---------------

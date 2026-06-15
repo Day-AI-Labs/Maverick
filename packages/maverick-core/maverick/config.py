@@ -254,6 +254,12 @@ def get_features() -> dict:
                       run by ``maverick worker``. Off = the schedule endpoints
                       return 403 and the UI hides; the ``maverick schedule`` CLI
                       on the host is unaffected.
+    - ``triggers`` allow binding a saved template to an inbound webhook (POST
+                      /webhook/run) so an external event runs it as a goal. The
+                      inbound route is HMAC-signed exactly like /webhook/start
+                      and fails closed without a [webhooks] secret. Off = the
+                      /api/v1/triggers editor and the /webhook/run route 404/403
+                      and the builder panel hides.
 
     All default on.
     """
@@ -265,6 +271,7 @@ def get_features() -> dict:
         "pack_editing": bool(cfg.get("pack_editing", True)),
         "role_editing": bool(cfg.get("role_editing", True)),
         "scheduling": bool(cfg.get("scheduling", True)),
+        "triggers": bool(cfg.get("triggers", True)),
     }
 
 
