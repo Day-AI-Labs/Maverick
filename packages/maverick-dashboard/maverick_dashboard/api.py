@@ -983,8 +983,11 @@ async def list_tools() -> dict:
 # *merged* result fails lint, so editing can never weaken the safety envelope.
 
 
-def _require_pack_editing() -> None:
+def _require_pack_editing(request: Request) -> None:
     from maverick.config import get_features
+    principal = caller_principal(request)
+    if principal is not None and not is_dashboard_admin(principal):
+        raise HTTPException(status_code=403, detail="pack editing requires a dashboard admin")
     if not get_features().get("pack_editing", True):
         raise HTTPException(
             status_code=403,
@@ -1020,10 +1023,10 @@ async def validate_agent_override(name: str, payload: AgentOverrideIn) -> dict:
 
 
 @router.post("/agents/{name}/override")
-async def save_agent_override(name: str, payload: AgentOverrideIn) -> dict:
+async def save_agent_override(request: Request, name: str, payload: AgentOverrideIn) -> dict:
     """Persist a tenant override for ``name``. 403 if pack editing is disabled,
     422 if the merged pack fails lint (the override is rejected, not written)."""
-    _require_pack_editing()
+    _require_pack_editing(request)
     from maverick.domain_edit import resolved_view, write_override
     try:
         write_override(name, payload.model_dump(exclude_unset=True))
@@ -1033,9 +1036,9 @@ async def save_agent_override(name: str, payload: AgentOverrideIn) -> dict:
 
 
 @router.delete("/agents/{name}/override")
-async def delete_agent_override(name: str) -> dict:
+async def delete_agent_override(request: Request, name: str) -> dict:
     """Drop a tenant override, reverting the agent to its built-in pack."""
-    _require_pack_editing()
+    _require_pack_editing(request)
     from maverick.domain_edit import remove_override, resolved_view
     removed = remove_override(name)
     view = resolved_view(name)
