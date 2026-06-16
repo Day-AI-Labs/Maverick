@@ -2,9 +2,9 @@
 
     python benchmarks/run_eval.py gaia --dataset path/to/gaia.jsonl --limit 20
 
-The solver drives ``maverick start`` so it exercises the same path a real
-user hits, then reads the agent's final answer from the world model. CI
-has no API keys, so ``MAVERICK_EVAL_DRY_RUN=1`` swaps in a stub solver
+The solver runs each task as a real goal **in-process** (``agent_solver.py``) --
+the same ``run_goal`` path a user hits -- and returns the agent's final answer.
+CI has no API keys, so ``MAVERICK_EVAL_DRY_RUN=1`` swaps in a stub solver
 (every task "answered" with empty text) to smoke-test the machinery.
 
 Benchmarks register here by name; add an adapter in ``eval_<name>.py`` and
@@ -16,7 +16,6 @@ import argparse
 import importlib.util
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -40,28 +39,6 @@ _BENCHMARKS = {
 }
 
 
-def _dry_run_solver(task) -> str:
-    return ""
-
-
-def _maverick_solver(max_dollars: float, max_wall_seconds: float):
-    """Build a solver that runs each task as a goal and returns its result."""
-
-    def solve(task) -> str:
-        proc = subprocess.run(
-            [
-                "maverick", "start",
-                "--max-dollars", str(max_dollars),
-                "--max-wall-seconds", str(max_wall_seconds),
-                task.prompt,
-            ],
-            capture_output=True, text=True, timeout=max_wall_seconds, check=True,
-        )
-        return proc.stdout
-
-    return solve
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("benchmark", choices=sorted(_BENCHMARKS))
@@ -81,9 +58,12 @@ def main() -> int:
     append_scores = _load("evals.py", "append_scores")
 
     if os.environ.get("MAVERICK_EVAL_DRY_RUN") == "1":
-        solver = _dry_run_solver
+        solver = _load("agent_solver.py", "dry_run_solver")
     else:
-        solver = _maverick_solver(args.max_dollars, args.max_wall_seconds)
+        make_agent_solver = _load("agent_solver.py", "make_agent_solver")
+        solver = make_agent_solver(
+            max_dollars=args.max_dollars, max_wall_seconds=args.max_wall_seconds,
+        )
 
     summary = run_benchmark(
         bench, solver, dataset=args.dataset, limit=args.limit

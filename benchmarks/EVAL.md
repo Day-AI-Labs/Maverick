@@ -8,15 +8,24 @@ shapes.
 
 ## Run it
 
-```bash
-# Real run (drives `maverick start`; needs a provider key configured):
-python benchmarks/run_eval.py gaia --dataset path/to/gaia.jsonl --limit 20
+The real run executes each task as a goal **in-process** via the live solver in
+`agent_solver.py` — the same `run_goal` path a user hits — and returns the
+agent's `FINAL ANSWER:`. Cost is capped **per task** with `--max-dollars`.
 
-# CI / smoke (no keys, no dataset — uses the shipped offline fixture):
+```bash
+# Real run (needs a provider key, e.g. ANTHROPIC_API_KEY):
+python benchmarks/run_eval.py gaia --dataset path/to/gaia.jsonl \
+    --limit 20 --max-dollars 2 --max-wall-seconds 600
+
+# CI / smoke (no keys, no dataset — shipped offline fixture + stub solver):
 MAVERICK_EVAL_DRY_RUN=1 python benchmarks/run_eval.py gaia
 ```
 
 Scores append to `benchmarks/SCORES.md` (a markdown table, like `RESULTS.md`).
+
+**Rough cost:** ~$0.5–$2 per task (multi-step agent on the Opus orchestrator),
+so a 20-task slice ≈ $10–$40 and the full GAIA validation split (~165 tasks)
+≈ $80–$300. Bound it with `--max-dollars` (per task) and `--limit` (task count).
 
 ## The contract (`evals.py`)
 
