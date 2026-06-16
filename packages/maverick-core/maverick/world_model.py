@@ -1217,6 +1217,13 @@ class WorldModel:
         )
         return [_goal_event_from_row(r) for r in rows]
 
+    def recent_event_contents(self, limit: int = 5000) -> list[str]:
+        """Coordination-message bodies across all goals (newest first), the corpus
+        the emergent-protocol codebook learns from. Read-only."""
+        rows = self._read_all(
+            "SELECT content FROM goal_events ORDER BY id DESC LIMIT ?", (int(limit),))
+        return [r[0] for r in rows if r and r[0]]
+
     def prune_goal_events(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
         """Delete goal_events rows older than N seconds. Returns rows removed."""
         cutoff = time.time() - older_than_seconds
