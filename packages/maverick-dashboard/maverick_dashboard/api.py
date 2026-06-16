@@ -488,6 +488,29 @@ async def list_installed_skills() -> list[SkillOut]:
     ]
 
 
+@router.get("/flywheel")
+async def get_flywheel_state() -> dict:
+    """What the Cognitive Data Engine has learned from the workforce's own outcomes.
+
+    A read-only window into the moat: the **guardrails** it has mined (actions it
+    causally shows lower outcomes, each with the effect that justifies it -- and
+    auto-dropped when the harm is gone) and the **habits** it has consolidated
+    (causally-beneficial actions, with a reinforcement strength). Empty until the
+    flywheel has turned. Read-only; never mutates."""
+    out: dict = {"guardrails": [], "habits": []}
+    try:
+        from maverick.negative_knowledge import shared as _guardrails
+        out["guardrails"] = [g.to_dict() for g in _guardrails().all()]
+    except Exception:  # pragma: no cover -- observability never errors the API
+        pass
+    try:
+        from maverick.procedural_memory import shared as _memory
+        out["habits"] = [m.to_dict() for m in _memory().recall(top_k=20)]
+    except Exception:  # pragma: no cover
+        pass
+    return out
+
+
 def _require_skill_install_opt_in() -> None:
     if os.environ.get("MAVERICK_ALLOW_SKILL_INSTALL", "").lower() not in {"1", "true", "yes"}:
         raise HTTPException(
