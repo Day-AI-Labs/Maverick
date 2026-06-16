@@ -50,18 +50,20 @@
       <code>maverick.continuous_benchmark.detect_regression</code>.
     </p>
   {% else %}
-    <h2 class="empty__title">No benchmark runs recorded</h2>
-    <p class="muted" style="margin-bottom: var(--space-5);">
-      Scores land here when a run records them with the
-      <code>bench_track</code> tool, e.g.:
-    </p>
-    <pre style="background: var(--surface-sunken); color: var(--text); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); display: inline-block; text-align: start; margin: 0;">bench_track op=record name=swe_bench score=0.42 commit=abc123</pre>
-    <p class="muted" style="margin-top: var(--space-5); font-size: var(--text-sm);">
-      or from Python:
-      <code>maverick.continuous_benchmark.record_result(...)</code> +
-      <code>save_history(...)</code>. History persists at
-      <code>{{ history_path }}</code>.
-    </p>
+    <div class="mv-empty">
+      <p class="mv-empty__title">No benchmark runs recorded</p>
+      <p class="mv-empty__body">
+        Scores land here when a run records them with the
+        <code>bench_track</code> tool, e.g.:
+      </p>
+      <pre style="background: var(--surface-sunken); color: var(--text); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); display: inline-block; text-align: start; margin: 0;">bench_track op=record name=swe_bench score=0.42 commit=abc123</pre>
+      <p class="muted" style="margin-top: var(--space-5); font-size: var(--text-sm);">
+        or from Python:
+        <code>maverick.continuous_benchmark.record_result(...)</code> +
+        <code>save_history(...)</code>. History persists at
+        <code>{{ history_path }}</code>.
+      </p>
+    </div>
   {% endif %}
 </div>
 <p class="muted" style="font-size: 0.8rem;">

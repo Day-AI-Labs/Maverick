@@ -26,6 +26,14 @@ def test_pages_use_shared_page_title(monkeypatch, tmp_path):
         assert '<h1 class="page-title">' + label in t, path
 
 
+def test_generic_empties_use_mv_empty(monkeypatch, tmp_path):
+    # Generic full-page empties converged onto the single .mv-empty component.
+    _isolate(monkeypatch, tmp_path)
+    c = _client()
+    for path in ["/benchmarks", "/compartments", "/store"]:
+        assert "mv-empty" in c.get(path).text, path
+
+
 def test_automations_uses_shared_section_head(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     t = _client().get("/automations").text
