@@ -13,8 +13,9 @@ store. It does three things:
      tripwire (and the Shield, when wired) and quarantine the ones that look
      like smuggled instructions, so they never enter the store.
   3. **Trust-aware retrieval** -- keep low-trust memory out of the agent's
-     standing brief, and refuse to let it drive high-risk (irreversible)
-     actions (:func:`allow_recall`).
+     standing brief (:func:`filter_facts`), with a stricter gate available for
+     memory consulted right before an irreversible action
+     (``filter_facts(high_risk=True)`` / :func:`allow_recall`).
 
 Every decision is logged to the signed audit chain (:func:`audit_write`,
 :func:`audit_recall`) so memory lineage is verifiable the same way tool calls
@@ -125,9 +126,15 @@ _INJECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         ("exfiltrate",
          r"\b(send|post|upload|exfiltrate|forward)\b.{0,40}"
          r"(https?://|ftp://|attacker|webhook)"),
-        ("shell-fetch", r"\b(curl|wget)\s+\S"),
+        # curl/wget + a flag, a scheme, or a host.tld -- not prose like
+        # "curl up on the couch".
+        ("shell-fetch",
+         r"\b(?:curl|wget)\s+(?:-{1,2}[a-z]|\w+://|[\w-]+\.[a-z]{2,})"),
         ("base64-decode", r"base64\b.{0,12}\b(decode|b64decode)"),
-        ("destructive-shell", r"\brm\s+-rf\b|\bdrop\s+table\b"),
+        # rm -rf, or an actual DROP TABLE/DATABASE ...; statement (terminated)
+        # -- not a passing mention like "drop table talk and ship".
+        ("destructive-shell",
+         r"\brm\s+-rf\b|\bdrop\s+(?:table|database)\b[^;\n]{0,40};"),
         ("jailbreak", r"\b(jailbreak|dan\s+mode|developer\s+mode)\b"),
         ("conceal", r"\bdo\s*n[o']?t\s+(tell|inform|alert|notify)\b"),
         ("skip-approval",
@@ -197,6 +204,29 @@ def allow_recall(prov: Provenance, *, high_risk: bool = False,
     if high_risk and prov.trust < TrustTier.LEARNED:
         return False
     return True
+
+
+def filter_facts(facts: dict[str, tuple[str, int]], *,
+                 high_risk: bool = False) -> dict[str, str]:
+    """Apply trust-aware retrieval to ``{key: (value, trust_tier)}`` (as returned
+    by :meth:`maverick.world_model.WorldModel.get_facts_with_trust`) and return
+    the kept ``{key: value}``.
+
+    This is the production entry point: it runs :func:`allow_recall` per fact so
+    the trust floor -- and, with ``high_risk=True``, the stricter
+    irreversible-action gate -- is enforced in one place. Every fact passes
+    through unchanged when the guard is disabled."""
+    if not enabled():
+        return {k: v for k, (v, _tier) in facts.items()}
+    out: dict[str, str] = {}
+    for k, (v, tier) in facts.items():
+        try:
+            trust = TrustTier(int(tier))
+        except ValueError:
+            trust = TrustTier.EXTERNAL  # unknown tier -> least trusted (safe)
+        if allow_recall(Provenance(trust=trust), high_risk=high_risk):
+            out[k] = v
+    return out
 
 
 def agent_fact_provenance() -> Provenance:

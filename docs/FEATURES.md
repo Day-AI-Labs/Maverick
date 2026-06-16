@@ -283,12 +283,14 @@ here.
   **provenance** (`source` + a `TrustTier`: first-party / learned / tool /
   external + a sensitivity label) and low-trust writes are run through an
   **injection/poisoning tripwire** (and the Shield, fail-open) so smuggled
-  instructions are quarantined, not stored. **Trust-aware retrieval** keeps
-  memory below `[memory_guard] min_recall_trust` out of the agent's standing
-  brief, and low-trust memory can never single-handedly authorize a high-risk
-  action. Every decision lands in the signed audit chain
-  (`EventKind.MEMORY_GUARD`). Provenance columns are recorded even when the
-  guard is off, so turning it on governs existing memory immediately.
+  instructions are quarantined, not stored. **Trust-aware retrieval**
+  (`filter_facts`) keeps memory below `[memory_guard] min_recall_trust` out of
+  the agent's standing brief, with a stricter gate available for memory
+  consulted right before an irreversible action (`filter_facts(high_risk=True)`,
+  which requires at least learned-loop trust). Every decision lands in the
+  signed audit chain (`EventKind.MEMORY_GUARD`). Provenance columns are recorded
+  even when the guard is off, so turning it on governs existing memory
+  immediately.
 - **Temporal memory — non-destructive fact evolution** (`fact_history` in
   `world_model.py`, opt-in `[memory] temporal` / `MAVERICK_TEMPORAL_MEMORY`) —
   a changed fact no longer overwrites the old value; the prior value is kept

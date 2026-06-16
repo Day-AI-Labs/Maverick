@@ -724,6 +724,10 @@ class WorldModel:
                 if remaining <= 0:
                     raise
                 time.sleep(min(0.05, remaining))
+        # [memory] temporal is read ONCE at open, not per write: upsert_fact /
+        # delete_fact are on the hot path and load_config() is uncached file
+        # I/O. A config toggle takes effect on the next WorldModel open.
+        self._temporal_memory = _temporal_memory_enabled()
 
     @contextlib.contextmanager
     def _writing(self) -> Iterator[sqlite3.Connection]:
@@ -1377,11 +1381,19 @@ class WorldModel:
         now = time.time()
         enc = _enc_field(value)
         with self._writing() as conn:
-            if _temporal_memory_enabled():
+            if self._temporal_memory:
                 prior = conn.execute(
-                    "SELECT value FROM facts WHERE key = ? LIMIT 1", (key,),
+                    "SELECT value, trust_tier FROM facts WHERE key = ? LIMIT 1",
+                    (key,),
                 ).fetchone()
-                changed = prior is None or _dec_field(prior[0]) != value
+                # A new version is recorded when the value changes OR the trust
+                # tier changes -- a higher/lower-trust source re-asserting the
+                # same value is a distinct belief worth its own audit window.
+                changed = (
+                    prior is None
+                    or _dec_field(prior[0]) != value
+                    or int(prior[1]) != int(trust_tier)
+                )
                 if changed:
                     # Close the open window, then open a new one for this value:
                     # the prior value is preserved with the instant it stopped
@@ -1407,21 +1419,18 @@ class WorldModel:
                 (key, enc, episode_id, now, source, int(trust_tier), sensitivity),
             )
 
-    def get_facts(self, *, min_trust: int | None = None) -> dict[str, str]:
-        """All current facts as ``{key: value}``, newest first.
-
-        ``min_trust`` (Memory Guard trust-aware retrieval) drops facts whose
-        ``trust_tier`` is below the floor so low-trust/poisoned memory never
-        reaches the agent's standing brief. None = no filter (unchanged)."""
-        if min_trust is not None:
-            rows = self._read_all(
-                "SELECT key, value FROM facts WHERE trust_tier >= ? "
-                "ORDER BY updated_at DESC", (int(min_trust),),
-            )
-        else:
-            rows = self._read_all(
-                "SELECT key, value FROM facts ORDER BY updated_at DESC")
+    def get_facts(self) -> dict[str, str]:
+        """All current facts as ``{key: value}``, newest first."""
+        rows = self._read_all("SELECT key, value FROM facts ORDER BY updated_at DESC")
         return {r["key"]: _dec_field(r["value"]) for r in rows}
+
+    def get_facts_with_trust(self) -> dict[str, tuple[str, int]]:
+        """All current facts as ``{key: (value, trust_tier)}``, newest first --
+        the provenance the Memory Guard filters on at recall (see
+        :func:`maverick.memory_guard.filter_facts`)."""
+        rows = self._read_all(
+            "SELECT key, value, trust_tier FROM facts ORDER BY updated_at DESC")
+        return {r["key"]: (_dec_field(r["value"]), int(r["trust_tier"])) for r in rows}
 
     def facts_matching(self, token: str) -> dict[str, str]:
         """Facts explicitly scoped to ``token`` by key prefix.
@@ -1449,6 +1458,12 @@ class WorldModel:
             ph = ",".join("?" * len(keys))
             with self._writing() as conn:
                 conn.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
+                # GDPR Art.17: hard-purge the bitemporal history too, or the
+                # erased values would survive in fact_history (and stay
+                # reconstructable via get_fact(as_of=...)). A subject-erase
+                # removes the window rather than closing it. No-op (empty table)
+                # when [memory] temporal is off.
+                conn.execute(f"DELETE FROM fact_history WHERE key IN ({ph})", keys)
         return keys
 
     @staticmethod
@@ -1501,7 +1516,7 @@ class WorldModel:
         closed (valid_to = now) rather than erased, so the record that the fact
         existed until this moment survives the delete."""
         with self._writing() as conn:
-            if _temporal_memory_enabled():
+            if self._temporal_memory:
                 conn.execute(
                     "UPDATE fact_history SET valid_to = ? "
                     "WHERE key = ? AND valid_to IS NULL",

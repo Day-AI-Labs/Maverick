@@ -978,10 +978,7 @@ class PostgresWorldModel:
                 (key, value, episode_id, time.time(), _active_tenant()),
             )
 
-    def get_facts(self, *, min_trust: int | None = None) -> dict[str, str]:
-        # ``min_trust`` (trust-aware retrieval) is a no-op here: provenance
-        # columns are sqlite-first, so Postgres returns the full set (fail-open).
-        del min_trust
+    def get_facts(self) -> dict[str, str]:
         frag, params = _tenant_scope()
         sql = "SELECT key, value FROM facts"
         if frag:
@@ -991,6 +988,12 @@ class PostgresWorldModel:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return {r[0]: r[1] for r in rows}
+
+    def get_facts_with_trust(self) -> dict[str, tuple[str, int]]:
+        # Provenance columns are sqlite-first; treat every Postgres fact as
+        # first-party (3) so the Memory Guard fail-opens (keeps them) rather
+        # than silently dropping memory it can't tier.
+        return {k: (v, 3) for k, v in self.get_facts().items()}
 
     def facts_matching(self, token: str) -> dict[str, str]:
         """Facts explicitly scoped to ``token`` by ``user:<token>:`` key prefix.

