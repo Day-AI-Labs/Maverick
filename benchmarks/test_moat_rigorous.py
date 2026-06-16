@@ -150,6 +150,13 @@ def test_run_live_preflight_refuses_empty_codebase(tmp_path):
         MR.run_live(codebase=str(tmp_path))
 
 
+def test_worker_source_compiles():
+    # The whole embedded worker (prologue + run + always-emit-RESULT_JSON tail)
+    # must be valid Python -- it's never imported, so nothing else would catch a
+    # syntax error before a paid run tried to execute it.
+    compile(MR._WORKER_SRC, "<worker>", "exec")
+
+
 def test_worker_provisions_codebase_into_sandbox_workdir(tmp_path, monkeypatch):
     # Exec only the config-writing prologue (before the kernel import) in an
     # isolated HOME with a fake codebase, and confirm it mounts it + points the

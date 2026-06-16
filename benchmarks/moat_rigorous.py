@@ -429,15 +429,20 @@ except Exception as e:
     print("RUN_EXC:", type(e).__name__, str(e)[:120])
 wall = time.monotonic() - t
 nsk = len(list(_cfg.rglob("*.md")))  # distilled skills now in the store
-eps = world.list_episodes(goal_id=gid, limit=1)
-if eps:
-    e = eps[0]
-    out = {"cost": float(e.cost_dollars), "tools": int(e.tool_calls),
-           "wall": wall, "ok": e.outcome == "success", "skills": nsk}
-else:
-    out = {"cost": float(getattr(budget, "dollars", 0.0)),
-           "tools": int(getattr(budget, "tool_calls", 0)),
-           "wall": wall, "ok": False, "skills": nsk}
+# ALWAYS emit RESULT_JSON so a failed/partial run is RECORDED by the parent,
+# never silently dropped (which would lose its spent budget and skew totals).
+out = {"cost": 0.0, "tools": 0, "wall": wall, "ok": False, "skills": nsk}
+try:
+    eps = world.list_episodes(goal_id=gid, limit=1)
+    if eps:
+        e = eps[0]
+        out.update(cost=float(e.cost_dollars), tools=int(e.tool_calls),
+                   ok=e.outcome == "success")
+    else:
+        out.update(cost=float(getattr(budget, "dollars", 0.0)),
+                   tools=int(getattr(budget, "tool_calls", 0)))
+except Exception as _ex:
+    out["err"] = str(_ex)[:120]
 print("RESULT_JSON:" + json.dumps(out))
 '''
 
