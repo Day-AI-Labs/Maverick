@@ -1059,6 +1059,14 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `domain.py`); absent means today's behaviour — a free-text prose result with
   no declared consumer. The dashboard reads it to render, route, and gate a
   result by domain rather than showing every output as the same text box.
+- **Deliverable rendering** — the goal page (`/chat/goal/<id>`) renders a
+  result as the artifact its pack declares: a `forecast`/`table`/`report` shape
+  whose result carries a grid becomes a real titled, gated `<table>` (the FP&A
+  13-week cash forecast lands as a week-by-week grid, not a wall of monospace),
+  while `prose` and contract-less goals keep the plain text result. Server-side
+  and dependency-free (`deliverable.py` parses the pipe table agents emit; cells
+  go through template autoescaping), so a malformed or table-less result
+  degrades gracefully to prose.
 - **Finance suite (Office of the CFO)** — 31 domain packs across 7 towers
   (Controllership, FP&A, Treasury, Tax, Assurance, Procurement, Reporting) + a
   Finance Controller, each a sealed read-only/draft-by-default compartment with
