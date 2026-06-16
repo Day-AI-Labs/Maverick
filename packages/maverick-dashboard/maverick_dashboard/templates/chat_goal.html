@@ -73,6 +73,13 @@
   .artifact__title { font-weight: var(--font-medium); }
   .artifact__ver { margin-inline-start: auto; font-size: var(--text-xs); }
   .artifact__body { margin: 0; padding: var(--space-3) var(--space-4); white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-sm); overflow-x: auto; }
+  .artifact__history { border-top: 1px solid var(--hairline); padding: var(--space-2) var(--space-4); }
+  .artifact__history summary { cursor: pointer; font-size: var(--text-sm); color: var(--accent); }
+  .artifact__version { margin-top: var(--space-3); }
+  .artifact__version-head { font-size: var(--text-xs); font-weight: var(--font-medium); margin-bottom: var(--space-1); }
+  .artifact__diff { margin: 0; padding: var(--space-2) var(--space-3); background: var(--bg); border-radius: var(--radius-sm); font-family: ui-monospace, monospace; font-size: var(--text-xs); white-space: pre-wrap; overflow-x: auto; }
+  .artifact__diff .add { color: var(--accent); }
+  .artifact__diff .del { color: var(--danger); }
   .spinner {
     display: inline-block; width: 0.8em; height: 0.8em;
     border: 2px solid var(--border); border-top-color: var(--brand);
@@ -202,6 +209,12 @@
             </div>
           {% else %}
             <pre class="artifact__body" tabindex="0">{{ a.prose }}</pre>
+          {% endif %}
+          {% if a.versions > 1 %}
+            <details class="artifact__history" data-goal="{{ goal.id }}" data-title="{{ a.title }}">
+              <summary>Version history ({{ a.versions }})</summary>
+              <div class="artifact__history-body muted">Loading…</div>
+            </details>
           {% endif %}
         </div>
       {% endfor %}
@@ -543,5 +556,53 @@
       if (approve) approve.addEventListener('click', function () { submit('approved'); });
       if (reject) reject.addEventListener('click', function () { submit('rejected'); });
     })();
+  </script>
+
+  <script>
+    // Artifact version history: fetch on first expand, render newest-first with
+    // a unified diff per version (server-computed). textContent throughout — no
+    // untrusted content reaches innerHTML.
+    document.querySelectorAll('.artifact__history').forEach(function (d) {
+      d.addEventListener('toggle', function () {
+        if (!d.open || d.dataset.loaded) return;
+        d.dataset.loaded = '1';
+        const body = d.querySelector('.artifact__history-body');
+        const url = '/api/v1/goals/' + encodeURIComponent(d.dataset.goal) +
+                    '/artifacts/history?title=' + encodeURIComponent(d.dataset.title);
+        fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+          body.textContent = '';
+          body.classList.remove('muted');
+          const versions = (j.versions || []).slice().reverse();  // newest first
+          if (!versions.length) { body.textContent = 'No history.'; return; }
+          versions.forEach(function (v) {
+            const wrap = document.createElement('div');
+            wrap.className = 'artifact__version';
+            const head = document.createElement('div');
+            head.className = 'artifact__version-head';
+            head.textContent = 'v' + v.version +
+              (v.created_at ? ' · ' + new Date(v.created_at * 1000).toLocaleString() : '');
+            wrap.appendChild(head);
+            if (v.diff) {
+              const pre = document.createElement('pre');
+              pre.className = 'artifact__diff';
+              v.diff.split('\n').forEach(function (line) {
+                const span = document.createElement('span');
+                if (line[0] === '+') span.className = 'add';
+                else if (line[0] === '-') span.className = 'del';
+                span.textContent = line + '\n';
+                pre.appendChild(span);
+              });
+              wrap.appendChild(pre);
+            } else {
+              const p = document.createElement('div');
+              p.className = 'muted';
+              p.textContent = '(initial version)';
+              wrap.appendChild(p);
+            }
+            body.appendChild(wrap);
+          });
+        }).catch(function () { body.textContent = 'Failed to load history.'; });
+      });
+    });
   </script>
 {% endblock %}

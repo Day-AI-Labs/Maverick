@@ -54,3 +54,25 @@ def test_goal_without_artifacts_has_no_panel(tmp_path, monkeypatch):
     w.set_goal_status(gid, "done", result="just text")
     t = client.get(f"/chat/goal/{gid}").text
     assert 'class="artifacts"' not in t
+
+
+def test_artifact_history_endpoint_diffs(tmp_path, monkeypatch):
+    w = _world(tmp_path, monkeypatch)
+    gid = w.create_goal("g", "")
+    w.add_artifact(gid, "text", "Note", "alpha\nbeta")
+    w.add_artifact(gid, "text", "Note", "alpha\ngamma")
+    r = client.get(f"/api/v1/goals/{gid}/artifacts/history", params={"title": "Note"})
+    assert r.status_code == 200
+    vs = r.json()["versions"]
+    assert [v["version"] for v in vs] == [1, 2]
+    assert vs[0]["diff"] == ""                      # first version, nothing to diff against
+    assert "-beta" in vs[1]["diff"] and "+gamma" in vs[1]["diff"]
+
+
+def test_goal_page_shows_version_history_disclosure(tmp_path, monkeypatch):
+    w = _world(tmp_path, monkeypatch)
+    gid = w.create_goal("g", "", domain="finance_cash13w")
+    w.add_artifact(gid, "text", "Note", "v one")
+    w.add_artifact(gid, "text", "Note", "v two")     # 2 versions -> disclosure shows
+    t = client.get(f"/chat/goal/{gid}").text
+    assert "artifact__history" in t and "Version history" in t

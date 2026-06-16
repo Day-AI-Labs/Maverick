@@ -1094,7 +1094,13 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   (reusing the deliverable renderer), others as text — with a per-title version
   count; `GET /api/v1/goals/<id>/artifacts` lists them. Governed take on
   Claude-style artifacts: rich *rendering*, never arbitrary HTML/JS execution in
-  the operator's browser.
+  the operator's browser. **Agents emit them automatically**: on goal completion
+  the orchestrator records a structured deliverable as an artifact (best-effort,
+  byte-identical re-finalizes are deduped), so re-runs accrue version history.
+  The goal page grows a **version/diff viewer** — a per-artifact history
+  disclosure that fetches each version with a server-computed unified diff
+  (`/artifacts/history`), rendered with add/del coloring (textContent only, no
+  innerHTML).
   the deliverable their pack declares and scoped to the consumer role, so an
   FP&A analyst sees "my forecasts" and a risk officer sees "assessments awaiting
   my sign-off" instead of the flat `/goals` stream. Filter chips per consumer
