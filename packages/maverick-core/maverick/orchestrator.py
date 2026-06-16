@@ -330,6 +330,38 @@ def _record_skill_outcome(ctx: Any, *, success: bool) -> None:
         pass
 
 
+def _record_deliverable_artifact(world: Any, goal_id: int, result_text: str | None) -> None:
+    """If this goal's pack declares a structured deliverable, persist the result
+    as a versioned artifact -- so re-runs accumulate history and the goal page's
+    Artifacts panel reflects what was produced.
+
+    Best-effort: never blocks a run, and skips when the result is byte-identical
+    to the latest stored version, so re-finalizing the same output doesn't spam
+    versions. A table-shaped deliverable is stored as a ``table`` artifact;
+    everything structured-but-not-tabular as ``text``."""
+    try:
+        if not result_text:
+            return
+        g = world.get_goal(goal_id)
+        if g is None or not getattr(g, "domain", ""):
+            return
+        from .deliverable import render_deliverable
+        from .domain import available_domains
+        prof = available_domains().get(g.domain)
+        if prof is None:
+            return
+        rendered = render_deliverable(prof.output.shape, result_text)
+        if not rendered.structured:
+            return
+        title = prof.output.deliverable or "Deliverable"
+        for a in world.latest_artifacts(goal_id):
+            if a.get("title") == title and a.get("content") == result_text:
+                return  # unchanged -- don't append a duplicate version
+        world.add_artifact(goal_id, "table" if rendered.table else "text", title, result_text)
+    except Exception:  # pragma: no cover -- artifacts never block a run
+        pass
+
+
 def _record_planning_outcome(
     goal: Any, domain: str | None, mode: str, *, success: bool,
 ) -> None:
@@ -1244,6 +1276,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
             semantic_recall.index_goal(world.get_goal(goal_id))
         except Exception as e:  # pragma: no cover -- indexing never blocks a run
             log.debug("semantic index skipped: %s", e)
+        _record_deliverable_artifact(world, goal_id, summary)
         _record_skill_outcome(ctx, success=True)
         _record_planning_outcome(goal, domain, _planning_mode, success=True)
         _fire_webhook("final_emitted", {

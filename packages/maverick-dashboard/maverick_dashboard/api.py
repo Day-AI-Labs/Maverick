@@ -1122,6 +1122,31 @@ async def list_goal_artifacts(request: Request, goal_id: int) -> dict:
     return {"artifacts": w.latest_artifacts(goal_id)}
 
 
+@router.get("/goals/{goal_id}/artifacts/history")
+async def goal_artifact_history(request: Request, goal_id: int, title: str) -> dict:
+    """Every version of one titled artifact, oldest -> newest, each with a unified
+    diff against the previous version. Powers the version/diff viewer."""
+    import difflib
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    versions = [a for a in w.artifacts_for_goal(goal_id) if a["title"] == title]
+    out: list[dict] = []
+    prev: str | None = None
+    for a in versions:  # ascending by version
+        diff = ""
+        if prev is not None:
+            diff = "\n".join(difflib.unified_diff(
+                prev.splitlines(), (a["content"] or "").splitlines(),
+                fromfile=f"v{a['version'] - 1}", tofile=f"v{a['version']}", lineterm=""))
+        out.append({"version": a["version"], "created_at": a["created_at"],
+                    "content": a["content"], "diff": diff})
+        prev = a["content"] or ""
+    return {"title": title, "versions": out}
+
+
 @router.get("/plugins")
 async def list_plugins() -> dict:
     """Discovered + allow-listed plugins, broken out by kind."""
