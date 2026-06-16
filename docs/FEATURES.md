@@ -1087,6 +1087,14 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   re-keyed by hand. The goal page grows a sign-off panel (Approve / Reject + note,
   then the decision + hand-off download); a signed-off deliverable drops out of
   the persona inbox's "awaiting sign-off" queue. Agents draft; humans certify.
+- **System-of-record routing** — when a deliverable is approved, Maverick POSTs
+  it to a configured downstream endpoint (treasury / GL / Jira), so "approved in
+  Maverick" lands in the system of record automatically instead of being
+  re-keyed. Opt-in via `[deliverables] handoff_webhook` (a wizard step;
+  env-referenceable URL), signed with the existing `[webhooks]` HMAC secret and
+  delivered over the SSRF-safe webhook path. Best-effort and never blocks the
+  sign-off; the payload carries the parsed deliverable (table rows) and
+  attribution. Fires only on `approved` (`webhooks.fire_deliverable_handoff`).
 - **Finance suite (Office of the CFO)** — 31 domain packs across 7 towers
   (Controllership, FP&A, Treasury, Tax, Assurance, Procurement, Reporting) + a
   Finance Controller, each a sealed read-only/draft-by-default compartment with

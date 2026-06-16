@@ -38,6 +38,16 @@ _thread_lock = threading.Lock()
 _executor = None  # type: ignore[var-annotated]
 
 
+def _expand_env(val: object) -> str | None:
+    """Resolve a config value that may be a ``${VAR}`` env reference. Returns the
+    literal string, the env var's value, or ``None`` (unset / non-string)."""
+    if not isinstance(val, str):
+        return str(val) if val is not None else None
+    if val.startswith("${") and val.endswith("}"):
+        return os.environ.get(val[2:-1]) or None
+    return val or None
+
+
 def _load_config_outbound() -> tuple[list[str], str | None]:
     try:
         from .config import load_config
@@ -47,15 +57,7 @@ def _load_config_outbound() -> tuple[list[str], str | None]:
         return [], None
     section = (cfg or {}).get("webhooks") or {}
     urls = list(section.get("outbound") or [])
-    secret = section.get("secret")
-    if isinstance(secret, str) and secret.startswith("${") and secret.endswith("}"):
-        env_name = secret[2:-1]
-        secret = os.environ.get(env_name) or None
-    # Coerce a non-string TOML value (e.g. `secret = 1234`) to str so _sign's
-    # secret.encode() and verify_signature don't raise AttributeError (which,
-    # for the outbound path, would break fire()'s never-raise contract).
-    if secret is not None and not isinstance(secret, str):
-        secret = str(secret)
+    secret = _expand_env(section.get("secret"))
     return urls, secret
 
 
@@ -201,6 +203,36 @@ def fire(
     for url in urls:
         executor.submit(_post, url, body, dict(headers), timeout)
     return len(urls)
+
+
+def _load_handoff_target() -> tuple[str | None, str | None]:
+    """The deliverable hand-off target: ``([deliverables] handoff_webhook, secret)``.
+
+    The URL may be a literal or a ``${VAR}`` env reference; signing reuses the
+    existing ``[webhooks] secret`` so a deployment configures one signing key.
+    Returns ``(None, ...)`` when no hand-off endpoint is configured."""
+    try:
+        from .config import load_config
+        cfg = load_config() or {}
+    except Exception as e:  # pragma: no cover -- config never blocks the hand-off
+        log.debug("webhooks: cannot load config for hand-off: %s", e)
+        return None, None
+    url = _expand_env((cfg.get("deliverables") or {}).get("handoff_webhook"))
+    _, secret = _load_config_outbound()
+    return url, secret
+
+
+def fire_deliverable_handoff(payload: dict[str, Any]) -> int:
+    """Push an approved deliverable to the configured system-of-record endpoint.
+
+    A thin wrapper over :func:`fire` for the ``deliverable.approved`` event,
+    routed to ``[deliverables] handoff_webhook``. Silent no-op (returns 0) when
+    no endpoint is configured, and -- like ``fire`` -- never raises into the
+    caller, so a sign-off is recorded whether or not the hand-off is wired."""
+    url, secret = _load_handoff_target()
+    if not url:
+        return 0
+    return fire("deliverable.approved", payload, urls=[url], secret=secret)
 
 
 def verify_signature(

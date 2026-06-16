@@ -279,6 +279,14 @@ def test_write_config_emits_webhooks(tmp_path: Path, monkeypatch):
     assert parsed["webhooks"]["secret"] == "${MAVERICK_WEBHOOK_SECRET}"
 
 
+def test_write_config_emits_deliverable_handoff(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        deliverables={"handoff_webhook": "https://sor.example/ingest"},
+    )
+    assert parsed["deliverables"]["handoff_webhook"] == "https://sor.example/ingest"
+
+
 def test_write_config_emits_a2a(tmp_path: Path, monkeypatch):
     parsed = _write_full_config(
         tmp_path, monkeypatch, a2a={"enabled": True},
