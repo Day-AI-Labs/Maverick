@@ -20,32 +20,38 @@ from typing import Any
 _DONE = "done"
 
 
-def _run_view(g: Any, gate: str | None) -> dict:
+def _run_view(g: Any, gate: str | None, signoff: str | None) -> dict:
     """One run as the inbox shows it. ``awaiting`` = a gated deliverable that
-    has finished and so is sitting for its human sign-off."""
+    has finished and has no sign-off recorded yet, so it is sitting for its
+    human review; once signed off (approved/rejected) it drops out."""
     status = getattr(g, "status", "") or ""
     return {
         "id": getattr(g, "id", None),
         "title": getattr(g, "title", "") or "",
         "status": status,
         "updated_at": getattr(g, "updated_at", 0) or 0,
-        "awaiting": bool(gate) and status == _DONE,
+        "signoff": signoff,
+        "awaiting": bool(gate) and status == _DONE and not signoff,
     }
 
 
 def build_inbox(specs: list[dict], runs_by_domain: dict[str, list],
-                role: str | None = None) -> dict:
+                role: str | None = None,
+                signoffs: dict[int, str] | None = None) -> dict:
     """Shape the persona inbox.
 
     ``specs`` are the packs that declare a deliverable (each a dict with
     ``domain``/``deliverable``/``consumers``/``cadence``/``gate``/``shape``/
     ``suite``); ``runs_by_domain`` maps a pack name to its recent runs (newest
-    first). ``role`` scopes to deliverables that role consumes.
+    first). ``role`` scopes to deliverables that role consumes. ``signoffs``
+    maps a goal id to its recorded decision, so a reviewed deliverable drops
+    out of the awaiting queue.
 
     Returns ``roles`` (every consumer role, for the filter), the selected
     ``role``, ``items`` (one per deliverable, runs attached, gated-and-finished
     floated to the top), and ``awaiting`` (the flat sign-off queue across the
     selected deliverables, newest first)."""
+    signoffs = signoffs or {}
     roles = sorted({r for s in specs for r in s.get("consumers", [])})
     if role:
         specs = [s for s in specs if role in s.get("consumers", [])]
@@ -53,7 +59,8 @@ def build_inbox(specs: list[dict], runs_by_domain: dict[str, list],
     items: list[dict] = []
     awaiting: list[dict] = []
     for s in specs:
-        runs = [_run_view(g, s.get("gate")) for g in runs_by_domain.get(s["domain"], [])]
+        runs = [_run_view(g, s.get("gate"), signoffs.get(getattr(g, "id", None)))
+                for g in runs_by_domain.get(s["domain"], [])]
         awaiting_count = 0
         for r in runs:
             if r["awaiting"]:

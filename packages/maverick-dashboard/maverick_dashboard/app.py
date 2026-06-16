@@ -984,7 +984,12 @@ async def deliverables_page(request: Request, role: str = "") -> HTMLResponse:
                 domain=s["domain"], owner=owner, limit=5, order="desc")
         except Exception:  # pragma: no cover -- a bad domain query never breaks the page
             runs_by_domain[s["domain"]] = []
-    model = build_inbox(specs, runs_by_domain, role or None)
+    ids = [g.id for runs in runs_by_domain.values() for g in runs]
+    try:
+        signoffs = _world().signoffs_for_goals(ids)
+    except Exception:  # pragma: no cover -- never break the page on the sign-off lookup
+        signoffs = {}
+    model = build_inbox(specs, runs_by_domain, role or None, signoffs)
     return templates.TemplateResponse(request, "deliverables.html", model)
 
 
@@ -3392,14 +3397,23 @@ def _goal_deliverable(g):
 
 @app.get("/chat/goal/{goal_id}", response_class=HTMLResponse)
 async def chat_goal(request: Request, goal_id: int) -> HTMLResponse:
-    g = _world().get_goal(goal_id)
+    w = _world()
+    g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
     contract, rendered = _goal_deliverable(g)
+    # The current sign-off, only for a gated deliverable (the panel that lets a
+    # human certify it and hand it off). None elsewhere -> no panel.
+    signoff = None
+    if contract and contract.get("gate"):
+        try:
+            signoff = w.signoff_for(goal_id)
+        except Exception:  # pragma: no cover -- never 500 the goal page
+            signoff = None
     return templates.TemplateResponse(
         request, "chat_goal.html",
-        {"goal": g, "deliverable": contract, "rendered": rendered},
+        {"goal": g, "deliverable": contract, "rendered": rendered, "signoff": signoff},
     )
 
 

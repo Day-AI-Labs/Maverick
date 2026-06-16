@@ -60,6 +60,14 @@ class TestBuildInbox:
         m = build_inbox([_RISK, _FORECAST], runs)  # risk first by input order
         assert m["items"][0]["domain"] == "finance_cash13w"     # floated up
 
+    def test_signed_off_run_drops_out_of_awaiting(self):
+        runs = {"finance_cash13w": [_Run(7, "Refresh forecast", "done", 100.0)]}
+        # finished + gated, but reviewed -> no longer awaiting
+        m = build_inbox([_FORECAST], runs, signoffs={7: "approved"})
+        assert m["awaiting"] == []
+        assert m["items"][0]["awaiting_count"] == 0
+        assert m["items"][0]["runs"][0]["signoff"] == "approved"
+
 
 class TestDeliverablesPage:
     def _world(self, tmp_path, monkeypatch):

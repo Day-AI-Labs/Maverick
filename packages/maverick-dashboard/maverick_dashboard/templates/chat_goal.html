@@ -53,6 +53,17 @@
   .deliverable__table { font-size: var(--text-sm); }
   .deliverable__table th, .deliverable__table td { white-space: nowrap; }
   .deliverable__prose { padding: var(--space-3) var(--space-4); font-family: inherit; }
+
+  /* Sign-off: the human certify/reject step a gated deliverable calls for. */
+  .signoff {
+    margin-top: var(--space-4); padding: var(--space-4);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-sunken);
+  }
+  .signoff__head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+  .signoff__note { margin: 0 0 var(--space-3); white-space: pre-wrap; }
+  .signoff__prompt { margin: 0 0 var(--space-3); font-size: var(--text-sm); }
+  .signoff__actions { display: flex; gap: var(--space-2); }
+  .signoff textarea.input { width: 100%; margin-bottom: var(--space-3); }
   .spinner {
     display: inline-block; width: 0.8em; height: 0.8em;
     border: 2px solid var(--border); border-top-color: var(--brand);
@@ -132,6 +143,30 @@
         <p id="deliverable-stale" class="muted" style="display: none; margin-top: var(--space-3);">
           Deliverable updated — <a href="/chat/goal/{{ goal.id }}">reload to view it</a>.
         </p>
+        {% if deliverable.gate %}
+          <div class="signoff">
+            {% if signoff %}
+              <div class="signoff__head">
+                <span class="badge {{ 'success' if signoff.decision == 'approved' else 'failure' }}">{{ signoff.decision }}</span>
+                <span class="muted">by {{ signoff.decided_by or 'operator' }} · <span data-when="{{ signoff.created_at }}"></span></span>
+              </div>
+              {% if signoff.note %}<p class="signoff__note muted">{{ signoff.note }}</p>{% endif %}
+              {% if signoff.decision == 'approved' and rendered.table %}
+                <a class="btn btn--ghost" href="/api/v1/goals/{{ goal.id }}/deliverable.csv">Download for hand-off (CSV)</a>
+              {% endif %}
+            {% elif goal.status == 'done' %}
+              <p class="signoff__prompt">Needs <strong>{{ deliverable.gate }}</strong> sign-off before it's acted on.</p>
+              <textarea id="signoff-note" class="input" rows="2" placeholder="Optional review note…" aria-label="Review note"></textarea>
+              <div class="signoff__actions">
+                <button id="signoff-approve" class="btn btn--primary" type="button" data-decision="approved">Approve</button>
+                <button id="signoff-reject" class="btn btn--ghost" type="button" data-decision="rejected">Reject</button>
+              </div>
+              <p id="signoff-msg" role="status" aria-live="polite" class="muted" style="min-height: 1em; margin: var(--space-2) 0 0;"></p>
+            {% else %}
+              <p class="signoff__prompt muted">Sign-off ({{ deliverable.gate }}) opens when the deliverable is finished.</p>
+            {% endif %}
+          </div>
+        {% endif %}
       {% else %}
         <pre id="result" tabindex="0" aria-label="Goal result"
              style="white-space: pre-wrap; margin: 0;">{{ goal.result or '' }}</pre>
@@ -433,6 +468,45 @@
       // Poll questions on a longer cadence so the form picks up on
       // ask_user that happens between event ticks.
       setInterval(function() { if (!done) pollQuestions(); }, 5000);
+    })();
+  </script>
+  <script>
+    // Deliverable sign-off: record the human certify/reject decision, then
+    // reload to show the signed-off state (and the hand-off download).
+    (function () {
+      document.querySelectorAll('.signoff [data-when]').forEach(function (el) {
+        var ts = parseFloat(el.getAttribute('data-when'));
+        if (ts) el.textContent = window.mvWhen(ts);
+      });
+      var approve = document.getElementById('signoff-approve');
+      var reject = document.getElementById('signoff-reject');
+      if (!approve && !reject) return;
+      var note = document.getElementById('signoff-note');
+      var msg = document.getElementById('signoff-msg');
+      var goalId = {{ goal.id }};
+      var btns = [approve, reject];
+      function submit(decision) {
+        btns.forEach(function (b) { if (b) b.disabled = true; });
+        msg.style.color = 'var(--muted)';
+        msg.textContent = 'Recording…';
+        fetch('/api/v1/goals/' + goalId + '/signoff', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({decision: decision, note: (note && note.value.trim()) || null}),
+        }).then(function (r) {
+          if (r.ok) { location.reload(); return; }
+          return r.json().catch(function () { return {}; }).then(function (j) {
+            msg.style.color = 'var(--danger)';
+            msg.textContent = j.detail || ('Sign-off failed: ' + r.status);
+            btns.forEach(function (b) { if (b) b.disabled = false; });
+          });
+        }).catch(function (e) {
+          msg.style.color = 'var(--danger)';
+          msg.textContent = String(e);
+          btns.forEach(function (b) { if (b) b.disabled = false; });
+        });
+      }
+      if (approve) approve.addEventListener('click', function () { submit('approved'); });
+      if (reject) reject.addEventListener('click', function () { submit('rejected'); });
     })();
   </script>
 {% endblock %}
