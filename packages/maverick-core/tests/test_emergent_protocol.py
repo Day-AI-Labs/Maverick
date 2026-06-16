@@ -1,0 +1,71 @@
+"""The Emergent Substrate: learn a shorthand for repeated coordination, compress
+with it, and -- the contract that makes it deployable -- decode EXACTLY back to
+English so nothing is ever hidden.
+"""
+from __future__ import annotations
+
+from maverick import emergent_protocol as ep
+
+CORPUS = [
+    "spawning sub-agent for research task",
+    "spawning sub-agent for analysis task",
+    "spawning sub-agent for research task",
+    "verification passed with high confidence",
+    "verification passed with high confidence",
+    "blocked on user approval for high-risk action",
+    "blocked on user approval for high-risk action",
+]
+
+
+def test_learn_codes_the_repeated_boilerplate():
+    book = ep.learn(CORPUS)
+    assert book.size > 0
+    # the most-repeated phrases earn codes
+    assert any("spawning sub-agent for" in p for p in book.forward)
+    assert any("verification passed" in p for p in book.forward)
+
+
+def test_encoding_actually_compresses():
+    book = ep.learn(CORPUS)
+    assert ep.compression_ratio(CORPUS, book) < 1.0
+    one = "verification passed with high confidence"
+    assert len(ep.encode(one, book)) < len(one)
+
+
+def test_round_trip_is_exact_for_every_message():
+    book = ep.learn(CORPUS)
+    # in-corpus, novel, overlapping, and substring-y messages all round-trip
+    probes = CORPUS + [
+        "a totally novel message the codebook never saw",
+        "verification passed with high confidence and verification passed again",
+        "spawning sub-agents (note: 'spawning sub-agent for' appears mid-word-ish)",
+        "",
+    ]
+    for m in probes:
+        assert ep.decode(ep.encode(m, book), book) == m
+
+
+def test_empty_codebook_is_identity():
+    book = ep.Codebook()
+    assert ep.encode("anything at all", book) == "anything at all"
+    assert ep.decode("anything at all", book) == "anything at all"
+    assert ep.compression_ratio(["abc"], book) == 1.0
+
+
+def test_store_roundtrip_and_audit(tmp_path):
+    store = ep.CodebookStore(path=tmp_path / "cb.json")
+    store.update(ep.learn(CORPUS))
+    book = store.book()
+    msg = "verification passed with high confidence"
+    coded = ep.encode(msg, book)
+    # persisted codebook still decodes the compressed form back to plain English
+    reloaded = ep.CodebookStore(path=tmp_path / "cb.json").book()
+    assert ep.decode(coded, reloaded) == msg
+
+
+def test_enabled_off_by_default(monkeypatch):
+    monkeypatch.delenv("MAVERICK_EMERGENT_PROTOCOL", raising=False)
+    monkeypatch.setattr("maverick.config.get_emergent_protocol", lambda: {"enable": False})
+    assert ep.enabled() is False
+    monkeypatch.setenv("MAVERICK_EMERGENT_PROTOCOL", "1")
+    assert ep.enabled() is True

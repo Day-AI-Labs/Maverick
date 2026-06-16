@@ -1272,6 +1272,13 @@ def pick_advanced() -> dict[str, Any]:
             "ships the proven win. Discovery, not just labour; off by default.",
             default=False,
         ),
+        "emergent_protocol": _q_confirm(
+            "Emergent coordination shorthand? Swarms evolve short codes for the boilerplate "
+            "they repeat (cheaper coordination), while every code decodes EXACTLY back to "
+            "English -- the auditable translation layer, so nothing is ever hidden from the "
+            "Shield or a human. Off by default; a no-op until a codebook is learned.",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2571,6 +2578,13 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("# Discover a better process and prove it: pair a harmful action with")
         lines.append("# the beneficial habit that should replace it, validate the swap in the")
         lines.append("# world-model, then experiment for real (maverick.operations_scientist).")
+        lines.append("enable = true")
+    if advanced.get("emergent_protocol"):
+        lines.append("")
+        lines.append("[emergent_protocol]")
+        lines.append("# Learn short codes for the swarm's repeated coordination boilerplate;")
+        lines.append("# every code decodes exactly back to English, so nothing is hidden from")
+        lines.append("# the Shield/audit (maverick.emergent_protocol). No-op until learned.")
         lines.append("enable = true")
     if advanced.get("enforce_quotas"):
         lines.append("")

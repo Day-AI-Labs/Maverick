@@ -780,6 +780,18 @@ def get_operations_scientist() -> dict:
     return {"enable": bool(cfg.get("enable", False))}
 
 
+def get_emergent_protocol() -> dict:
+    """Return the ``[emergent_protocol]`` section (learned coordination shorthand).
+
+    The swarm evolves short codes for the boilerplate it repeats, paying frontier
+    tokens only for what's new -- but every code decodes exactly back to English
+    (the auditable translation layer). OFF by default -- when ``enable`` is false
+    the codec is the identity transform, so a default deployment is unaffected.
+    """
+    cfg = load_config().get("emergent_protocol", {})
+    return {"enable": bool(cfg.get("enable", False))}
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 
