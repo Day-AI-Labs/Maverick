@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["itgrc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Asset lifecycle register"
+consumers = ["control_owner", "security_analyst"]
+cadence = "monthly"
+gate = "review"

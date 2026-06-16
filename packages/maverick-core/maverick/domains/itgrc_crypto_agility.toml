@@ -11,3 +11,10 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["itgrc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Crypto-agility posture & CBOM"
+consumers = ["security_analyst", "ciso"]
+cadence = "quarterly"
+gate = "review"

@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "AI system risk-tier register"
+consumers = ["risk_officer", "ciso", "compliance_officer"]
+cadence = "quarterly"
+gate = "review"

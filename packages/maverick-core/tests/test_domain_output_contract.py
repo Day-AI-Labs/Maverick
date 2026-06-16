@@ -206,3 +206,30 @@ class TestBankingSuiteContracts:
     def test_banking_roles_stay_a_consistent_vocabulary(self):
         roles = {r for p in self._with_contract().values() for r in p.output.consumers}
         assert roles and roles <= self._ALLOWED, f"unexpected roles: {roles - self._ALLOWED}"
+
+
+class TestItGrcSuiteContracts:
+    """The IT-GRC / risk suite declares contracts across the risk register,
+    privacy (DPIA/RoPA), control testing, incident/breach response, security
+    findings, and audit evidence -- the risk-officer / CISO / privacy home."""
+
+    _ALLOWED = {"risk_officer", "ciso", "compliance_officer", "internal_auditor",
+                "privacy_officer", "security_analyst", "vendor_risk_manager",
+                "control_owner"}
+
+    def _with_contract(self):
+        return {n: p for n, p in available_domains().items()
+                if n.startswith("itgrc_") and (p.output.deliverable or p.output.consumers)}
+
+    def test_many_itgrc_packs_declare_deliverables(self):
+        assert len(self._with_contract()) >= 45
+
+    def test_declared_itgrc_contracts_lint_clean(self):
+        for name, p in self._with_contract().items():
+            errors, warnings = lint_profile(p)
+            assert not errors, (name, errors)
+            assert not [w for w in warnings if "output" in w], (name, warnings)
+
+    def test_itgrc_roles_stay_a_consistent_vocabulary(self):
+        roles = {r for p in self._with_contract().values() for r in p.output.consumers}
+        assert roles and roles <= self._ALLOWED, f"unexpected roles: {roles - self._ALLOWED}"

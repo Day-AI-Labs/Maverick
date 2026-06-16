@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Forensics timeline & findings"
+consumers = ["security_analyst", "ciso"]
+cadence = "on-demand"
+gate = "review"

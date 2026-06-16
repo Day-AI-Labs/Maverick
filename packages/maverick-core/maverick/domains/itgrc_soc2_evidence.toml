@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["itgrc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "SOC 2 control-evidence register"
+consumers = ["internal_auditor", "compliance_officer"]
+cadence = "monthly"
+gate = "review"

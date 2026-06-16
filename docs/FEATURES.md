@@ -1091,7 +1091,11 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   reinsurance_analyst, compliance_officer, ...). The banking suite adds ~37
   (CECL allowance, SAR/CTR filings, AML queues, loan files, call/liquidity
   reports, ALM sensitivity) across bsa_officer, credit_officer, loan_officer,
-  treasurer, operations_manager, ...
+  treasurer, operations_manager, ...; and the IT-GRC / risk suite adds ~55
+  (enterprise risk register, DPIA/RoPA, control-test results, incident/breach
+  reports, vendor TPRM, audit evidence) across risk_officer, ciso,
+  privacy_officer, internal_auditor, security_analyst, ... -- so the inbox spans
+  ~159 deliverables across ~30 consumer roles.
 - **Governed hand-off (deliverable sign-off + export)** — closes the loop the
   output gate opens: a human certifies a finished, gated deliverable
   (`POST /api/v1/goals/<id>/signoff`, recorded in the v16 `signoffs` table with

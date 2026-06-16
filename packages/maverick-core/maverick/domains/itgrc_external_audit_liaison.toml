@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Prepared-by-client package"
+consumers = ["compliance_officer", "internal_auditor"]
+cadence = "quarterly"
+gate = "review"

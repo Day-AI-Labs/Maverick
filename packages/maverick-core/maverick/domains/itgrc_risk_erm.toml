@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Enterprise risk register"
+consumers = ["risk_officer", "ciso"]
+cadence = "quarterly"
+gate = "review"

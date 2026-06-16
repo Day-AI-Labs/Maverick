@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "AI incident PIR"
+consumers = ["ciso", "risk_officer"]
+cadence = "on-demand"
+gate = "approval"

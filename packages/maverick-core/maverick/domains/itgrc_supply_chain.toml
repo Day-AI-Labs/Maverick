@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Supply-chain trust assessment"
+consumers = ["security_analyst", "ciso"]
+cadence = "quarterly"
+gate = "review"

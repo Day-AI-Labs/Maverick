@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["itgrc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Policy attestation tracker"
+consumers = ["compliance_officer", "control_owner"]
+cadence = "monthly"
+gate = "review"

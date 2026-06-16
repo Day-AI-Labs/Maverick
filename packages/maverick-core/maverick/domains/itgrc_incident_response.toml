@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Security incident case file"
+consumers = ["ciso", "security_analyst"]
+cadence = "on-demand"
+gate = "approval"

@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["itgrc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Data classification register"
+consumers = ["control_owner", "privacy_officer"]
+cadence = "monthly"
+gate = "review"

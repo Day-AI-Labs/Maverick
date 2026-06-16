@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Breach assessment & notice"
+consumers = ["privacy_officer", "compliance_officer", "ciso"]
+cadence = "on-demand"
+gate = "approval"
