@@ -64,6 +64,15 @@
   .signoff__prompt { margin: 0 0 var(--space-3); font-size: var(--text-sm); }
   .signoff__actions { display: flex; gap: var(--space-2); }
   .signoff textarea.input { width: 100%; margin-bottom: var(--space-3); }
+
+  /* Artifacts: a goal's versioned, kind-tagged outputs. */
+  .artifacts { margin-top: var(--space-5); }
+  .artifacts__head { font-weight: var(--font-semibold); margin-bottom: var(--space-3); display: flex; align-items: center; gap: var(--space-2); }
+  .artifact { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); overflow: hidden; margin-bottom: var(--space-3); }
+  .artifact__head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--hairline); }
+  .artifact__title { font-weight: var(--font-medium); }
+  .artifact__ver { margin-inline-start: auto; font-size: var(--text-xs); }
+  .artifact__body { margin: 0; padding: var(--space-3) var(--space-4); white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-sm); overflow-x: auto; }
   .spinner {
     display: inline-block; width: 0.8em; height: 0.8em;
     border: 2px solid var(--border); border-top-color: var(--brand);
@@ -172,6 +181,32 @@
              style="white-space: pre-wrap; margin: 0;">{{ goal.result or '' }}</pre>
       {% endif %}
     </div>
+    {% if artifacts %}
+    <div class="artifacts" aria-label="Artifacts">
+      <div class="artifacts__head">Artifacts <span class="badge">{{ artifacts|length }}</span></div>
+      {% for a in artifacts %}
+        <div class="artifact">
+          <div class="artifact__head">
+            <span class="artifact__title">{{ a.title or 'Untitled' }}</span>
+            <span class="badge">{{ a.kind }}</span>
+            <span class="muted artifact__ver">v{{ a.version }}{% if a.versions > 1 %} · {{ a.versions }} versions{% endif %}</span>
+          </div>
+          {% if a.table %}
+            <div class="deliverable__table-wrap">
+              <table class="deliverable__table">
+                <thead><tr>{% for h in a.table.headers %}<th scope="col">{{ h }}</th>{% endfor %}</tr></thead>
+                <tbody>
+                  {% for row in a.table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <pre class="artifact__body" tabindex="0">{{ a.prose }}</pre>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div id="halt-card" class="halt-card" style="display: none;">
       <div class="halt-card__title">Stopped before finishing</div>
       <p id="halt-reason" class="muted" style="margin: var(--space-2) 0 0;"></p>

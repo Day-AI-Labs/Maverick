@@ -10,7 +10,7 @@ from maverick.world_model import SCHEMA_VERSION, WorldModel
 
 
 def test_schema_version_is_current(tmp_path):
-    assert SCHEMA_VERSION == 17  # bump when adding a migration
+    assert SCHEMA_VERSION == 18  # bump when adding a migration
     assert WorldModel(tmp_path / "w.db").schema_version == SCHEMA_VERSION
 
 
@@ -81,6 +81,30 @@ def test_signoffs_for_goals_batch(tmp_path):
     w.record_signoff(b, "rejected")
     assert w.signoffs_for_goals([a, b, c]) == {a: "approved", b: "rejected"}
     assert w.signoffs_for_goals([]) == {}
+
+
+def test_artifact_versioning_and_latest(tmp_path):
+    w = WorldModel(tmp_path / "w.db")
+    g = w.create_goal("forecast", domain="finance_cash13w")
+    w.add_artifact(g, "table", "Cash forecast", "| W | Net |\n| - | - |\n| 1 | 300 |")
+    w.add_artifact(g, "table", "Cash forecast", "| W | Net |\n| - | - |\n| 1 | 350 |")  # v2
+    w.add_artifact(g, "markdown", "Memo", "# Memo\nUp 50.")
+    # all versions retained, ordered by title then version
+    allv = [(a["title"], a["version"]) for a in w.artifacts_for_goal(g)]
+    assert allv == [("Cash forecast", 1), ("Cash forecast", 2), ("Memo", 1)]
+    # latest = newest version per title, with a count + decrypted content
+    latest = {a["title"]: a for a in w.latest_artifacts(g)}
+    assert latest["Cash forecast"]["version"] == 2
+    assert latest["Cash forecast"]["versions"] == 2
+    assert "350" in latest["Cash forecast"]["content"]   # content round-trips (encrypted)
+    assert latest["Memo"]["kind"] == "markdown" and latest["Memo"]["versions"] == 1
+
+
+def test_artifacts_absent_is_empty(tmp_path):
+    w = WorldModel(tmp_path / "w.db")
+    g = w.create_goal("plain")
+    assert w.artifacts_for_goal(g) == []
+    assert w.latest_artifacts(g) == []
 
 
 def test_list_goals_domain_filter(tmp_path):

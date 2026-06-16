@@ -1086,7 +1086,15 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   and dependency-free (`deliverable.py` parses the pipe table agents emit; cells
   go through template autoescaping), so a malformed or table-less result
   degrades gracefully to prose.
-- **Persona inbox (`/deliverables`)** — the consumption home: runs grouped by
+- **Artifacts** — a goal can produce versioned, kind-tagged artifacts
+  (markdown / code / table / text) stored apart from the single `goal.result`
+  blob (v18 `artifacts` table; `add_artifact` / `latest_artifacts`, title
+  plaintext for version-keying, content encrypted at rest). The goal page shows
+  the latest version of each, rendered by kind — a `table` artifact as a grid
+  (reusing the deliverable renderer), others as text — with a per-title version
+  count; `GET /api/v1/goals/<id>/artifacts` lists them. Governed take on
+  Claude-style artifacts: rich *rendering*, never arbitrary HTML/JS execution in
+  the operator's browser.
   the deliverable their pack declares and scoped to the consumer role, so an
   FP&A analyst sees "my forecasts" and a risk officer sees "assessments awaiting
   my sign-off" instead of the flat `/goals` stream. Filter chips per consumer

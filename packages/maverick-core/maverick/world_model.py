@@ -25,7 +25,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -73,6 +73,23 @@ CREATE TABLE IF NOT EXISTS signoffs (
     note TEXT,
     created_at REAL NOT NULL
 );
+
+-- v18 artifacts: versioned, kind-tagged deliverable artifacts a goal produces
+-- (markdown / code / table / text), distinct from the single goal.result blob.
+-- Re-emitting the same (goal_id, title) appends a new version; title + content
+-- are encrypted at rest like other agent output. The render kind drives how the
+-- dashboard presents it.
+CREATE TABLE IF NOT EXISTS artifacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    goal_id INTEGER NOT NULL REFERENCES goals(id),
+    kind TEXT NOT NULL DEFAULT 'text',
+    title TEXT,
+    content TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_goal ON artifacts(goal_id);
 
 CREATE TABLE IF NOT EXISTS episodes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -352,6 +369,9 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE facts ADD COLUMN trust_tier INTEGER NOT NULL DEFAULT 3",
         "ALTER TABLE facts ADD COLUMN sensitivity TEXT NOT NULL DEFAULT 'internal'",
     ],
+    # v18 artifacts: the artifacts table + its index are in SCHEMA (idempotent
+    # CREATE); listed here so existing DBs bump the version on next open.
+    18: [],
 }
 
 
@@ -997,6 +1017,47 @@ class WorldModel:
             tuple(ids),
         )
         return {r["goal_id"]: r["decision"] for r in rows}
+
+    def add_artifact(self, goal_id: int, kind: str, title: str, content: str) -> int:
+        """Record an artifact a goal produced (markdown / code / table / text).
+        Re-using the same ``(goal_id, title)`` appends the next version, so the
+        UI can show history. ``title`` is a plaintext label (versioning keys on
+        it); ``content`` is encrypted at rest like other agent output."""
+        now = time.time()
+        with self._writing() as conn:
+            cur = conn.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM artifacts WHERE goal_id = ? AND title = ?",
+                (int(goal_id), title or ""),
+            )
+            version = int(cur.fetchone()[0]) + 1
+            cur = conn.execute(
+                "INSERT INTO artifacts(goal_id, kind, title, content, version, created_at) "
+                "VALUES(?, ?, ?, ?, ?, ?)",
+                (int(goal_id), str(kind or "text"), title or "",
+                 _enc_field(content), version, now),
+            )
+            return int(cur.lastrowid)
+
+    def artifacts_for_goal(self, goal_id: int) -> list[dict]:
+        """Every artifact version for a goal, ordered by title then version."""
+        rows = self._read_all(
+            "SELECT id, goal_id, kind, title, content, version, created_at "
+            "FROM artifacts WHERE goal_id = ? ORDER BY title, version",
+            (int(goal_id),),
+        )
+        return [{"id": r["id"], "goal_id": r["goal_id"], "kind": r["kind"],
+                 "title": r["title"] or "", "content": _dec_field(r["content"]) or "",
+                 "version": r["version"], "created_at": r["created_at"]} for r in rows]
+
+    def latest_artifacts(self, goal_id: int) -> list[dict]:
+        """The latest version of each titled artifact, with a ``versions`` count
+        (what the goal page shows; older versions are still in the table)."""
+        by_title: dict[str, dict] = {}
+        counts: dict[str, int] = {}
+        for a in self.artifacts_for_goal(goal_id):  # title, version ascending
+            by_title[a["title"]] = a
+            counts[a["title"]] = counts.get(a["title"], 0) + 1
+        return [{**a, "versions": counts[t]} for t, a in by_title.items()]
 
     def set_goal_domain(self, goal_id: int, domain: str) -> None:
         """Record the department (domain pack) a goal is running as.
