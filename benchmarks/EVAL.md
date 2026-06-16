@@ -47,7 +47,7 @@ run_benchmark(bench, solver, dataset=..., limit=...) -> {pass_at_1, mean_score, 
 | slice | benchmark | status | scorer |
 |---|---|---|---|
 | general assistant | **GAIA** (`eval_gaia.py`) | ✅ shipped | official normalized exact-match (number / string / list) |
-| tool-agent policy | **τ²-bench** (`eval_tau2.py`) | ✅ shipped | stateful tool domain + DB; graded on final state **and** required actions. Self-runnable: `python benchmarks/eval_tau2.py` (dry-run on the retail fixture); real tau2 task files via `--dataset`. Real Maverick-driving solver + user simulator are the follow-up. |
+| tool-agent policy | **τ²-bench** (`eval_tau2.py`) | ✅ shipped | stateful tool domain + DB; graded on final state **and** required actions. The **live solver** (`tau2_solver.py`) runs an agent↔user-simulator conversation over the domain tools. Run: `python benchmarks/eval_tau2.py --limit N --max-dollars 2`; CI/stub: `MAVERICK_EVAL_DRY_RUN=1 …`. |
 | CLI ops | **terminal-bench** (`eval_terminal_bench.py`) | ✅ shipped | Docker-free virtual-FS: graded on final files **and** required commands. The **live solver** (`terminal_solver.py`) drives a real LLM in a tool-calling loop over the env's shell tools. Run: `python benchmarks/eval_terminal_bench.py --limit N --max-dollars 2`; CI/stub: `MAVERICK_EVAL_DRY_RUN=1 …`. |
 
 ### Adding the next slice
@@ -66,6 +66,12 @@ the command log (`required_commands`). Validated for free with a scripted
 FakeLLM (`test_terminal_solver.py`); a live smoke on the bundled tasks passes
 **3/3**. (Full terminal-bench-in-a-container, for tasks that need real command
 execution, is a separate heavier seam.)
+
+**τ²-bench** is **dual-control** (agent↔user): the live solver (`tau2_solver.py`)
+runs a Maverick agent in a tool-loop talking to a **user-simulator** LLM that
+holds the scenario, until the customer's goal is resolved; `verify` grades the
+final DB state **and** the required tool actions. Validated for free with
+scripted FakeLLMs for *both* sides (`test_tau2_solver.py`).
 
 **τ²-bench** needs a live **user-simulator** LLM (it's a dual-control
 agent↔user setting), which is a separate piece; the *offline* scorer
