@@ -67,13 +67,13 @@ def test_temporal_delete_closes_window(tmp_path, monkeypatch):
     assert len(hist) == 1 and hist[0].valid_to is not None  # history survives delete
 
 
-def test_provenance_stored_and_trust_filter(tmp_path):
+def test_provenance_stored(tmp_path):
     w = _wm(tmp_path)
     w.upsert_fact("trusted", "ok")  # default = first-party trust (3)
     w.upsert_fact("agentnote", "maybe", source="agent:kv_memory", trust_tier=1)
-    assert set(w.get_facts()) == {"trusted", "agentnote"}
-    # Trust-aware retrieval drops the low-trust fact at floor=2.
-    assert set(w.get_facts(min_trust=2)) == {"trusted"}
+    meta = w.get_facts_with_trust()
+    assert meta["trusted"] == ("ok", 3)
+    assert meta["agentnote"] == ("maybe", 1)  # the Memory Guard filters on this
 
 
 def test_provenance_recorded_even_without_temporal(tmp_path, monkeypatch):
@@ -82,5 +82,36 @@ def test_provenance_recorded_even_without_temporal(tmp_path, monkeypatch):
     monkeypatch.delenv("MAVERICK_TEMPORAL_MEMORY", raising=False)
     w = _wm(tmp_path)
     w.upsert_fact("a", "x", trust_tier=0)
-    assert w.get_facts(min_trust=1) == {}
+    assert w.get_facts_with_trust()["a"] == ("x", 0)  # tier stored without temporal
     assert w.get_facts() == {"a": "x"}
+
+
+def test_erase_purges_fact_history(tmp_path, monkeypatch):
+    # GDPR Art.17: delete_facts_matching must hard-purge the temporal history,
+    # or erased PII survives in fact_history and via get_fact(as_of=...).
+    monkeypatch.setenv("MAVERICK_TEMPORAL_MEMORY", "1")
+    w = _wm(tmp_path)
+    k = "user:telegram:u1:addr"
+    w.upsert_fact(k, "old place")
+    t0 = time.time()
+    time.sleep(0.01)
+    w.upsert_fact(k, "new place")
+    assert len(w.fact_history(k)) == 2          # history accrued
+
+    removed = w.delete_facts_matching("telegram:u1")
+    assert removed == [k]
+    assert k not in w.get_facts()
+    assert w.fact_history(k) == []              # history purged, not just closed
+    assert w.get_fact(k, as_of=t0) is None      # erased PII not reconstructable
+
+
+def test_trust_change_records_new_version(tmp_path, monkeypatch):
+    # A re-assertion of the same value by a different-trust source is a distinct
+    # belief and gets its own validity window.
+    monkeypatch.setenv("MAVERICK_TEMPORAL_MEMORY", "1")
+    w = _wm(tmp_path)
+    w.upsert_fact("k", "v", trust_tier=1)       # tool trust
+    w.upsert_fact("k", "v", trust_tier=3)       # same value, first-party re-assert
+    hist = w.fact_history("k")
+    assert [h.trust_tier for h in hist] == [3, 1]
+    assert hist[0].valid_to is None and hist[1].valid_to is not None

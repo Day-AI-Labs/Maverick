@@ -637,15 +637,11 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
         else:
             from . import memory_guard as _mg
             if _mg.enabled():
-                _min_trust = _mg.min_recall_trust()
-                facts = world.get_facts(min_trust=_min_trust)
-                try:
-                    _total = world.count_facts()
-                except Exception:  # pragma: no cover
-                    _total = len(facts)
+                _facts_meta = world.get_facts_with_trust()
+                facts = _mg.filter_facts(_facts_meta)
                 _mg.audit_recall(
-                    kept=len(facts), dropped=max(0, _total - len(facts)),
-                    min_trust=_min_trust, goal_id=goal_id,
+                    kept=len(facts), dropped=max(0, len(_facts_meta) - len(facts)),
+                    min_trust=_mg.min_recall_trust(), goal_id=goal_id,
                 )
             else:
                 facts = world.get_facts()
