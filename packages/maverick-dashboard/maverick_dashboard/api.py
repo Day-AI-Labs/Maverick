@@ -48,6 +48,7 @@ from .api_schemas import (
     GoalIn,
     GoalOut,
     HaltIn,
+    OutcomeIn,
     RedactIn,
     ReparentIn,
     RetitleIn,
@@ -461,6 +462,21 @@ async def set_fact(payload: FactIn) -> None:
     if not key:
         raise HTTPException(status_code=400, detail="fact key is required")
     _world().upsert_fact(key, payload.value)
+
+
+@router.post("/outcomes", status_code=204)
+async def record_outcome(payload: OutcomeIn) -> None:
+    """Ingest a real downstream outcome for a past episode (the grounded reward).
+
+    The HTTP entrypoint a system-of-record connector (CRM / ERP / ticketing
+    webhook) calls once reality reports back -- invoice paid (1.0), ticket
+    reopened (0.0), or a graded result. The Cognitive Data Engine flywheel then
+    prefers this over the verifier proxy on its next turn, so learning is grounded
+    in what actually happened. ``value`` is clamped to [0, 1] by the store.
+    """
+    from maverick.consequence import record_outcome as _rec
+    _rec(int(payload.goal_id), int(payload.episode_id), float(payload.value),
+         kind=(payload.kind or ""))
 
 
 @router.get("/skills", response_model=list[SkillOut])
