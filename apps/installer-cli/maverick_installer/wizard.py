@@ -1154,6 +1154,19 @@ def pick_advanced() -> dict[str, Any]:
             "An explicit trust decision; OFF by default.",
             default=False,
         ),
+        "memory_guard": _q_confirm(
+            "Memory Guard (OWASP ASI06)? Screen every stored fact for prompt-"
+            "injection/poisoning, stamp it with provenance + a trust tier, and "
+            "keep low-trust memory out of the agent's standing brief (trust-aware "
+            "retrieval). Every decision is audited. OFF by default.",
+            default=False,
+        ),
+        "temporal_memory": _q_confirm(
+            "Temporal memory? Keep a bitemporal history of every fact (validity "
+            "windows) instead of overwriting -- answer 'what did we believe on "
+            "date X, and why' for the Operating Record. OFF by default.",
+            default=False,
+        ),
         "specialist_discipline": _q_confirm(
             "Specialist operating discipline? Append each business suite's "
             "professional guardrails (finance maker-checker, legal privilege, "
@@ -2697,6 +2710,14 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[fleet_memory]")
         lines.append("enable = true")
+    if advanced.get("memory_guard"):
+        lines.append("")
+        lines.append("[memory_guard]")
+        lines.append("enable = true")
+    if advanced.get("temporal_memory"):
+        lines.append("")
+        lines.append("[memory]")
+        lines.append("temporal = true")
     # Discipline defaults ON; only an explicit decline is written.
     if advanced.get("specialist_discipline") is False:
         lines.append("")

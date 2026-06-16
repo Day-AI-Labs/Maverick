@@ -25,7 +25,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -95,8 +95,34 @@ CREATE TABLE IF NOT EXISTS facts (
     value TEXT NOT NULL,
     source_episode_id INTEGER REFERENCES episodes(id),
     updated_at REAL NOT NULL,
+    -- v17 Memory Guard provenance (plaintext metadata; the value stays sealed).
+    -- source = who authored this fact; trust_tier = maverick.memory_guard.TrustTier
+    -- (3=first-party/operator default ... 0=external/untrusted); sensitivity label.
+    source TEXT NOT NULL DEFAULT '',
+    trust_tier INTEGER NOT NULL DEFAULT 3,
+    sensitivity TEXT NOT NULL DEFAULT 'internal',
     UNIQUE(key)
 );
+
+-- v17 temporal memory: a bitemporal history of every fact value. `facts` keeps
+-- the single CURRENT value (UNIQUE(key)); this table records each value's
+-- validity window so "what did we believe on date X, and why" is answerable --
+-- non-destructive evolution instead of overwrite. `value` is sealed at rest like
+-- facts.value; the window/provenance columns are plaintext so they stay queryable
+-- under encryption. Only written when [memory] temporal is enabled.
+CREATE TABLE IF NOT EXISTS fact_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    source_episode_id INTEGER REFERENCES episodes(id),
+    valid_from REAL NOT NULL,
+    valid_to REAL,
+    source TEXT NOT NULL DEFAULT '',
+    trust_tier INTEGER NOT NULL DEFAULT 3,
+    sensitivity TEXT NOT NULL DEFAULT 'internal'
+);
+
+CREATE INDEX IF NOT EXISTS idx_fact_history_key ON fact_history(key, valid_from);
 
 CREATE TABLE IF NOT EXISTS questions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -316,6 +342,16 @@ MIGRATIONS: dict[int, list[str]] = {
     # v16 deliverable sign-off: the signoffs table is in SCHEMA (idempotent
     # CREATE); listed here so existing DBs bump the version on next open.
     16: [],
+    # v17 governed/temporal memory: provenance + trust tier on the live fact row
+    # (Memory Guard), and the bitemporal fact_history table + its index (in SCHEMA
+    # as idempotent CREATE) for non-destructive fact evolution. The ALTERs add the
+    # provenance columns to existing DBs; legacy facts backfill to trust_tier=3
+    # (first-party) so the guard never retroactively hides already-trusted memory.
+    17: [
+        "ALTER TABLE facts ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE facts ADD COLUMN trust_tier INTEGER NOT NULL DEFAULT 3",
+        "ALTER TABLE facts ADD COLUMN sensitivity TEXT NOT NULL DEFAULT 'internal'",
+    ],
 }
 
 
@@ -412,6 +448,38 @@ class Attachment:
     sha256: str
     path: str
     created_at: float
+
+
+@dataclass
+class FactVersion:
+    """One historical value of a fact (see :meth:`WorldModel.fact_history`).
+
+    ``valid_to is None`` marks the value that is still current. The window is
+    transaction time: ``valid_from`` is when the value became current and
+    ``valid_to`` is when it was superseded or deleted."""
+    value: str | None
+    valid_from: float
+    valid_to: float | None
+    source: str = ""
+    trust_tier: int = 3
+    sensitivity: str = "internal"
+
+
+def _temporal_memory_enabled() -> bool:
+    """Whether to keep a bitemporal ``fact_history`` (validity windows) on every
+    fact change. OFF by default -- the live-value path is byte-identical when off
+    (upsert overwrites, no history rows). Turn on with ``MAVERICK_TEMPORAL_MEMORY=1``
+    or ``[memory] temporal = true`` for non-destructive fact evolution and
+    ``get_fact(..., as_of=...)`` / ``fact_history(...)`` queries."""
+    if (os.environ.get("MAVERICK_TEMPORAL_MEMORY") or "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return True
+    try:
+        from .config import load_config
+        return bool(load_config().get("memory", {}).get("temporal", False))
+    except Exception:  # pragma: no cover -- config never blocks a write
+        return False
 
 
 def _enc_field(text: str | None) -> str | None:
@@ -1232,16 +1300,66 @@ class WorldModel:
             return cur.rowcount
 
     # ----- facts -----
-    def upsert_fact(self, key: str, value: str, episode_id: int | None = None) -> None:
+    def upsert_fact(
+        self, key: str, value: str, episode_id: int | None = None,
+        *, source: str = "", trust_tier: int = 3, sensitivity: str = "internal",
+    ) -> None:
+        """Write the current value of ``key``.
+
+        ``source``/``trust_tier``/``sensitivity`` are Memory Guard provenance
+        (see :mod:`maverick.memory_guard`); they default to first-party trust so
+        existing internal callers are unaffected. When ``[memory] temporal`` is
+        on, a *changed* value also appends a :class:`FactVersion` to
+        ``fact_history`` and closes the prior open window -- non-destructive
+        evolution. An unchanged value refreshes provenance without a new version.
+        """
+        now = time.time()
+        enc = _enc_field(value)
         with self._writing() as conn:
+            if _temporal_memory_enabled():
+                prior = conn.execute(
+                    "SELECT value FROM facts WHERE key = ? LIMIT 1", (key,),
+                ).fetchone()
+                changed = prior is None or _dec_field(prior[0]) != value
+                if changed:
+                    # Close the open window, then open a new one for this value:
+                    # the prior value is preserved with the instant it stopped
+                    # being current instead of being overwritten and lost.
+                    conn.execute(
+                        "UPDATE fact_history SET valid_to = ? "
+                        "WHERE key = ? AND valid_to IS NULL",
+                        (now, key),
+                    )
+                    conn.execute(
+                        "INSERT INTO fact_history(key, value, source_episode_id, "
+                        "valid_from, valid_to, source, trust_tier, sensitivity) "
+                        "VALUES(?, ?, ?, ?, NULL, ?, ?, ?)",
+                        (key, enc, episode_id, now, source, int(trust_tier),
+                         sensitivity),
+                    )
             conn.execute(
-                "INSERT INTO facts(key, value, source_episode_id, updated_at) VALUES(?, ?, ?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-                (key, _enc_field(value), episode_id, time.time()),
+                "INSERT INTO facts(key, value, source_episode_id, updated_at, "
+                "source, trust_tier, sensitivity) VALUES(?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                "updated_at = excluded.updated_at, source = excluded.source, "
+                "trust_tier = excluded.trust_tier, sensitivity = excluded.sensitivity",
+                (key, enc, episode_id, now, source, int(trust_tier), sensitivity),
             )
 
-    def get_facts(self) -> dict[str, str]:
-        rows = self._read_all("SELECT key, value FROM facts ORDER BY updated_at DESC")
+    def get_facts(self, *, min_trust: int | None = None) -> dict[str, str]:
+        """All current facts as ``{key: value}``, newest first.
+
+        ``min_trust`` (Memory Guard trust-aware retrieval) drops facts whose
+        ``trust_tier`` is below the floor so low-trust/poisoned memory never
+        reaches the agent's standing brief. None = no filter (unchanged)."""
+        if min_trust is not None:
+            rows = self._read_all(
+                "SELECT key, value FROM facts WHERE trust_tier >= ? "
+                "ORDER BY updated_at DESC", (int(min_trust),),
+            )
+        else:
+            rows = self._read_all(
+                "SELECT key, value FROM facts ORDER BY updated_at DESC")
         return {r["key"]: _dec_field(r["value"]) for r in rows}
 
     def facts_matching(self, token: str) -> dict[str, str]:
@@ -1277,14 +1395,57 @@ class WorldModel:
         """Escape LIKE wildcards so a key/query is matched literally."""
         return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
-    def get_fact(self, key: str) -> str | None:
-        """Single fact value by exact key, or None. Locked read."""
+    def get_fact(self, key: str, *, as_of: float | None = None) -> str | None:
+        """Single fact value by exact key, or None. Locked read.
+
+        With ``as_of`` (a unix timestamp) the value is read from ``fact_history``
+        as it stood at that instant (requires ``[memory] temporal``); returns
+        None when no recorded version covered that time."""
+        if as_of is not None:
+            row = self._read_one(
+                "SELECT value FROM fact_history WHERE key = ? AND valid_from <= ? "
+                "AND (valid_to IS NULL OR valid_to > ?) "
+                "ORDER BY valid_from DESC LIMIT 1",
+                (key, as_of, as_of),
+            )
+            return _dec_field(row["value"]) if row else None
         row = self._read_one("SELECT value FROM facts WHERE key = ? LIMIT 1", (key,))
         return _dec_field(row["value"]) if row else None
 
+    def fact_history(self, key: str, *, limit: int = 50) -> list[FactVersion]:
+        """Every recorded version of ``key``, newest first (requires ``[memory]
+        temporal``). The entry whose ``valid_to is None`` is the current value;
+        the rest are superseded values with the window they were believed in."""
+        rows = self._read_all(
+            "SELECT value, valid_from, valid_to, source, trust_tier, sensitivity "
+            "FROM fact_history WHERE key = ? ORDER BY valid_from DESC LIMIT ?",
+            (key, max(1, int(limit))),
+        )
+        return [
+            FactVersion(
+                value=_dec_field(r["value"]),
+                valid_from=r["valid_from"],
+                valid_to=r["valid_to"],
+                source=r["source"] or "",
+                trust_tier=int(r["trust_tier"]),
+                sensitivity=r["sensitivity"] or "internal",
+            )
+            for r in rows
+        ]
+
     def delete_fact(self, key: str) -> int:
-        """Delete one fact by exact key; return rows removed (0 or 1)."""
+        """Delete one fact by exact key; return rows removed (0 or 1).
+
+        When ``[memory] temporal`` is on, the open ``fact_history`` window is
+        closed (valid_to = now) rather than erased, so the record that the fact
+        existed until this moment survives the delete."""
         with self._writing() as conn:
+            if _temporal_memory_enabled():
+                conn.execute(
+                    "UPDATE fact_history SET valid_to = ? "
+                    "WHERE key = ? AND valid_to IS NULL",
+                    (time.time(), key),
+                )
             return conn.execute("DELETE FROM facts WHERE key = ?", (key,)).rowcount
 
     def stale_fact_keys(self, older_than: float, limit: int = 500) -> list[str]:

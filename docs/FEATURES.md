@@ -277,6 +277,25 @@ here.
   (with deciders) threaded into one queryable spine, exportable as an
   Ed25519-signed portable **capsule** (decision spine + learned state)
   verifiable offline; tampering fails verification.
+- **Memory Guard — governed reads/writes (OWASP ASI06)** (`memory_guard.py`,
+  opt-in `[memory_guard] enable` / `MAVERICK_MEMORY_GUARD`) — the screen
+  between an agent and its memory store. Every fact write is stamped with
+  **provenance** (`source` + a `TrustTier`: first-party / learned / tool /
+  external + a sensitivity label) and low-trust writes are run through an
+  **injection/poisoning tripwire** (and the Shield, fail-open) so smuggled
+  instructions are quarantined, not stored. **Trust-aware retrieval** keeps
+  memory below `[memory_guard] min_recall_trust` out of the agent's standing
+  brief, and low-trust memory can never single-handedly authorize a high-risk
+  action. Every decision lands in the signed audit chain
+  (`EventKind.MEMORY_GUARD`). Provenance columns are recorded even when the
+  guard is off, so turning it on governs existing memory immediately.
+- **Temporal memory — non-destructive fact evolution** (`fact_history` in
+  `world_model.py`, opt-in `[memory] temporal` / `MAVERICK_TEMPORAL_MEMORY`) —
+  a changed fact no longer overwrites the old value; the prior value is kept
+  with the validity window it was believed in (`valid_from`..`valid_to`), so
+  `world.get_fact(key, as_of=t)` and `world.fact_history(key)` answer "what did
+  we believe on date X, and why" for the Operating Record. Bitemporal metadata
+  is plaintext (queryable) while the value stays sealed at rest; sqlite-first.
 - **Federated insight exchange** (`insight_exchange.py`,
   `maverick insights-export` / `insights-import`) — consolidated lessons
   (never raw trajectories) cross instance boundaries as Ed25519-signed
