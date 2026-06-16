@@ -8,7 +8,10 @@ import pytest
 from maverick.skills import (
     Skill,
     _safe_name,
+    build_skill_md,
+    create_skill,
     install_skill,
+    load_skills,
     relevant_skills,
     remove_skill,
 )
@@ -45,6 +48,47 @@ class TestSafeName:
     def test_empty_fallback(self):
         assert _safe_name("") == "skill"
         assert _safe_name("!!!") == "skill"
+
+
+class TestCreateSkill:
+    def test_authors_a_valid_skill_that_round_trips(self, tmp_path: Path):
+        d = tmp_path / "skills"
+        s = create_skill(
+            "My Cool Skill",
+            "# What this does\n\nDo the thing.\n\n# Steps\n1. One.\n2. Two.",
+            triggers=["do the thing", "make it happen"],
+            tools_needed=["read_file"],
+            skills_dir=d,
+        )
+        assert s.name == "my-cool-skill"                 # display name -> kebab id
+        assert (d / "my-cool-skill.md").exists()
+        # loads back through the normal loader with fields intact
+        loaded = {x.name: x for x in load_skills(d)}
+        assert "my-cool-skill" in loaded
+        assert loaded["my-cool-skill"].triggers == ["do the thing", "make it happen"]
+        assert loaded["my-cool-skill"].tools_needed == ["read_file"]
+
+    def test_requires_a_trigger(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="trigger"):
+            create_skill("x", "body text", triggers=[], skills_dir=tmp_path / "s")
+
+    def test_requires_a_body(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="instructions|body"):
+            create_skill("x", "   ", triggers=["go"], skills_dir=tmp_path / "s")
+
+    def test_build_skill_md_is_parseable(self):
+        md = build_skill_md("Weekly Rollup", ["weekly status"], ["read_file"], "Body here.")
+        parsed = Skill.parse(md, Path("weekly-rollup.md"))
+        assert parsed.name == "weekly-rollup"
+        assert parsed.triggers == ["weekly status"]
+        assert parsed.tools_needed == ["read_file"]
+        assert "Body here." in parsed.body
+
+    def test_multiline_trigger_is_collapsed(self, tmp_path: Path):
+        # A trigger with embedded newlines can't break the line-based frontmatter.
+        s = create_skill("t", "Body.", triggers=["line one\nline two"],
+                         skills_dir=tmp_path / "s")
+        assert s.triggers == ["line one line two"]
 
 
 class TestInstallSkill:

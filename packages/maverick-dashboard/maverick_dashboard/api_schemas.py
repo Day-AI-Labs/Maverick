@@ -144,6 +144,15 @@ class SkillInstallIn(BaseModel):
     source: str = Field(..., description="https://... or gh:org/repo[:path]")
 
 
+class SkillCreateIn(BaseModel):
+    """Author a skill in the dashboard: a name, the trigger phrases that
+    activate it, the tools it needs, and the instructions (markdown body)."""
+    name: str = Field(..., max_length=80)
+    instructions: str = Field(..., max_length=20000)
+    triggers: list[str] = Field(default_factory=list)
+    tools_needed: list[str] = Field(default_factory=list)
+
+
 class SkillOut(BaseModel):
     name: str
     triggers: list[str]

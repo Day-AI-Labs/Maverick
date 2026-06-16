@@ -396,6 +396,57 @@ def install_skill(
     return _validate_and_write(content, skills_dir)
 
 
+def _clean_items(items) -> list[str]:
+    """Trigger/tool entries cleaned for one-per-line frontmatter: each collapsed
+    to a single line (the parser splits on newlines), blanks dropped."""
+    out: list[str] = []
+    for it in items or []:
+        t = " ".join(str(it).split()).strip()
+        if t:
+            out.append(t)
+    return out
+
+
+def _slug(name: str) -> str:
+    """kebab-case a display name into a skill id / filename stem."""
+    s = re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-")
+    return s or "skill"
+
+
+def build_skill_md(name: str, triggers, tools_needed, body: str) -> str:
+    """Compose a SKILL.md (YAML frontmatter + body) in the exact line format the
+    loader parses (``Skill.parse``) -- its inverse. The name is kebab-cased so
+    the frontmatter name, filename, and publish lint all agree."""
+    lines = ["---", f"name: {_slug(name)}", "triggers:"]
+    lines += [f"  - {t}" for t in _clean_items(triggers)]
+    tools = _clean_items(tools_needed)
+    if tools:
+        lines.append("tools_needed:")
+        lines += [f"  - {t}" for t in tools]
+    lines += ["---", "", (body or "").strip(), ""]
+    return "\n".join(lines)
+
+
+def create_skill(
+    name: str, body: str, *, triggers, tools_needed=(), skills_dir: Path | None = None
+) -> Skill:
+    """Author a skill from structured fields (the dashboard "New skill" form) and
+    install it.
+
+    Same validate + secret/shield scan + write path as :func:`install_skill`,
+    but the SKILL.md is composed here instead of fetched from a URL -- so there
+    is no remote-content risk, only the (scanned) body the author typed. Raises
+    ``ValueError`` on invalid input (no trigger, empty body, a name that doesn't
+    yield a valid id, or content the shield blocks). ``skills_dir`` resolves to
+    the live :data:`SKILLS_DIR` at call time when omitted (so it's overridable)."""
+    if not _clean_items(triggers):
+        raise ValueError("a skill needs at least one trigger phrase (that's how it activates)")
+    if not (body or "").strip():
+        raise ValueError("a skill needs instructions (a non-empty body)")
+    target_dir = Path(skills_dir).expanduser() if skills_dir is not None else SKILLS_DIR
+    return _validate_and_write(build_skill_md(name, triggers, tools_needed, body), target_dir)
+
+
 def _canonical_signed_bytes(parsed: Skill) -> bytes:
     """Bytes an Ed25519 publisher signs over.
 

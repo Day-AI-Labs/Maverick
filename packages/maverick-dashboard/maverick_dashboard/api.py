@@ -56,6 +56,7 @@ from .api_schemas import (
     ScheduleIn,
     ScheduleOut,
     SignoffIn,
+    SkillCreateIn,
     SkillInstallIn,
     SkillOut,
     TriggerIn,
@@ -557,6 +558,25 @@ async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
         s = install_skill(payload.source, trusted_local=False)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    return SkillOut(name=s.name, triggers=s.triggers, tools_needed=s.tools_needed)
+
+
+@router.post("/skills/create", response_model=SkillOut, status_code=201)
+async def create_skill_endpoint(payload: SkillCreateIn) -> SkillOut:
+    """Author a skill from the dashboard form (name / triggers / tools /
+    instructions) and install it.
+
+    Lower risk than installing a remote source -- the content is the body the
+    author typed, not fetched code -- but it still lands in agent prompts and is
+    secret/shield-scanned, so it shares the same ``MAVERICK_ALLOW_SKILL_INSTALL``
+    opt-in as install. 422 on invalid input (no trigger, empty body, ...)."""
+    _require_skill_install_opt_in()
+    from maverick.skills import create_skill
+    try:
+        s = create_skill(payload.name, payload.instructions,
+                         triggers=payload.triggers, tools_needed=payload.tools_needed)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     return SkillOut(name=s.name, triggers=s.triggers, tools_needed=s.tools_needed)
 
 

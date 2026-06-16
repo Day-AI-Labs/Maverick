@@ -1131,6 +1131,14 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   delivered over the SSRF-safe webhook path. Best-effort and never blocks the
   sign-off; the payload carries the parsed deliverable (table rows) and
   attribution. Fires only on `approved` (`webhooks.fire_deliverable_handoff`).
+- **In-dashboard skill authoring** — the `/skills` page can now *create* a skill,
+  not just install one: a form (name, trigger phrases, tools, instructions)
+  composes a `SKILL.md` and writes it via the same validate + secret/shield-scan
+  path as install (`skills.create_skill` / `build_skill_md`). Kebab-cased id,
+  injected into matching agents on the next run. Shares the
+  `MAVERICK_ALLOW_SKILL_INSTALL` opt-in (skills land in agent prompts), so it's
+  off by default in a locked deployment. Skills are instructions, not code —
+  the safe, governed equivalent of an in-app extension.
 - **Finance suite (Office of the CFO)** — 31 domain packs across 7 towers
   (Controllership, FP&A, Treasury, Tax, Assurance, Procurement, Reporting) + a
   Finance Controller, each a sealed read-only/draft-by-default compartment with
