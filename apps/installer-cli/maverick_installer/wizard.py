@@ -1257,6 +1257,14 @@ def pick_advanced() -> dict[str, Any]:
             "and a no-op until you set a draft model.",
             default=False,
         ),
+        "data_engine": _q_confirm(
+            "Cognitive Data Engine? The Tesla-style improvement flywheel: production "
+            "failures are triaged by CAUSAL impact on real outcomes (fix what moves "
+            "reality most, not what's merely frequent), then mined, validated in the "
+            "world-model, and promoted through the safety ladder. The workforce compounds "
+            "from its own experience; off by default.",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2543,6 +2551,13 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("# Set draft_model to a cheap spec to activate; a no-op until you do.")
         lines.append("enable = true")
         lines.append('# draft_model = "anthropic:claude-haiku-4-5-20251001"')
+    if advanced.get("data_engine"):
+        lines.append("")
+        lines.append("[data_engine]")
+        lines.append("# Triage production failures by causal impact on real outcomes, then")
+        lines.append("# mine + validate + promote fixes (maverick.data_engine). The Tesla")
+        lines.append("# data-engine flywheel for the workforce; reads the trajectory store.")
+        lines.append("enable = true")
     if advanced.get("enforce_quotas"):
         lines.append("")
         lines.append("[quotas]")
