@@ -198,7 +198,7 @@ here.
   maker-checker + SoD, legal privilege, HR PII-minimization, IT/GRC
   chain-of-custody, ops safety interlocks, engineering tests-first, GTM
   no-overpromising, strategy source-grounding). One implementation point
-  upgrades all 1,019 built-in packs AND operator/intake-generated packs;
+  upgrades all 1,118 built-in packs AND operator/intake-generated packs;
   prompts only — hard limits stay with capabilities/governance.
 - **Department memory at every spawn depth** — `agent_from_profile` appends
   the department's recalled lessons (same-department reflexions + dream
@@ -221,7 +221,7 @@ here.
   cost avoided + ROI, the capability improvement curve from the hindsight
   ledger, and governance evidence, per department (and per external vendor
   with `--fleet`). Read-only; the POC-closing artifact.
-- **1,019-agent specialist portfolio across 26 suites** — the original 8
+- **1,118-agent specialist portfolio across 26 suites** — the original 8
   business suites plus customer experience, marketing, procurement,
   data & analytics, security ops, executive office, facilities/EHS, tax
   preparation, and 10 industry verticals (healthcare, insurance, banking,
@@ -230,7 +230,7 @@ here.
   (country employment law, GDPR/CCPA/PIPL/EU-AI-Act regimes, indirect-tax
   regimes). Quality gate: `maverick domains-lint [--ci]` — every pack has
   a bounded persona, least-privilege allow list, explicit deny list, and
-  risk ceiling; 0 errors, 0 warnings across all 1,019.
+  risk ceiling; 0 errors, 0 warnings across all 1,118.
 - **Tax preparation pipeline** (`tax_prep.py`, `maverick tax prepare
   <docs-dir>`; the 19-pack `tax_` suite) — a CPA firm's docs-to-draft
   workflow: uploaded client documents are classified and extracted

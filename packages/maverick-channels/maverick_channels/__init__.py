@@ -6,17 +6,15 @@ response back. This is the surface Maverick uses to power phone-companion
 mode — the agent itself runs on Desktop or VPS, and channels give a
 phone (or any other client) a way to talk to it.
 
-Available channels (status as of v0.1):
-  - cli       (ready)
-  - telegram  (ready)
-  - discord   (ready)
-  - slack     (ready)
-  - signal    (ready, requires signal-cli on PATH)
-  - email     (ready, stdlib only)
-  - matrix    (ready, requires matrix-nio)
-  - whatsapp  (scaffold, requires Twilio + public webhook)
-  - sms       (scaffold, requires Twilio + public webhook)
-  - imessage  (macOS only)
+Available channels (18 wired adapters; each requires its provider's
+credentials and a per-sender allowlist, default-deny):
+  - cli, telegram, discord, slack, signal, email, matrix
+  - bluesky, mastodon, irc, threads, rcs, voice
+  - whatsapp + sms (Twilio + public webhook), whatsapp_cloud (Meta Graph API)
+  - imessage (macOS only)
+Enhanced variants layer on these: email_v2 (IMAP IDLE + threading),
+discord_stages (Stage voice), streaming_voice (barge-in), rich_render
+(KaTeX/Mermaid). signal needs signal-cli on PATH; matrix needs matrix-nio.
 """
 from .base import Channel, Handler, IncomingMessage, Reply, as_reply
 

@@ -3,7 +3,7 @@
 > Enterprise recursive multi-agent swarm. One kernel, every model.
 
 Maverick is an **agentic enterprise platform**: a governed AI workforce of
-1,019 prebuilt specialists across 26 business suites that provably improves
+1,118 prebuilt specialists across 26 business suites that provably improves
 with use — deployed in your own environment. It drives any
 LLM (Claude, GPT, Kimi, Grok, Gemini, DeepSeek, Ollama, OpenRouter), and
 ships a governed, auditable safety surface built for regulated teams.

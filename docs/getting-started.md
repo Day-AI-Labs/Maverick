@@ -112,4 +112,4 @@ All local. Nothing is uploaded except your prompts to the cloud LLM you chose.
 Once you have a few runs behind you, the learning surface is four commands:
 `maverick dream` (consolidate experience), `maverick hindsight` (did learning
 help or regress?), `maverick proof` (deliverables, cost avoided, ROI), and
-`maverick domains-lint` (audit the 1,000-agent specialist catalog).
+`maverick domains-lint` (audit the 1,118-agent specialist catalog).

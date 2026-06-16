@@ -1,54 +1,72 @@
-# Maverick — Fix Backlog
+# Maverick — Fix Backlog (status board)
 
 > Compiled from a full read-through of the codebase (June 2026). Prioritized for
 > two goals: (1) survive technical/security/commercial diligence, (2) convert the
-> asset into a fundable/sellable business. P0 = cheap + high-trust-impact, do first.
+> asset into a fundable/sellable business.
+>
+> **Legend:** `[x]` done · `[~]` partially done · `[ ]` open.
+> **Tags:** `(needs you)` = founder/external act, not code · `(needs key)` =
+> requires a provider API key to produce real numbers (never fabricated) ·
+> `(open eng)` = a real engineering decision/refactor, deliberately NOT done
+> unilaterally (wire-vs-cut and large refactors need a call, not a guess).
 
-## P0 — Correctness & credibility (cheap, fixes false claims a diligence team will catch)
+## P0 — Correctness & credibility (the cheap diligence-protecting fixes)
 
-- [ ] **README says world-model schema `v10`; actual is `v15`** (`world_model.py:28` vs `README.md:130`). Update.
-- [ ] **README/architecture omit the Postgres world-model backend entirely** — it exists (`world_model_backends/postgres.py`, ~1570 lines, with tenant RLS). Document it.
-- [ ] **"1,019 packs across 26 suites" vs 1,118 TOMLs on disk.** Reconcile the headline number everywhere it appears (README, FEATURES, marketing). Pick the real, defensible count.
-- [ ] **channels `__init__.py` docstring still says "10 channels / whatsapp+sms scaffold"** — 20 adapters are actually built. Update (`maverick_channels/__init__.py:9-20`).
-- [ ] **Produce a real `benchmarks/RESULTS.md`** with multi-seed numbers. Today the harnesses are honest "run it yourself" — a buyer/investor wants the numbers, not the harness.
-- [ ] Sweep `docs/FEATURES.md` + `AGENTS.md` for stale module-name references (rule: a rename must update FEATURES.md).
+- [x] **README schema `v10` → actual `v16`** — fixed in README, `docs/architecture.md`, `docs/specs/durable-execution.md`.
+- [x] **Postgres world-model backend now documented** — added to the README repo-layout + architecture lines (was omitted entirely).
+- [x] **Pack count reconciled to the true `1,118`** (not `1,019`) across README, FEATURES, CLAUDE.md, press-kit, comparison, index, getting-started, CHANGELOG, and the proposal/research docs. `domains-lint` confirms **1,118 packs, 0 errors, 0 warnings**.
+- [x] **channels `__init__.py` docstring** rewritten — 18 wired adapters listed, `whatsapp`/`sms` no longer mislabeled "scaffold".
+- [ ] **`benchmarks/RESULTS.md` with real multi-seed numbers** — `(needs key)`. The harnesses exist and run; producing the actual pass@1 numbers requires a provider key. I will NOT fabricate them.
+- [~] **Sweep FEATURES.md / AGENTS.md for stale refs** — the schema-version + pack-count refs are fixed; the remaining "sweep" is open-ended (FEATURES `schema v14 domain column` is correct *history*, left as-is).
 
 ## P1 — Security & legal (would fail a security review or a buyer's lawyers)
 
-- [ ] **Postgres backend stores content PLAINTEXT** while SQLite seals sensitive columns at rest (`crypto_at_rest`). This directly contradicts the "regulated / self-host / encryption-at-rest" positioning. Either seal PG columns or document the asymmetry loudly and gate the regulated profile to SQLite.
-- [ ] **Session-providers (consumer-chat cookie scraping: ChatGPT/Claude/Gemini/Grok/Kimi) ship in-tree.** This replays login cookies against private web-UI endpoints — explicit ToS violation + account-ban risk. An enterprise buyer's counsel will flag it. Decide: isolate behind a separate optional package, harden the gate, or remove. Right now it's a liability attached to the core repo.
-- [ ] **Generated-tool `fn` runs in-process at runtime** (only registration is sandboxed via AST audit + out-of-host import check). Documented as future hardening — make it real before claiming "self-improving in production."
-- [ ] Confirm `self_edit` stays unregistered-by-default (it is) and document why.
-- [ ] **Unsigned installers** (Tauri `.dmg`/`.exe`/`.AppImage`, MSI). Get code-signing certs before any real distribution; "unknown developer" prompts kill enterprise trust.
+- [ ] **Postgres backend stores content PLAINTEXT** while SQLite seals at rest — `(open eng)`. A real fix (seal PG columns) or a gating decision (regulated profile → SQLite only). Contradicts the encryption-at-rest positioning; should be done before the regulated-buyer conversation.
+- [ ] **In-tree consumer-chat session-providers (ToS risk)** — `(needs you)` product/legal decision: isolate into a separate optional package, harden the gate, or remove. A buyer's counsel will flag it.
+- [ ] **Generated-tool `fn` runs in-process at runtime** — `(open eng)` hardening (out-of-process tool runtime); only registration is currently sandboxed.
+- [x] **`self_edit` stays unregistered-by-default** — confirmed (`tools/__init__.py:1194` "self_edit intentionally is not registered"), documented in code.
+- [ ] **Unsigned installers** (Tauri / MSI) — `(needs you)` code-signing certs (external).
 
-## P2 — Half-built / unwired (decide per item: WIRE, CUT, or label "experimental")
+## P2 — Half-built / unwired — `(open eng)`, each a WIRE / CUT / "experimental" call
 
-Built-and-tested but referenced by nothing in the live path — reads as "unfocused effort" in diligence:
-- [ ] `vision_click.py` + `computer_calibration.py` — production-quality, wired into nothing. Wire into the computer-use path or delete.
-- [ ] `prompt_dsl.py` (cache-aware prompt builder) — no live caller; `agent.py` still string-concats the system prompt. Wire or delete.
-- [ ] Domain-pack `[[workflow]]` playbooks — parsed/linted/rendered, but **zero** of 1,118 packs use them. Author a few exemplars or remove the surface.
-- [ ] Compaction RAG `DigestIndex` (`compaction.py`) — built, not wired into the loop.
-- [ ] `pgvector` knowledge store (`maverick_knowledge/store.py`) — `raise NotImplementedError`. The only real store is brute-force cosine in SQLite (won't scale).
-- [ ] `migrate.py` rewrite engine — `REWRITES = []` (dead until 2.0 renames land).
-- [ ] `schema-plan` online/offline migration gate — exists, **not wired into CI**.
-- [ ] `training/` RL pipeline — interfaces + lazy-torch; uses a structural stand-in for operator-side text. Not real learning yet; don't overclaim.
+> These are deliberately **not** done unilaterally — deleting working modules or
+> doing the large compaction refactor are judgment calls that need a decision
+> (and risk breaking things), not an autonomous guess.
 
-Consolidate (footguns):
-- [ ] **Two parallel budget tuners** (`budget_tuner.py` advisory vs `self_tuning_budget.py` online; only the latter is wired, divergent constants). Merge or clearly delineate.
-- [ ] **Four overlapping compaction selection mechanisms with two disjoint strategy vocabularies** (`compaction_plugins` heuristic/learned/multimodal/streaming/graph vs `compaction_hybrid` truncate/structural/retrieval/summarize), plus two dispatchers. Unify or document the map — this will bite the next contributor.
-- [ ] Two unrelated `FederationError` classes / two federation systems (gRPC goal-delegation vs signed-envelope channel/marketplace). Rename for clarity.
-- [ ] `multi_monitor.py` is display geometry, not monitoring — rename to avoid confusion.
+- [ ] `vision_click.py` + `computer_calibration.py` — built, wired into nothing.
+- [ ] `prompt_dsl.py` — no live caller.
+- [ ] Domain-pack `[[workflow]]` playbooks — parsed/linted/rendered, used by zero packs.
+- [ ] Compaction RAG `DigestIndex` — built, not wired.
+- [ ] `pgvector` knowledge store — `raise NotImplementedError`.
+- [ ] `migrate.py` rewrite engine — `REWRITES = []`.
+- [ ] `schema-plan` migration gate — exists, not wired into CI.
+- [ ] `training/` RL pipeline — interfaces only; don't overclaim "learning".
+- [ ] Consolidate: two budget tuners · four compaction mechanisms / two vocabularies · two `FederationError` classes · `multi_monitor` naming. (Renames/merges touch imports → need a deliberate pass, not a drive-by.)
 
-## P3 — Focus & product debt (the strategic risk)
+## P3 — Focus & product debt — `(needs you)` strategic decisions
 
-- [ ] **26 suites / 1,118 packs with zero customers = breadth without validation.** Pick 1–2 wedge verticals (BFSI/finance is the obvious one — it leads governance spend; tax-prep is unusually complete) and go deep with design partners. The long tail reads as unfocused until something is validated in production.
-- [ ] **Resolve the open-source "lite edition" decision.** It gates the whole distribution/community motion (and the HF-spotlight item that's currently licensing-blocked).
-- [ ] Live-service validation gaps from ROADMAP (IRC server, Even G2 device, a real LangChain install, a Redis broker, the arq worker pool) — protocol-tested but never run against live infra.
+- [ ] **26 suites / 1,118 packs, zero customers = breadth without validation.** Pick 1–2 wedge verticals (BFSI/finance, tax-prep) and go deep. Founder call.
+- [ ] **Open-source "lite edition" decision** — gates the whole distribution motion.
+- [ ] Live-service validation gaps (IRC / G2 / LangChain / Redis broker / arq worker) — need real infra to exercise.
 
-## P4 — Productionization for a sale or raise (the value unlocks)
+## P4 — Productionization for a sale or raise — `(needs you)` except the one code item
 
-- [ ] **Get 2–3 design-partner LOIs / pilots.** Single biggest valuation lever — moves it from "asset" to "business" tier (see valuation notes).
-- [ ] **Start SOC 2 Type I.** Readiness doc + `maverick.soc2` evidence collector exist; the attestation itself is external and is table-stakes for the regulated-enterprise buyer.
-- [ ] **Commission a third-party pen test** (readiness/scope doc exists; the engagement doesn't).
-- [ ] Dashboard: finish the `@app.on_event` → lifespan migration (one residual); retire CSP `'unsafe-inline'` (nonce migration).
-- [ ] Decide the multi-tenant hosting story you actually want to operate vs. ship as self-host-only (Postgres tenancy + queue dispatch are wired but never run at scale).
+- [ ] **2–3 design-partner LOIs / pilots** — `(needs you)`. The single biggest valuation lever.
+- [ ] **SOC 2 Type I** — `(needs you)`, external attestation (readiness + evidence collector already exist).
+- [ ] **Third-party pen test** — `(needs you)`, external engagement.
+- [x] **Dashboard `@app.on_event` → lifespan** — already migrated (`app.py:199` lifespan handler; only a docstring mention of the old name remains). CSP `'unsafe-inline'` nonce migration is the remaining `(open eng)` half.
+- [ ] **Multi-tenant hosting story** — `(needs you)` operate-vs-self-host decision (Postgres tenancy + queue dispatch are wired but never run at scale).
+
+---
+
+### Summary
+**Done now (this PR):** every P0 item that is code/docs (schema version, Postgres
+documentation, the 1,118 pack-count reconciliation, the channels docstring) plus
+the two already-satisfied items (`self_edit`, dashboard lifespan).
+
+**Not done, and why:** `RESULTS.md` needs a provider key (no fabricated numbers);
+P1/P2 are real engineering decisions (seal-PG, session-provider disposition,
+wire-vs-cut, the consolidation refactors) that need a call rather than an
+autonomous guess; P3/P4 are founder/external acts (design partners, SOC 2, pen
+test, signing certs, the OSS-edition and wedge decisions). The highest-value
+remaining items are **not code** — they're traction and validation.

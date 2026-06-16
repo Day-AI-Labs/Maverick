@@ -12,7 +12,7 @@ Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agen
 - 🧾 **Tamper-evident & audit-ready.** A signed, hash-chained, append-only audit log (`maverick audit verify`) with SIEM export, encryption-at-rest, DSAR, and SOC2-aligned evidence — built to survive a security review.
 - 🔒 **Self-host & air-gap.** Runs entirely in your environment — laptop, VPC, Kubernetes, or a disconnected network with no required data egress. No hyperscaler dependency, no telemetry.
 - 📈 **A workforce that provably improves.** Closed-loop learning — offline experience consolidation ("dreaming"), per-department memory, skill distillation with safe forgetting — every learned artifact audited, snapshotted, and rollback-able. `maverick hindsight` detects if learning ever regressed; `maverick proof` reports deliverables, cost avoided, ROI, and the improvement curve.
-- 🏢 **1,019 prebuilt specialists across 26 business suites.** Customer support, finance, legal, HR, ops, GTM, marketing, procurement, data, security ops, tax preparation for CPA firms, and 10 industry verticals (healthcare, insurance, banking, gov contracting, …) — every pack a real agent with a least-privilege tool envelope and risk ceiling. Run `maverick domains-lint` and check for yourself: 0 errors, 0 warnings.
+- 🏢 **1,118 prebuilt specialists across 26 business suites.** Customer support, finance, legal, HR, ops, GTM, marketing, procurement, data, security ops, tax preparation for CPA firms, and 10 industry verticals (healthcare, insurance, banking, gov contracting, …) — every pack a real agent with a least-privilege tool envelope and risk ceiling. Run `maverick domains-lint` and check for yourself: 0 errors, 0 warnings.
 - 🧠 **Long-horizon multi-agent depth.** A recursive orchestrator spawns specialist sub-agents that work for hours under hard dollar / wall-clock / tool-call caps — frontier-agent depth, on the models *you* choose, with the governance and learning layers no coding-agent runtime ships.
 
 > **Proprietary software — not open source.** Maverick is enterprise software; use, redistribution, and derivative works require a license. [Contact us](https://github.com/Day-AI-Labs/Maverick) for evaluation or commercial access. See [`LICENSE`](./LICENSE) and [`TRADEMARK.md`](./TRADEMARK.md).
@@ -127,7 +127,7 @@ maverick version                         # installed package versions
 ```
 packages/
   maverick-core/       Python agent kernel: recursive swarm, persistent world
-                       model (SQLite + FTS5 + schema v10), 12 LLM providers, 7
+                       model (SQLite + FTS5, or Postgres; schema v16), 12 LLM providers, 7
                        sandboxes, MCP client, skills, templates, persona,
                        background runner, budget tracking
   maverick-shield/     Agent Shield integration + built-in fallback rule set
