@@ -224,6 +224,167 @@ class Checkpointer:
         except Exception as e:  # pragma: no cover
             log.debug("checkpoint: clear failed (non-fatal): %s", e)
 
+    # ----- rewind / fork support (spec §4, G2) -----
+
+    def orchestrator_for(self, goal_id: int) -> tuple[str, int] | None:
+        """``(agent_id, episode_id)`` of the goal's newest checkpoint.
+
+        Phase 1 only checkpoints the depth-0 root, so the newest checkpoint's
+        agent is the orchestrator — the node ``rewind`` operates on."""
+        if goal_id is None or not self._ensure():
+            return None
+        try:
+            row = self._world.conn.execute(
+                "SELECT agent_id, episode_id FROM checkpoints WHERE goal_id = ? "
+                "ORDER BY created_at DESC, step_seq DESC, id DESC LIMIT 1",
+                (goal_id,),
+            ).fetchone()
+        except Exception as e:  # pragma: no cover
+            log.warning("checkpoint: orchestrator_for() failed: %s", e)
+            return None
+        return (str(row[0]), int(row[1])) if row else None
+
+    def list_steps(self, goal_id: int, agent_id: str, episode_id: int = 0) -> list[int]:
+        """Checkpoint step indices (ascending) kept for (goal, episode, agent)."""
+        if goal_id is None or not self._ensure():
+            return []
+        try:
+            rows = self._world.conn.execute(
+                "SELECT step_seq FROM checkpoints "
+                "WHERE goal_id = ? AND episode_id = ? AND agent_id = ? "
+                "ORDER BY step_seq ASC",
+                (goal_id, episode_id, agent_id),
+            ).fetchall()
+        except Exception as e:  # pragma: no cover
+            log.warning("checkpoint: list_steps() failed: %s", e)
+            return []
+        return [int(r[0]) for r in rows]
+
+    def at_or_before_step(self, goal_id: int, agent_id: str, step_seq: int,
+                          episode_id: int = 0) -> Checkpoint | None:
+        """The newest checkpoint at or before ``step_seq`` (the rewind target)."""
+        if goal_id is None or not self._ensure():
+            return None
+        try:
+            row = self._world.conn.execute(
+                "SELECT goal_id, episode_id, agent_id, step_seq, messages, budget, meta "
+                "FROM checkpoints WHERE goal_id = ? AND episode_id = ? AND agent_id = ? "
+                "AND step_seq <= ? ORDER BY step_seq DESC LIMIT 1",
+                (goal_id, episode_id, agent_id, step_seq),
+            ).fetchone()
+        except Exception as e:  # pragma: no cover
+            log.warning("checkpoint: at_or_before_step() failed: %s", e)
+            return None
+        if row is None:
+            return None
+        try:
+            return Checkpoint(
+                goal_id=row[0], episode_id=row[1], agent_id=row[2], step_seq=row[3],
+                messages=json.loads(row[4]), budget=json.loads(row[5]),
+                meta=json.loads(row[6]),
+            )
+        except (TypeError, ValueError):  # pragma: no cover -- corrupt row
+            return None
+
+    def truncate_after(self, goal_id: int, agent_id: str, step_seq: int,
+                       episode_id: int = 0) -> int:
+        """Delete checkpoints AFTER ``step_seq`` so the next resume continues
+        from it. Returns the number removed."""
+        if goal_id is None or not self._ensure():
+            return 0
+        try:
+            with self._world._writing() as conn:
+                cur = conn.execute(
+                    "DELETE FROM checkpoints WHERE goal_id = ? AND episode_id = ? "
+                    "AND agent_id = ? AND step_seq > ?",
+                    (goal_id, episode_id, agent_id, step_seq),
+                )
+                return int(cur.rowcount or 0)
+        except Exception as e:  # pragma: no cover
+            log.warning("checkpoint: truncate_after() failed: %s", e)
+            return 0
+
+    def copy_checkpoint(self, ckpt: Checkpoint, dst_goal_id: int) -> bool:
+        """Write ``ckpt`` under a different goal id (for ``--fork``). Keeps the
+        same episode/agent/step so the forked goal's resume finds it unchanged."""
+        if dst_goal_id is None or not self._ensure():
+            return False
+        try:
+            with self._world._writing() as conn:
+                conn.execute(
+                    "INSERT INTO checkpoints"
+                    "(goal_id, episode_id, agent_id, step_seq, created_at, "
+                    " messages, budget, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                    (dst_goal_id, ckpt.episode_id, ckpt.agent_id, ckpt.step_seq,
+                     time.time(), json.dumps(ckpt.messages, default=str),
+                     json.dumps(ckpt.budget), json.dumps(ckpt.meta, default=str)),
+                )
+            return True
+        except Exception as e:  # pragma: no cover
+            log.warning("checkpoint: copy_checkpoint() failed: %s", e)
+            return False
+
+
+@dataclass
+class RewindResult:
+    ok: bool
+    detail: str
+    target_step: int | None = None
+    forked_goal_id: int | None = None
+
+
+def rewind(world: Any, goal_id: int, to_step: int, *, fork: bool = False) -> RewindResult:
+    """Restart a goal from an earlier checkpoint (spec §4, G2).
+
+    Without ``fork``: drop the checkpoints after ``to_step`` and re-block the
+    goal so ``maverick resume`` continues from there. With ``fork``: copy the
+    target checkpoint under a NEW child goal (same department, so the resumed
+    role keys the same ``checkpoint_id``), leaving the original intact — "go back
+    to step N and try a different branch."
+
+    Builds only on the shipped Phase-1 per-step checkpoints (no swarm-tree
+    concurrency). Never raises; returns a structured result.
+    """
+    ck = Checkpointer(world)
+    found = ck.orchestrator_for(goal_id)
+    if found is None:
+        return RewindResult(False, f"goal #{goal_id} has no checkpoints "
+                            "(durable execution off, or a legacy/never-run goal)")
+    agent_id, episode_id = found
+    target = ck.at_or_before_step(goal_id, agent_id, to_step, episode_id)
+    if target is None:
+        steps = ck.list_steps(goal_id, agent_id, episode_id)
+        return RewindResult(False, f"no checkpoint at or before step {to_step} "
+                            f"for goal #{goal_id} (available steps: {steps})")
+    if fork:
+        g = world.get_goal(goal_id)
+        title = getattr(g, "title", None) or f"rewind of #{goal_id}"
+        desc = getattr(g, "description", "") or ""
+        domain = getattr(g, "domain", "") or ""
+        new_goal = world.create_goal(title, desc, parent_id=goal_id, domain=domain)
+        if not ck.copy_checkpoint(target, new_goal):
+            return RewindResult(False, "fork failed: could not copy the checkpoint")
+        try:
+            world.set_goal_status(new_goal, "blocked")
+        except Exception:  # pragma: no cover -- best effort
+            pass
+        return RewindResult(
+            True,
+            f"forked goal #{goal_id} -> new goal #{new_goal} at step {target.step_seq}; "
+            f"resume it with `maverick resume {new_goal}`",
+            target_step=target.step_seq, forked_goal_id=new_goal)
+    removed = ck.truncate_after(goal_id, agent_id, target.step_seq, episode_id)
+    try:
+        world.set_goal_status(goal_id, "blocked")
+    except Exception:  # pragma: no cover -- best effort
+        pass
+    return RewindResult(
+        True,
+        f"rewound goal #{goal_id} to step {target.step_seq} "
+        f"({removed} later checkpoint(s) dropped); continue with "
+        f"`maverick resume {goal_id}`",
+        target_step=target.step_seq)
+
 
 # ----- Budget (de)serialization -----
 # Budget is a dataclass of plain int/float counters + caps; snapshot the
@@ -277,6 +438,6 @@ def restore_budget(snapshot: dict):
 
 
 __all__ = [
-    "enabled", "Checkpoint", "Checkpointer",
+    "enabled", "Checkpoint", "Checkpointer", "RewindResult", "rewind",
     "snapshot_budget", "restore_budget",
 ]
