@@ -13,22 +13,22 @@
   </div>
 
   {% if entries %}
-    <div class="store-grid">
+    <div class="card-grid">
       {% for e in entries %}
-        <div class="store-card">
-          <div class="store-card-head">
-            <code class="store-name">{{ e.name }}</code>
+        <div class="card">
+          <div class="store__head">
+            <code class="store__name">{{ e.name }}</code>
             {% if e.verified %}<span class="badge active" title="Verified author">verified</span>{% endif %}
           </div>
-          <p class="store-summary">{{ e.summary or "No description." }}</p>
-          <p class="muted store-meta">
+          <p class="store__summary">{{ e.summary or "No description." }}</p>
+          <p class="muted store__meta">
             {% if e.author %}by {{ e.author }} · {% endif %}v{{ e.version }}
             {% if e.install_count %} · {{ e.install_count }} installs{% endif %}
           </p>
           {% if e.name in installed %}
-            <button class="store-btn installed" disabled>Installed</button>
+            <button class="btn btn--ghost store__btn" disabled>Installed</button>
           {% else %}
-            <button class="store-btn install" data-name="{{ e.name }}">Install</button>
+            <button class="btn btn--primary store__btn install" data-name="{{ e.name }}">Install</button>
           {% endif %}
         </div>
       {% endfor %}
@@ -44,25 +44,20 @@
     </div>
   {% endif %}
 
-  <p id="store-msg" role="status" aria-live="polite" class="muted" style="min-height: 1em; margin-top: 1rem;"></p>
+  <p id="store-msg" role="status" aria-live="polite" class="muted" style="min-height: 1em; margin-top: var(--space-4);"></p>
 
   <style>
-    .store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
-    .store-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; display: flex; flex-direction: column; }
-    .store-card-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
-    .store-name { font-size: 0.95rem; }
-    .store-summary { margin: 0 0 0.75rem; flex: 1; }
-    .store-meta { font-size: 0.78rem; margin: 0 0 1rem; }
-    .store-btn { padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; border: 0; font-weight: 500; }
-    .store-btn.install { background: var(--brand); color: var(--brand-fg); }
-    .store-btn.installed { background: var(--panel); color: var(--muted); border: 1px solid var(--border); cursor: default; }
-    .store-btn[disabled] { opacity: 0.7; }
+    .store__head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+    .store__name { font-size: var(--text-sm); }
+    .store__summary { margin: 0 0 var(--space-3); flex: 1 1 auto; }
+    .store__meta { font-size: var(--text-xs); margin: 0 0 var(--space-3); }
+    .store__btn { align-self: flex-start; margin-top: auto; }
   </style>
 
   <script>
     (function() {
       const msg = document.getElementById('store-msg');
-      document.querySelectorAll('button.store-btn.install').forEach(function(btn) {
+      document.querySelectorAll('button.store__btn.install').forEach(function(btn) {
         btn.addEventListener('click', async function() {
           const name = btn.dataset.name;
           btn.disabled = true;
@@ -77,8 +72,8 @@
             });
             if (r.ok) {
               btn.textContent = 'Installed';
-              btn.classList.remove('install');
-              btn.classList.add('installed');
+              btn.classList.remove('install', 'btn--primary');
+              btn.classList.add('btn--ghost');
               msg.style.color = 'var(--accent)';
               msg.textContent = 'Installed ' + name + '.';
             } else {

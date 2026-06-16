@@ -34,6 +34,15 @@ def test_generic_empties_use_mv_empty(monkeypatch, tmp_path):
         assert "mv-empty" in c.get(path).text, path
 
 
+def test_store_modernized_off_bespoke_classes(monkeypatch, tmp_path):
+    # store was a token opt-out (.store-card/.store-grid, raw 8px); now rebuilt
+    # on the shared .card/.card-grid + .btn.
+    _isolate(monkeypatch, tmp_path)
+    t = _client().get("/store").text
+    assert "store-card" not in t and "store-grid" not in t
+    assert "border-radius: 8px" not in t
+
+
 def test_automations_uses_shared_section_head(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     t = _client().get("/automations").text
