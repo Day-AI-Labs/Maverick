@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Vendor TPRM assessment"
+consumers = ["vendor_risk_manager", "risk_officer"]
+cadence = "annual"
+gate = "approval"

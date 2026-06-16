@@ -11,3 +11,10 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["itgrc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Non-human identity inventory"
+consumers = ["ciso", "control_owner"]
+cadence = "quarterly"
+gate = "review"

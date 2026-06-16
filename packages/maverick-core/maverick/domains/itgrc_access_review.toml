@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Access recertification register"
+consumers = ["control_owner", "risk_officer"]
+cadence = "quarterly"
+gate = "approval"

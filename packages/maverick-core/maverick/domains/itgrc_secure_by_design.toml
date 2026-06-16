@@ -11,3 +11,10 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["itgrc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Secure-by-Design evidence"
+consumers = ["compliance_officer", "ciso"]
+cadence = "annual"
+gate = "approval"

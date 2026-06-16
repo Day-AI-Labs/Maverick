@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["itgrc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "License reconciliation matrix"
+consumers = ["control_owner", "compliance_officer"]
+cadence = "quarterly"
+gate = "review"

@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["itgrc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Segregation-of-duties conflict matrix"
+consumers = ["internal_auditor", "control_owner"]
+cadence = "monthly"
+gate = "review"

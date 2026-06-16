@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Vulnerability register"
+consumers = ["security_analyst", "ciso"]
+cadence = "weekly"
+gate = "review"

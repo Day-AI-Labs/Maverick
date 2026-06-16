@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Asset/configuration inventory"
+consumers = ["control_owner", "security_analyst"]
+cadence = "monthly"
+gate = "review"

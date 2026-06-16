@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Cross-border transfer impact assessment"
+consumers = ["privacy_officer", "compliance_officer"]
+cadence = "on-demand"
+gate = "review"

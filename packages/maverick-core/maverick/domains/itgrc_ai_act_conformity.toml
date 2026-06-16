@@ -14,3 +14,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "EU AI Act conformity package"
+consumers = ["compliance_officer", "ciso"]
+cadence = "on-demand"
+gate = "approval"

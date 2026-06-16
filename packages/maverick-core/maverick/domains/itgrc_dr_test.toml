@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["itgrc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "DR test results log"
+consumers = ["control_owner", "risk_officer"]
+cadence = "quarterly"
+gate = "approval"
