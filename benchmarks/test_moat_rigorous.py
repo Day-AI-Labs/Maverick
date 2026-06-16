@@ -150,6 +150,13 @@ def test_run_live_preflight_refuses_empty_codebase(tmp_path):
         MR.run_live(codebase=str(tmp_path))
 
 
+def test_worker_source_compiles():
+    # The whole embedded worker (prologue + run + always-emit-RESULT_JSON tail)
+    # must be valid Python -- it's never imported, so nothing else would catch a
+    # syntax error before a paid run tried to execute it.
+    compile(MR._WORKER_SRC, "<worker>", "exec")
+
+
 def test_worker_provisions_codebase_into_sandbox_workdir(tmp_path, monkeypatch):
     # Exec only the config-writing prologue (before the kernel import) in an
     # isolated HOME with a fake codebase, and confirm it mounts it + points the
@@ -166,6 +173,24 @@ def test_worker_provisions_codebase_into_sandbox_workdir(tmp_path, monkeypatch):
     assert "[sandbox]" in cfg and "workdir" in cfg
     assert 'orchestrator = "claude-sonnet-4-6"' in cfg
     assert (tmp_path / "ws" / "src" / "pkg" / "mod.py").exists()  # codebase copied in
+
+
+def test_total_dollar_ceiling_stops_the_run():
+    # Each observation costs warm 1.0 + cold 1.0 = 2.0; the ceiling must stop the
+    # run before it blows the budget, keeping the observations gathered so far.
+    def runner(pair, seed):
+        return (RunMetrics(1.0, 0, 0.0, True), RunMetrics(1.0, 0, 0.0, True))
+    pairs = [MR.PairSpec("p", "A", "B")]
+    assert MR.run_moat_rigorous(pairs, seeds=5, pair_run_fn=runner).n == 5  # no ceiling
+    capped = MR.run_moat_rigorous(pairs, seeds=5, pair_run_fn=runner, max_total_dollars=3.0)
+    assert capped.n == 2  # stops once cumulative spend (2.0 -> 4.0) reaches $3
+
+
+def test_run_live_refuses_cap_below_floor():
+    # A sub-$1 cap guarantees truncation -> refuse before spending anything.
+    import pytest
+    with pytest.raises(RuntimeError, match="floor"):
+        MR.run_live(cap=0.5)
 
 
 def test_format_report_renders_table_and_claim():
