@@ -34,7 +34,7 @@
 {% endmacro %}
 
 {% block content %}
-  <h2>agents</h2>
+  <h1 class="page-title">Agents</h1>
   <p class="muted" style="max-width: 48rem;">
     Every specialist pack, and the editor to tailor one for this deployment.
     Saving writes a <em>tenant override</em> that inherits the built-in pack and
@@ -69,9 +69,9 @@
 
     <section aria-label="Agent editor" style="flex: 1; min-width: 0;">
       {% if selected %}
-      <h3 style="margin-top: 0;">
+      <h2 style="margin-top: 0;">
         <code>{{ selected.name }}</code>{% if selected.suite %} <span class="muted">· {{ selected.suite }}</span>{% endif %}
-      </h3>
+      </h2>
       {% if selected.is_override %}
       <p class="muted">Overridden fields: {{ selected.overridden|join(', ') or '—' }}
         (everything else inherits the built-in pack).</p>

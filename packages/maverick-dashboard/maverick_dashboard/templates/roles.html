@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}roles · Maverick{% endblock %}
 {% block content %}
-  <h2>roles</h2>
+  <h1 class="page-title">Roles</h1>
   <p class="muted" style="max-width: 48rem;">
     The kernel's core roles. Add a per-client <strong>system-prompt addendum</strong>
     to any role — extra instructions appended to its base template on every spawn,
@@ -35,7 +35,7 @@
 
     <section aria-label="Role editor" style="flex: 1; min-width: 0;">
       {% if selected %}
-      <h3 style="margin-top: 0;"><code>{{ selected.role }}</code></h3>
+      <h2 style="margin-top: 0;"><code>{{ selected.role }}</code></h2>
       <p class="muted">
         model: <code>{{ selected.model or '—' }}</code>
         {% if selected.effort %}· effort: <code>{{ selected.effort }}</code>{% endif %}
