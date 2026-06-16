@@ -11,3 +11,10 @@ deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Loss & LAE reserve indication"
+consumers = ["actuary", "controller", "risk_officer"]
+cadence = "quarterly"
+gate = "review"

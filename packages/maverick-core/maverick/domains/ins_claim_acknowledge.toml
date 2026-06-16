@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Claim acknowledgment"
+consumers = ["claims_adjuster", "compliance_officer"]
+cadence = "on-demand"
+gate = "review"

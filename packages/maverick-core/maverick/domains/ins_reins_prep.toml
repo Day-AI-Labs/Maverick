@@ -11,3 +11,10 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Reinsurance cession & recovery claim"
+consumers = ["reinsurance_analyst"]
+cadence = "on-demand"
+gate = "approval"

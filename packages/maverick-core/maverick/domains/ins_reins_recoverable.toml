@@ -11,3 +11,10 @@ deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Reinsurance recoverable allowance"
+consumers = ["controller", "actuary", "risk_officer"]
+cadence = "quarterly"
+gate = "review"

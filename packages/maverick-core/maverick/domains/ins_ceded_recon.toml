@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Ceded premium & commission reconciliation"
+consumers = ["reinsurance_analyst", "controller"]
+cadence = "monthly"
+gate = "approval"

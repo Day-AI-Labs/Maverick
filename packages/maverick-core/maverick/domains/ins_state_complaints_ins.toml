@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "DOI complaint response"
+consumers = ["compliance_officer", "claims_manager"]
+cadence = "on-demand"
+gate = "approval"

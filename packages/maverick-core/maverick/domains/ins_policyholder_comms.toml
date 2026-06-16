@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Statutory policyholder notice"
+consumers = ["compliance_officer", "agency_manager"]
+cadence = "on-demand"
+gate = "approval"

@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Lapse/reinstatement notice"
+consumers = ["agency_manager", "compliance_officer"]
+cadence = "on-demand"
+gate = "review"

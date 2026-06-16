@@ -11,3 +11,10 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Subrogation recovery file"
+consumers = ["claims_manager", "reinsurance_analyst"]
+cadence = "on-demand"
+gate = "review"

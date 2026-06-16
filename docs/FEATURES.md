@@ -1084,7 +1084,11 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   The finance suite declares output contracts across its towers (FP&A forecasts,
   controllership reconciliations, treasury schedules, tax provisions, assurance
   memos, reporting drafts, risk/credit), so the inbox is populated with ~29
-  deliverables across 11 consumer roles, not just the one proof pack.
+  deliverables across 11 consumer roles, not just the one proof pack. The
+  insurance suite extends this with ~38 more (claims files, underwriting files,
+  reserve indications, reinsurance reconciliations, statutory filings) across
+  its own 11-role vocabulary (underwriter, actuary, claims_adjuster/manager,
+  reinsurance_analyst, compliance_officer, ...).
 - **Governed hand-off (deliverable sign-off + export)** — closes the loop the
   output gate opens: a human certifies a finished, gated deliverable
   (`POST /api/v1/goals/<id>/signoff`, recorded in the v16 `signoffs` table with
