@@ -1,0 +1,30 @@
+"""The golden-path walkthrough drives the real governance/capability/audit/budget
+code (no model) and emits tamper-evident receipts. See maverick/golden_path.py.
+"""
+from __future__ import annotations
+
+import pytest
+from maverick import golden_path
+
+
+def test_golden_path_receipts(tmp_path):
+    pytest.importorskip("cryptography")  # the demo's value is the signed receipts
+    audit = tmp_path / "audit.ndjson"
+    scenario = golden_path.run_scenario(audit, key_dir=tmp_path / "keys")
+
+    # The storyline exercises every enforcement surface, in order.
+    assert [s.verdict for s in scenario.steps] == [
+        "SEALED", "DENY", "REQUIRE_HUMAN", "ALLOW", "CAPPED", "TAMPER-EVIDENT"]
+
+    # The authentic chain verifies clean; the tamper produced a real break reason.
+    assert scenario.chain_clean is True
+    assert scenario.break_reason and "UNEXPECTED" not in scenario.break_reason
+
+    # The on-disk signed audit file independently verifies clean.
+    from maverick.audit import signing
+    assert audit.exists()
+    assert not signing.verify_chain(audit)
+
+    md = golden_path.render(scenario, audit)
+    assert "Golden Path" in md
+    assert "DENY" in md and "TAMPER-EVIDENT" in md
