@@ -355,8 +355,10 @@
       padding: 0.5rem 0.95rem; border-radius: var(--radius-md); cursor: pointer;
       font-size: var(--text-base); font-weight: var(--font-medium); line-height: 1.2;
       border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+      transition: background-color .13s ease, border-color .13s ease, color .13s ease, transform .06s ease;
     }
     .btn:hover { border-color: var(--border-strong); text-decoration: none; }
+    .btn:active { transform: translateY(1px); }
     .btn--primary { background: var(--brand); border-color: var(--brand); color: var(--brand-fg); }
     .btn--primary:hover { background: var(--brand-hi); border-color: var(--brand-hi); }
     .btn--ghost { background: transparent; }
@@ -439,6 +441,7 @@
       .navgrp__caret { transition: none; }
       .skeleton { animation: none; }
       tbody tr { transition: none; }
+      .btn:active { transform: none; }
     }
 
     /* Reusable feedback primitives: window.mvToast() + window.mvConfirm(). */
