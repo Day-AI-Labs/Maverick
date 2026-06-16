@@ -1220,6 +1220,48 @@ def codebook(ctx, limit: int, show: bool) -> None:
         click.echo(f"  {code} = {phrase!r}")
 
 
+@main.command("codec-probe")
+@click.option("--limit", type=int, default=5000, help="Coordination messages to probe.")
+@click.option("--encoding", default="cl100k_base", help="tiktoken encoding for the local proxy.")
+@click.option("--model", default=None, help="Anthropic model for the EXACT count (needs API key).")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def codec_probe(ctx, limit: int, encoding: str, model: str | None, as_json: bool) -> None:
+    """Measure whether the emergent codec saves TOKENS, not just bytes.
+
+    The kill-switch experiment: bytes and frontier tokens do NOT move together,
+    because the audit-safe sentinel codes can tokenize worse than the English they
+    replace. Learns a codebook from real coordination (goal_events) and reports the
+    byte delta beside the *token* delta -- and whether the compressed form actually
+    costs fewer tokens. Pass --model (with an API key) for the exact Anthropic count;
+    otherwise a local tiktoken proxy answers the directional question for free.
+    """
+    import json as _json
+
+    from .codec_probe import measure, resolve_counter
+    from .emergent_protocol import learn
+    world = open_world(ctx.obj["db"])
+    msgs = world.recent_event_contents(limit=limit)
+    if not msgs:
+        click.echo("no coordination messages to probe")
+        return
+    book = learn(msgs)
+    counter = resolve_counter(encoding=encoding, model=model)
+    delta = measure(msgs, book, count_tokens=counter)
+    d = delta.to_dict()
+    if as_json:
+        click.echo(_json.dumps(d, indent=2))
+        return
+    click.echo(f"probed {d['n_messages']} messages, {book.size} codes")
+    click.echo(f"  bytes : {d['byte_savings_pct']:+.1f}%")
+    verdict = "SAVES tokens" if d["pays_off"] else "COSTS MORE tokens"
+    click.echo(f"  tokens: {d['token_savings_pct']:+.1f}%   -> {verdict}")
+    be = d["breakeven_messages"]
+    click.echo(f"  read-coded: {d['codebook_tokens']} tokens to carry the codebook; "
+               + (f"break-even after {be:.0f} reuses" if be != float("inf")
+                  else "NEVER breaks even (no per-message token saving)"))
+
+
 @main.command("flywheel")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
 def flywheel(as_json: bool) -> None:
