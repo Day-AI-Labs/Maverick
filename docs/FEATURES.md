@@ -1067,6 +1067,14 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   and dependency-free (`deliverable.py` parses the pipe table agents emit; cells
   go through template autoescaping), so a malformed or table-less result
   degrades gracefully to prose.
+- **Persona inbox (`/deliverables`)** — the consumption home: runs grouped by
+  the deliverable their pack declares and scoped to the consumer role, so an
+  FP&A analyst sees "my forecasts" and a risk officer sees "assessments awaiting
+  my sign-off" instead of the flat `/goals` stream. Filter chips per consumer
+  role; a gated deliverable whose run has finished surfaces in an "Awaiting
+  sign-off" queue whose Review action opens the rendered deliverable. Keyed off
+  the existing `goals.domain` attribution (`list_goals(domain=...)`) and the
+  pack output contract; the model is shaped by a pure `deliverables.build_inbox`.
 - **Finance suite (Office of the CFO)** — 31 domain packs across 7 towers
   (Controllership, FP&A, Treasury, Tax, Assurance, Procurement, Reporting) + a
   Finance Controller, each a sealed read-only/draft-by-default compartment with

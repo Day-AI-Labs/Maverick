@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}deliverables · Maverick{% endblock %}
+{% block content %}
+  <h1 class="page-title">Deliverables</h1>
+  <p class="page-subtitle">
+    What the fleet produces, grouped by deliverable and scoped to who consumes
+    it — your forecasts, assessments awaiting your sign-off — not the flat
+    <a href="/goals">run list</a>.
+  </p>
+
+  {% if items or role %}
+    <div class="dlv-filter" role="group" aria-label="Filter by role">
+      <a href="/deliverables" class="dlv-chip{% if not role %} dlv-chip--on{% endif %}">All</a>
+      {% for r in roles %}
+        <a href="/deliverables?role={{ r }}" class="dlv-chip{% if role == r %} dlv-chip--on{% endif %}">{{ r }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if awaiting %}
+    <div class="section-head">
+      <h2>Awaiting sign-off</h2>
+      <span class="badge warn">{{ awaiting|length }}</span>
+    </div>
+    <div class="panel" style="padding: var(--space-2) var(--space-3);">
+      {% for r in awaiting %}
+        <div class="mv-row">
+          <div class="mv-row__main">
+            <div class="mv-row__title">{{ r.deliverable }}</div>
+            <div class="mv-row__sub muted">
+              {{ r.title }} · <span data-when="{{ r.updated_at }}"></span> · {{ r.gate }} gate
+            </div>
+          </div>
+          <div class="mv-row__actions">
+            <a class="btn btn--primary" href="/chat/goal/{{ r.id }}">Review</a>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if items %}
+    <div class="section-head"><h2>Deliverables</h2></div>
+    <div class="card-grid">
+      {% for it in items %}
+        <div class="card">
+          <div class="dlv-card__head">
+            <span class="dlv-card__label">{{ it.deliverable }}</span>
+            {% if it.gate %}<span class="badge" title="Needs {{ it.gate }} before it is acted on">{{ it.gate }} gate</span>{% endif %}
+          </div>
+          <p class="muted dlv-card__meta">
+            {%- if it.consumers %}For {{ it.consumers|join(', ') }}{% else %}No consumers named{% endif -%}
+            {%- if it.cadence %} · {{ it.cadence }}{% endif -%}
+            {%- if it.shape %} · {{ it.shape }}{% endif -%}
+          </p>
+          {% if it.latest %}
+            <a class="dlv-run" href="/chat/goal/{{ it.latest.id }}">
+              <span class="badge {{ it.latest.status }}">{{ it.latest.status }}</span>
+              <span class="dlv-run__title">{{ it.latest.title }}</span>
+              <span class="muted" data-when="{{ it.latest.updated_at }}"></span>
+            </a>
+            {% if it.awaiting_count %}
+              <p class="muted dlv-card__await">{{ it.awaiting_count }} awaiting your sign-off</p>
+            {% endif %}
+          {% else %}
+            <p class="muted dlv-card__meta">No runs yet — this deliverable hasn't been produced.</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="mv-empty">
+      <p class="mv-empty__title">{% if role %}No deliverables for {{ role }}{% else %}No deliverables declared yet{% endif %}</p>
+      <p class="mv-empty__body">
+        A deliverable appears here once a domain pack declares its
+        <code>[output]</code> contract — a label, the roles who consume it, and
+        an optional sign-off gate. See <a href="/compartments">Compartments</a>
+        for the pack roster.
+      </p>
+    </div>
+  {% endif %}
+
+  <style>
+    .dlv-filter { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-5); }
+    .dlv-chip {
+      padding: 0.3rem 0.8rem; border: 1px solid var(--border); border-radius: 999px;
+      font-size: var(--text-sm); color: var(--muted); background: var(--surface-1);
+      transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+    }
+    .dlv-chip:hover { color: var(--text); border-color: var(--brand-border); }
+    .dlv-chip--on { color: var(--brand-fg); background: var(--brand); border-color: var(--brand); }
+    .dlv-card__head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+    .dlv-card__label { font-weight: var(--font-semibold); margin-inline-end: auto; }
+    .dlv-card__meta { font-size: var(--text-sm); margin: 0 0 var(--space-3); }
+    .dlv-card__await { font-size: var(--text-sm); margin: var(--space-2) 0 0; color: var(--warn); }
+    .dlv-run {
+      display: flex; align-items: center; gap: var(--space-2); margin-top: auto;
+      padding: var(--space-2) var(--space-3); border: 1px solid var(--hairline);
+      border-radius: var(--radius-md); background: var(--surface-sunken);
+    }
+    .dlv-run:hover { border-color: var(--brand-border); }
+    .dlv-run__title { flex: 1 1 auto; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+  <script>
+    // Format every server-rendered timestamp via the shared relative-time helper.
+    (function () {
+      document.querySelectorAll('[data-when]').forEach(function (el) {
+        var ts = parseFloat(el.getAttribute('data-when'));
+        if (ts) el.textContent = window.mvWhen(ts);
+      });
+    })();
+  </script>
+{% endblock %}

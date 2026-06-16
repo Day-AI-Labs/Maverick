@@ -51,6 +51,20 @@ def test_list_goals_owner_filter(tmp_path):
     assert w.list_goals(status="done", owner="user:bob") == []
 
 
+def test_list_goals_domain_filter(tmp_path):
+    w = WorldModel(tmp_path / "w.db")
+    f1 = w.create_goal("forecast", domain="finance_cash13w")
+    f2 = w.create_goal("forecast 2", domain="finance_cash13w")
+    other = w.create_goal("other", domain="bank_cecl_allowance")
+    generic = w.create_goal("generic")  # no domain
+    assert {g.id for g in w.list_goals(domain="finance_cash13w")} == {f1, f2}
+    assert {g.id for g in w.list_goals(domain="bank_cecl_allowance")} == {other}
+    assert {g.id for g in w.list_goals(domain="")} == {generic}  # unattributed only
+    # domain + owner compose
+    w.set_goal_domain(f1, "finance_cash13w")  # idempotent; keep attribution
+    assert {g.id for g in w.list_goals(domain="finance_cash13w", limit=1, order="desc")} == {f2}
+
+
 def test_migration_adds_owner_to_a_v10_db(tmp_path):
     # A real pre-owner (v10) DB: goals table without `owner`, version pinned 10.
     db = tmp_path / "old.db"
