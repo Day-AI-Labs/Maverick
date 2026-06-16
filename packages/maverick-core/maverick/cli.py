@@ -1168,6 +1168,28 @@ def compounding(ctx, as_json: bool, window: int) -> None:
             f"cost {r.cost_delta_pct:+.0f}%  success {r.success_delta:+.2f}  [{arrow}]")
 
 
+@main.command("record-outcome")
+@click.argument("goal_id", type=int)
+@click.argument("episode_id", type=int)
+@click.argument("value", type=float)
+@click.option("--kind", default="", help="What the outcome is (e.g. invoice_paid, renewed).")
+def record_outcome(goal_id: int, episode_id: int, value: float, kind: str) -> None:
+    """Feed a REAL downstream outcome back to a past episode (the grounded reward).
+
+    The Consequence Engine's ingestion entrypoint -- a system-of-record connector
+    (or a human) calls this once reality reports back: ``maverick record-outcome
+    <goal_id> <episode_id> <value>`` with value in [0,1] (paid=1.0, reopened=0.0,
+    or a graded result). The flywheel then prefers this over the verifier proxy
+    when it next turns, so learning is grounded in what actually happened.
+    """
+    from .consequence import record_outcome as _rec
+    ok = _rec(goal_id, episode_id, value, kind=kind)
+    click.echo(
+        f"recorded outcome {value:g} for goal {goal_id} episode {episode_id}"
+        f"{(' (' + kind + ')') if kind else ''}" if ok
+        else "failed to record outcome")
+
+
 @main.command("flywheel")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
 def flywheel(as_json: bool) -> None:
