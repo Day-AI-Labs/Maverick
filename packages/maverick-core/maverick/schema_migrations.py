@@ -128,4 +128,40 @@ def _default_migrations():
     return MIGRATIONS
 
 
-__all__ = ["Step", "classify", "plan", "online_only", "validate", "render"]
+def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
+    """Lint the world-model migration table; the CI ratchet for migrations.
+
+    ``--ci`` exits non-zero when a migration is malformed or unclassifiable
+    (an ``unknown`` SQL shape), so a new migration can't ship without being
+    reviewed for online/offline safety. A classified *offline* migration is
+    allowed (it's legitimate, just flagged) — the online/offline call is an
+    operator deploy-time decision (``maverick schema-plan``), not a hard block.
+    """
+    import argparse
+    p = argparse.ArgumentParser(
+        prog="maverick.schema_migrations",
+        description="Lint the world-model migration table.")
+    p.add_argument("--ci", action="store_true",
+                   help="exit 1 if any migration is malformed or unclassifiable")
+    args = p.parse_args(argv)
+
+    problems = validate()
+    if problems:
+        print("schema migrations: PROBLEMS")
+        for prob in problems:
+            print(f"  - {prob}")
+    else:
+        migrations = _default_migrations()
+        steps = plan(0, max(migrations)) if migrations else []
+        verdict = "all online-safe" if online_only(steps) else "some need a maintenance window"
+        print(f"schema migrations: OK ({len(migrations)} versions, {verdict})")
+    if args.ci and problems:
+        return 1
+    return 0
+
+
+__all__ = ["Step", "classify", "plan", "online_only", "validate", "render", "main"]
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

@@ -90,3 +90,17 @@ def test_schema_plan_command_runs(tmp_path, monkeypatch):
     assert r.exit_code == 0, r.output
     # A fresh DB opens already-current -> nothing pending.
     assert "current" in r.output or "pending" in r.output
+
+
+def test_ci_gate_passes_on_the_shipped_table():
+    from maverick.schema_migrations import main
+    assert main(["--ci"]) == 0  # the shipped migrations lint clean
+
+
+def test_ci_gate_fails_on_an_unclassifiable_migration(monkeypatch):
+    from maverick import schema_migrations as sm
+    monkeypatch.setattr(sm, "_default_migrations",
+                        lambda: {1: ["ALTER TABLE t ADD COLUMN a TEXT"], 2: ["PRAGMA foo"]})
+    assert sm.main(["--ci"]) == 1
+    # Without --ci it reports the problem but does not fail the build.
+    assert sm.main([]) == 0
