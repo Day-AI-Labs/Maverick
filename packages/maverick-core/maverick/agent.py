@@ -1367,9 +1367,11 @@ class Agent:
             return d
         if (d := self._capability_path_denial(name, args, cap)) is not None:
             return d
-        # Pre-execution rehearsal (Operating Twin): hold an elevated-risk tool the
-        # world-model can't vouch for. No-op unless [rehearsal] is on; fail-open.
-        if (d := self._rehearsal_denial(name)) is not None:
+        # Operating-Twin pre-execution gates (both no-op + fail-open by default):
+        # rehearsal holds an elevated-risk tool the world-model can't vouch for;
+        # a learned guardrail holds an action the data engine has causally shown
+        # lowers outcomes (self-correcting -- dropped when the harm is gone).
+        if (d := self._twin_denial(name)) is not None:
             return d
         # The browser can follow redirects and later URL-less actions read or
         # interact with the current page. Pass the active host scope into the
@@ -1636,6 +1638,11 @@ class Agent:
         except Exception:  # pragma: no cover -- never break the loop
             return self.model
 
+    def _twin_denial(self, name: str) -> str | None:
+        """The Operating-Twin pre-execution gates, first hold wins: rehearsal
+        (world-model can't vouch) then learned guardrails (causally harmful)."""
+        return self._rehearsal_denial(name) or self._guardrail_denial(name)
+
     def _rehearsal_denial(self, name: str) -> str | None:
         """Hold an elevated-risk tool the rehearsal twin can't vouch for.
 
@@ -1667,6 +1674,36 @@ class Agent:
                 "The tool was not executed; choose another approach or seek approval."
             )
         except Exception:  # pragma: no cover -- rehearsal must never break the loop
+            return None
+
+    def _guardrail_denial(self, name: str) -> str | None:
+        """Hold an action a learned guardrail flags as causally harmful.
+
+        No-op unless ``[data_engine]`` is enabled (guardrails are its output);
+        consults the registry the flywheel writes; any error fails open. Unlike a
+        hand-written deny-list, the guardrail carries the causal effect that
+        justifies it and is auto-dropped when the harm is gone.
+        """
+        try:
+            from . import data_engine
+            if not data_engine.enabled():
+                return None
+            from .negative_knowledge import shared
+            g = shared().consult(name)
+            if g is None:
+                return None
+            try:  # tamper-evident record of the hold; never block on audit
+                from .audit import EventKind, record
+                record(EventKind.SHIELD_BLOCK, agent=self.name, goal_id=self.ctx.goal_id,
+                       stage="guardrail", reason=g.rule)
+            except Exception:  # pragma: no cover
+                pass
+            return (
+                f"⚠ Held by a learned guardrail: {g.rule}. The tool was not executed; "
+                "choose another approach (this rule was learned from real outcomes and "
+                "is dropped automatically once the harm is gone)."
+            )
+        except Exception:  # pragma: no cover -- guardrails must never break the loop
             return None
 
     def _capture_trajectory_step(self, step_index, tool_name, tool_succeeded,
