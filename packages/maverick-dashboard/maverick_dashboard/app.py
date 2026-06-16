@@ -995,6 +995,32 @@ async def goal_set_project(request: Request, goal_id: int,
     return RedirectResponse(f"/chat/goal/{goal_id}", status_code=303)
 
 
+@app.get("/styles", response_class=HTMLResponse)
+async def styles_page(request: Request) -> HTMLResponse:
+    """Output styles -- the response style applied to every run."""
+    from maverick.styles import active_style_name, all_styles
+    items = [{"name": n, "guidance": g} for n, g in sorted(all_styles().items())]
+    return templates.TemplateResponse(
+        request, "output_styles.html",
+        {"styles": items, "active": active_style_name()})
+
+
+@app.post("/styles/set")
+async def styles_set(request: Request, name: str = Form("")) -> RedirectResponse:
+    """Set the active output style (empty value clears it). Same-origin; the
+    operator role (it changes how every agent responds)."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    require_permission(request, "operate")
+    from maverick import runtime_overrides
+    n = (name or "").strip()
+    try:
+        runtime_overrides.set_style(n) if n else runtime_overrides.clear_style()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse("/styles", status_code=303)
+
+
 def _deliverable_specs() -> list[dict]:
     """The packs that declare a deliverable -- the rows of the persona inbox.
 

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}output styles · Maverick{% endblock %}
+{% block content %}
+  <h1 class="page-title">Output styles</h1>
+  <p class="page-subtitle">Pick the response style applied to every agent run — tone and format only, never capabilities or safety.</p>
+
+  <div class="panel">
+    <form method="post" action="/styles/set" style="margin: 0;">
+      <table>
+        <thead><tr><th scope="col"></th><th scope="col">style</th><th scope="col">guidance</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><input type="radio" name="name" value="" id="style-none"{% if not active %} checked{% endif %}></td>
+            <td><label for="style-none">Default</label></td>
+            <td class="muted">No style block — the agent's default voice.</td>
+          </tr>
+          {% for s in styles %}
+          <tr>
+            <td><input type="radio" name="name" value="{{ s.name }}" id="style-{{ s.name }}"{% if active == s.name %} checked{% endif %}></td>
+            <td><label for="style-{{ s.name }}"><code>{{ s.name }}</code></label></td>
+            <td class="muted">{{ s.guidance }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="margin-top: var(--space-3); display: flex; align-items: center; gap: var(--space-3);">
+        <button type="submit" class="btn btn--primary">Apply</button>
+        {% if active %}<span class="muted">Active: <code>{{ active }}</code></span>{% endif %}
+      </div>
+    </form>
+  </div>
+  <p class="muted" style="font-size: var(--text-sm);">
+    Applies deployment-wide and takes effect on the next run. Per-conversation and custom styles are on the roadmap.
+  </p>
+{% endblock %}
