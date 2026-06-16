@@ -108,9 +108,31 @@ null-action placebo (treated vs treated, which must be ~0). An uncertain
 simulator never greenlights a promotion.
 
 This is the learning half of the **Operating Twin**: the per-customer
-world-model that will also power pre-execution rehearsal (the governance half).
-A generative transition model is a drop-in replacement for the tabular one
-behind the same interface.
+world-model that *also* powers pre-execution rehearsal (the governance half,
+below). A generative transition model is a drop-in replacement for the tabular
+one behind the same interface.
+
+## Governance half — pre-execution rehearsal (shipped)
+
+The same world-model powers counterfactual *foresight*. `maverick.rehearsal`
+takes a fitted `TransitionModel` and, before a risky plan executes, Monte-Carlo
+rolls it forward to a predicted outcome and gates on it:
+
+- **proceed** — the model has support and confidently predicts a good outcome.
+  Let the agent be bold (less friction than a blanket approval gate).
+- **block** — the model confidently predicts a *poor* outcome.
+- **escalate** — the rollout is too uncertain, or — crucially — the model has
+  **no support** for this action in this state. A simulator that bluffs about the
+  unknown is worse than none, so an unseen move is escalated to a human / canary,
+  never waved through and never silently blocked.
+
+This is governance as a *capability*, not just a brake: confidence buys boldness,
+ignorance buys a human. The verdict (`RehearsalVerdict.decision`) maps onto the
+existing escalation surfaces (consent / autonomy gate). OFF by default and
+fail-open (`[rehearsal] enable`); when on it fails toward caution — unknown,
+over-uncertain, or an internal error all escalate. Live wiring into the agent
+action loop (which actions to gate, the state encoder, model-refresh cadence) is
+a deliberate follow-up seam; the engine + gate policy ship here, fully tested.
 
 ## Build status
 
@@ -122,5 +144,7 @@ behind the same interface.
 | trajectory DAG fields (`parent_step`, `outcome`) | ✅ |
 | config knob + wizard step | ✅ |
 | model-based counterfactual rollouts — tabular g-computation (Phase B) | ✅ |
+| pre-execution rehearsal — the governance half (`rehearsal.py`) | ✅ |
 | richer nuisance models (logistic propensity/outcome, causal forest) | seam |
 | generative transition model behind the same interface | seam |
+| live wiring of the rehearsal gate into the agent action loop | seam |

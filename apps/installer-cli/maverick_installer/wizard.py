@@ -1241,6 +1241,14 @@ def pick_advanced() -> dict[str, Any]:
             "what it adjusted for. Requires self-improvement enabled.",
             default=False,
         ),
+        "rehearsal": _q_confirm(
+            "Pre-execution rehearsal? Before a risky plan runs, simulate it against the "
+            "learned world-model of your environment and gate on the prediction: proceed "
+            "when the model is confident it's safe, BLOCK a confidently-poor outcome, and "
+            "ESCALATE to a human when the model is unsure or has never seen the move. "
+            "Governance that lets agents be bolder where it's earned; off by default.",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2505,6 +2513,13 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("# effect (maverick.promotion_effect), not a correlation. Applies")
         lines.append("# when self-improvement is enabled.")
         lines.append("causal_promotion = true")
+    if advanced.get("rehearsal"):
+        lines.append("")
+        lines.append("[rehearsal]")
+        lines.append("# Simulate a risky plan against the learned world-model before it")
+        lines.append("# runs; proceed when confidently safe, block a poor outcome, escalate")
+        lines.append("# the unknown (maverick.rehearsal). Fail-open while disabled.")
+        lines.append("enable = true")
     if advanced.get("enforce_quotas"):
         lines.append("")
         lines.append("[quotas]")
