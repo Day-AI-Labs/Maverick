@@ -74,6 +74,14 @@ def test_page_includes_run_history_loader(monkeypatch, tmp_path):
     assert "/api/v1/automation-runs" in _client().get("/automations").text
 
 
+def test_empty_states_use_shared_component(monkeypatch, tmp_path):
+    # The schedule/trigger empties now use the shared .mv-empty component.
+    _isolate(monkeypatch, tmp_path)
+    t = _client().get("/automations").text
+    assert 'class="mv-empty" id="auto-sched-empty"' in t
+    assert 'class="mv-empty" id="auto-trig-empty"' in t
+
+
 def test_run_history_links_drill_into_trajectory(monkeypatch, tmp_path):
     # Run-history entries link to each goal's trajectory ("what it did").
     _isolate(monkeypatch, tmp_path)
