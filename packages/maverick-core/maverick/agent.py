@@ -702,6 +702,18 @@ class Agent:
         except Exception:
             pass
 
+        # Learned-habits prior (the Hippocampus, additive): when the data engine
+        # is on, surface the strongest causally-beneficial habits it has
+        # consolidated so the agent prefers what has worked. No-op unless
+        # [data_engine] is enabled and procedural memory exists; fail-open.
+        try:
+            from . import data_engine
+            if data_engine.enabled():
+                from .procedural_memory import recall_prompt
+                base = base + recall_prompt()
+        except Exception:
+            pass
+
         # Per-role client addendum (optional, additive): a tenant's custom
         # instructions for this role, edited via the dashboard roles editor.
         # Empty for any role the client hasn't customized, so behavior is
