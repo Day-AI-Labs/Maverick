@@ -3868,6 +3868,57 @@ async def workflow_builder_page(request: Request, template: str | None = None,
     )
 
 
+@app.get("/start", response_class=HTMLResponse)
+async def get_started_page(request: Request) -> HTMLResponse:
+    """First-run guide: a live checklist from zero to a running AI workforce.
+    Each step reflects real workspace state (provider configured? a workflow or
+    agent built? anything run or automated?) so it self-completes as you go."""
+    from maverick.config import any_provider_configured
+    from maverick.templates import USER_TEMPLATES
+    provider_ok = bool(any_provider_configured())
+    try:
+        has_templates = any(USER_TEMPLATES.glob("*.md"))
+    except OSError:
+        has_templates = False
+    try:
+        from maverick.domain_edit import list_agents
+        has_agents = any(a.get("is_override") for a in list_agents())
+    except Exception:
+        has_agents = False
+    try:
+        ran = bool(_world().list_goals(limit=1))
+    except Exception:
+        ran = False
+    automated = False
+    try:
+        from maverick.job_queue import JobQueue
+        automated = any((j.payload or {}).get("__cron__")
+                        for j in JobQueue().list(status="pending"))
+    except Exception:
+        automated = False
+    if not automated:
+        try:
+            from maverick_dashboard import triggers_store
+            automated = bool(triggers_store.list_triggers())
+        except Exception:
+            automated = False
+    steps = [
+        {"title": "Connect a model provider", "done": provider_ok,
+         "body": "Add an API key (or a self-hosted endpoint) so your agents can think.",
+         "cta": "/settings", "cta_label": "Open Settings"},
+        {"title": "Build a workflow or agent", "done": has_templates or has_agents,
+         "body": "Draft a reusable workflow, or a governed specialist agent, in the builder.",
+         "cta": "/workflow-builder", "cta_label": "Open the builder"},
+        {"title": "Run it — or put it on autopilot", "done": ran or automated,
+         "body": "Start a goal from chat, or arm a schedule / webhook trigger to run it for you.",
+         "cta": "/chat", "cta_label": "Start a goal"},
+    ]
+    return templates.TemplateResponse(
+        request, "get_started.html",
+        {"steps": steps, "done_count": sum(1 for s in steps if s["done"]), "total": len(steps)},
+    )
+
+
 @app.get("/workflows", response_class=HTMLResponse)
 async def workflows_index_page(request: Request) -> HTMLResponse:
     """Your saved workflows: templates you authored + agent playbooks you built,

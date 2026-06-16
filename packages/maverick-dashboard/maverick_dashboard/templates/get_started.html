@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}get started · Maverick{% endblock %}
+{% block content %}
+<style>
+  .gs { max-width: 760px; margin-inline: auto; }
+  .gs__head { margin-bottom: var(--space-5); }
+  .gs__head h1 { margin: 0 0 var(--space-1); }
+  .gs__sub { color: var(--muted); margin: 0; }
+  .gs__progress { margin: var(--space-4) 0 var(--space-5); }
+  .gs__bar { height: 6px; border-radius: var(--radius-pill); background: var(--surface-2); overflow: hidden; }
+  .gs__bar > i { display: block; height: 100%; background: var(--brand); border-radius: inherit; transition: width .3s ease; }
+  .gs__steps { display: flex; flex-direction: column; gap: var(--space-3); list-style: none; margin: 0; padding: 0; }
+  .gs__step { display: flex; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); align-items: center; }
+  .gs__step--done { border-color: var(--brand-border); background: var(--brand-subtle); }
+  .gs__mark { flex: none; width: 1.9rem; height: 1.9rem; border-radius: var(--radius-pill); display: inline-flex; align-items: center; justify-content: center; font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+  .gs__step--done .gs__mark { background: var(--brand); color: var(--brand-fg); border-color: var(--brand); }
+  .gs__body { flex: 1 1 auto; min-width: 0; }
+  .gs__title { font-weight: var(--font-semibold); margin: 0 0 2px; }
+  .gs__desc { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+  .gs__cta { flex: none; align-self: center; }
+  @media (max-width: 560px) {
+    .gs__step { flex-wrap: wrap; }
+    .gs__cta { width: 100%; }
+  }
+</style>
+
+<div class="gs">
+  <div class="gs__head">
+    <h1 class="page-title">Get started</h1>
+    <p class="gs__sub">Three steps from zero to a governed AI workforce — this checklist updates itself as you go.</p>
+    <div class="gs__progress">
+      <div class="gs__bar" role="progressbar" aria-label="Setup progress"
+           aria-valuenow="{{ done_count }}" aria-valuemin="0" aria-valuemax="{{ total }}">
+        <i style="width: {{ (100 * done_count // total) }}%;"></i>
+      </div>
+      <p class="muted" style="margin: var(--space-2) 0 0; font-size: var(--text-sm);">{{ done_count }} of {{ total }} done</p>
+    </div>
+  </div>
+
+  {% if done_count == total %}
+  <div class="mv-empty" style="margin-bottom: var(--space-5);">
+    <p class="mv-empty__title">🎉 You’re all set</p>
+    <p class="mv-empty__body">Your workspace is configured and running. Manage everything from <a href="/workflows">Workflows</a> and <a href="/automations">Automations</a>.</p>
+  </div>
+  {% endif %}
+
+  <ol class="gs__steps">
+    {% for s in steps %}
+    <li class="gs__step{% if s.done %} gs__step--done{% endif %}">
+      <span class="gs__mark" aria-hidden="true">{% if s.done %}✓{% else %}{{ loop.index }}{% endif %}</span>
+      <div class="gs__body">
+        <p class="gs__title">{{ s.title }}{% if s.done %} <span class="muted">· done</span>{% endif %}</p>
+        <p class="gs__desc">{{ s.body }}</p>
+      </div>
+      <a class="btn {% if s.done %}btn--ghost{% else %}btn--primary{% endif %} gs__cta" href="{{ s.cta }}">{{ s.cta_label }}</a>
+    </li>
+    {% endfor %}
+  </ol>
+</div>
+{% endblock %}
