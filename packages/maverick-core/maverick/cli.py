@@ -1190,6 +1190,36 @@ def record_outcome(goal_id: int, episode_id: int, value: float, kind: str) -> No
         else "failed to record outcome")
 
 
+@main.command("codebook")
+@click.option("--limit", type=int, default=5000, help="Coordination messages to learn from.")
+@click.option("--show", is_flag=True, help="Show the current codebook without relearning.")
+@click.pass_context
+def codebook(ctx, limit: int, show: bool) -> None:
+    """Learn (or show) the swarm's coordination shorthand from its real messages.
+
+    The Emergent Substrate: reads the coordination the agents have actually
+    exchanged (goal_events) and learns short codes for the phrases they repeat --
+    every code decodes EXACTLY back to English, so nothing is hidden from the
+    Shield or a human. Reports the achievable compression. (Agents actively
+    *speaking* the shorthand is a separate opt-in; this learns + inspects it.)
+    """
+    from .emergent_protocol import compression_ratio, learn, shared
+    store = shared()
+    if show:
+        book = store.book()
+        click.echo(f"codebook: {book.size} codes")
+    else:
+        world = open_world(ctx.obj["db"])
+        msgs = world.recent_event_contents(limit=limit)
+        book = learn(msgs)
+        store.update(book)
+        ratio = compression_ratio(msgs, book)
+        click.echo(f"learned {book.size} codes from {len(msgs)} messages "
+                   f"({(1 - ratio) * 100:.0f}% smaller on this corpus)")
+    for phrase, code in list(book.forward.items())[:10]:
+        click.echo(f"  {code} = {phrase!r}")
+
+
 @main.command("flywheel")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
 def flywheel(as_json: bool) -> None:
