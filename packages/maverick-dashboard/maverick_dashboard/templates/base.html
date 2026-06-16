@@ -469,6 +469,10 @@
     .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4); display: flex; flex-direction: column; transition: border-color .12s ease, box-shadow .12s ease; animation: mv-rise 200ms ease-out both; }
     .card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
     .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--space-4); }
+    /* Shared section header: an h2 with optional right-aligned count/action. */
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+    .section-head h2 { margin: 0; font-size: var(--text-lg); }
+    .section-head h2:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
     @media (prefers-reduced-motion: reduce) { .mv-toast, .mv-row, .card { animation: none; } }
   </style>
   {% if custom_theme_css %}

@@ -5,10 +5,7 @@
   .auto { max-width: 880px; margin-inline: auto; }
   .auto :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--radius-sm); }
   .auto__head { margin-bottom: var(--space-6); }
-  .auto__section-head h2:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   .auto__section { margin-bottom: var(--space-7); }
-  .auto__section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
-  .auto__section-head h2 { margin: 0; font-size: var(--text-lg); }
   .auto__hint { color: var(--muted); font-size: var(--text-sm); margin: 0 0 var(--space-3); }
   .auto__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
   .auto__url { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; font-size: var(--text-xs); }
@@ -29,7 +26,7 @@
 
   {% if scheduling_enabled %}
   <section class="auto__section" id="auto-sched-section" aria-labelledby="auto-sched-h">
-    <div class="auto__section-head">
+    <div class="section-head">
       <h2 id="auto-sched-h" tabindex="-1">Schedules</h2>
       <span class="muted" id="auto-sched-count"></span>
     </div>
@@ -45,7 +42,7 @@
 
   {% if triggers_enabled %}
   <section class="auto__section" id="auto-trig-section" aria-labelledby="auto-trig-h">
-    <div class="auto__section-head">
+    <div class="section-head">
       <h2 id="auto-trig-h" tabindex="-1">Webhook triggers</h2>
       <span class="muted" id="auto-trig-count"></span>
     </div>
