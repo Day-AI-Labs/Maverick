@@ -20,7 +20,8 @@ def test_pages_use_shared_page_title(monkeypatch, tmp_path):
     # agents/roles/skills used a bare lowercase <h2>; now the shared <h1>.
     _isolate(monkeypatch, tmp_path)
     c = _client()
-    for path, label in [("/agents", "Agents"), ("/roles", "Roles"), ("/skills", "Skills")]:
+    for path, label in [("/agents", "Agents"), ("/roles", "Roles"), ("/skills", "Skills"),
+                        ("/plugins", "Plugins"), ("/safety", "Safety"), ("/compliance", "Compliance")]:
         t = c.get(path).text
         assert '<h1 class="page-title">' + label in t, path
 

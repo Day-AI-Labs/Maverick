@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}compliance · Maverick{% endblock %}
 {% block content %}
-  <h2>compliance</h2>
+  <h1 class="page-title">Compliance</h1>
   <p class="muted">
     Control-coverage for this deployment, mapped to GDPR + the EU AI Act + US
     frameworks (NIST AI RMF, Colorado AI Act, NYC Local Law 144, CCPA/CPRA).
@@ -33,7 +33,7 @@
 
   {% if summary %}
   <div class="panel">
-    <h3 style="margin-top: 0;">Coverage</h3>
+    <h2 style="margin-top: 0;">Coverage</h2>
     <div class="muted" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
       <span>active: <strong>{{ summary.get('active', 0) }}</strong></span>
       <span>need action: <strong>{{ summary.get('action_needed', 0) }}</strong></span>
@@ -45,7 +45,7 @@
   {% if groups %}
     {% for fw, group in groups.items() %}
     <div class="panel">
-      <h3 style="margin-top: 0;">{{ group.label }}</h3>
+      <h2 style="margin-top: 0;">{{ group.label }}</h2>
       <table>
         <thead>
           <tr>
