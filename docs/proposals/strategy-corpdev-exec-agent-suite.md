@@ -1,6 +1,6 @@
 # Strategy / Corporate Development / Executive agent suite
 
-> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,019 lint-clean agents across 26 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
+> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,118 lint-clean agents across 26 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
 
 
 **Status:** design / roadmap. Companion to the finance, IT-GRC, sales-GTM, HR, and

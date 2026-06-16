@@ -39,7 +39,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from W-2 box 15; no-tax/flat states computed, graduated states handed to
   the preparer) → preparer review package, every line cited to its source
   document and out-of-scope items flagged as open items; plus the 19-pack
-  `tax_` specialist suite (portfolio now 1,019 packs across 26 suites) and
+  `tax_` specialist suite (portfolio now 1,118 packs across 26 suites) and
   CCH Axcess / Thomson Reuters GoSystem connectors (confirm-gated write
   seats + GET-only low-risk read seats for the status packs).
 - Signed tax-constants channel (`maverick tax update`, `[tax]` config):

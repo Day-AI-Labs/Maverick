@@ -24,7 +24,7 @@ from other languages over MCP and gRPC. Maverick is developed by Day AI Labs.
 Maverick is a proprietary, commercially licensed, self-hosted AI agent runtime
 for enterprises. A recursive orchestrator decomposes goals and spawns
 specialist sub-agents that work in parallel under hard budget caps, behind a
-safety shield, with a signed audit log. It ships 1,019 prebuilt specialist
+safety shield, with a signed audit log. It ships 1,118 prebuilt specialist
 agents across 26 business suites (every pack lint-audited for least-privilege
 envelopes), a closed learning lifecycle — agents consolidate experience,
 provably improve, and every learned change is audited and reversible — plus
