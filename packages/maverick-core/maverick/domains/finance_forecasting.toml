@@ -21,3 +21,10 @@ max_risk = "low"
 mcp_servers = ["EPM_Adaptive"]
 knowledge_sources = ["finance_operating_plan", "finance_kpi_defs"]
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "Driver-based forecast (scenarios)"
+consumers = ["fpa_analyst", "controller"]
+cadence = "monthly"
+gate = "review"

@@ -19,3 +19,10 @@ deny_tools = ["file_with_sec", "email", "gmail", "slack_bot"]
 max_risk = "low"
 knowledge_sources = ["finance_prior_filings", "finance_ir_materials"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Earnings release & investor deck"
+consumers = ["ir_lead", "cfo"]
+cadence = "quarterly"
+gate = "approval"

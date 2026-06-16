@@ -21,3 +21,10 @@ allow_hosts = ["*.dnb.com", "*.experian.com"]
 mcp_servers = ["Credit_DnB"]
 knowledge_sources = ["finance_credit_policy"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Credit limits & CECL allowance"
+consumers = ["credit_officer", "fpa_analyst"]
+cadence = "monthly"
+gate = "review"

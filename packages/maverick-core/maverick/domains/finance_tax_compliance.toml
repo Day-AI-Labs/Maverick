@@ -21,3 +21,10 @@ allow_hosts = ["*.avalara.com", "*.vertexinc.com", "*.sovos.com"]
 mcp_servers = ["Tax_Avalara"]
 knowledge_sources = ["finance_tax_positions", "finance_jurisdiction_rules"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Tax return workpapers & calendar"
+consumers = ["tax_analyst", "cfo"]
+cadence = "quarterly"
+gate = "approval"

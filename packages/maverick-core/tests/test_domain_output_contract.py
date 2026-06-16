@@ -126,3 +126,31 @@ class TestBuiltinContract:
         assert "fpa_analyst" in out.consumers
         assert out.cadence == "weekly"
         assert out.gate == "review"
+
+
+class TestFinanceSuiteContracts:
+    """The finance suite declares contracts across its towers, so the persona
+    inbox is populated (not just the one proof pack)."""
+
+    def _finance_with_contract(self):
+        return {n: p for n, p in available_domains().items()
+                if n.startswith("finance_") and (p.output.deliverable or p.output.consumers)}
+
+    def test_many_finance_packs_declare_deliverables(self):
+        declared = self._finance_with_contract()
+        assert len(declared) >= 20, f"only {len(declared)} finance contracts"
+
+    def test_declared_finance_contracts_lint_clean(self):
+        for name, p in self._finance_with_contract().items():
+            errors, warnings = lint_profile(p)
+            assert not errors, (name, errors)
+            assert not [w for w in warnings if "output" in w], (name, warnings)
+
+    def test_consumer_roles_stay_a_consistent_vocabulary(self):
+        # A bounded, shared role set keeps the inbox's role filter meaningful --
+        # guard against a typo'd / one-off role drifting in.
+        allowed = {"controller", "fpa_analyst", "treasurer", "tax_analyst",
+                   "auditor", "risk_officer", "credit_officer", "cfo",
+                   "accounting_manager", "ir_lead", "internal_auditor"}
+        roles = {r for p in self._finance_with_contract().values() for r in p.output.consumers}
+        assert roles and roles <= allowed, f"unexpected roles: {roles - allowed}"

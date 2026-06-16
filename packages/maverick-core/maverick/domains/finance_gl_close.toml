@@ -23,3 +23,10 @@ allow_hosts = ["*.netsuite.com", "*.sap.com"]
 mcp_servers = ["ERP_NetSuite"]
 knowledge_sources = ["finance_accounting_policy", "finance_close"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "GL reconciliations & staged JEs"
+consumers = ["accounting_manager", "controller"]
+cadence = "monthly"
+gate = "approval"

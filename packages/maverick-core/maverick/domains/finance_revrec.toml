@@ -23,3 +23,10 @@ allow_hosts = ["*.salesforce.com", "*.stripe.com", "*.chargebee.com"]
 mcp_servers = ["Billing_Stripe"]
 knowledge_sources = ["finance_revrec_policy", "finance_contracts"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Revenue-recognition schedule (ASC 606)"
+consumers = ["accounting_manager", "auditor"]
+cadence = "monthly"
+gate = "review"

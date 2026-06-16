@@ -22,3 +22,10 @@ max_risk = "low"
 mcp_servers = ["GRC_AuditBoard"]
 knowledge_sources = ["finance_rcm", "finance_audit_plan"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Internal-audit findings memo"
+consumers = ["internal_auditor", "risk_officer"]
+cadence = "quarterly"
+gate = "review"

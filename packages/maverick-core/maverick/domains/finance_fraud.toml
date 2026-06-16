@@ -22,3 +22,10 @@ max_risk = "low"
 mcp_servers = ["GRC_AuditBoard"]
 knowledge_sources = ["finance_fraud_policy", "finance_rcm"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Fraud risk-ranked leads"
+consumers = ["internal_auditor", "risk_officer"]
+cadence = "monthly"
+gate = "review"

@@ -19,3 +19,10 @@ deny_tools = ["wire_transfer", "place_trade"]
 max_risk = "medium"
 knowledge_sources = ["finance_debt_schedule", "finance_treasury_policy"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Debt & lease amortization schedule"
+consumers = ["treasurer", "cfo"]
+cadence = "monthly"
+gate = "review"
