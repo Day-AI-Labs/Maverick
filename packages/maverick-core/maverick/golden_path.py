@@ -48,72 +48,78 @@ def run_scenario(audit_path: Path, *, key_dir: Path) -> Scenario:
     from .governance import Policy, evaluate
     from .llm import MODEL_SONNET
 
+    # KEY_DIR is a module global; restore it so an in-process call (e.g. the test)
+    # never leaks this run's key dir into later audit probes.
+    saved_key_dir = signing.KEY_DIR
     signing.KEY_DIR = key_dir
-    signer = signing.AuditSigner(audit_path)
-    steps: list[Step] = []
-
-    # 1. The specialist boots sealed + attenuated (real capability narrowing).
-    parent = Capability(principal=_PARENT, max_risk="high")
-    cap = domain_capability(load_domains(builtin_dir())["finance_ap"], parent, _SPECIALIST)
-    steps.append(Step(
-        "An AP specialist boots under the controller",
-        "inherit the controller's full reach",
-        "SEALED",
-        f"runs at max_risk={cap.max_risk!r} (parent was 'high'); can read AP "
-        f"(billdotcom_read={cap.permits('billdotcom_read')}), cannot open a shell "
-        f"({cap.permits('shell')}), cannot release payments "
-        f"({cap.permits('release_payment')})",
-    ))
-    signer.write({"event": "agent_boot", "principal": _SPECIALIST,
-                  "max_risk": cap.max_risk, "sealed": True})
-
-    policy = Policy(require_human_above={"release_payment": 5000.0},
-                    deny_above={"wire_transfer": 50000.0})
-
-    # 2-4. Three money requests through the real delegation-of-authority gate.
-    for action, amount, scene in [
-        ("wire_transfer", 60000, "A 'vendor' asks for a $60,000 wire"),
-        ("release_payment", 6000, "The agent moves to release a $6,000 invoice"),
-        ("release_payment", 4000, "The agent moves to release a $4,000 invoice"),
-    ]:
-        d = evaluate(action, policy=policy, amount=float(amount), currency="USD")
-        steps.append(Step(scene, f"{action} ${amount:,}", d.decision.name,
-                          f"governance policy fired rule={d.rule!r}"))
-        signer.write({"event": "governance_decision", "action": action,
-                      "amount": amount, "decision": d.decision.name, "rule": d.rule})
-
-    # 5. A runaway loop hits the hard budget ceiling (real BudgetExceeded).
-    budget = Budget(max_dollars=0.10)
-    budget.record_tokens(2000, 500, model=MODEL_SONNET)  # routine work, under cap
-    capped = False
     try:
-        budget.record_tokens(0, 2_000_000, model=MODEL_SONNET)  # a runaway
-    except BudgetExceeded:
-        capped = True
-    steps.append(Step(
-        "A runaway loop tries to keep spending",
-        "burn past the $0.10 ceiling",
-        "CAPPED" if capped else "NOT CAPPED",
-        f"hard budget ceiling held ({budget.summary()})"))
-    signer.write({"event": "budget_ceiling", "cap_held": capped})
+        signer = signing.AuditSigner(audit_path)
+        steps: list[Step] = []
 
-    # 6. The receipts are tamper-evident.
-    clean_breaks = signing.verify_chain(audit_path, signer.public_key_hex)
-    tampered = audit_path.with_name("audit.tampered.ndjson")
-    tampered.write_text(
-        audit_path.read_text().replace('"amount": 60000', '"amount": 60'),
-        encoding="utf-8")
-    breaks = signing.verify_chain(tampered, signer.public_key_hex)
-    tampered.unlink()
-    reason = breaks[0].reason if breaks else "(none — UNEXPECTED)"
-    steps.append(Step(
-        "An auditor checks the trail",
-        "verify the signed chain, then alter one amount",
-        "TAMPER-EVIDENT",
-        f"the authentic chain verifies clean ({not clean_breaks}); "
-        f"silently changing $60,000 to $60 is caught ({reason})"))
+        # 1. The specialist boots sealed + attenuated (real capability narrowing).
+        parent = Capability(principal=_PARENT, max_risk="high")
+        cap = domain_capability(load_domains(builtin_dir())["finance_ap"], parent, _SPECIALIST)
+        steps.append(Step(
+            "An AP specialist boots under the controller",
+            "inherit the controller's full reach",
+            "SEALED",
+            f"runs at max_risk={cap.max_risk!r} (parent was 'high'); can read AP "
+            f"(billdotcom_read={cap.permits('billdotcom_read')}), cannot open a shell "
+            f"({cap.permits('shell')}), cannot release payments "
+            f"({cap.permits('release_payment')})",
+        ))
+        signer.write({"event": "agent_boot", "principal": _SPECIALIST,
+                      "max_risk": cap.max_risk, "sealed": True})
 
-    return Scenario(steps=steps, chain_clean=not clean_breaks, break_reason=reason)
+        policy = Policy(require_human_above={"release_payment": 5000.0},
+                        deny_above={"wire_transfer": 50000.0})
+
+        # 2-4. Three money requests through the real delegation-of-authority gate.
+        for action, amount, scene in [
+            ("wire_transfer", 60000, "A 'vendor' asks for a $60,000 wire"),
+            ("release_payment", 6000, "The agent moves to release a $6,000 invoice"),
+            ("release_payment", 4000, "The agent moves to release a $4,000 invoice"),
+        ]:
+            d = evaluate(action, policy=policy, amount=float(amount), currency="USD")
+            steps.append(Step(scene, f"{action} ${amount:,}", d.decision.name,
+                              f"governance policy fired rule={d.rule!r}"))
+            signer.write({"event": "governance_decision", "action": action,
+                          "amount": amount, "decision": d.decision.name, "rule": d.rule})
+
+        # 5. A runaway loop hits the hard budget ceiling (real BudgetExceeded).
+        budget = Budget(max_dollars=0.10)
+        budget.record_tokens(2000, 500, model=MODEL_SONNET)  # routine work, under cap
+        capped = False
+        try:
+            budget.record_tokens(0, 2_000_000, model=MODEL_SONNET)  # a runaway
+        except BudgetExceeded:
+            capped = True
+        steps.append(Step(
+            "A runaway loop tries to keep spending",
+            "burn past the $0.10 ceiling",
+            "CAPPED" if capped else "NOT CAPPED",
+            f"hard budget ceiling held ({budget.summary()})"))
+        signer.write({"event": "budget_ceiling", "cap_held": capped})
+
+        # 6. The receipts are tamper-evident.
+        clean_breaks = signing.verify_chain(audit_path, signer.public_key_hex)
+        tampered = audit_path.with_name("audit.tampered.ndjson")
+        tampered.write_text(
+            audit_path.read_text().replace('"amount": 60000', '"amount": 60'),
+            encoding="utf-8")
+        breaks = signing.verify_chain(tampered, signer.public_key_hex)
+        tampered.unlink()
+        reason = breaks[0].reason if breaks else "(none — UNEXPECTED)"
+        steps.append(Step(
+            "An auditor checks the trail",
+            "verify the signed chain, then alter one amount",
+            "TAMPER-EVIDENT",
+            f"the authentic chain verifies clean ({not clean_breaks}); "
+            f"silently changing $60,000 to $60 is caught ({reason})"))
+
+        return Scenario(steps=steps, chain_clean=not clean_breaks, break_reason=reason)
+    finally:
+        signing.KEY_DIR = saved_key_dir
 
 
 def render(scenario: Scenario, audit_path: Path) -> str:

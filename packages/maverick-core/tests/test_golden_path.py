@@ -20,10 +20,16 @@ def test_golden_path_receipts(tmp_path):
     assert scenario.chain_clean is True
     assert scenario.break_reason and "UNEXPECTED" not in scenario.break_reason
 
-    # The on-disk signed audit file independently verifies clean.
+    # The on-disk signed file independently verifies under the run's key dir
+    # (restore the global afterward so this test doesn't leak it either).
     from maverick.audit import signing
-    assert audit.exists()
-    assert not signing.verify_chain(audit)
+    saved = signing.KEY_DIR
+    signing.KEY_DIR = tmp_path / "keys"
+    try:
+        assert audit.exists()
+        assert not signing.verify_chain(audit)
+    finally:
+        signing.KEY_DIR = saved
 
     md = golden_path.render(scenario, audit)
     assert "Golden Path" in md

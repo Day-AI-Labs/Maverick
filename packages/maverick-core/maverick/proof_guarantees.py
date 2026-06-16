@@ -132,19 +132,26 @@ def claim_audit_is_tamper_evident():
     from pathlib import Path
 
     from .audit import signing
-    with tempfile.TemporaryDirectory() as td:
-        signing.KEY_DIR = Path(td) / "keys"
-        path = Path(td) / "audit.ndjson"
-        signer = signing.AuditSigner(path)
-        signer.write({"event": "release_payment", "amount": 6000, "decision": "REQUIRE_HUMAN"})
-        signer.write({"event": "human_approval", "by": "cfo", "decision": "approved"})
-        clean = signing.verify_chain(path, signer.public_key_hex)
-        _check(not clean, f"clean chain reported breaks: {clean}")
-        rows = path.read_text().splitlines()
-        path.write_text("\n".join(rows).replace('"amount": 6000', '"amount": 60') + "\n")
-        broken = signing.verify_chain(path, signer.public_key_hex)
-        _check(broken, "tampering an audited row was NOT detected")
-    return f"2-row signed chain verifies clean; altering an amount is caught ({broken[0].reason})"
+    # KEY_DIR is a module global; this guarantee runs IN-PROCESS (via proof_pack),
+    # so restore it or the dangling temp path leaks into later tests' audit probes.
+    saved_key_dir = signing.KEY_DIR
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            signing.KEY_DIR = Path(td) / "keys"
+            path = Path(td) / "audit.ndjson"
+            signer = signing.AuditSigner(path)
+            signer.write({"event": "release_payment", "amount": 6000, "decision": "REQUIRE_HUMAN"})
+            signer.write({"event": "human_approval", "by": "cfo", "decision": "approved"})
+            clean = signing.verify_chain(path, signer.public_key_hex)
+            _check(not clean, f"clean chain reported breaks: {clean}")
+            rows = path.read_text().splitlines()
+            path.write_text("\n".join(rows).replace('"amount": 6000', '"amount": 60') + "\n")
+            broken = signing.verify_chain(path, signer.public_key_hex)
+            _check(broken, "tampering an audited row was NOT detected")
+            return ("2-row signed chain verifies clean; altering an amount is "
+                    f"caught ({broken[0].reason})")
+    finally:
+        signing.KEY_DIR = saved_key_dir
 
 
 # label, fn, needs_crypto
