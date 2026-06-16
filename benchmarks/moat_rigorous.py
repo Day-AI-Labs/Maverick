@@ -79,11 +79,18 @@ class PairSpec:
 
 @dataclass
 class Observation:
-    """One (pair, seed) outcome: the SAME target B run warm and cold."""
+    """One (pair, seed) outcome: the SAME target B run warm and cold.
+
+    ``warm_correct`` / ``cold_correct`` are an OPTIONAL correctness signal from
+    a grader (``None`` = ungraded). Without it, ``success`` only means the run
+    *completed*; with it we can tell *cheaper* from *cheaper-AND-right* and
+    catch the failure mode where memory makes the agent faster but wrong."""
     name: str
     seed: int
     warm: RunMetrics
     cold: RunMetrics
+    warm_correct: bool | None = None
+    cold_correct: bool | None = None
 
 
 # A live pair runner takes (PairSpec, seed) and returns (warm_B, cold_B).
@@ -147,15 +154,41 @@ class RigorousResult:
         return round(sum(o.cold.success for o in self.observations) / self.n, 3) if self.n else 0.0
 
     @property
+    def graded(self) -> list[Observation]:
+        """Observations with a correctness verdict on BOTH arms."""
+        return [o for o in self.observations
+                if o.warm_correct is not None and o.cold_correct is not None]
+
+    @property
+    def warm_correct_rate(self) -> float | None:
+        g = self.graded
+        return round(sum(bool(o.warm_correct) for o in g) / len(g), 3) if g else None
+
+    @property
+    def cold_correct_rate(self) -> float | None:
+        g = self.graded
+        return round(sum(bool(o.cold_correct) for o in g) / len(g), 3) if g else None
+
+    @property
+    def correctness_regressed(self) -> bool:
+        """Graded runs where WARM is less correct than COLD -- learning must
+        never make the answer wrong. False when nothing was graded (no verdict
+        either way), so it never blocks an ungraded run."""
+        wr, cr = self.warm_correct_rate, self.cold_correct_rate
+        return wr is not None and cr is not None and wr < cr
+
+    @property
     def bounded_moat_demonstrated(self) -> bool:
         """The honest, defensible claim: WARM is NEVER worse than COLD (cost
-        not-worse on every observation) AND reliability does not regress. This
-        is exactly the "warm never worse than cold" property the relevance
+        not-worse on every observation), reliability does not regress, AND --
+        when graded -- correctness does not regress (cheaper-but-wrong is not a
+        moat). This is the "warm never worse than cold" property the relevance
         gate is meant to guarantee."""
         return (
             self.n > 0
             and self.not_worse_count == self.n
             and self.warm_success_rate >= self.cold_success_rate
+            and not self.correctness_regressed
         )
 
     @property
@@ -174,6 +207,12 @@ def claim(result: RigorousResult) -> str:
     we never over-state. Order matters: strongest supported claim wins."""
     if result.n == 0:
         return "No valid observations: no claim can be made."
+    if result.correctness_regressed:
+        return (
+            f"STOP -- learning hurt correctness: warm answers were correct "
+            f"{result.warm_correct_rate:.0%} vs cold {result.cold_correct_rate:.0%} "
+            f"on graded runs. Cheaper-but-wrong is a regression, not a moat."
+        )
     if result.cheaper_moat_demonstrated:
         return (
             f"Governed learning helps: on seen task classes the warm agent is "

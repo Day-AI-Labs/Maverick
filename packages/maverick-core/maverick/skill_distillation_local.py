@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 _STORE = Path.home() / ".maverick" / "learned-skills"
@@ -91,13 +92,30 @@ def distill(trajectories: list[dict], *, top_k: int = 3) -> dict | None:
     }
 
 
+def _utc_now_iso() -> str:
+    """UTC timestamp for skill provenance (the colons in the time round-trip
+    through the line-based frontmatter parser; no other punctuation)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def to_skill_markdown(skill: dict) -> str:
-    """Render a distilled skill as a validator-compliant ``SKILL.md`` string."""
+    """Render a distilled skill as a validator-compliant ``SKILL.md`` string.
+
+    Carries machine-readable PROVENANCE in the frontmatter -- when it was
+    learned, from how many examples, and by which path -- so a learned skill is
+    inspectable and auditable (governed learning), not an anonymous blob. The
+    validator accepts these keys and the in-memory Skill ignores them, but they
+    are preserved on disk; values are kept special-char-free so the line-based
+    frontmatter parser round-trips them."""
     lines = ["---", f"name: {skill['name']}", "triggers:"]
     lines += [f"  - {t}" for t in skill["triggers"]]
     if skill.get("tools_needed"):
         lines.append("tools_needed:")
         lines += [f"  - {t}" for t in skill["tools_needed"]]
+    # Provenance (governed learning): structured, special-char-free values.
+    lines.append(f"distilled_at: {skill.get('distilled_at') or _utc_now_iso()}")
+    lines.append(f"n_examples: {int(skill.get('n_examples', 1))}")
+    lines.append(f"source: {skill.get('source') or 'auto-distilled-local-v2'}")
     lines.append("---")
     lines.append("")
     lines.append("# What this does")

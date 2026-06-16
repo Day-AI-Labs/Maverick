@@ -63,6 +63,40 @@ def test_gate_rejects_duplicate():
     assert skill2 is None and "duplicate" in reason
 
 
+# ---- quality gate (specificity / precision) ----
+
+def test_passes_quality_accepts_specific_skill():
+    skill = {"name": "reconcile-ledger",
+             "summary": "reconcile the general ledger to the bank",
+             "triggers": ["reconcile the general ledger"], "tools_needed": ["read_file"]}
+    ok, reason = v2.passes_quality(skill)
+    assert ok and reason == "ok"
+
+
+def test_passes_quality_rejects_no_triggers():
+    ok, reason = v2.passes_quality({"name": "x", "summary": "lots of specific words",
+                                    "triggers": [], "tools_needed": []})
+    assert not ok and "no triggers" in reason
+
+
+def test_passes_quality_rejects_too_generic():
+    # Content is almost all glue words -> too few signal tokens -> it would
+    # over-fire on unrelated goals (the noise-injection failure mode).
+    skill = {"name": "do-it", "summary": "use the tool to run the goal",
+             "triggers": ["do the task"], "tools_needed": []}
+    ok, reason = v2.passes_quality(skill)
+    assert not ok and "too generic" in reason
+
+
+def test_distill_gated_wires_quality_check():
+    # A normally-acceptable skill is rejected when the signal bar is impossibly
+    # high -> proves the quality gate is wired into distill_gated.
+    trajs = [_traj("deploy the billing service", t=2),
+             _traj("deploy the billing api", t=1)]
+    skill, reason = v2.distill_gated(trajs, min_examples=2, min_signal=99)
+    assert skill is None and "low quality" in reason
+
+
 # ---- store integration ----
 
 def test_signatures_from_store_reads_md(tmp_path):

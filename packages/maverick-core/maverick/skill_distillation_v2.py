@@ -13,6 +13,12 @@ continuous learning actually usable:
   text — the right metric when a compact candidate is checked against a fuller
   saved skill; same zero-dep / no-embedding-model approach v1 uses), so the
   store stays a set of *distinct* lessons.
+* **gate on quality** — don't save a skill too generic to retrieve precisely:
+  one whose content signature is mostly glue words would over-fire on unrelated
+  goals and *inject noise* into warm runs — the very failure the recall
+  relevance gate fights — so it is worse than no skill at all. A learned skill
+  must carry enough specific signal (distinct non-glue tokens) to be matched
+  precisely, or it is dropped.
 
 Pure and deterministic: the gates take plain skill dicts / signatures, tested
 without touching disk; ``distill_and_save_gated`` is the drop-in the loop calls.
@@ -33,6 +39,10 @@ _STOP = frozenset({
 
 DEFAULT_MIN_EXAMPLES = 2
 DEFAULT_DEDUP_THRESHOLD = 0.6
+# A learned skill needs at least this many distinct non-glue tokens in its
+# content signature, or it is too generic to retrieve precisely (it would
+# over-fire and inject noise). Conservative so real narrow skills still pass.
+DEFAULT_MIN_SIGNAL_TOKENS = 4
 
 
 def _tokens(text: str) -> frozenset[str]:
@@ -79,16 +89,36 @@ def signatures_from_store(store: Path | str = _STORE) -> list[frozenset[str]]:
     return out
 
 
+def passes_quality(skill: dict, *,
+                   min_signal: int = DEFAULT_MIN_SIGNAL_TOKENS) -> tuple[bool, str]:
+    """Quality gate: a learned skill must be *specific enough to recall
+    precisely*. A skill with no triggers can never match; a skill whose content
+    signature is mostly glue words would over-fire on unrelated goals and inject
+    noise into warm runs (precision >> recall for agent memory), making it worse
+    than no skill. Returns ``(ok, reason)``; pure/deterministic."""
+    if not (skill.get("triggers") or []):
+        return False, "no triggers"
+    n = len(_signature(skill))
+    if n < min_signal:
+        return False, f"too generic ({n} signal tokens < {min_signal})"
+    return True, "ok"
+
+
 def distill_gated(trajectories: list[dict], *,
                   existing_signatures: list[frozenset[str]] | None = None,
                   top_k: int = 3, min_examples: int = DEFAULT_MIN_EXAMPLES,
-                  dedup_threshold: float = DEFAULT_DEDUP_THRESHOLD) -> tuple[dict | None, str]:
-    """Distill with the v2 gates. Returns ``(skill_or_None, reason)``."""
+                  dedup_threshold: float = DEFAULT_DEDUP_THRESHOLD,
+                  min_signal: int = DEFAULT_MIN_SIGNAL_TOKENS) -> tuple[dict | None, str]:
+    """Distill with the v2 gates (evidence, quality, dedup). Returns
+    ``(skill_or_None, reason)``."""
     skill = distill(trajectories, top_k=top_k)
     if skill is None:
         return None, "no successful trajectories"
     if int(skill.get("n_examples", 0)) < min_examples:
         return None, f"too few examples ({skill.get('n_examples', 0)} < {min_examples})"
+    ok, why = passes_quality(skill, min_signal=min_signal)
+    if not ok:
+        return None, f"low quality: {why}"
     sig = _signature(skill)
     if is_duplicate(sig, existing_signatures or [], threshold=dedup_threshold):
         return None, "duplicate of an existing skill"
@@ -97,17 +127,19 @@ def distill_gated(trajectories: list[dict], *,
 
 def distill_and_save_gated(trajectories: list[dict], *, store: Path | str = _STORE,
                            top_k: int = 3, min_examples: int = DEFAULT_MIN_EXAMPLES,
-                           dedup_threshold: float = DEFAULT_DEDUP_THRESHOLD) -> tuple[Path | None, str]:
-    """Gate + dedup against ``store``, save only a novel skill. Returns
-    ``(path_or_None, reason)``."""
+                           dedup_threshold: float = DEFAULT_DEDUP_THRESHOLD,
+                           min_signal: int = DEFAULT_MIN_SIGNAL_TOKENS) -> tuple[Path | None, str]:
+    """Gate (evidence + quality + dedup) against ``store``, save only a novel,
+    specific skill. Returns ``(path_or_None, reason)``."""
     existing = signatures_from_store(store)
     skill, reason = distill_gated(
         trajectories, existing_signatures=existing, top_k=top_k,
-        min_examples=min_examples, dedup_threshold=dedup_threshold)
+        min_examples=min_examples, dedup_threshold=dedup_threshold,
+        min_signal=min_signal)
     if skill is None:
         return None, reason
     return save_skill(skill, store), "ok"
 
 
 __all__ = ["distill_gated", "distill_and_save_gated", "is_duplicate",
-           "signatures_from_store"]
+           "passes_quality", "signatures_from_store"]
