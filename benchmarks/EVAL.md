@@ -64,8 +64,13 @@ drives a real LLM in a tool-calling loop over the virtual-FS shell tools, and
 `verify` grades the final filesystem (`expected_files` / `absent_files`) **and**
 the command log (`required_commands`). Validated for free with a scripted
 FakeLLM (`test_terminal_solver.py`); a live smoke on the bundled tasks passes
-**3/3**. (Full terminal-bench-in-a-container, for tasks that need real command
-execution, is a separate heavier seam.)
+**3/3**. For tasks that need **real command execution** (run code, run a test
+suite, chmod+exec) the virtual FS can't do, `container_terminal_solver.py` runs
+the agent against a throwaway **isolated Docker container** (`--network none`,
+memory/pid-capped) and grades by running the verify command *inside* it
+(exit 0) — live-proven **4/4** on `eval_fixtures/container_terminal_hard.jsonl`.
+Its loop + grading are unit-tested free (in-memory fake container); a live run
+needs a Docker daemon.
 
 **τ²-bench** is **dual-control** (agent↔user): the live solver (`tau2_solver.py`)
 runs a Maverick agent in a tool-loop talking to a **user-simulator** LLM that
