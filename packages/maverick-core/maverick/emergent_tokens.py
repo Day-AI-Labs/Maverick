@@ -29,10 +29,17 @@ literally contains the escape and marker characters).
 """
 from __future__ import annotations
 
+import json
+import logging
+import os
+import threading
 from collections import Counter
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .emergent_protocol import learn as _learn_phrases
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -157,7 +164,99 @@ def single_token_markers(count_tokens, candidates, *, escape: str,
     return out
 
 
+@dataclass
+class TokenCodebookStore:
+    """Persisted token-aware codebook (atomic, 0600). Mirrors the sentinel codec's
+    store so the wiring can load a learned codebook without relearning per run."""
+
+    path: Path | None = None
+    _book: TokenCodebook = None  # type: ignore[assignment]
+    _lock: threading.Lock = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self._lock is None:
+            self._lock = threading.Lock()
+        if self._book is None:
+            self._book = TokenCodebook()
+        if self.path is not None:
+            self._load()
+
+    def update(self, book: TokenCodebook) -> None:
+        with self._lock:
+            self._book = book
+            self._save()
+
+    def book(self) -> TokenCodebook:
+        with self._lock:
+            return self._book
+
+    def _load(self) -> None:
+        try:
+            raw = json.loads(Path(self.path).read_text(encoding="utf-8"))
+            esc = str(raw.get("escape") or "")
+            fwd = {str(k): str(v) for k, v in (raw.get("forward") or {}).items()}
+            # reverse maps marker (code minus escape) -> phrase.
+            rev = {code[len(esc):]: phrase for phrase, code in fwd.items()} if esc else {}
+            self._book = TokenCodebook(escape=esc, forward=fwd, reverse=rev)
+        except (OSError, ValueError, AttributeError):
+            return
+
+    def _save(self) -> None:
+        if self.path is None:
+            return
+        try:
+            p = Path(self.path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = p.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self._book.to_dict(), sort_keys=True), encoding="utf-8")
+            os.replace(tmp, p)
+            try:
+                os.chmod(p, 0o600)
+            except OSError:
+                pass
+        except Exception:  # pragma: no cover -- best-effort
+            log.debug("token codebook save failed", exc_info=True)
+
+
+_shared: dict = {}
+_shared_lock = threading.Lock()
+
+
+def enabled() -> bool:
+    """Whether the live token-aware codec may measure on the coordination stream.
+    OFF by default; env var overrides config."""
+    env = os.environ.get("MAVERICK_EMERGENT_CODEC", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    try:
+        from .config import get_emergent_codec
+
+        return bool(get_emergent_codec().get("enable", False))
+    except Exception:  # pragma: no cover -- config never blocks a run
+        return False
+
+
+def shared() -> TokenCodebookStore:
+    from .paths import data_dir
+
+    path = data_dir("token_codebook.json")
+    with _shared_lock:
+        store = _shared.get(path)
+        if store is None:
+            store = TokenCodebookStore(path=path)
+            _shared[path] = store
+        return store
+
+
+def reset_shared() -> None:
+    with _shared_lock:
+        _shared.clear()
+
+
 __all__ = [
     "TokenCodebook", "learn", "encode", "decode",
     "token_savings", "single_token_markers",
+    "TokenCodebookStore", "enabled", "shared", "reset_shared",
 ]

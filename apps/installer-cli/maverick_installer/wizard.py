@@ -1285,6 +1285,14 @@ def pick_advanced() -> dict[str, Any]:
             "Shield or a human. Off by default; a no-op until a codebook is learned.",
             default=False,
         ),
+        "emergent_codec": _q_confirm(
+            "Measure the token-aware codec on live coordination? The codec that saves "
+            "actual frontier TOKENS (not just bytes), via byte-stuffed cheap codes. When "
+            "on, the blackboard measures -- never changes -- what it would compress real "
+            "traffic to, so you can confirm the savings before agents ever read codes. "
+            "Off by default; pure telemetry, the audit/Shield path is untouched.",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2634,6 +2642,13 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("# Learn short codes for the swarm's repeated coordination boilerplate;")
         lines.append("# every code decodes exactly back to English, so nothing is hidden from")
         lines.append("# the Shield/audit (maverick.emergent_protocol). No-op until learned.")
+        lines.append("enable = true")
+    if advanced.get("emergent_codec"):
+        lines.append("")
+        lines.append("[emergent_codec]")
+        lines.append("# Measure the token-aware codec (maverick.emergent_tokens) on the live")
+        lines.append("# coordination stream: byte-stuffed cheap codes that save real tokens.")
+        lines.append("# Telemetry only -- the rendered text agents/Shield see is unchanged.")
         lines.append("enable = true")
     if advanced.get("enforce_quotas"):
         lines.append("")

@@ -149,7 +149,30 @@ class Blackboard:
         for e in recent:
             head = f"[{e.agent}/{e.kind}]"
             lines.append(f"{head} {e.content}")
-        return "\n".join(lines)
+        rendered = "\n".join(lines)
+        self._measure_codec(rendered)
+        return rendered
+
+    def _measure_codec(self, rendered: str) -> None:
+        """Measure (never apply) what the token-aware codec would save on this real
+        coordination block. OFF by default; the returned text is unchanged, so the
+        audit/Shield path and the agents see exactly the plain English they did
+        before. This only records telemetry once an operator opts in AND a codebook
+        has been learned -- the safe way to confirm the bench numbers on live
+        traffic before ever asking a model to read codes."""
+        if not rendered:
+            return
+        try:
+            from . import emergent_tokens as et
+            if not et.enabled():
+                return
+            book = et.shared().book()
+            if book.size == 0:
+                return
+            from . import codec_telemetry
+            codec_telemetry.record(rendered, et.encode(rendered, book))
+        except Exception:  # pragma: no cover -- measurement never blocks the loop
+            pass
 
     def to_json(self) -> str:
         with self._lock:
