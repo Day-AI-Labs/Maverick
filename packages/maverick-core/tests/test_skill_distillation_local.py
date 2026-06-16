@@ -54,6 +54,25 @@ def test_to_markdown_has_frontmatter():
     assert "triggers:" in md and "# Steps" in md
 
 
+def test_to_markdown_carries_provenance():
+    # A learned skill records WHEN it was learned, from how many examples, and
+    # by which path -- so it is inspectable/auditable (governed learning).
+    md = to_skill_markdown({**distill(_TRAJ), "distilled_at": "2026-01-02T03:04:05Z"})
+    assert "distilled_at: 2026-01-02T03:04:05Z" in md  # injected timestamp round-trips
+    assert "n_examples: 2" in md                        # 2 successful trajectories
+    assert "source: auto-distilled-local-v2" in md
+
+
+def test_provenance_round_trips_and_validates(tmp_path):
+    # Provenance frontmatter must break neither the validator nor the parser.
+    from maverick.skills import Skill
+    skill = {**distill(_TRAJ), "distilled_at": "2026-01-02T03:04:05Z"}
+    path = save_skill(skill, tmp_path)
+    assert validate_skill_file(path).ok
+    parsed = Skill.parse(path.read_text(encoding="utf-8"), path)
+    assert parsed.name == skill["name"]  # known fields parse; provenance ignored in-memory
+
+
 def test_distill_and_save_roundtrip(tmp_path):
     path = distill_and_save(_TRAJ, store=tmp_path)
     assert path is not None and path.exists()
