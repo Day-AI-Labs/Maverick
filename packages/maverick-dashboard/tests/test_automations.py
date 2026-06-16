@@ -98,6 +98,31 @@ def test_templates_page_shows_automate_cta(monkeypatch, tmp_path):
     assert "/workflow-builder?template=weekly-report" in r.text
 
 
+def test_templates_rebuilt_on_shared_components(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    import maverick_dashboard.app as appmod
+    monkeypatch.setattr(appmod, "template_market_entries",
+                        lambda: [{"name": "x", "title": "T", "body": "b", "params": []}])
+    t = _client().get("/templates").text
+    assert 'class="card-grid"' in t and 'class="card"' in t      # shared card components
+    assert 'class="btn btn--primary"' in t                        # Use = a real primary button
+
+
+def test_templates_empty_uses_mv_empty(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    import maverick_dashboard.app as appmod
+    monkeypatch.setattr(appmod, "template_market_entries", list)
+    t = _client().get("/templates").text
+    assert 'class="mv-empty"' in t and "No templates yet" in t
+
+
+def test_shared_card_motion_gated_by_reduced_motion(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    t = _client().get("/templates").text
+    assert "@keyframes mv-rise" in t and "animation: mv-rise" in t
+    assert "prefers-reduced-motion: reduce) { .mv-toast, .mv-row, .card" in t
+
+
 def test_templates_page_shows_edit_cta(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     import maverick_dashboard.app as appmod
