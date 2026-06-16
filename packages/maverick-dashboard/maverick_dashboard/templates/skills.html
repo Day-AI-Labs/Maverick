@@ -20,6 +20,49 @@
     {% endif %}
   </div>
 
+  <h2>Create a skill</h2>
+  <div class="panel">
+    <form id="skill-create-form">
+      <label class="skill-field">
+        <span class="muted">Name</span>
+        <input type="text" id="sc-name" required maxlength="80" placeholder="e.g. weekly-status-rollup" />
+      </label>
+      <label class="skill-field">
+        <span class="muted">Triggers — one phrase per line (how the agent activates it)</span>
+        <textarea id="sc-triggers" rows="3" required placeholder="weekly status&#10;status rollup&#10;summarize the week"></textarea>
+      </label>
+      <label class="skill-field">
+        <span class="muted">Tools needed — comma or space separated (optional)</span>
+        <input type="text" id="sc-tools" placeholder="read_file, knowledge_search" />
+      </label>
+      <label class="skill-field">
+        <span class="muted">Instructions — what it does and the steps (markdown)</span>
+        <textarea id="sc-body" rows="8" required placeholder="# What this skill does&#10;...&#10;&#10;# Steps&#10;1. ...&#10;2. ..."></textarea>
+      </label>
+      <button type="submit"
+              style="padding: 0.5rem 1.25rem; background: var(--brand); color: var(--brand-fg); border: 0; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;">
+        Create skill
+      </button>
+    </form>
+    <p id="skill-create-msg" role="status" aria-live="polite" class="muted" style="margin-top: 0.75rem; min-height: 1em;"></p>
+    <p class="muted" style="font-size: 0.85rem; margin-top: 1rem;">
+      Authored skills are saved to <code>~/.maverick/skills</code> and injected
+      into matching agents on the next run. Same opt-in as install
+      (<code>MAVERICK_ALLOW_SKILL_INSTALL=1</code>); the body is secret- and
+      shield-scanned before it's written.
+    </p>
+  </div>
+
+  <style>
+    .skill-field { display: block; margin-bottom: var(--space-3); }
+    .skill-field > span { display: block; margin-bottom: var(--space-1); font-size: var(--text-sm); }
+    .skill-field input, .skill-field textarea {
+      width: 100%; padding: 0.5rem 0.75rem; background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit;
+    }
+    .skill-field textarea { resize: vertical; }
+  </style>
+
   <h2>Install a skill</h2>
   <div class="panel">
     <form id="skill-install-form" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -51,7 +94,8 @@
 
       // Append the newly installed skill in place (keeps scroll position)
       // rather than full-reloading — mirrors store.html's in-place update.
-      function appendSkill(s) {
+      // Shared on window so the "Create a skill" form below reuses it.
+      window.__mvAppendSkill = function appendSkill(s) {
         const noSkills = document.getElementById('no-skills');
         if (noSkills) noSkills.remove();
         const h = document.createElement('h3');
@@ -97,11 +141,68 @@
             const s = await r.json().catch(function() { return null; });
             msg.style.color = 'var(--accent)';
             if (s && s.name) {
-              appendSkill(s);
+              window.__mvAppendSkill(s);
               msg.textContent = 'Installed ' + s.name + '. Active on the next agent invocation.';
               src.value = '';
             } else {
               msg.textContent = 'Installed.';
+            }
+          } else {
+            const j = await r.json().catch(function() { return {}; });
+            msg.style.color = 'var(--danger)';
+            msg.textContent = (j.detail || ('HTTP ' + r.status));
+          }
+        } catch (e) {
+          msg.style.color = 'var(--danger)';
+          msg.textContent = String(e);
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      });
+    })();
+  </script>
+
+  <script>
+    // Author a skill from the form -> POST /api/v1/skills/create -> render it in
+    // the installed list (reuses window.__mvAppendSkill from the install script).
+    (function() {
+      const form = document.getElementById('skill-create-form');
+      if (!form) return;
+      const name = document.getElementById('sc-name');
+      const triggers = document.getElementById('sc-triggers');
+      const tools = document.getElementById('sc-tools');
+      const body = document.getElementById('sc-body');
+      const msg = document.getElementById('skill-create-msg');
+      const btn = form.querySelector('button[type="submit"]');
+      const splitLines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
+      const splitTools = (s) => s.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
+
+      form.addEventListener('submit', async function(ev) {
+        ev.preventDefault();
+        const payload = {
+          name: name.value.trim(),
+          triggers: splitLines(triggers.value),
+          tools_needed: splitTools(tools.value),
+          instructions: body.value,
+        };
+        if (btn) btn.disabled = true;
+        msg.style.color = 'var(--muted)';
+        msg.textContent = 'Creating…';
+        try {
+          const r = await fetch('/api/v1/skills/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+          });
+          if (r.ok) {
+            const s = await r.json().catch(function() { return null; });
+            msg.style.color = 'var(--accent)';
+            if (s && s.name) {
+              window.__mvAppendSkill(s);
+              msg.textContent = 'Created ' + s.name + '. Active on the next agent invocation.';
+              form.reset();
+            } else {
+              msg.textContent = 'Created.';
             }
           } else {
             const j = await r.json().catch(function() { return {}; });
