@@ -11,3 +11,10 @@ deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "CECL allowance memo & roll-forward"
+consumers = ["controller", "credit_officer", "risk_officer"]
+cadence = "quarterly"
+gate = "approval"

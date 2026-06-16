@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "HMDA LAR submission"
+consumers = ["compliance_officer", "internal_auditor"]
+cadence = "quarterly"
+gate = "approval"

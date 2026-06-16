@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Beneficial-ownership register"
+consumers = ["bsa_officer", "compliance_officer"]
+cadence = "on-demand"
+gate = "review"

@@ -1088,7 +1088,10 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   insurance suite extends this with ~38 more (claims files, underwriting files,
   reserve indications, reinsurance reconciliations, statutory filings) across
   its own 11-role vocabulary (underwriter, actuary, claims_adjuster/manager,
-  reinsurance_analyst, compliance_officer, ...).
+  reinsurance_analyst, compliance_officer, ...). The banking suite adds ~37
+  (CECL allowance, SAR/CTR filings, AML queues, loan files, call/liquidity
+  reports, ALM sensitivity) across bsa_officer, credit_officer, loan_officer,
+  treasurer, operations_manager, ...
 - **Governed hand-off (deliverable sign-off + export)** — closes the loop the
   output gate opens: a human certifies a finished, gated deliverable
   (`POST /api/v1/goals/<id>/signoff`, recorded in the v16 `signoffs` table with

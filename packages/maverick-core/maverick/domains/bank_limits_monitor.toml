@@ -11,3 +11,10 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Risk-limit exceptions"
+consumers = ["risk_officer", "treasurer"]
+cadence = "daily"
+gate = "review"
