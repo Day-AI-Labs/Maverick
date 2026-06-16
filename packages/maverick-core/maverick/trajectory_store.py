@@ -187,7 +187,27 @@ def capture_step(step: TrajectoryStep, *, store: TrajectoryStore | None = None) 
         return False
 
 
+def episode_dag_fields(step_index: int, is_final: bool,
+                       verifier_confidence: float | None) -> dict:
+    """Decision-DAG fields for a captured step.
+
+    ``parent_step`` is the linear edge to the prior step (None at the root) -- a
+    faithful chain for a single agent's episode (cross-agent branching is a later
+    refinement). ``outcome`` is the episode's terminal task label, carried only on
+    the final step: the verifier's confidence in the final answer, which is what
+    ``promotion_effect`` / ``counterfactual_rollout`` read as the leaf reward.
+    ``verifier_confidence`` mirrors it for the final step. The estimators are the
+    consumers, so populating these makes the captured corpus DAG-complete.
+    """
+    vconf = None if verifier_confidence is None else float(verifier_confidence)
+    return {
+        "parent_step": (step_index - 1) if step_index else None,
+        "verifier_confidence": vconf if is_final else None,
+        "outcome": vconf if (is_final and vconf is not None) else None,
+    }
+
+
 __all__ = [
     "TrajectoryStep", "TrajectoryStore",
-    "enabled", "shared", "reset_shared", "capture_step",
+    "enabled", "shared", "reset_shared", "capture_step", "episode_dag_fields",
 ]
