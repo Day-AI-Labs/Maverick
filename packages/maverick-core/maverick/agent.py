@@ -1367,6 +1367,10 @@ class Agent:
             return d
         if (d := self._capability_path_denial(name, args, cap)) is not None:
             return d
+        # Pre-execution rehearsal (Operating Twin): hold an elevated-risk tool the
+        # world-model can't vouch for. No-op unless [rehearsal] is on; fail-open.
+        if (d := self._rehearsal_denial(name)) is not None:
+            return d
         # The browser can follow redirects and later URL-less actions read or
         # interact with the current page. Pass the active host scope into the
         # tool so it can gate the final/current page host before returning
@@ -1609,6 +1613,45 @@ class Agent:
         # need a reward model configured just to record what its agents did.
         self._capture_trajectory_step(
             step_index, tool_name, tool_succeeded, is_final, error, promise, progress)
+
+    def _last_tool(self) -> str:
+        """The tool used just before this one (``_actions`` already holds the
+        current call at [-1], so the prior is [-2]); '' at the first tool."""
+        acts = getattr(self, "_actions", None)
+        return acts[-2] if acts and len(acts) >= 2 else ""
+
+    def _rehearsal_denial(self, name: str) -> str | None:
+        """Hold an elevated-risk tool the rehearsal twin can't vouch for.
+
+        No-op unless ``[rehearsal]`` is enabled; only ``high``-risk tools are
+        gated; any error fails open (the tool runs). A confident-good rehearsal
+        proceeds; a confident-poor (BLOCK) or unvouchable (ESCALATE) one returns a
+        non-leaky refusal the model can react to.
+        """
+        try:
+            from . import rehearsal
+            if not rehearsal.enabled():
+                return None
+            from .safety.tool_risk import tool_risk
+            if tool_risk(name) != "high":
+                return None
+            from .rehearsal_runtime import gate_tool
+            v = gate_tool(domain=self.domain, role=self.role,
+                          last_tool=self._last_tool(), tool_name=name)
+            if v.decision == rehearsal.PROCEED:
+                return None
+            try:  # tamper-evident record of the hold; never block on audit
+                from .audit import EventKind, record
+                record(EventKind.SHIELD_BLOCK, agent=self.name, goal_id=self.ctx.goal_id,
+                       stage="rehearsal", reason=f"{v.decision}: {v.reason}")
+            except Exception:  # pragma: no cover
+                pass
+            return (
+                f"⚠ Held by pre-execution rehearsal ({v.decision}): {v.reason}. "
+                "The tool was not executed; choose another approach or seek approval."
+            )
+        except Exception:  # pragma: no cover -- rehearsal must never break the loop
+            return None
 
     def _capture_trajectory_step(self, step_index, tool_name, tool_succeeded,
                                  is_final, error, promise, progress) -> None:
