@@ -1075,6 +1075,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   sign-off" queue whose Review action opens the rendered deliverable. Keyed off
   the existing `goals.domain` attribution (`list_goals(domain=...)`) and the
   pack output contract; the model is shaped by a pure `deliverables.build_inbox`.
+  **Persona identity:** with a `[personas]` binding (principal → consumer roles,
+  with a single-user `default`; a wizard step), the inbox defaults to the
+  signed-in user's own deliverables — a risk officer lands on their assessments,
+  an analyst on their forecasts — with a "Mine / All" toggle. Distinct from the
+  RBAC role (admin/operator/viewer, which gates *actions*); this says which
+  deliverables are *yours*. No binding = the full list, as before.
   The finance suite declares output contracts across its towers (FP&A forecasts,
   controllership reconciliations, treasury schedules, tax provisions, assurance
   memos, reporting drafts, risk/credit), so the inbox is populated with ~29

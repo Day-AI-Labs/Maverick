@@ -287,6 +287,14 @@ def test_write_config_emits_deliverable_handoff(tmp_path: Path, monkeypatch):
     assert parsed["deliverables"]["handoff_webhook"] == "https://sor.example/ingest"
 
 
+def test_write_config_emits_personas(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        personas={"default": ["fpa_analyst", "treasurer"]},
+    )
+    assert parsed["personas"]["default"] == ["fpa_analyst", "treasurer"]
+
+
 def test_write_config_emits_a2a(tmp_path: Path, monkeypatch):
     parsed = _write_full_config(
         tmp_path, monkeypatch, a2a={"enabled": True},
