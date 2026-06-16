@@ -1262,6 +1262,46 @@ def codec_probe(ctx, limit: int, encoding: str, model: str | None, as_json: bool
                   else "NEVER breaks even (no per-message token saving)"))
 
 
+@main.command("codec-learn")
+@click.option("--limit", type=int, default=5000, help="Coordination messages to learn from.")
+@click.option("--encoding", default="cl100k_base", help="tiktoken encoding for the local proxy.")
+@click.option("--model", default=None, help="Anthropic model for the EXACT count (needs API key).")
+@click.pass_context
+def codec_learn(ctx, limit: int, encoding: str, model: str | None) -> None:
+    """Learn the token-aware codebook from real coordination and persist it.
+
+    This is the codec that actually saves frontier tokens (byte-stuffed ~2-token
+    codes), not just bytes. Picks token-cheap, collision-safe codes from the
+    target tokenizer, learns the swarm's repeated phrases from goal_events, and
+    saves the codebook for the live blackboard to measure against. Reports the
+    token savings on the historical corpus -- the authoritative, cross-process
+    number (the live blackboard telemetry confirms it during an actual run).
+    """
+    from . import emergent_tokens as et
+    from .codec_probe import resolve_counter
+    world = open_world(ctx.obj["db"])
+    msgs = world.recent_event_contents(limit=limit)
+    if not msgs:
+        click.echo("no coordination messages to learn from")
+        return
+    counter = resolve_counter(encoding=encoding, model=model)
+    # Candidate codes: printable ASCII + Latin/symbol ranges, filtered to the
+    # tokenizer's single-token chars that don't occur in the corpus. First viable
+    # one is the reserved escape; the rest are markers.
+    candidates = [chr(c) for c in list(range(0x21, 0x7f)) + list(range(0xa1, 0x600))]
+    pool = et.single_token_markers(counter, candidates, escape="", corpus=msgs, limit=200)
+    if len(pool) < 2:
+        click.echo("no token-cheap markers available for this tokenizer; codec would not help")
+        return
+    escape, markers = pool[0], pool[1:]
+    book = et.learn(msgs, escape=escape, markers=markers)
+    et.shared().update(book)
+    saved = et.token_savings(msgs, book, count_tokens=counter)
+    click.echo(f"learned {book.size} token-aware codes from {len(msgs)} messages")
+    click.echo(f"  estimated token savings on this corpus: {saved:+.1f}%")
+    click.echo("  enable [emergent_codec] to measure it live on the coordination stream")
+
+
 @main.command("flywheel")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
 def flywheel(as_json: bool) -> None:

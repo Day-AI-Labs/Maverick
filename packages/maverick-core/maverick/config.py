@@ -805,6 +805,21 @@ def get_emergent_protocol() -> dict:
     return {"enable": bool(cfg.get("enable", False))}
 
 
+def get_emergent_codec() -> dict:
+    """Return the ``[emergent_codec]`` section (live token-aware compression).
+
+    The token-aware codec (``maverick.emergent_tokens``) is the implementation that
+    actually saves *frontier tokens*, not just bytes -- byte-stuffed ~2-token codes
+    instead of the ~5-token sentinels. When ``enable`` is true the blackboard
+    measures, on the real coordination stream, what the codec would save (telemetry
+    only -- the rendered text agents see is unchanged, so the audit/Shield path is
+    untouched). OFF by default: a default deployment measures nothing and pays
+    nothing. Flipping agents to actually *read* codes is a separate, stricter step.
+    """
+    cfg = load_config().get("emergent_codec", {})
+    return {"enable": bool(cfg.get("enable", False))}
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 

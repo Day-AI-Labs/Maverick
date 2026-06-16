@@ -511,6 +511,23 @@ async def get_flywheel_state() -> dict:
     return out
 
 
+@router.get("/codec")
+async def get_codec_telemetry() -> dict:
+    """What the token-aware emergent codec is saving on the LIVE coordination stream.
+
+    Confirms the bench numbers against production: as the swarm runs, the blackboard
+    measures (never applies) what the codec would compress each rendered coordination
+    block to -- byte savings always, token savings when a tokenizer is registered in
+    this process. In-process counters, so this reflects the runtime hosting the
+    agents. Zeroed until ``[emergent_codec] enable`` is on and a codebook is learned.
+    Read-only; never mutates."""
+    try:
+        from maverick.codec_telemetry import snapshot
+        return snapshot().to_dict()
+    except Exception:  # pragma: no cover -- observability never errors the API
+        return {"n_blocks": 0, "tokens_measured": False}
+
+
 def _require_skill_install_opt_in() -> None:
     if os.environ.get("MAVERICK_ALLOW_SKILL_INSTALL", "").lower() not in {"1", "true", "yes"}:
         raise HTTPException(
