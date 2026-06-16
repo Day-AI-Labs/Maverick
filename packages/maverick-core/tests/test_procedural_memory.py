@@ -66,3 +66,11 @@ def test_store_recall_and_roundtrip(tmp_path):
 
 def test_recall_empty_store_is_noop(tmp_path):
     assert pm.MemoryStore(path=tmp_path / "m.json").recall() == []
+
+
+def test_recall_prompt_surfaces_habits(tmp_path):
+    store = pm.MemoryStore(path=tmp_path / "m.json")
+    assert pm.recall_prompt(store=store) == ""        # empty -> no prompt change
+    store.update(pm.consolidate(_corpus("Y")))
+    prompt = pm.recall_prompt(store=store)
+    assert "Learned habits" in prompt and "prefer 'Y'" in prompt

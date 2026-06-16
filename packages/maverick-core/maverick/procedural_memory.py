@@ -181,4 +181,22 @@ def reset_shared() -> None:
         _shared.clear()
 
 
-__all__ = ["Memory", "consolidate", "MemoryStore", "shared", "reset_shared"]
+def recall_prompt(*, store: MemoryStore | None = None, top_k: int = 5) -> str:
+    """A planning-prior prompt fragment of the strongest learned habits, or ''.
+
+    The read side of the Hippocampus: surface the causally-beneficial actions the
+    workforce has consolidated so an agent can *prefer* them. Empty store -> ''
+    (no prompt change), so it's safe to append unconditionally."""
+    habits = (store or shared()).recall(top_k=top_k)
+    if not habits:
+        return ""
+    lines = "\n".join(
+        f"- prefer '{m.action}' (it has helped before; strength {m.strength:.2f})"
+        for m in habits)
+    return ("\n\nLearned habits (from your own past outcomes — prefer these where they "
+            "fit; they are guidance, not mandatory):\n" + lines)
+
+
+__all__ = [
+    "Memory", "consolidate", "MemoryStore", "shared", "reset_shared", "recall_prompt",
+]
