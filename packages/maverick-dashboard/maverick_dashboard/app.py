@@ -941,6 +941,53 @@ async def goals_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "goals.html", {"goals": goals})
 
 
+def _deliverable_specs() -> list[dict]:
+    """The packs that declare a deliverable -- the rows of the persona inbox.
+
+    A pack earns a spec once its output contract names a deliverable or its
+    consumers; packs that only emit prose stay out of the inbox (they're plain
+    runs on ``/goals``). Fail-soft to an empty list so the page never 500s if
+    the factory layer is unavailable."""
+    try:
+        from maverick.domain import available_domains, suite_for
+    except Exception:  # pragma: no cover -- factory layer unavailable
+        return []
+    specs: list[dict] = []
+    for name, prof in sorted(available_domains().items()):
+        out = prof.output
+        if not (out.deliverable or out.consumers):
+            continue
+        specs.append({
+            "domain": name,
+            "deliverable": out.deliverable or name,
+            "shape": out.shape,
+            "consumers": list(out.consumers),
+            "cadence": out.cadence,
+            "gate": out.gate,
+            "suite": suite_for(name),
+        })
+    return specs
+
+
+@app.get("/deliverables", response_class=HTMLResponse)
+async def deliverables_page(request: Request, role: str = "") -> HTMLResponse:
+    """The persona inbox: runs grouped by the deliverable their pack declares,
+    scoped to the role that consumes them -- "my forecasts", "assessments
+    awaiting my sign-off" -- instead of the flat ``/goals`` stream."""
+    from .deliverables import build_inbox
+    specs = _deliverable_specs()
+    owner = goal_owner_filter(request)
+    runs_by_domain: dict[str, list] = {}
+    for s in specs:
+        try:
+            runs_by_domain[s["domain"]] = _world().list_goals(
+                domain=s["domain"], owner=owner, limit=5, order="desc")
+        except Exception:  # pragma: no cover -- a bad domain query never breaks the page
+            runs_by_domain[s["domain"]] = []
+    model = build_inbox(specs, runs_by_domain, role or None)
+    return templates.TemplateResponse(request, "deliverables.html", model)
+
+
 @app.get("/tenants", response_class=HTMLResponse)
 async def tenants_page(request: Request) -> HTMLResponse:
     """Operator console: the provisioned-tenant roster (status / plan / quota).

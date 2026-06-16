@@ -902,6 +902,7 @@ class WorldModel:
         status: str | None = None,
         *,
         owner: str | None = None,
+        domain: str | None = None,
         limit: int | None = None,
         offset: int = 0,
         order: str = "asc",
@@ -912,6 +913,8 @@ class WorldModel:
         all rows in ASC id order). Dashboard callers should pass a
         small ``limit`` to avoid loading every goal on every request;
         ``order='desc'`` lets the most-recent slice be fetched cheaply.
+        ``domain`` scopes to one department (the pack a goal ran as) -- the
+        ``domain`` column is plaintext, so it filters in SQL.
         """
         direction = "DESC" if order.lower() == "desc" else "ASC"
         sql = "SELECT * FROM goals"
@@ -923,6 +926,9 @@ class WorldModel:
         if owner is not None:
             clauses.append("owner = ?")
             params = params + (owner,)
+        if domain is not None:
+            clauses.append("domain = ?")
+            params = params + (domain,)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += f" ORDER BY id {direction}"
