@@ -753,6 +753,20 @@ def get_data_engine() -> dict:
     }
 
 
+def get_consequence() -> dict:
+    """Return the ``[consequence]`` section (the Consequence Engine).
+
+    Reality as the reward: real downstream outcomes (invoice paid, contract
+    renewed, ticket stayed closed), reported by a system-of-record connector and
+    joined back to the episode that acted, become the grounded learning signal.
+    OFF by default -- when ``enable`` is false the data-engine join keeps using
+    the verifier-confidence proxy, so a default deployment is unaffected;
+    recording outcomes is always harmless (it just stores).
+    """
+    cfg = load_config().get("consequence", {})
+    return {"enable": bool(cfg.get("enable", False))}
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 
