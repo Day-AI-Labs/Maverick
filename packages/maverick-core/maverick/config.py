@@ -767,6 +767,19 @@ def get_consequence() -> dict:
     return {"enable": bool(cfg.get("enable", False))}
 
 
+def get_operations_scientist() -> dict:
+    """Return the ``[operations_scientist]`` section (the discovery engine).
+
+    An agent that discovers a better process and proves it causally: it pairs a
+    harmful action with the beneficial habit that should replace it, validates the
+    swap in the world-model, then (downstream) runs a real experiment and ships
+    the proven win. OFF by default -- when ``enable`` is false the engine never
+    runs, so a default deployment is unaffected.
+    """
+    cfg = load_config().get("operations_scientist", {})
+    return {"enable": bool(cfg.get("enable", False))}
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 

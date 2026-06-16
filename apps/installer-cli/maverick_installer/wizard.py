@@ -1265,6 +1265,13 @@ def pick_advanced() -> dict[str, Any]:
             "from its own experience; off by default.",
             default=False,
         ),
+        "operations_scientist": _q_confirm(
+            "Operations Scientist? An agent that DISCOVERS a better process and proves it: "
+            "it pairs a harmful action with the beneficial habit that should replace it, "
+            "validates the swap in the world-model, then runs a real causal experiment and "
+            "ships the proven win. Discovery, not just labour; off by default.",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2557,6 +2564,13 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("# Triage production failures by causal impact on real outcomes, then")
         lines.append("# mine + validate + promote fixes (maverick.data_engine). The Tesla")
         lines.append("# data-engine flywheel for the workforce; reads the trajectory store.")
+        lines.append("enable = true")
+    if advanced.get("operations_scientist"):
+        lines.append("")
+        lines.append("[operations_scientist]")
+        lines.append("# Discover a better process and prove it: pair a harmful action with")
+        lines.append("# the beneficial habit that should replace it, validate the swap in the")
+        lines.append("# world-model, then experiment for real (maverick.operations_scientist).")
         lines.append("enable = true")
     if advanced.get("enforce_quotas"):
         lines.append("")
