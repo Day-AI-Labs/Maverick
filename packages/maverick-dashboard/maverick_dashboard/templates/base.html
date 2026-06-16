@@ -459,6 +459,10 @@
     .mv-row__sub { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; word-break: break-word; }
     .mv-row__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; flex: none; }
     .btn--icon { flex: none; padding: 0.3rem 0.55rem; font-size: var(--text-sm); line-height: 1; }
+    /* Shared empty / get-started state: centered title + body + a CTA. */
+    .mv-empty { text-align: center; padding: var(--space-6) var(--space-4); border: 1px dashed var(--border); border-radius: var(--radius-lg); background: var(--surface-1); color: var(--muted); }
+    .mv-empty__title { color: var(--text); font-weight: var(--font-semibold); font-size: var(--text-md); margin: 0 0 var(--space-1); }
+    .mv-empty__body { margin: 0 auto var(--space-3); max-width: 38rem; }
     @media (prefers-reduced-motion: reduce) { .mv-toast { animation: none; } }
   </style>
   {% if custom_theme_css %}
@@ -591,6 +595,7 @@
       {% set _active_path = '/chat' if _path == '/' else _path %}
       {% set _icons = {
         '/chat': 'chat', '/goals': 'target', '/agents': 'agents', '/roles': 'roles',
+        '/start': 'check',
         '/goal-builder': 'builder', '/workflow-builder': 'workflow', '/workflows': 'workflow',
         '/automations': 'clock',
         '/graph-editor': 'graph', '/fleets': 'fleets',
@@ -604,7 +609,7 @@
         '/facts': 'facts', '/walkthroughs': 'walkthroughs', '/embed-demo': 'embed',
       } %}
       {% set _nav_groups = [
-        ('Operate', [('/chat', 'Chat'), ('/goals', 'Goals'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/workflows', 'Workflows'), ('/automations', 'Automations'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
+        ('Operate', [('/start', 'Get started'), ('/chat', 'Chat'), ('/goals', 'Goals'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/workflows', 'Workflows'), ('/automations', 'Automations'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
         ('Observe', [('/overview', 'Overview'), ('/oversight', 'Oversight'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
         ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'), ('/safety', 'Safety'), ('/compliance', 'Compliance'), ('/compartments', 'Compartments'), ('/audit', 'Audit')]),
         ('Extend', [('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'), ('/tools', 'Tools'), ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/channels', 'Channels')]),

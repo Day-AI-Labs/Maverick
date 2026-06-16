@@ -48,7 +48,9 @@ def test_index_empty_states(monkeypatch, tmp_path):
     import maverick.domain_edit as de
     monkeypatch.setattr(de, "list_agents", list)
     t = _client().get("/workflows").text
-    assert "No saved templates yet" in t and "No agent playbooks yet" in t
+    # shared .mv-empty component now backs these
+    assert "No templates yet" in t and "No agent playbooks yet" in t
+    assert "mv-empty" in t
 
 
 def test_nav_workflows_points_to_index(monkeypatch, tmp_path):
