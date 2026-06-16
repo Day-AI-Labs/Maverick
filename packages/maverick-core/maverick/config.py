@@ -529,6 +529,31 @@ def get_fleet_memory() -> dict:
     return {"enable": bool(cfg.get("enable", False))}
 
 
+def get_memory() -> dict:
+    """Return the ``[memory]`` section. ``temporal`` keeps a bitemporal history
+    of every fact value (validity windows) instead of overwriting, so the
+    Operating Record can answer "what did we believe on date X, and why".
+    OFF by default (one extra append per fact change); the live-value read path
+    is unchanged when off. Also honored via ``MAVERICK_TEMPORAL_MEMORY=1``."""
+    cfg = load_config().get("memory", {})
+    return {"temporal": bool(cfg.get("temporal", False))}
+
+
+def get_memory_guard() -> dict:
+    """Return the ``[memory_guard]`` section (OWASP ASI06 controls). OFF by
+    default. When on, every memory write is screened for injection/poisoning and
+    stamped with provenance + a trust tier, and memory below ``min_recall_trust``
+    is filtered out of the agent's standing brief (trust-aware retrieval).
+    ``min_recall_trust`` is a :class:`maverick.memory_guard.TrustTier` value
+    (default 1 = drop only EXTERNAL/untrusted memory). Also honored via
+    ``MAVERICK_MEMORY_GUARD=1``."""
+    cfg = load_config().get("memory_guard", {})
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "min_recall_trust": int(cfg.get("min_recall_trust", 1)),
+    }
+
+
 def get_domains() -> dict:
     """Return the ``[domains]`` section with defaults filled in.
 

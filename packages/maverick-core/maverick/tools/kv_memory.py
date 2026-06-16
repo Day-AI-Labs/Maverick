@@ -73,6 +73,20 @@ def _run_factory(world, goal_id: int | None):
                     "Store a summary or a file path instead."
                 )
             scoped = _scoped_key(goal_id, user_key)
+            # Memory Guard (OWASP ASI06): a fact the agent persists is TOOL-trust
+            # -- the memory-poisoning surface, since it may parrot attacker-
+            # controlled tool/web content. Screen the value and stamp provenance
+            # before it enters the store; a flagged low-trust write is quarantined
+            # (not stored) and audited. All a no-op when the guard is off.
+            from .. import memory_guard as _mg
+            _prov = _mg.agent_fact_provenance()
+            _decision = _mg.screen_write(value, _prov)
+            _mg.audit_write(scoped, _prov, _decision, goal_id=goal_id)
+            if not _decision.allowed:
+                return (
+                    "ERROR: memory write blocked by Memory Guard "
+                    f"({_decision.reason})"
+                )
             # Atomic upsert through the locked WorldModel API. The prior
             # DELETE-then-INSERT on world.conn was (a) non-atomic -- a crash
             # or a concurrent commit between the two statements wiped the
@@ -80,7 +94,10 @@ def _run_factory(world, goal_id: int | None):
             # lock, so it could flush another thread's half-written
             # transaction. upsert_fact does an ON CONFLICT upsert under
             # _writing().
-            world.upsert_fact(scoped, value)
+            world.upsert_fact(
+                scoped, value, source=_prov.source,
+                trust_tier=int(_prov.trust), sensitivity=_prov.sensitivity.value,
+            )
             return f"set {user_key!r} ({len(value)} bytes)"
         if op == "get":
             user_key = (args.get("key") or "").strip()

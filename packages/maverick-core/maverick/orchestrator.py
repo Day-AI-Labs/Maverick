@@ -596,7 +596,27 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
             _wm_memory_on = get_features()["world_model"]
         except Exception:
             _wm_memory_on = True
-        facts = world.get_facts() if _wm_memory_on else {}
+        # Memory Guard (OWASP ASI06) trust-aware retrieval: when enabled, drop
+        # facts below the trust floor so low-trust/poisoned memory never enters
+        # the standing brief (these become standing instructions), and audit how
+        # many were filtered. No-op -- the full fact set -- when the guard is off.
+        if not _wm_memory_on:
+            facts = {}
+        else:
+            from . import memory_guard as _mg
+            if _mg.enabled():
+                _min_trust = _mg.min_recall_trust()
+                facts = world.get_facts(min_trust=_min_trust)
+                try:
+                    _total = world.count_facts()
+                except Exception:  # pragma: no cover
+                    _total = len(facts)
+                _mg.audit_recall(
+                    kept=len(facts), dropped=max(0, _total - len(facts)),
+                    min_trust=_min_trust, goal_id=goal_id,
+                )
+            else:
+                facts = world.get_facts()
         fact_lines: list[str] = []
         for k, v in facts.items():
             val = str(v)

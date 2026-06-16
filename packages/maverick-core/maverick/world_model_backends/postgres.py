@@ -957,7 +957,16 @@ class PostgresWorldModel:
 
     # ----- facts (global key/value memory) -----
 
-    def upsert_fact(self, key: str, value: str, episode_id: int | None = None) -> None:
+    def upsert_fact(
+        self, key: str, value: str, episode_id: int | None = None,
+        *, source: str = "", trust_tier: int = 3, sensitivity: str = "internal",
+    ) -> None:
+        # Memory Guard provenance + temporal fact_history are sqlite-first (like
+        # at-rest encryption). The signature accepts the provenance kwargs so the
+        # backend-agnostic callers (kv_memory, orchestrator) don't break under
+        # Postgres; they are not persisted here yet. The write-time screen in
+        # kv_memory -- the primary ASI06 control -- runs regardless of backend.
+        del source, trust_tier, sensitivity
         with self._tx() as cur:
             cur.execute(
                 "INSERT INTO facts(key, value, source_episode_id, updated_at, tenant_id) "
@@ -969,7 +978,10 @@ class PostgresWorldModel:
                 (key, value, episode_id, time.time(), _active_tenant()),
             )
 
-    def get_facts(self) -> dict[str, str]:
+    def get_facts(self, *, min_trust: int | None = None) -> dict[str, str]:
+        # ``min_trust`` (trust-aware retrieval) is a no-op here: provenance
+        # columns are sqlite-first, so Postgres returns the full set (fail-open).
+        del min_trust
         frag, params = _tenant_scope()
         sql = "SELECT key, value FROM facts"
         if frag:
@@ -1005,7 +1017,11 @@ class PostgresWorldModel:
     def _like_escape(s: str) -> str:
         return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
-    def get_fact(self, key: str) -> str | None:
+    def get_fact(self, key: str, *, as_of: float | None = None) -> str | None:
+        # Temporal history is sqlite-first; an ``as_of`` read has no backing
+        # store here, so it returns None rather than a misleading current value.
+        if as_of is not None:
+            return None
         frag, params = _tenant_scope()
         sql = "SELECT value FROM facts WHERE key = %s"
         p: list = [key]

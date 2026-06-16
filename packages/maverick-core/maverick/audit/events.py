@@ -88,6 +88,11 @@ class EventKind:
     # wrote/retired/quarantined) so `maverick audit verify` covers learned
     # state the same way it covers tool calls.
     LEARNING_UPDATE = "learning_update"
+    # Memory governance (OWASP ASI06): a memory write was stamped/screened, or a
+    # trust-aware retrieval pass filtered low-trust memory out of the brief.
+    # payload: action:str (write|write_blocked|recall_filter), plus key/source/
+    # trust/sensitivity/reason/markers (writes) or kept/dropped/min_trust (recall).
+    MEMORY_GUARD = "memory_guard"
 
 
 @dataclass
