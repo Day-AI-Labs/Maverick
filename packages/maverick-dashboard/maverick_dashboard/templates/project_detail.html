@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name or 'project' }} · Maverick{% endblock %}
+{% block content %}
+  <p class="muted" style="margin-bottom: var(--space-2);"><a href="/projects">← Projects</a></p>
+  <h1 class="page-title">{{ project.name or 'Untitled project' }}</h1>
+  {% if project.description %}<p class="page-subtitle">{{ project.description }}</p>{% endif %}
+
+  <div class="panel">
+    <p class="muted" style="margin: 0;">
+      {% if project.domain %}Department <code>{{ project.domain }}</code> · {% endif %}
+      {{ goals|length }} goal{{ '' if goals|length == 1 else 's' }}
+      {% if counts %} · {% for s, n in counts.items() %}{{ n }} {{ s }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}
+    </p>
+  </div>
+
+  <h2>Goals in this project</h2>
+  <div class="panel{% if not goals %} empty{% endif %}">
+    {% if goals %}
+      <table>
+        <thead><tr><th scope="col">id</th><th scope="col">status</th><th scope="col">title</th><th scope="col"></th></tr></thead>
+        <tbody>
+        {% for g in goals %}
+          <tr>
+            <td><code>#{{ g.id }}</code></td>
+            <td><span class="badge {{ g.status }}">{{ g.status }}</span></td>
+            <td><a href="/chat/goal/{{ g.id }}">{{ g.title }}</a></td>
+            <td class="muted" style="white-space: nowrap;"><a href="/goals/{{ g.id }}/plan">plan</a> · <a href="/goals/{{ g.id }}/trajectory">replay</a></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="mv-empty"><p class="mv-empty__title">No goals filed here yet</p>
+        <p class="mv-empty__body">Open a run and pick this project under “Project”.</p></div>
+    {% endif %}
+  </div>
+{% endblock %}
