@@ -450,15 +450,16 @@ def run_live(seeds: int = 2, cap: float = 1.25, timeout: int = 600,
     tasks finish within ``cap``; pass ``orchestrator_model=""`` to keep the
     product default (Opus, which truncates at a tight cap -- see docstring).
 
-    PRE-FLIGHT: refuses to spend a cent if ``codebase`` has no sources to mount
-    -- the agent would see an empty workspace and every run would answer "no
-    codebase available" (verify before you pay; see MOAT_RIGOROUS_RESULTS.md)."""
-    n = _codebase_sources(codebase)
-    if n == 0:
+    PRE-FLIGHT: refuses to spend a cent unless the agent can actually READ the
+    mounted codebase (``moat_preflight.sandbox_can_read``) -- else every run
+    answers "no codebase available" (verify before you pay; see
+    MOAT_RIGOROUS_RESULTS.md)."""
+    from moat_preflight import sandbox_can_read
+    ok, detail = sandbox_can_read(codebase)
+    if not ok:
         raise RuntimeError(
-            f"pre-flight: codebase {codebase!r} has no .py sources to mount -- the "
-            f"agent would analyze an EMPTY workspace and every run would answer "
-            f"'no codebase available'. Point --codebase at a real source tree.")
+            f"pre-flight FAILED ({detail}); the agent could not read the codebase "
+            f"-- refusing to spend. Run `python benchmarks/moat_preflight.py` first.")
     return run_moat_rigorous(DEFAULT_PAIRS, seeds,
                              _live_pair_runner(cap, timeout, orchestrator_model, codebase),
                              tol=tol)
