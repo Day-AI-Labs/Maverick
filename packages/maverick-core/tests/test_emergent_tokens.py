@@ -1,0 +1,92 @@
+"""Tokenizer-aware codec: codes that save tokens, with the audit contract intact.
+
+The contract is ``decode(encode(x)) == x`` for ANY input -- including content that
+literally contains the escape and marker bytes. These tests fuzz that property
+hard (a naive str.replace decode fails it), then pin the token-saving behaviour
+with a deterministic stub tokenizer so CI needs no real BPE."""
+from __future__ import annotations
+
+import random
+
+from maverick import emergent_tokens as et
+
+ESC = "\x1b"  # reserved escape byte
+
+
+def _chars(s: str) -> int:
+    """Deterministic stub tokenizer: one token per character."""
+    return len(s)
+
+
+def _book(escape=ESC, markers=("A", "B", "C", "D")):
+    # Train on a corpus with clear repetition so phrases get coded.
+    msgs = ["alpha beta gamma", "alpha beta", "gamma delta epsilon"] * 4
+    return et.learn(msgs, escape=escape, markers=list(markers))
+
+
+def test_round_trip_basic():
+    book = _book()
+    assert book.size > 0
+    for m in ["alpha beta gamma", "gamma delta epsilon", "alpha beta and gamma delta epsilon"]:
+        assert et.decode(et.encode(m, book), book) == m
+
+
+def test_round_trip_adversarial():
+    # Markers deliberately chosen as ordinary letters that ALSO appear in content,
+    # and content that literally contains the escape and code byte-sequences.
+    book = _book(markers=("a", "b", "g", "d"))  # collide with alpha/beta/gamma/delta
+    cases = [
+        f"a literal escape {ESC} here",
+        f"{ESC}{ESC}{ESC}{ESC} runs of escapes",
+        f"a code lookalike {ESC}a and {ESC}b",
+        "alpha beta" + ESC + "gamma delta epsilon",
+        ESC,                       # lone trailing escape
+        "",                        # empty
+        "no codeable phrases at all",
+    ]
+    for m in cases:
+        assert et.decode(et.encode(m, book), book) == m, repr(m)
+
+
+def test_round_trip_fuzz():
+    book = _book(markers=("A", "B", "C", "D", "E"))
+    alphabet = list("alpha beta gamma delta epsilon ") + [ESC, "A", "B", "C", "x", "y"]
+    rng = random.Random(1234)
+    for _ in range(2000):
+        s = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 40)))
+        assert et.decode(et.encode(s, book), book) == s, repr(s)
+
+
+def test_empty_pool_is_identity():
+    msgs = ["alpha beta", "alpha beta"]
+    for bad in (et.learn(msgs, escape="", markers=["A"]),
+                et.learn(msgs, escape=ESC, markers=[])):
+        assert bad.size == 0
+        assert et.encode("alpha beta", bad) == "alpha beta"
+        assert et.decode("alpha beta", bad) == "alpha beta"
+
+
+def test_marker_equal_escape_is_skipped():
+    book = et.learn(["alpha beta"] * 4, escape=ESC, markers=[ESC, "A"])
+    # ESC marker is dropped; only "A" remains usable.
+    assert ESC not in book.reverse
+    assert all(code.startswith(ESC) for code in book.forward.values())
+
+
+def test_codes_are_cheap_and_save_tokens():
+    # Stub tokenizer: 1 token per character. A coded phrase ("alpha beta" = 10 chars)
+    # collapses to ESC+marker = 2 chars -> 2 "tokens": a real saving.
+    book = _book()
+    msgs = ["alpha beta gamma"] * 10
+    saved = et.token_savings(msgs, book, count_tokens=_chars)
+    assert saved > 0
+
+
+def test_single_token_markers_filters():
+    # 1 "token" iff single char (stub); exclude escape and corpus members.
+    cands = ["A", "B", "CC", "D", ESC, "E"]
+    out = et.single_token_markers(_chars, cands, escape=ESC, corpus=["B occurs here"])
+    assert "A" in out and "D" in out and "E" in out
+    assert "CC" not in out      # 2 tokens
+    assert ESC not in out       # the escape
+    assert "B" not in out       # present in corpus
