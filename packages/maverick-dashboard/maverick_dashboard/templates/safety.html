@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}safety · Maverick{% endblock %}
 {% block content %}
-  <h2>safety</h2>
+  <h1 class="page-title">Safety</h1>
   <p class="muted">
     What Agent Shield blocked — denied inputs, tool calls, and outputs, read
     from the local audit log (<code>shield_block</code> events).
@@ -27,7 +27,7 @@
   </div>
 
   <div class="panel">
-    <h3 style="margin-top: 0;">Blocks {% if day %}on {{ day }}{% else %}today{% endif %}</h3>
+    <h2 style="margin-top: 0;">Blocks {% if day %}on {{ day }}{% else %}today{% endif %}</h2>
     <p style="font-size: 2rem; margin: 0.2rem 0;">{{ total }}</p>
     <div class="muted" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
       <span>input: <strong>{{ by_stage.get('input', 0) }}</strong></span>
@@ -38,7 +38,7 @@
 
   {% if top_reasons %}
   <div class="panel">
-    <h3 style="margin-top: 0;">Top reasons</h3>
+    <h2 style="margin-top: 0;">Top reasons</h2>
     <table>
       <thead><tr><th scope="col">reason</th><th scope="col">count</th></tr></thead>
       <tbody>
@@ -51,7 +51,7 @@
   {% endif %}
 
   <div class="panel">
-    <h3 style="margin-top: 0;">Recent blocks</h3>
+    <h2 style="margin-top: 0;">Recent blocks</h2>
     {% if events %}
       <table>
         <thead>
