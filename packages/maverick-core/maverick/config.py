@@ -322,6 +322,15 @@ def get_skills() -> dict:
         "require_signed_catalog": require_catalog,
         # Recall the shipped first-party skills library at runtime (opt-out).
         "builtin": bool(cfg.get("builtin", True)),
+        # Relevance GATES on skill recall. Precision >> recall for agent memory:
+        # weakly-relevant retrieved context regresses the agent (hard negatives
+        # flip answers -- GSM-DC/GSM-IC; large/noisy memory degrades -- Lifelong-
+        # AgentBench). The embedding path keeps a skill only above this cosine;
+        # the lexical fallback keeps one only at/above this RAW score (a real
+        # two-word or phrase match), so noise is never injected -> warm is never
+        # worse than cold.
+        "embed_threshold": float(cfg.get("embed_threshold", 0.35)),
+        "lexical_min_relevance": float(cfg.get("lexical_min_relevance", 4.0)),
     }
 
 

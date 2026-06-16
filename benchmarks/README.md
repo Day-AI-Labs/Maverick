@@ -39,6 +39,29 @@ All three are designed to **fail** for single-shot prompting (too
 broad, too many steps) and **succeed** for a recursive swarm with
 verify + skill distill enabled.
 
+## Does the learning actually help? (the moat)
+
+The differentiator vs. stateless assistants is that Maverick *retains and
+recalls* what it learns. These benchmarks make that claim falsifiable
+instead of marketing:
+
+| Benchmark | Question | Cost |
+|---|---|---|
+| `recall_precision.py` | Does relevance-gating cut injected noise without losing the right skill? | **free** (deterministic, lexical path) |
+| `moat_rigorous.py` | Holding the task fixed, is a *warm* agent (relevant prior in store) never worse — and ideally cheaper — than a *cold* one? | ~$0.5–0.7/run × 3 runs/observation |
+| `moat.py` | Original cold-vs-warm A/B (kept for history; superseded by `moat_rigorous.py`'s same-target protocol) | as above |
+
+`recall_precision.py` runs in CI (no key): it shows the relevance gate drops
+the lexical false-positive rate from **88% → 12%** with Recall@1 held at 100%
+— precision is what matters, because injecting weakly-relevant memory *regresses*
+the agent (hard negatives flip answers; large/noisy memory degrades).
+
+`moat_rigorous.py` is the paid, end-to-end proof. Its headline is the
+**defensible** one: *warm is never worse than cold* (the property the gate
+buys), reported as a not-worse rate + a **median** (outlier-robust) cost delta,
+with success parity. Pure aggregation is unit-tested offline
+(`test_moat_rigorous.py`); results land in `MOAT_RIGOROUS_RESULTS.md`.
+
 ## Comparing across providers
 
 Re-run the same benchmark with different `[models]` config blocks:
@@ -60,6 +83,7 @@ and their numbers side by side.
   model, not the agent system
 - Safety / red-team coverage -- that's Agent Shield's territory and
   has its own benchmark suite
-- Distillation quality (whether auto-generated SKILL.md files actually
-  help future runs) -- needs a separate longitudinal study, planned
-  for v0.2
+
+Distillation quality (whether auto-generated SKILL.md files actually help
+future runs) **is** now measured — see "Does the learning actually help?"
+above (`recall_precision.py` + `moat_rigorous.py`).
