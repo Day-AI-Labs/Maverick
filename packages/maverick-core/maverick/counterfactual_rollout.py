@@ -85,38 +85,43 @@ class TransitionModel:
         return self
 
     def support(self, state: tuple, action: Hashable) -> int:
-        return sum(self._next.get((state, action), {}).values())
+        return sum((self._next_counts(state, action) or {}).values())
 
     def actions(self, state: tuple) -> list:
         return list(self._policy.get(state, {}))
 
-    def _sample_next(self, sa: tuple, rng: random.Random):
-        counts = self._next.get(sa)
-        if not counts:
-            return _TERMINAL  # unseen (s,a): treat as absorbing, scored by prior
+    def _next_counts(self, state: tuple, action: Hashable):
+        """Next-state counts for ``(state, action)`` (None if unseen). Subclasses
+        override to generalise (e.g. feature backoff) rather than return None."""
+        return self._next.get((state, action))
+
+    def _policy_counts(self, state: tuple):
+        """Behaviour-policy action counts for ``state`` (None if unseen)."""
+        return self._policy.get(state)
+
+    @staticmethod
+    def _weighted_choice(counts, rng: random.Random):
         items = list(counts.items())
         total = sum(c for _, c in items)
         r = rng.random() * total
         upto = 0.0
-        for nxt, c in items:
+        for key, c in items:
             upto += c
             if r <= upto:
-                return nxt
+                return key
         return items[-1][0]
 
+    def _sample_next(self, sa: tuple, rng: random.Random):
+        counts = self._next_counts(sa[0], sa[1])
+        if not counts:
+            return _TERMINAL  # unseen (s,a): treat as absorbing, scored by prior
+        return self._weighted_choice(counts, rng)
+
     def _sample_action(self, state: tuple, rng: random.Random):
-        pol = self._policy.get(state)
+        pol = self._policy_counts(state)
         if not pol:
             return None
-        items = list(pol.items())
-        total = sum(c for _, c in items)
-        r = rng.random() * total
-        upto = 0.0
-        for act, c in items:
-            upto += c
-            if r <= upto:
-                return act
-        return items[-1][0]
+        return self._weighted_choice(pol, rng)
 
     def _terminal_outcome(self, sa: tuple) -> float:
         s, n = self._term.get(sa, (0.0, 0))
@@ -155,7 +160,7 @@ class TransitionModel:
         correct = 0
         n = 0
         for t in holdout:
-            counts = self._next.get((t.state, t.action))
+            counts = self._next_counts(t.state, t.action)
             n += 1
             if not counts:
                 continue
