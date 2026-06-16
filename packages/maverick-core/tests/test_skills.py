@@ -130,10 +130,31 @@ class TestSkillParse:
 
 
 class TestRelevantSkills:
+    @pytest.fixture(autouse=True)
+    def _force_lexical(self, monkeypatch):
+        # These exercise the LEXICAL scorer specifically, so force it -- the
+        # result must not depend on whether fastembed happens to be installed
+        # (the embedding path has its own cosine gate).
+        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed", lambda: False)
+
     def _make_skill(self, name: str, triggers: list[str]) -> Skill:
         return Skill(
             name=name, triggers=triggers, tools_needed=[], body="", path=Path("/x"),
         )
+
+    def test_relevance_gate_drops_weak_matches(self):
+        # A skill sharing only a common word ("the") is noise and must be gated
+        # out (precision >> recall for agent memory).
+        strong = self._make_skill("strong", ["deploy the service"])
+        weak = self._make_skill("weak", ["the weather forecast"])
+        out = relevant_skills("deploy the service now", [strong, weak])
+        assert strong in out and weak not in out
+
+    def test_gate_is_configurable(self):
+        from maverick.skills import _relevant_skills_lexical
+        weak = self._make_skill("weak", ["the weather"])  # shares only "the"
+        assert weak in _relevant_skills_lexical("the price", [weak], min_score=0.0)
+        assert weak not in _relevant_skills_lexical("the price", [weak], min_score=4.0)
 
     def test_word_overlap_scoring(self):
         s1 = self._make_skill("a", ["web search results"])

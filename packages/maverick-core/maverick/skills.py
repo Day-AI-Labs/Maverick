@@ -278,7 +278,8 @@ def _decay_weights(names: list[str]) -> dict[str, float]:
         return dict.fromkeys(names, 1.0)
 
 
-def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3) -> list[Skill]:
+def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3,
+                             min_score: float = 0.0) -> list[Skill]:
     goal_lower = goal.lower()
     goal_words = set(re.findall(r"\w+", goal_lower))
     weights = _decay_weights([s.name for s in all_skills])
@@ -290,21 +291,38 @@ def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3)
             score += len(trig_words & goal_words) * 2
             if trig.lower() in goal_lower:
                 score += 5
-        if score > 0:
+        # Relevance gate on the RAW score (before decay): a single shared common
+        # word (score 2) is noise, and injecting weakly-relevant memory HURTS the
+        # agent (the research is unambiguous). Require >= min_score so noise is
+        # never injected; decay only re-orders skills that already cleared it.
+        if score > 0 and score >= min_score:
             scored.append((score * weights.get(s.name, 1.0), s))
     scored.sort(key=lambda x: -x[0])
     return [s for _, s in scored[:max_n]]
 
 
 def relevant_skills(goal: str, all_skills: list[Skill], max_n: int = 3) -> list[Skill]:
+    """Recall the skills relevant to ``goal``, relevance-GATED so weak/irrelevant
+    matches are never injected. Precision >> recall for agent memory: noisy recall
+    regresses the agent, so the embedding path keeps a skill only above cosine
+    ``[skills].embed_threshold`` (default 0.35) and the lexical fallback only
+    at/above ``[skills].lexical_min_relevance`` (default a real two-word/phrase
+    match). This gives the "warm is never worse than cold" property."""
+    try:
+        from . import config as _config
+        cfg = _config.get_skills()
+        embed_threshold = float(cfg.get("embed_threshold", 0.35))
+        lexical_min = float(cfg.get("lexical_min_relevance", 0.0))
+    except Exception:  # pragma: no cover -- config never blocks recall
+        embed_threshold, lexical_min = 0.35, 0.0
     try:
         from .skill_embeddings import relevant_skills_embed
-        result = relevant_skills_embed(goal, all_skills, max_n=max_n)
+        result = relevant_skills_embed(goal, all_skills, max_n=max_n, threshold=embed_threshold)
         if result is not None:
             return result
     except Exception as e:
         log.debug("embedding retrieval failed; falling back to lexical: %s", e)
-    return _relevant_skills_lexical(goal, all_skills, max_n=max_n)
+    return _relevant_skills_lexical(goal, all_skills, max_n=max_n, min_score=lexical_min)
 
 
 def render_for_prompt(skills: list[Skill]) -> str:
