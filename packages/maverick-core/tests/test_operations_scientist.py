@@ -78,3 +78,42 @@ def test_enabled_off_by_default(monkeypatch):
     assert ops.enabled() is False
     monkeypatch.setenv("MAVERICK_OPERATIONS_SCIENTIST", "1")
     assert ops.enabled() is True
+
+
+def test_propose_creative_generates_new_interventions():
+    # an injected LLM generator proposes actions the data hasn't tried
+    def generate(fc):
+        return {"A": ["new_tool_1", "new_tool_2"], "C": ["batch_first"]}.get(fc.action, [])
+
+    hyps = ops.propose_creative([_fc("A", -0.5, -0.2), _fc("C", -0.3, -0.1)],
+                                generate=generate)
+    swaps = {(h.baseline_action, h.candidate_action) for h in hyps}
+    assert ("A", "new_tool_1") in swaps and ("C", "batch_first") in swaps
+    assert hyps[0].baseline_action == "A"          # most harmful first
+    assert hyps[0].predicted_lift == 0.5
+
+
+def test_propose_creative_skips_self_dupes_and_non_harmful():
+    def generate(fc):
+        return ["A", "A", "good_one"]              # self + duplicate + one real
+
+    hyps = ops.propose_creative(
+        [_fc("A", -0.5, -0.2), _fc("D", -0.2, 0.05)],  # D's CI crosses 0 -> skipped
+        generate=generate)
+    assert [(h.baseline_action, h.candidate_action) for h in hyps] == [("A", "good_one")]
+
+
+def test_propose_creative_survives_a_flaky_generator():
+    def generate(fc):
+        raise RuntimeError("LLM hiccup")
+    assert ops.propose_creative([_fc("A", -0.5, -0.2)], generate=generate) == []
+
+
+def test_creative_hypotheses_are_sim_validated():
+    # the LLM proposes B; the world-model proves it actually helps (or wouldn't)
+    wm = TransitionModel().fit(
+        [Transition(START, "B", GOOD)] * 12 + [Transition(GOOD, "go", None, 1.0)] * 12
+        + [Transition(START, "A", BAD)] * 12 + [Transition(BAD, "go", None, 0.0)] * 12)
+    [hyp] = ops.propose_creative([_fc("A", -0.5, -0.2)], generate=lambda fc: ["B"])
+    res = ops.simulate(hyp, wm, [START], rollouts=50)
+    assert res.worth_experimenting and res.sim_lift > 0
