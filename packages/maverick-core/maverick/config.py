@@ -726,6 +726,33 @@ def get_speculative() -> dict:
     }
 
 
+def get_data_engine() -> dict:
+    """Return the ``[data_engine]`` section (the Cognitive Data Engine).
+
+    The Tesla-style improvement flywheel for the agent workforce: production
+    failures are causally triaged, a fix is mined + validated in the world-model,
+    promoted through the safety ladder, and measured against real outcomes. OFF
+    by default -- when ``enable`` is false the engine never runs, so a default
+    deployment is unaffected. ``failure_threshold`` is the outcome below which an
+    episode counts as a failure; ``min_support`` is the evidence a causal-impact
+    estimate needs before a failure class is ranked.
+    """
+    cfg = load_config().get("data_engine", {})
+
+    def _num(key: str, default: float, cast=float):
+        try:
+            return cast(cfg.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "failure_threshold": _num("failure_threshold", 0.5),
+        "min_support": _num("min_support", 8, int),
+        "top_k": _num("top_k", 10, int),
+    }
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 
