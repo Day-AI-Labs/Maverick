@@ -52,6 +52,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from moat import RunMetrics  # noqa: E402
 
+# The orchestrator (the main loop) must COMPLETE these tasks within the cap.
+# The product-default Opus orchestrator truncates at a tight cap -- the budget
+# refuses the next call before the agent finalizes -- which ALSO starves
+# learning (the populate run never succeeds, so distills nothing). So the live
+# run pins a cheaper, completing orchestrator, held IDENTICAL across warm and
+# cold so the delta still isolates memory (see MOAT_RIGOROUS_RESULTS.md). Pull
+# the repo's Sonnet tier rather than a literal id so it cannot drift.
+try:
+    from maverick.llm import ROLE_MODELS as _ROLE_MODELS
+    _COMPLETING_ORCHESTRATOR = _ROLE_MODELS.get("coder", "claude-sonnet-4-6")
+except Exception:  # pragma: no cover -- benchmark falls back to a sane default
+    _COMPLETING_ORCHESTRATOR = "claude-sonnet-4-6"
+
 
 @dataclass
 class PairSpec:
@@ -268,7 +281,7 @@ DEFAULT_PAIRS = [
 ]
 
 
-def _live_pair_runner(cap: float, timeout: int) -> PairRunFn:  # pragma: no cover -- requires API key
+def _live_pair_runner(cap: float, timeout: int, orchestrator_model: str) -> PairRunFn:  # pragma: no cover -- requires API key
     """Build a pair runner that executes each phase in an isolated subprocess
     (fresh HOME => fresh store), so WARM (pre-warmed by A) and COLD (fresh)
     differ only in store contents. Subprocess isolation avoids in-process
@@ -288,6 +301,7 @@ def _live_pair_runner(cap: float, timeout: int) -> PairRunFn:  # pragma: no cove
             "MAVERICK_AUTO_DISTILL": "1", "MAVERICK_BUILTIN_SKILLS": "0",
             "MAVERICK_MOAT_ALLOW_LOCAL_SANDBOX": "1",
             "MOAT_TASK": task, "MOAT_CAP": str(cap),
+            "MOAT_ORCH_MODEL": orchestrator_model,
         })
         os.makedirs(os.path.join(home, ".maverick"), exist_ok=True)
         try:
@@ -318,12 +332,20 @@ def _live_pair_runner(cap: float, timeout: int) -> PairRunFn:  # pragma: no cove
 _WORKER_SRC = '''\
 import json, os, time
 from pathlib import Path
+# Pin the orchestrator + revisor so the task COMPLETES within the cap (the
+# product-default Opus orchestrator truncates and starves learning; see module
+# docstring). Held identical across warm and cold, so the delta isolates memory.
+_cfg = Path("~/.maverick").expanduser(); _cfg.mkdir(parents=True, exist_ok=True)
+_orch = os.environ.get("MOAT_ORCH_MODEL", "").strip()
+if _orch:
+    (_cfg / "config.toml").write_text(
+        '[models]\\norchestrator = "%s"\\nrevisor = "%s"\\n' % (_orch, _orch))
 from maverick.budget import Budget
 from maverick.llm import LLM
 from maverick.orchestrator import run_goal_sync
 from maverick.sandbox import build_sandbox
 from maverick.world_model import WorldModel
-task = os.environ["MOAT_TASK"]; cap = float(os.environ.get("MOAT_CAP", "1.0"))
+task = os.environ["MOAT_TASK"]; cap = float(os.environ.get("MOAT_CAP", "1.25"))
 world = WorldModel(path=Path("~/.maverick/world.db").expanduser())
 gid = world.create_goal(task[:80], task); budget = Budget(max_dollars=cap)
 t = time.monotonic()
@@ -332,28 +354,37 @@ try:
 except Exception as e:
     print("RUN_EXC:", type(e).__name__, str(e)[:120])
 wall = time.monotonic() - t
+nsk = len(list(_cfg.rglob("*.md")))  # distilled skills now in the store
 eps = world.list_episodes(goal_id=gid, limit=1)
 if eps:
     e = eps[0]
     out = {"cost": float(e.cost_dollars), "tools": int(e.tool_calls),
-           "wall": wall, "ok": e.outcome == "success"}
+           "wall": wall, "ok": e.outcome == "success", "skills": nsk}
 else:
     out = {"cost": float(getattr(budget, "dollars", 0.0)),
-           "tools": int(getattr(budget, "tool_calls", 0)), "wall": wall, "ok": False}
+           "tools": int(getattr(budget, "tool_calls", 0)),
+           "wall": wall, "ok": False, "skills": nsk}
 print("RESULT_JSON:" + json.dumps(out))
 '''
 
 
-def run_live(seeds: int = 2, cap: float = 1.0, timeout: int = 600,
-             tol: float = 0.05) -> RigorousResult:  # pragma: no cover -- requires API key
-    """Paid run against the real kernel. Requires ANTHROPIC_API_KEY."""
-    return run_moat_rigorous(DEFAULT_PAIRS, seeds, _live_pair_runner(cap, timeout), tol=tol)
+def run_live(seeds: int = 2, cap: float = 1.25, timeout: int = 600,
+             tol: float = 0.05,
+             orchestrator_model: str = _COMPLETING_ORCHESTRATOR) -> RigorousResult:  # pragma: no cover -- requires API key
+    """Paid run against the real kernel. Requires ANTHROPIC_API_KEY. Pins the
+    orchestrator to a completing model (default: the repo's Sonnet tier) so
+    tasks finish within ``cap``; pass ``orchestrator_model=""`` to keep the
+    product default (Opus, which truncates at a tight cap -- see docstring)."""
+    return run_moat_rigorous(DEFAULT_PAIRS, seeds,
+                             _live_pair_runner(cap, timeout, orchestrator_model), tol=tol)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Rigorous compounding-moat benchmark")
     ap.add_argument("--seeds", type=int, default=2, help="repeats per pair")
-    ap.add_argument("--cap", type=float, default=1.0, help="$ cap per run")
+    ap.add_argument("--cap", type=float, default=1.25, help="$ cap per run")
+    ap.add_argument("--orchestrator-model", default=_COMPLETING_ORCHESTRATOR,
+                    help="orchestrator model so tasks complete ('' = product default; Opus truncates)")
     ap.add_argument("--out", type=Path, default=Path("benchmarks/MOAT_RIGOROUS_RESULTS.md"))
     ap.add_argument("--json", type=Path, default=None)
     return ap.parse_args(argv)
@@ -361,7 +392,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- thin CLI wrapper
     args = parse_args(argv)
-    result = run_live(seeds=args.seeds, cap=args.cap)
+    result = run_live(seeds=args.seeds, cap=args.cap,
+                      orchestrator_model=args.orchestrator_model)
     report = format_report(result)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(report + "\n", encoding="utf-8")
