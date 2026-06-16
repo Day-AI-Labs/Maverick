@@ -73,6 +73,11 @@ except Exception:  # pragma: no cover -- benchmark falls back to a sane default
 DEFAULT_CODEBASE = str(Path(__file__).resolve().parents[1]
                        / "packages" / "maverick-core" / "maverick")
 
+# A per-run cap below this guarantees truncation: the budget reserves ~$0.20
+# per Sonnet call pre-flight, so a sub-$1 cap leaves too little usable spend for
+# these tasks to finalize (the second way the first run wasted money).
+MIN_LIVE_CAP = 1.0
+
 
 def _codebase_sources(codebase: str | Path) -> int:
     """Count python sources under ``codebase`` -- the pre-flight signal that the
@@ -290,15 +295,26 @@ def format_report(result: RigorousResult) -> str:
     return "\n".join(lines)
 
 
-def run_moat_rigorous(pairs: list[PairSpec], seeds: int,
-                      pair_run_fn: PairRunFn, tol: float = 0.05) -> RigorousResult:
+def run_moat_rigorous(pairs: list[PairSpec], seeds: int, pair_run_fn: PairRunFn,
+                      tol: float = 0.05,
+                      max_total_dollars: float | None = None) -> RigorousResult:
     """Orchestrate the protocol with an injected pair runner (pure: scripted
-    in tests, real kernel in ``run_live``)."""
+    in tests, real kernel in ``run_live``).
+
+    ``max_total_dollars`` is a HARD spend ceiling: once cumulative warm+cold
+    cost reaches it, the run stops and returns the observations so far rather
+    than starting another (a budget can't be blown past this). ``None`` = no
+    limit. Note: the per-pair populate (A) cost is internal to the runner and
+    not counted here, so set the ceiling with headroom."""
     obs: list[Observation] = []
+    spent = 0.0
     for pair in pairs:
         for seed in range(seeds):
+            if max_total_dollars is not None and spent >= max_total_dollars:
+                return aggregate(obs, tol=tol)  # ceiling reached -> stop, keep results
             warm, cold = pair_run_fn(pair, seed)
             obs.append(Observation(name=pair.name, seed=seed, warm=warm, cold=cold))
+            spent += warm.cost_dollars + cold.cost_dollars
     return aggregate(obs, tol=tol)
 
 
@@ -449,7 +465,8 @@ print("RESULT_JSON:" + json.dumps(out))
 
 def run_live(seeds: int = 2, cap: float = 1.25, timeout: int = 600,
              tol: float = 0.05, orchestrator_model: str = _COMPLETING_ORCHESTRATOR,
-             codebase: str = DEFAULT_CODEBASE) -> RigorousResult:  # pragma: no cover -- requires API key
+             codebase: str = DEFAULT_CODEBASE,
+             max_total_dollars: float | None = None) -> RigorousResult:  # pragma: no cover -- requires API key
     """Paid run against the real kernel. Requires ANTHROPIC_API_KEY. Pins the
     orchestrator to a completing model (default: the repo's Sonnet tier) so
     tasks finish within ``cap``; pass ``orchestrator_model=""`` to keep the
@@ -458,7 +475,14 @@ def run_live(seeds: int = 2, cap: float = 1.25, timeout: int = 600,
     PRE-FLIGHT: refuses to spend a cent unless the agent can actually READ the
     mounted codebase (``moat_preflight.sandbox_can_read``) -- else every run
     answers "no codebase available" (verify before you pay; see
-    MOAT_RIGOROUS_RESULTS.md)."""
+    MOAT_RIGOROUS_RESULTS.md). SPEND GUARDS: refuses a cap below ``MIN_LIVE_CAP``
+    (a sub-$1 cap guarantees truncation), and ``max_total_dollars`` hard-caps
+    cumulative warm+cold spend so a run can't blow its budget."""
+    if cap < MIN_LIVE_CAP:
+        raise RuntimeError(
+            f"pre-flight: cap ${cap:.2f} is below the ${MIN_LIVE_CAP:.2f} floor -- "
+            f"the budget reserves ~$0.20/call, so a sub-${MIN_LIVE_CAP:.2f} cap "
+            f"truncates these tasks before they finalize. Raise --cap.")
     from moat_preflight import sandbox_can_read
     ok, detail = sandbox_can_read(codebase)
     if not ok:
@@ -467,7 +491,7 @@ def run_live(seeds: int = 2, cap: float = 1.25, timeout: int = 600,
             f"-- refusing to spend. Run `python benchmarks/moat_preflight.py` first.")
     return run_moat_rigorous(DEFAULT_PAIRS, seeds,
                              _live_pair_runner(cap, timeout, orchestrator_model, codebase),
-                             tol=tol)
+                             tol=tol, max_total_dollars=max_total_dollars)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -478,6 +502,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="orchestrator model so tasks complete ('' = product default; Opus truncates)")
     ap.add_argument("--codebase", default=DEFAULT_CODEBASE,
                     help="source tree mounted into the sandbox so the agent can read it")
+    ap.add_argument("--max-total-dollars", type=float, default=None,
+                    help="hard ceiling on cumulative warm+cold spend; the run stops at it")
     ap.add_argument("--out", type=Path, default=Path("benchmarks/MOAT_RIGOROUS_RESULTS.md"))
     ap.add_argument("--json", type=Path, default=None)
     return ap.parse_args(argv)
@@ -486,7 +512,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- thin CLI wrapper
     args = parse_args(argv)
     result = run_live(seeds=args.seeds, cap=args.cap,
-                      orchestrator_model=args.orchestrator_model, codebase=args.codebase)
+                      orchestrator_model=args.orchestrator_model, codebase=args.codebase,
+                      max_total_dollars=args.max_total_dollars)
     report = format_report(result)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(report + "\n", encoding="utf-8")
