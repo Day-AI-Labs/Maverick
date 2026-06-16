@@ -1168,6 +1168,51 @@ def compounding(ctx, as_json: bool, window: int) -> None:
             f"cost {r.cost_delta_pct:+.0f}%  success {r.success_delta:+.2f}  [{arrow}]")
 
 
+@main.command("flywheel")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def flywheel(as_json: bool) -> None:
+    """Turn the Cognitive Data Engine flywheel once over the Operating Record.
+
+    One grounded pass: triage production failures by causal impact, mine
+    self-correcting guardrails, consolidate beneficial habits into procedural
+    memory, and propose process improvements -- learning from REAL outcomes where
+    they've reported back. A no-op unless ``[data_engine]`` is enabled.
+    """
+    import json as _json
+
+    from .flywheel import maybe_run
+    rep = maybe_run()
+    if as_json:
+        click.echo(_json.dumps({
+            "n_episodes": rep.n_episodes,
+            "guardrails": [g.to_dict() for g in rep.guardrails],
+            "memories": [m.to_dict() for m in rep.memories],
+            "hypotheses": [{"swap": f"{h.baseline_action}->{h.candidate_action}",
+                            "predicted_lift": h.predicted_lift} for h in rep.hypotheses],
+            "predicted_lift": rep.predicted_lift,
+        }))
+        return
+    if not rep.acted:
+        click.echo("Flywheel: nothing to learn yet "
+                   "(data engine off, or no failures/habits in the corpus).")
+        return
+    click.echo(click.style(f"Flywheel — one turn over {rep.n_episodes} episodes", bold=True))
+    if rep.guardrails:
+        click.echo(f"  guardrails learned: {len(rep.guardrails)} "
+                   f"(recoverable lift ~{rep.predicted_lift:.2f})")
+        for g in rep.guardrails[:5]:
+            click.echo(f"    avoid '{g.action}' (severity {g.severity:.2f})")
+    if rep.memories:
+        click.echo(f"  habits consolidated: {len(rep.memories)}")
+        for m in rep.memories[:5]:
+            click.echo(f"    prefer '{m.action}' (strength {m.strength:.2f})")
+    if rep.hypotheses:
+        click.echo(f"  improvements proposed: {len(rep.hypotheses)}")
+        for h in rep.hypotheses[:5]:
+            click.echo(f"    swap '{h.baseline_action}' -> '{h.candidate_action}' "
+                       f"(predicted +{h.predicted_lift:.2f})")
+
+
 @main.command("cost-retro")
 @click.option("--top", type=int, default=10, help="How many costliest goals to show.")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
