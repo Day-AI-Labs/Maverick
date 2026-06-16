@@ -251,18 +251,37 @@ def _dry_run_solver(task: TerminalTask, tools: dict) -> None:
     """No-op solver: structure smoke (every task scores 0)."""
 
 
+def _load_terminal_solver():
+    """Path-load the live solver (benchmarks/ is a flat script dir)."""
+    name = "benchmarks_terminal_solver"
+    if name in sys.modules:
+        return sys.modules[name]
+    p = Path(__file__).parent / "terminal_solver.py"
+    spec = importlib.util.spec_from_file_location(name, p)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def main() -> int:
-    """Smoke-run the harness (dry-run solver by default). A real run injects a
-    solver that drives a Maverick agent against a containerized terminal and
-    reflects the resulting filesystem into the env for verification."""
+    """Run the terminal-bench harness. By default the LIVE Maverick solver drives
+    each task with a tool-calling loop over the virtual-FS tools (needs a provider
+    key); ``MAVERICK_EVAL_DRY_RUN=1`` swaps in the no-op stub for CI / smoke."""
     import argparse
+    import os
     ap = argparse.ArgumentParser(prog="eval_terminal_bench")
     ap.add_argument("--dataset", type=Path, default=None)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--max-dollars", type=float, default=2.0)
     ap.add_argument("--tag", default="local")
     ap.add_argument("--scores", type=Path, default=Path(__file__).parent / "SCORES.md")
     args = ap.parse_args()
-    summary = run_terminal_bench(_dry_run_solver, dataset=args.dataset, limit=args.limit)
+    if os.environ.get("MAVERICK_EVAL_DRY_RUN") == "1":
+        solver = _dry_run_solver
+    else:
+        solver = _load_terminal_solver().make_terminal_solver(max_dollars=args.max_dollars)
+    summary = run_terminal_bench(solver, dataset=args.dataset, limit=args.limit)
     _E.append_scores(summary, args.scores, tag=args.tag)
     print(json.dumps({k: v for k, v in summary.items() if k != "results"}, indent=2))
     return 0
