@@ -65,6 +65,21 @@ try:
 except Exception:  # pragma: no cover -- benchmark falls back to a sane default
     _COMPLETING_ORCHESTRATOR = "claude-sonnet-4-6"
 
+# The codebase the "analyze this codebase" tasks operate on. It MUST be mounted
+# into the sandbox workspace, or the agent sees an empty ~/maverick-workspace
+# (config.get_sandbox's default workdir) and every run answers "no codebase
+# available" -- the bug that invalidated the first graded run. Default: this
+# repo's kernel source.
+DEFAULT_CODEBASE = str(Path(__file__).resolve().parents[1]
+                       / "packages" / "maverick-core" / "maverick")
+
+
+def _codebase_sources(codebase: str | Path) -> int:
+    """Count python sources under ``codebase`` -- the pre-flight signal that the
+    agent will actually have code to read. Zero means the run would be wasted."""
+    p = Path(codebase).expanduser()
+    return sum(1 for _ in p.rglob("*.py")) if p.is_dir() else 0
+
 
 @dataclass
 class PairSpec:
@@ -320,7 +335,8 @@ DEFAULT_PAIRS = [
 ]
 
 
-def _live_pair_runner(cap: float, timeout: int, orchestrator_model: str) -> PairRunFn:  # pragma: no cover -- requires API key
+def _live_pair_runner(cap: float, timeout: int, orchestrator_model: str,
+                      codebase: str) -> PairRunFn:  # pragma: no cover -- requires API key
     """Build a pair runner that executes each phase in an isolated subprocess
     (fresh HOME => fresh store), so WARM (pre-warmed by A) and COLD (fresh)
     differ only in store contents. Subprocess isolation avoids in-process
@@ -346,6 +362,7 @@ def _live_pair_runner(cap: float, timeout: int, orchestrator_model: str) -> Pair
             "MAVERICK_AUTONOMOUS": "1",
             "MOAT_TASK": task, "MOAT_CAP": str(cap),
             "MOAT_ORCH_MODEL": orchestrator_model,
+            "MOAT_CODEBASE": str(codebase),  # mounted into the sandbox workspace
         })
         os.makedirs(os.path.join(home, ".maverick"), exist_ok=True)
         try:
@@ -374,16 +391,29 @@ def _live_pair_runner(cap: float, timeout: int, orchestrator_model: str) -> Pair
 
 # Worker run in an isolated HOME; prints one RESULT_JSON line read by the parent.
 _WORKER_SRC = '''\
-import json, os, time
+import json, os, shutil, time
 from pathlib import Path
-# Pin the orchestrator + revisor so the task COMPLETES within the cap (the
-# product-default Opus orchestrator truncates and starves learning; see module
-# docstring). Held identical across warm and cold, so the delta isolates memory.
+# Two things the run needs, written into config before the kernel loads:
+#  (1) Pin the orchestrator + revisor so the task COMPLETES within the cap (the
+#      product-default Opus orchestrator truncates and starves learning).
+#  (2) MOUNT the codebase into the sandbox workspace -- else the LocalBackend
+#      workdir defaults to an EMPTY ~/maverick-workspace and every "analyze this
+#      codebase" run answers "no codebase available" (the bug that invalidated
+#      the first graded run). Copy is per-run (isolated), read-only in practice.
 _cfg = Path("~/.maverick").expanduser(); _cfg.mkdir(parents=True, exist_ok=True)
+_lines = []
 _orch = os.environ.get("MOAT_ORCH_MODEL", "").strip()
 if _orch:
-    (_cfg / "config.toml").write_text(
-        '[models]\\norchestrator = "%s"\\nrevisor = "%s"\\n' % (_orch, _orch))
+    _lines += ["[models]", 'orchestrator = "%s"' % _orch, 'revisor = "%s"' % _orch]
+_src = os.environ.get("MOAT_CODEBASE", "").strip()
+if _src and Path(_src).is_dir():
+    _ws = Path("~/ws").expanduser(); _ws.mkdir(parents=True, exist_ok=True)
+    _dst = _ws / Path(_src).name
+    if not _dst.exists():
+        shutil.copytree(_src, _dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    _lines += ["[sandbox]", 'workdir = "%s"' % _ws]
+if _lines:
+    (_cfg / "config.toml").write_text("\\n".join(_lines) + "\\n")
 from maverick.budget import Budget
 from maverick.llm import LLM
 from maverick.orchestrator import run_goal_sync
@@ -413,14 +443,25 @@ print("RESULT_JSON:" + json.dumps(out))
 
 
 def run_live(seeds: int = 2, cap: float = 1.25, timeout: int = 600,
-             tol: float = 0.05,
-             orchestrator_model: str = _COMPLETING_ORCHESTRATOR) -> RigorousResult:  # pragma: no cover -- requires API key
+             tol: float = 0.05, orchestrator_model: str = _COMPLETING_ORCHESTRATOR,
+             codebase: str = DEFAULT_CODEBASE) -> RigorousResult:  # pragma: no cover -- requires API key
     """Paid run against the real kernel. Requires ANTHROPIC_API_KEY. Pins the
     orchestrator to a completing model (default: the repo's Sonnet tier) so
     tasks finish within ``cap``; pass ``orchestrator_model=""`` to keep the
-    product default (Opus, which truncates at a tight cap -- see docstring)."""
+    product default (Opus, which truncates at a tight cap -- see docstring).
+
+    PRE-FLIGHT: refuses to spend a cent if ``codebase`` has no sources to mount
+    -- the agent would see an empty workspace and every run would answer "no
+    codebase available" (verify before you pay; see MOAT_RIGOROUS_RESULTS.md)."""
+    n = _codebase_sources(codebase)
+    if n == 0:
+        raise RuntimeError(
+            f"pre-flight: codebase {codebase!r} has no .py sources to mount -- the "
+            f"agent would analyze an EMPTY workspace and every run would answer "
+            f"'no codebase available'. Point --codebase at a real source tree.")
     return run_moat_rigorous(DEFAULT_PAIRS, seeds,
-                             _live_pair_runner(cap, timeout, orchestrator_model), tol=tol)
+                             _live_pair_runner(cap, timeout, orchestrator_model, codebase),
+                             tol=tol)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -429,6 +470,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--cap", type=float, default=1.25, help="$ cap per run")
     ap.add_argument("--orchestrator-model", default=_COMPLETING_ORCHESTRATOR,
                     help="orchestrator model so tasks complete ('' = product default; Opus truncates)")
+    ap.add_argument("--codebase", default=DEFAULT_CODEBASE,
+                    help="source tree mounted into the sandbox so the agent can read it")
     ap.add_argument("--out", type=Path, default=Path("benchmarks/MOAT_RIGOROUS_RESULTS.md"))
     ap.add_argument("--json", type=Path, default=None)
     return ap.parse_args(argv)
@@ -437,7 +480,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- thin CLI wrapper
     args = parse_args(argv)
     result = run_live(seeds=args.seeds, cap=args.cap,
-                      orchestrator_model=args.orchestrator_model)
+                      orchestrator_model=args.orchestrator_model, codebase=args.codebase)
     report = format_report(result)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(report + "\n", encoding="utf-8")

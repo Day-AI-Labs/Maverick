@@ -1,5 +1,20 @@
 # Rigorous compounding-moat — results (2026-06-16)
 
+> ## ⚠️ CORRECTION (2026-06-16, later): these numbers are INVALID — do not cite them.
+> A follow-up **correctness-graded** run found that the agent never had the
+> codebase: the sandbox `workdir` defaulted to an empty `~/maverick-workspace`
+> (the `config.get_sandbox` default), so every "analyze this codebase" run was
+> flailing in an empty directory (it literally answered *"no codebase
+> available"*). The cost deltas below therefore measured **the warm agent giving
+> up faster vs. the cold agent searching longer in an empty workspace — not
+> comprehension.** This is exactly what the correctness grader (lane #3) was
+> built to catch: cost-and-completion metrics hid a broken setup; grading "did
+> it cite the *real* code" collapsed it to 0. Fixed in `moat_rigorous.py` by
+> mounting the codebase into the sandbox workspace + a pre-flight guard that
+> refuses to spend when there is no code to read. A valid run is pending
+> (re-run with the mount + a completing cap). The methodology below stands; the
+> *numbers* do not.
+
 Live run of the protocol in `moat_rigorous.py`. **Read this with its caveats —
 it is an honest, *bounded* result, not a hero number.**
 
