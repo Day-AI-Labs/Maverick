@@ -11,3 +11,10 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Reserve adequacy exceptions"
+consumers = ["actuary", "claims_manager"]
+cadence = "monthly"
+gate = "review"

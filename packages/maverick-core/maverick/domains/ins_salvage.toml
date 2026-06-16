@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Salvage recovery register"
+consumers = ["claims_adjuster", "claims_manager"]
+cadence = "on-demand"
+gate = "approval"

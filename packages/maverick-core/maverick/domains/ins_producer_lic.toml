@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Producer license & appointment tracking"
+consumers = ["compliance_officer", "agency_manager"]
+cadence = "monthly"
+gate = "review"

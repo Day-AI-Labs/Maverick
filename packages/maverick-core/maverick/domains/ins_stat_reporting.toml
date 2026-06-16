@@ -11,3 +11,10 @@ deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Statutory financial statement"
+consumers = ["controller", "compliance_officer", "actuary"]
+cadence = "annual"
+gate = "approval"

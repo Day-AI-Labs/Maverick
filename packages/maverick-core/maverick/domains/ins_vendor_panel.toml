@@ -11,3 +11,10 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Claims vendor performance"
+consumers = ["claims_manager", "compliance_officer"]
+cadence = "monthly"
+gate = "review"

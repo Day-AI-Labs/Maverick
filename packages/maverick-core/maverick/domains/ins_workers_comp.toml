@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Workers'-comp claim tracking"
+consumers = ["claims_adjuster", "claims_manager"]
+cadence = "weekly"
+gate = "review"
