@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from fastapi.testclient import TestClient
 from maverick_dashboard.app import app
-from maverick_dashboard.deliverables import build_inbox
+from maverick_dashboard.deliverables import build_inbox, persona_roles_for
 
 client = TestClient(app, headers={"Origin": "http://testserver"})
 
@@ -68,6 +68,42 @@ class TestBuildInbox:
         assert m["items"][0]["awaiting_count"] == 0
         assert m["items"][0]["runs"][0]["signoff"] == "approved"
 
+    def test_mine_defaults_to_my_roles(self):
+        # No explicit role + my roles -> only deliverables I consume, flagged.
+        m = build_inbox([_FORECAST, _RISK], {}, mine={"risk_officer"})
+        assert [it["domain"] for it in m["items"]] == ["risk_x"]
+        assert m["showing_mine"] is True
+        assert m["mine"] == ["risk_officer"]
+
+    def test_explicit_role_overrides_mine(self):
+        m = build_inbox([_FORECAST, _RISK], {}, role="fpa_analyst", mine={"risk_officer"})
+        assert [it["domain"] for it in m["items"]] == ["finance_cash13w"]
+        assert m["showing_mine"] is False     # an explicit chip wins over the default
+        assert m["roles"] == ["fpa_analyst", "risk_officer", "treasurer"]  # all roles, for the filter
+
+
+class TestPersonaRoles:
+    def _cfg(self, monkeypatch, cfg):
+        monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: cfg)
+
+    def test_principal_mapping_wins(self, monkeypatch):
+        self._cfg(monkeypatch, {"personas": {"user:alice": ["fpa_analyst", "treasurer"],
+                                             "default": ["viewer_role"]}})
+        assert persona_roles_for("user:alice") == ["fpa_analyst", "treasurer"]
+
+    def test_falls_back_to_default(self, monkeypatch):
+        self._cfg(monkeypatch, {"personas": {"default": ["risk_officer"]}})
+        assert persona_roles_for("user:nobody") == ["risk_officer"]
+        assert persona_roles_for(None) == ["risk_officer"]  # no-auth single user
+
+    def test_string_is_coerced_to_list(self, monkeypatch):
+        self._cfg(monkeypatch, {"personas": {"default": "controller"}})
+        assert persona_roles_for(None) == ["controller"]
+
+    def test_no_binding_is_empty(self, monkeypatch):
+        self._cfg(monkeypatch, {})
+        assert persona_roles_for("user:alice") == []
+
 
 class TestDeliverablesPage:
     def _world(self, tmp_path, monkeypatch):
@@ -100,3 +136,18 @@ class TestDeliverablesPage:
         assert "No deliverables for nobody_consumes_this" in r.text
         # the real consumer keeps the forecast visible
         assert "13-week cash forecast" in client.get("/deliverables?role=fpa_analyst").text
+
+    def test_persona_identity_defaults_inbox_to_my_roles(self, tmp_path, monkeypatch):
+        self._world(tmp_path, monkeypatch)
+        # No-auth single user bound to a persona role -> inbox defaults to "mine".
+        monkeypatch.setattr("maverick.config.load_config",
+                            lambda *a, **k: {"personas": {"default": ["tax_analyst"]}})
+        t = client.get("/deliverables").text
+        assert "Showing deliverables for your role" in t
+        assert "tax_analyst" in t
+        # a tax_analyst deliverable shows; a forecast (fpa/treasurer) is filtered out
+        assert "Tax provision" in t
+        assert "13-week cash forecast" not in t
+        # ?role=all widens back to everything
+        t_all = client.get("/deliverables?role=all").text
+        assert "13-week cash forecast" in t_all

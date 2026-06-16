@@ -1861,6 +1861,26 @@ def pick_deliverable_handoff() -> tuple[dict[str, Any], list[str]]:
     return {"handoff_webhook": url}, []
 
 
+def pick_persona_roles() -> dict[str, Any]:
+    """Bind the operator to persona consumer role(s) for the deliverables inbox.
+
+    Sets ``[personas] default`` so the signed-in user lands on their own
+    deliverables ("my forecasts") instead of the full list. Per-user mappings
+    (``[personas]`` keyed by principal) are added later like RBAC roles; this is
+    the single-user default."""
+    if not _q_confirm(
+        "Default the deliverables inbox to your own role(s)?",
+        default=False,
+    ):
+        return {}
+    raw = _q_text(
+        "  Your primary role(s) (e.g. fpa_analyst, controller; space/comma separated)",
+        default="",
+    ).strip()
+    roles = [r.strip() for r in raw.replace(",", " ").split() if r.strip()]
+    return {"default": roles} if roles else {}
+
+
 def pick_connectors() -> dict[str, str]:
     """Collect credentials for enterprise connectors (ServiceNow, Salesforce,
     Snowflake, SAP, ...).
@@ -2865,6 +2885,7 @@ def write_config(
     notifications: dict[str, Any] | None = None,
     webhooks: dict[str, Any] | None = None,
     deliverables: dict[str, Any] | None = None,
+    personas: dict[str, Any] | None = None,
     a2a: dict[str, Any] | None = None,
     web_search_enabled: bool = False,
     skills: dict[str, Any] | None = None,
@@ -2981,6 +3002,7 @@ def write_config(
     lines += _cfg_table("notifications", notifications)
     lines += _cfg_table("webhooks", webhooks)
     lines += _cfg_table("deliverables", deliverables)
+    lines += _cfg_table("personas", personas)
     lines += _cfg_table("a2a", a2a)
 
     # Config has no secrets today but does carry provider names and
@@ -3683,6 +3705,10 @@ def run(fast: bool = False, resume: bool = False) -> int:
     state["_deliverables_pair"] = [deliverables, deliverable_envs]
     _save_partial(state)
 
+    personas = state.get("_personas") or pick_persona_roles()
+    state["_personas"] = personas
+    _save_partial(state)
+
     _announce()
     a2a_cfg, a2a_envs = state.get("_a2a_pair") or pick_a2a()
     state["_a2a_pair"] = [a2a_cfg, a2a_envs]
@@ -3736,6 +3762,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         notifications=notifications,
         webhooks=webhooks,
         deliverables=deliverables,
+        personas=personas,
         a2a=a2a_cfg,
         web_search_enabled=web_search_enabled,
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed") or signed_skills.get("require_signed_catalog")) else None,

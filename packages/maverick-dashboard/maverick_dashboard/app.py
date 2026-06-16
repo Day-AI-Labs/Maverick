@@ -973,8 +973,12 @@ def _deliverable_specs() -> list[dict]:
 async def deliverables_page(request: Request, role: str = "") -> HTMLResponse:
     """The persona inbox: runs grouped by the deliverable their pack declares,
     scoped to the role that consumes them -- "my forecasts", "assessments
-    awaiting my sign-off" -- instead of the flat ``/goals`` stream."""
-    from .deliverables import build_inbox
+    awaiting my sign-off" -- instead of the flat ``/goals`` stream.
+
+    With no explicit ``?role=``, defaults to the caller's own persona roles
+    (``[personas]`` config) so a logged-in analyst lands on their deliverables;
+    ``?role=all`` widens to everything, ``?role=<r>`` picks a single role."""
+    from .deliverables import build_inbox, persona_roles_for
     specs = _deliverable_specs()
     owner = goal_owner_filter(request)
     runs_by_domain: dict[str, list] = {}
@@ -989,7 +993,11 @@ async def deliverables_page(request: Request, role: str = "") -> HTMLResponse:
         signoffs = _world().signoffs_for_goals(ids)
     except Exception:  # pragma: no cover -- never break the page on the sign-off lookup
         signoffs = {}
-    model = build_inbox(specs, runs_by_domain, role or None, signoffs)
+    # Explicit chip wins; "all" forces the full view; otherwise default to mine.
+    selected = role if role and role != "all" else None
+    mine = set(persona_roles_for(caller_principal(request)))
+    default_mine = mine if (not selected and role != "all") else None
+    model = build_inbox(specs, runs_by_domain, selected, signoffs, mine=default_mine)
     return templates.TemplateResponse(request, "deliverables.html", model)
 
 

@@ -8,11 +8,20 @@
     <a href="/goals">run list</a>.
   </p>
 
-  {% if items or role %}
+  {% if showing_mine %}
+    <p class="muted" style="margin-top: calc(-1 * var(--space-2)); margin-bottom: var(--space-4);">
+      Showing deliverables for your role{{ 's' if mine|length > 1 else '' }}: <strong>{{ mine|join(', ') }}</strong>.
+    </p>
+  {% endif %}
+
+  {% if items or role or showing_mine %}
     <div class="dlv-filter" role="group" aria-label="Filter by role">
-      <a href="/deliverables" class="dlv-chip{% if not role %} dlv-chip--on{% endif %}">All</a>
+      {% if mine %}
+        <a href="/deliverables" class="dlv-chip{% if showing_mine %} dlv-chip--on{% endif %}">Mine</a>
+      {% endif %}
+      <a href="/deliverables?role=all" class="dlv-chip{% if not showing_mine and not role %} dlv-chip--on{% endif %}">All</a>
       {% for r in roles %}
-        <a href="/deliverables?role={{ r }}" class="dlv-chip{% if role == r %} dlv-chip--on{% endif %}">{{ r }}</a>
+        <a href="/deliverables?role={{ r }}" class="dlv-chip{% if role == r %} dlv-chip--on{% endif %}{% if r in mine %} dlv-chip--mine{% endif %}">{{ r }}</a>
       {% endfor %}
     </div>
   {% endif %}
@@ -70,12 +79,21 @@
     </div>
   {% else %}
     <div class="mv-empty">
-      <p class="mv-empty__title">{% if role %}No deliverables for {{ role }}{% else %}No deliverables declared yet{% endif %}</p>
+      <p class="mv-empty__title">
+        {%- if role %}No deliverables for {{ role }}
+        {%- elif showing_mine %}Nothing for your role{{ 's' if mine|length > 1 else '' }} yet
+        {%- else %}No deliverables declared yet{% endif %}
+      </p>
       <p class="mv-empty__body">
-        A deliverable appears here once a domain pack declares its
-        <code>[output]</code> contract — a label, the roles who consume it, and
-        an optional sign-off gate. See <a href="/compartments">Compartments</a>
-        for the pack roster.
+        {% if showing_mine %}
+          No deliverables are routed to <strong>{{ mine|join(', ') }}</strong> yet —
+          <a href="/deliverables?role=all">see all deliverables</a>.
+        {% else %}
+          A deliverable appears here once a domain pack declares its
+          <code>[output]</code> contract — a label, the roles who consume it, and
+          an optional sign-off gate. See <a href="/compartments">Compartments</a>
+          for the pack roster.
+        {% endif %}
       </p>
     </div>
   {% endif %}
@@ -89,6 +107,9 @@
     }
     .dlv-chip:hover { color: var(--text); border-color: var(--brand-border); }
     .dlv-chip--on { color: var(--brand-fg); background: var(--brand); border-color: var(--brand); }
+    /* a role the signed-in user consumes: a subtle dot, so "mine" reads at a glance */
+    .dlv-chip--mine:not(.dlv-chip--on) { border-color: var(--brand-border); }
+    .dlv-chip--mine::before { content: "• "; color: var(--brand); }
     .dlv-card__head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
     .dlv-card__label { font-weight: var(--font-semibold); margin-inline-end: auto; }
     .dlv-card__meta { font-size: var(--text-sm); margin: 0 0 var(--space-3); }
