@@ -219,17 +219,37 @@ def _dry_run_solver(task: Tau2Task, tools: dict) -> None:
     """No-op solver: structure smoke (every task scores 0)."""
 
 
+def _load_tau2_solver():
+    """Path-load the live solver (benchmarks/ is a flat script dir)."""
+    name = "benchmarks_tau2_solver"
+    if name in sys.modules:
+        return sys.modules[name]
+    p = Path(__file__).parent / "tau2_solver.py"
+    spec = importlib.util.spec_from_file_location(name, p)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def main() -> int:
-    """Smoke-run the harness (dry-run solver by default). A real run injects a
-    solver that registers these tools into a Maverick agent + user simulator."""
+    """Run the tau2 harness. By default the LIVE solver runs an agent<->user-
+    simulator conversation over the domain tools (needs a provider key);
+    ``MAVERICK_EVAL_DRY_RUN=1`` swaps in the no-op stub for CI / smoke."""
     import argparse
+    import os
     ap = argparse.ArgumentParser(prog="eval_tau2")
     ap.add_argument("--dataset", type=Path, default=None)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--max-dollars", type=float, default=2.0)
     ap.add_argument("--tag", default="local")
     ap.add_argument("--scores", type=Path, default=Path(__file__).parent / "SCORES.md")
     args = ap.parse_args()
-    summary = run_tau2(_dry_run_solver, dataset=args.dataset, limit=args.limit)
+    if os.environ.get("MAVERICK_EVAL_DRY_RUN") == "1":
+        solver = _dry_run_solver
+    else:
+        solver = _load_tau2_solver().make_tau2_solver(max_dollars=args.max_dollars)
+    summary = run_tau2(solver, dataset=args.dataset, limit=args.limit)
     _E.append_scores(summary, args.scores, tag=args.tag)
     print(json.dumps({k: v for k, v in summary.items() if k != "results"}, indent=2))
     return 0
