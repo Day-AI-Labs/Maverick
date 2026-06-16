@@ -71,7 +71,7 @@ def _episode_role(ep) -> str:
 
 
 def triage(steps, *, failure_threshold: float = 0.5, min_support: int = 8,
-           top_k: int = 10) -> list[FailureClass]:
+           top_k: int = 10, outcome_fn=None) -> list[FailureClass]:
     """Rank candidate actions by how much they causally hurt task outcome.
 
     For each distinct tool, estimate the confounder-adjusted effect of using it on
@@ -79,10 +79,15 @@ def triage(steps, *, failure_threshold: float = 0.5, min_support: int = 8,
     Classes with a *negative* effect are causally harmful; they're ranked by their
     upper confidence bound ascending (most confidently harmful first), with
     trustworthy estimates ahead of untrustworthy ones.
+
+    ``outcome_fn`` (default ``_terminal_outcome``) maps an episode to its outcome;
+    the flywheel injects a *grounded* one that prefers real consequences over the
+    verifier proxy, so triage learns from what actually happened.
     """
     steps = list(steps)
     if not steps:
         return []
+    outcome_fn = outcome_fn or _terminal_outcome
 
     # Group once so we can attach counts + exemplars without re-scanning per tool.
     episodes: dict = {}
@@ -96,7 +101,7 @@ def triage(steps, *, failure_threshold: float = 0.5, min_support: int = 8,
         units = pe.units_from_trajectories(
             steps,
             treatment_fn=lambda ep, t=tool: 1 if any(s.tool == t for s in ep) else 0,
-            outcome_fn=_terminal_outcome,
+            outcome_fn=outcome_fn,
             stratum_fn=lambda ep: (ep[0].domain,),
         )
         est = pe.estimate_effect(units, adjusted_for=("domain",), min_used=min_support)
@@ -107,7 +112,7 @@ def triage(steps, *, failure_threshold: float = 0.5, min_support: int = 8,
         for key, ep in ordered.items():
             if not any(s.tool == tool for s in ep):
                 continue
-            y = _terminal_outcome(ep)
+            y = outcome_fn(ep)
             if y is None:
                 continue
             used += 1

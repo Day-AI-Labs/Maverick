@@ -53,21 +53,24 @@ class Memory:
 
 def consolidate(steps, prior=(), *, decay: float = _DECAY, reinforce: float = _REINFORCE,
                 base: float = _BASE, min_support: int = 8,
-                retire_below: float = _RETIRE_BELOW) -> list[Memory]:
+                retire_below: float = _RETIRE_BELOW, outcome_fn=None) -> list[Memory]:
     """One consolidation cycle: reinforce habits that still help, decay the rest.
 
     Beneficial = an action whose confounder-adjusted effect on outcome is
     positive with confidence (``ci_low > 0``). Priors decay by ``decay``;
     still-beneficial ones are reinforced by ``reinforce`` (net climb); new ones
-    enter at ``base``; anything below ``retire_below`` is forgotten.
+    enter at ``base``; anything below ``retire_below`` is forgotten. ``outcome_fn``
+    (default ``_terminal_outcome``) lets the flywheel ground consolidation in real
+    consequences.
     """
     steps = list(steps)
+    outcome_fn = outcome_fn or _terminal_outcome
     beneficial: dict[str, float] = {}
     for tool in {s.tool for s in steps if s.tool}:
         units = pe.units_from_trajectories(
             steps,
             treatment_fn=lambda ep, t=tool: 1 if any(s.tool == t for s in ep) else 0,
-            outcome_fn=_terminal_outcome,
+            outcome_fn=outcome_fn,
             stratum_fn=lambda ep: (ep[0].domain,),
         )
         est = pe.estimate_effect(units, adjusted_for=("domain",), min_used=min_support)
