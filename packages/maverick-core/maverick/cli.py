@@ -2968,6 +2968,54 @@ def resume(ctx, goal_id_arg, goal_id, max_depth: int, max_dollars, max_wall_seco
 
 
 @main.command()
+@click.argument("goal_id", type=int)
+@click.option("--to-step", type=int, default=None,
+              help="Rewind to this checkpoint step (the agent re-runs from here).")
+@click.option("--fork", is_flag=True,
+              help="Restart from the step as a NEW goal, leaving the original intact.")
+@click.option("--list", "list_only", is_flag=True,
+              help="List the checkpoint steps available to rewind to.")
+@click.pass_context
+@_humane_errors
+def rewind(ctx, goal_id: int, to_step, fork: bool, list_only: bool) -> None:
+    """Restart a goal from an earlier checkpoint (durable execution).
+
+    \b
+      maverick rewind 7 --list                # which steps can I go back to?
+      maverick rewind 7 --to-step 12          # re-run goal 7 from step 12
+      maverick rewind 7 --to-step 12 --fork   # try a different branch as a new goal
+
+    Requires durable execution ([durable] enabled) to have checkpointed the run.
+    After rewinding, continue the run with `maverick resume`.
+    """
+    from . import checkpoint as ckpt_mod
+    world = open_world(ctx.obj["db"])
+    if not world.get_goal(goal_id):
+        click.echo(f"no such goal #{goal_id}. See `maverick status`.", err=True)
+        sys.exit(2)
+    ck = ckpt_mod.Checkpointer(world)
+    found = ck.orchestrator_for(goal_id)
+    if found is None:
+        click.echo(f"goal #{goal_id} has no checkpoints "
+                   "(durable execution off, or it was never run with it on).")
+        return
+    agent_id, episode_id = found
+    if list_only or to_step is None:
+        steps = ck.list_steps(goal_id, agent_id, episode_id)
+        if not steps:
+            click.echo(f"goal #{goal_id}: no checkpoint steps recorded.")
+        else:
+            click.echo(f"goal #{goal_id} checkpoint steps available: "
+                       f"{steps[0]}..{steps[-1]} ({len(steps)} kept)")
+            click.echo(f"rewind with `maverick rewind {goal_id} --to-step N [--fork]`")
+        return
+    res = ckpt_mod.rewind(world, goal_id, to_step, fork=fork)
+    click.echo(res.detail)
+    if not res.ok:
+        sys.exit(1)
+
+
+@main.command()
 @click.argument("key")
 @click.argument("value", nargs=-1, required=True)
 @click.pass_context

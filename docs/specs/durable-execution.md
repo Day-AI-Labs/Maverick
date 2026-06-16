@@ -183,7 +183,15 @@ lands when the durable loop exists to hang it on.
   before building `SwarmContext`, so a fresh-process resume continues the
   crashed episode instead of creating a new episode that cannot match the saved
   checkpoint. Production resume now works without test-only name pinning.
-- **Phase 2 — swarm tree.** Per-agent records + parent re-gather; rewind/fork.
+- **Phase 2 — rewind/fork.** ✅ *Shipped (the rewind/fork half).* `maverick
+  rewind <id> [--to-step N] [--fork] [--list]` over the Phase-1 per-step
+  checkpoints (`maverick/checkpoint.py` `rewind()` +
+  `tests/test_durable_rewind.py`): in-place rewind drops the checkpoints after
+  step N and re-blocks the goal so `maverick resume` continues from there;
+  `--fork` copies the target checkpoint under a NEW child goal (same department,
+  so the resumed role keys the same `checkpoint_id`) and leaves the original
+  intact. **Still pending:** the swarm-tree case — per-agent records + parent
+  re-gather for a crash mid-`spawn_swarm` (the concurrency hazard in §6).
 - **Phase 3 — pluggable backend + sandbox-snapshot hook** (interface only).
 - **Phase 4 — deterministic replay** (record tool outputs + seeds; `maverick
   replay <id>`), which also serves the audit-log + eval-harness work.
