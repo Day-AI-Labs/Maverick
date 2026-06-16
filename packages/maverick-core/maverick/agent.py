@@ -1618,14 +1618,24 @@ class Agent:
         try:
             import time as _t
 
-            from .trajectory_store import TrajectoryStep, capture_step
+            from .trajectory_store import (
+                TrajectoryStep,
+                capture_step,
+                episode_dag_fields,
+            )
+            # Decision-DAG edge + terminal outcome (the final answer's verifier
+            # confidence, set by the verify stage just before the is_final score).
+            dag = episode_dag_fields(
+                int(step_index), bool(is_final),
+                getattr(self.ctx, "last_verifier_confidence", None),
+            )
             capture_step(TrajectoryStep(
                 ts=_t.time(), goal_id=int(self.ctx.goal_id or 0),
                 episode_id=int(getattr(self.ctx, "episode_id", 0) or 0),
                 step=int(step_index), role=self.role, tool=tool_name or "",
                 tool_succeeded=tool_succeeded, is_final=bool(is_final),
                 error=error or "", promise=promise, progress=progress,
-                domain=self.domain or "",
+                domain=self.domain or "", **dag,
             ))
         except Exception:  # pragma: no cover -- capture must never break the loop
             pass

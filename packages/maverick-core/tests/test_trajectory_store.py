@@ -5,6 +5,7 @@ from maverick.trajectory_store import (
     TrajectoryStep,
     TrajectoryStore,
     capture_step,
+    episode_dag_fields,
     reset_shared,
 )
 
@@ -13,6 +14,31 @@ def _step(**kw):
     base = dict(ts=1.0, goal_id=7, episode_id=1, step=0, role="coder")
     base.update(kw)
     return TrajectoryStep(**base)
+
+
+def test_episode_dag_fields():
+    # Root step: no parent, no terminal outcome yet.
+    root = episode_dag_fields(0, is_final=False, verifier_confidence=None)
+    assert root == {"parent_step": None, "verifier_confidence": None, "outcome": None}
+    # Mid step: links to its predecessor; still no outcome.
+    mid = episode_dag_fields(3, is_final=False, verifier_confidence=0.9)
+    assert mid["parent_step"] == 2 and mid["outcome"] is None
+    # Final step: carries the terminal outcome (the verifier's confidence).
+    fin = episode_dag_fields(5, is_final=True, verifier_confidence=0.8)
+    assert fin == {"parent_step": 4, "verifier_confidence": 0.8, "outcome": 0.8}
+
+
+def test_dag_fields_flow_to_estimator_outcome(tmp_path):
+    # A captured episode with the DAG fields is readable by the promotion_effect
+    # adapter without a custom outcome_fn beyond reading `.outcome`.
+    store = TrajectoryStore(path=tmp_path / "dag.ndjson")
+    for i, (final, conf) in enumerate([(False, None), (True, 0.75)]):
+        store.record(TrajectoryStep(
+            ts=1.0, goal_id=1, episode_id=1, step=i, role="orch", tool="X" if i == 0 else "",
+            is_final=final, **episode_dag_fields(i, final, conf)))
+    steps = list(store.iter_steps())
+    assert steps[0].parent_step is None and steps[1].parent_step == 0
+    assert steps[1].outcome == 0.75
 
 
 def test_capture_off_by_default_is_noop(tmp_path, monkeypatch):
