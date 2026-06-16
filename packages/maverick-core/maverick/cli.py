@@ -3970,6 +3970,22 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
         world, max_goals=max_goals, donations_dir=donations_dir,
     )
     click.echo(report.summary())
+    # Cognitive Data Engine: turn the flywheel as part of the nightly cycle --
+    # triage failures by causal impact, mine self-correcting guardrails,
+    # consolidate beneficial habits, propose improvements, all grounded in real
+    # outcomes. No-op unless [data_engine] is enabled; never breaks dreaming.
+    try:
+        from . import data_engine
+        if data_engine.enabled():
+            from .flywheel import maybe_run
+            fw = maybe_run()
+            if fw.acted:
+                click.echo(
+                    f"[flywheel] {len(fw.guardrails)} guardrails, {len(fw.memories)} "
+                    f"habits, {len(fw.hypotheses)} improvements "
+                    f"(recoverable lift ~{fw.predicted_lift:.2f})")
+    except Exception:  # pragma: no cover -- the flywheel must never break dreaming
+        pass
     if not rehearse:
         return
     cases = dreaming.load_rehearsals()
