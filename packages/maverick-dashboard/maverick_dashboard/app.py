@@ -3316,13 +3316,44 @@ async def _handle_issue_webhook(
     return JSONResponse({"goal_id": goal_id}, status_code=201)
 
 
+def _goal_deliverable(g):
+    """A goal's result rendered as the deliverable its pack declares.
+
+    Returns ``(contract, rendered)`` -- the pack's output contract (label /
+    consumers / cadence / gate) and the result parsed per its ``shape`` -- or
+    ``(None, None)`` for a generic goal, a pack that declares only prose, or
+    when the factory layer is unavailable. So a goal page only grows a titled
+    deliverable card when a pack actually asked for one; everything else keeps
+    today's plain prose result."""
+    try:
+        from maverick.deliverable import render_deliverable
+        from maverick.domain import available_domains
+        prof = available_domains().get(g.domain) if g.domain else None
+        if prof is None:
+            return None, None
+        rendered = render_deliverable(prof.output.shape, g.result)
+        if not rendered.structured:
+            return None, None
+        out = prof.output
+        contract = {"shape": out.shape, "deliverable": out.deliverable,
+                    "consumers": list(out.consumers), "cadence": out.cadence,
+                    "gate": out.gate}
+        return contract, rendered
+    except Exception:  # never 500 the goal page if the factory layer is unavailable
+        return None, None
+
+
 @app.get("/chat/goal/{goal_id}", response_class=HTMLResponse)
 async def chat_goal(request: Request, goal_id: int) -> HTMLResponse:
     g = _world().get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
-    return templates.TemplateResponse(request, "chat_goal.html", {"goal": g})
+    contract, rendered = _goal_deliverable(g)
+    return templates.TemplateResponse(
+        request, "chat_goal.html",
+        {"goal": g, "deliverable": contract, "rendered": rendered},
+    )
 
 
 @app.get("/api/goal/{goal_id}")

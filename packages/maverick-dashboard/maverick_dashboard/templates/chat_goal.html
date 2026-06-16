@@ -36,6 +36,23 @@
   #events > div + div { border-top: 1px solid var(--hairline); }
   .answer { margin-top: var(--space-4); font-size: var(--text-md); line-height: 1.65; color: var(--text); }
   .answer #result { font-family: inherit; }  /* the result reads as prose, not code */
+
+  /* A pack's declared deliverable: a titled artifact, not a text dump. The
+     grid inherits base.html's table styling (tabular-nums) for clean columns. */
+  .deliverable {
+    border: 1px solid var(--border); border-radius: var(--radius-lg);
+    background: var(--surface-1); overflow: hidden;
+  }
+  .deliverable__head {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--hairline);
+  }
+  .deliverable__label { font-weight: var(--font-semibold); color: var(--text); margin-inline-end: auto; }
+  .deliverable__meta { margin: 0; padding: var(--space-2) var(--space-4) 0; font-size: var(--text-sm); }
+  .deliverable__table-wrap { overflow-x: auto; padding: var(--space-2) var(--space-2) var(--space-3); }
+  .deliverable__table { font-size: var(--text-sm); }
+  .deliverable__table th, .deliverable__table td { white-space: nowrap; }
+  .deliverable__prose { padding: var(--space-3) var(--space-4); font-family: inherit; }
   .spinner {
     display: inline-block; width: 0.8em; height: 0.8em;
     border: 2px solid var(--border); border-top-color: var(--brand);
@@ -110,8 +127,15 @@
       <p id="stream-error" role="alert" class="muted" style="display: none; margin: 0; color: var(--danger);"></p>
     </div>
     <div id="result-section" class="answer" style="display: {% if goal.result %}block{% else %}none{% endif %};">
-      <pre id="result" tabindex="0" aria-label="Goal result"
-           style="white-space: pre-wrap; margin: 0;">{{ goal.result or '' }}</pre>
+      {% if rendered and rendered.structured %}
+        {% include "_deliverable.html" %}
+        <p id="deliverable-stale" class="muted" style="display: none; margin-top: var(--space-3);">
+          Deliverable updated — <a href="/chat/goal/{{ goal.id }}">reload to view it</a>.
+        </p>
+      {% else %}
+        <pre id="result" tabindex="0" aria-label="Goal result"
+             style="white-space: pre-wrap; margin: 0;">{{ goal.result or '' }}</pre>
+      {% endif %}
     </div>
     <div id="halt-card" class="halt-card" style="display: none;">
       <div class="halt-card__title">Stopped before finishing</div>
@@ -146,8 +170,13 @@
       const placeholderEl = document.getElementById('loading-placeholder');
       const streamErrorEl = document.getElementById('stream-error');
       const statusEl = document.getElementById('status');
-      const resultEl = document.getElementById('result');
+      const resultEl = document.getElementById('result');  // null when structured
       const resultSection = document.getElementById('result-section');
+      const deliverableStaleEl = document.getElementById('deliverable-stale');
+      // A structured deliverable (forecast/table/report) is rendered server-side
+      // as a grid; the live stream can't re-parse it client-side, so on a live
+      // change we prompt a reload rather than dumping raw text over the grid.
+      const STRUCTURED = {{ (rendered.structured if rendered else False)|tojson }};
       const cancelBtn = document.getElementById('cancel-btn');
       const questionPanel = document.getElementById('question-panel');
       const questionText = document.getElementById('question-text');
@@ -318,12 +347,19 @@
           statusEl.textContent = d.status;
         }
         if (d.result) {
+          const changed = d.result !== lastResult;
           lastResult = d.result;
           // A clean finish shows its result; a 'blocked' result is a terse
           // stop-reason that the halt card renders instead.
           if (d.status !== 'blocked') {
-            resultEl.textContent = d.result;
             resultSection.style.display = 'block';
+            if (STRUCTURED) {
+              // Server-rendered grid is authoritative; prompt a reload if the
+              // deliverable changed after this page loaded.
+              if (changed && deliverableStaleEl) deliverableStaleEl.style.display = 'block';
+            } else if (resultEl) {
+              resultEl.textContent = d.result;
+            }
           }
         }
         if (d.status === 'blocked') {

@@ -1,0 +1,35 @@
+{# A pack's declared deliverable: a titled card (label · who consumes it · the
+   sign-off gate) wrapping either a parsed grid or prose. Cells go through
+   autoescaping, so an agent result can't inject markup. Expects ``deliverable``
+   (the contract dict) and ``rendered`` (a maverick.deliverable.RenderedDeliverable). #}
+<div class="deliverable">
+  <div class="deliverable__head">
+    <span class="deliverable__label">{{ deliverable.deliverable or 'Deliverable' }}</span>
+    {% if deliverable.gate %}
+      <span class="badge" title="Needs {{ deliverable.gate }} before it is acted on">{{ deliverable.gate }} gate</span>
+    {% endif %}
+  </div>
+  {% if deliverable.consumers or deliverable.cadence %}
+    <p class="deliverable__meta muted">
+      {%- if deliverable.consumers %}For {{ deliverable.consumers|join(', ') }}{% endif -%}
+      {%- if deliverable.consumers and deliverable.cadence %} · {% endif -%}
+      {%- if deliverable.cadence %}{{ deliverable.cadence }}{% endif -%}
+    </p>
+  {% endif %}
+  {% if rendered.table %}
+    <div class="deliverable__table-wrap">
+      <table class="deliverable__table">
+        <thead>
+          <tr>{% for h in rendered.table.headers %}<th scope="col">{{ h }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for row in rendered.table.rows %}
+            <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <pre class="deliverable__prose" tabindex="0" style="white-space: pre-wrap; margin: 0;">{{ rendered.prose }}</pre>
+  {% endif %}
+</div>
