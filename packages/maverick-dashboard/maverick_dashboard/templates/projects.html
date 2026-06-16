@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}projects · Maverick{% endblock %}
+{% block content %}
+  <h1 class="page-title">Projects</h1>
+  <p class="page-subtitle">Workspaces that group related goals — a close cycle, an audit, a deal.</p>
+
+  <div class="panel">
+    <h2 style="margin-top: 0;">New project</h2>
+    <form method="post" action="/projects" class="project-form">
+      <label class="project-field"><span class="muted">Name</span>
+        <input type="text" name="name" required maxlength="120"
+               placeholder="e.g. Q3 controllership close" class="input"></label>
+      <label class="project-field"><span class="muted">Department (optional)</span>
+        <input type="text" name="domain" placeholder="e.g. finance_sox" class="input"></label>
+      <label class="project-field"><span class="muted">Description (optional)</span>
+        <textarea name="description" rows="2" class="input"></textarea></label>
+      <button type="submit" class="btn btn--primary">Create project</button>
+    </form>
+  </div>
+
+  <div class="panel{% if not projects %} empty{% endif %}">
+    {% if projects %}
+      <table>
+        <thead><tr><th scope="col">project</th><th scope="col">department</th><th scope="col">goals</th><th scope="col">status</th></tr></thead>
+        <tbody>
+        {% for p in projects %}
+          <tr>
+            <td><a href="/projects/{{ p.id }}">{{ p.name or 'Untitled' }}</a>
+              {% if p.description %}<div class="muted" style="font-size: var(--text-xs);">{{ p.description[:100] }}</div>{% endif %}</td>
+            <td class="muted">{{ p.domain or '—' }}</td>
+            <td>{{ p.goal_count }}</td>
+            <td><span class="badge {{ p.status }}">{{ p.status }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="mv-empty"><p class="mv-empty__title">No projects yet</p>
+        <p class="mv-empty__body">Create one above to group related goals into a workspace.</p></div>
+    {% endif %}
+  </div>
+
+  <style>
+    .project-form { display: flex; flex-direction: column; gap: var(--space-3); max-width: 32rem; }
+    .project-field { display: block; }
+    .project-field > span { display: block; margin-bottom: var(--space-1); font-size: var(--text-sm); }
+    .project-field .input { width: 100%; }
+  </style>
+{% endblock %}

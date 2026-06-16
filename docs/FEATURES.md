@@ -1101,6 +1101,15 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   disclosure that fetches each version with a server-computed unified diff
   (`/artifacts/history`), rendered with add/del coloring (textContent only, no
   innerHTML).
+- **Projects / matter workspaces (`/projects`)** — group related goals into a
+  persistent workspace (a close cycle, an audit, a deal). v19 `projects` table
+  (name/description encrypted; owner/domain plaintext) + a nullable
+  `goals.project_id`; `create_project` / `list_projects` (with goal counts) /
+  `set_goal_project` / `list_goals(project_id=...)` / `project_status_counts`.
+  The page lists + creates projects; a detail page shows member goals and a
+  status rollup; the goal page gains a Project selector to file a run (or clear
+  it). Owner-scoped like goals (a project you don't own 404s). The maverick take
+  on Claude Projects: a governed, attributable workspace, not just a chat folder.
   the deliverable their pack declares and scoped to the consumer role, so an
   FP&A analyst sees "my forecasts" and a risk officer sees "assessments awaiting
   my sign-off" instead of the flat `/goals` stream. Filter chips per consumer

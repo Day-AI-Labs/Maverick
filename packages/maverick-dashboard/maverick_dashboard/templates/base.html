@@ -607,7 +607,7 @@
       {# The dashboard lands on /chat, so highlight Chat when at the bare root. #}
       {% set _active_path = '/chat' if _path == '/' else _path %}
       {% set _icons = {
-        '/chat': 'chat', '/goals': 'target', '/deliverables': 'templates', '/agents': 'agents', '/roles': 'roles',
+        '/chat': 'chat', '/goals': 'target', '/projects': 'fleets', '/deliverables': 'templates', '/agents': 'agents', '/roles': 'roles',
         '/start': 'check',
         '/goal-builder': 'builder', '/workflow-builder': 'workflow', '/workflows': 'workflow',
         '/automations': 'clock',
@@ -622,7 +622,7 @@
         '/facts': 'facts', '/walkthroughs': 'walkthroughs', '/embed-demo': 'embed',
       } %}
       {% set _nav_groups = [
-        ('Operate', [('/start', 'Get started'), ('/chat', 'Chat'), ('/goals', 'Goals'), ('/deliverables', 'Deliverables'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/workflows', 'Workflows'), ('/automations', 'Automations'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
+        ('Operate', [('/start', 'Get started'), ('/chat', 'Chat'), ('/goals', 'Goals'), ('/projects', 'Projects'), ('/deliverables', 'Deliverables'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/workflows', 'Workflows'), ('/automations', 'Automations'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
         ('Observe', [('/overview', 'Overview'), ('/oversight', 'Oversight'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
         ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'), ('/safety', 'Safety'), ('/compliance', 'Compliance'), ('/compartments', 'Compartments'), ('/audit', 'Audit')]),
         ('Extend', [('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'), ('/tools', 'Tools'), ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/channels', 'Channels')]),

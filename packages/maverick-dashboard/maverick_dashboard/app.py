@@ -941,6 +941,60 @@ async def goals_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "goals.html", {"goals": goals})
 
 
+@app.get("/projects", response_class=HTMLResponse)
+async def projects_page(request: Request) -> HTMLResponse:
+    """Projects ("matters") -- workspaces grouping related goals."""
+    projects = _world().list_projects(owner=goal_owner_filter(request))
+    return templates.TemplateResponse(request, "projects.html", {"projects": projects})
+
+
+@app.post("/projects")
+async def projects_create(request: Request, name: str = Form(...),
+                          description: str = Form(""), domain: str = Form("")) -> RedirectResponse:
+    """Create a project, then redirect to it. Same-origin; owned by the caller."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    if not name.strip():
+        raise HTTPException(status_code=422, detail="a project needs a name")
+    pid = _world().create_project(
+        name.strip(), description=description.strip(),
+        owner=goal_owner_filter(request) or "", domain=domain.strip())
+    return RedirectResponse(f"/projects/{pid}", status_code=303)
+
+
+@app.get("/projects/{project_id}", response_class=HTMLResponse)
+async def project_detail(request: Request, project_id: int) -> HTMLResponse:
+    w = _world()
+    project = w.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="no such project")
+    # Owner-scoped like goals: a project you don't own 404s rather than leaks.
+    owner = goal_owner_filter(request)
+    if owner is not None and project["owner"] not in ("", owner):
+        raise HTTPException(status_code=404, detail="no such project")
+    goals = w.list_goals(project_id=project_id, order="desc")
+    return templates.TemplateResponse(
+        request, "project_detail.html",
+        {"project": project, "goals": goals, "counts": w.project_status_counts(project_id)})
+
+
+@app.post("/chat/goal/{goal_id}/project")
+async def goal_set_project(request: Request, goal_id: int,
+                           project_id: str = Form("")) -> RedirectResponse:
+    """File a goal under a project (empty value clears it). Same-origin; the
+    caller must be able to access the goal."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    pid = int(project_id) if project_id.strip() else None
+    w.set_goal_project(goal_id, pid)
+    return RedirectResponse(f"/chat/goal/{goal_id}", status_code=303)
+
+
 def _deliverable_specs() -> list[dict]:
     """The packs that declare a deliverable -- the rows of the persona inbox.
 
@@ -3452,10 +3506,14 @@ async def chat_goal(request: Request, goal_id: int) -> HTMLResponse:
         except Exception:  # pragma: no cover -- never 500 the goal page
             signoff = None
     artifacts = _goal_artifacts(w, goal_id)
+    try:
+        projects = w.list_projects(owner=goal_owner_filter(request))
+    except Exception:  # pragma: no cover -- never 500 the goal page
+        projects = []
     return templates.TemplateResponse(
         request, "chat_goal.html",
         {"goal": g, "deliverable": contract, "rendered": rendered,
-         "signoff": signoff, "artifacts": artifacts},
+         "signoff": signoff, "artifacts": artifacts, "projects": projects},
     )
 
 

@@ -25,7 +25,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -47,7 +47,22 @@ CREATE TABLE IF NOT EXISTS goals (
     deadline REAL,
     result TEXT,
     owner TEXT NOT NULL DEFAULT '',
-    domain TEXT NOT NULL DEFAULT ''
+    domain TEXT NOT NULL DEFAULT '',
+    project_id INTEGER
+);
+
+-- v19 projects ("matters"): a workspace grouping related goals (a close cycle,
+-- an audit, a deal). name + description are encrypted at rest like goal content;
+-- owner/domain/status are plaintext for listing + filtering. Goals point at one
+-- via goals.project_id (nullable; a goal need not belong to a project).
+CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    description TEXT,
+    owner TEXT NOT NULL DEFAULT '',
+    domain TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at REAL NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_goals_status     ON goals(status);
@@ -372,6 +387,13 @@ MIGRATIONS: dict[int, list[str]] = {
     # v18 artifacts: the artifacts table + its index are in SCHEMA (idempotent
     # CREATE); listed here so existing DBs bump the version on next open.
     18: [],
+    # v19 projects ("matters"): the projects table is in SCHEMA (idempotent
+    # CREATE); the ALTER adds the goals.project_id column to pre-existing DBs
+    # (legacy goals default to NULL = unfiled). No index -- project filtering
+    # scans like the owner/domain filters; goal counts are small.
+    19: [
+        "ALTER TABLE goals ADD COLUMN project_id INTEGER",
+    ],
 }
 
 
@@ -388,6 +410,7 @@ class Goal:
     result: str | None
     owner: str = ""
     domain: str = ""
+    project_id: int | None = None
 
 
 @dataclass
@@ -935,15 +958,15 @@ class WorldModel:
 
     # ----- goals -----
     def create_goal(self, title: str, description: str = "", parent_id: int | None = None,
-                    *, owner: str = "", domain: str = "") -> int:
+                    *, owner: str = "", domain: str = "", project_id: int | None = None) -> int:
         now = time.time()
         with self._writing() as conn:
             cur = conn.execute(
                 "INSERT INTO goals(parent_id, title, description, status, "
-                "created_at, updated_at, owner, domain) "
-                "VALUES(?, ?, ?, 'pending', ?, ?, ?, ?)",
+                "created_at, updated_at, owner, domain, project_id) "
+                "VALUES(?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
                 (parent_id, _enc_field(title), _enc_field(description), now, now,
-                 owner, domain or ""),
+                 owner, domain or "", project_id),
             )
             return cur.lastrowid
 
@@ -1059,6 +1082,67 @@ class WorldModel:
             counts[a["title"]] = counts.get(a["title"], 0) + 1
         return [{**a, "versions": counts[t]} for t, a in by_title.items()]
 
+    # ---- projects ("matters"): a workspace grouping related goals ----------
+
+    def create_project(self, name: str, *, description: str = "", owner: str = "",
+                       domain: str = "") -> int:
+        """Create a project. ``name``/``description`` are encrypted at rest;
+        ``owner``/``domain`` are plaintext (listing + scoping)."""
+        now = time.time()
+        with self._writing() as conn:
+            cur = conn.execute(
+                "INSERT INTO projects(name, description, owner, domain, status, created_at) "
+                "VALUES(?, ?, ?, ?, 'active', ?)",
+                (_enc_field(name), _enc_field(description), owner or "", domain or "", now),
+            )
+            return int(cur.lastrowid)
+
+    def _project_from_row(self, row) -> dict:
+        return {
+            "id": row["id"], "name": _dec_field(row["name"]) or "",
+            "description": _dec_field(row["description"]) or "",
+            "owner": row["owner"], "domain": row["domain"],
+            "status": row["status"], "created_at": row["created_at"],
+        }
+
+    def get_project(self, project_id: int) -> dict | None:
+        row = self._read_one("SELECT * FROM projects WHERE id = ?", (int(project_id),))
+        return self._project_from_row(row) if row else None
+
+    def list_projects(self, *, owner: str | None = None) -> list[dict]:
+        """All projects, newest first. ``owner``-scoped like :meth:`list_goals`
+        (owner is plaintext); each carries a ``goal_count``."""
+        sql = "SELECT * FROM projects"
+        params: tuple[Any, ...] = ()
+        if owner is not None:
+            sql += " WHERE owner = ?"
+            params = (owner,)
+        sql += " ORDER BY id DESC"
+        out = []
+        for row in self._read_all(sql, params):
+            p = self._project_from_row(row)
+            cnt = self._read_one(
+                "SELECT COUNT(*) AS n FROM goals WHERE project_id = ?", (p["id"],))
+            p["goal_count"] = int(cnt["n"]) if cnt else 0
+            out.append(p)
+        return out
+
+    def set_goal_project(self, goal_id: int, project_id: int | None) -> None:
+        """File a goal under a project (or clear it with ``None``)."""
+        with self._writing() as conn:
+            conn.execute(
+                "UPDATE goals SET project_id = ?, updated_at = ? WHERE id = ?",
+                (int(project_id) if project_id is not None else None, time.time(), int(goal_id)),
+            )
+
+    def project_status_counts(self, project_id: int) -> dict[str, int]:
+        """Member-goal counts keyed by status (the project summary)."""
+        rows = self._read_all(
+            "SELECT status, COUNT(*) AS n FROM goals WHERE project_id = ? GROUP BY status",
+            (int(project_id),),
+        )
+        return {r["status"]: int(r["n"]) for r in rows}
+
     def set_goal_domain(self, goal_id: int, domain: str) -> None:
         """Record the department (domain pack) a goal is running as.
 
@@ -1087,6 +1171,7 @@ class WorldModel:
         *,
         owner: str | None = None,
         domain: str | None = None,
+        project_id: int | None = None,
         limit: int | None = None,
         offset: int = 0,
         order: str = "asc",
@@ -1113,6 +1198,9 @@ class WorldModel:
         if domain is not None:
             clauses.append("domain = ?")
             params = params + (domain,)
+        if project_id is not None:
+            clauses.append("project_id = ?")
+            params = params + (int(project_id),)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += f" ORDER BY id {direction}"

@@ -80,6 +80,8 @@
   .artifact__diff { margin: 0; padding: var(--space-2) var(--space-3); background: var(--bg); border-radius: var(--radius-sm); font-family: ui-monospace, monospace; font-size: var(--text-xs); white-space: pre-wrap; overflow-x: auto; }
   .artifact__diff .add { color: var(--accent); }
   .artifact__diff .del { color: var(--danger); }
+  .goal-project { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); }
+  .goal-project select { max-width: 16rem; }
   .spinner {
     display: inline-block; width: 0.8em; height: 0.8em;
     border: 2px solid var(--border); border-top-color: var(--brand);
@@ -219,6 +221,18 @@
         </div>
       {% endfor %}
     </div>
+    {% endif %}
+    {% if projects %}
+    <form method="post" action="/chat/goal/{{ goal.id }}/project" class="goal-project">
+      <label class="muted" for="goal-project-sel">Project</label>
+      <select id="goal-project-sel" name="project_id" class="input" onchange="this.form.submit()">
+        <option value="">— none —</option>
+        {% for p in projects %}
+          <option value="{{ p.id }}"{% if p.id == goal.project_id %} selected{% endif %}>{{ p.name or 'Untitled' }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button type="submit" class="btn btn--ghost">Set</button></noscript>
+    </form>
     {% endif %}
     <div id="halt-card" class="halt-card" style="display: none;">
       <div class="halt-card__title">Stopped before finishing</div>
