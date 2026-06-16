@@ -120,6 +120,17 @@ here.
   (`credit.py`) — this is offline, corpus-level, for promotion decisions. Opt-in
   via `[self_improvement] causal_promotion`; applies only when self-improvement
   is enabled.
+- **Model-based counterfactual rollouts** — when confounding is so severe that no
+  stratum has both arms (zero overlap), stratification is blind; g-computation
+  over a tabular transition model fit from the logged `(state, action) ->
+  next_state` records (`counterfactual_rollout.py`) recovers the effect anyway by
+  re-simulating each context with the decision forced to treated vs control and
+  rolling forward to a terminal outcome. Returns the same `EffectEstimate`, so
+  the gate is unchanged. Fail-closed by calibration: trustworthy only when the
+  model predicts held-out one-step transitions, both actions have support, and a
+  null-action placebo reads ~0. The tabular learning half of the Operating Twin
+  (a generative transition model is a drop-in behind the same interface); same
+  `causal_promotion` knob.
 - **Human-override ingestion** — when a human declines an Art-14 approval
   gate, the refusal is persisted as a recallable lesson
   (`reflexion.record_human_override`, failure class `human_override`,

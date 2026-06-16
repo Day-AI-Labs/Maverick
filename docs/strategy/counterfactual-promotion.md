@@ -81,18 +81,36 @@ which sub-trajectories feed this estimator.
 - **It is the safety story** — a self-modifying system that promotes only
   causally-validated changes is the thing you can actually put in a bank.
 
-## Phase B — model-based counterfactual rollouts (designed, not built)
+## Phase B — model-based counterfactual rollouts (tabular version shipped)
 
-When confounding is too severe for stratified adjustment (long horizons,
-high-dimensional action spaces), fit a transition model `q(s'|s,a)` over the
-Operating Record and **re-simulate** the trajectory from a decision node with the
-decision perturbed (`do(T=¬x)`), propagating to a terminal outcome via the
-verifier head; average over rollouts → a counterfactual outcome. It feeds the
-**same** `EffectEstimate(effect, ci, trustworthy)` interface, so the promotion
-ladder never changes — only the estimator behind it gets stronger. This is the
-learning half of the **Operating Twin**: the per-customer world-model that also
-powers pre-execution rehearsal (the governance half). Gated by the same
-calibration freeze — an uncertain twin never greenlights a promotion.
+`maverick.counterfactual_rollout` fits a **tabular transition model** over the
+logged `(state, action) -> next_state` records — a discrete world-model of the
+agent's own environment — and runs **g-computation**: re-simulate each starting
+context with the decision's action forced to `treated` vs `control`, roll
+forward under the learned dynamics + observed behaviour policy to a terminal
+outcome, and difference the two. It returns the **same**
+`EffectEstimate(effect, ci, trustworthy)`, so `propose_with_effect` and the gate
+are unchanged — only the estimator behind them got stronger.
+
+**Why it earns its place:** g-computation identifies an effect that
+stratification *structurally cannot*. When the behaviour policy confounds the
+decision deterministically (zero overlap in every Phase-A stratum), Phase A is
+honest but blind. Phase B still recovers it, because the action varies *somewhere*
+in the corpus and the effect is composed from one-step transitions that DO have
+support. The test battery demonstrates exactly this contrast.
+
+**The one assumption, stated honestly:** g-computation is unbiased only if the
+state captures everything that confounds action with outcome (no unobserved
+confounding *given the model's state*). So it is **fail-closed by calibration** —
+`trustworthy` requires the model to predict held-out one-step transitions
+(`one_step_accuracy >= min_accuracy`), both actions to have real support, and a
+null-action placebo (treated vs treated, which must be ~0). An uncertain
+simulator never greenlights a promotion.
+
+This is the learning half of the **Operating Twin**: the per-customer
+world-model that will also power pre-execution rehearsal (the governance half).
+A generative transition model is a drop-in replacement for the tabular one
+behind the same interface.
 
 ## Build status
 
@@ -103,5 +121,6 @@ calibration freeze — an uncertain twin never greenlights a promotion.
 | `propose_with_effect` producer (fail-closed) | ✅ |
 | trajectory DAG fields (`parent_step`, `outcome`) | ✅ |
 | config knob + wizard step | ✅ |
+| model-based counterfactual rollouts — tabular g-computation (Phase B) | ✅ |
 | richer nuisance models (logistic propensity/outcome, causal forest) | seam |
-| model-based counterfactual rollouts (Phase B) | designed |
+| generative transition model behind the same interface | seam |
