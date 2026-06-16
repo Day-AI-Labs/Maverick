@@ -131,6 +131,16 @@ here.
   null-action placebo reads ~0. The tabular learning half of the Operating Twin
   (a generative transition model is a drop-in behind the same interface); same
   `causal_promotion` knob.
+- **Pre-execution rehearsal** — the governance half of the Operating Twin: before
+  a risky plan runs, simulate it against the same learned world-model and gate on
+  the prediction (`rehearsal.py`). Proceed when the model has support and
+  confidently predicts a good outcome (let the agent be bold), **block** a
+  confidently-poor outcome, and **escalate** to a human/canary when the rollout is
+  too uncertain or — crucially — when the model has never seen the move (a
+  simulator that bluffs about the unknown is worse than none). Governance as a
+  capability, not just a brake. OFF by default and fail-open (`[rehearsal]
+  enable`); when on it fails toward caution (unknown / over-uncertain / error all
+  escalate). The verdict maps onto the existing consent / autonomy-gate surfaces.
 - **Human-override ingestion** — when a human declines an Art-14 approval
   gate, the refusal is persisted as a recallable lesson
   (`reflexion.record_human_override`, failure class `human_override`,

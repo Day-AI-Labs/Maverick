@@ -127,17 +127,24 @@ class TransitionModel:
     def rollout(self, start: tuple, first_action: Hashable, *, horizon: int,
                 rng: random.Random) -> float:
         """One Monte-Carlo g-computation rollout: outcome under do(a0=first_action)."""
-        state, action = start, first_action
-        for _ in range(horizon):
+        return self.rollout_plan(start, [first_action], horizon=horizon, rng=rng)
+
+    def rollout_plan(self, start: tuple, forced_actions, *, horizon: int,
+                     rng: random.Random) -> float:
+        """Roll out forcing ``forced_actions`` for the first steps, then following
+        the observed behaviour policy -- the outcome under ``do(plan)``."""
+        forced = list(forced_actions)
+        state = start
+        for step in range(horizon):
+            action = forced[step] if step < len(forced) else self._sample_action(state, rng)
+            if action is None:
+                return self._terminal_outcome((state, None))
             sa = (state, action)
             nxt = self._sample_next(sa, rng)
             if nxt is _TERMINAL:
                 return self._terminal_outcome(sa)
             state = nxt
-            action = self._sample_action(state, rng)
-            if action is None:
-                return self._terminal_outcome((state, None))
-        return self._terminal_outcome((state, action))
+        return self._terminal_outcome((state, self._sample_action(state, rng)))
 
     def one_step_accuracy(self, holdout) -> tuple[float, int]:
         """Fraction of held-out transitions whose next_state is the model's mode.

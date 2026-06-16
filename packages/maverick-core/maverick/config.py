@@ -669,6 +669,36 @@ def get_self_improvement() -> dict:
     }
 
 
+def get_rehearsal() -> dict:
+    """Return the ``[rehearsal]`` section (pre-execution rehearsal gate).
+
+    The governance half of the Operating Twin: before a risky plan executes, it
+    is simulated against the learned world-model and gated on the prediction.
+    OFF by default and fail-open -- when ``enable`` is false ``gate_action`` is a
+    no-op that proceeds, so a default deployment is unaffected. ``outcome_floor``
+    is the predicted-outcome below which a *confident* rehearsal blocks;
+    ``min_support`` is the (state, action) observations the model needs before it
+    will vouch for a move (below it the action is escalated, never waved through);
+    ``max_uncertainty`` escalates an over-uncertain rollout.
+    """
+    cfg = load_config().get("rehearsal", {})
+
+    def _num(key: str, default: float, cast=float):
+        try:
+            return cast(cfg.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "outcome_floor": _num("outcome_floor", 0.5),
+        "min_support": _num("min_support", 5, int),
+        "max_uncertainty": _num("max_uncertainty", 0.25),
+        "horizon": _num("horizon", 8, int),
+        "rollouts": _num("rollouts", 200, int),
+    }
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 
