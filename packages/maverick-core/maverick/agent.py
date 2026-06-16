@@ -702,6 +702,16 @@ class Agent:
         except Exception:
             pass
 
+        # Output style (optional, additive): the user-selected response style
+        # (dashboard runtime overlay). Tone/format only, like the persona block.
+        try:
+            from .styles import render_active_style_prompt
+            style = render_active_style_prompt()
+            if style:
+                base = base + style
+        except Exception:
+            pass
+
         # Learned-habits prior (the Hippocampus, additive): when the data engine
         # is on, surface the strongest causally-beneficial habits it has
         # consolidated so the agent prefers what has worked. No-op unless

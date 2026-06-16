@@ -212,7 +212,8 @@ def _write_state(denied: set[str], models: dict[str, str] | None,
                  budget: float | None,
                  plugins: tuple[set[str], set[str]] | None = None,
                  allowed: set[str] | None = None,
-                 mcp: dict[str, dict] | None = None) -> None:
+                 mcp: dict[str, dict] | None = None,
+                 style: str | None = None) -> None:
     """Serialise the whole overlay: [security] denied_tools + optional [models]
     (default + per-role) + [budget] max_dollars + [plugins] enabled/disabled +
     [access] allowed_models + [mcp_servers.<name>] tables. One file holds every
@@ -250,6 +251,9 @@ def _write_state(denied: set[str], models: dict[str, str] | None,
     if allow:
         body += ("\n[access]\nallowed_models = ["
                  f"{', '.join(_toml_string(s) for s in sorted(allow))}]\n")
+    active_style = style_override() if style is None else style
+    if active_style:
+        body += f"\n[styles]\nactive = {_toml_string(active_style)}\n"
     # MCP server tables come last: once a subtable header is emitted every
     # following key belongs to it, so no top-level section may follow.
     servers = mcp_overlay() if mcp is None else mcp
@@ -358,6 +362,29 @@ def set_budget(max_dollars: float) -> float:
 def clear_budget() -> None:
     """Drop the dashboard spend cap, reverting to config.toml / defaults."""
     _write_state(denied_tools(), _models_overlay() or None, None)
+
+
+def style_override() -> str | None:
+    """The dashboard-selected output style name, or ``None`` if unset."""
+    v = _load().get("styles", {})
+    name = v.get("active") if isinstance(v, dict) else None
+    return name if isinstance(name, str) and name.strip() else None
+
+
+def set_style(name: str) -> str:
+    """Select the active output style (a name from ``styles.all_styles()``).
+    Validated against the registry so a typo can't silently take effect."""
+    n = (name or "").strip()
+    from .styles import all_styles
+    if n not in all_styles():
+        raise ValueError(f"unknown output style: {name!r}")
+    _write_state(denied_tools(), _models_overlay() or None, budget_override(), style=n)
+    return n
+
+
+def clear_style() -> None:
+    """Drop the output style, reverting to the default voice."""
+    _write_state(denied_tools(), _models_overlay() or None, budget_override(), style="")
 
 
 def _validate_plugin(name: str) -> str:

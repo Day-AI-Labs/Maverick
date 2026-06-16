@@ -1112,6 +1112,15 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   status rollup; the goal page gains a Project selector to file a run (or clear
   it). Owner-scoped like goals (a project you don't own 404s). The maverick take
   on Claude Projects: a governed, attributable workspace, not just a chat folder.
+- **Output styles (`/styles`)** — a user-selectable response style (concise /
+  explanatory / formal / executive / technical / bullet) appended to every
+  agent's system prompt — tone and format only, never capabilities or the safety
+  surface (the Claude "styles" analog; sibling to the operator `[persona]`
+  block). `styles.py` is the registry + renderer; the active selection is a
+  dashboard runtime overlay (`styles.active`, like plugin toggles — not
+  config.toml), set on the page (operator role, validated against the registry).
+  Injected in `agent.py` beside the persona block, additive and fail-open.
+  Per-conversation selection + custom styles are the planned follow-ons.
   the deliverable their pack declares and scoped to the consumer role, so an
   FP&A analyst sees "my forecasts" and a risk officer sees "assessments awaiting
   my sign-off" instead of the flat `/goals` stream. Filter chips per consumer
