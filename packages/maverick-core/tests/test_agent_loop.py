@@ -55,6 +55,30 @@ class TestAgentLoop:
         assert result.final is None
 
     @pytest.mark.asyncio
+    async def test_ask_user_proceeds_when_headless(
+        self, ctx, fake_llm, make_llm_response, monkeypatch,
+    ):
+        # With assume-and-proceed on, an ask_user call must NOT block: the agent
+        # is told to assume + continue, then reaches FINAL on the next turn. A
+        # run that completes is also a run that can distill what it learned.
+        monkeypatch.setenv("MAVERICK_AUTONOMOUS", "1")
+        fake_llm.scripted = [
+            make_llm_response(
+                text="I need more info.",
+                tool_calls=[ToolCall(id="t1", name="ask_user",
+                                     input={"question": "which dates?"})],
+            ),
+            make_llm_response(text="FINAL: assuming Q1, the answer is 42"),
+        ]
+        agent = Agent(ctx=ctx, role="orchestrator",
+                      brief="plan something a user would normally clarify")
+        result = await agent.run()
+        # The point: it did NOT stall waiting for a human -- it kept going and
+        # produced a result (vs. test_ask_user_marks_blocked, which blocks).
+        assert result.blocked_on_user is False
+        assert result.final is not None
+
+    @pytest.mark.asyncio
     async def test_empty_response_yields_error(self, ctx, fake_llm, make_llm_response):
         fake_llm.scripted = [make_llm_response(text="", tool_calls=[])]
         agent = Agent(ctx=ctx, role="researcher", brief="trivial")

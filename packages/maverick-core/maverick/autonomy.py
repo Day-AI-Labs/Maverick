@@ -44,6 +44,7 @@ _DEFAULTS = {
     "disagreement_high": 0.5,
     "escalate_verification": True,
     "tighten_on_low_trust": True,
+    "headless_assume": False,
 }
 
 
@@ -70,6 +71,29 @@ def _resolve() -> dict:
 def autonomy_enabled() -> bool:
     """Whether the autonomy gate is active. Off by default."""
     return bool(_resolve()["enable"])
+
+
+def assume_when_headless() -> bool:
+    """Whether a run should ASSUME-AND-PROCEED instead of blocking on
+    ``ask_user``.
+
+    When no human is available to answer (headless / batch / benchmark runs),
+    stalling forever on a clarification nobody will answer is worse than
+    stating a reasonable assumption and continuing -- and a blocked run never
+    reaches FINAL, so it also never distills what it learned. This is a
+    distinct axis from the verification gate, so it is resolved independently
+    of ``enable``: ``MAVERICK_AUTONOMOUS`` overrides ``[autonomy]
+    headless_assume`` either way. Off by default; never raises (an unreadable
+    config degrades to "block", the safe pre-existing behavior)."""
+    env = os.environ.get("MAVERICK_AUTONOMOUS", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    try:
+        return bool(_resolve().get("headless_assume", False))
+    except Exception:  # pragma: no cover -- config must never block a run
+        return False
 
 
 @dataclass
@@ -177,6 +201,7 @@ def gate_tool(
 
 __all__ = [
     "autonomy_enabled",
+    "assume_when_headless",
     "AutonomyVerdict",
     "should_escalate_verification",
     "tighten_ceiling",

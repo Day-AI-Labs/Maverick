@@ -423,6 +423,10 @@ def get_autonomy() -> dict:
         "disagreement_high": _clamp01("disagreement_high", 0.5),
         "escalate_verification": bool(cfg.get("escalate_verification", True)),
         "tighten_on_low_trust": bool(cfg.get("tighten_on_low_trust", True)),
+        # Independent axis (resolved without ``enable``): assume-and-proceed
+        # instead of blocking on ``ask_user`` when no human can answer
+        # (headless / batch / benchmark runs). Default off.
+        "headless_assume": bool(cfg.get("headless_assume", False)),
     }
 
 

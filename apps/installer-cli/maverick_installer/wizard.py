@@ -1201,6 +1201,12 @@ def pick_advanced() -> dict[str, Any]:
             "disagreement is resolved or a human approves.",
             default=False,
         ),
+        "headless_assume": _q_confirm(
+            "Autonomous (headless) mode? When no human is available to answer, the "
+            "agent states a reasonable assumption and continues instead of stalling "
+            "on a clarifying question. Best for batch / unattended runs.",
+            default=False,
+        ),
         "calibration_enforce": _q_confirm(
             "Calibration interlock? Freeze self-improvement (trajectory donation) "
             "if the verifier stops telling correct answers from incorrect ones on "
@@ -2493,10 +2499,14 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[verification]")
         lines.append("risk_proportional = true")
-    if advanced.get("autonomy_gate"):
+    if advanced.get("autonomy_gate") or advanced.get("headless_assume"):
         lines.append("")
         lines.append("[autonomy]")
-        lines.append("enable = true")
+        if advanced.get("autonomy_gate"):
+            lines.append("enable = true")
+        # Independent axis: assume-and-proceed instead of blocking on ask_user.
+        if advanced.get("headless_assume"):
+            lines.append("headless_assume = true")
     if advanced.get("calibration_enforce"):
         lines.append("")
         lines.append("[calibration]")
