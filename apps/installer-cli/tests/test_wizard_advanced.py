@@ -128,6 +128,27 @@ def test_autonomy_gate_writes_and_is_read(tmp_path, monkeypatch):
     assert autonomy.autonomy_enabled() is True
 
 
+def test_headless_assume_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's headless toggle writes [autonomy]
+    headless_assume, and the kernel reads it back -- independent of the gate's
+    `enable` (assume-and-proceed is a distinct axis)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_AUTONOMOUS", raising=False)
+    monkeypatch.delenv("MAVERICK_AUTONOMY_GATE", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"headless_assume": True})
+    assert "[autonomy]" in cfg
+    assert "headless_assume = true" in cfg
+
+    parsed = tomllib.loads(cfg)
+    assert parsed["autonomy"] == {"headless_assume": True}  # enable stays off
+
+    from maverick import autonomy
+    assert autonomy.assume_when_headless() is True
+    assert autonomy.autonomy_enabled() is False
+
+
 def test_calibration_enforce_writes_and_is_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's calibration toggle writes [calibration]
     enforce, and the kernel's config reads it back."""

@@ -300,6 +300,11 @@ def _live_pair_runner(cap: float, timeout: int, orchestrator_model: str) -> Pair
             "MAVERICK_USE_SKILLS": "1", "MAVERICK_REFLEXION": "1",
             "MAVERICK_AUTO_DISTILL": "1", "MAVERICK_BUILTIN_SKILLS": "0",
             "MAVERICK_MOAT_ALLOW_LOCAL_SANDBOX": "1",
+            # Headless: assume-and-proceed instead of blocking on ask_user, so a
+            # run reaches FINAL (and thus distills) instead of stalling on a
+            # clarification nobody will answer -- the failure mode that left the
+            # populate run un-distilled in MOAT_RIGOROUS_RESULTS.md.
+            "MAVERICK_AUTONOMOUS": "1",
             "MOAT_TASK": task, "MOAT_CAP": str(cap),
             "MOAT_ORCH_MODEL": orchestrator_model,
         })

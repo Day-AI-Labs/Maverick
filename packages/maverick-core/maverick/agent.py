@@ -2831,7 +2831,25 @@ class Agent:
                         )
                         raise
                     if tc.name == "ask_user":
-                        blocked = True
+                        from .autonomy import assume_when_headless
+                        if assume_when_headless():
+                            # No human is available to answer (headless /
+                            # autonomous run). Blocking forever on a question
+                            # nobody will answer is worse than proceeding -- and
+                            # a blocked run never reaches FINAL, so it also never
+                            # distills what it learned. Turn the question into a
+                            # directive to assume and continue, and require the
+                            # assumption be stated so the choice stays auditable.
+                            # Off by default (MAVERICK_AUTONOMOUS / [autonomy]
+                            # headless_assume); unchanged blocking otherwise.
+                            output = (
+                                "AUTONOMOUS MODE: no human is available to "
+                                "answer questions. Do not wait. Choose the most "
+                                "reasonable assumption, state it explicitly in "
+                                "your FINAL answer, and continue."
+                            )
+                        else:
+                            blocked = True
                     bb.post(
                         self.name, "observation",
                         f"tool={tc.name} -> {output[:500]}",

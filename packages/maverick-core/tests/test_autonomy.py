@@ -31,6 +31,35 @@ class TestEnabledDefault:
         assert autonomy.autonomy_enabled() is False
 
 
+class TestAssumeWhenHeadless:
+    def test_off_by_default(self, monkeypatch):
+        monkeypatch.delenv("MAVERICK_AUTONOMOUS", raising=False)
+        # Clean test home -> no config -> blocks on ask_user (safe default).
+        assert autonomy.assume_when_headless() is False
+
+    def test_env_enables(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_AUTONOMOUS", "1")
+        assert autonomy.assume_when_headless() is True
+
+    def test_config_enables_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("MAVERICK_AUTONOMOUS", raising=False)
+        monkeypatch.setattr(autonomy, "_resolve", lambda: {"headless_assume": True})
+        assert autonomy.assume_when_headless() is True
+
+    def test_env_off_overrides_config_on(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_AUTONOMOUS", "0")
+        monkeypatch.setattr(autonomy, "_resolve", lambda: {"headless_assume": True})
+        assert autonomy.assume_when_headless() is False
+
+    def test_independent_of_verification_gate(self, monkeypatch):
+        # Assume-and-proceed is a distinct axis: it does NOT require the
+        # verification gate (MAVERICK_AUTONOMY_GATE) to be enabled.
+        monkeypatch.delenv("MAVERICK_AUTONOMY_GATE", raising=False)
+        monkeypatch.setenv("MAVERICK_AUTONOMOUS", "1")
+        assert autonomy.autonomy_enabled() is False
+        assert autonomy.assume_when_headless() is True
+
+
 class TestShouldEscalate:
     def test_disabled_never_escalates(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_AUTONOMY_GATE", raising=False)
