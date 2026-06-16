@@ -25,7 +25,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS goal_origins (
 );
 
 CREATE INDEX IF NOT EXISTS idx_goal_origins_ref ON goal_origins(kind, ref);
+
+-- v16 deliverable sign-off: a human's certify/reject decision on a finished,
+-- gated deliverable (the review a pack's output-contract gate calls for). One
+-- authoritative current decision per goal; the note is encrypted at rest like
+-- other free-text. This is the governed hand-off: agents draft, humans certify.
+CREATE TABLE IF NOT EXISTS signoffs (
+    goal_id INTEGER PRIMARY KEY REFERENCES goals(id),
+    decision TEXT NOT NULL,
+    decided_by TEXT NOT NULL DEFAULT '',
+    note TEXT,
+    created_at REAL NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS episodes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -301,6 +313,9 @@ MIGRATIONS: dict[int, list[str]] = {
     # spawned a goal) is in SCHEMA (idempotent CREATE). Listed here so existing
     # DBs bump the version and pick it up on next open, matching the v9 pattern.
     15: [],
+    # v16 deliverable sign-off: the signoffs table is in SCHEMA (idempotent
+    # CREATE); listed here so existing DBs bump the version on next open.
+    16: [],
 }
 
 
@@ -874,6 +889,46 @@ class WorldModel:
             (str(kind), str(ref)),
         )
         return {r["status"]: int(r["n"]) for r in rows}
+
+    def record_signoff(self, goal_id: int, decision: str, *,
+                       decided_by: str = "", note: str | None = None) -> None:
+        """Record a human's certify/reject decision on a finished deliverable --
+        the sign-off a pack's output gate calls for. One authoritative row per
+        goal (a later decision replaces an earlier one); the note is encrypted
+        at rest. ``decision`` is 'approved' or 'rejected'."""
+        with self._writing() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO signoffs(goal_id, decision, decided_by, "
+                "note, created_at) VALUES(?, ?, ?, ?, ?)",
+                (int(goal_id), str(decision), str(decided_by or ""),
+                 _enc_field(note), time.time()),
+            )
+
+    def signoff_for(self, goal_id: int) -> dict | None:
+        """The current sign-off on a goal's deliverable, or ``None`` if it
+        hasn't been reviewed yet."""
+        row = self._read_one("SELECT * FROM signoffs WHERE goal_id = ?", (int(goal_id),))
+        if not row:
+            return None
+        return {
+            "goal_id": row["goal_id"], "decision": row["decision"],
+            "decided_by": row["decided_by"], "note": _dec_field(row["note"]),
+            "created_at": row["created_at"],
+        }
+
+    def signoffs_for_goals(self, goal_ids) -> dict[int, str]:
+        """Map ``goal_id -> decision`` for a batch of goals (the persona inbox,
+        so a signed-off deliverable drops out of the awaiting queue). Goals with
+        no sign-off are simply absent."""
+        ids = [int(g) for g in goal_ids]
+        if not ids:
+            return {}
+        placeholders = ",".join("?" * len(ids))
+        rows = self._read_all(
+            f"SELECT goal_id, decision FROM signoffs WHERE goal_id IN ({placeholders})",
+            tuple(ids),
+        )
+        return {r["goal_id"]: r["decision"] for r in rows}
 
     def set_goal_domain(self, goal_id: int, domain: str) -> None:
         """Record the department (domain pack) a goal is running as.

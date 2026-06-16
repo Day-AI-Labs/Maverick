@@ -54,6 +54,7 @@ from .api_schemas import (
     RoleOverrideIn,
     ScheduleIn,
     ScheduleOut,
+    SignoffIn,
     SkillInstallIn,
     SkillOut,
     TriggerIn,
@@ -920,6 +921,89 @@ async def goal_open_questions(request: Request, goal_id: int) -> dict:
             for q in qs
         ],
     }
+
+
+def _goal_gate(domain: str) -> str | None:
+    """The sign-off gate the goal's pack declares ('review'/'approval'), or
+    ``None`` (no gate, or the factory layer is unavailable)."""
+    if not domain:
+        return None
+    try:
+        from maverick.domain import available_domains
+        prof = available_domains().get(domain)
+        return prof.output.gate if prof else None
+    except Exception:  # pragma: no cover -- factory layer unavailable
+        return None
+
+
+def _goal_shape(domain: str) -> str:
+    """The render shape the goal's pack declares, defaulting to 'prose'."""
+    if not domain:
+        return "prose"
+    try:
+        from maverick.domain import available_domains
+        prof = available_domains().get(domain)
+        return prof.output.shape if prof else "prose"
+    except Exception:  # pragma: no cover -- factory layer unavailable
+        return "prose"
+
+
+@router.get("/goals/{goal_id}/signoff")
+async def get_signoff(request: Request, goal_id: int) -> dict:
+    """The current sign-off on a goal's deliverable, plus the gate its pack
+    declares (so the UI knows whether a sign-off is even called for)."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    return {"gate": _goal_gate(g.domain), "signoff": w.signoff_for(goal_id)}
+
+
+@router.post("/goals/{goal_id}/signoff")
+async def post_signoff(request: Request, goal_id: int, payload: SignoffIn) -> dict:
+    """Record a human's certify/reject decision on a finished deliverable -- the
+    governed hand-off step (agents draft; humans certify). 400 if the pack
+    declares no gate (there is nothing to sign off)."""
+    require_permission(request, "operate")
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    if _goal_gate(g.domain) is None:
+        raise HTTPException(status_code=400, detail="this deliverable has no sign-off gate")
+    w.record_signoff(goal_id, payload.decision,
+                     decided_by=_supervisor(request), note=payload.note)
+    return {"gate": _goal_gate(g.domain), "signoff": w.signoff_for(goal_id)}
+
+
+@router.get("/goals/{goal_id}/deliverable.csv")
+async def export_deliverable_csv(request: Request, goal_id: int) -> Response:
+    """Export a goal's deliverable as CSV -- the mechanical hand-off so an
+    approved forecast/table can be loaded into a downstream system instead of
+    re-keyed. 404 when the result carries no tabular deliverable."""
+    import csv
+    import io as _io
+
+    from maverick.deliverable import render_deliverable
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    rendered = render_deliverable(_goal_shape(g.domain), g.result)
+    if rendered.table is None:
+        raise HTTPException(status_code=404, detail="no tabular deliverable to export")
+    buf = _io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(rendered.table.headers)
+    writer.writerows(rendered.table.rows)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="deliverable-{goal_id}.csv"'},
+    )
 
 
 @router.get("/plugins")

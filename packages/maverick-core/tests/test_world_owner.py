@@ -10,7 +10,7 @@ from maverick.world_model import SCHEMA_VERSION, WorldModel
 
 
 def test_schema_version_is_current(tmp_path):
-    assert SCHEMA_VERSION == 15  # bump when adding a migration
+    assert SCHEMA_VERSION == 16  # bump when adding a migration
     assert WorldModel(tmp_path / "w.db").schema_version == SCHEMA_VERSION
 
 
@@ -49,6 +49,38 @@ def test_list_goals_owner_filter(tmp_path):
     w.set_goal_status(a, "done")
     assert {g.id for g in w.list_goals(status="done", owner="user:alice")} == {a}
     assert w.list_goals(status="done", owner="user:bob") == []
+
+
+def test_signoff_record_and_read(tmp_path):
+    w = WorldModel(tmp_path / "w.db")
+    gid = w.create_goal("forecast", domain="finance_cash13w")
+    assert w.signoff_for(gid) is None                      # unreviewed
+    w.record_signoff(gid, "approved", decided_by="user:alice", note="ties out")
+    s = w.signoff_for(gid)
+    assert s["decision"] == "approved"
+    assert s["decided_by"] == "user:alice"
+    assert s["note"] == "ties out"                          # note round-trips (encrypted)
+
+
+def test_signoff_latest_decision_wins(tmp_path):
+    w = WorldModel(tmp_path / "w.db")
+    gid = w.create_goal("forecast", domain="finance_cash13w")
+    w.record_signoff(gid, "rejected", decided_by="user:bob", note="rework week 3")
+    w.record_signoff(gid, "approved", decided_by="user:alice")  # supersedes
+    s = w.signoff_for(gid)
+    assert s["decision"] == "approved" and s["decided_by"] == "user:alice"
+    assert s["note"] is None                                # the new decision's (empty) note
+
+
+def test_signoffs_for_goals_batch(tmp_path):
+    w = WorldModel(tmp_path / "w.db")
+    a = w.create_goal("a", domain="finance_cash13w")
+    b = w.create_goal("b", domain="finance_cash13w")
+    c = w.create_goal("c", domain="finance_cash13w")  # unreviewed
+    w.record_signoff(a, "approved")
+    w.record_signoff(b, "rejected")
+    assert w.signoffs_for_goals([a, b, c]) == {a: "approved", b: "rejected"}
+    assert w.signoffs_for_goals([]) == {}
 
 
 def test_list_goals_domain_filter(tmp_path):

@@ -32,6 +32,13 @@ class AgentOverrideIn(BaseModel):
     extends: str | None = None
 
 
+class SignoffIn(BaseModel):
+    """A human's sign-off on a finished, gated deliverable -- the certify/reject
+    decision the pack's output gate calls for, with an optional review note."""
+    decision: str = Field(..., pattern="^(approved|rejected)$")
+    note: str | None = Field(default=None, max_length=2000)
+
+
 class RoleOverrideIn(BaseModel):
     """A per-tenant override for a core agent role: a system-prompt addendum
     appended to the role's base template, plus optional model/effort overrides

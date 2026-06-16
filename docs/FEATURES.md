@@ -1075,6 +1075,14 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   sign-off" queue whose Review action opens the rendered deliverable. Keyed off
   the existing `goals.domain` attribution (`list_goals(domain=...)`) and the
   pack output contract; the model is shaped by a pure `deliverables.build_inbox`.
+- **Governed hand-off (deliverable sign-off + export)** — closes the loop the
+  output gate opens: a human certifies a finished, gated deliverable
+  (`POST /api/v1/goals/<id>/signoff`, recorded in the v16 `signoffs` table with
+  who/when and an encrypted review note), and an approved deliverable can be
+  pulled downstream as CSV (`GET /api/v1/goals/<id>/deliverable.csv`) instead of
+  re-keyed by hand. The goal page grows a sign-off panel (Approve / Reject + note,
+  then the decision + hand-off download); a signed-off deliverable drops out of
+  the persona inbox's "awaiting sign-off" queue. Agents draft; humans certify.
 - **Finance suite (Office of the CFO)** — 31 domain packs across 7 towers
   (Controllership, FP&A, Treasury, Tax, Assurance, Procurement, Reporting) + a
   Finance Controller, each a sealed read-only/draft-by-default compartment with
