@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Branch audit findings"
+consumers = ["internal_auditor", "operations_manager"]
+cadence = "quarterly"
+gate = "review"

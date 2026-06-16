@@ -11,3 +11,10 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Delinquency & collections queue"
+consumers = ["credit_officer", "operations_manager"]
+cadence = "weekly"
+gate = "review"

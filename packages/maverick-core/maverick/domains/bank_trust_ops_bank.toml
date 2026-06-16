@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Trust account administration review"
+consumers = ["trust_officer", "compliance_officer"]
+cadence = "quarterly"
+gate = "review"

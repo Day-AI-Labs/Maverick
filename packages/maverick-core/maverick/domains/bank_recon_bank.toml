@@ -11,3 +11,10 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "GL / account reconciliation"
+consumers = ["operations_manager", "controller"]
+cadence = "daily"
+gate = "review"

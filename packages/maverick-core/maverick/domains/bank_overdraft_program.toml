@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Overdraft program compliance"
+consumers = ["compliance_officer", "operations_manager"]
+cadence = "monthly"
+gate = "review"

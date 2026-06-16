@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Derivative confirmation reconciliation"
+consumers = ["treasurer", "operations_manager"]
+cadence = "daily"
+gate = "review"

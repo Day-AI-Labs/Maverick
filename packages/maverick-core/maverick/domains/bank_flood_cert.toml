@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Flood determination tracking"
+consumers = ["compliance_officer", "loan_officer"]
+cadence = "on-demand"
+gate = "review"

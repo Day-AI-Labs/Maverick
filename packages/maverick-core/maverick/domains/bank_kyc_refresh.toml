@@ -11,3 +11,10 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "KYC refresh queue"
+consumers = ["bsa_officer", "compliance_officer"]
+cadence = "monthly"
+gate = "review"

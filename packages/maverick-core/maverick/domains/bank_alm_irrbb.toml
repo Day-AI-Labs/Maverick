@@ -11,3 +11,10 @@ deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "ALM / IRRBB sensitivity"
+consumers = ["treasurer", "risk_officer"]
+cadence = "monthly"
+gate = "review"

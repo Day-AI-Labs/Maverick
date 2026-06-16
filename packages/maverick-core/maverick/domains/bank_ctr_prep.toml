@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "CTR filing batch"
+consumers = ["bsa_officer", "compliance_officer"]
+cadence = "daily"
+gate = "approval"

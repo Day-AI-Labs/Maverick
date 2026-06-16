@@ -11,3 +11,10 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Regulatory call report"
+consumers = ["controller", "compliance_officer"]
+cadence = "quarterly"
+gate = "approval"
