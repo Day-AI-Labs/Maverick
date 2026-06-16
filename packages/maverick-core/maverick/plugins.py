@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -499,6 +500,62 @@ def installed_plugins() -> dict[str, list[str]]:
         "skills":    [getattr(s, "name", "<unnamed>") for s in discover_skills()],
         "personas":  list(discover_personas()),
     }
+
+
+def installable_plugins() -> list[str]:
+    """Plugin *packages* the operator has pre-approved for dashboard install
+    (``[plugins] installable = ["pkg-a", "pkg-b"]``).
+
+    This is the install allowlist, deliberately separate from the *load*
+    allowlist (``enabled``): an empty/absent list means the dashboard installs
+    nothing (fail closed). The dashboard offers exactly these as one-click
+    installs -- never a free-text package name -- so a compromised token can
+    only pull packages an operator already vetted, not arbitrary code."""
+    raw = _plugins_config().get("installable")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    return [s for s in (str(x).strip() for x in raw) if s]
+
+
+# A conservative dist name: no URLs, version specifiers, or shell metacharacters.
+# The allowlist is matched verbatim and pip runs with argv (no shell), so an
+# entry can't smuggle extra arguments even if config were tampered with.
+_SAFE_PKG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+
+
+def install_plugin(name: str, *, timeout: float = 300.0) -> dict[str, list[str]]:
+    """``pip install`` an operator-allowlisted plugin package, then return the
+    refreshed plugin-slot snapshot (new entry points are discoverable in this
+    process immediately; their code loads on the next agent run).
+
+    Bounded by :func:`installable_plugins`: ``name`` MUST be on the
+    ``[plugins] installable`` allowlist and a plain package name (no URL /
+    version spec / metacharacters). Raises ``ValueError`` otherwise or if pip
+    fails. pip runs as argv (never a shell), so nothing here is injectable."""
+    import subprocess
+    import sys
+
+    name = (name or "").strip()
+    allow = installable_plugins()
+    if not allow:
+        raise ValueError(
+            "plugin install is disabled: set [plugins] installable to a package "
+            "allowlist in ~/.maverick/config.toml"
+        )
+    if name not in allow:
+        raise ValueError(f"{name!r} is not on the [plugins] installable allowlist")
+    if not _SAFE_PKG.match(name):
+        raise ValueError(f"unsafe package name: {name!r}")
+    proc = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--no-input", name],
+        capture_output=True, text=True, timeout=timeout, check=False,
+    )
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip()[-500:]
+        raise ValueError(f"pip install of {name!r} failed: {tail}")
+    return installed_plugins()
 
 
 # ---- hot plugin reload (roadmap 2027-H1 ecosystem) --------------------------
