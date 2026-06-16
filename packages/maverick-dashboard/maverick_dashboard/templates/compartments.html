@@ -26,6 +26,14 @@
             {% if d.persona %}
               <div class="muted" style="max-width: 30rem;" title="{{ d.persona }}">{{ d.persona[:140] }}{% if d.persona|length > 140 %}…{% endif %}</div>
             {% endif %}
+            {% if d.output.deliverable %}
+              <div class="muted" style="max-width: 30rem; margin-top: var(--space-1);">
+                <strong>Delivers:</strong> {{ d.output.deliverable }}
+                {%- if d.output.consumers %} → {{ d.output.consumers|join(', ') }}{% endif -%}
+                {%- if d.output.cadence %} ({{ d.output.cadence }}){% endif -%}
+                {%- if d.output.gate %} · {{ d.output.gate }} gate{% endif -%}
+              </div>
+            {% endif %}
           </td>
           <td><span class="badge">{{ d.compartment }}</span></td>
           <td class="muted">{{ d.authoring }}</td>

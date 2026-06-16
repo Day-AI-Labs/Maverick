@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "13-week cash forecast"
+consumers = ["fpa_analyst", "treasurer"]
+cadence = "weekly"
+gate = "review"

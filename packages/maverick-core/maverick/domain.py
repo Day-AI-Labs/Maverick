@@ -32,7 +32,7 @@ except ModuleNotFoundError:  # Python 3.10
 _FIELDS = frozenset({
     "compartment", "description", "persona", "allow_tools", "deny_tools",
     "max_risk", "allow_paths", "allow_hosts", "mcp_servers", "models",
-    "knowledge_sources", "authoring", "extends", "workflow",
+    "knowledge_sources", "authoring", "extends", "workflow", "output",
 })
 
 
@@ -53,6 +53,25 @@ class WorkflowStep:
 
 
 @dataclass
+class OutputContract:
+    """The *consumption* side of a pack: what the specialist delivers, to whom,
+    how often, and what sign-off the deliverable needs before it is acted on.
+
+    Distinct from the capability envelope (what the agent *may do*) and the
+    workflow playbook (how it *works*): this declares the *deliverable*. The
+    dashboard reads it to render a result as the right kind of artifact (a
+    forecast grid vs. a memo), route it to the people who consume it, and gate
+    it before it is used. Absent/empty means today's behaviour exactly -- a
+    free-text result with no declared consumer, rendered as prose.
+    """
+    shape: str = "prose"           # render archetype: prose|report|table|forecast
+    deliverable: str = ""          # human label, e.g. "13-week cash forecast"
+    consumers: list[str] = field(default_factory=list)  # persona roles who receive it
+    cadence: str = ""              # "on-demand"|"daily"|"weekly"|"monthly"|...
+    gate: str | None = None        # sign-off before the deliverable is used
+
+
+@dataclass
 class DomainProfile:
     name: str
     compartment: str = ""          # seal boundary; defaults to ``name``
@@ -69,6 +88,7 @@ class DomainProfile:
     authoring: str = "manual"      # "manual" | "generated"
     extends: str = ""              # overlay base: inherit a pack, patch the rest
     workflow: list[WorkflowStep] = field(default_factory=list)  # editable playbook
+    output: OutputContract = field(default_factory=OutputContract)  # the deliverable
 
     def __post_init__(self) -> None:
         if not self.compartment:
@@ -113,10 +133,30 @@ def _coerce_workflow(raw: object) -> list[WorkflowStep]:
     return steps
 
 
+def _coerce_output(raw: object) -> OutputContract:
+    """Turn a pack's ``[output]`` table into an :class:`OutputContract`.
+
+    Forgiving like :func:`_coerce_workflow`: a missing/non-table ``output`` (or
+    a stray non-list ``consumers``) yields the empty contract rather than
+    raising, so a malformed block can't break pack discovery."""
+    if not isinstance(raw, dict):
+        return OutputContract()
+    consumers = raw.get("consumers")
+    return OutputContract(
+        shape=str(raw.get("shape") or "prose"),
+        deliverable=str(raw.get("deliverable") or ""),
+        consumers=[str(c) for c in consumers] if isinstance(consumers, list) else [],
+        cadence=str(raw.get("cadence") or ""),
+        gate=(str(raw["gate"]) if raw.get("gate") else None),
+    )
+
+
 def _coerce(name: str, data: dict) -> DomainProfile:
     fields = {k: v for k, v in data.items() if k in _FIELDS}
     if "workflow" in fields:
         fields["workflow"] = _coerce_workflow(fields["workflow"])
+    if "output" in fields:
+        fields["output"] = _coerce_output(fields["output"])
     return DomainProfile(name=name, **fields)
 
 
@@ -213,11 +253,14 @@ def overlay_profile(base: DomainProfile, patch: dict) -> DomainProfile:
         "knowledge_sources": list(base.knowledge_sources),
         "authoring": base.authoring,
         "workflow": list(base.workflow),
+        "output": base.output,
     }
     for k in overridden_fields(patch):
         data[k] = patch[k]
     if "workflow" in patch:
         data["workflow"] = _coerce_workflow(patch["workflow"])
+    if "output" in patch:
+        data["output"] = _coerce_output(patch["output"])
     return DomainProfile(name=base.name, **data)
 
 
@@ -359,8 +402,30 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
 
 _VALID_RISKS = frozenset({"low", "medium", "high"})
 _VALID_GATES = frozenset({"approval", "review"})
+# Render archetypes the dashboard knows how to present a deliverable as. An
+# unknown shape is a warning, not an error: it falls back to prose rendering, so
+# a newer pack naming a future shape still loads on an older dashboard.
+_VALID_SHAPES = frozenset({"prose", "report", "table", "forecast"})
 # Below this, a persona is a label, not a working instruction set.
 _MIN_PERSONA_CHARS = 200
+
+
+def _lint_output(out: OutputContract) -> list[str]:
+    """Quality-gate a pack's output contract. Returns warnings only -- a
+    misdeclared deliverable degrades the consumption surface (it renders as
+    prose, doesn't route) but never weakens the safety envelope, so nothing
+    here is a hard error."""
+    warnings: list[str] = []
+    if out.shape and out.shape not in _VALID_SHAPES:
+        warnings.append(f"output.shape {out.shape!r} is not one of "
+                        f"{sorted(_VALID_SHAPES)} (it will render as prose)")
+    if out.gate and out.gate not in _VALID_GATES:
+        warnings.append(f"output.gate {out.gate!r} is not one of "
+                        f"{sorted(_VALID_GATES)}")
+    if out.deliverable and not out.consumers:
+        warnings.append("output declares a deliverable but no consumers: name "
+                        "the roles who receive it so it can be routed")
+    return warnings
 
 
 def _lint_workflow(profile: DomainProfile) -> tuple[list[str], list[str]]:
@@ -421,6 +486,7 @@ def lint_profile(profile: DomainProfile) -> tuple[list[str], list[str]]:
     if not profile.deny_tools:
         warnings.append("no deny_tools: consider explicitly denying the "
                         "tools this role must never touch")
+    warnings.extend(_lint_output(profile.output))
     wf_errors, wf_warnings = _lint_workflow(profile)
     errors.extend(wf_errors)
     warnings.extend(wf_warnings)
