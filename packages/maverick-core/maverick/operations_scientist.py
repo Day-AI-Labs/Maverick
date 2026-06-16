@@ -102,6 +102,43 @@ def propose(failure_classes, memories, *, top_k: int = 10) -> list[Hypothesis]:
     return out[:top_k]
 
 
+def propose_creative(failure_classes, *, generate, candidates_per: int = 3,
+                     top_k: int = 10) -> list[Hypothesis]:
+    """Propose genuinely NEW interventions, not just swaps from known habits.
+
+    For each causally-harmful failure class, ``generate(failure_class) -> list[str]``
+    (an injected LLM seam) suggests candidate replacement actions the data hasn't
+    tried -- the *creative* half of discovery. Each becomes a hypothesis whose
+    predicted lift is the harm avoided; the benefit is unknown until ``simulate``
+    validates it in the world-model, so a wild idea can't reach a real experiment
+    on confidence alone. ``generate`` is injected so this module stays
+    LLM-agnostic and trivially testable; the caller wires it to a provider.
+    """
+    out: list[Hypothesis] = []
+    for fc in failure_classes:
+        if getattr(fc, "ci_high", 0.0) >= 0.0:
+            continue  # only confidently-harmful classes
+        try:
+            candidates = generate(fc) or []
+        except Exception:  # pragma: no cover -- a flaky generator yields nothing
+            candidates = []
+        seen: set = set()
+        for cand in candidates[:candidates_per]:
+            cand = str(cand).strip()
+            if not cand or cand == fc.action or cand in seen:
+                continue
+            seen.add(cand)
+            out.append(Hypothesis(
+                baseline_action=fc.action, candidate_action=cand,
+                predicted_lift=abs(fc.causal_effect),   # benefit proven later, in sim
+                rationale=(f"proposed '{cand}' to replace harmful '{fc.action}' "
+                           f"(lowers outcome ~{abs(fc.causal_effect):.2f}); "
+                           "validate in simulation before experimenting"),
+            ))
+    out.sort(key=lambda h: h.predicted_lift, reverse=True)
+    return out[:top_k]
+
+
 def simulate(hypothesis: Hypothesis, model, start_states, *, rollouts: int = 100,
              min_support: int = 5) -> SimResult:
     """Test the swap in the world-model: g-computation lift of candidate vs baseline.
@@ -119,4 +156,4 @@ def simulate(hypothesis: Hypothesis, model, start_states, *, rollouts: int = 100
     return SimResult(hypothesis=hypothesis, sim_lift=est.effect, trustworthy=est.trustworthy)
 
 
-__all__ = ["Hypothesis", "SimResult", "enabled", "propose", "simulate"]
+__all__ = ["Hypothesis", "SimResult", "enabled", "propose", "propose_creative", "simulate"]
