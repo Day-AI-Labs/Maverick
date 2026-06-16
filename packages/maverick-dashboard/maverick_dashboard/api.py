@@ -1109,6 +1109,19 @@ async def export_deliverable_csv(request: Request, goal_id: int) -> Response:
     )
 
 
+@router.get("/goals/{goal_id}/artifacts")
+async def list_goal_artifacts(request: Request, goal_id: int) -> dict:
+    """The goal's latest artifacts -- the newest version of each titled output
+    (markdown / code / table / text) it produced, with a per-title version
+    count. Goal-access gated; content is decrypted for the owner."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    return {"artifacts": w.latest_artifacts(goal_id)}
+
+
 @router.get("/plugins")
 async def list_plugins() -> dict:
     """Discovered + allow-listed plugins, broken out by kind."""

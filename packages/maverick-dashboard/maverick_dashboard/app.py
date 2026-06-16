@@ -3451,10 +3451,28 @@ async def chat_goal(request: Request, goal_id: int) -> HTMLResponse:
             signoff = w.signoff_for(goal_id)
         except Exception:  # pragma: no cover -- never 500 the goal page
             signoff = None
+    artifacts = _goal_artifacts(w, goal_id)
     return templates.TemplateResponse(
         request, "chat_goal.html",
-        {"goal": g, "deliverable": contract, "rendered": rendered, "signoff": signoff},
+        {"goal": g, "deliverable": contract, "rendered": rendered,
+         "signoff": signoff, "artifacts": artifacts},
     )
+
+
+def _goal_artifacts(w, goal_id: int) -> list[dict]:
+    """A goal's latest artifacts, each pre-rendered by kind: a ``table`` artifact
+    parses to a grid (reusing the deliverable renderer), everything else falls
+    back to text. ``[]`` if the goal has none (the panel then doesn't render)."""
+    try:
+        from maverick.deliverable import render_deliverable
+        out: list[dict] = []
+        for a in w.latest_artifacts(goal_id):
+            shape = "table" if a.get("kind") == "table" else "prose"
+            r = render_deliverable(shape, a.get("content"))
+            out.append({**a, "table": r.table, "prose": r.prose})
+        return out
+    except Exception:  # pragma: no cover -- never 500 the goal page
+        return []
 
 
 @app.get("/api/goal/{goal_id}")
