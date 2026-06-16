@@ -67,6 +67,18 @@ row.appendChild(mvEl('div', 'mv-row__title', name));
 row.appendChild(mvEl('div', 'mv-row__sub', 'last run ' + mvWhen(ts)));
 ```
 
+## `.card` / `.card-grid`
+
+The shared card surface (border + token padding + hover) and a responsive
+`auto-fill` grid of them. Used by the Templates catalog. Cards and `.mv-row`s
+get a subtle `mv-rise` entrance, disabled under `prefers-reduced-motion`.
+
+```html
+<div class="card-grid">
+  <div class="card">…</div>
+</div>
+```
+
 ## `.mv-row` / `.btn--icon`
 
 The shared list-row component — an icon/title + a muted subline + trailing
