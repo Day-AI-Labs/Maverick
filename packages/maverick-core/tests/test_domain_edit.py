@@ -62,6 +62,17 @@ class TestOverlayToml:
         loaded = tomllib.loads(overlay_toml({"name": "p", "workflow": [{"instruction": "x"}]}))
         assert "workflow" not in loaded
 
+    def test_output_contract_round_trips_through_loader(self):
+        patch = {"name": "p", "output": {
+            "shape": "forecast", "deliverable": "13-week cash forecast",
+            "consumers": ["fpa_analyst", "treasurer"], "cadence": "weekly",
+            "gate": "review"}}
+        loaded = tomllib.loads(overlay_toml(patch))
+        assert loaded["output"]["shape"] == "forecast"
+        assert loaded["output"]["deliverable"] == "13-week cash forecast"
+        assert loaded["output"]["consumers"] == ["fpa_analyst", "treasurer"]
+        assert loaded["output"]["gate"] == "review"
+
 
 class TestWriteOverride:
     def test_partial_override_inherits_base(self, tenant_dir):
@@ -105,6 +116,13 @@ class TestResolvedView:
 
     def test_unknown_pack_returns_none(self, tenant_dir):
         assert resolved_view("does_not_exist_anywhere") is None
+
+    def test_view_exposes_output_contract(self, tenant_dir):
+        # The merged view carries the deliverable so the editor/API can render it.
+        view = resolved_view("finance_cash13w")
+        assert view["output"]["shape"] == "forecast"
+        assert view["output"]["deliverable"] == "13-week cash forecast"
+        assert "fpa_analyst" in view["output"]["consumers"]
 
 
 class TestValidateAndList:

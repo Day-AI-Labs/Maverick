@@ -61,6 +61,9 @@ def test_compartments_page_renders(tmp_path, monkeypatch):
     assert "compartments" in resp.text.lower()
     # the built-in finance pack shows up as a domain in the roster
     assert "finance" in resp.text
+    # a pack that declares an output contract surfaces its deliverable
+    assert "Delivers:" in resp.text
+    assert "13-week cash forecast" in resp.text
 
 
 def test_facts_page_renders(tmp_path, monkeypatch):

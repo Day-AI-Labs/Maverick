@@ -1051,6 +1051,14 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   domain configuration (intake agent + LLM proposer + `run_intake`).
 - **Domain packs** — spawn domain agents from profiles (legal / privacy / generic
   packs) on the sector-seal foundation.
+- **Pack output contract** — a pack's optional `[output]` block declares the
+  *consumption* side of the deliverable: its render `shape` (prose / report /
+  table / forecast), a human `deliverable` label, the `consumers` (persona
+  roles who receive it), a `cadence`, and the `gate` (review / approval) it
+  needs before it is acted on. Additive and lint-checked (`OutputContract` in
+  `domain.py`); absent means today's behaviour — a free-text prose result with
+  no declared consumer. The dashboard reads it to render, route, and gate a
+  result by domain rather than showing every output as the same text box.
 - **Finance suite (Office of the CFO)** — 31 domain packs across 7 towers
   (Controllership, FP&A, Treasury, Tax, Assurance, Procurement, Reporting) + a
   Finance Controller, each a sealed read-only/draft-by-default compartment with

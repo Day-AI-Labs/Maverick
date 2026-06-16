@@ -60,6 +60,15 @@ def overlay_toml(patch: dict) -> str:
         lines.append("[models]")
         for role, model in dict(patch["models"]).items():
             lines.append(f"{role} = {json.dumps(model)}")
+    out = patch.get("output")
+    if out:
+        lines.append("")
+        lines.append("[output]")
+        for key in ("shape", "deliverable", "cadence", "gate"):
+            if out.get(key):
+                lines.append(f"{key} = {json.dumps(out[key])}")
+        if out.get("consumers"):
+            lines.append(f"consumers = {json.dumps(list(out['consumers']))}")
     for step in patch.get("workflow") or []:
         if not str(step.get("name") or "").strip():
             continue
@@ -173,6 +182,13 @@ def _step_dict(step) -> dict:
             "tools": list(step.tools), "gate": step.gate}
 
 
+def _output_dict(out) -> dict:
+    """A pack's output contract as a plain dict for the editor/API payload."""
+    return {"shape": out.shape, "deliverable": out.deliverable,
+            "consumers": list(out.consumers), "cadence": out.cadence,
+            "gate": out.gate}
+
+
 def resolved_view(name: str, directory: str | Path | None = None) -> dict | None:
     """The merged pack the agent actually runs, plus provenance and lint -- the
     payload the editor renders. ``None`` if no such pack exists.
@@ -195,6 +211,7 @@ def resolved_view(name: str, directory: str | Path | None = None) -> dict | None
         "knowledge_sources": list(prof.knowledge_sources),
         "models": dict(prof.models),
         "workflow": [_step_dict(s) for s in prof.workflow],
+        "output": _output_dict(prof.output),
         "is_override": bool(raw),
         "overridden": sorted(overridden_fields(raw)),
         "errors": errors,
