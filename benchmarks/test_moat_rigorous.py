@@ -12,11 +12,13 @@ import moat_rigorous as MR  # noqa: E402
 from moat import RunMetrics  # noqa: E402
 
 
-def _obs(name, seed, warm_cost, cold_cost, warm_ok=True, cold_ok=True):
+def _obs(name, seed, warm_cost, cold_cost, warm_ok=True, cold_ok=True,
+         warm_correct=None, cold_correct=None):
     return MR.Observation(
         name=name, seed=seed,
         warm=RunMetrics(cost_dollars=warm_cost, tool_calls=0, wall_seconds=0.0, success=warm_ok),
         cold=RunMetrics(cost_dollars=cold_cost, tool_calls=0, wall_seconds=0.0, success=cold_ok),
+        warm_correct=warm_correct, cold_correct=cold_correct,
     )
 
 
@@ -100,6 +102,35 @@ def test_orchestration_calls_runner_per_pair_and_seed():
     assert len(calls) == 4                      # 2 pairs x 2 seeds
     assert result.n == 4
     assert result.bounded_moat_demonstrated is True
+
+
+def test_correctness_regression_blocks_moat_and_claim():
+    # Warm is cheaper but LESS correct than cold -> not a moat; claim says STOP.
+    r = MR.aggregate([
+        _obs("a", 0, 0.5, 1.0, warm_correct=False, cold_correct=True),
+        _obs("b", 0, 0.5, 1.0, warm_correct=True, cold_correct=True),
+    ])
+    assert r.warm_correct_rate == 0.5 and r.cold_correct_rate == 1.0
+    assert r.correctness_regressed is True
+    assert r.bounded_moat_demonstrated is False
+    assert "hurt correctness" in MR.claim(r)
+
+
+def test_correctness_parity_allows_moat():
+    r = MR.aggregate([
+        _obs("a", 0, 0.5, 1.0, warm_correct=True, cold_correct=True),
+        _obs("b", 0, 0.6, 1.0, warm_correct=True, cold_correct=False),
+    ])
+    assert r.correctness_regressed is False
+    assert r.bounded_moat_demonstrated is True  # cheaper AND correctness not worse
+
+
+def test_ungraded_correctness_is_neutral():
+    # No grader -> correctness rates None -> never blocks (back-compat).
+    r = MR.aggregate([_obs("a", 0, 0.8, 1.0)])
+    assert r.warm_correct_rate is None and r.cold_correct_rate is None
+    assert r.correctness_regressed is False
+    assert r.bounded_moat_demonstrated is True
 
 
 def test_format_report_renders_table_and_claim():
