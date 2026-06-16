@@ -8,6 +8,8 @@ client = TestClient(app, headers={"Origin": "http://testserver"})
 
 
 def test_tail_latency_endpoint_empty():
+    from maverick import tool_latency
+    tool_latency.reset()  # the sample store is process-global; isolate it before
     resp = client.get("/api/v1/diag/tail-latency")
     assert resp.status_code == 200
     assert resp.json() == {"flagged": []}
