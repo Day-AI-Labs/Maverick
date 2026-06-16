@@ -55,6 +55,35 @@ drawer / picker backdrop instead of a bespoke `rgba(...)`:
 .my-overlay::backdrop { background: var(--scrim); }
 ```
 
+## `window.mvEl(tag, cls, text)` / `window.mvWhen(ts)`
+
+`mvEl` is a one-line element builder (`createElement` + optional class + optional
+`textContent`); `mvWhen(epoch_seconds)` formats a timestamp with the browser
+locale. Both were reimplemented per page before; use the shared ones.
+
+```js
+var row = mvEl('li', 'mv-row');
+row.appendChild(mvEl('div', 'mv-row__title', name));
+row.appendChild(mvEl('div', 'mv-row__sub', 'last run ' + mvWhen(ts)));
+```
+
+## `.mv-row` / `.btn--icon`
+
+The shared list-row component — an icon/title + a muted subline + trailing
+actions — used by the Automations page, the builder's schedule/trigger lists,
+and the Workflows index. `.btn--icon` is the compact square button for a row's
+`✕` / icon action.
+
+```html
+<li class="mv-row">
+  <div class="mv-row__main">
+    <div class="mv-row__title">Title</div>
+    <div class="mv-row__sub">subtitle</div>
+  </div>
+  <div class="mv-row__actions"><button class="btn btn--icon" aria-label="Delete">✕</button></div>
+</li>
+```
+
 ## Adoption
 
 In use by: the Automations page, the workflow builder (schedules, triggers,

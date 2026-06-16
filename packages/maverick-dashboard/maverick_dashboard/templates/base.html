@@ -452,6 +452,13 @@
     .mv-confirm__body { padding: var(--space-5); }
     .mv-confirm__msg { margin: 0 0 var(--space-4); }
     .mv-confirm__row { display: flex; justify-content: flex-end; gap: var(--space-2); }
+    /* Shared list-row: an icon/title + muted subline + trailing actions. */
+    .mv-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); }
+    .mv-row__main { flex: 1 1 auto; min-width: 0; }
+    .mv-row__title { font-weight: var(--font-semibold); }
+    .mv-row__sub { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; word-break: break-word; }
+    .mv-row__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; flex: none; }
+    .btn--icon { flex: none; padding: 0.3rem 0.55rem; font-size: var(--text-sm); line-height: 1; }
     @media (prefers-reduced-motion: reduce) { .mv-toast { animation: none; } }
   </style>
   {% if custom_theme_css %}
@@ -715,6 +722,17 @@
           document.body.appendChild(ta); ta.select();
           document.execCommand('copy'); ta.remove(); ok();
         } catch (e) { fail(); }
+      };
+      // Small DOM builder + a uniform timestamp formatter, shared by the
+      // list-rendering pages (was reimplemented per page).
+      window.mvEl = function (tag, cls, text) {
+        var e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text != null) e.textContent = text;
+        return e;
+      };
+      window.mvWhen = function (ts) {
+        try { return new Date((ts || 0) * 1000).toLocaleString(); } catch (e) { return ''; }
       };
     })();
   </script>

@@ -11,11 +11,6 @@
   .auto__section-head h2 { margin: 0; font-size: var(--text-lg); }
   .auto__hint { color: var(--muted); font-size: var(--text-sm); margin: 0 0 var(--space-3); }
   .auto__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-  .auto__item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); }
-  .auto__item-main { flex: 1 1 auto; min-width: 0; }
-  .auto__item-title { font-weight: var(--font-semibold); }
-  .auto__item-sub { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; word-break: break-word; }
-  .auto__item .btn { flex: none; }
   .auto__url { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; font-size: var(--text-xs); }
   .auto__runs { color: var(--muted); font-size: var(--text-xs); margin-top: 4px; }
   .auto__run { text-decoration: none; border-bottom: 1px dashed currentColor; }
@@ -64,7 +59,7 @@
 
 <script>
 (function () {
-  function fmtWhen(ts) { try { return new Date((ts || 0) * 1000).toLocaleString(); } catch (e) { return ''; } }
+  var fmtWhen = window.mvWhen, el = window.mvEl;   // shared primitives (base.html)
   function cronText(cron) {
     var map = { '* * *': 'every day', '* * 1-5': 'on weekdays', '* * 1': 'every Monday' };
     var m = /^(\d+)\s+(\d+)\s+(.+)$/.exec(cron || '');
@@ -73,9 +68,8 @@
     if (!when) return cron;
     return when + ' at ' + ('0' + m[2]).slice(-2) + ':' + ('0' + m[1]).slice(-2);
   }
-  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function delBtn(label, onClick) {
-    var b = el('button', 'btn btn--ghost', '✕'); b.type = 'button';
+    var b = el('button', 'btn btn--icon', '✕'); b.type = 'button';
     b.setAttribute('aria-label', label); b.title = 'Delete';
     b.addEventListener('click', onClick); return b;
   }
@@ -92,10 +86,10 @@
     if (schedCount) schedCount.textContent = items.length ? (items.length + (items.length === 1 ? ' schedule' : ' schedules')) : '';
     if (schedEmpty) schedEmpty.hidden = items.length > 0;
     items.forEach(function (s) {
-      var li = el('li', 'auto__item');
-      var main = el('div', 'auto__item-main');
-      main.appendChild(el('div', 'auto__item-title', s.title || '(goal)'));
-      main.appendChild(el('div', 'auto__item-sub', cronText(s.cron) + ' · next ' + fmtWhen(s.next_run)));
+      var li = el('li', 'mv-row');
+      var main = el('div', 'mv-row__main');
+      main.appendChild(el('div', 'mv-row__title', s.title || '(goal)'));
+      main.appendChild(el('div', 'mv-row__sub', cronText(s.cron) + ' · next ' + fmtWhen(s.next_run)));
       if (s.schedule_id) { var runs = el('div', 'auto__runs'); main.appendChild(runs); loadRuns('schedule', s.schedule_id, runs); }
       li.appendChild(main);
       li.appendChild(delBtn('Delete schedule ' + (s.title || s.id), function () { delSchedule(s.id); }));
@@ -130,11 +124,11 @@
     if (trigEmpty) trigEmpty.hidden = items.length > 0;
     var base = window.location.origin + (data.webhook_url || '/webhook/run');
     items.forEach(function (t) {
-      var li = el('li', 'auto__item');
-      var main = el('div', 'auto__item-main');
-      main.appendChild(el('div', 'auto__item-title', t.name));
+      var li = el('li', 'mv-row');
+      var main = el('div', 'mv-row__main');
+      main.appendChild(el('div', 'mv-row__title', t.name));
       var pcount = t.params ? Object.keys(t.params).length : 0;
-      var sub = el('div', 'auto__item-sub');
+      var sub = el('div', 'mv-row__sub');
       sub.appendChild(document.createTextNode('template ' + (t.template || '') + (pcount ? (' · ' + pcount + ' param' + (pcount === 1 ? '' : 's')) : '') + ' · '));
       sub.appendChild(el('span', 'auto__url', 'POST ' + base + ' {"trigger":"' + t.name + '"}'));
       main.appendChild(sub);

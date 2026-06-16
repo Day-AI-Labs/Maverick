@@ -10,11 +10,6 @@
   .wfx__section { margin-bottom: var(--space-7); }
   .wfx__section h2 { font-size: var(--text-lg); margin: 0 0 var(--space-3); }
   .wfx__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-  .wfx__item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); }
-  .wfx__item-main { flex: 1 1 auto; min-width: 0; }
-  .wfx__item-title { font-weight: var(--font-semibold); }
-  .wfx__item-sub { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; word-break: break-word; }
-  .wfx__actions { display: flex; gap: var(--space-2); flex-wrap: wrap; flex: none; }
   .wfx__empty { color: var(--muted); padding: var(--space-4); border: 1px dashed var(--border); border-radius: var(--radius-md); }
 </style>
 
@@ -30,12 +25,12 @@
     {% if templates %}
     <ul class="wfx__list" aria-label="Your templates">
       {% for t in templates %}
-      <li class="wfx__item">
-        <div class="wfx__item-main">
-          <div class="wfx__item-title">{{ t.title or t.name }}</div>
-          <div class="wfx__item-sub">{{ t.name }}{% if t.params %} · params: {{ t.params|join(', ') }}{% endif %}</div>
+      <li class="mv-row">
+        <div class="mv-row__main">
+          <div class="mv-row__title">{{ t.title or t.name }}</div>
+          <div class="mv-row__sub">{{ t.name }}{% if t.params %} · params: {{ t.params|join(', ') }}{% endif %}</div>
         </div>
-        <div class="wfx__actions">
+        <div class="mv-row__actions">
           <a class="btn btn--ghost" href="/workflow-builder?edit={{ t.name | urlencode }}">Edit</a>
           {% if scheduling_enabled or triggers_enabled %}<a class="btn btn--ghost" href="/workflow-builder?template={{ t.name | urlencode }}">Automate</a>{% endif %}
           <a class="btn btn--ghost" href="/chat?title={{ t.title | urlencode }}">Use</a>
@@ -53,12 +48,12 @@
     {% if playbooks %}
     <ul class="wfx__list" aria-label="Your agent playbooks">
       {% for p in playbooks %}
-      <li class="wfx__item">
-        <div class="wfx__item-main">
-          <div class="wfx__item-title">{{ p.name }}</div>
-          <div class="wfx__item-sub">{% if p.description %}{{ p.description }}{% endif %}{% if p.suite %} · {{ p.suite }}{% endif %}</div>
+      <li class="mv-row">
+        <div class="mv-row__main">
+          <div class="mv-row__title">{{ p.name }}</div>
+          <div class="mv-row__sub">{% if p.description %}{{ p.description }}{% endif %}{% if p.suite %} · {{ p.suite }}{% endif %}</div>
         </div>
-        <div class="wfx__actions">
+        <div class="mv-row__actions">
           <a class="btn btn--ghost" href="/workflow-builder?edit_agent={{ p.name | urlencode }}">Edit</a>
           <a class="btn btn--ghost" href="/agents?name={{ p.name | urlencode }}">Open in Agents</a>
         </div>

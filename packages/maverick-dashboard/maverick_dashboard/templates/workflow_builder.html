@@ -129,8 +129,7 @@
   .wf__copyrow code { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; font-size: var(--text-xs); word-break: break-all; }
   .wf__curl { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); font-size: var(--text-xs); line-height: 1.5; overflow-x: auto; white-space: pre; margin: 0 0 var(--space-2); }
   .wf__sched-list { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-  .wf__sched-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); font-size: var(--text-sm); }
-  .wf__sched-item > span { flex: 1 1 auto; min-width: 0; }
+  .wf__sched-list .mv-row { font-size: var(--text-sm); }
   .wf__sched-when { color: var(--muted); }
 
   @media (prefers-reduced-motion: reduce) {
@@ -629,9 +628,7 @@
       if (intWrap) intWrap.hidden = cad !== 'hourly';
       if (cronWrap) cronWrap.hidden = cad !== 'custom';
     }
-    function fmtWhen(ts) {
-      try { return new Date((ts || 0) * 1000).toLocaleString(); } catch (e) { return ''; }
-    }
+    var fmtWhen = window.mvWhen;   // shared timestamp formatter (base.html)
     function renderSchedParams(params) {
       schedParams.textContent = '';
       if (!params || !params.length) { schedParamsWrap.hidden = true; return; }
@@ -736,8 +733,9 @@
       schedList.textContent = '';
       items.forEach(function (s) {
         var li = document.createElement('li');
-        li.className = 'wf__sched-item';
+        li.className = 'mv-row';
         var span = document.createElement('span');
+        span.className = 'mv-row__main';
         var title = document.createElement('strong');
         title.textContent = s.title || '(goal)';
         var when = document.createElement('span');
@@ -746,7 +744,7 @@
         span.appendChild(title); span.appendChild(when);
         var rm = document.createElement('button');
         rm.type = 'button';
-        rm.className = 'btn btn--ghost pb-step__btn';
+        rm.className = 'btn btn--icon';
         rm.setAttribute('aria-label', 'Cancel this schedule');
         rm.title = 'Cancel';
         rm.textContent = '✕';
@@ -865,8 +863,9 @@
       trigList.textContent = '';
       items.forEach(function (t) {
         var li = document.createElement('li');
-        li.className = 'wf__sched-item';
+        li.className = 'mv-row';
         var span = document.createElement('span');
+        span.className = 'mv-row__main';
         var title = document.createElement('strong');
         title.textContent = t.name;
         var sub = document.createElement('span');
@@ -876,7 +875,7 @@
         span.appendChild(title); span.appendChild(sub);
         var rm = document.createElement('button');
         rm.type = 'button';
-        rm.className = 'btn btn--ghost pb-step__btn';
+        rm.className = 'btn btn--icon';
         rm.setAttribute('aria-label', 'Delete this trigger');
         rm.title = 'Delete';
         rm.textContent = '✕';
