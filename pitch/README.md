@@ -36,9 +36,17 @@ or should invent:
 4. **Brand** — logo / colors if you have them; otherwise the deck specs a clean
    placeholder.
 
-## Next step: the visual deck
+## The visual deck
 
-`SEED-DECK.md` is the content source of truth. The visual build (Figma) renders:
-the hero governance-chokepoint diagram (slide 3), the moat stack (6), the market
-bullseye (7), and the competition table (9). Design direction is at the bottom
-of `SEED-DECK.md`.
+`SEED-DECK.md` is the content source of truth; [`deck/`](./deck/) is the built
+visual deck (all 13 slides) in two renderings of the same content:
+
+- [`deck/audience-a.html`](./deck/audience-a.html) — a self-contained HTML deck
+  (no build step). Open in a browser, present with `←`/`→`, export to PDF with
+  `Cmd/Ctrl-P`. See [`deck/README.md`](./deck/README.md).
+- An editable **Figma** version of the same 13 slides (deep-navy / electric
+  theme), for hand-editing and asset export.
+
+Both keep the `[ FILL ]` placeholders (rendered in amber) for the four
+founder-only facts — the ask, the team, the traction, and the contact /
+data-room link. Fill those before sending.

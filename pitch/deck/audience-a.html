@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maverick — Seed Deck (Audience A)</title>
+<!--
+  Maverick — Seed Deck (pre-seed / seed).
+  Content source of truth: pitch/SEED-DECK.md (founder-approved). Every number here is
+  verifiable from this repo, or shown as a highlighted [FILL] for a founder-only fact
+  (ask, team, traction). Nothing is fabricated — it has to survive diligence.
+
+  HOW TO USE
+   • Open in a browser. Use ← / → (or Space) to move between slides.
+   • Press F to toggle fullscreen for presenting.
+   • Export to PDF: ⌘/Ctrl-P → "Save as PDF" → Landscape, margins None, Background graphics ON.
+-->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root{
+  --bg:#0A1020; --panel:#0E1730; --panel2:#111C3A; --panel3:#16213f;
+  --white:#F5F8FF; --muted:#93A4C4; --faint:#62729A;
+  --accent:#5B8CFF; --cyan:#3BE8FF; --mint:#36E0A0; --coral:#FF6B6B; --amber:#F5B642;
+  --line:#1E2A4A; --line2:#27365c;
+  --scale:1;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#05080f;color:var(--white);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+
+.wrap{scroll-snap-type:y mandatory;height:100vh;overflow-y:scroll;scroll-behavior:smooth;}
+.page{scroll-snap-align:center;min-height:100vh;display:flex;align-items:center;justify-content:center;}
+.slide{width:1280px;height:720px;flex:0 0 auto;position:relative;overflow:hidden;
+  background:radial-gradient(130% 90% at 88% -10%, rgba(91,140,255,.13), transparent 55%),
+             radial-gradient(90% 70% at 6% 110%, rgba(59,232,255,.06), transparent 55%),
+             var(--bg);
+  border:1px solid var(--line);border-radius:16px;
+  box-shadow:0 40px 120px rgba(0,0,0,.6);
+  transform:scale(var(--scale));transform-origin:center center;}
+.pad{position:absolute;inset:0;padding:58px 72px 0;}
+
+/* ---- shared components ---- */
+.kicker{display:flex;align-items:center;gap:14px;font-size:15px;font-weight:600;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--accent);}
+.kicker::before{content:"";width:34px;height:5px;border-radius:3px;background:var(--accent);}
+.h1{font-size:48px;line-height:1.08;font-weight:800;letter-spacing:-.015em;margin:24px 0 0;max-width:1080px;}
+.h1.sm{font-size:40px}
+.sub{font-size:22px;line-height:1.5;color:var(--muted);margin:20px 0 0;max-width:1000px;font-weight:400;}
+.accent{color:var(--accent)} .cy{color:var(--cyan)} .mint{color:var(--mint)} .coral{color:var(--coral)}
+b,strong{font-weight:700;color:var(--white)}
+.fill{color:var(--amber);border:1px dashed rgba(245,182,66,.55);border-radius:6px;
+  padding:0 7px;font-weight:600;font-size:.84em;background:rgba(245,182,66,.07);white-space:nowrap}
+.foot{position:absolute;left:72px;right:72px;bottom:26px;display:flex;justify-content:space-between;
+  align-items:center;border-top:1px solid var(--line);padding-top:13px;font-size:13.5px;color:var(--faint);letter-spacing:.05em;}
+.foot .wm{color:var(--muted);font-weight:700;letter-spacing:.24em;font-size:13px}
+.foot .sec{color:var(--faint);letter-spacing:.12em;text-transform:uppercase;font-size:12px}
+
+.cols{display:flex;gap:28px}
+.card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+  border-radius:18px;padding:28px 30px;position:relative;overflow:hidden}
+.card .bar{position:absolute;top:0;left:0;right:0;height:5px}
+.card h3{margin:6px 0 10px;font-size:23px;font-weight:700}
+.card p{margin:0;font-size:17.5px;line-height:1.5;color:var(--muted)}
+.tag{display:inline-block;font-size:13px;font-weight:600;letter-spacing:.06em;padding:5px 12px;border-radius:999px;
+  border:1px solid var(--line2);color:var(--muted);background:rgba(255,255,255,.02)}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+
+ul.bul{list-style:none;margin:18px 0 0;padding:0}
+ul.bul li{position:relative;padding:0 0 0 30px;margin:0 0 16px;font-size:21px;line-height:1.46;color:var(--muted)}
+ul.bul li::before{content:"";position:absolute;left:0;top:9px;width:11px;height:11px;border-radius:3px;background:var(--accent)}
+ul.bul li.cy::before{background:var(--cyan)} ul.bul li.mint::before{background:var(--mint)} ul.bul li.coral::before{background:var(--coral)}
+
+.statbig{font-size:64px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.statlbl{font-size:15px;color:var(--muted);margin-top:8px;letter-spacing:.03em}
+
+code,.mono{font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace}
+.codechip{font-family:'JetBrains Mono',monospace;background:rgba(91,140,255,.10);border:1px solid var(--line2);
+  color:var(--cyan);padding:2px 9px;border-radius:7px;font-size:.86em}
+
+/* ---- HUD ---- */
+.hud{position:fixed;right:18px;bottom:16px;z-index:50;display:flex;gap:14px;align-items:center;
+  font-size:12.5px;color:#7a89ad;background:rgba(8,12,22,.82);border:1px solid var(--line);
+  padding:8px 14px;border-radius:999px;backdrop-filter:blur(6px)}
+.hud b{color:#cdd7ee}
+.hud .k{border:1px solid var(--line2);border-radius:5px;padding:1px 6px;color:#9fb0d6;font-family:'JetBrains Mono',monospace;font-size:11px}
+
+/* ---- print ---- */
+@media print{
+  @page{size:13.333in 7.5in;margin:0}
+  html,body{background:#fff}
+  .wrap{height:auto;overflow:visible;display:block}
+  .page{min-height:auto;display:block;break-after:page;page-break-after:always}
+  .slide{transform:none!important;border-radius:0;border:none;box-shadow:none;width:13.333in;height:7.5in}
+  .pad{padding:0.6in 0.75in 0}
+  .foot{left:.75in;right:.75in;bottom:.3in}
+  .hud{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+
+<!-- ============ 1 · TITLE ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker" style="margin-top:8px">Governed · Auditable · Self-improving</div>
+    <div style="font-size:128px;font-weight:800;letter-spacing:-.03em;margin:64px 0 0;line-height:1">MAVERICK</div>
+    <div style="font-size:25px;font-weight:500;color:var(--muted);margin-top:12px">by <span style="color:var(--accent);font-weight:600">Daybreak Labs</span></div>
+    <div style="font-size:34px;font-weight:600;color:var(--white);margin-top:26px;max-width:1040px;line-height:1.2">
+      The governed, auditable AI agent <span class="accent">workforce</span> for regulated enterprises.</div>
+    <div style="font-size:20px;color:var(--muted);margin-top:30px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <span class="fill">[ FILL: founder name ]</span><span style="color:var(--faint)">·</span>
+      <span class="fill">[ FILL: contact ]</span><span style="color:var(--faint)">·</span>
+      <span class="fill">[ FILL: month 2026 ]</span></div>
+    <div style="position:absolute;right:72px;top:64px;display:flex;gap:10px;flex-direction:column;align-items:flex-end">
+      <div class="tag" style="border-color:rgba(91,140,255,.5);color:#cfe0ff">SEED ROUND · <span class="fill" style="font-size:1em">[ FILL $X.XM ]</span></div>
+      <div style="font-size:13px;color:var(--faint);letter-spacing:.05em">Governance on every action · Tamper-evident audit · Provable learning</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">Seed · Audience A</span><span>01 / 13</span></div>
+</div></section>
+
+<!-- ============ 2 · PROBLEM ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">The problem</div>
+    <h1 class="h1">Every enterprise wants an AI agent workforce.<br>Almost none can deploy one where it&nbsp;matters.</h1>
+    <p class="sub">In regulated, high-stakes work the blocker isn&rsquo;t capability — it&rsquo;s <b>governance, auditability, and trust</b>.</p>
+    <div class="cols" style="margin-top:34px">
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--coral)"></div>
+        <h3>No proof it stayed in policy</h3>
+        <p>No tamper-evident record of what an agent did. No way to prove it&rsquo;s getting <b>better</b>, not quietly drifting.</p></div>
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--amber)"></div>
+        <h3>A forced bad trade</h3>
+        <p><b>Hosted black boxes</b> you can&rsquo;t run on your own data — or <b>ungoverned frameworks</b> you have to secure yourself.</p></div>
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--accent)"></div>
+        <h3>Where it dies</h3>
+        <p>The demo wins. Then the <b>CISO, compliance, and GC</b> ask &ldquo;show me what it did, prove it can&rsquo;t exfiltrate, prove it won&rsquo;t get worse&rdquo; — and it stalls.</p></div>
+    </div>
+    <p style="font-size:22px;font-weight:600;color:var(--coral);margin-top:30px">
+      Agentic AI is stuck in pilots — in exactly the industries that would pay the most for it.</p>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">The problem</span><span>02 / 13</span></div>
+</div></section>
+
+<!-- ============ 3 · SOLUTION (HERO) ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">The solution</div>
+    <h1 class="h1 sm">A governed agent <span class="accent">runtime</span> — not a chatbot, not a framework.</h1>
+    <p class="sub" style="margin-top:14px;max-width:1140px">Every single action passes <b>one chokepoint</b> — then lands where a human signs off. Self-host or air-gap, on the customer&rsquo;s data.</p>
+    <!-- hero chokepoint diagram -->
+    <svg viewBox="0 0 1140 322" width="1140" height="322" style="margin-top:18px" font-family="Inter, sans-serif">
+      <defs>
+        <marker id="ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#5B8CFF"/></marker>
+        <marker id="ahg" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#36E0A0"/></marker>
+        <marker id="ahr" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#FF6B6B"/></marker>
+        <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="16" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <!-- input -->
+      <rect x="0" y="78" width="150" height="70" rx="12" fill="#0E1730" stroke="#27365c"/>
+      <text x="75" y="108" fill="#F5F8FF" font-size="16" font-weight="700" text-anchor="middle">Goal</text>
+      <text x="75" y="130" fill="#93A4C4" font-size="12.5" text-anchor="middle">orchestrator</text>
+      <text x="75" y="180" fill="#93A4C4" font-size="12.5" text-anchor="middle">spawns specialists</text>
+      <rect x="22" y="196" width="106" height="22" rx="6" fill="#111C3A" stroke="#27365c"/><text x="75" y="211" fill="#cfe0ff" font-size="12" text-anchor="middle">specialist swarm</text>
+      <line x1="150" y1="113" x2="330" y2="113" stroke="#5B8CFF" stroke-width="2.5" marker-end="url(#ah)"/>
+      <!-- GATE -->
+      <g filter="url(#glow)"><rect x="332" y="58" width="300" height="118" rx="16" fill="#111C3A" stroke="#5B8CFF" stroke-width="2.5"/></g>
+      <text x="482" y="92" fill="#5B8CFF" font-size="18" font-weight="800" text-anchor="middle" letter-spacing="1">THE CHOKEPOINT</text>
+      <text x="482" y="118" fill="#F5F8FF" font-size="14.5" text-anchor="middle">capability · governance policy</text>
+      <text x="482" y="140" fill="#F5F8FF" font-size="14.5" text-anchor="middle">shield · hard budget</text>
+      <text x="482" y="162" fill="#3BE8FF" font-size="12.5" text-anchor="middle">every action — allow / deny / require-human</text>
+      <!-- allow branch -->
+      <path d="M632 96 L726 96" stroke="#36E0A0" stroke-width="2.5" fill="none" marker-end="url(#ahg)"/>
+      <text x="678" y="86" fill="#36E0A0" font-size="12" font-weight="600" text-anchor="middle">allow</text>
+      <rect x="728" y="64" width="186" height="64" rx="12" fill="#0E1730" stroke="#36E0A0"/>
+      <text x="821" y="90" fill="#F5F8FF" font-size="14.5" font-weight="700" text-anchor="middle">Tools / Sandbox</text>
+      <text x="821" y="110" fill="#93A4C4" font-size="12" text-anchor="middle">network-off by default</text>
+      <!-- deny branch -->
+      <path d="M632 150 L726 184" stroke="#FF6B6B" stroke-width="2.5" fill="none" marker-end="url(#ahr)"/>
+      <text x="672" y="182" fill="#FF6B6B" font-size="12" font-weight="600" text-anchor="middle">deny / human</text>
+      <rect x="728" y="166" width="186" height="50" rx="12" fill="#0E1730" stroke="#FF6B6B"/>
+      <text x="821" y="196" fill="#F5F8FF" font-size="14.5" font-weight="700" text-anchor="middle">Human sign-off</text>
+      <!-- result -->
+      <line x1="914" y1="96" x2="982" y2="96" stroke="#5B8CFF" stroke-width="2.5" marker-end="url(#ah)"/>
+      <rect x="984" y="58" width="150" height="118" rx="14" fill="#111C3A" stroke="#27365c"/>
+      <text x="1059" y="92" fill="#F5F8FF" font-size="14.5" font-weight="700" text-anchor="middle">Signed result</text>
+      <text x="1059" y="113" fill="#93A4C4" font-size="12" text-anchor="middle">+ tamper-evident</text>
+      <text x="1059" y="129" fill="#93A4C4" font-size="12" text-anchor="middle">audit chain</text>
+      <text x="1059" y="156" fill="#3BE8FF" font-size="11.5" text-anchor="middle">→ system of record</text>
+      <!-- learning loop -->
+      <path d="M984 168 C 700 300, 360 300, 150 168" stroke="#3BE8FF" stroke-width="2" stroke-dasharray="6 6" fill="none" opacity=".8" marker-end="url(#ah)"/>
+      <text x="567" y="298" fill="#3BE8FF" font-size="13" font-weight="600" text-anchor="middle">closed learning loop — governed · audited · rollback-able · provably improves</text>
+    </svg>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">The solution</span><span>03 / 13</span></div>
+</div></section>
+
+<!-- ============ 4 · WHY NOW ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Why now</div>
+    <h1 class="h1 sm">The market just shifted to reward exactly this.</h1>
+    <div class="cols" style="margin-top:30px;align-items:stretch">
+      <div style="flex:1.05">
+        <ul class="bul" style="margin-top:4px">
+          <li><b>Adoption inflection.</b> Enterprise agentic AI is moving from pilots to budget — but stalling on governance.</li>
+          <li class="cy"><b>Regulation forces the issue.</b> EU AI Act and sector rules (HIPAA, SOX, GLBA) make &ldquo;ungoverned agent&rdquo; a non-starter.</li>
+          <li class="mint"><b>2026 rewards defensibility.</b> Capital now pays for IP-heavy companies and <b>punishes AI wrappers.</b> Maverick is the opposite of a wrapper.</li>
+        </ul>
+      </div>
+      <div style="flex:.95;display:flex;flex-direction:column;gap:18px">
+        <div class="card" style="padding:26px 30px"><div class="eyebrow">AI governance &amp; compliance spend</div>
+          <div style="display:flex;align-items:baseline;gap:14px;margin-top:10px">
+            <span class="statbig" style="font-size:52px">$2.2B</span>
+            <span style="font-size:30px;color:var(--accent);font-weight:700">→ $11B</span></div>
+          <div class="statlbl">2025 → 2036, riding a <b style="color:#cfe0ff">$51B</b> GRC budget — BFSI leading.</div></div>
+        <div class="card" style="padding:22px 30px">
+          <div class="eyebrow" style="margin-bottom:14px">The bet repriced</div>
+          <div style="display:flex;align-items:center;gap:12px;font-size:16px;color:var(--muted)">
+            <span style="padding:6px 12px;border:1px solid var(--line2);border-radius:8px">2024 · capability race</span>
+            <span class="accent" style="font-size:20px">→</span>
+            <span style="padding:6px 12px;border:1px solid rgba(91,140,255,.5);border-radius:8px;color:#cfe0ff;background:rgba(91,140,255,.08)">2026 · governance + defensibility</span>
+          </div></div>
+      </div>
+    </div>
+    <p style="font-size:19px;color:var(--muted);margin-top:26px">Governance and provable safety are becoming a <b>requirement, not a feature</b> — and we&rsquo;re early to the layer that becomes mandatory.</p>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">Why now</span><span>04 / 13</span></div>
+</div></section>
+
+<!-- ============ 5 · PRODUCT (SHOW, DON'T TELL) ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Product — show, don&rsquo;t tell</div>
+    <h1 class="h1 sm">The governance is checkable, not claimed.</h1>
+    <p class="sub" style="margin-top:12px;max-width:1120px">We don&rsquo;t say &ldquo;it&rsquo;s governed.&rdquo; We run it live — the platform refuses the dangerous action and leaves a tamper-evident receipt.</p>
+    <div class="cols" style="margin-top:26px;gap:22px">
+      <!-- 1 proof pack -->
+      <div class="card" style="flex:1;padding:0;overflow:hidden">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
+          <span class="codechip">maverick proof-pack</span><span style="font-size:12px;color:var(--mint)">● Ed25519 signed</span></div>
+        <div class="mono" style="padding:16px 18px;font-size:12.5px;line-height:1.7;color:#b9c6e6">
+          <div><span style="color:#62729A"># PROOF.md</span></div>
+          <div>governance&nbsp;&nbsp;<span class="mint">✓ PASS</span></div>
+          <div>reliability&nbsp;&nbsp;<span class="mint">✓ CERT</span></div>
+          <div>performance&nbsp;<span class="mint">✓ SLA</span></div>
+          <div>shield&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="mint">✓ PASS</span></div>
+          <div style="color:#62729A;margin-top:6px">verifiable offline ·<br>refuses to fabricate</div></div>
+      </div>
+      <!-- 2 golden path receipts -->
+      <div class="card" style="flex:1.25;padding:0;overflow:hidden">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--line)"><span class="codechip">golden-path receipts</span></div>
+        <div class="mono" style="padding:14px 18px;font-size:12.5px;line-height:1.95">
+          <div>boot finance specialist&nbsp;&nbsp;<span style="color:#93A4C4">SEALED</span></div>
+          <div>$60k wire&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="coral">DENY</span></div>
+          <div>$6k release&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="amber" style="color:var(--amber)">REQUIRE_HUMAN</span></div>
+          <div>runaway loop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cy">CAPPED</span></div>
+          <div>alter audited row&nbsp;&nbsp;<span class="mint">CAUGHT</span></div>
+          <div style="color:#62729A;margin-top:6px">every row tamper-evident</div></div>
+      </div>
+      <!-- 3 deliverables inbox -->
+      <div class="card" style="flex:1.1;padding:0;overflow:hidden">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--line)"><span class="codechip">/deliverables · persona inbox</span></div>
+        <div style="padding:14px 18px;font-size:13.5px;line-height:1.6;color:#b9c6e6">
+          <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line)">
+            <span>Q3 reconciliation</span><span class="amber" style="color:var(--amber);font-size:12px">Awaiting sign-off</span></div>
+          <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line)">
+            <span>Vendor risk memo</span><span class="mint" style="font-size:12px">Certified</span></div>
+          <div style="margin-top:12px;color:var(--muted);font-size:12.5px">human certifies →<br>routes to <b>Salesforce / ServiceNow</b><br><span style="color:#62729A">signed · audited</span></div>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:17px;color:var(--muted);margin-top:22px"><b>One command</b> produces a signed evidence bundle. <b>One scenario</b> shows the deny, the cap, and the human sign-off. That&rsquo;s the whole enterprise loop, closed.</p>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">Product</span><span>05 / 13</span></div>
+</div></section>
+
+<!-- ============ 6 · MOAT ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">The moat</div>
+    <h1 class="h1 sm">Three compounding moats — all audited, none a wrapper.</h1>
+    <div style="margin-top:30px;display:flex;flex-direction:column;gap:16px">
+      <div class="card" style="padding:22px 28px;display:flex;align-items:center;gap:26px">
+        <div style="font-size:30px;font-weight:800;color:var(--accent);width:52px">01</div>
+        <div style="flex:1"><h3 style="margin:0 0 4px">Governance bound to every action</h3>
+          <p>Capability tokens (attenuate-only), a policy engine, an egress lock, and a <b>signed, hash-chained audit log</b> with offline verification. Deep infra — not a prompt over an API.</p></div></div>
+      <div class="card" style="padding:22px 28px;display:flex;align-items:center;gap:26px">
+        <div style="font-size:30px;font-weight:800;color:var(--cyan);width:52px">02</div>
+        <div style="flex:1"><h3 style="margin:0 0 4px">A workforce that <span class="cy">provably</span> improves</h3>
+          <p>An audited, snapshot-/rollback-able learning loop: offline &ldquo;dreaming,&rdquo; per-department memory, and a causal flywheel. <b>Every causal claim survives a placebo test</b> before it changes behavior.</p></div></div>
+      <div class="card" style="padding:22px 28px;display:flex;align-items:center;gap:26px">
+        <div style="font-size:30px;font-weight:800;color:var(--mint);width:52px">03</div>
+        <div style="flex:1"><h3 style="margin:0 0 4px">1,118 least-privilege specialist packs · 26 suites</h3>
+          <p><span class="codechip">maverick domains-lint</span> → <b>0 errors, 0 warnings.</b> Run it yourself. A governed library a competitor can&rsquo;t assemble in a quarter.</p></div></div>
+    </div>
+    <p style="font-size:18px;color:var(--muted);margin-top:24px">~<b style="color:#cfe0ff">310,000 lines</b> of infrastructure · <b style="color:#cfe0ff">10,000+ tests</b> — the thing a frontier lab won&rsquo;t ship into a bank: a system that <b>rewrites itself in production</b>, governed, gated, and reversible.</p>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">The moat</span><span>06 / 13</span></div>
+</div></section>
+
+<!-- ============ 7 · MARKET & WEDGE ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Market &amp; wedge</div>
+    <h1 class="h1 sm">Go deep where governance <em style="font-style:normal" class="accent">is</em> the buying criterion.</h1>
+    <div class="cols" style="margin-top:26px;align-items:center">
+      <div style="flex:1.15">
+        <ul class="bul">
+          <li><b>TAM:</b> enterprise agent platforms (~<b style="color:#cfe0ff">$9B</b>, fast-growing) at the intersection of the <b style="color:#cfe0ff">$51B</b> GRC / governance budget. We sell into both.</li>
+          <li class="mint"><b>Beachhead — BFSI / finance.</b> Leads governance spend, highest regulatory pain, clearest ROI. The finance suite already declares ~29 governed deliverables across 11 roles.</li>
+          <li class="cy"><b>Second wedge — tax-prep for CPA firms.</b> A deterministic, citation-backed pipeline (docs → first-pass 1040 + state return) with a signed tax-law update channel.</li>
+          <li><b>Expansion:</b> 26 suites already built — healthcare, insurance, legal, gov-contracting. Land-and-expand once the wedge is proven.</li>
+        </ul>
+      </div>
+      <div style="flex:.85;display:flex;justify-content:center">
+        <svg viewBox="0 0 380 360" width="380" height="360" font-family="Inter, sans-serif">
+          <circle cx="190" cy="175" r="170" fill="none" stroke="#27365c" stroke-width="1.5"/>
+          <circle cx="190" cy="175" r="118" fill="rgba(59,232,255,.05)" stroke="#2b4a6b" stroke-width="1.5"/>
+          <circle cx="190" cy="175" r="64" fill="rgba(91,140,255,.16)" stroke="#5B8CFF" stroke-width="2"/>
+          <text x="190" y="170" fill="#F5F8FF" font-size="20" font-weight="800" text-anchor="middle">BFSI</text>
+          <text x="190" y="190" fill="#cfe0ff" font-size="12" text-anchor="middle">beachhead</text>
+          <text x="190" y="128" fill="#3BE8FF" font-size="12.5" text-anchor="middle">tax · insurance · healthcare</text>
+          <text x="190" y="33" fill="#93A4C4" font-size="12.5" text-anchor="middle">26 suites built</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">Market &amp; wedge</span><span>07 / 13</span></div>
+</div></section>
+
+<!-- ============ 8 · GO-TO-MARKET ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Go-to-market</div>
+    <h1 class="h1 sm">Two motions — self-host gets procurement to &ldquo;yes&rdquo;.</h1>
+    <div class="cols" style="margin-top:30px">
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--accent)"></div>
+        <div class="tag" style="margin-bottom:12px;border-color:rgba(91,140,255,.5);color:#cfe0ff">DIRECT · go deep in one vertical</div>
+        <p style="font-size:18px;color:var(--muted)">Land <b>2&ndash;3 BFSI design partners</b> → a paid pilot → expansion across suites. Self-host means their data never leaves; security review gets to &ldquo;yes&rdquo; faster.</p></div>
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--cyan)"></div>
+        <div class="tag" style="margin-bottom:12px;border-color:rgba(59,232,255,.5);color:#bdf3ff">OVERLAY · govern their agents</div>
+        <p style="font-size:18px;color:var(--muted)"><b>&ldquo;Bring your Agentforce / Copilot / LangChain agents under Maverick governance.&rdquo;</b> No rip-and-replace. The easiest enterprise entry — and a natural acquisition story for a GRC / ServiceNow buyer.</p></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;margin-top:26px;justify-content:center">
+      <span style="padding:10px 18px;border:1px solid var(--line2);border-radius:10px;color:#cfe0ff">Direct</span>
+      <span class="accent" style="font-size:22px">↘</span>
+      <span style="padding:12px 22px;border:1px solid rgba(91,140,255,.55);border-radius:10px;background:rgba(91,140,255,.1);color:#fff;font-weight:700">Expand across 26 suites</span>
+      <span class="cy" style="font-size:22px">↗</span>
+      <span style="padding:10px 18px;border:1px solid var(--line2);border-radius:10px;color:#bdf3ff">Overlay</span>
+    </div>
+    <p style="font-size:16px;color:var(--faint);margin-top:24px;text-align:center">Distribution already built: <b style="color:#9fb0d6">8 PyPI packages</b> · Docker / K8s / VPS · an <b style="color:#9fb0d6">MCP server</b> (Claude Code / Cursor / any MCP client) · GitHub Action.</p>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">Go-to-market</span><span>08 / 13</span></div>
+</div></section>
+
+<!-- ============ 9 · COMPETITION ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Competition</div>
+    <h1 class="h1 sm">We don&rsquo;t race to build a smarter agent. We govern&nbsp;them.</h1>
+    <table style="width:100%;margin-top:28px;border-collapse:collapse;font-size:16.5px">
+      <thead><tr style="color:var(--muted);font-size:14px;text-transform:uppercase;letter-spacing:.06em">
+        <th style="text-align:left;padding:12px 10px;font-weight:600"></th>
+        <th style="padding:12px 8px;font-weight:600">Governance<br>+ audit</th>
+        <th style="padding:12px 8px;font-weight:600">Self-host /<br>air-gap</th>
+        <th style="padding:12px 8px;font-weight:600">Provable<br>learning</th>
+        <th style="padding:12px 8px;font-weight:600">Prebuilt regulated<br>specialists</th></tr></thead>
+      <tbody>
+        <tr style="background:linear-gradient(90deg,rgba(91,140,255,.16),rgba(91,140,255,.05));">
+          <td style="padding:16px 12px;font-weight:800;font-size:19px;border-radius:10px 0 0 10px">Maverick</td>
+          <td style="text-align:center" class="mint">✅ signed, hash-chained</td><td style="text-align:center" class="mint">✅</td>
+          <td style="text-align:center" class="mint">✅</td><td style="text-align:center;border-radius:0 10px 10px 0" class="mint">✅ 1,118</td></tr>
+        <tr style="color:var(--muted);border-bottom:1px solid var(--line)"><td style="padding:14px 12px">Sierra <span style="color:var(--faint);font-size:13px">($15.8B, CX agents)</span></td>
+          <td style="text-align:center">partial</td><td style="text-align:center" class="coral">❌ hosted</td><td style="text-align:center" class="coral">❌</td><td style="text-align:center" class="coral">❌</td></tr>
+        <tr style="color:var(--muted);border-bottom:1px solid var(--line)"><td style="padding:14px 12px">Cognition / Devin <span style="color:var(--faint);font-size:13px">(coding)</span></td>
+          <td style="text-align:center" class="coral">❌</td><td style="text-align:center" class="coral">❌</td><td style="text-align:center" class="coral">❌</td><td style="text-align:center" class="coral">❌</td></tr>
+        <tr style="color:var(--muted);border-bottom:1px solid var(--line)"><td style="padding:14px 12px">LangChain <span style="color:var(--faint);font-size:13px">(framework)</span></td>
+          <td style="text-align:center" class="coral">❌ DIY</td><td style="text-align:center">✅ but DIY</td><td style="text-align:center" class="coral">❌</td><td style="text-align:center" class="coral">❌</td></tr>
+        <tr style="color:var(--muted)"><td style="padding:14px 12px">ServiceNow / Salesforce</td>
+          <td style="text-align:center">policy, not agent-native</td><td style="text-align:center" class="coral">❌</td><td style="text-align:center" class="coral">❌</td><td style="text-align:center" class="coral">❌</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:17px;color:var(--muted);margin-top:22px">Nobody owns <b>&ldquo;governed, self-hostable, provably-improving agent workforce for regulated work.&rdquo;</b> That&rsquo;s the lane.</p>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">Competition</span><span>09 / 13</span></div>
+</div></section>
+
+<!-- ============ 10 · TRACTION ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Traction &amp; what&rsquo;s built</div>
+    <h1 class="h1 sm">Pre-revenue, alpha — and unusually far along on <span class="accent">substance</span>.</h1>
+    <div class="cols" style="margin-top:28px">
+      <div style="flex:1.1">
+        <div class="eyebrow" style="color:var(--mint);margin-bottom:14px">✅ Built &amp; installable today</div>
+        <ul class="bul" style="margin-top:0">
+          <li class="mint">~310K LOC across <b>8 packages on PyPI</b>; native installers for Win / macOS / Linux.</li>
+          <li class="mint"><b>10,000+ passing tests</b> on Python 3.10–3.12.</li>
+          <li class="mint">The product proves itself: signed Proof Pack, governance scoreboard, <b>1,118 lint-clean packs</b> (0 errors).</li>
+        </ul>
+      </div>
+      <div style="flex:1">
+        <div class="eyebrow" style="margin-bottom:14px">→ Next 12 months (what this round buys)</div>
+        <ul class="bul" style="margin-top:0">
+          <li>Design partners / pilots: <span class="fill">[ FILL: e.g. 2 BFSI design partners in conversation; 1 signed LOI ]</span></li>
+          <li>Revenue: <span class="fill">[ FILL: pre-revenue / $X MRR / pilot value ]</span></li>
+          <li>3 design partners live · <b>SOC 2 Type I</b> in progress · first paid ARR.</li>
+        </ul>
+      </div>
+      <div style="flex:.7;display:flex;flex-direction:column;justify-content:center;align-items:center;border-left:1px solid var(--line)">
+        <div class="statbig mint" style="color:var(--mint)">10,400+</div>
+        <div class="statlbl" style="text-align:center">tests green<br>Py 3.10–3.12</div>
+      </div>
+    </div>
+    <p style="font-size:17px;color:var(--muted);margin-top:24px">The hard infrastructure is built and tested, and the product can prove its own guarantees on the spot. This round turns a strong <b>asset</b> into a <b>company</b>.</p>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">Traction</span><span>10 / 13</span></div>
+</div></section>
+
+<!-- ============ 11 · TEAM ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Team</div>
+    <h1 class="h1 sm">The team to make autonomy governable.</h1>
+    <p class="sub" style="margin-top:12px">This slide carries a seed round — make the &ldquo;why you&rdquo; specific and credible.</p>
+    <div class="cols" style="margin-top:32px">
+      <div class="card" style="flex:1">
+        <div style="width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--cyan));margin-bottom:16px"></div>
+        <h3 style="margin:0 0 6px">Founder</h3>
+        <p><span class="fill">[ FILL: founder name + one-line credibility — prior company / domain / why-you ]</span></p>
+      </div>
+      <div class="card" style="flex:1">
+        <div style="width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,var(--panel3),var(--line2));margin-bottom:16px"></div>
+        <h3 style="margin:0 0 6px">Co-founders / key hires</h3>
+        <p><span class="fill">[ FILL: any co-founders / key hires / advisors ]</span></p>
+      </div>
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--accent)"></div>
+        <h3 style="margin:6px 0 6px">Why us</h3>
+        <p><span class="fill">[ FILL: the unfair advantage — domain access, prior exit, depth in regulated AI ]</span></p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">Team</span><span>11 / 13</span></div>
+</div></section>
+
+<!-- ============ 12 · THE ASK ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">The ask</div>
+    <div class="cols" style="margin-top:26px;align-items:flex-start">
+      <div style="flex:1.05">
+        <div style="font-size:22px;color:var(--muted)">Raising</div>
+        <div class="statbig" style="font-size:88px;margin:6px 0 4px"><span class="fill" style="font-size:.7em">[ FILL: $X ]</span></div>
+        <div style="font-size:22px;color:var(--muted)">at <span class="fill">[ FILL: $Y pre-money ]</span></div>
+        <p style="font-size:16px;color:var(--faint);margin-top:20px;max-width:480px">Market context: 2026 is pricing defensible, IP-heavy seed companies in the <b style="color:#9fb0d6">$8–20M pre-money</b> range — before the traction this round delivers.</p>
+        <div style="margin-top:18px">
+          <div class="eyebrow" style="margin-bottom:10px">Use of funds (12–18 mo)</div>
+          <p style="font-size:17px;color:var(--muted)"><span class="fill">[ FILL: e.g. 2 eng hires · design-partner success · SOC 2 + pen test · GTM ]</span></p>
+        </div>
+      </div>
+      <div style="flex:1;border-left:1px solid var(--line);padding-left:34px">
+        <div class="eyebrow" style="margin-bottom:18px">Milestones this funds</div>
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div style="display:flex;gap:16px;align-items:center"><div style="width:34px;height:34px;border-radius:50%;background:rgba(91,140,255,.16);border:1px solid var(--accent);color:#cfe0ff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto">1</div><div style="font-size:18px">3 design partners <b>live</b></div></div>
+          <div style="display:flex;gap:16px;align-items:center"><div style="width:34px;height:34px;border-radius:50%;background:rgba(59,232,255,.14);border:1px solid var(--cyan);color:#bdf3ff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto">2</div><div style="font-size:18px">First <b>paid ARR</b></div></div>
+          <div style="display:flex;gap:16px;align-items:center"><div style="width:34px;height:34px;border-radius:50%;background:rgba(54,224,160,.14);border:1px solid var(--mint);color:#9bf3cf;display:flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto">3</div><div style="font-size:18px"><b>SOC 2 Type I</b></div></div>
+          <div style="display:flex;gap:16px;align-items:center"><div style="width:34px;height:34px;border-radius:50%;background:rgba(245,182,66,.14);border:1px solid var(--amber);color:#f6d79a;display:flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto">4</div><div style="font-size:18px">A fundable <b>Series A story</b></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">The ask</span><span>12 / 13</span></div>
+</div></section>
+
+<!-- ============ 13 · VISION ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Vision</div>
+    <h1 class="h1" style="font-size:54px;margin-top:30px">The AI workforce <span class="accent">of record</span><br>for regulated enterprises.</h1>
+    <p class="sub" style="font-size:24px;max-width:1060px;margin-top:28px">A governed, self-improving agent workforce that does real operational work — and can <b>prove, to a regulator,</b> that it stayed in policy and got better.</p>
+    <p style="font-size:21px;color:var(--muted);margin-top:30px">Start: one regulated vertical.<br>End: <b style="color:#cfe0ff">the governance + learning layer every enterprise agent runs through.</b></p>
+    <div style="position:absolute;left:72px;bottom:96px;display:flex;gap:16px;align-items:center;font-size:18px;color:var(--muted)">
+      <span class="fill">[ FILL: contact ]</span><span style="color:var(--faint)">·</span><span class="fill">[ FILL: data room link ]</span>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">MAVERICK</span><span class="sec">Vision</span><span>13 / 13</span></div>
+</div></section>
+
+</div><!-- /wrap -->
+
+<div class="hud">
+  <span><span class="k">←</span> <span class="k">→</span> navigate</span>
+  <span><span class="k">F</span> fullscreen</span>
+  <span><b id="pgno">1</b> / 13</span>
+</div>
+
+<script>
+(function(){
+  var pages = Array.prototype.slice.call(document.querySelectorAll('.page'));
+  var wrap = document.getElementById('wrap');
+  var pgno = document.getElementById('pgno');
+  function fit(){
+    var s = Math.min(window.innerWidth/1320, window.innerHeight/760);
+    document.documentElement.style.setProperty('--scale', Math.max(0.2, s));
+  }
+  window.addEventListener('resize', fit); fit();
+
+  function current(){
+    var best=0, bd=1e9;
+    for(var i=0;i<pages.length;i++){
+      var r=pages[i].getBoundingClientRect();
+      var d=Math.abs(r.top+r.height/2 - window.innerHeight/2);
+      if(d<bd){bd=d;best=i;}
+    }
+    return best;
+  }
+  function go(i){ i=Math.max(0,Math.min(pages.length-1,i)); pages[i].scrollIntoView({behavior:'smooth'}); }
+  wrap.addEventListener('scroll', function(){ pgno.textContent = current()+1; });
+  document.addEventListener('keydown', function(e){
+    if(e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' '||e.key==='PageDown'){e.preventDefault();go(current()+1);}
+    else if(e.key==='ArrowLeft'||e.key==='ArrowUp'||e.key==='PageUp'){e.preventDefault();go(current()-1);}
+    else if(e.key==='Home'){e.preventDefault();go(0);}
+    else if(e.key==='End'){e.preventDefault();go(pages.length-1);}
+    else if(e.key==='f'||e.key==='F'){ if(!document.fullscreenElement){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();} else {document.exitFullscreen&&document.exitFullscreen();} }
+  });
+})();
+</script>
+</body>
+</html>
