@@ -39,7 +39,7 @@
 - [ ] Compaction RAG `DigestIndex` — built, not wired.
 - [ ] `pgvector` knowledge store — `raise NotImplementedError`.
 - [ ] `migrate.py` rewrite engine — `REWRITES = []`.
-- [ ] `schema-plan` migration gate — exists, not wired into CI.
+- [x] `schema-plan` migration gate — now wired into CI (`python -m maverick.schema_migrations --ci` in the lint job): fails the build on a malformed or unclassifiable world-model migration, so one can't ship without an online/offline-safety review.
 - [ ] `training/` RL pipeline — interfaces only; don't overclaim "learning".
 - [ ] Consolidate: two budget tuners · four compaction mechanisms / two vocabularies · two `FederationError` classes · `multi_monitor` naming. (Renames/merges touch imports → need a deliberate pass, not a drive-by.)
 
