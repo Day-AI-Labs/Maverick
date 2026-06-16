@@ -43,6 +43,14 @@ def test_store_modernized_off_bespoke_classes(monkeypatch, tmp_path):
     assert "border-radius: 8px" not in t
 
 
+def test_buttons_have_tactile_transition(monkeypatch, tmp_path):
+    # Buttons gained a smooth transition + a subtle press, gated by reduced motion.
+    _isolate(monkeypatch, tmp_path)
+    t = _client().get("/start").text
+    assert ".btn:active { transform: translateY(1px); }" in t
+    assert ".btn:active { transform: none; }" in t
+
+
 def test_automations_uses_shared_section_head(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     t = _client().get("/automations").text
