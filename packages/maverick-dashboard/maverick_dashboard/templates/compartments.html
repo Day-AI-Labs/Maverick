@@ -41,9 +41,11 @@
       </tbody>
     </table>
     {% else %}
-      <h2 class="empty__title">No domain agents yet</h2>
-      <p class="muted" style="margin-bottom: var(--space-5);">Onboard a business to mint its first sealed agent.</p>
-      <pre style="background: var(--surface-sunken); color: var(--text); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); display: inline-block; text-align: start; margin: 0;">maverick onboard</pre>
+      <div class="mv-empty">
+        <p class="mv-empty__title">No domain agents yet</p>
+        <p class="mv-empty__body">Onboard a business to mint its first sealed agent:</p>
+        <pre style="background: var(--surface-sunken); color: var(--text); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); display: inline-block; text-align: start; margin: 0;">maverick onboard</pre>
+      </div>
     {% endif %}
   </div>
 {% endblock %}
