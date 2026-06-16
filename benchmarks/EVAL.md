@@ -8,15 +8,24 @@ shapes.
 
 ## Run it
 
-```bash
-# Real run (drives `maverick start`; needs a provider key configured):
-python benchmarks/run_eval.py gaia --dataset path/to/gaia.jsonl --limit 20
+The real run executes each task as a goal **in-process** via the live solver in
+`agent_solver.py` — the same `run_goal` path a user hits — and returns the
+agent's `FINAL ANSWER:`. Cost is capped **per task** with `--max-dollars`.
 
-# CI / smoke (no keys, no dataset — uses the shipped offline fixture):
+```bash
+# Real run (needs a provider key, e.g. ANTHROPIC_API_KEY):
+python benchmarks/run_eval.py gaia --dataset path/to/gaia.jsonl \
+    --limit 20 --max-dollars 2 --max-wall-seconds 600
+
+# CI / smoke (no keys, no dataset — shipped offline fixture + stub solver):
 MAVERICK_EVAL_DRY_RUN=1 python benchmarks/run_eval.py gaia
 ```
 
 Scores append to `benchmarks/SCORES.md` (a markdown table, like `RESULTS.md`).
+
+**Rough cost:** ~$0.5–$2 per task (multi-step agent on the Opus orchestrator),
+so a 20-task slice ≈ $10–$40 and the full GAIA validation split (~165 tasks)
+≈ $80–$300. Bound it with `--max-dollars` (per task) and `--limit` (task count).
 
 ## The contract (`evals.py`)
 
@@ -39,7 +48,7 @@ run_benchmark(bench, solver, dataset=..., limit=...) -> {pass_at_1, mean_score, 
 |---|---|---|---|
 | general assistant | **GAIA** (`eval_gaia.py`) | ✅ shipped | official normalized exact-match (number / string / list) |
 | tool-agent policy | **τ²-bench** (`eval_tau2.py`) | ✅ shipped | stateful tool domain + DB; graded on final state **and** required actions. Self-runnable: `python benchmarks/eval_tau2.py` (dry-run on the retail fixture); real tau2 task files via `--dataset`. Real Maverick-driving solver + user simulator are the follow-up. |
-| CLI ops | terminal-bench | follow-up | run the task's `verify` command in a sandbox workdir; pass iff exit 0 |
+| CLI ops | **terminal-bench** (`eval_terminal_bench.py`) | ✅ shipped | Docker-free virtual-FS: graded on final files **and** required commands. The **live solver** (`terminal_solver.py`) drives a real LLM in a tool-calling loop over the env's shell tools. Run: `python benchmarks/eval_terminal_bench.py --limit N --max-dollars 2`; CI/stub: `MAVERICK_EVAL_DRY_RUN=1 …`. |
 
 ### Adding the next slice
 
@@ -49,9 +58,14 @@ run_benchmark(bench, solver, dataset=..., limit=...) -> {pass_at_1, mean_score, 
    `test_evals.py` that runs it with a stub solver.
 3. Register it in `run_eval.py`'s `_BENCHMARKS`.
 
-**terminal-bench** fits the contract directly: the task carries a `verify`
-shell command, the solver runs the instruction in a workdir, and `score`
-runs `verify` through `sandbox.exec()` (CLAUDE.md rule 4) — pass iff exit 0.
+**terminal-bench** ships its own stateful harness (`eval_terminal_bench.py`):
+a task gives starting files + a request, the **live solver** (`terminal_solver.py`)
+drives a real LLM in a tool-calling loop over the virtual-FS shell tools, and
+`verify` grades the final filesystem (`expected_files` / `absent_files`) **and**
+the command log (`required_commands`). Validated for free with a scripted
+FakeLLM (`test_terminal_solver.py`); a live smoke on the bundled tasks passes
+**3/3**. (Full terminal-bench-in-a-container, for tasks that need real command
+execution, is a separate heavier seam.)
 
 **τ²-bench** needs a live **user-simulator** LLM (it's a dual-control
 agent↔user setting), which is a separate piece; the *offline* scorer

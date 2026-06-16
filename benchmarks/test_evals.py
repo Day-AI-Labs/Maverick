@@ -136,36 +136,17 @@ class TestGaiaEndToEnd:
         assert summary["pass_at_1"] == 0.0
 
 
-# --- real CLI solver wrapper ------------------------------------------
+# --- in-process live-solver wiring ------------------------------------
 
 class TestMaverickSolver:
-    def test_runs_supported_start_command_and_returns_stdout(self, run_eval, monkeypatch, evals):
-        calls = []
-
-        def fake_run(cmd, **kwargs):
-            calls.append((cmd, kwargs))
-            return run_eval.subprocess.CompletedProcess(
-                cmd, 0, stdout="FINAL ANSWER: Paris\n", stderr=""
-            )
-
-        monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
-        solver = run_eval._maverick_solver(max_dollars=0.25, max_wall_seconds=12)
+    def test_run_eval_wires_the_in_process_solver(self, run_eval, evals):
+        # The brittle `maverick start` subprocess solver was replaced by the
+        # in-process agent_solver. run_eval loads both the dry-run stub and the
+        # live factory from it; the factory builds a solver without running it.
+        # The live path itself is covered end-to-end (FakeLLM) in
+        # test_agent_solver.py.
+        dry = run_eval._load("agent_solver.py", "dry_run_solver")
+        make = run_eval._load("agent_solver.py", "make_agent_solver")
         task = evals.EvalTask(task_id="task", prompt="What is the answer?")
-
-        assert solver(task) == "FINAL ANSWER: Paris\n"
-        assert calls == [
-            (
-                [
-                    "maverick", "start",
-                    "--max-dollars", "0.25",
-                    "--max-wall-seconds", "12",
-                    "What is the answer?",
-                ],
-                {
-                    "capture_output": True,
-                    "text": True,
-                    "timeout": 12,
-                    "check": True,
-                },
-            )
-        ]
+        assert dry(task) == ""
+        assert callable(make(max_dollars=0.25, max_wall_seconds=12))
