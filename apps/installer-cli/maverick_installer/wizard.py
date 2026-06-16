@@ -1249,6 +1249,14 @@ def pick_advanced() -> dict[str, Any]:
             "Governance that lets agents be bolder where it's earned; off by default.",
             default=False,
         ),
+        "speculative": _q_confirm(
+            "Speculative execution? On turns where the world-model is highly confident "
+            "what comes next (a well-trodden, near-deterministic step), draft with a cheap "
+            "model instead of the frontier one -- reserving the expensive model for novel "
+            "or uncertain turns. Cuts cost/latency on repetitive workflows; off by default "
+            "and a no-op until you set a draft model.",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2527,6 +2535,14 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("# runs; proceed when confidently safe, block a poor outcome, escalate")
         lines.append("# the unknown (maverick.rehearsal). Fail-open while disabled.")
         lines.append("enable = true")
+    if advanced.get("speculative"):
+        lines.append("")
+        lines.append("[speculative]")
+        lines.append("# Draft a confidently-predictable turn with a cheap model, keeping the")
+        lines.append("# frontier model for novel/uncertain turns (maverick.speculative_exec).")
+        lines.append("# Set draft_model to a cheap spec to activate; a no-op until you do.")
+        lines.append("enable = true")
+        lines.append('# draft_model = "anthropic:claude-haiku-4-5-20251001"')
     if advanced.get("enforce_quotas"):
         lines.append("")
         lines.append("[quotas]")

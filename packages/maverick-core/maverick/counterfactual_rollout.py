@@ -90,6 +90,12 @@ class TransitionModel:
     def actions(self, state: tuple) -> list:
         return list(self._policy.get(state, {}))
 
+    def policy(self, state: tuple) -> dict:
+        """Behaviour-policy action counts for ``state`` ({} if unseen). Public
+        accessor used by speculative execution; subclasses generalise via
+        ``_policy_counts``."""
+        return dict(self._policy_counts(state) or {})
+
     def _next_counts(self, state: tuple, action: Hashable):
         """Next-state counts for ``(state, action)`` (None if unseen). Subclasses
         override to generalise (e.g. feature backoff) rather than return None."""

@@ -109,4 +109,10 @@ def gate_tool(*, domain, role, last_tool, tool_name) -> RehearsalVerdict:
     return rehearsal.gate_action(model, encode_state(domain, role, last_tool), [tool_name])
 
 
-__all__ = ["encode_state", "gate_tool", "reset_cache"]
+def world_model():
+    """The cached Operating-Record world-model (None if no data). Public accessor
+    so speculative execution shares one model with rehearsal."""
+    return _model()
+
+
+__all__ = ["encode_state", "gate_tool", "reset_cache", "world_model"]
