@@ -133,6 +133,41 @@ def test_ungraded_correctness_is_neutral():
     assert r.bounded_moat_demonstrated is True
 
 
+def test_codebase_sources_counts_py_files(tmp_path):
+    assert MR._codebase_sources(tmp_path) == 0          # empty -> wasted run
+    (tmp_path / "a.py").write_text("x = 1\n")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "b.py").write_text("y = 2\n")
+    assert MR._codebase_sources(tmp_path) == 2
+    assert MR._codebase_sources(tmp_path / "missing") == 0
+
+
+def test_run_live_preflight_refuses_empty_codebase(tmp_path):
+    # The guard must raise BEFORE spending a cent when there's no code to mount
+    # (the bug that invalidated the first graded run).
+    import pytest
+    with pytest.raises(RuntimeError, match="no .py sources"):
+        MR.run_live(codebase=str(tmp_path))
+
+
+def test_worker_provisions_codebase_into_sandbox_workdir(tmp_path, monkeypatch):
+    # Exec only the config-writing prologue (before the kernel import) in an
+    # isolated HOME with a fake codebase, and confirm it mounts it + points the
+    # sandbox workdir at it -- the fix for the empty-workspace bug.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    src = tmp_path / "src"
+    (src / "pkg").mkdir(parents=True)
+    (src / "pkg" / "mod.py").write_text("x = 1\n")
+    monkeypatch.setenv("MOAT_CODEBASE", str(src))
+    monkeypatch.setenv("MOAT_ORCH_MODEL", "claude-sonnet-4-6")
+    prologue = MR._WORKER_SRC.split("from maverick.budget import Budget")[0]
+    exec(compile(prologue, "<prologue>", "exec"), {"__name__": "w"})
+    cfg = (tmp_path / ".maverick" / "config.toml").read_text()
+    assert "[sandbox]" in cfg and "workdir" in cfg
+    assert 'orchestrator = "claude-sonnet-4-6"' in cfg
+    assert (tmp_path / "ws" / "src" / "pkg" / "mod.py").exists()  # codebase copied in
+
+
 def test_format_report_renders_table_and_claim():
     r = MR.aggregate([_obs("auth->authz", 0, 0.8, 1.0)])
     report = MR.format_report(r)
