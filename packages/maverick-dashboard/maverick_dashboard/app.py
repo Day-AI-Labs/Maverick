@@ -1559,9 +1559,16 @@ async def plugins_page(request: Request) -> HTMLResponse:
         except Exception:
             pass
         groups[label] = items
+    try:
+        from maverick.plugins import installable_plugins
+        installable = installable_plugins()
+    except Exception:  # pragma: no cover -- never break the page
+        installable = []
+    install_enabled = os.environ.get("MAVERICK_ALLOW_PLUGIN_INSTALL", "").lower() in {"1", "true", "yes"}
     return templates.TemplateResponse(
         request, "plugins.html",
-        {"groups": groups, "allowlist_active": allow is not None, "error": None},
+        {"groups": groups, "allowlist_active": allow is not None, "error": None,
+         "installable": installable, "install_enabled": install_enabled},
     )
 
 
@@ -1585,6 +1592,31 @@ async def plugins_toggle(request: Request, name: str = Form(...),
         fn(name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="invalid plugin name") from exc
+    return RedirectResponse("/plugins", status_code=303)
+
+
+@app.post("/plugins/install")
+async def plugins_install(request: Request, name: str = Form(...)) -> RedirectResponse:
+    """Install a plugin *package* the operator pre-approved in ``[plugins]
+    installable``, then redirect back so its slots show up to enable.
+
+    Sensitive (runs ``pip install``), so it's quad-gated: same-origin, an
+    explicit ``MAVERICK_ALLOW_PLUGIN_INSTALL`` opt-in, the admin role, and the
+    install allowlist (``install_plugin`` rejects anything not on it). Only the
+    allowlisted package names are ever accepted -- never free-text input."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    if os.environ.get("MAVERICK_ALLOW_PLUGIN_INSTALL", "").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(
+            status_code=403,
+            detail="plugin install via dashboard is disabled; set MAVERICK_ALLOW_PLUGIN_INSTALL=1",
+        )
+    require_permission(request, "admin")
+    from maverick.plugins import install_plugin
+    try:
+        install_plugin(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse("/plugins", status_code=303)
 
 

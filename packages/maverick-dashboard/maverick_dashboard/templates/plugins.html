@@ -62,14 +62,49 @@
     </div>
   {% endfor %}
 
+  <h2 style="margin-top: 2rem;">Install a plugin</h2>
   <div class="panel">
-    <h3 style="margin-top: 0;">install a plugin</h3>
-    <p class="muted">
-      Plugins are regular Python packages declaring <code>maverick.tools</code>,
-      <code>maverick.channels</code>, <code>maverick.skills</code>, or
-      <code>maverick.personas</code> entry points. Install with:
-    </p>
-    <pre style="background: var(--bg); padding: 0.75rem; border-radius: 4px; overflow-x: auto;">pipx inject maverick-agent &lt;package-name&gt;</pre>
-    <p class="muted">Then enable it from the list above — no <code>config.toml</code> editing needed.</p>
+    {% if installable %}
+      <p class="muted">
+        Operator-approved plugin packages (<code>[plugins] installable</code>) —
+        one-click install, then enable from the list above.
+        {% if not install_enabled %}
+          <strong>Installing is off:</strong> set
+          <code>MAVERICK_ALLOW_PLUGIN_INSTALL=1</code> on the dashboard to enable the buttons.
+        {% endif %}
+      </p>
+      <table>
+        <thead><tr><th scope="col">package</th><th scope="col">action</th></tr></thead>
+        <tbody>
+        {% for pkg in installable %}
+          <tr>
+            <td><code>{{ pkg }}</code></td>
+            <td>
+              <form method="post" action="/plugins/install" style="display: inline;">
+                <input type="hidden" name="name" value="{{ pkg }}" />
+                <button type="submit" class="btn btn--primary" {% if not install_enabled %}disabled{% endif %}>Install</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <p class="muted" style="font-size: 0.85rem; margin-top: var(--space-3);">
+        Installs run <code>pip install</code> in the dashboard's environment and take
+        effect on the next goal. Only these pre-approved packages can be installed here —
+        never arbitrary input.
+      </p>
+    {% else %}
+      <p class="muted">
+        Plugins are Python packages declaring <code>maverick.tools</code>,
+        <code>maverick.channels</code>, <code>maverick.skills</code>, or
+        <code>maverick.personas</code> entry points. For one-click install from
+        here, list approved packages under <code>[plugins] installable</code> in
+        <code>~/.maverick/config.toml</code> and set
+        <code>MAVERICK_ALLOW_PLUGIN_INSTALL=1</code>. Or install on the host:
+      </p>
+      <pre style="background: var(--bg); padding: 0.75rem; border-radius: 4px; overflow-x: auto;">pipx inject maverick-agent &lt;package-name&gt;</pre>
+      <p class="muted">Then enable it from the list above — no <code>config.toml</code> editing needed.</p>
+    {% endif %}
   </div>
 {% endblock %}

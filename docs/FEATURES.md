@@ -1139,6 +1139,15 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `MAVERICK_ALLOW_SKILL_INSTALL` opt-in (skills land in agent prompts), so it's
   off by default in a locked deployment. Skills are instructions, not code —
   the safe, governed equivalent of an in-app extension.
+- **Allowlisted plugin install** — the `/plugins` page can one-click `pip
+  install` a *code* plugin package (tools / channels / skills / personas entry
+  points), but only one the operator pre-approved in `[plugins] installable`.
+  Fail-closed and quad-gated: same-origin, the `MAVERICK_ALLOW_PLUGIN_INSTALL`
+  opt-in, the admin role, and the install allowlist — and pip runs as argv (no
+  shell), so nothing is injectable and a compromised token can't pull arbitrary
+  code, only pre-vetted packages (`plugins.install_plugin` / `installable_plugins`).
+  Distinct from the *load* allowlist (`enabled`); installed slots appear in the
+  toggle list to enable.
 - **Finance suite (Office of the CFO)** — 31 domain packs across 7 towers
   (Controllership, FP&A, Treasury, Tax, Assurance, Procurement, Reporting) + a
   Finance Controller, each a sealed read-only/draft-by-default compartment with
