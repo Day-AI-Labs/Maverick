@@ -1706,6 +1706,15 @@ class WorldModel:
             return cur.rowcount
 
 
+class PostgresAtRestUnsupported(RuntimeError):
+    """Encryption-at-rest is on but the Postgres backend is selected.
+
+    The Postgres backend does not seal content at rest yet (the SQLite backend
+    does, via ``crypto_at_rest``). Rather than silently storing regulated /
+    encrypted-at-rest data as plaintext, :func:`open_world` fails closed. See
+    ``docs/encryption.md`` and ``FIXES.md`` (P1)."""
+
+
 def open_world(path: Path = DEFAULT_DB) -> Any:
     """Open the configured world-model backend.
 
@@ -1718,10 +1727,29 @@ def open_world(path: Path = DEFAULT_DB) -> Any:
     The Postgres backend (and its ``psycopg`` dependency) is imported only
     when selected, so the default SQLite path stays dependency-free and the
     kernel runs without psycopg installed.
+
+    **Fail-closed at-rest safety:** the Postgres backend does not seal content
+    at rest yet (unlike SQLite). Selecting it while encryption-at-rest is
+    enabled raises :class:`PostgresAtRestUnsupported` instead of silently
+    storing plaintext — use SQLite for encrypted/regulated deployments until
+    Postgres sealing lands.
     """
     from .world_model_backends import is_postgres_configured
 
     if is_postgres_configured():
+        # Fail closed rather than silently degrade the encryption-at-rest
+        # guarantee: the Postgres backend stores content as plaintext today.
+        # Checked BEFORE importing psycopg so a misconfig surfaces this clear
+        # error rather than an ImportError or, worse, plaintext-at-rest.
+        from .crypto_at_rest import at_rest_enabled
+        if at_rest_enabled():
+            raise PostgresAtRestUnsupported(
+                "encryption-at-rest is enabled, but the Postgres world-model "
+                "backend does not seal content at rest yet. Use the SQLite "
+                "backend (unset [world_model] backend / MAVERICK_WORLD_BACKEND) "
+                "for encrypted or regulated deployments, or disable "
+                "encryption-at-rest. Tracked in FIXES.md / docs/encryption.md."
+            )
         from .world_model_backends import open_postgres_world
 
         return open_postgres_world()

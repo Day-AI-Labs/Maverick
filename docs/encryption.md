@@ -59,6 +59,13 @@ Key resolution (first match wins):
 **Fail-closed:** if encryption is enabled but the `cryptography` backend or the key is
 unavailable, a write *errors* rather than silently storing plaintext.
 
+**Backend:** at-rest sealing is implemented in the **SQLite** backend only. The
+**Postgres** backend does not seal content at rest yet, so `open_world` **fails closed**
+— selecting Postgres (`[world_model] backend = "postgres"` / `MAVERICK_WORLD_BACKEND`)
+while encryption-at-rest is enabled raises `PostgresAtRestUnsupported` rather than
+silently storing plaintext. Use the SQLite backend for encrypted / regulated
+deployments until Postgres sealing lands (tracked in `FIXES.md`).
+
 ## Search trade-off
 
 `messages.content` is full-text indexed (SQLite FTS5). Under encryption the index
