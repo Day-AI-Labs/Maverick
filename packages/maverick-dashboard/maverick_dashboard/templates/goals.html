@@ -28,11 +28,11 @@
       </tbody>
     </table>
     {% else %}
-      <h2 class="empty__title">No goals yet</h2>
-      <p class="muted" style="margin-bottom: var(--space-5);">
-        Start one from the <a href="/chat">chat</a> or from the command line.
-      </p>
-      <pre style="background: var(--surface-sunken); color: var(--text); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); display: inline-block; text-align: start; margin: 0;">maverick start "Plan a 3-day trip to Lisbon under $1500"</pre>
+      <div class="mv-empty">
+        <p class="mv-empty__title">No goals yet</p>
+        <p class="mv-empty__body">Start one from <a href="/chat">chat</a>, or from the command line:</p>
+        <pre style="background: var(--surface-sunken); color: var(--text); padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); display: inline-block; text-align: start; margin: var(--space-2) 0 0;">maverick start "Plan a 3-day trip to Lisbon under $1500"</pre>
+      </div>
     {% endif %}
   </div>
   <script>

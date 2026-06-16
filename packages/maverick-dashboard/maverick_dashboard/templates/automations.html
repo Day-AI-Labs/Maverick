@@ -18,7 +18,6 @@
   .auto__run--failed, .auto__run--error { color: var(--danger); font-weight: var(--font-semibold); }
   .auto__runs-fail { color: var(--danger); font-weight: var(--font-semibold); }
   .auto__run:hover { border-bottom-style: solid; }
-  .auto__empty { color: var(--muted); padding: var(--space-4); border: 1px dashed var(--border); border-radius: var(--radius-md); }
   .auto__warn { color: var(--text); background: var(--surface-2); border: 1px solid var(--border-strong); border-left: 3px solid var(--ring); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font-size: var(--text-sm); margin-bottom: var(--space-3); }
 </style>
 
@@ -36,7 +35,11 @@
     </div>
     <p class="auto__hint">Cron schedules run while <code>maverick worker</code> is active.</p>
     <ul class="auto__list" id="auto-sched-list" aria-label="Schedules"></ul>
-    <div class="auto__empty" id="auto-sched-empty" hidden>No schedules yet — open a saved workflow in the <a href="/workflow-builder">builder</a> and add one.</div>
+    <div class="mv-empty" id="auto-sched-empty" hidden>
+      <p class="mv-empty__title">No schedules yet</p>
+      <p class="mv-empty__body">Put a saved workflow on a recurring schedule from the builder.</p>
+      <a class="btn btn--primary" href="/workflows">Open Workflows</a>
+    </div>
   </section>
   {% endif %}
 
@@ -48,12 +51,19 @@
     </div>
     <div class="auto__warn" id="auto-trig-nosecret" hidden>No <code>[webhooks]</code> secret is configured, so triggers won’t fire. Set one in <code>~/.maverick/config.toml</code> or <code>MAVERICK_WEBHOOK_SECRET</code>.</div>
     <ul class="auto__list" id="auto-trig-list" aria-label="Webhook triggers"></ul>
-    <div class="auto__empty" id="auto-trig-empty" hidden>No triggers yet — open a saved workflow in the <a href="/workflow-builder">builder</a> and add one.</div>
+    <div class="mv-empty" id="auto-trig-empty" hidden>
+      <p class="mv-empty__title">No triggers yet</p>
+      <p class="mv-empty__body">Wire a saved workflow to an inbound webhook from the builder.</p>
+      <a class="btn btn--primary" href="/workflows">Open Workflows</a>
+    </div>
   </section>
   {% endif %}
 
   {% if not scheduling_enabled and not triggers_enabled %}
-  <div class="auto__empty">Automations are disabled. Enable <code>[features] scheduling</code> and/or <code>[features] triggers</code> in config to use this page.</div>
+  <div class="mv-empty">
+    <p class="mv-empty__title">Automations are disabled</p>
+    <p class="mv-empty__body">Enable <code>[features] scheduling</code> and/or <code>[features] triggers</code> in config to use this page.</p>
+  </div>
   {% endif %}
 </div>
 
