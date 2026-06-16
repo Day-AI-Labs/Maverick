@@ -50,6 +50,24 @@ class TestSignoffApi:
         r = client.post(f"/api/v1/goals/{gid}/signoff", json={"decision": "maybe"})
         assert r.status_code == 422
 
+    def test_approval_fires_handoff_rejection_does_not(self, tmp_path, monkeypatch):
+        import maverick.webhooks as webhooks
+        w = _world(tmp_path, monkeypatch)
+        calls = []
+        monkeypatch.setattr(webhooks, "fire_deliverable_handoff",
+                            lambda payload: calls.append(payload) or 1)
+
+        gid = _forecast_goal(w)
+        client.post(f"/api/v1/goals/{gid}/signoff", json={"decision": "approved"})
+        assert len(calls) == 1
+        assert calls[0]["goal_id"] == gid
+        assert calls[0]["domain"] == "finance_cash13w"
+        assert calls[0]["table"]["headers"] == ["Week", "Net"]  # parsed deliverable rides along
+
+        gid2 = _forecast_goal(w)
+        client.post(f"/api/v1/goals/{gid2}/signoff", json={"decision": "rejected"})
+        assert len(calls) == 1  # rejection does not hand off downstream
+
 
 class TestDeliverableExport:
     def test_forecast_exports_as_csv(self, tmp_path, monkeypatch):

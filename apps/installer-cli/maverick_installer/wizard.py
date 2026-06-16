@@ -1842,6 +1842,25 @@ def pick_webhooks() -> tuple[dict[str, Any], list[str]]:
     return cfg, envs
 
 
+def pick_deliverable_handoff() -> tuple[dict[str, Any], list[str]]:
+    """System-of-record hand-off for APPROVED deliverables. Returns
+    (config, env_vars_needed).
+
+    Distinct from lifecycle webhooks: this fires only when a human signs off a
+    gated deliverable (a forecast, a CECL memo), POSTing it to a downstream
+    system (treasury / GL / Jira) so an approved result lands there instead of
+    being re-keyed by hand. Signed with the same [webhooks] HMAC secret."""
+    if not _q_confirm(
+        "POST approved deliverables to a system-of-record endpoint?",
+        default=False,
+    ):
+        return {}, []
+    url = _q_text("  System-of-record endpoint URL", default="").strip()
+    if not url:
+        return {}, []
+    return {"handoff_webhook": url}, []
+
+
 def pick_connectors() -> dict[str, str]:
     """Collect credentials for enterprise connectors (ServiceNow, Salesforce,
     Snowflake, SAP, ...).
@@ -2845,6 +2864,7 @@ def write_config(
     persona: dict[str, str] | None = None,
     notifications: dict[str, Any] | None = None,
     webhooks: dict[str, Any] | None = None,
+    deliverables: dict[str, Any] | None = None,
     a2a: dict[str, Any] | None = None,
     web_search_enabled: bool = False,
     skills: dict[str, Any] | None = None,
@@ -2960,6 +2980,7 @@ def write_config(
     lines += _cfg_table("persona", persona)
     lines += _cfg_table("notifications", notifications)
     lines += _cfg_table("webhooks", webhooks)
+    lines += _cfg_table("deliverables", deliverables)
     lines += _cfg_table("a2a", a2a)
 
     # Config has no secrets today but does carry provider names and
@@ -3657,6 +3678,11 @@ def run(fast: bool = False, resume: bool = False) -> int:
     state["_webhooks_pair"] = [webhooks, webhook_envs]
     _save_partial(state)
 
+    deliverables, deliverable_envs = (
+        state.get("_deliverables_pair") or pick_deliverable_handoff())
+    state["_deliverables_pair"] = [deliverables, deliverable_envs]
+    _save_partial(state)
+
     _announce()
     a2a_cfg, a2a_envs = state.get("_a2a_pair") or pick_a2a()
     state["_a2a_pair"] = [a2a_cfg, a2a_envs]
@@ -3666,7 +3692,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
     # (they're secrets; the only safe place is ~/.maverick/.env).
     extra_envs = (
         set(web_search_envs) | set(notify_envs) | set(webhook_envs)
-        | set(a2a_envs)
+        | set(a2a_envs) | set(deliverable_envs)
     )
     keys = collect_api_keys(providers, channel_envs | extra_envs)
     # Enterprise connectors are always registered; collect any credentials the
@@ -3709,6 +3735,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         persona=persona,
         notifications=notifications,
         webhooks=webhooks,
+        deliverables=deliverables,
         a2a=a2a_cfg,
         web_search_enabled=web_search_enabled,
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed") or signed_skills.get("require_signed_catalog")) else None,

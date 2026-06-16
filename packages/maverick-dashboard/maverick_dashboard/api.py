@@ -989,9 +989,36 @@ async def post_signoff(request: Request, goal_id: int, payload: SignoffIn) -> di
     assert_goal_access(request, g)
     if _goal_gate(g.domain) is None:
         raise HTTPException(status_code=400, detail="this deliverable has no sign-off gate")
-    w.record_signoff(goal_id, payload.decision,
-                     decided_by=_supervisor(request), note=payload.note)
+    who = _supervisor(request)
+    w.record_signoff(goal_id, payload.decision, decided_by=who, note=payload.note)
+    if payload.decision == "approved":
+        _handoff_approved_deliverable(g, who)
     return {"gate": _goal_gate(g.domain), "signoff": w.signoff_for(goal_id)}
+
+
+def _handoff_approved_deliverable(g, decided_by: str) -> None:
+    """Push an approved deliverable to the configured system-of-record endpoint.
+
+    Best-effort and never raises: the sign-off is already recorded, so a missing
+    or failing hand-off endpoint must not fail the request. A no-op unless
+    ``[deliverables] handoff_webhook`` is configured."""
+    try:
+        from maverick import webhooks
+        from maverick.deliverable import render_deliverable
+        rendered = render_deliverable(_goal_shape(g.domain), g.result)
+        table = ({"headers": rendered.table.headers, "rows": rendered.table.rows}
+                 if rendered.table else None)
+        webhooks.fire_deliverable_handoff({
+            "goal_id": g.id,
+            "domain": g.domain,
+            "title": g.title,
+            "shape": rendered.shape,
+            "decided_by": decided_by,
+            "table": table,
+            "result": g.result or "",
+        })
+    except Exception:  # pragma: no cover -- hand-off is best-effort
+        log.warning("deliverable hand-off failed for goal %s", getattr(g, "id", "?"))
 
 
 @router.get("/goals/{goal_id}/deliverable.csv")
