@@ -19,3 +19,10 @@ deny_tools = ["email", "gmail", "send_payment", "post_journal_entry"]
 max_risk = "low"
 knowledge_sources = ["finance_rcm", "finance_pbc_list"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Auditor PBC evidence package"
+consumers = ["auditor", "controller"]
+cadence = "on-demand"
+gate = "review"

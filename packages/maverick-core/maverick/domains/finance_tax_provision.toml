@@ -20,3 +20,10 @@ allow_hosts = ["*.onesource.thomsonreuters.com", "*.corptax.com"]
 mcp_servers = ["Tax_ONESOURCE"]
 knowledge_sources = ["finance_tax_positions", "finance_tax_tables"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Tax provision & ETR reconciliation (ASC 740)"
+consumers = ["tax_analyst", "controller"]
+cadence = "quarterly"
+gate = "review"

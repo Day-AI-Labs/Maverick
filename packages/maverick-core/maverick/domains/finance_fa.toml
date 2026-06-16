@@ -23,3 +23,10 @@ allow_hosts = ["*.netsuite.com", "*.sap.com"]
 mcp_servers = ["ERP_NetSuite"]
 knowledge_sources = ["finance_capitalization_policy", "finance_useful_life"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Fixed-asset register & depreciation"
+consumers = ["accounting_manager", "auditor"]
+cadence = "monthly"
+gate = "review"

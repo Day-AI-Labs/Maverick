@@ -22,3 +22,10 @@ allow_hosts = ["*.oracle.com", "*.onestream.com"]
 mcp_servers = ["Consolidation_OneStream"]
 knowledge_sources = ["finance_entity_structure", "finance_accounting_policy"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Intercompany eliminations & consolidation"
+consumers = ["controller", "auditor"]
+cadence = "monthly"
+gate = "review"

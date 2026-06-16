@@ -22,3 +22,10 @@ allow_hosts = ["*.concur.com", "*.expensify.com", "*.ramp.com"]
 mcp_servers = ["Expense_Ramp"]
 knowledge_sources = ["finance_te_policy", "finance_accounting_policy"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "T&E exceptions & accrual"
+consumers = ["accounting_manager", "controller"]
+cadence = "weekly"
+gate = "review"

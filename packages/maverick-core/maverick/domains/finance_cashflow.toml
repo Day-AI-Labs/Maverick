@@ -22,3 +22,10 @@ allow_hosts = ["*.moderntreasury.com", "*.plaid.com"]
 mcp_servers = ["Bank_Plaid"]
 knowledge_sources = ["finance_treasury_policy", "finance_operating_plan"]
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "Cash-flow & liquidity runway"
+consumers = ["fpa_analyst", "treasurer"]
+cadence = "weekly"
+gate = "review"

@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Month-end close checklist"
+consumers = ["controller", "accounting_manager"]
+cadence = "monthly"
+gate = "review"

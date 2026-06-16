@@ -10,3 +10,10 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Variance (flux) analysis"
+consumers = ["controller", "fpa_analyst"]
+cadence = "monthly"
+gate = "review"

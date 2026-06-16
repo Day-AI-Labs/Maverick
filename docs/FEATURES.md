@@ -1075,6 +1075,10 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   sign-off" queue whose Review action opens the rendered deliverable. Keyed off
   the existing `goals.domain` attribution (`list_goals(domain=...)`) and the
   pack output contract; the model is shaped by a pure `deliverables.build_inbox`.
+  The finance suite declares output contracts across its towers (FP&A forecasts,
+  controllership reconciliations, treasury schedules, tax provisions, assurance
+  memos, reporting drafts, risk/credit), so the inbox is populated with ~29
+  deliverables across 11 consumer roles, not just the one proof pack.
 - **Governed hand-off (deliverable sign-off + export)** — closes the loop the
   output gate opens: a human certifies a finished, gated deliverable
   (`POST /api/v1/goals/<id>/signoff`, recorded in the v16 `signoffs` table with

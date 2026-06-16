@@ -25,3 +25,10 @@ max_risk = "low"
 mcp_servers = ["GRC_AuditBoard"]
 knowledge_sources = ["finance_rcm", "finance_coso_policy"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "SOX control-test findings"
+consumers = ["internal_auditor", "risk_officer"]
+cadence = "quarterly"
+gate = "review"

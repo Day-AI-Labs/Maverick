@@ -22,3 +22,10 @@ allow_hosts = ["*.workiva.com", "*.sec.gov"]
 mcp_servers = ["SEC_Workiva"]
 knowledge_sources = ["finance_prior_filings", "finance_accounting_policy"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "10-K/10-Q draft & disclosures"
+consumers = ["ir_lead", "auditor"]
+cadence = "quarterly"
+gate = "approval"

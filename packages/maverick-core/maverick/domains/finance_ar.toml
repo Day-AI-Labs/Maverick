@@ -22,3 +22,10 @@ allow_hosts = ["*.stripe.com", "*.chargebee.com", "*.netsuite.com"]
 mcp_servers = ["Billing_Stripe"]
 knowledge_sources = ["finance_accounting_policy", "finance_credit_policy"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "AR aging & collections"
+consumers = ["accounting_manager", "credit_officer"]
+cadence = "weekly"
+gate = "review"

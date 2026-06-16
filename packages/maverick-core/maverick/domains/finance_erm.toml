@@ -18,3 +18,10 @@ deny_tools = ["post_journal_entry", "release_payment", "wire_transfer"]
 max_risk = "low"
 knowledge_sources = ["finance_risk_register", "finance_treasury_policy"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Enterprise risk register & KRIs"
+consumers = ["risk_officer", "cfo"]
+cadence = "quarterly"
+gate = "review"

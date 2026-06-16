@@ -23,3 +23,10 @@ allow_hosts = ["*.bill.com", "*.coupa.com", "*.tipalti.com"]
 mcp_servers = ["AP_BillCom"]
 knowledge_sources = ["finance_accounting_policy", "finance_ap_policy"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "AP aging & payment batch"
+consumers = ["accounting_manager", "treasurer"]
+cadence = "weekly"
+gate = "approval"
