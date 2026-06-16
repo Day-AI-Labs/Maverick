@@ -699,6 +699,33 @@ def get_rehearsal() -> dict:
     }
 
 
+def get_speculative() -> dict:
+    """Return the ``[speculative]`` section (speculative agent execution).
+
+    Draft a turn with a cheap model when the Operating Twin's world-model is
+    confident the turn is predictable, reserving the frontier model for novel /
+    uncertain turns. OFF by default and fail-open -- when ``enable`` is false (or
+    no ``draft_model`` is configured) the agent always uses its normal model.
+    ``draft_model`` is an operator-chosen cheap model spec (never hard-coded);
+    ``min_confidence``/``min_support`` set how dominant + well-observed an action
+    must be before its turn is drafted.
+    """
+    cfg = load_config().get("speculative", {})
+
+    def _num(key: str, default: float, cast=float):
+        try:
+            return cast(cfg.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "draft_model": (str(cfg.get("draft_model", "")).strip() or None),
+        "min_confidence": _num("min_confidence", 0.85),
+        "min_support": _num("min_support", 8, int),
+    }
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 

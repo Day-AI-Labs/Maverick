@@ -1620,6 +1620,22 @@ class Agent:
         acts = getattr(self, "_actions", None)
         return acts[-2] if acts and len(acts) >= 2 else ""
 
+    def _speculative_turn_model(self) -> str:
+        """Pick the model for this turn: a cheap draft when the Operating Twin's
+        world-model is confident the turn is predictable, else the normal model.
+
+        No-op (returns ``self.model``) unless ``[speculative]`` is enabled with a
+        configured draft model and the state is speculatable; fail-open on any
+        error. At turn start the last EXECUTED tool is ``_actions[-1]``.
+        """
+        try:
+            from .speculative_exec import draft_model_for_turn
+            acts = getattr(self, "_actions", None)
+            last = acts[-1] if acts else ""
+            return draft_model_for_turn(self.domain, self.role, last) or self.model
+        except Exception:  # pragma: no cover -- never break the loop
+            return self.model
+
     def _rehearsal_denial(self, name: str) -> str | None:
         """Hold an elevated-risk tool the rehearsal twin can't vouch for.
 
@@ -1925,7 +1941,7 @@ class Agent:
                     budget=self.ctx.budget,
                     max_tokens=4096,
                     thinking_budget=self._thinking_budget(),
-                    model=self.model,
+                    model=self._speculative_turn_model(),
                     **_effort_kw,
                 )
             except BudgetExceeded as e:
