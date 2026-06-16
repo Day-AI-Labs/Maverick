@@ -127,6 +127,14 @@ class FactIn(BaseModel):
     value: str
 
 
+class OutcomeIn(BaseModel):
+    """A real downstream outcome for a past episode (the Consequence Engine)."""
+    goal_id: int
+    episode_id: int
+    value: float
+    kind: str = ""
+
+
 class AnswerIn(BaseModel):
     question_id: int
     answer: str
