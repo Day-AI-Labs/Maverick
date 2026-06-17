@@ -276,6 +276,22 @@ class FederationNode:
         """
         peer = self.peer(peer_name)
         corr = (correlation_id or "").strip() or uuid.uuid4().hex
+        # Egress control: a company governs which outside agents its agents may
+        # *dial*. Disengaged -> no-op; engaged -> a peer absent from the trust
+        # registry (or not permitted outbound) is refused before any connection
+        # opens, and the refusal is still recorded for reciprocity.
+        from . import agent_trust
+        out = agent_trust.decide_outbound(peer.name)
+        if out.denied:
+            agent_trust.record_denied(
+                peer.name, out, direction="outbound", correlation_id=corr)
+            self._record(
+                EventKind.FEDERATION_DELEGATE, agent="federation",
+                peer_node=peer.name, correlation_id=corr, direction="sent",
+                accepted=False, reason=out.reason,
+            )
+            return DelegateOutcome(peer=peer.name, correlation_id=corr,
+                                   accepted=False, reason=out.reason)
         payload = {
             "goal_title": title,
             "goal_description": description,
@@ -402,20 +418,50 @@ class FederationService:
 
         requested = {str(t) for t in (payload.get("requested_tools") or [])
                      if str(t).strip()}
+        req_risk = str(payload.get("max_risk") or "") or None
+
+        # Agent Trust Plane: the single gate for *external* agents. Disengaged
+        # (the default) this is a no-op ALLOW with no ceiling, so behaviour is
+        # unchanged. Engaged (enterprise mode or [agent_trust] enforce), a peer
+        # absent from the registry is refused here even though it presented a
+        # valid shared token — registry membership, direction, and the tool/risk
+        # ceiling are all checked before we equip a delegation.
+        from . import agent_trust
+        decision = agent_trust.decide_inbound(
+            peer.name, requested_tools=requested, max_risk=req_risk)
+        if decision.denied:
+            agent_trust.record_denied(
+                peer.name, decision, direction="inbound", correlation_id=corr)
+            return self._refuse_recorded(peer, corr, decision.reason)
+
         # Narrow-only: the peer's request can only restrict this node's own
         # grant, and every requested tool is REQUIRED — a delegation this node
-        # can't fully equip is refused rather than run half-equipped.
+        # can't fully equip is refused rather than run half-equipped. When the
+        # trust plane is engaged, the peer's registry ceiling tightens the local
+        # grant too (intersection, never a broadening).
+        parent = self._local_grant()
+        if decision.capability is not None:
+            parent = (decision.capability if parent is None
+                      else parent.intersect(decision.capability,
+                                            principal=f"federation:{peer.name}"))
         negotiation = negotiate_boot(
-            self._local_grant(),
+            parent,
             principal=f"federation:{peer.name}",
             requested_tools=requested or None,
             required_tools=requested or None,
-            max_risk=str(payload.get("max_risk") or "") or None,
+            max_risk=req_risk,
         )
         if not negotiation.ok:
             return self._refuse_recorded(peer, corr, negotiation.reason)
 
         deadline_ms = _to_int(payload.get("deadline_ms"))
+        # Clamp the run's wall-clock to the peer's registry ceiling (down only).
+        _, capped_wall = agent_trust.clamp_budget(
+            decision.agent,
+            max_wall_seconds=(deadline_ms / 1000.0) if deadline_ms > 0 else None,
+        )
+        if capped_wall is not None:
+            deadline_ms = int(capped_wall * 1000.0)
         try:
             goal_id = int(self._goals().start_goal(
                 str(payload.get("goal_title") or ""),

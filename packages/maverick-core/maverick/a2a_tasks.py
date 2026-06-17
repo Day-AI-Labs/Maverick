@@ -158,12 +158,26 @@ def _a2a_capability() -> Any:
             vals = [vals]
         return frozenset(str(v).strip() for v in vals if str(v).strip())
 
-    return Capability(
+    cap = Capability(
         principal="a2a",
         allow_tools=_names("tools", "MAVERICK_A2A_TOOLS"),
         deny_tools=_names("deny_tools", "MAVERICK_A2A_DENY_TOOLS"),
         max_risk=max_risk,
     )
+    # When the Agent Trust Plane is engaged, a central [agent_trust] entry with
+    # id "a2a" tightens this ceiling (intersection, never a broadening), so a
+    # company governs A2A callers from the same registry as every other
+    # external agent. No "a2a" entry / plane disengaged -> ceiling unchanged.
+    try:
+        from . import agent_trust
+        if agent_trust.agent_trust_enforced():
+            entry = agent_trust.lookup("a2a")
+            if entry is not None:
+                cap = cap.intersect(entry.capability(principal="a2a"),
+                                    principal="a2a")
+    except Exception:  # pragma: no cover - trust read never breaks A2A
+        pass
+    return cap
 
 
 def _default_runner(

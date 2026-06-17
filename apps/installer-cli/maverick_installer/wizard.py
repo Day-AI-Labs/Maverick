@@ -1348,6 +1348,14 @@ def pick_advanced() -> dict[str, Any]:
             "when the agent handles PHI/PII/financial data.",
             default=False,
         ),
+        "agent_trust": _q_confirm(
+            "Govern which OUTSIDE agents your agents may talk to? Engages the Agent "
+            "Trust Plane: external agents (federation peers, A2A callers, fleet "
+            "agents) are default-DENIED unless listed in [agent_trust] agents with a "
+            "pinned key, direction, and tool/budget/data ceiling. Auto-on under "
+            "enterprise mode; recommended at the company boundary.",
+            default=False,
+        ),
         "anonymous_logs": _q_confirm(
             "Anonymous mode? Scrub user-identifying content (goal text, user/channel "
             "ids, home paths, emails/phones) from logs and audit events — hashes or "
@@ -2709,6 +2717,19 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[enterprise]")
         lines.append("mode = true")
+    if advanced.get("agent_trust"):
+        lines.append("")
+        lines.append("[agent_trust]")
+        lines.append("enforce = true")
+        # Default-deny: external agents must be listed here, by pinned Ed25519
+        # public key, with the direction and ceiling they're trusted within.
+        # Swap pubkeys out of band (data_dir('audit','keys')/<key_id>.pub).
+        lines.append("# agents = [")
+        lines.append('#   { id = "vega", pubkey = "<64-hex Ed25519>", '
+                     'direction = "both", allow_tools = ["read_file", '
+                     '"http_fetch"], max_risk = "medium", max_dollars = 2.0, '
+                     'max_wall_seconds = 600, data_scopes = ["support"] },')
+        lines.append("# ]")
     if advanced.get("anonymous_logs"):
         lines.append("")
         lines.append("[privacy]")
