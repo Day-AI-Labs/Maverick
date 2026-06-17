@@ -533,7 +533,7 @@ async def bearer_auth(request: Request, call_next):
     # browser history, Referer headers on outbound link clicks, uvicorn
     # access logs, and any logging proxy in front. Require the
     # ``Authorization: Bearer`` header.
-    if header_token and hmac.compare_digest(header_token, expected):
+    if header_token and hmac.compare_digest(header_token.encode(), expected.encode()):
         return await call_next(request)
     return JSONResponse({"detail": "unauthorized"}, status_code=401)
 

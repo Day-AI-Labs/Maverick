@@ -81,9 +81,13 @@ def validate(manifest: dict) -> list[str]:
     if not packages:
         problems.append("at least one package (or remote) is required")
     for i, pkg in enumerate(packages):
+        if not isinstance(pkg, dict):
+            problems.append(f"packages[{i}] must be an object")
+            continue
         if not (pkg.get("identifier") or "").strip():
             problems.append(f"packages[{i}].identifier is required")
-        if not ((pkg.get("transport") or {}).get("type")):
+        transport = pkg.get("transport")
+        if not (isinstance(transport, dict) and transport.get("type")):
             problems.append(f"packages[{i}].transport.type is required")
     return problems
 

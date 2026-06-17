@@ -134,7 +134,7 @@ def _xlsx_set_cell(path: Path, cell: str, value: Any, sheet: str | None) -> None
     ws = wb[sheet] if (sheet and sheet in wb.sheetnames) else wb.active
     if sheet and ws.title != sheet:
         ws.title = sheet
-    ws[cell] = value
+    ws[cell] = _neutralize_formula(value)
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
 

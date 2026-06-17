@@ -62,9 +62,19 @@ class MatrixChannel(Channel):
         self._client = AsyncClient(homeserver, user_id)
         self._client.access_token = self.access_token
         self._client.add_event_callback(self._on_message, RoomMessageText)
+        # Drop messages older than channel start. matrix-nio's initial
+        # sync_forever (no stored next_batch) replays each room's recent
+        # timeline through this callback, so without a cutoff every restart
+        # re-runs the agent swarm on old messages -- duplicate replies + real
+        # LLM spend. Seeded in start(); ms epoch to match event.server_timestamp.
+        self._start_ts_ms: int | None = None
 
     async def _on_message(self, room: MatrixRoom, event: RoomMessageText) -> None:
         if event.sender == self.user_id:
+            return
+        # Ignore backlog replayed by the initial sync (see __init__).
+        ts = getattr(event, "server_timestamp", None)
+        if self._start_ts_ms is not None and ts is not None and ts < self._start_ts_ms:
             return
         if not is_allowed(event.sender, self.allowed_user_ids):
             log.warning("unauthorized matrix access: sender=%s", event.sender)
@@ -84,6 +94,8 @@ class MatrixChannel(Channel):
         await self.send(room.room_id, reply)
 
     async def start(self) -> None:
+        import time
+        self._start_ts_ms = int(time.time() * 1000)
         log.info("Matrix channel syncing")
         await self._client.sync_forever(timeout=30000, full_state=True)
 

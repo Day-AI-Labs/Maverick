@@ -204,7 +204,7 @@ def verify(receipt_json: str, key: str) -> str:
     if not isinstance(payload, dict) or not isinstance(sig, str):
         return MALFORMED
     expected = _sign(payload, key)
-    return VALID if hmac.compare_digest(expected, sig) else INVALID
+    return VALID if hmac.compare_digest(expected.encode(), sig.encode()) else INVALID
 
 
 def verify_chain(path: str | Path | None = None, key: str | None = None) -> ChainReport:

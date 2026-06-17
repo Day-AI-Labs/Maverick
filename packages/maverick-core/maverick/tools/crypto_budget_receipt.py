@@ -65,7 +65,7 @@ def _verify(args: dict[str, Any]) -> str:
         return "INVALID: malformed receipt (expected goal|dollars|hexmac)"
     goal, dollars, mac = parts
     expected = _mac(goal, dollars, key)
-    if hmac.compare_digest(expected, mac.strip()):
+    if hmac.compare_digest(expected.encode(), mac.strip().encode()):
         return f"VALID: goal={goal} dollars={dollars}"
     return "INVALID: signature mismatch"
 

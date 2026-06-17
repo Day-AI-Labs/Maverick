@@ -120,7 +120,8 @@ def _save(records: dict[str, TenantRecord]) -> None:
 
 
 def list_tenants() -> list[TenantRecord]:
-    return [_load()[k] for k in sorted(_load())]
+    records = _load()
+    return [records[k] for k in sorted(records)]
 
 
 def get_tenant(tenant_id: str) -> TenantRecord | None:

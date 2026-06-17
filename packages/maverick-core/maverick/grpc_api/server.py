@@ -98,7 +98,7 @@ def _abort(context, code, details: str):
 
 def _require_authorized(context, bearer_token: str) -> None:
     supplied = _metadata_bearer_token(context)
-    if supplied and hmac.compare_digest(supplied, bearer_token):
+    if supplied and hmac.compare_digest(supplied.encode(), bearer_token.encode()):
         return
     _abort(context, _grpc_code().UNAUTHENTICATED, "missing or invalid bearer token")
 

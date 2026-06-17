@@ -29,6 +29,7 @@ is a later refinement.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 from dataclasses import dataclass
@@ -158,9 +159,16 @@ def authenticate(config: ProxyConfig, headers: dict[str, str]) -> bool:
         return False
     lowered = {k.lower(): v for k, v in headers.items()}
     bearer = lowered.get("authorization", "").strip()
-    if bearer == f"Bearer {config.client_token}":
+    # Compare as bytes: hmac.compare_digest raises TypeError on a str with any
+    # non-ASCII char, and both header values here are attacker-controlled.
+    if hmac.compare_digest(
+        bearer.encode(), f"Bearer {config.client_token}".encode()
+    ):
         return True
-    return lowered.get(_PROXY_TOKEN_HEADER, "").strip() == config.client_token
+    return hmac.compare_digest(
+        lowered.get(_PROXY_TOKEN_HEADER, "").strip().encode(),
+        config.client_token.encode(),
+    )
 
 
 def _split_listen(listen: str) -> tuple[str, int]:

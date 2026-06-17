@@ -270,7 +270,7 @@ class TaskEngine:
         if not authorization or not authorization.startswith("Bearer "):
             return _err(_AUTH_REQUIRED, "missing bearer token")
         given = authorization[len("Bearer "):].strip()
-        if not hmac.compare_digest(token, given):
+        if not hmac.compare_digest(token.encode(), given.encode()):
             return _err(_AUTH_REQUIRED, "invalid bearer token")
         return None
 

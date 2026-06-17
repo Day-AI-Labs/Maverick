@@ -93,7 +93,10 @@ class GlassesChannel(Channel):
             return "Sorry, you're not authorized to drive this agent."
         msg = IncomingMessage(user_id=user_id, text=text, channel=self.name)
         if classify_utterance(text) == "quick":
-            task = asyncio.create_task(self.handler(msg))
+            # Route through dispatch_text (not the raw handler) so a v2 handler
+            # returning a Reply is normalized to text before hud_trim; the raw
+            # handler path would hand hud_trim a Reply object and AttributeError.
+            task = asyncio.create_task(self.dispatch_text(msg))
             try:
                 reply = await asyncio.wait_for(asyncio.shield(task), timeout=self.deadline_s)
                 return hud_trim(reply)

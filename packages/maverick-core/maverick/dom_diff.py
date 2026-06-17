@@ -38,7 +38,10 @@ class _DOMCollector(HTMLParser):
         if tag == "a" and a.get("href"):
             sig += f"[href={a['href']}]"
         self.signatures.append(sig)
-        if tag in _INVISIBLE:
+        # Only non-void invisible tags open a skip region; void ones (meta,
+        # link) never get a close tag, so incrementing here would leak the
+        # depth and silently drop all subsequent visible text.
+        if tag in _INVISIBLE and tag not in _VOID:
             self._skip_depth += 1
 
     def handle_endtag(self, tag):

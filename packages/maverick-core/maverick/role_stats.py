@@ -200,7 +200,10 @@ def top_roles(k: int = 5, *, min_runs: int = 2, path: Path | None = None,
     (keys are returned with the scope stripped); otherwise only global ones.
     """
     stats = _load(_resolve(path))
-    prefix = f"{domain}{_SCOPE_SEP}" if domain else None
+    # Keys are stored under safe_role(domain) (see record); sanitize the lookup
+    # the same way so a domain needing normalization still matches its entries.
+    domain_key = safe_role(domain) if domain else None
+    prefix = f"{domain_key}{_SCOPE_SEP}" if domain_key else None
     ranked = []
     for key, st in stats.items():
         if st.runs < min_runs:

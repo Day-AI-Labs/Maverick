@@ -28,6 +28,7 @@ NDJSON host's one crash-restart. grpcio is imported lazily behind the
 from __future__ import annotations
 
 import atexit
+import ipaddress
 import json
 import logging
 import re
@@ -64,7 +65,15 @@ def _is_local_grpc_target(target: str) -> bool:
             host = t.split(":", 1)[1].rsplit(":", 1)[0].strip("[]")
         else:
             host = t.rsplit(":", 1)[0].strip("[]")
-    return host in {"localhost", "127.0.0.1", "::1"} or host.startswith("127.")
+    if host == "localhost":
+        return True
+    # Match real loopback addresses (127.0.0.0/8, ::1), not string prefixes:
+    # "127.0.0.1.attacker.com" startswith "127." but is NOT loopback and would
+    # be dialed over an insecure channel.
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _spec_passes_shield(name: str, description: str, schema: dict[str, Any], shield) -> bool:

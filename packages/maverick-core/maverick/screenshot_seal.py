@@ -142,7 +142,7 @@ def _read_anchor(directory: Path, key: str) -> tuple[dict | None, str | None]:
         return None, "invalid"
     sig = str(payload.get("sig", ""))
     expected = hmac.new(key.encode(), _anchor_canonical(payload), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, sig):
+    if not hmac.compare_digest(expected.encode(), sig.encode()):
         return payload, "bad_signature"
     if payload.get("version") != ANCHOR_VERSION:
         return payload, "invalid"
@@ -248,7 +248,7 @@ def verify_ledger(directory: str | Path, *, key: str | None = None) -> dict:
             report["broken_at"] = i
             break
         sig = hmac.new(k.encode(), entry.canonical(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(sig, entry.sig):
+        if not hmac.compare_digest(sig.encode(), str(entry.sig).encode()):
             report["ok"] = False
             report["bad_signatures"].append(entry.file)
         if latest_index.get(entry.file) == i:
