@@ -197,6 +197,11 @@ def _process_file(
             mode = 0o600
         with open(tmp, "wb") as dst:
             dst.write(new_bytes)
+            # fsync before the atomic replace so a crash can't leave the erase
+            # half-committed (an authorized GDPR erasure must be durable, matching
+            # the signing/sealing rewriters in this package).
+            dst.flush()
+            os.fsync(dst.fileno())
         tmp.replace(path)
         try:
             os.chmod(path, mode)
