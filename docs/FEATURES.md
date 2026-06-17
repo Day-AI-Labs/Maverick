@@ -957,9 +957,16 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   longer impersonate a peer that has a pinned key. Freshness + a replay-nonce
   cache reject captured signatures; `[agent_trust] require_signed = true` refuses
   even shared-token-only peers (peers without a pinned key remain a documented
-  migration path). (Signed A2A requests and gating of the gRPC goal API / MCP /
-  channel / marketplace surfaces are staged follow-ups — `doctor` flags the
-  currently-ungated ingresses.)
+  migration path). **Per-caller A2A identity**: an `[agent_trust] a2a_token`
+  resolves an A2A caller to principal `agent:<id>`, so the registry governs
+  individual A2A callers (admission + per-caller tool ceiling) rather than one
+  shared surface. **Channel and marketplace federation** are gated by the
+  registered (signature-verified) origin. **Org governance**: accepting a
+  federation delegation routes through `governance.evaluate` when engaged —
+  `DENY` refuses and `REQUIRE_HUMAN` refuses fail-closed (no silent
+  auto-accept), a no-op without a `[governance]` policy. (Gating the gRPC goal
+  API and MCP server — single-shared-bearer surfaces needing per-caller
+  identity — is the remaining follow-up; `doctor` flags them as ungated.)
 - **gRPC API v1 — stable** (`grpc_api/maverick.proto`, package `maverick.v1`;
   contract gate `grpc_api/contract.py` + committed golden
   `maverick_v1_contract.json`, wired into CI): additive changes pass; removing/

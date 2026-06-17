@@ -141,6 +141,11 @@ class TrustedAgent:
     max_dollars: float | None = None
     max_wall_seconds: float | None = None
     data_scopes: frozenset[str] = frozenset()
+    # Per-caller A2A bearer: A2A carries no per-caller identity in-protocol, so an
+    # operator can mint one bearer per agent here. A request presenting it
+    # resolves to principal "agent:<id>" and is governed by THIS entry, not a
+    # shared "a2a" surface entry. "" = this agent has no A2A bearer.
+    a2a_token: str = ""
     # Key lifecycle (all default to "always valid" so existing configs are
     # byte-for-byte unchanged): a revoked or out-of-window entry is denied by
     # decide_inbound/decide_outbound/verify_identity. `not_before`/`expires_at`
@@ -301,6 +306,7 @@ def _agent_from_entry(entry: dict) -> TrustedAgent | None:
         max_dollars=_positive_float(entry.get("max_dollars")),
         max_wall_seconds=_positive_float(entry.get("max_wall_seconds")),
         data_scopes=_names(entry.get("data_scopes")),
+        a2a_token=str(entry.get("a2a_token") or ""),
         not_before=_positive_float(entry.get("not_before")),
         expires_at=_positive_float(entry.get("expires_at")),
         revoked=bool(entry.get("revoked")),
@@ -341,6 +347,27 @@ def load_registry(cfg: dict | None = None) -> dict[str, TrustedAgent]:
 def lookup(agent_id: str, *, registry: dict[str, TrustedAgent] | None = None) -> TrustedAgent | None:
     reg = load_registry() if registry is None else registry
     return reg.get(agent_id)
+
+
+def agent_for_a2a_token(
+    token: str, *, registry: dict[str, TrustedAgent] | None = None,
+) -> TrustedAgent | None:
+    """Resolve a presented A2A bearer to its registered agent, or ``None``.
+
+    Constant-time compares against every entry's ``a2a_token`` (scanning all so
+    timing doesn't reveal which matched); an empty token never matches. This is
+    how a per-caller A2A bearer maps to a specific :class:`TrustedAgent` so the
+    registry can govern individual A2A callers instead of one shared surface."""
+    import hmac
+    presented = (token or "").encode()
+    if not presented:
+        return None
+    reg = load_registry() if registry is None else registry
+    matched: TrustedAgent | None = None
+    for agent in reg.values():
+        if agent.a2a_token and hmac.compare_digest(agent.a2a_token.encode(), presented):
+            matched = matched or agent
+    return matched
 
 
 # -- decision point --------------------------------------------------------
@@ -618,6 +645,7 @@ __all__ = [
     "load_trust_state",
     "load_registry",
     "lookup",
+    "agent_for_a2a_token",
     "decide_inbound",
     "decide_outbound",
     "decide_memory_access",

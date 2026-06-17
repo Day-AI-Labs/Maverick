@@ -194,6 +194,15 @@ def import_listings(
     assert isinstance(envelope, dict)  # verify_envelope guarantees this
     origin = envelope["origin"]
     report["origin"] = origin
+    # Agent Trust Plane: when engaged, the (signature-verified) origin must also
+    # be a registered, inbound-permitted agent (single allowlist). No-op when
+    # disengaged (kernel rule 1).
+    from . import agent_trust
+    decision = agent_trust.decide_inbound(origin)
+    if decision.denied:
+        agent_trust.record_denied(origin, decision, direction="inbound")
+        report["reason"] = decision.reason
+        return report
     listings = envelope.get("listings")
     if not isinstance(listings, list):
         report["reason"] = "listings is not a list"
