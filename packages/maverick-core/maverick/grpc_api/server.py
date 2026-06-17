@@ -97,10 +97,54 @@ def _abort(context, code, details: str):
 
 
 def _require_authorized(context, bearer_token: str) -> None:
+    _authorize_caller(context, bearer_token)
+
+
+def _authorize_caller(context, bearer_token: str):
+    """Authorize a caller and return its identity.
+
+    Accepts EITHER the configured shared operator bearer (returns ``None`` — the
+    shared principal) OR a per-caller ``[agent_trust] grpc_token`` (returns the
+    resolved :class:`TrustedAgent`). Aborts UNAUTHENTICATED when neither matches,
+    so per-caller tokens are first-class without weakening the shared-bearer path.
+    """
     supplied = _metadata_bearer_token(context)
-    if supplied and hmac.compare_digest(supplied.encode(), bearer_token.encode()):
-        return
+    if supplied and bearer_token and hmac.compare_digest(
+        supplied.encode(), bearer_token.encode()
+    ):
+        return None
+    if supplied:
+        try:
+            from ..agent_trust import agent_for_token
+            agent = agent_for_token(supplied, "grpc")
+        except Exception:  # pragma: no cover - never break auth on a read error
+            agent = None
+        if agent is not None:
+            return agent
     _abort(context, _grpc_code().UNAUTHENTICATED, "missing or invalid bearer token")
+
+
+def _trust_capability(context, agent):
+    """Agent Trust Plane gate for a goal-CREATING RPC. Returns the capability
+    ceiling to intersect into the run (``None`` when disengaged). Aborts
+    PERMISSION_DENIED when the caller isn't a permitted inbound agent.
+
+    A per-caller token gates on that agent's entry; a shared-operator-bearer
+    caller gates on the surface-wide ``"grpc"`` entry — so engaging the plane
+    default-denies the gRPC goal API instead of leaving it open on the bearer."""
+    try:
+        from .. import agent_trust
+        enforced, registry = agent_trust.load_trust_state()
+    except Exception:  # pragma: no cover - config read never breaks the path
+        return None
+    if not enforced:
+        return None
+    agent_id = agent.id if agent is not None else "grpc"
+    decision = agent_trust.decide_inbound(agent_id, registry=registry, enforced=True)
+    if decision.denied:
+        agent_trust.record_denied(agent_id, decision, direction="inbound")
+        _abort(context, _grpc_code().PERMISSION_DENIED, decision.reason)
+    return decision.capability
 
 
 def _capability_from_json(raw: str):
@@ -143,7 +187,8 @@ def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
 
     class MaverickServicer(pb2_grpc.MaverickServicer):
         def StartGoal(self, request, context):
-            _require_authorized(context, bearer_token)
+            agent = _authorize_caller(context, bearer_token)
+            capability = _trust_capability(context, agent)
             try:
                 goal_id = service.start_goal(
                     request.title,
@@ -152,6 +197,7 @@ def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
                     max_wall_seconds=request.max_wall_seconds or None,
                     channel=request.channel or None,
                     user_id=request.user_id or None,
+                    capability=capability,
                 )
             except ValueError as e:
                 context.abort(_grpc_code().INVALID_ARGUMENT, str(e))
@@ -186,7 +232,8 @@ def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
             )
 
         def RunGoal(self, request, context):
-            _require_authorized(context, bearer_token)
+            agent = _authorize_caller(context, bearer_token)
+            trust_cap = _trust_capability(context, agent)
             channel = request.channel or None
             user_id = request.user_id or None
             try:
@@ -198,6 +245,11 @@ def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
             except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
                 context.abort(_grpc_code().INVALID_ARGUMENT, str(e))
                 raise
+            # Intersect the caller's trust-plane ceiling (narrow-only) on top of
+            # any RPC-supplied / locally-derived grant.
+            if trust_cap is not None:
+                capability = (trust_cap if capability is None
+                              else capability.intersect(trust_cap, principal="grpc"))
             st = service.run_goal(
                 request.goal_id,
                 max_dollars=request.max_dollars or None,

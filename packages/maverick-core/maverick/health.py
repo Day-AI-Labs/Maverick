@@ -389,10 +389,6 @@ def _check_agent_trust() -> None:
              fix="rotate or remove expired/revoked entries")
     else:
         _row(GREEN, "agent-trust", detail)
-    # Honesty about Phase-1 coverage: these ingresses are not yet gated.
-    _row(YELLOW, "agent-trust:coverage",
-         "gRPC goal API and MCP server are NOT gated by the trust plane",
-         fix="restrict those ports at the network layer (trust-plane wiring is staged)")
 
 
 def diagnose() -> int:

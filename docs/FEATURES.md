@@ -964,9 +964,13 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   registered (signature-verified) origin. **Org governance**: accepting a
   federation delegation routes through `governance.evaluate` when engaged —
   `DENY` refuses and `REQUIRE_HUMAN` refuses fail-closed (no silent
-  auto-accept), a no-op without a `[governance]` policy. (Gating the gRPC goal
-  API and MCP server — single-shared-bearer surfaces needing per-caller
-  identity — is the remaining follow-up; `doctor` flags them as ungated.)
+  auto-accept), a no-op without a `[governance]` policy. The **gRPC goal API**
+  and **MCP server** are likewise gated: each accepts a per-caller
+  `[agent_trust] grpc_token` / `mcp_token` (distinct per surface) resolving to
+  `agent:<id>`, and when engaged a caller must be a permitted inbound agent
+  (per-caller entry, or the surface-wide `"grpc"` / `"mcp"` entry for a
+  shared-bearer caller) — so every external ingress (federation, A2A, fleet,
+  channel, marketplace, gRPC, MCP) is default-denied at the boundary.
 - **gRPC API v1 — stable** (`grpc_api/maverick.proto`, package `maverick.v1`;
   contract gate `grpc_api/contract.py` + committed golden
   `maverick_v1_contract.json`, wired into CI): additive changes pass; removing/
