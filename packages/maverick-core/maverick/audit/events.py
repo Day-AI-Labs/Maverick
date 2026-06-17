@@ -28,6 +28,9 @@ Payload shapes (kind -> required fields, all events also carry
                      accepted:bool, reason:str ("" when accepted) — one half of a
                      cross-swarm delegation; reciprocity of the two halves is
                      verified by ``audit/federation.cross_verify``
+  agent_trust_denied: peer:str, direction:str (inbound|received|outbound),
+                     rule:str, reason:str, correlation_id:str — an external
+                     agent was refused by the Agent Trust Plane.
 """
 from __future__ import annotations
 
@@ -88,6 +91,12 @@ class EventKind:
     HALT            = "halt"
     CONFIG_REMEDIATED = "config_remediated"
     FEDERATION_DELEGATE = "federation_delegate"
+    # Agent Trust Plane: an external agent was refused an inbound action or an
+    # outbound dial because it is absent from the [agent_trust] registry, its
+    # direction forbade the interaction, or it exceeded its tool/risk ceiling.
+    # payload: peer:str, direction:str (inbound|outbound), rule:str, reason:str,
+    # correlation_id:str ("" when none).
+    AGENT_TRUST_DENIED = "agent_trust_denied"
     # Learning governance: one row per dream cycle (what the learning system
     # wrote/retired/quarantined) so `maverick audit verify` covers learned
     # state the same way it covers tool calls.

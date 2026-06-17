@@ -213,6 +213,26 @@ def recall(
     source = f"{vendor}:{agent_id}"
     if not any(r.get("source") == source for r in roster()):
         return "", f"unregistered fleet agent {source!r}"
+    # Data-scope control: when the Agent Trust Plane is engaged, an external
+    # agent may only recall memory domains its [agent_trust] entry allows. The
+    # roster (above) governs *who* can write/read at all; the trust registry's
+    # data_scopes governs *what company data* this agent may see. Disengaged ->
+    # no-op (the roster check alone, exactly as before).
+    try:
+        from . import agent_trust
+        if agent_trust.agent_trust_enforced():
+            ta = agent_trust.lookup(agent_id)
+            if ta is None:
+                return "", f"agent {agent_id!r} is not in the trust registry"
+            if not ta.permits_scope(domain):
+                agent_trust.record_denied(
+                    agent_id,
+                    agent_trust.TrustDecision(
+                        False, f"domain {domain!r} outside data_scopes", "data_scope"),
+                    direction="inbound")
+                return "", f"agent {agent_id!r} may not read domain {domain!r}"
+    except Exception:  # pragma: no cover - trust read never breaks recall
+        pass
     safe_query = _sanitize(query, shield=shield)
     if safe_query is None or not safe_query.strip():
         return "", "query blocked or empty"
