@@ -149,6 +149,22 @@ def test_headless_assume_writes_and_is_read(tmp_path, monkeypatch):
     assert autonomy.autonomy_enabled() is False
 
 
+def test_governed_actions_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's governed-actions toggle writes [actions] enable,
+    and the kernel's lineage gate reads it back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_GOVERNED_ACTIONS", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"governed_actions": True})
+    assert "[actions]" in cfg
+    parsed = tomllib.loads(cfg)
+    assert parsed["actions"] == {"enable": True}
+
+    from maverick import governed_actions
+    assert governed_actions.enabled() is True
+
+
 def test_calibration_enforce_writes_and_is_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's calibration toggle writes [calibration]
     enforce, and the kernel's config reads it back."""

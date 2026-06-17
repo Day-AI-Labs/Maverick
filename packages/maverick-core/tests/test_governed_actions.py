@@ -4,6 +4,7 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
+from maverick import governed_actions as ga_mod
 from maverick.governed_actions import ActionError, ActionSpec, GovernedActions
 
 
@@ -80,3 +81,47 @@ def test_trace_is_the_decision_lineage():
     assert t["action"] == "recommend"
     assert t["result"] == "ANSWER"
     assert t["sources"] == ["doc1"] and t["skills"] == ["skill-a"]
+
+
+# -- run-path wiring: enable flag + persistent per-goal lineage -------------
+
+def test_enabled_off_by_default_and_env_toggles(monkeypatch):
+    monkeypatch.delenv("MAVERICK_GOVERNED_ACTIONS", raising=False)
+    assert ga_mod.enabled() is False
+    monkeypatch.setenv("MAVERICK_GOVERNED_ACTIONS", "1")
+    assert ga_mod.enabled() is True
+    monkeypatch.setenv("MAVERICK_GOVERNED_ACTIONS", "0")
+    assert ga_mod.enabled() is False
+
+
+def test_record_tool_lineage_only_traces_consequential(tmp_path):
+    # read_file is low risk -> NOT traced; write_file/shell are consequential.
+    ga_mod.record_tool_lineage(7, "read_file", {"path": "x"}, store_dir=tmp_path)
+    assert ga_mod.load_lineage(7, store_dir=tmp_path) == []
+    ga_mod.record_tool_lineage(7, "write_file", {"path": "x", "content": "y"},
+                               skills=("s1",), sources=("ticket-9",),
+                               actor="root", store_dir=tmp_path)
+    ga_mod.record_tool_lineage(7, "shell", {"cmd": "ls"}, store_dir=tmp_path)
+    links = ga_mod.load_lineage(7, store_dir=tmp_path)
+    assert [link["action"] for link in links] == ["write_file", "shell"]
+    assert links[0]["skills"] == ["s1"] and links[0]["sources"] == ["ticket-9"]
+    assert ga_mod.verify_lineage_file(7, store_dir=tmp_path).startswith("VALID")
+
+
+def test_persisted_lineage_detects_tampering(tmp_path):
+    ga_mod.record_tool_lineage(1, "shell", {"cmd": "a"}, store_dir=tmp_path)
+    ga_mod.record_tool_lineage(1, "shell", {"cmd": "b"}, store_dir=tmp_path)
+    assert ga_mod.verify_lineage_file(1, store_dir=tmp_path).startswith("VALID")
+    import json
+    f = tmp_path / "1.ndjson"
+    lines = f.read_text().splitlines()
+    rec = json.loads(lines[0])
+    rec["params_json"] = '{"cmd": "TAMPERED"}'
+    lines[0] = json.dumps(rec)
+    f.write_text("\n".join(lines) + "\n")
+    assert ga_mod.verify_lineage_file(1, store_dir=tmp_path).startswith("BROKEN")
+
+
+def test_record_tool_lineage_is_fail_open(tmp_path):
+    # A bad goal_id type must not raise (lineage never breaks a run).
+    ga_mod.record_tool_lineage("not-an-int", "shell", {}, store_dir=tmp_path)  # no exception
