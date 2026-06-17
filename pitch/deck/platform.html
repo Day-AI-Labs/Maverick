@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maverick — The Platform</title>
+<!--
+  Maverick — The Platform (product / platform tour — "goes through everything").
+  Same visual system and chrome as the investor deck (audience-a.html); its own content.
+  Every number here is verifiable from this repo, or shown as a highlighted [FILL] for a
+  founder/contact-only fact. Nothing is fabricated.
+
+  HOW TO USE
+   • Open in a browser. Use ← / → (or Space) to move between slides.
+   • Press F to toggle fullscreen for presenting.
+   • Export to PDF: ⌘/Ctrl-P → "Save as PDF" → Landscape, margins None, Background graphics ON.
+-->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root{
+  --bg:#0A1020; --panel:#0E1730; --panel2:#111C3A; --panel3:#16213f;
+  --white:#F5F8FF; --muted:#93A4C4; --faint:#62729A;
+  --accent:#5B8CFF; --cyan:#3BE8FF; --mint:#36E0A0; --coral:#FF6B6B; --amber:#F5B642;
+  --line:#1E2A4A; --line2:#27365c;
+  --scale:1;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#05080f;color:var(--white);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+
+.wrap{scroll-snap-type:y mandatory;height:100vh;overflow-y:scroll;scroll-behavior:smooth;}
+.page{scroll-snap-align:center;min-height:100vh;display:flex;align-items:center;justify-content:center;}
+.slide{width:1280px;height:720px;flex:0 0 auto;position:relative;overflow:hidden;
+  background:radial-gradient(130% 90% at 88% -10%, rgba(91,140,255,.13), transparent 55%),
+             radial-gradient(90% 70% at 6% 110%, rgba(59,232,255,.06), transparent 55%),
+             var(--bg);
+  border:1px solid var(--line);border-radius:16px;
+  box-shadow:0 40px 120px rgba(0,0,0,.6);
+  transform:scale(var(--scale));transform-origin:center center;}
+.pad{position:absolute;inset:0;padding:58px 72px 0;}
+
+/* ---- shared components ---- */
+.kicker{display:flex;align-items:center;gap:14px;font-size:15px;font-weight:600;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--accent);}
+.kicker::before{content:"";width:34px;height:5px;border-radius:3px;background:var(--accent);}
+.h1{font-size:48px;line-height:1.08;font-weight:800;letter-spacing:-.015em;margin:24px 0 0;max-width:1080px;}
+.h1.sm{font-size:40px}
+.sub{font-size:22px;line-height:1.5;color:var(--muted);margin:20px 0 0;max-width:1000px;font-weight:400;}
+.accent{color:var(--accent)} .cy{color:var(--cyan)} .mint{color:var(--mint)} .coral{color:var(--coral)}
+b,strong{font-weight:700;color:var(--white)}
+.fill{color:var(--amber);border:1px dashed rgba(245,182,66,.55);border-radius:6px;
+  padding:0 7px;font-weight:600;font-size:.84em;background:rgba(245,182,66,.07);white-space:nowrap}
+.foot{position:absolute;left:72px;right:72px;bottom:26px;display:flex;justify-content:space-between;
+  align-items:center;border-top:1px solid var(--line);padding-top:13px;font-size:13.5px;color:var(--faint);letter-spacing:.05em;}
+.foot .wm{color:var(--muted);font-weight:700;letter-spacing:.24em;font-size:13px}
+.foot .sec{color:var(--faint);letter-spacing:.12em;text-transform:uppercase;font-size:12px}
+
+.cols{display:flex;gap:28px}
+.card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+  border-radius:18px;padding:28px 30px;position:relative;overflow:hidden}
+.card .bar{position:absolute;top:0;left:0;right:0;height:5px}
+.card h3{margin:6px 0 10px;font-size:23px;font-weight:700}
+.card p{margin:0;font-size:17.5px;line-height:1.5;color:var(--muted)}
+.tag{display:inline-block;font-size:13px;font-weight:600;letter-spacing:.06em;padding:5px 12px;border-radius:999px;
+  border:1px solid var(--line2);color:var(--muted);background:rgba(255,255,255,.02)}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+
+ul.bul{list-style:none;margin:18px 0 0;padding:0}
+ul.bul li{position:relative;padding:0 0 0 30px;margin:0 0 16px;font-size:21px;line-height:1.46;color:var(--muted)}
+ul.bul li::before{content:"";position:absolute;left:0;top:9px;width:11px;height:11px;border-radius:3px;background:var(--accent)}
+ul.bul li.cy::before{background:var(--cyan)} ul.bul li.mint::before{background:var(--mint)} ul.bul li.coral::before{background:var(--coral)}
+
+.statbig{font-size:64px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.statlbl{font-size:15px;color:var(--muted);margin-top:8px;letter-spacing:.03em}
+
+code,.mono{font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace}
+.codechip{font-family:'JetBrains Mono',monospace;background:rgba(91,140,255,.10);border:1px solid var(--line2);
+  color:var(--cyan);padding:2px 9px;border-radius:7px;font-size:.86em}
+
+/* ---- platform-tour helpers (reuse existing vars) ---- */
+.grid7{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.partrow{display:flex;align-items:baseline;gap:16px;background:linear-gradient(180deg,var(--panel2),var(--panel));
+  border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+.partrow .pn{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:#cfe0ff;min-width:158px}
+.partrow .pj{font-size:15px;color:var(--muted);line-height:1.4}
+.chip{display:inline-block;font-size:14px;font-weight:600;padding:7px 14px;border-radius:10px;
+  border:1px solid var(--line2);color:#cfe0ff;background:rgba(91,140,255,.06)}
+
+/* ---- print ---- */
+@media print{
+  @page{size:13.333in 7.5in;margin:0}
+  html,body{background:#fff}
+  .wrap{height:auto;overflow:visible;display:block}
+  .page{min-height:auto;display:block;break-after:page;page-break-after:always}
+  .slide{transform:none!important;border-radius:0;border:none;box-shadow:none;width:13.333in;height:7.5in}
+  .pad{padding:0.6in 0.75in 0}
+  .foot{left:.75in;right:.75in;bottom:.3in}
+  .hud{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+
+<!-- ============ 1 · TITLE ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker" style="margin-top:8px">For regulated enterprises</div>
+    <div style="font-size:128px;font-weight:800;letter-spacing:-.03em;margin:64px 0 0;line-height:1">MAVERICK</div>
+    <div style="font-size:25px;font-weight:500;color:var(--muted);margin-top:12px">by <span style="color:var(--accent);font-weight:600">Daybreak Labs</span></div>
+    <div style="font-size:34px;font-weight:600;color:var(--white);margin-top:26px;max-width:1040px;line-height:1.2">
+      The governed AI agent <span class="accent">workforce</span> — the whole platform.</div>
+    <div style="position:absolute;right:72px;top:64px;display:flex;gap:10px;flex-direction:column;align-items:flex-end">
+      <div class="tag" style="border-color:rgba(91,140,255,.5);color:#cfe0ff">Platform overview</div>
+      <div style="font-size:13px;color:var(--faint);letter-spacing:.05em">Governance on every action · Tamper-evident audit · Provable learning</div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">Overview</span><span>01 / 16</span></div>
+</div></section>
+
+<!-- ============ 2 · WHAT IT IS ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">What it is</div>
+    <h1 class="h1 sm">Not a chatbot. Not a framework.<br>A governed <span class="accent">runtime</span> that does real regulated work.</h1>
+    <p class="sub" style="margin-top:22px;max-width:1120px">Maverick is a recursive multi-agent runtime where every action clears <b>one gate</b> before it runs — capability, policy, shield, hard budget, tamper-evident audit. It runs <b>on your data, in your environment</b>, and it ships <b>1,118 least-privilege specialist packs</b> ready to do the work.</p>
+    <div style="display:flex;gap:14px;margin-top:38px;flex-wrap:wrap">
+      <span class="chip" style="border-color:rgba(91,140,255,.5)">Governed</span>
+      <span class="chip" style="border-color:rgba(59,232,255,.5);color:#bdf3ff;background:rgba(59,232,255,.06)">Self-hostable</span>
+      <span class="chip" style="border-color:rgba(54,224,160,.5);color:#9bf3cf;background:rgba(54,224,160,.06)">Provably-improving</span>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">What it is</span><span>02 / 16</span></div>
+</div></section>
+
+<!-- ============ 3 · ARCHITECTURE ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Architecture</div>
+    <h1 class="h1 sm">Seven parts, one governed spine.</h1>
+    <div class="grid7" style="margin-top:28px">
+      <div class="partrow"><span class="pn">kernel · maverick-core</span><span class="pj">Orchestrator, capability, policy, budget, sandbox, audit — the chokepoint.</span></div>
+      <div class="partrow"><span class="pn">shield</span><span class="pj">Safety scan on every action; the kernel runs without it (fails open with a warning).</span></div>
+      <div class="partrow"><span class="pn">channels</span><span class="pj">How work comes in and goes out — connectors to the systems of record.</span></div>
+      <div class="partrow"><span class="pn">dashboard</span><span class="pj">FastAPI control plane: deliverable inboxes, governance scoreboard, sign-off.</span></div>
+      <div class="partrow"><span class="pn">mcp</span><span class="pj">MCP server — drive Maverick from Claude Code, Cursor, any MCP client.</span></div>
+      <div class="partrow"><span class="pn">evolve</span><span class="pj">The closed learning loop: dreaming, hindsight, proof, snapshot &amp; rollback.</span></div>
+      <div class="partrow" style="grid-column:1 / -1"><span class="pn">knowledge</span><span class="pj">Per-department memory and fleet memory — the substrate the workforce and external agents learn against.</span></div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">Architecture</span><span>03 / 16</span></div>
+</div></section>
+
+<!-- ============ 4 · THE CHOKEPOINT (HERO) ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">The chokepoint</div>
+    <h1 class="h1 sm">Every action clears <span class="accent">one gate</span> before it runs.</h1>
+    <p class="sub" style="margin-top:14px;max-width:1140px">capability → governance policy (allow / deny / require-human) → shield → hard budget → tamper-evident audit.</p>
+    <!-- hero chokepoint diagram (verbatim from audience-a.html slide 3) -->
+    <svg viewBox="0 0 1140 322" width="1140" height="322" style="margin-top:18px" font-family="Inter, sans-serif">
+      <defs>
+        <marker id="ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#5B8CFF"/></marker>
+        <marker id="ahg" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#36E0A0"/></marker>
+        <marker id="ahr" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#FF6B6B"/></marker>
+        <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="16" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <!-- input -->
+      <rect x="0" y="78" width="150" height="70" rx="12" fill="#0E1730" stroke="#27365c"/>
+      <text x="75" y="108" fill="#F5F8FF" font-size="16" font-weight="700" text-anchor="middle">Goal</text>
+      <text x="75" y="130" fill="#93A4C4" font-size="12.5" text-anchor="middle">orchestrator</text>
+      <text x="75" y="180" fill="#93A4C4" font-size="12.5" text-anchor="middle">spawns specialists</text>
+      <rect x="22" y="196" width="106" height="22" rx="6" fill="#111C3A" stroke="#27365c"/><text x="75" y="211" fill="#cfe0ff" font-size="12" text-anchor="middle">specialist swarm</text>
+      <line x1="150" y1="113" x2="330" y2="113" stroke="#5B8CFF" stroke-width="2.5" marker-end="url(#ah)"/>
+      <!-- GATE -->
+      <g filter="url(#glow)"><rect x="332" y="58" width="300" height="118" rx="16" fill="#111C3A" stroke="#5B8CFF" stroke-width="2.5"/></g>
+      <text x="482" y="92" fill="#5B8CFF" font-size="18" font-weight="800" text-anchor="middle" letter-spacing="1">THE CHOKEPOINT</text>
+      <text x="482" y="118" fill="#F5F8FF" font-size="14.5" text-anchor="middle">capability · governance policy</text>
+      <text x="482" y="140" fill="#F5F8FF" font-size="14.5" text-anchor="middle">shield · hard budget</text>
+      <text x="482" y="162" fill="#3BE8FF" font-size="12.5" text-anchor="middle">every action — allow / deny / require-human</text>
+      <!-- allow branch -->
+      <path d="M632 96 L726 96" stroke="#36E0A0" stroke-width="2.5" fill="none" marker-end="url(#ahg)"/>
+      <text x="678" y="86" fill="#36E0A0" font-size="12" font-weight="600" text-anchor="middle">allow</text>
+      <rect x="728" y="64" width="186" height="64" rx="12" fill="#0E1730" stroke="#36E0A0"/>
+      <text x="821" y="90" fill="#F5F8FF" font-size="14.5" font-weight="700" text-anchor="middle">Tools / Sandbox</text>
+      <text x="821" y="110" fill="#93A4C4" font-size="12" text-anchor="middle">network-off by default</text>
+      <!-- deny branch -->
+      <path d="M632 150 L726 184" stroke="#FF6B6B" stroke-width="2.5" fill="none" marker-end="url(#ahr)"/>
+      <text x="672" y="182" fill="#FF6B6B" font-size="12" font-weight="600" text-anchor="middle">deny / human</text>
+      <rect x="728" y="166" width="186" height="50" rx="12" fill="#0E1730" stroke="#FF6B6B"/>
+      <text x="821" y="196" fill="#F5F8FF" font-size="14.5" font-weight="700" text-anchor="middle">Human sign-off</text>
+      <!-- result -->
+      <line x1="914" y1="96" x2="982" y2="96" stroke="#5B8CFF" stroke-width="2.5" marker-end="url(#ah)"/>
+      <rect x="984" y="58" width="150" height="118" rx="14" fill="#111C3A" stroke="#27365c"/>
+      <text x="1059" y="92" fill="#F5F8FF" font-size="14.5" font-weight="700" text-anchor="middle">Signed result</text>
+      <text x="1059" y="113" fill="#93A4C4" font-size="12" text-anchor="middle">+ tamper-evident</text>
+      <text x="1059" y="129" fill="#93A4C4" font-size="12" text-anchor="middle">audit chain</text>
+      <text x="1059" y="156" fill="#3BE8FF" font-size="11.5" text-anchor="middle">→ system of record</text>
+      <!-- learning loop -->
+      <path d="M984 168 C 700 300, 360 300, 150 168" stroke="#3BE8FF" stroke-width="2" stroke-dasharray="6 6" fill="none" opacity=".8" marker-end="url(#ah)"/>
+      <text x="567" y="298" fill="#3BE8FF" font-size="13" font-weight="600" text-anchor="middle">closed learning loop — governed · audited · rollback-able · provably improves</text>
+    </svg>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">The chokepoint</span><span>04 / 16</span></div>
+</div></section>
+
+<!-- ============ 5 · CAPABILITY & POLICY ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Capability &amp; policy</div>
+    <h1 class="h1 sm">Least privilege, <span class="accent">enforced</span>.</h1>
+    <div class="cols" style="margin-top:30px">
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--accent)"></div>
+        <h3>Capability tokens</h3>
+        <p>Every specialist gets a token scoped to exactly what it needs. <b>Attenuate-only</b> — a token can be narrowed, never widened, as it passes down the swarm.</p></div>
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--cyan)"></div>
+        <h3>Policy engine</h3>
+        <p>Each action is evaluated against policy: <span class="mint">allow</span> · <span class="coral">deny</span> · <span class="amber" style="color:var(--amber)">require-human</span>. The decision is recorded with the action.</p></div>
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--mint)"></div>
+        <h3>Egress lock</h3>
+        <p>Data can't leave unless policy says so. A <b>successful prompt injection still can't move data out</b> — the lock sits below the agent.</p></div>
+    </div>
+    <p style="font-size:18px;color:var(--muted);margin-top:28px">Privilege is bound to the action, not the prompt. The agent can be wrong and the boundary still holds.</p>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">Capability &amp; policy</span><span>05 / 16</span></div>
+</div></section>
+
+<!-- ============ 6 · THE AUDIT ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">The audit</div>
+    <h1 class="h1 sm">Every action, signed and <span class="accent">hash-chained</span>.</h1>
+    <div class="cols" style="margin-top:28px;align-items:flex-start">
+      <div style="flex:1.05">
+        <ul class="bul" style="margin-top:6px">
+          <li><b>Tamper-evident.</b> Each entry is hash-chained to the one before it; altering a row breaks the chain.</li>
+          <li class="cy"><b>Verifiable offline.</b> No call home — a regulator can check the chain in an air-gapped room.</li>
+          <li class="mint"><b>The Operating Record.</b> One signed ledger of what the workforce did, decided, and refused.</li>
+        </ul>
+      </div>
+      <div style="flex:1">
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
+            <span class="codechip">operating-record · hash-chain</span><span style="font-size:12px;color:var(--mint)">● signed</span></div>
+          <div class="mono" style="padding:16px 18px;font-size:12.5px;line-height:1.85;color:#b9c6e6">
+            <div><span style="color:#62729A"># append-only ledger</span></div>
+            <div>#118 wire.send&nbsp;&nbsp;<span class="coral">DENY</span>&nbsp;&nbsp;<span style="color:#62729A">prev a91f…</span></div>
+            <div>#119 doc.read&nbsp;&nbsp;<span class="mint">ALLOW</span>&nbsp;<span style="color:#62729A">hash 4c0d…</span></div>
+            <div>#120 release&nbsp;&nbsp;<span class="amber" style="color:var(--amber)">HUMAN</span>&nbsp;<span style="color:#62729A">hash e72b…</span></div>
+            <div>#121 certify&nbsp;&nbsp;<span class="mint">ALLOW</span>&nbsp;<span style="color:#62729A">hash 1f88…</span></div>
+            <div style="color:#62729A;margin-top:6px">verify ✓ — chain intact, offline</div></div>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:18px;color:var(--muted);margin-top:24px">The answer to "what did it do?" is one signed file — not a screen recording and a promise.</p>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">The audit</span><span>06 / 16</span></div>
+</div></section>
+
+<!-- ============ 7 · BUDGETS & SANDBOX ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Budgets &amp; sandbox</div>
+    <h1 class="h1 sm">Bounded blast radius.</h1>
+    <div class="cols" style="margin-top:28px">
+      <div style="flex:1.1">
+        <div class="eyebrow" style="margin-bottom:14px">Hard budget caps — enforced at record time</div>
+        <ul class="bul" style="margin-top:0">
+          <li><b>Tokens.</b> A run can't burn past its token ceiling.</li>
+          <li class="cy"><b>Dollars.</b> A spend cap stops the work, not the invoice.</li>
+          <li class="mint"><b>Wall-clock.</b> Time-boxed — a runaway loop is capped, not waited out.</li>
+          <li class="coral"><b>Tools.</b> A cap on tool calls bounds the action count.</li>
+        </ul>
+      </div>
+      <div style="flex:1">
+        <div class="card" style="padding:26px 30px"><div class="bar" style="background:var(--mint)"></div>
+          <h3>Sandbox</h3>
+          <p><b>Network-off by default.</b> Tools run in a sandbox with no egress unless policy grants it. All shell routes through <span class="codechip">sandbox.exec()</span> — nothing runs around it.</p>
+          <p style="margin-top:14px">A specialist that goes wrong is contained: capped budget, no network, no privilege it wasn't handed.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">Budgets &amp; sandbox</span><span>07 / 16</span></div>
+</div></section>
+
+<!-- ============ 8 · THE PROOF PACK ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">The Proof Pack</div>
+    <h1 class="h1 sm">It signs its own <span class="accent">guarantees</span>.</h1>
+    <p class="sub" style="margin-top:12px;max-width:1120px">One command produces an Ed25519-signed evidence bundle — verifiable offline, and it refuses to fabricate a passing result.</p>
+    <div class="cols" style="margin-top:26px;align-items:center">
+      <div class="card" style="flex:.9;padding:0;overflow:hidden">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
+          <span class="codechip">maverick proof-pack</span><span style="font-size:12px;color:var(--mint)">● Ed25519 signed</span></div>
+        <div class="mono" style="padding:16px 18px;font-size:13px;line-height:1.75;color:#b9c6e6">
+          <div><span style="color:#62729A"># PROOF.md</span></div>
+          <div>governance&nbsp;&nbsp;<span class="mint">✓ PASS</span></div>
+          <div>reliability&nbsp;&nbsp;<span class="mint">✓ CERT</span></div>
+          <div>performance&nbsp;<span class="mint">✓ SLA</span></div>
+          <div>shield&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="mint">✓ PASS</span></div>
+          <div style="color:#62729A;margin-top:6px">verifiable offline ·<br>refuses to fabricate</div></div>
+      </div>
+      <div style="flex:1.1">
+        <ul class="bul" style="margin-top:0">
+          <li><b>Governance.</b> The policy guarantees, signed.</li>
+          <li class="cy"><b>Reliability.</b> A reliability certificate from the run.</li>
+          <li class="mint"><b>SLA.</b> Performance measured against the stated bound.</li>
+          <li><b>Shield.</b> Safety-scan results, in the same bundle.</li>
+        </ul>
+        <p style="font-size:17px;color:var(--muted);margin-top:8px">A buyer's security team verifies the signature themselves — no trust in our word required.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">The Proof Pack</span><span>08 / 16</span></div>
+</div></section>
+
+<!-- ============ 9 · THE GOLDEN PATH ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">The golden path</div>
+    <h1 class="h1 sm">Watch it <span class="coral">refuse</span>.</h1>
+    <p class="sub" style="margin-top:12px;max-width:1120px">A seeded scenario you run live. The platform refuses the dangerous action and leaves a tamper-evident receipt for every step.</p>
+    <div class="cols" style="margin-top:26px;align-items:center">
+      <div class="card" style="flex:1.1;padding:0;overflow:hidden">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--line)"><span class="codechip">golden-path receipts</span></div>
+        <div class="mono" style="padding:16px 20px;font-size:14px;line-height:2.1">
+          <div>boot finance specialist&nbsp;&nbsp;<span style="color:#93A4C4">SEALED</span></div>
+          <div>$60k wire&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="coral">DENY</span></div>
+          <div>$6k release&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="amber" style="color:var(--amber)">REQUIRE_HUMAN</span></div>
+          <div>runaway loop&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cy">CAPPED</span></div>
+          <div>alter audited row&nbsp;&nbsp;<span class="mint">CAUGHT</span></div>
+          <div style="color:#62729A;margin-top:8px">every row tamper-evident</div></div>
+      </div>
+      <div style="flex:1">
+        <ul class="bul" style="margin-top:0">
+          <li><b>SEALED.</b> Boots with no shell, no payments — least privilege from the start.</li>
+          <li class="coral"><b>DENY.</b> A $60k wire is blocked by policy.</li>
+          <li><b>REQUIRE_HUMAN.</b> A $6k release escalates to a person.</li>
+          <li class="cy"><b>CAPPED.</b> A runaway loop hits the budget and stops.</li>
+          <li class="mint"><b>CAUGHT.</b> Altering one audited row breaks the chain.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">The golden path</span><span>09 / 16</span></div>
+</div></section>
+
+<!-- ============ 10 · PROVABLE LEARNING ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Provable learning</div>
+    <h1 class="h1 sm">A workforce that <span class="accent">proves</span> it improved.</h1>
+    <p class="sub" style="margin-top:12px;max-width:1140px">A closed, audited learning loop — not a static model, and not an unverified claim of getting better.</p>
+    <div class="cols" style="margin-top:26px">
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--accent)"></div>
+        <h3>The loop</h3>
+        <p>Offline consolidation (&ldquo;<b>dreaming</b>&rdquo;) → <b>hindsight</b> on real outcomes → <b>proof</b> before anything changes behavior.</p></div>
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--cyan)"></div>
+        <h3>Memory &amp; flywheel</h3>
+        <p><b>Per-department memory</b> feeds a <b>causal flywheel</b> that mines self-correcting guardrails from outcomes.</p></div>
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--mint)"></div>
+        <h3>Proven, reversible</h3>
+        <p>Every causal claim must <b>survive a placebo test</b> before it ships. <b>Snapshot &amp; rollback</b> on every change.</p></div>
+    </div>
+    <p style="font-size:18px;color:var(--muted);margin-top:26px">It rewrites itself in production — governed, gated, and reversible. The part a frontier lab won't ship into a bank.</p>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">Provable learning</span><span>10 / 16</span></div>
+</div></section>
+
+<!-- ============ 11 · FLEET MEMORY ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Fleet memory</div>
+    <h1 class="h1 sm">Govern agents you <span class="accent">didn't build</span>.</h1>
+    <p class="sub" style="margin-top:14px;max-width:1140px">Bring your existing agents under Maverick governance — no rip-and-replace. The capability, audit, and memory layers wrap agents that already run elsewhere.</p>
+    <div style="display:flex;gap:16px;margin-top:36px;flex-wrap:wrap">
+      <span class="chip" style="border-color:rgba(91,140,255,.5)">Agentforce</span>
+      <span class="chip" style="border-color:rgba(91,140,255,.5)">Copilot</span>
+      <span class="chip" style="border-color:rgba(91,140,255,.5)">LangChain</span>
+      <span class="chip" style="border-color:var(--line2);color:var(--muted);background:rgba(255,255,255,.02)">… any external agent</span>
+    </div>
+    <p style="font-size:18px;color:var(--muted);margin-top:36px">The same signed audit, egress lock, and learning loop — now over agents the enterprise already owns. The easiest way in, and the widest surface to govern.</p>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">Fleet memory</span><span>11 / 16</span></div>
+</div></section>
+
+<!-- ============ 12 · THE SPECIALIST LIBRARY ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">The specialist library</div>
+    <h1 class="h1 sm">1,118 governed packs. 26 suites. <span class="mint">Zero</span> lint errors.</h1>
+    <div class="cols" style="margin-top:30px;align-items:center">
+      <div style="flex:1.15">
+        <ul class="bul">
+          <li><b>Least privilege by construction.</b> Every pack declares exactly the capabilities it needs — nothing more.</li>
+          <li class="cy"><span class="codechip">maverick domains-lint</span> → <b>0 errors, 0 warnings.</b> Run it yourself.</li>
+          <li class="mint"><b>Finance suite</b> ships <b>~29 governed deliverables</b> across <b>11 roles</b> — a complete department, not a demo.</li>
+          <li><b>26 suites built</b> — finance, tax, healthcare, insurance, legal, gov, and more. Land and expand.</li>
+        </ul>
+      </div>
+      <div style="flex:.85;display:flex;flex-direction:column;justify-content:center;align-items:center;border-left:1px solid var(--line)">
+        <div class="statbig accent" style="color:var(--accent);font-size:88px">1,118</div>
+        <div class="statlbl" style="text-align:center">least-privilege<br>specialist packs · 26 suites</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">Specialist library</span><span>12 / 16</span></div>
+</div></section>
+
+<!-- ============ 13 · DELIVERABLES ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Deliverables</div>
+    <h1 class="h1 sm">Work lands where a human <span class="accent">signs off</span>.</h1>
+    <div class="cols" style="margin-top:28px;align-items:center">
+      <div style="flex:1.05">
+        <ul class="bul" style="margin-top:0">
+          <li><b>Typed deliverable.</b> A goal's result renders as a structured artifact, not raw chat.</li>
+          <li class="cy"><b>Per-role inbox.</b> It lands in the right person's queue, awaiting sign-off.</li>
+          <li class="mint"><b>Human certifies.</b> A person reviews and certifies before anything moves.</li>
+          <li><b>Routes to the system of record.</b> Signed and audited into <b>Salesforce / ServiceNow</b>.</li>
+        </ul>
+      </div>
+      <div class="card" style="flex:1;padding:0;overflow:hidden">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--line)"><span class="codechip">/deliverables · persona inbox</span></div>
+        <div style="padding:16px 20px;font-size:14.5px;line-height:1.6;color:#b9c6e6">
+          <div style="display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line)">
+            <span>Q3 reconciliation</span><span class="amber" style="color:var(--amber);font-size:12.5px">Awaiting sign-off</span></div>
+          <div style="display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line)">
+            <span>Vendor risk memo</span><span class="mint" style="font-size:12.5px">Certified</span></div>
+          <div style="margin-top:14px;color:var(--muted);font-size:13.5px">human certifies →<br>routes to <b>Salesforce / ServiceNow</b><br><span style="color:#62729A">signed · audited</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">Deliverables</span><span>13 / 16</span></div>
+</div></section>
+
+<!-- ============ 14 · DEPLOY ANYWHERE ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Deploy anywhere</div>
+    <h1 class="h1 sm">Self-host or air-gap. Your data <span class="accent">never leaves</span>.</h1>
+    <p class="sub" style="margin-top:14px;max-width:1140px">Runs in the customer's environment with no required egress. The distribution surface is already built.</p>
+    <div class="grid7" style="margin-top:28px">
+      <div class="partrow"><span class="pn">8 PyPI packages</span><span class="pj">pip-installable; the platform ships as a Python workspace.</span></div>
+      <div class="partrow"><span class="pn">Docker / K8s / VPS</span><span class="pj">Container, cluster, or a single box — your call.</span></div>
+      <div class="partrow"><span class="pn">MCP server</span><span class="pj">Drive from Claude Code, Cursor, or any MCP client.</span></div>
+      <div class="partrow"><span class="pn">GitHub Action</span><span class="pj">Wire governance into CI.</span></div>
+      <div class="partrow"><span class="pn">plugin SDK</span><span class="pj">TypeScript SDK to extend the platform.</span></div>
+      <div class="partrow"><span class="pn">native installers</span><span class="pj">Windows / macOS / Linux desktop apps.</span></div>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">Deploy anywhere</span><span>14 / 16</span></div>
+</div></section>
+
+<!-- ============ 15 · THE LANE ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">The lane</div>
+    <h1 class="h1 sm">Nobody else ships this.</h1>
+    <p class="sub" style="margin-top:18px;max-width:1140px">Governed, self-hostable, provably-improving agents for regulated work — the one position no incumbent or framework holds.</p>
+    <div class="cols" style="margin-top:34px">
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--accent)"></div>
+        <h3>Frameworks</h3>
+        <p>Ungoverned plumbing you secure yourself. No audit, no egress lock, no proof.</p></div>
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--cyan)"></div>
+        <h3>Hosted agents</h3>
+        <p>A black box you can't run on your own data. Can't air-gap; can't self-verify.</p></div>
+      <div class="card" style="flex:1"><div class="bar" style="background:var(--mint)"></div>
+        <h3>Incumbents</h3>
+        <p>Policy bolted on, not agent-native. No self-host, no provable learning.</p></div>
+    </div>
+    <p style="font-size:19px;color:var(--muted);margin-top:28px">Governance + provable learning is the layer that becomes mandatory — and the lane no one else occupies.</p>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">The lane</span><span>15 / 16</span></div>
+</div></section>
+
+<!-- ============ 16 · CLOSE ============ -->
+<section class="page"><div class="slide">
+  <div class="pad">
+    <div class="kicker">Close</div>
+    <h1 class="h1" style="font-size:54px;margin-top:30px">The AI workforce <span class="accent">of record</span><br>for regulated enterprises.</h1>
+    <p class="sub" style="font-size:24px;max-width:1080px;margin-top:30px">Governance on every action. A signed record you can verify offline. A workforce that proves it improved — running on your data, in your environment.</p>
+    <div style="position:absolute;left:72px;bottom:96px;display:flex;gap:16px;align-items:center;font-size:18px;color:var(--muted)">
+      <span class="fill">[ FILL: contact ]</span>
+    </div>
+  </div>
+  <div class="foot"><span class="wm">DAYBREAK LABS</span><span class="sec">Close</span><span>16 / 16</span></div>
+</div></section>
+
+</div><!-- /wrap -->
+
+<div class="hud">
+  <span><span class="k">←</span> <span class="k">→</span> navigate</span>
+  <span><span class="k">F</span> fullscreen</span>
+  <span><b id="pgno">1</b> / 16</span>
+</div>
+
+<script>
+(function(){
+  var pages = Array.prototype.slice.call(document.querySelectorAll('.page'));
+  var wrap = document.getElementById('wrap');
+  var pgno = document.getElementById('pgno');
+  function fit(){
+    var s = Math.min(window.innerWidth/1320, window.innerHeight/760);
+    document.documentElement.style.setProperty('--scale', Math.max(0.2, s));
+  }
+  window.addEventListener('resize', fit); fit();
+
+  function current(){
+    var best=0, bd=1e9;
+    for(var i=0;i<pages.length;i++){
+      var r=pages[i].getBoundingClientRect();
+      var d=Math.abs(r.top+r.height/2 - window.innerHeight/2);
+      if(d<bd){bd=d;best=i;}
+    }
+    return best;
+  }
+  function go(i){ i=Math.max(0,Math.min(pages.length-1,i)); pages[i].scrollIntoView({behavior:'smooth'}); }
+  wrap.addEventListener('scroll', function(){ pgno.textContent = current()+1; });
+  document.addEventListener('keydown', function(e){
+    if(e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' '||e.key==='PageDown'){e.preventDefault();go(current()+1);}
+    else if(e.key==='ArrowLeft'||e.key==='ArrowUp'||e.key==='PageUp'){e.preventDefault();go(current()-1);}
+    else if(e.key==='Home'){e.preventDefault();go(0);}
+    else if(e.key==='End'){e.preventDefault();go(pages.length-1);}
+    else if(e.key==='f'||e.key==='F'){ if(!document.fullscreenElement){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();} else {document.exitFullscreen&&document.exitFullscreen();} }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maverick — Why this shouldn't have been possible</title>
+<!--
+  Maverick — the long read. Manifesto -> deep-dive -> walkthrough.
+  A scrollable, self-contained page (no build step). Open in a browser, or
+  print to PDF. Every number is verifiable from this repo; the single
+  founder-only fact (contact) is a highlighted [FILL].
+  Content sources: pitch/SEED-DECK.md, CLAUDE.md.
+-->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+:root{
+  --bg:#0A1020; --bg2:#070b16; --panel:#0E1730; --panel2:#111C3A;
+  --white:#F5F8FF; --muted:#9DAFCE; --faint:#6A7AA0;
+  --accent:#5B8CFF; --cyan:#3BE8FF; --mint:#36E0A0; --coral:#FF6B6B; --amber:#F5B642;
+  --line:#1E2A4A; --line2:#27365c;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg2);color:var(--white);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;line-height:1.6;
+  background:
+    radial-gradient(120% 60% at 85% -5%, rgba(91,140,255,.14), transparent 60%),
+    radial-gradient(90% 50% at 5% 8%, rgba(59,232,255,.05), transparent 55%),
+    var(--bg2);}
+.wrap{max-width:880px;margin:0 auto;padding:0 28px}
+::selection{background:rgba(91,140,255,.32)}
+
+/* top bar */
+.top{position:sticky;top:0;z-index:20;backdrop-filter:blur(10px);
+  background:rgba(7,11,22,.72);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;justify-content:space-between;align-items:center;height:58px}
+.wm{font-weight:800;letter-spacing:.24em;font-size:13px;color:var(--white)}
+.wm span{color:var(--accent)}
+.top .by{font-size:12px;color:var(--faint);letter-spacing:.04em}
+
+/* hero */
+.hero{padding:120px 0 80px;border-bottom:1px solid var(--line)}
+.kick{display:inline-flex;align-items:center;gap:12px;font-size:13px;font-weight:700;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--accent)}
+.kick::before{content:"";width:30px;height:4px;border-radius:3px;background:var(--accent)}
+.hero h1{font-size:clamp(40px,6vw,68px);line-height:1.04;font-weight:900;letter-spacing:-.025em;
+  margin:26px 0 0;max-width:14ch}
+.hero h1 .ac{color:var(--accent)}
+.hero .lead{font-size:clamp(19px,2.4vw,24px);color:var(--muted);margin:28px 0 0;max-width:60ch;font-weight:400}
+.hero .cue{margin-top:54px;font-size:13px;color:var(--faint);letter-spacing:.16em;text-transform:uppercase}
+
+/* sections */
+section{padding:84px 0;border-bottom:1px solid var(--line)}
+.actlabel{font-size:13px;font-weight:800;letter-spacing:.26em;text-transform:uppercase;color:var(--faint)}
+.actlabel b{color:var(--accent)}
+h2{font-size:clamp(30px,4.4vw,46px);line-height:1.1;font-weight:800;letter-spacing:-.02em;margin:16px 0 0;max-width:18ch}
+h3{font-size:23px;font-weight:700;letter-spacing:-.01em;margin:48px 0 8px;color:var(--white)}
+h3 .n{color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:.7em;margin-right:10px;font-weight:700}
+p{font-size:18.5px;color:#cdd8f0;margin:18px 0 0;max-width:66ch}
+p.big{font-size:22px;color:#e6edff}
+.muted{color:var(--muted)}
+b,strong{color:var(--white);font-weight:700}
+.ac{color:var(--accent)} .cy{color:var(--cyan)} .mint{color:var(--mint)} .coral{color:var(--coral)} .am{color:var(--amber)}
+em{color:#dbe6ff;font-style:italic}
+a{color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(59,232,255,.3)}
+
+/* pull quote */
+.pq{margin:54px 0;padding:6px 0 6px 30px;border-left:3px solid var(--accent);
+  font-size:clamp(24px,3.4vw,34px);line-height:1.28;font-weight:700;letter-spacing:-.01em;color:#fff;max-width:24ch}
+
+/* stat row */
+.stats{display:flex;flex-wrap:wrap;gap:14px;margin:42px 0 0}
+.stat{flex:1;min-width:150px;background:linear-gradient(180deg,var(--panel2),var(--panel));
+  border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+.stat .big{font-size:38px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.stat .lbl{font-size:14px;color:var(--muted);margin-top:8px;line-height:1.4}
+
+/* hero svg */
+.figure{margin:46px 0 0;background:linear-gradient(180deg,var(--panel),#0b1226);
+  border:1px solid var(--line);border-radius:18px;padding:26px 22px;overflow:hidden}
+.figure svg{width:100%;height:auto;display:block}
+.figure .cap{font-size:13.5px;color:var(--faint);margin-top:10px;text-align:center;letter-spacing:.02em}
+
+/* mono / receipts */
+.mono{font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace}
+.term{margin:34px 0 0;background:#070d1c;border:1px solid var(--line2);border-radius:14px;overflow:hidden}
+.term .bar{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line)}
+.term .bar .chip{font-family:'JetBrains Mono',monospace;background:rgba(91,140,255,.12);border:1px solid var(--line2);
+  color:var(--cyan);padding:3px 11px;border-radius:7px;font-size:13px}
+.term .body{padding:18px 20px;font-family:'JetBrains Mono',monospace;font-size:14.5px;line-height:2}
+.term .body .row{display:flex;justify-content:space-between;gap:20px}
+.term .body .c{color:#62729A}
+.codechip{font-family:'JetBrains Mono',monospace;background:rgba(91,140,255,.10);border:1px solid var(--line2);
+  color:var(--cyan);padding:2px 9px;border-radius:7px;font-size:.84em;white-space:nowrap}
+.fill{color:var(--amber);border:1px dashed rgba(245,182,66,.55);border-radius:6px;
+  padding:0 8px;font-weight:600;font-size:.92em;background:rgba(245,182,66,.07)}
+
+/* tags */
+.tags{display:flex;flex-wrap:wrap;gap:10px;margin:30px 0 0}
+.tg{font-size:14px;font-weight:600;letter-spacing:.04em;padding:8px 16px;border-radius:999px;
+  border:1px solid var(--line2);color:#cfe0ff;background:rgba(255,255,255,.02)}
+
+/* close */
+.close{padding:100px 0 90px;text-align:center;border-bottom:none}
+.close .big2{font-size:clamp(30px,4.6vw,50px);font-weight:900;letter-spacing:-.025em;line-height:1.08;margin:18px auto 0;max-width:18ch}
+.close .contact{margin-top:40px;font-size:16px;color:var(--muted)}
+.foot{padding:30px 0 60px;color:var(--faint);font-size:13px;display:flex;justify-content:space-between;letter-spacing:.04em}
+
+@media (max-width:640px){ .stats{flex-direction:column} .term .body{font-size:12.5px} }
+</style>
+</head>
+<body>
+
+<div class="top"><div class="wrap">
+  <div class="wm">MAVERICK</div>
+  <div class="by">by <span style="color:var(--accent);font-weight:600">Daybreak Labs</span></div>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="kick">Maverick · by Daybreak Labs</div>
+  <h1>The agent workforce a regulated enterprise can <span class="ac">actually deploy</span>.</h1>
+  <p class="lead">An AI workforce that does real, high-stakes operational work — finance, legal, healthcare ops — and can <b>prove, to a regulator,</b> that it stayed in policy and got better. Here is what we built, and why it shouldn&rsquo;t have been possible.</p>
+  <div class="cue">↓ &nbsp;The long read</div>
+</div></header>
+
+<!-- ===================== ACT I — MANIFESTO ===================== -->
+<section><div class="wrap">
+  <div class="actlabel"><b>Act I</b> &nbsp;·&nbsp; The truth nobody admits</div>
+  <h2>The hard part was never the agent.</h2>
+
+  <p class="big">Everyone has been told the same story: AI agents are coming for enterprise operations. The story is true. What no one tells you is that the agent — the part the whole industry is racing to build — was never the hard part.</p>
+
+  <p>The hard part shows up the instant an agent touches something that matters. A bank doesn&rsquo;t need a smarter chatbot. It needs to prove — to a regulator, in writing, after the fact — that the system it let near a <b>$60,000 wire</b> did exactly what it was allowed to, <em>could not have done otherwise</em>, and is getting <b>better</b> over time instead of quietly drifting worse.</p>
+
+  <p>No one could prove that. So agentic AI stalled in pilots, in exactly the industries that would pay the most for it. The demo dazzles. Then the <b>CISO, the compliance officer, and the general counsel</b> walk in, ask three questions — <span class="cy">what did it do, could it exfiltrate our data, will it get worse?</span> — and the project quietly dies.</p>
+
+  <div class="pq">We didn&rsquo;t build a smarter agent. We built the layer a bank needs <span class="ac">around</span> it — and made the agent prove itself.</div>
+
+  <p>Frontier labs build smarter agents, and that race is commoditizing by the month. We built the layer a regulated enterprise needs <em>around</em> the agent: governance bound to every single action, an audit trail that can&rsquo;t be forged, and a workforce that improves under proof. And we built it as real infrastructure — roughly <b>310,000 lines</b> of it, installable today, that you can run with your network <b>turned off</b>.</p>
+
+  <div class="stats">
+    <div class="stat"><div class="big ac">~310K</div><div class="lbl">lines of governed infrastructure — installable today</div></div>
+    <div class="stat"><div class="big mint">1,118</div><div class="lbl">least-privilege specialist packs · 0 lint errors</div></div>
+    <div class="stat"><div class="big cy">0</div><div class="lbl">required egress — your data never leaves</div></div>
+  </div>
+
+  <p class="muted" style="margin-top:34px">Here is what that actually means — and why, until now, it shouldn&rsquo;t have been possible.</p>
+</div></section>
+
+<!-- ===================== ACT II — DEEP DIVE ===================== -->
+<section><div class="wrap">
+  <div class="actlabel"><b>Act II</b> &nbsp;·&nbsp; How it actually works</div>
+  <h2>Most &ldquo;AI platforms&rdquo; are a prompt and a hope. This is infrastructure.</h2>
+  <p>It is built around one uncompromising idea, and everything else follows from it.</p>
+
+  <h3><span class="n">01</span>One gate. Every action. Before it runs.</h3>
+  <p>Every action an agent takes — every tool call, every payment, every write — passes through <b>one chokepoint before it happens</b>. Not after. At that gate, in order: a <b>capability</b> check (is this agent even allowed to attempt this?), a <b>governance policy</b> (allow, deny, or require a human?), a <b>safety shield</b> (is this dangerous, or an injection?), a <b>hard budget</b> (out of tokens, dollars, wall-clock, or tool calls?), and a <b>tamper-evident audit</b> entry. One path. No exceptions. An agent cannot do anything Maverick didn&rsquo;t watch and record.</p>
+
+  <div class="figure">
+    <svg viewBox="0 0 1140 322" font-family="Inter, sans-serif">
+      <defs>
+        <marker id="ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#5B8CFF"/></marker>
+        <marker id="ahg" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#36E0A0"/></marker>
+        <marker id="ahr" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#FF6B6B"/></marker>
+        <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="16" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <rect x="0" y="78" width="150" height="70" rx="12" fill="#0E1730" stroke="#27365c"/>
+      <text x="75" y="108" fill="#F5F8FF" font-size="16" font-weight="700" text-anchor="middle">Goal</text>
+      <text x="75" y="130" fill="#93A4C4" font-size="12.5" text-anchor="middle">orchestrator</text>
+      <text x="75" y="180" fill="#93A4C4" font-size="12.5" text-anchor="middle">spawns specialists</text>
+      <rect x="22" y="196" width="106" height="22" rx="6" fill="#111C3A" stroke="#27365c"/><text x="75" y="211" fill="#cfe0ff" font-size="12" text-anchor="middle">specialist swarm</text>
+      <line x1="150" y1="113" x2="330" y2="113" stroke="#5B8CFF" stroke-width="2.5" marker-end="url(#ah)"/>
+      <g filter="url(#glow)"><rect x="332" y="58" width="300" height="118" rx="16" fill="#111C3A" stroke="#5B8CFF" stroke-width="2.5"/></g>
+      <text x="482" y="92" fill="#5B8CFF" font-size="18" font-weight="800" text-anchor="middle" letter-spacing="1">THE CHOKEPOINT</text>
+      <text x="482" y="118" fill="#F5F8FF" font-size="14.5" text-anchor="middle">capability · governance policy</text>
+      <text x="482" y="140" fill="#F5F8FF" font-size="14.5" text-anchor="middle">shield · hard budget</text>
+      <text x="482" y="162" fill="#3BE8FF" font-size="12.5" text-anchor="middle">every action — allow / deny / require-human</text>
+      <path d="M632 96 L726 96" stroke="#36E0A0" stroke-width="2.5" fill="none" marker-end="url(#ahg)"/>
+      <text x="678" y="86" fill="#36E0A0" font-size="12" font-weight="600" text-anchor="middle">allow</text>
+      <rect x="728" y="64" width="186" height="64" rx="12" fill="#0E1730" stroke="#36E0A0"/>
+      <text x="821" y="90" fill="#F5F8FF" font-size="14.5" font-weight="700" text-anchor="middle">Tools / Sandbox</text>
+      <text x="821" y="110" fill="#93A4C4" font-size="12" text-anchor="middle">network-off by default</text>
+      <path d="M632 150 L726 184" stroke="#FF6B6B" stroke-width="2.5" fill="none" marker-end="url(#ahr)"/>
+      <text x="672" y="182" fill="#FF6B6B" font-size="12" font-weight="600" text-anchor="middle">deny / human</text>
+      <rect x="728" y="166" width="186" height="50" rx="12" fill="#0E1730" stroke="#FF6B6B"/>
+      <text x="821" y="196" fill="#F5F8FF" font-size="14.5" font-weight="700" text-anchor="middle">Human sign-off</text>
+      <line x1="914" y1="96" x2="982" y2="96" stroke="#5B8CFF" stroke-width="2.5" marker-end="url(#ah)"/>
+      <rect x="984" y="58" width="150" height="118" rx="14" fill="#111C3A" stroke="#27365c"/>
+      <text x="1059" y="92" fill="#F5F8FF" font-size="14.5" font-weight="700" text-anchor="middle">Signed result</text>
+      <text x="1059" y="113" fill="#93A4C4" font-size="12" text-anchor="middle">+ tamper-evident</text>
+      <text x="1059" y="129" fill="#93A4C4" font-size="12" text-anchor="middle">audit chain</text>
+      <text x="1059" y="156" fill="#3BE8FF" font-size="11.5" text-anchor="middle">→ system of record</text>
+      <path d="M984 168 C 700 300, 360 300, 150 168" stroke="#3BE8FF" stroke-width="2" stroke-dasharray="6 6" fill="none" opacity=".8" marker-end="url(#ah)"/>
+      <text x="567" y="298" fill="#3BE8FF" font-size="13" font-weight="600" text-anchor="middle">closed learning loop — governed · audited · rollback-able · provably improves</text>
+    </svg>
+    <div class="cap">Every action, through one gate — then to a signed result and a closed, governed learning loop.</div>
+  </div>
+
+  <h3><span class="n">02</span>Least privilege, actually enforced.</h3>
+  <p>Agents hold <b>capability tokens that can only ever be attenuated</b> — narrowed, never widened. A specialist that can read ledgers cannot grant itself the power to move money. And the whole system runs behind an <b>egress lock</b>: even a <em>successful</em> prompt injection — the attack everyone fears — can&rsquo;t move your data out, because there is no path out. The sandbox has its network off by default.</p>
+
+  <h3><span class="n">03</span>An audit that can&rsquo;t be forged.</h3>
+  <p>Every action leaves a <b>signed, hash-chained</b> entry. Alter one row after the fact and the chain breaks — and Maverick catches it. The log <b>verifies offline</b>, with no call home: exactly what a regulator wants and what a hosted black box can never offer. This is the <b>Operating Record</b> — the single durable account of everything your AI workforce did, and why it was allowed to.</p>
+  <div class="term">
+    <div class="bar"><span class="chip">operating-record · verify --offline</span><span style="font-size:12px;color:var(--mint)">● chain intact</span></div>
+    <div class="body mono">
+      <div><span class="c"># each entry signs the one before it</span></div>
+      <div class="row"><span>0xA1 · boot finance-specialist</span><span class="mint">✓ signed</span></div>
+      <div class="row"><span>0xA2 · deny $60k wire &nbsp;(prev 0xA1)</span><span class="mint">✓ signed</span></div>
+      <div class="row"><span>0xA3 · require-human $6k (prev 0xA2)</span><span class="mint">✓ signed</span></div>
+      <div class="row"><span class="c">— alter 0xA2 after the fact —</span><span class="coral">✗ CAUGHT</span></div>
+    </div>
+  </div>
+
+  <h3><span class="n">04</span>A workforce that proves it improved.</h3>
+  <p>This is the part a frontier lab won&rsquo;t ship into a bank: a system that <b>rewrites its own behavior in production</b>. Overnight and offline, Maverick consolidates what it learned — we call it <em>dreaming</em> — turns hindsight into proposed guardrails, and tests each one. Here is the discipline that makes it safe: <b>every causal claim must survive a placebo test before it is allowed to change behavior.</b> If a &ldquo;lesson&rdquo; can&rsquo;t beat a sham version of itself, it&rsquo;s thrown out. What passes is applied — governed, audited, and <b>reversible</b>. You can roll the entire workforce back to any prior state.</p>
+
+  <div class="pq">It rewrites itself in production — and every change has to <span class="ac">beat a placebo</span> before it&rsquo;s allowed to ship.</div>
+
+  <h3><span class="n">05</span>1,118 specialists, already built.</h3>
+  <p>Maverick ships with <b>1,118 least-privilege specialist packs across 26 regulated suites</b> — finance, healthcare, insurance, legal, government. Run <span class="codechip">maverick domains-lint</span> yourself: <b class="mint">0 errors, 0 warnings</b>. The finance suite alone declares ~<b>29 governed deliverables across 11 roles</b>. This isn&rsquo;t a framework you assemble. It&rsquo;s a workforce that boots.</p>
+
+  <h3><span class="n">06</span>Seven parts, one governed spine.</h3>
+  <p>Under the hood: a <b>kernel</b> (maverick-core) that runs and governs; a <b>shield</b> that scans; <b>channels</b> that connect; a <b>dashboard</b> for the humans in the loop; an <b>MCP server</b> so any client can drive it; <b>evolve</b>, the learning lifecycle; and <b>knowledge</b>, the memory. Seven components, one spine. Tellingly, the kernel runs <em>even without</em> the shield — it fails open with a warning, because governance should never be the thing that takes you down.</p>
+
+  <h3><span class="n">07</span>On your hardware, or no one&rsquo;s.</h3>
+  <p>Self-host it in your VPC. Air-gap it completely. It runs on <b>Docker, Kubernetes, or a plain VPS</b>; installs from <b>8 packages on PyPI</b>; and drives from Claude Code, Cursor, or any MCP client. Your data never leaves — which is precisely why your security review gets to &ldquo;yes&rdquo; faster than you expect.</p>
+</div></section>
+
+<!-- ===================== ACT III — WALKTHROUGH ===================== -->
+<section><div class="wrap">
+  <div class="actlabel"><b>Act III</b> &nbsp;·&nbsp; Don&rsquo;t take our word for it</div>
+  <h2>We don&rsquo;t tell you it&rsquo;s governed. We run it in front of you.</h2>
+  <p>Nine commands, no slides. All offline, no API key required.</p>
+
+  <h3>The golden path — watch it refuse.</h3>
+  <p>Boot a finance specialist <b>sealed</b>: no shell, no network, no payments. Then watch the gate do its job — and leave a receipt for every decision.</p>
+  <div class="term">
+    <div class="bar"><span class="chip">maverick golden-path</span><span style="font-size:12px;color:var(--faint)">every row tamper-evident</span></div>
+    <div class="body mono">
+      <div class="row"><span>boot finance specialist</span><span class="muted">SEALED</span></div>
+      <div class="row"><span>$60,000 wire</span><span class="coral">DENY</span></div>
+      <div class="row"><span>$6,000 release</span><span class="am">REQUIRE_HUMAN</span></div>
+      <div class="row"><span>runaway loop</span><span class="cy">CAPPED</span></div>
+      <div class="row"><span>alter an audited row</span><span class="mint">CAUGHT</span></div>
+    </div>
+  </div>
+
+  <h3>The Proof Pack — it signs its own guarantees.</h3>
+  <p><span class="codechip">maverick proof-pack</span> produces a single, <b>Ed25519-signed</b> evidence bundle — governance guarantees, a reliability cert, a performance SLA, and shield results — that <b>verifies offline and refuses to fabricate</b>. One command. Your compliance team can check it without trusting us at all.</p>
+  <div class="term">
+    <div class="bar"><span class="chip">maverick proof-pack</span><span style="font-size:12px;color:var(--mint)">● Ed25519 signed</span></div>
+    <div class="body mono">
+      <div><span class="c"># PROOF.md — verifiable offline</span></div>
+      <div class="row"><span>governance</span><span class="mint">✓ PASS</span></div>
+      <div class="row"><span>reliability</span><span class="mint">✓ CERT</span></div>
+      <div class="row"><span>performance</span><span class="mint">✓ SLA</span></div>
+      <div class="row"><span>shield</span><span class="mint">✓ PASS</span></div>
+    </div>
+  </div>
+
+  <h3>Where the work lands.</h3>
+  <p>A goal&rsquo;s result doesn&rsquo;t vanish into a chat log. It renders as a <b>typed deliverable</b>, lands in a <b>per-role inbox</b>, waits for a human to <b>certify</b> it, and then routes — signed and audited — into your system of record: <b>Salesforce, ServiceNow</b>. The whole enterprise loop, closed.</p>
+
+  <h3>And then, overnight, it gets better.</h3>
+  <p>It learns — reversibly, under proof. Tomorrow&rsquo;s workforce is measurably better than today&rsquo;s, and you hold the audited record of exactly why. That is the thing no one else can offer: an AI workforce that <b>compounds</b>, and can <b>prove</b> it.</p>
+</div></section>
+
+<!-- ===================== CLOSE ===================== -->
+<section class="close"><div class="wrap">
+  <div class="kick" style="justify-content:center">The bet</div>
+  <p class="big" style="margin:22px auto 0;max-width:60ch">Agents are going to do enterprise work. In regulated industries, the only question is <b>whose governance and proof layer they run through.</b></p>
+  <div class="big2">We intend that to be <span class="ac">Maverick</span>.</div>
+  <div class="contact">
+    <span class="fill">[ FILL: contact ]</span> &nbsp;·&nbsp; run the proof yourself: <span class="codechip">maverick proof-pack</span>
+  </div>
+</div></section>
+
+<div class="foot"><div class="wrap" style="display:flex;justify-content:space-between;width:100%;padding:0 28px">
+  <span class="wm" style="font-size:12px">MAVERICK</span>
+  <span>by Daybreak Labs · the AI workforce of record for regulated enterprises</span>
+</div></div>
+
+</body>
+</html>
