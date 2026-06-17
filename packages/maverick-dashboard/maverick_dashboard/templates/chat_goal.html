@@ -82,6 +82,9 @@
   .artifact__diff .del { color: var(--danger); }
   .goal-project { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); }
   .goal-project select { max-width: 16rem; }
+  .goal-share { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+  .share-list { list-style: none; padding: 0; margin: var(--space-2) 0 0; width: 100%; }
+  .share-list li { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--muted); margin-bottom: var(--space-1); }
   .spinner {
     display: inline-block; width: 0.8em; height: 0.8em;
     border: 2px solid var(--border); border-top-color: var(--brand);
@@ -234,6 +237,18 @@
       <noscript><button type="submit" class="btn btn--ghost">Set</button></noscript>
     </form>
     {% endif %}
+    <div class="goal-share" data-goal="{{ goal.id }}">
+      <button type="button" id="share-create" class="btn btn--ghost">Create share link</button>
+      <input type="text" id="share-url" class="input" readonly aria-label="Share link"
+             style="display: none; max-width: 28rem;" onclick="this.select()">
+      <span id="share-msg" class="muted" role="status" aria-live="polite"></span>
+      <ul id="share-list" class="share-list">
+        {% for s in share_links %}
+          <li data-id="{{ s.id }}">Link #{{ s.id }} (read-only)
+            <button type="button" class="btn btn--ghost share-revoke" data-id="{{ s.id }}">Revoke</button></li>
+        {% endfor %}
+      </ul>
+    </div>
     <div id="halt-card" class="halt-card" style="display: none;">
       <div class="halt-card__title">Stopped before finishing</div>
       <p id="halt-reason" class="muted" style="margin: var(--space-2) 0 0;"></p>
@@ -618,5 +633,66 @@
         }).catch(function () { body.textContent = 'Failed to load history.'; });
       });
     });
+  </script>
+
+  <script>
+    // Share links: create (token shown once, in a copyable field) + revoke.
+    (function () {
+      const wrap = document.querySelector('.goal-share');
+      if (!wrap) return;
+      const goal = wrap.dataset.goal;
+      const createBtn = document.getElementById('share-create');
+      const urlField = document.getElementById('share-url');
+      const msg = document.getElementById('share-msg');
+      const list = document.getElementById('share-list');
+
+      createBtn.addEventListener('click', async function () {
+        createBtn.disabled = true;
+        msg.textContent = 'Creating…';
+        try {
+          const r = await fetch('/api/v1/goals/' + encodeURIComponent(goal) + '/share', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+          });
+          const j = await r.json().catch(function () { return {}; });
+          if (r.ok && j.url) {
+            urlField.value = j.url;
+            urlField.style.display = '';
+            urlField.focus();
+            urlField.select();
+            msg.textContent = 'Copy this link now — it is shown only once.';
+            if (j.id) addRow(j.id);
+          } else {
+            msg.textContent = j.detail || ('Could not create link (' + r.status + ').');
+          }
+        } catch (e) { msg.textContent = String(e); }
+        finally { createBtn.disabled = false; }
+      });
+
+      function addRow(id) {
+        const li = document.createElement('li');
+        li.dataset.id = id;
+        li.appendChild(document.createTextNode('Link #' + id + ' (read-only) '));
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'btn btn--ghost share-revoke';
+        b.dataset.id = id; b.textContent = 'Revoke';
+        li.appendChild(b);
+        list.appendChild(li);
+      }
+
+      list.addEventListener('click', async function (ev) {
+        const btn = ev.target.closest('.share-revoke');
+        if (!btn) return;
+        btn.disabled = true;
+        try {
+          const r = await fetch('/api/v1/goals/' + encodeURIComponent(goal) +
+                                '/share/' + encodeURIComponent(btn.dataset.id) + '/revoke',
+                                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          if (r.ok) {
+            const li = btn.closest('li');
+            if (li) li.remove();
+          } else { btn.disabled = false; }
+        } catch (e) { btn.disabled = false; }
+      });
+    })();
   </script>
 {% endblock %}
