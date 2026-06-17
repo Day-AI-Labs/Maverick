@@ -2071,6 +2071,22 @@ def mcp_registry_list(ctx) -> None:
             click.echo(f"  {s.name}  (stdio)  {argstr}")
 
 
+def _propagate_coding_flags(coding_mode: bool, best_of_n: int) -> None:
+    """Export the coding-mode / best-of-N env flags that ``coding_mode.from_env()``
+    reads everywhere. ``--best-of-n`` only takes effect under ``--coding-mode``,
+    so warn (rather than silently single-run) if it's set without it."""
+    if coding_mode:
+        os.environ["MAVERICK_CODING_MODE"] = "1"
+    if best_of_n > 1:
+        os.environ["MAVERICK_BEST_OF_N"] = str(best_of_n)
+        if not coding_mode:
+            click.echo(
+                "WARNING: --best-of-n only takes effect with --coding-mode; "
+                "without it the swarm does a single run.",
+                err=True,
+            )
+
+
 @main.command()
 @click.argument("title", required=False)
 @click.option("--description", default="")
@@ -2111,10 +2127,7 @@ def start(
     # Coding-mode flags propagate via env so coding_mode.from_env()
     # picks them up everywhere (agent prompt, patch validator,
     # test-driven verifier, best-of-N candidate eval).
-    if coding_mode:
-        os.environ["MAVERICK_CODING_MODE"] = "1"
-    if best_of_n > 1:
-        os.environ["MAVERICK_BEST_OF_N"] = str(best_of_n)
+    _propagate_coding_flags(coding_mode, best_of_n)
     if fail_to_pass:
         os.environ["MAVERICK_FAIL_TO_PASS"] = fail_to_pass
     if pass_to_pass:

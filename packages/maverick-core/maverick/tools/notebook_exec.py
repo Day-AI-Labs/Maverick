@@ -10,10 +10,28 @@ kernel-only. ``_extract_code`` is the pure, unit-tested core.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 from . import Tool, sandbox_run
+
+
+def _safe_path(sandbox, user_path: str) -> Path:
+    """Resolve ``user_path`` confined to the sandbox workspace.
+
+    Without a sandbox there's no workspace to confine to, so fall back to
+    ``expanduser`` (matches pandas_query). With a sandbox wired in, resolve
+    under ``sandbox.workdir`` and refuse anything that escapes it -- a
+    model-supplied ``~/secret.ipynb`` must not execute outside the workspace.
+    """
+    if sandbox is None:
+        return Path(os.path.expanduser(user_path))
+    workdir = Path(sandbox.workdir).resolve()
+    candidate = Path(user_path)
+    candidate = (workdir / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
+    candidate.relative_to(workdir)  # raises ValueError if it escapes
+    return candidate
 
 _SCHEMA = {
     "type": "object",
@@ -47,7 +65,10 @@ def _run(args: dict[str, Any], sandbox) -> str:
     path = (args.get("path") or "").strip()
     if not path:
         return "ERROR: path is required"
-    p = Path(path).expanduser()
+    try:
+        p = _safe_path(sandbox, path)
+    except ValueError:
+        return f"ERROR: path escapes the workspace: {path!r}"
     if not p.exists():
         return f"ERROR: no such notebook {path!r}"
     try:

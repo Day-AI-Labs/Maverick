@@ -221,6 +221,11 @@ class AnthropicClient:
         key = (api_key or os.environ.get("ANTHROPIC_API_KEY") or "").strip() or None
         from .base import llm_http_timeout
         kw: dict = {"api_key": key}
+        # Thread an explicit `[providers.anthropic] base_url` into the SDK so a
+        # configured endpoint (proxy / gateway) is honored. ``None`` leaves the
+        # SDK's own default base_url (mirrors how OpenAIClient handles base_url).
+        if base_url:
+            kw["base_url"] = base_url
         timeout = llm_http_timeout()
         if timeout is not None:
             kw["timeout"] = timeout

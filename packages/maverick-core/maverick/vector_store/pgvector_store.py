@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import uuid as _uuid
 from collections.abc import Callable
 
@@ -76,6 +77,13 @@ class PgVectorStore:
         self._collection = collection
         self._embedder = embedder
         self._dim = dim
+        # A single psycopg connection is shared across this object, but the
+        # kernel drives it from FastAPI's threadpool + the background runner.
+        # psycopg connections/cursors are NOT safe for concurrent use, so
+        # serialize every cursor operation -- mirroring the RLock the Postgres
+        # world-model backend uses. Reentrant so add()'s _ensure_vector_column
+        # call can nest under a future lock-holding caller.
+        self._lock = threading.RLock()
         self._conn = psycopg.connect(resolved, autocommit=True)
         self._ensure_schema()
 
@@ -96,7 +104,7 @@ class PgVectorStore:
         return vecs
 
     def _ensure_schema(self) -> None:
-        with self._conn.cursor() as cur:
+        with self._lock, self._conn.cursor() as cur:
             cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
             # The vector column is created on first add() once the dim is known
             # (pgvector requires a fixed dimension). Until then store the table
@@ -115,7 +123,7 @@ class PgVectorStore:
                 f"ON {_TABLE} (collection, tenant_id)")
 
     def _ensure_vector_column(self, dim: int) -> None:
-        with self._conn.cursor() as cur:
+        with self._lock, self._conn.cursor() as cur:
             cur.execute(
                 f"ALTER TABLE {_TABLE} ADD COLUMN IF NOT EXISTS embedding vector(%s)"
                 % int(dim))
@@ -145,7 +153,7 @@ class PgVectorStore:
         vecs = self._embed(documents)
         self._ensure_vector_column(self._dim or len(vecs[0]))
         tenant_id = _active_tenant()
-        with self._conn.cursor() as cur:
+        with self._lock, self._conn.cursor() as cur:
             for i, doc in enumerate(documents):
                 vec = "[" + ",".join(repr(float(x)) for x in vecs[i]) + "]"
                 meta = json.dumps(metadatas[i]) if metadatas else None
@@ -164,7 +172,7 @@ class PgVectorStore:
         vec = self._embed([text])[0]
         qvec = "[" + ",".join(repr(float(x)) for x in vec) + "]"
         tenant_sql, tenant_params, _ = self._tenant_predicate()
-        with self._conn.cursor() as cur:
+        with self._lock, self._conn.cursor() as cur:
             cur.execute(
                 f"SELECT id, document, metadata, embedding <=> %s AS distance "
                 f"FROM {_TABLE} WHERE collection = %s AND {tenant_sql} "
@@ -182,7 +190,7 @@ class PgVectorStore:
         if not ids:
             return
         tenant_sql, tenant_params, tenant_id = self._tenant_predicate()
-        with self._conn.cursor() as cur:
+        with self._lock, self._conn.cursor() as cur:
             cur.execute(
                 f"DELETE FROM {_TABLE} "
                 f"WHERE collection = %s AND {tenant_sql} AND id = ANY(%s)",
@@ -190,7 +198,7 @@ class PgVectorStore:
 
     def count(self) -> int:
         tenant_sql, tenant_params, _ = self._tenant_predicate()
-        with self._conn.cursor() as cur:
+        with self._lock, self._conn.cursor() as cur:
             cur.execute(
                 f"SELECT count(*) FROM {_TABLE} WHERE collection = %s AND {tenant_sql}",
                 (self._collection, *tenant_params))
@@ -198,7 +206,7 @@ class PgVectorStore:
 
     def reset(self) -> None:
         tenant_sql, tenant_params, _ = self._tenant_predicate()
-        with self._conn.cursor() as cur:
+        with self._lock, self._conn.cursor() as cur:
             cur.execute(
                 f"DELETE FROM {_TABLE} WHERE collection = %s AND {tenant_sql}",
                 (self._collection, *tenant_params))

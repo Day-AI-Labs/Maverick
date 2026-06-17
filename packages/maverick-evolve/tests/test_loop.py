@@ -95,7 +95,11 @@ async def test_continuous_skips_rounds_when_frozen(monkeypatch):
     )
     assert len(history) == 3
     assert all(h.get("skipped") for h in history)
-    assert best is None  # nothing evolved while the judge was frozen
+    # Nothing evolved while the judge was frozen, but the seed is still a valid
+    # returnable candidate (the archive is seeded up front) -- best() must not
+    # be None, so callers always get a usable config back.
+    assert best is not None
+    assert best.config == {"n": 4}
 
 
 # ---- demo CLI ----

@@ -127,8 +127,16 @@ def union_policies(policies) -> Policy:
         require_human_min_risk = _min_risk(require_human_min_risk, p.require_human_min_risk)
         deny_above = _min_thresholds(deny_above, p.deny_above)
         require_human_above = _min_thresholds(require_human_above, p.require_human_above)
-    # An action that is hard-denied need not also be listed as require-human.
+    # An action that is hard-denied need not also be listed as require-human --
+    # drop it from both the require-human set AND its per-action threshold, or
+    # the compiled policy contradicts itself (a hard-deny plus a require-human
+    # floor for the same action).
     require_human_actions -= deny_actions
+    require_human_above = {
+        action: amount
+        for action, amount in require_human_above.items()
+        if action not in deny_actions
+    }
     return Policy(
         deny_actions=frozenset(deny_actions),
         require_human_actions=frozenset(require_human_actions),

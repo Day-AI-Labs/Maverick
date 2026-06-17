@@ -72,6 +72,16 @@ def _retry_after_from(exc: Exception) -> float | None:
     if response is None:
         return None
     headers = getattr(response, "headers", None) or {}
+    # Prefer the millisecond header when present: some providers send
+    # `retry-after-ms` (sub-second precision) and only fall back to the
+    # whole-second `Retry-After`. Without this, an ms hint was ignored and
+    # the loop dropped to blind exponential backoff.
+    raw_ms = headers.get("retry-after-ms") or headers.get("Retry-After-Ms")
+    if raw_ms:
+        try:
+            return float(raw_ms) / 1000.0
+        except (TypeError, ValueError):
+            pass
     raw = headers.get("Retry-After") or headers.get("retry-after")
     if not raw:
         return None

@@ -80,6 +80,17 @@ class FirecrackerBackend:
     _warm_id: str | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
+        # Validate the network policy once, at construction, so a bad value
+        # (typo, attacker-influenced config) is rejected loudly instead of
+        # silently reaching an exec path with undefined isolation behaviour.
+        if (
+            self.network not in ("egress-deny", "egress-allow")
+            and not self.network.startswith("bridge=")
+        ):
+            raise ValueError(
+                "Firecracker network must be one of: 'egress-deny', "
+                f"'egress-allow', or 'bridge=<name>', got {self.network!r}"
+            )
         if self.provider == "local":
             if not shutil.which("firecracker"):
                 raise NotImplementedError(

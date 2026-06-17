@@ -52,6 +52,14 @@ async def evolve_continuous(
     history: list[dict] = []
     current = dict(seed_config)
 
+    # Seed the archive up front so best() always returns a valid candidate --
+    # even when every round is SKIPPED by a frozen calibration (otherwise the
+    # archive stays empty and best() is None). add() dedups by config id, so a
+    # loaded archive already containing the seed is unaffected, and a productive
+    # round that re-scores this config updates it in place.
+    if archive.best() is None:
+        archive.add(Candidate(config=dict(seed_config)))
+
     for r in range(max(0, rounds)):
         if calibration_frozen():
             history.append({"round": r, "skipped": True, "reason": "calibration frozen"})

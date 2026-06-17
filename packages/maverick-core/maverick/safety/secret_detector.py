@@ -60,9 +60,10 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # (BEGIN..END, DOTALL, non-greedy) when an END marker is present so the
     # base64 key MATERIAL is redacted -- the prior marker-only pattern left the
     # actual private key body and END line in cleartext (round-7 adversarial
-    # finding). Kept as a single pattern (not two) because scan() only dedupes
-    # EXACT spans, so a separate marker pattern would overlap and corrupt
-    # redact().
+    # finding). Kept as a single pattern (not two) because scan() dedupes only
+    # EXACT spans (it stays a byte-for-byte mirror of the native port); a
+    # separate marker pattern would overlap, and only redact() coalesces
+    # overlaps, so an extra pattern would still bloat scan()'s detection list.
     ("private_key_pem",    re.compile(
         r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"
         r"(?:"
@@ -120,6 +121,12 @@ def scan(text: str) -> list[SecretMatch]:
     """Return all secret matches found in ``text``."""
     if not text:
         return []
+    # scan() must stay a byte-for-byte mirror of the native port
+    # (maverick_native.secret_scan_spans) -- see test_native_detect_parity and
+    # the module footer -- so it reports every pattern's raw span and dedupes
+    # only EXACT duplicates. Overlap-coalescing belongs in redact() (the splice
+    # site), not here, so detection still surfaces every secret type and the
+    # native engine never diverges.
     matches: list[SecretMatch] = []
     seen_spans: set[tuple[int, int]] = set()
     for name, pat in _PATTERNS:
@@ -149,11 +156,26 @@ def redact(text: str) -> tuple[str, list[SecretMatch]]:
     matches = scan(text)
     if not matches:
         return text, []
+    # Coalesce overlapping spans into one redaction range per cluster before
+    # splicing (mirrors pii_detector). Different patterns can match overlapping
+    # (non-identical) regions; reverse-order splicing of overlapping spans
+    # corrupts offsets and can leave secret material in cleartext. Redacting the
+    # union of each overlap cluster guarantees no portion leaks. scan() itself
+    # stays uncoalesced so it (and the native port) report every detected
+    # secret; the returned ``matches`` are likewise the raw detections.
+    ordered = sorted(matches, key=lambda x: (x.span[0], -(x.span[1] - x.span[0])))
+    clusters: list[tuple[int, int, str]] = []
+    for m in ordered:
+        a, b = m.span
+        if clusters and a < clusters[-1][1]:
+            pa, pb, pname = clusters[-1]
+            clusters[-1] = (pa, max(pb, b), pname)
+        else:
+            clusters.append((a, b, m.name))
     # Replace from end to start so spans stay valid.
     out = text
-    for m in sorted(matches, key=lambda x: x.span[0], reverse=True):
-        a, b = m.span
-        out = out[:a] + f"[REDACTED:{m.name}]" + out[b:]
+    for a, b, name in sorted(clusters, key=lambda c: c[0], reverse=True):
+        out = out[:a] + f"[REDACTED:{name}]" + out[b:]
     return out, matches
 
 

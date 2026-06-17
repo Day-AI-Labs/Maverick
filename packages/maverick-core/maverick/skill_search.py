@@ -365,20 +365,36 @@ def index_from_records(records: list[dict[str, Any]]) -> SkillSearchIndex:
     return SkillSearchIndex(docs)
 
 
+def _scalar_line(value: str) -> str:
+    """Collapse a scalar frontmatter value to a single safe line.
+
+    Untrusted JSONL ``name``/``description`` are interpolated into YAML
+    frontmatter, so a value carrying a newline (followed by ``---`` or
+    ``tools_needed:``) could forge frontmatter. Collapse all whitespace to a
+    single line -- the same single-line guarantee :func:`skills._clean_items`
+    gives list entries -- which makes ``---`` and key-injection impossible
+    (any embedded newline disappears)."""
+    return " ".join(str(value).split()).strip()
+
+
 def _record_to_skill_md(record: dict[str, Any]) -> str:
     """Render a pulled record back into SKILL.md text (frontmatter + body)."""
-    lines = ["---", f"name: {record['name']}"]
-    if record.get("description"):
-        lines.append(f"description: {record['description']}")
+    lines = ["---", f"name: {_scalar_line(record['name'])}"]
+    description = _scalar_line(record.get("description", ""))
+    if description:
+        lines.append(f"description: {description}")
     if record.get("tags"):
         lines.append("tags:")
-        lines.extend(f"  - {t}" for t in record["tags"])
-    triggers = record.get("triggers") or []
+        lines.extend(f"  - {_scalar_line(t)}" for t in record["tags"])
+    triggers = [_scalar_line(t) for t in (record.get("triggers") or [])]
+    triggers = [t for t in triggers if t]
     lines.append("triggers:")
     lines.extend(f"  - {t}" for t in (triggers or ["imported skill"]))
-    if record.get("tools_needed"):
+    tools = [_scalar_line(t) for t in (record.get("tools_needed") or [])]
+    tools = [t for t in tools if t]
+    if tools:
         lines.append("tools_needed:")
-        lines.extend(f"  - {t}" for t in record["tools_needed"])
+        lines.extend(f"  - {t}" for t in tools)
     lines.append("---")
     body = record.get("body") or "# Imported skill\n\nNo body provided."
     return "\n".join(lines) + "\n\n" + body + "\n"

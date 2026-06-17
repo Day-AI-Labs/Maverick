@@ -554,8 +554,10 @@ def _money_fingerprint(d: SourceDoc) -> tuple:
     return (d.doc_type, round(d.wages, 2), round(d.interest, 2),
             round(d.ordinary_dividends, 2), round(d.federal_withholding, 2),
             round(d.nonemployee_comp, 2), round(d.mortgage_interest, 2),
-            round(d.retirement_gross, 2), round(d.social_security, 2),
-            round(d.unemployment, 2), round(d.state_withholding, 2))
+            round(d.retirement_gross, 2), round(d.retirement_taxable, 2),
+            round(d.social_security, 2), round(d.unemployment, 2),
+            round(d.student_loan_interest, 2), round(d.tuition, 2),
+            round(d.broker_proceeds, 2), round(d.state_withholding, 2))
 
 
 def duplicate_groups(wp: Workpaper) -> list[list[str]]:
@@ -740,9 +742,15 @@ def compute_state_first_pass(wp: Workpaper, state: str, *,
     status = normalize_filing_status(wp.filing_status)
     status = status if status in FILING_STATUSES else "single"
     withholding = round(sum(
-        d.state_withholding for d in wp.docs
-        if not d.state or d.state == state), 2)
+        d.state_withholding for d in wp.docs if d.state == state), 2)
     open_items: list[str] = []
+    blank_state = round(sum(
+        d.state_withholding for d in wp.docs if not d.state), 2)
+    if blank_state:
+        open_items.append(
+            f"state withholding ${blank_state:,.2f} reported on document(s) "
+            "with no state -- PREPARER MUST CONFIRM the state before crediting "
+            f"it (not assumed to be {state or 'the resident state'})")
     other = sorted({d.state for d in wp.docs if d.state and d.state != state})
     if other:
         open_items.append(

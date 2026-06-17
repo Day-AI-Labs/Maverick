@@ -184,9 +184,10 @@ class TaskStore:
         with self._lock:
             self._make_room_for_task_locked()
             self._tasks[task.id] = task
-        future = self._executor.submit(self._run, task, name, arguments)
-        with self._lock:
-            task.future = future
+            # Assign the future under the SAME lock that inserts the task: a
+            # concurrent cancel()/_purge_expired() must never observe a freshly
+            # inserted task with `future is None` and evict a starting worker.
+            task.future = self._executor.submit(self._run, task, name, arguments)
         return task
 
     def _resolve_ttl(self, task_param: dict) -> int:

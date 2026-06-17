@@ -150,6 +150,12 @@ class ChatGPTSessionClient:
                 "ChatGPT /api/auth/session returned no accessToken. "
                 "Endpoint may have changed; consider BYOK fallback."
             )
+        # Cache the freshly fetched token on the session object so subsequent
+        # complete() calls reuse it instead of round-tripping /api/auth/session
+        # every time (mirrors how claude_session caches org_id). Scoped to this
+        # in-memory session; a 401 on use re-captures, so a stale/expired token
+        # surfaces loudly rather than being trusted forever.
+        self._session["access_token"] = token
         return token
 
     def _build_request_body(self, prompt: str, model: str) -> dict:
@@ -260,6 +266,10 @@ class ChatGPTSessionClient:
                     raise RuntimeError(
                         "ChatGPT /api/auth/session returned no accessToken."
                     )
+                # Cache for reuse within this session object (see
+                # _fetch_access_token); avoids an /api/auth/session round-trip
+                # on every async complete() call.
+                self._session["access_token"] = token
             resp = await client.post(
                 _BASE_URL + _CONVERSATION_PATH,
                 headers=self._auth_headers(token),

@@ -46,6 +46,21 @@ class KnowledgeBase:
         # vision model). Without it, image uploads are skipped (not read as bytes).
         self.image_describer = image_describer
 
+    def close(self) -> None:
+        """Release the backing store's resources (e.g. the SQLite connection).
+
+        No-op for stores that don't expose ``close`` (e.g. a future pgvector
+        pool managed elsewhere)."""
+        closer = getattr(self.store, "close", None)
+        if callable(closer):
+            closer()
+
+    def __enter__(self) -> KnowledgeBase:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
     def _safe(self, text: str) -> bool:
         """Shield-scan a chunk on the way in. Fail-open: a scanner error never
         blocks ingestion, mirroring the kernel's shield contract."""

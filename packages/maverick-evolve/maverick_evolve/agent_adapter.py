@@ -118,8 +118,18 @@ def subprocess_run_one(
                 [python, "-m", "maverick.cli", "start", prompt],
                 env=env, capture_output=True, text=True, timeout=timeout, cwd=workdir,
             )
-        except subprocess.TimeoutExpired:
-            return ""
+        except subprocess.TimeoutExpired as e:
+            # A timed-out run produced no valid answer; raise so the eval
+            # harness scores it as a failure (0.0) rather than treating an
+            # empty string as a genuine answer.
+            raise RuntimeError(f"run timed out after {timeout}s") from e
+        if proc.returncode != 0:
+            # A crashed run is a failure, NOT an empty answer. Raise so the
+            # caller (eval_harness) scores 0.0 instead of scoring garbage.
+            stderr = (proc.stderr or "").strip()[-500:]
+            raise RuntimeError(
+                f"run exited with code {proc.returncode}: {stderr}"
+            )
         return proc.stdout or ""
 
 

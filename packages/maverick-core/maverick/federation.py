@@ -589,6 +589,8 @@ def _servicer(service: FederationService, pb2, pb2_grpc):
                 })
             except FederationAuthError as e:
                 _abort(context, _grpc_code().UNAUTHENTICATED, str(e))
+                raise  # if context.abort() didn't raise (mocks), don't fall
+                # through to reference the unbound `reply`
             return pb2.PeerInfo(
                 node=reply["node"], protocol=reply["protocol"],
                 agent_card_json=reply["agent_card_json"],
@@ -619,6 +621,8 @@ def _servicer(service: FederationService, pb2, pb2_grpc):
                 })
             except FederationAuthError as e:
                 _abort(context, _grpc_code().UNAUTHENTICATED, str(e))
+                raise  # if context.abort() didn't raise (mocks), don't fall
+                # through to reference the unbound `reply`
             return pb2.StatusReply(status=reply["status"], result=reply["result"])
 
     return MaverickFederationServicer()

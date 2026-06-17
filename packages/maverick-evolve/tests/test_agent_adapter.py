@@ -56,6 +56,7 @@ def test_subprocess_run_one_uses_overlay_without_replacing_operator_config(monke
 
         class Proc:
             stdout = "ok"
+            returncode = 0
 
         return Proc()
 

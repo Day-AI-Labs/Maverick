@@ -472,6 +472,66 @@ def _estimate_call_cost(model_id, system, messages, tools, max_tokens) -> float:
     return (chars / 4 / 1_000_000) * in_rate + (max_tokens / 1_000_000) * out_rate
 
 
+def _response_call_cost(model_id, resp) -> float | None:
+    """Per-call $ derived from THIS response's own token usage, or ``None`` when
+    the response carries no usage to price from.
+
+    provider-health spend used to be diffed off the shared ``budget.dollars``
+    counter (``dollars - _d0``), which races other concurrent sub-agents on the
+    same budget: their spend lands inside the window and inflates this call's
+    recorded dollars. Pricing the response's own usage is call-local, so a wide
+    parallel fan-out records each call's real cost. Returns ``None`` when no
+    usage is exposed so the caller can fall back to the (sequentially-correct)
+    budget diff rather than recording a phantom $0.
+    """
+    if resp is None:
+        return None
+    from .budget import (
+        _CACHE_READ_MULT,
+        _cache_write_mult_from_ttl,
+        _lookup_price,
+    )
+    usage = getattr(getattr(resp, "raw", None), "usage", None)
+
+    def _u(*names) -> int:
+        for n in names:
+            v = getattr(usage, n, None) if usage is not None else None
+            if v is not None:
+                try:
+                    return max(0, int(v))
+                except (TypeError, ValueError):
+                    return 0
+        return 0
+
+    # Anthropic uses input/output_tokens; OpenAI-compat uses prompt/completion.
+    # ``input_tokens`` is non-cached input only; cache tokens are billed apart.
+    in_tok = _u("input_tokens", "prompt_tokens")
+    out_tok = _u("output_tokens", "completion_tokens")
+    cache_read = int(getattr(resp, "cache_read_tokens", 0) or 0)
+    cache_write = int(getattr(resp, "cache_creation_tokens", 0) or 0)
+    if not (in_tok or out_tok or cache_read or cache_write):
+        return None
+    in_rate, out_rate = _lookup_price(model_id)
+    write_mult = _cache_write_mult_from_ttl(None)
+    cost = (in_tok / 1_000_000) * in_rate
+    cost += (cache_read / 1_000_000) * in_rate * _CACHE_READ_MULT
+    cost += (cache_write / 1_000_000) * in_rate * write_mult
+    cost += (out_tok / 1_000_000) * out_rate
+    return cost
+
+
+def _call_spend(model_id, resp, budget, dollars_baseline) -> float:
+    """Dollars to attribute to one LLM call for provider-health/metrics.
+
+    Prefers the response's own usage (call-local, race-free under a shared
+    budget); falls back to the budget diff when the response exposes no usage.
+    """
+    if not budget:
+        return 0.0
+    call_cost = _response_call_cost(model_id, resp)
+    return call_cost if call_cost is not None else (budget.dollars - dollars_baseline)
+
+
 class LLM:
     """Multi-provider LLM dispatcher.
 
@@ -618,6 +678,7 @@ class LLM:
         _t0 = _time.time()
         _d0 = budget.dollars if budget else 0.0
         _err = False
+        _resp = None
         # Hold this call's projected cost against the cap BEFORE dispatching, so
         # concurrent callers on a shared budget can't each pass an individual
         # check() and then collectively overshoot -- the same defense the async
@@ -633,7 +694,8 @@ class LLM:
                     **_gen_ai_attributes(provider, model_id),
                 },
             ):
-                return client.complete(**kwargs)
+                _resp = client.complete(**kwargs)
+                return _resp
         except Exception:
             _err = True
             raise
@@ -641,7 +703,9 @@ class LLM:
             if _held:
                 budget.release(_held)
             _dt_ms = (_time.time() - _t0) * 1000.0
-            _spent = (budget.dollars - _d0) if budget else 0.0
+            # Price THIS call's own usage rather than diffing the shared
+            # budget.dollars counter, which races concurrent sub-agents.
+            _spent = _call_spend(model_id, _resp, budget, _d0)
             try:
                 from .provider_health import get as _h
                 _h().record(provider, model_id,
@@ -725,6 +789,7 @@ class LLM:
         _t0 = _time.time()
         _d0 = budget.dollars if budget else 0.0
         _err = False
+        _resp = None
         # Hold this call's projected cost against the cap BEFORE dispatching, so
         # concurrent sub-agents on a shared budget can't each pass an individual
         # check and then collectively overshoot (a $2.50 cap reached $6+ with a
@@ -756,7 +821,8 @@ class LLM:
 
                 hedge = _hedge_ms()
                 if hedge is None:
-                    return await _call()
+                    _resp = await _call()
+                    return _resp
                 # Tail-latency hedge (opt-in): race the primary against a backup
                 # fired `hedge` ms later; first success wins, the laggard is
                 # cancelled. The race is bounded by the remaining wall budget via
@@ -786,9 +852,10 @@ class LLM:
                         _release_budget_hold(budget, _backup_held)
 
                 try:
-                    return await race_first_success(
+                    _resp = await race_first_success(
                         [_call, _backup], budget_ms=race_budget_ms
                     )
+                    return _resp
                 except AllAttemptsFailed as e:
                     # Both the primary and the hedge failed: surface the real
                     # provider error (chained as __cause__) so failover/retry
@@ -802,7 +869,9 @@ class LLM:
             if _held:
                 budget.release(_held)
             _dt_ms = (_time.time() - _t0) * 1000.0
-            _spent = (budget.dollars - _d0) if budget else 0.0
+            # Price THIS call's own usage rather than diffing the shared
+            # budget.dollars counter, which races concurrent sub-agents.
+            _spent = _call_spend(model_id, _resp, budget, _d0)
             try:
                 from .provider_health import get as _h
                 _h().record(provider, model_id,

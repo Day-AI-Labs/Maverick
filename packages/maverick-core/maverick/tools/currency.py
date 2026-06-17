@@ -37,10 +37,12 @@ _CCY_SCHEMA: dict[str, Any] = {
 
 
 def _fetch(url: str, params: dict) -> tuple[int, Any]:
-    import httpx
+    # Route through the SSRF-safe client (pins the resolved public IP, forces
+    # follow_redirects=False) so a provider 3xx can't redirect us onto an
+    # internal address -- a raw httpx.get(follow_redirects=True) would.
+    from ._ssrf import safe_get
     try:
-        r = httpx.get(url, params=params, timeout=15.0,
-                      follow_redirects=True)
+        r = safe_get(url, params=params, timeout=15.0)
         try:
             return r.status_code, r.json()
         except ValueError:

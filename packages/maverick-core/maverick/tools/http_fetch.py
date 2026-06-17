@@ -117,18 +117,19 @@ def _is_private_ip(host: str) -> bool:
     plus reserved/multicast/unspecified ranges (0.0.0.0, 224.0.0.0/4,
     240.0.0.0/4, ...) that the previous version missed.
 
-    NOTE: this is the pre-flight validation only (a name that fails to resolve
-    here returns False; the connection layer then errors meaningfully). DNS
-    rebinding between this check and the socket is closed separately by pinning
-    the validated IP for the connection: ``_resolve_pinned`` + the
-    ``_PinnedHTTP(S)Connection`` handlers for the urllib ``guarded_urlopen``
-    path, and ``_ssrf.safe_client`` (which ``_run_fetch`` and ``_check_robots``
-    use) for the httpx path.
+    NOTE: this is the pre-flight validation only. A name that fails to resolve
+    here is treated as BLOCKED (fail closed) -- the same fail-closed stance as
+    ``_resolve_pinned`` -- so a resolver error can't slip an unvalidated host
+    past the pre-flight. DNS rebinding between this check and the socket is
+    closed separately by pinning the validated IP for the connection:
+    ``_resolve_pinned`` + the ``_PinnedHTTP(S)Connection`` handlers for the
+    urllib ``guarded_urlopen`` path, and ``_ssrf.safe_client`` (which
+    ``_run_fetch`` and ``_check_robots`` use) for the httpx path.
     """
     try:
         addrs = socket.getaddrinfo(host, None)
     except socket.gaierror:
-        return False
+        return True  # resolution failure -> fail closed (treat as blocked)
     for _fam, _stype, _proto, _name, sockaddr in addrs:
         ip_str = sockaddr[0]
         try:
@@ -381,6 +382,20 @@ def _preflight_fetch(url: str, parsed: Any) -> str | None:
     if deny:
         return f"ERROR: {deny}"
 
+    # Egress policy: the per-tenant plane ([egress] / [tenancy.egress.<t>]) AND
+    # the per-tool policy ([sandbox.tool.http_fetch]). No policy configured ->
+    # allow-all, so this is a no-op for the default install. Checked BEFORE the
+    # private-IP resolution: an explicitly denied host is a static policy
+    # decision that must not depend on DNS resolving (the IP check now fails
+    # closed on resolution failure).
+    try:
+        from ..tenant_egress import egress_allowed
+        if not egress_allowed("http_fetch", parsed.hostname or ""):
+            return (f"ERROR: egress policy blocks http_fetch from reaching "
+                    f"{parsed.hostname!r} (see [egress] / [sandbox.tool.http_fetch]).")
+    except Exception:  # pragma: no cover -- policy never breaks a fetch
+        pass
+
     if os.environ.get("MAVERICK_FETCH_ALLOW_PRIVATE") != "1":
         if _is_private_ip(parsed.hostname or ""):
             return (
@@ -391,17 +406,6 @@ def _preflight_fetch(url: str, parsed: Any) -> str | None:
     if os.environ.get("MAVERICK_FETCH_RESPECT_ROBOTS") == "1":
         if not _check_robots(url):
             return f"ERROR: blocked by robots.txt for {url!r}"
-
-    # Egress policy: the per-tenant plane ([egress] / [tenancy.egress.<t>]) AND
-    # the per-tool policy ([sandbox.tool.http_fetch]). No policy configured ->
-    # allow-all, so this is a no-op for the default install.
-    try:
-        from ..tenant_egress import egress_allowed
-        if not egress_allowed("http_fetch", parsed.hostname or ""):
-            return (f"ERROR: egress policy blocks http_fetch from reaching "
-                    f"{parsed.hostname!r} (see [egress] / [sandbox.tool.http_fetch]).")
-    except Exception:  # pragma: no cover -- policy never breaks a fetch
-        pass
 
     # Chaos hook: the harness advertises an `http_fetch` failure stage
     # (MAVERICK_CHAOS=http_fetch:NN); wire it here so resilience tests can

@@ -50,16 +50,17 @@ def get_provider_client(
     """Lazy-import and instantiate the named provider client.
 
     ``base_url`` reaches the self-hosted / OpenAI-compatible clients (vllm,
-    tgi, ollama, openai, openai_compatible) so a ``[providers.<name>]
-    base_url`` in config actually configures the endpoint — previously only
-    the CLI preflight read that key and the client silently fell back to its
-    env var / localhost default. Providers with fixed or scheme-specific
-    endpoints (anthropic, azure, bedrock, ...) ignore it.
+    tgi, ollama, openai, openai_compatible) AND anthropic (for a proxy /
+    gateway endpoint) so a ``[providers.<name>] base_url`` in config actually
+    configures the endpoint — previously only the CLI preflight read that key
+    and the client silently fell back to its env var / localhost default.
+    Providers with fixed or scheme-specific endpoints (azure, bedrock, ...)
+    ignore it.
     """
     canon = _canonical(name)
     if canon == "anthropic":
         from .anthropic_provider import AnthropicClient
-        return AnthropicClient(api_key=api_key)
+        return AnthropicClient(api_key=api_key, base_url=base_url)
     if canon == "openai":
         from .openai_provider import OpenAIClient
         return OpenAIClient(api_key=api_key, base_url=base_url)

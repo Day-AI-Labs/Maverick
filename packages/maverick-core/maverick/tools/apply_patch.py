@@ -101,25 +101,29 @@ def _make_run(sandbox):
         if bad:
             return f"ERROR: refusing path-traversal in patch: {bad}"
 
-        # Write the patch to a tempfile so we can `git apply` it.
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".patch", dir=str(workdir),
-            delete=False, encoding="utf-8",
-        ) as tmp:
-            tmp.write(patch_text)
-            tmp_path = tmp.name
-        # CLAUDE.md rule 4: route git through sandbox.exec so the patch
-        # applies on the configured backend's filesystem (ssh/k8s/fc),
-        # not the host. exec runs a shell string at workdir and returns
-        # exit_code/stderr, which is all `git apply` needs. The tempfile
-        # was written into workdir, so we reference it by basename. Fall
-        # back to host subprocess (env-scrubbed) when there's no exec.
-        # Tempfile names are generated alphanumerics, but exec runs a shell
-        # string -- quote anyway so a different tempdir/suffix can never
-        # smuggle shell metacharacters (same pattern as preview_diff).
-        rel = shlex.quote(os.path.basename(tmp_path))
-        use_exec = hasattr(sandbox, "exec")
+        # Write the patch to a tempfile so we can `git apply` it. The whole
+        # create+use is bracketed by the try/finally below so an interruption
+        # after creation can't leak a stray .patch into the repo workdir (which
+        # would pollute `git status`).
+        tmp_path: str | None = None
         try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".patch", dir=str(workdir),
+                delete=False, encoding="utf-8",
+            ) as tmp:
+                tmp.write(patch_text)
+                tmp_path = tmp.name
+            # CLAUDE.md rule 4: route git through sandbox.exec so the patch
+            # applies on the configured backend's filesystem (ssh/k8s/fc),
+            # not the host. exec runs a shell string at workdir and returns
+            # exit_code/stderr, which is all `git apply` needs. The tempfile
+            # was written into workdir, so we reference it by basename. Fall
+            # back to host subprocess (env-scrubbed) when there's no exec.
+            # Tempfile names are generated alphanumerics, but exec runs a shell
+            # string -- quote anyway so a different tempdir/suffix can never
+            # smuggle shell metacharacters (same pattern as preview_diff).
+            rel = shlex.quote(os.path.basename(tmp_path))
+            use_exec = hasattr(sandbox, "exec")
             if use_exec:
                 try:
                     res = sandbox.exec(f"git apply --check {rel}", timeout=30)
@@ -173,10 +177,11 @@ def _make_run(sandbox):
                 + "\n  ".join(files)
             )
         finally:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+            if tmp_path is not None:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     return _run
 

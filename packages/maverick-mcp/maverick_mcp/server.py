@@ -40,6 +40,10 @@ SUPPORTED_PROTOCOL_VERSIONS = (
     PROTOCOL_VERSION_FALLBACK, "2025-03-26", "2025-06-18", PROTOCOL_VERSION,
 )
 SERVER_NAME = "maverick"
+
+# Sentinel distinguishing a MISSING JSON-RPC "id" (a notification, owed no
+# response) from an explicit `"id": null` (a request that still wants a reply).
+_NO_ID = object()
 try:
     from importlib.metadata import version as _pkg_version
 
@@ -1349,8 +1353,21 @@ class MCPServer:
         except json.JSONDecodeError as e:
             log.warning("bad JSON: %s", e)
             return
+        # A top-level JSON-RPC message must be an object. A batch (list) or a
+        # scalar would make `msg.get(...)` raise AttributeError and tear down
+        # the stdio loop. Reject with -32600 (Invalid Request); batches are
+        # acknowledged with a null-id error rather than crashing.
+        if not isinstance(msg, dict):
+            self._send_error(None, -32600, "Invalid Request: expected a JSON-RPC object")
+            return
         method = msg.get("method")
-        request_id = msg.get("id")
+        # Distinguish a MISSING id (notification, no reply) from an explicit
+        # `"id": null` (a request still owed a response). `_NO_ID` is the
+        # missing sentinel; only a missing id marks a notification.
+        request_id = msg.get("id", _NO_ID)
+        is_notification = request_id is _NO_ID
+        if is_notification:
+            request_id = None
         params = msg.get("params", {}) or {}
         # A client can send `params` as a non-object (list/string/number).
         # Handlers call `params.get(...)`, which would raise AttributeError
@@ -1359,7 +1376,6 @@ class MCPServer:
         # params response from the handler instead.
         if not isinstance(params, dict):
             params = {}
-        is_notification = request_id is None
         try:
             self._dispatch_stdio_message(method, request_id, params, is_notification)
         except TaskError as e:

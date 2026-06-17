@@ -26,6 +26,23 @@ log = logging.getLogger(__name__)
 DEFAULT_PATH = Path.home() / ".maverick" / "qdrant"
 
 
+def _active_tenant() -> str | None:
+    """Tenant scope for vector ids, or ``None`` for legacy single-tenant use."""
+    try:
+        from ..paths import current_tenant
+        return current_tenant()
+    except Exception:  # pragma: no cover -- tenancy never blocks vector ops
+        return None
+
+
+def _stored_id(doc_id: str, tenant_id: str | None) -> str:
+    """Namespace an id by tenant so one tenant can't read/delete another's
+    vectors -- the same scheme the pgvector adapter uses for its row ids."""
+    if tenant_id is None:
+        return doc_id
+    return f"tenant:{tenant_id}:{doc_id}"
+
+
 class QdrantStore:
     """Thin wrapper over qdrant-client.
 
@@ -102,10 +119,11 @@ class QdrantStore:
             raise ValueError(
                 f"metadatas length {len(metadatas)} != documents length {len(documents)}"
             )
+        tenant_id = _active_tenant()
         kwargs: dict = {
             "collection_name": self._collection,
             "documents": documents,
-            "ids": ids,
+            "ids": [_stored_id(i, tenant_id) for i in ids],
         }
         if metadatas:
             kwargs["metadata"] = metadatas
@@ -148,9 +166,11 @@ class QdrantStore:
         if not ids:
             return
         from qdrant_client.models import PointIdsList
+        tenant_id = _active_tenant()
         self._client.delete(
             collection_name=self._collection,
-            points_selector=PointIdsList(points=list(ids)),
+            points_selector=PointIdsList(
+                points=[_stored_id(i, tenant_id) for i in ids]),
         )
 
     def count(self) -> int:
@@ -162,10 +182,23 @@ class QdrantStore:
 
     def reset(self) -> None:
         """Drop and recreate the collection. Tests use this; runtime
-        users should prefer ``delete(ids)``."""
+        users should prefer ``delete(ids)``.
+
+        Recreate after the drop so a ``query`` before the next ``add`` doesn't
+        hit a missing collection. ``client.add`` auto-creates with the
+        fastembed vector params, so recreate with the same params; if the
+        client can't supply them (older versions / no model loaded) we leave
+        the next ``add`` to lazily recreate."""
         try:
             self._client.delete_collection(self._collection)
         except Exception:
+            pass
+        try:
+            self._client.create_collection(
+                collection_name=self._collection,
+                vectors_config=self._client.get_fastembed_vector_params(),
+            )
+        except Exception:  # pragma: no cover -- next add() recreates lazily
             pass
 
 

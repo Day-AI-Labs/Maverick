@@ -167,6 +167,14 @@ def _op_worktree_add(sandbox, workdir: Path, args: dict[str, Any]) -> str:
         return "ERROR: worktree_add requires path"
     if err := _reject_option_like(path, branch):
         return err
+    # Confine the worktree to the sandbox workdir: a leading-dash check alone
+    # still lets an absolute/traversing path create a worktree (a real,
+    # writable git checkout) anywhere on the host. Resolve under workdir and
+    # reject escapes (mirrors apply_patch / fs containment).
+    try:
+        (workdir / path).resolve().relative_to(workdir.resolve())
+    except ValueError:
+        return f"ERROR: refusing worktree path that escapes the workspace: {path!r}"
     git_args = ["worktree", "add", path]
     if branch:
         git_args.append(branch)

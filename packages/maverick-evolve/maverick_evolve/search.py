@@ -41,19 +41,23 @@ async def evolve(
     archive = archive or Archive()
 
     seed_score = await score(seed_config)
-    archive.add(Candidate(config=seed_config, score=seed_score))
+    seed = Candidate(config=seed_config, score=seed_score)
+    archive.add(seed)
+    # Track the incumbent best explicitly: admission to the archive stays
+    # unconditional (diversity/plateau traversal depends on keeping equal- and
+    # near-scoring configs to branch from), but a child only *displaces* the
+    # returned best when it clears the noise margin. At min_improvement=0.0 that
+    # is "strictly better", so eval jitter can't ratchet a tie into a new best.
+    best = seed
 
     for _ in range(max(0, generations)):
         parent = archive.sample(rng) or archive.best()
         child_config = mutate(dict(parent.config))
         child_score = await score(child_config)
-        archive.add(Candidate(config=child_config, score=child_score))
-        # (min_improvement is advisory metadata for the caller's logging/early-
-        # stop; admission is unconditional so diversity is preserved, but only
-        # a real improvement moves the returned best.)
-        _ = min_improvement
+        child = archive.add(Candidate(config=child_config, score=child_score))
+        if child.score > best.score + min_improvement:
+            best = child
 
-    best = archive.best()
     assert best is not None  # archive always holds at least the seed
     return best
 

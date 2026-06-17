@@ -43,7 +43,7 @@ def _load() -> dict:
     try:
         with open(OVERRIDES_PATH, "rb") as f:
             return _tomllib().load(f)
-    except (OSError, ValueError) as e:
+    except (OSError, ValueError, UnicodeDecodeError) as e:
         log.warning("runtime_overrides: cannot read %s: %s", OVERRIDES_PATH, e)
         return {}
 

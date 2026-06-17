@@ -116,7 +116,18 @@ class DreamInsight:
     user_id: str | None = None # reflexion scope; None = unscoped local runs
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        # June 17 council fix (#1241 follow-up): `load_insights` substitutes
+        # `_LEGACY_SCOPE_UNKNOWN` for a channel/user_id that was MISSING on
+        # disk (pre-scope lines whose scope is genuinely ambiguous). On any
+        # rewrite (append/expire/resolve) `asdict` would serialize that
+        # sentinel back as a literal value, turning "missing" into an
+        # indistinguishable real scope. Re-omit the field so it stays
+        # missing and round-trips back to the sentinel on the next load.
+        for k in ("channel", "user_id"):
+            if d.get(k) == _LEGACY_SCOPE_UNKNOWN:
+                d.pop(k, None)
+        return d
 
 
 @dataclass
@@ -243,7 +254,16 @@ def cluster_failures(
     texts overlap (jaccard >= ``similarity``). Only clusters with at least
     ``min_cluster`` members survive — a one-off failure is noise, not a
     pattern worth dreaming about.
+
+    June 17 council fix (config-bounds audit): ``min_cluster < 1`` means
+    "disabled" — return no clusters. The prior ``max(1, min_cluster)``
+    silently floored a config/default of 0 to 1, which promotes EVERY
+    one-off failure into a persisted (and globally recallable, via
+    ``promote_shared_insights``) insight — the opposite of the intended
+    "a single failure is noise" semantics.
     """
+    if min_cluster < 1:
+        return []
     clusters: list[list[dict]] = []
     for f in failures or []:
         ft = _tokens(str(f.get("goal_text", "")))
@@ -262,7 +282,7 @@ def cluster_failures(
                 break
         if not placed:
             clusters.append([f])
-    return [c for c in clusters if len(c) >= max(1, min_cluster)]
+    return [c for c in clusters if len(c) >= min_cluster]
 
 
 def _keywords(texts: list[str], k: int = 4) -> list[str]:
