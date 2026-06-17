@@ -260,7 +260,7 @@ def verify_signature(
         if not _timestamp_fresh(timestamp, max_age):
             return False
     expected = _sign(body, secret, timestamp=timestamp)
-    return hmac.compare_digest(signature, expected)
+    return hmac.compare_digest(signature.encode(), expected.encode())
 
 
 def _timestamp_fresh(timestamp: str, max_age: int | None) -> bool:

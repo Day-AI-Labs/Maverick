@@ -413,7 +413,7 @@ def websocket_authorized(websocket) -> bool:
     if expected:
         auth = websocket.headers.get("authorization", "")
         supplied = auth[7:] if auth.startswith("Bearer ") else ""
-        return bool(supplied) and _hmac.compare_digest(expected, supplied)
+        return bool(supplied) and _hmac.compare_digest(expected.encode(), supplied.encode())
     from .app import _PROXY_FORWARD_HEADERS, _is_loopback_client
     host = websocket.client.host if websocket.client else ""
     proxied = any(websocket.headers.get(h) for h in _PROXY_FORWARD_HEADERS)

@@ -314,7 +314,7 @@ async def auth_callback(request: Request):
     # (2) CSRF: state must match. Reject BEFORE any network/token exchange.
     query_state = request.query_params.get("state") or ""
     tx_state = tx.get("state") or ""
-    if not query_state or not secrets.compare_digest(query_state, tx_state):
+    if not query_state or not secrets.compare_digest(query_state.encode(), tx_state.encode()):
         # CSRF: reject with 400 and clear cookies BEFORE any token exchange.
         log.warning("OIDC callback: state mismatch (possible CSRF)")
         return _csrf_reject()

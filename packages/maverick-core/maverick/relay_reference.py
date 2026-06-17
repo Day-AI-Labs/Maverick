@@ -173,7 +173,7 @@ class Relay:
         expected = self.config.inbound_auth_token
         if not expected or not auth_token:
             return False
-        return hmac.compare_digest(auth_token, expected)
+        return hmac.compare_digest(auth_token.encode(), expected.encode())
 
     # -- quick path -----------------------------------------------------------
 
