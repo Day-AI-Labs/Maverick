@@ -271,6 +271,25 @@ def test_gemini_parse_handles_varied_content_shapes():
     assert _parse_stream_response(_body([["u", [[["deep"]]]]])) == "deep"
 
 
+def test_gemini_parse_multichunk_returns_last_cumulative():
+    """A multi-chunk stream must parse EVERY chunk and return the last
+    cumulative answer. Regression: an inner `text = ...` reassignment used to
+    clobber the stream buffer the decode loop iterates over, so only the first
+    chunk parsed and a truncated early answer was returned instead of the final.
+    """
+    import json
+
+    from maverick.session_providers.gemini_session import _parse_stream_response
+
+    def _chunk(text):
+        inner = json.dumps([None, None, None, None, [["u", [text]]]])
+        outer = json.dumps([[None, None, inner]])
+        return str(len(outer)) + "\n" + outer
+
+    stream = ")]}'\n" + _chunk("first") + "\n" + _chunk("first second") + "\n"
+    assert _parse_stream_response(stream) == "first second"
+
+
 def test_gemini_parse_tolerates_malformed_chunks():
     """Metadata-only / truncated / non-JSON chunks must not crash the parser."""
     import json
