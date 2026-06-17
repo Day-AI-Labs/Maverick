@@ -80,6 +80,27 @@ class TestDeliverableExport:
         assert "Week,Net" in body
         assert "W1,300" in body
 
+    def test_export_neutralizes_spreadsheet_formulas(self, tmp_path, monkeypatch):
+        w = _world(tmp_path, monkeypatch)
+        table = (
+            "| =Header | Value |\n"
+            "| --- | --- |\n"
+            "| =HYPERLINK(\"https://example.test\",\"x\") | +SUM(1,2) |\n"
+            "| -10 | @cmd |\n"
+            "| safe | text |\n"
+        )
+        gid = w.create_goal("Review access", "", domain="itgrc_access_review")
+        w.set_goal_status(gid, "done", result=table)
+
+        r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
+
+        assert r.status_code == 200
+        assert "'=Header,Value" in r.text
+        assert "'=" in r.text
+        assert "\"'+SUM(1,2)\"" in r.text
+        assert "'-10,'@cmd" in r.text
+        assert "safe,text" in r.text
+
     def test_no_table_is_404(self, tmp_path, monkeypatch):
         w = _world(tmp_path, monkeypatch)
         gid = w.create_goal("Refresh forecast", "", domain="finance_cash13w")

@@ -1081,6 +1081,20 @@ def _handoff_approved_deliverable(g, decided_by: str) -> None:
         log.warning("deliverable hand-off failed for goal %s", getattr(g, "id", "?"))
 
 
+_SPREADSHEET_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe_cell(value: object) -> object:
+    """Neutralize spreadsheet formula-leading cells before CSV export."""
+    if isinstance(value, str) and value.startswith(_SPREADSHEET_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
+def _csv_safe_row(row):
+    return [_csv_safe_cell(cell) for cell in row]
+
+
 @router.get("/goals/{goal_id}/deliverable.csv")
 async def export_deliverable_csv(request: Request, goal_id: int) -> Response:
     """Export a goal's deliverable as CSV -- the mechanical hand-off so an
@@ -1100,8 +1114,8 @@ async def export_deliverable_csv(request: Request, goal_id: int) -> Response:
         raise HTTPException(status_code=404, detail="no tabular deliverable to export")
     buf = _io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(rendered.table.headers)
-    writer.writerows(rendered.table.rows)
+    writer.writerow(_csv_safe_row(rendered.table.headers))
+    writer.writerows(_csv_safe_row(row) for row in rendered.table.rows)
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",
