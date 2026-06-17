@@ -232,6 +232,24 @@ def test_enforce_capabilities_writes_and_is_read(tmp_path, monkeypatch):
     assert capability_enforced() is True
 
 
+def test_per_call_token_exchange_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's per-call token-exchange toggle writes
+    [capabilities] per_call_tokens (implying enforce), and the kernel reads it
+    back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TOOL_TOKENS", raising=False)
+    monkeypatch.delenv("MAVERICK_ENFORCE_CAPABILITIES", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"per_call_token_exchange": True})
+    assert "[capabilities]" in cfg
+    assert "per_call_tokens = true" in cfg
+    assert "enforce = true" in cfg  # token exchange implies enforcement
+
+    from maverick.tool_token import tool_tokens_enabled
+    assert tool_tokens_enabled() is True
+
+
 def test_enforce_capabilities_reuses_existing_capabilities_table(tmp_path, monkeypatch):
     """The normal wizard path already writes [capabilities]; enabling
     enforcement must add to that table instead of emitting a duplicate TOML
