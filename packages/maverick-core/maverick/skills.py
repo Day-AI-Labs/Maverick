@@ -468,12 +468,16 @@ def create_skill(
 def _canonical_signed_bytes(parsed: Skill) -> bytes:
     """Bytes an Ed25519 publisher signs over.
 
-    Binds ``name``, ``triggers``, ``tools_needed``, and the canonical body.
+    Binds ``name``, ``triggers``, ``tools_needed``, ``purposes``, and the
+    canonical body.
     Previously only name+body were signed, so a signed skill's *activation
     triggers* and *requested tools* could be altered without breaking the
     signature -- e.g. re-pointing a trusted skill's triggers, or adding
     ``shell`` to ``tools_needed`` -- while the sig still verified. Binding all
-    four closes that. Serialized as canonical JSON (sorted keys, compact
+    four closes that. ``purposes`` is also security-relevant PBAC metadata,
+    so it must be signed too; otherwise purpose-scope tampering could change
+    recall authorization without breaking the signature. Serialized as
+    canonical JSON (sorted keys, compact
     separators) so field boundaries are unambiguous (no value can shift content
     into another field) and the encoding is deterministic. The body is the
     post-frontmatter markdown, stripped (matching ``Skill.parse``).
@@ -487,6 +491,7 @@ def _canonical_signed_bytes(parsed: Skill) -> bytes:
             "name": parsed.name,
             "triggers": list(parsed.triggers),
             "tools_needed": list(parsed.tools_needed),
+            "purposes": list(parsed.purposes),
             "body": parsed.body,
         },
         sort_keys=True,
@@ -530,7 +535,7 @@ def _verify_skill_signature(parsed: Skill, *, require_signature: bool = False) -
         trusted=cfg["trusted_pubkeys"],
         must_verify=bool(cfg["require_signed"]) or require_signature,
         require_anchor=require_signature,
-        fields="name/triggers/tools_needed/body",
+        fields="name/triggers/tools_needed/purposes/body",
     )
 
 

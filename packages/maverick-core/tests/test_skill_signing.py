@@ -30,7 +30,12 @@ _NAME = "signed-demo"
 _BODY = "# What it does\n\nDo a signed thing."
 
 
-def _make_skill(*, sig: str | None = None, pubkey: str | None = None) -> str:
+def _make_skill(
+    *,
+    sig: str | None = None,
+    pubkey: str | None = None,
+    purposes: tuple[str, ...] = (),
+) -> str:
     front = [
         "---",
         f"name: {_NAME}",
@@ -39,6 +44,9 @@ def _make_skill(*, sig: str | None = None, pubkey: str | None = None) -> str:
         "tools_needed:",
         "  - shell",
     ]
+    if purposes:
+        front.append("purposes:")
+        front.extend(f"  - {purpose}" for purpose in purposes)
     if sig is not None:
         front.append(f"sig: {sig}")
     if pubkey is not None:
@@ -47,11 +55,11 @@ def _make_skill(*, sig: str | None = None, pubkey: str | None = None) -> str:
     return "\n".join(front) + "\n\n" + _BODY + "\n"
 
 
-def _sign(priv: ed25519.Ed25519PrivateKey) -> str:
+def _sign(priv: ed25519.Ed25519PrivateKey, *, purposes: tuple[str, ...] = ()) -> str:
     # Sign over exactly what verification recomputes: parse the unsigned skill,
     # then sign its canonical bytes. This stays in lockstep with
     # _canonical_signed_bytes no matter which fields it binds.
-    parsed = skills.Skill.parse(_make_skill(), Path("in.md"))
+    parsed = skills.Skill.parse(_make_skill(purposes=purposes), Path("in.md"))
     return priv.sign(skills._canonical_signed_bytes(parsed)).hex()
 
 
@@ -73,6 +81,34 @@ def test_valid_signature_from_trusted_pubkey_installs(tmp_path, monkeypatch):
 
     assert s.name == _NAME
     assert (skills_dir / f"{_NAME}.md").exists()
+
+
+def test_purpose_tampering_is_rejected(tmp_path, monkeypatch):
+    priv, pub_hex = _keypair()
+    _write_config(tmp_path, monkeypatch, f'[skills]\ntrusted_pubkeys = ["{pub_hex}"]\n')
+    sig = _sign(priv, purposes=("audit",))
+    content = _make_skill(sig=sig, pubkey=pub_hex, purposes=("finance",))
+
+    src = tmp_path / "in.md"
+    src.write_text(content, encoding="utf-8")
+    skills_dir = tmp_path / "skills"
+    with pytest.raises(ValueError, match="signature does not verify"):
+        skills.install_skill(str(src), skills_dir=skills_dir)
+    assert not list(skills_dir.glob("*.md"))
+
+
+def test_purpose_removal_is_rejected(tmp_path, monkeypatch):
+    priv, pub_hex = _keypair()
+    _write_config(tmp_path, monkeypatch, f'[skills]\ntrusted_pubkeys = ["{pub_hex}"]\n')
+    sig = _sign(priv, purposes=("audit",))
+    content = _make_skill(sig=sig, pubkey=pub_hex)
+
+    src = tmp_path / "in.md"
+    src.write_text(content, encoding="utf-8")
+    skills_dir = tmp_path / "skills"
+    with pytest.raises(ValueError, match="signature does not verify"):
+        skills.install_skill(str(src), skills_dir=skills_dir)
+    assert not list(skills_dir.glob("*.md"))
 
 
 def test_forged_signature_is_rejected(tmp_path, monkeypatch):
