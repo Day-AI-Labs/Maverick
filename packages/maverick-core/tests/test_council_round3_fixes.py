@@ -120,3 +120,49 @@ def test_erase_cascades_subgoals_without_fk_abort(tmp_path, monkeypatch):
         assert convs == [], "conversation survived erase"
     finally:
         wm2.close()
+
+
+def test_erase_cascades_goal_artifacts_without_fk_abort(tmp_path, monkeypatch):
+    """Structured deliverables are persisted as goal artifacts. Those artifacts
+    must be erased before their parent goals, otherwise SQLite's goal_id FK
+    aborts the transaction and leaves the conversation's private data intact."""
+    import os
+
+    os.environ.pop("MAVERICK_DB", None)
+    import maverick.audit as audit_mod
+    from click.testing import CliRunner
+    from maverick import cli as cli_mod
+    from maverick.world_model import WorldModel
+
+    monkeypatch.setattr(audit_mod, "record", lambda kind, **payload: None)
+    # scrub_user touches the real ~/.maverick/audit dir; neutralize for hermeticity.
+    monkeypatch.setattr("maverick.audit.scrub_user", lambda *a, **k: (0, 0))
+
+    db = tmp_path / "world.db"
+    wm = WorldModel(db)
+    conv_id = wm.get_or_create_conversation("sms", "artifact-victim").id
+    gid = wm.create_goal("structured deliverable")
+    wm.append_turn(conv_id, "user", "sensitive input", goal_id=gid)
+    artifact_id = wm.add_artifact(gid, "table", "Deliverable", "sensitive result")
+    wm.close()
+
+    result = CliRunner().invoke(
+        cli_mod.main,
+        [
+            "--db", str(db), "erase", "--channel", "sms",
+            "--user", "artifact-victim", "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    wm2 = WorldModel(db)
+    try:
+        remaining_artifacts = wm2.conn.execute(
+            "SELECT id FROM artifacts WHERE id = ?", (artifact_id,),
+        ).fetchall()
+        assert remaining_artifacts == [], "artifact survived erase"
+        assert wm2.get_goal(gid) is None, "goal survived erase"
+        convs = [c for c in wm2.list_conversations("sms") if c.user_id == "artifact-victim"]
+        assert convs == [], "conversation survived erase"
+    finally:
+        wm2.close()

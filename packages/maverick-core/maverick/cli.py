@@ -3799,6 +3799,7 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
                 world.conn.execute(
                     f"DELETE FROM processed_messages WHERE goal_id IN ({gph})", gids,
                 )
+                world.conn.execute(f"DELETE FROM artifacts WHERE goal_id IN ({gph})", gids)
                 world.conn.execute(f"DELETE FROM goals WHERE id IN ({gph})", gids)
 
             world.conn.execute(
