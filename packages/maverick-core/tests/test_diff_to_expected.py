@@ -42,6 +42,19 @@ def test_numeric_relative_tolerance():
     assert miss.startswith("DIFF")
 
 
+def test_json_deeply_nested_does_not_crash():
+    # A hostile deeply-nested value must not blow the stack out of the tool:
+    # both json.loads (string path) and the deep-diff walk recurse.
+    deep_str = "[" * 4000 + "]" * 4000
+    out = _cmp(actual=deep_str, expected="1", mode="json")
+    assert out.startswith("DIFF") and isinstance(out, str)
+    nested = 1
+    for _ in range(6000):
+        nested = [nested]
+    out2 = _cmp(actual=nested, expected=nested, mode="json")
+    assert out2 == "DIFF: values too deeply nested to compare"
+
+
 def test_errors_and_factory_shape():
     t = diff_to_expected()
     assert t.fn({"op": "compare", "actual": 1}).startswith("ERROR")  # no expected

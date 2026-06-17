@@ -74,11 +74,17 @@ def _diff_json(actual: Any, expected: Any) -> str:
         if isinstance(v, str):
             try:
                 return json.loads(v)
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, ValueError, RecursionError):
                 return v
         return v
 
-    diffs = _deep_diff(_coerce(actual), _coerce(expected))
+    # Both parsing (json.loads) and the deep-diff walk recurse, so a hostile
+    # deeply-nested value can blow the stack; surface it as a DIFF rather than
+    # letting RecursionError escape the "returns MATCH or DIFF" contract.
+    try:
+        diffs = _deep_diff(_coerce(actual), _coerce(expected))
+    except RecursionError:
+        return "DIFF: values too deeply nested to compare"
     if not diffs:
         return "MATCH: JSON structures are equal"
     return "DIFF:\n" + "\n".join(f"- {d}" for d in diffs)

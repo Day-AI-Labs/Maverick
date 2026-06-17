@@ -56,6 +56,33 @@ def test_parse_code_sample():
     assert ghs._parse_code({"items": []}) == "no code matches"
 
 
+def test_parse_repos_tolerates_nondict_items():
+    # A malformed / hostile search response whose `items` carries null or
+    # non-dict elements must not raise: _parse_repos runs OUTSIDE _run's
+    # try/except, so an uncaught AttributeError there crashes the whole tool.
+    assert ghs._parse_repos({"items": [None, "x", 1, []]}) == "no repositories"
+    out = ghs._parse_repos(
+        {"items": [None, {"full_name": "a/b", "stargazers_count": 3}]}
+    )
+    assert "a/b" in out
+
+
+def test_parse_code_tolerates_nondict_items_and_repository():
+    assert ghs._parse_code({"items": [None, "x", 1]}) == "no code matches"
+    # repository as a non-dict (string) must not crash either.
+    out = ghs._parse_code({"items": [{"path": "p.py", "repository": "notdict"}]})
+    assert "p.py" in out
+
+
+def test_run_survives_nondict_items(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "tok")
+    monkeypatch.setattr(ghs, "_http_get_json", lambda url: (200, {"items": [None]}))
+    out = ghs.github_repo_search().fn({"op": "repos", "query": "foo"})
+    assert out == "no repositories"
+    out = ghs.github_repo_search().fn({"op": "code", "query": "foo"})
+    assert out == "no code matches"
+
+
 def test_run_uses_token_header(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "tok123")
     captured = {}

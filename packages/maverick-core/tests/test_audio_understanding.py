@@ -81,6 +81,20 @@ def test_decode_wav_mono_and_stereo_downmix():
     assert len(stereo) == 4                            # downmixed to mono
 
 
+def test_decode_wav_rejects_malformed_as_valueerror():
+    # Malformed / truncated bytes make stdlib ``wave`` raise wave.Error or
+    # EOFError; decode_wav must normalise those to ValueError so the tool's
+    # _run (which only catches ValueError/ImportError) returns an error string
+    # rather than letting the exception escape.
+    for bad in (b"", b"\xff" * 100, b"RIFFxxxxWAVE"):
+        try:
+            decode_wav(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for {bad!r}")
+
+
 def test_decode_wav_rejects_non_16bit():
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:

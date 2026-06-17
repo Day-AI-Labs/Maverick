@@ -76,15 +76,26 @@ def decode_wav(data: bytes) -> tuple[list[float], int]:
     """
     import array
     import wave
-    with wave.open(io.BytesIO(data)) as w:
-        rate = w.getframerate()
-        n_ch = w.getnchannels()
-        width = w.getsampwidth()
-        frames = w.readframes(w.getnframes())
+    # ``wave`` raises wave.Error / EOFError on malformed or truncated input;
+    # normalise those to ValueError so callers (the tool's _run) get the same
+    # "bad audio" contract they already handle for the non-16-bit case.
+    try:
+        with wave.open(io.BytesIO(data)) as w:
+            rate = w.getframerate()
+            n_ch = w.getnchannels()
+            width = w.getsampwidth()
+            frames = w.readframes(w.getnframes())
+    except (wave.Error, EOFError) as e:
+        raise ValueError(f"not a valid WAV stream: {e}") from e
     if width != 2:
         raise ValueError(f"only 16-bit PCM WAV is supported (got {8 * width}-bit)")
+    if n_ch < 1:
+        raise ValueError(f"invalid channel count: {n_ch}")
     samples = array.array("h")
-    samples.frombytes(frames)
+    try:
+        samples.frombytes(frames)
+    except ValueError as e:
+        raise ValueError(f"truncated WAV PCM data: {e}") from e
     if n_ch > 1:  # average interleaved channels to mono
         mono = [
             sum(samples[i:i + n_ch]) / n_ch for i in range(0, len(samples), n_ch)
