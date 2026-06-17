@@ -1056,6 +1056,20 @@ async def post_signoff(request: Request, goal_id: int, payload: SignoffIn) -> di
     return {"gate": _goal_gate(g.domain), "signoff": w.signoff_for(goal_id)}
 
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def _csv_literal_cell(value: object) -> object:
+    """Return a CSV cell that spreadsheet apps should treat as literal text."""
+    if not isinstance(value, str) or not value.startswith(_CSV_FORMULA_PREFIXES):
+        return value
+    return f"'{value}"
+
+
+def _csv_literal_row(row: list[str]) -> list[object]:
+    return [_csv_literal_cell(cell) for cell in row]
+
+
 def _handoff_approved_deliverable(g, decided_by: str) -> None:
     """Push an approved deliverable to the configured system-of-record endpoint.
 
@@ -1100,8 +1114,8 @@ async def export_deliverable_csv(request: Request, goal_id: int) -> Response:
         raise HTTPException(status_code=404, detail="no tabular deliverable to export")
     buf = _io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(rendered.table.headers)
-    writer.writerows(rendered.table.rows)
+    writer.writerow(_csv_literal_row(rendered.table.headers))
+    writer.writerows(_csv_literal_row(row) for row in rendered.table.rows)
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",

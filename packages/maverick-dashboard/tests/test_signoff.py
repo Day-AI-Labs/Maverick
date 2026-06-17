@@ -80,6 +80,23 @@ class TestDeliverableExport:
         assert "Week,Net" in body
         assert "W1,300" in body
 
+    def test_formula_prefixed_cells_export_as_literals(self, tmp_path, monkeypatch):
+        w = _world(tmp_path, monkeypatch)
+        gid = w.create_goal("Refresh the cash forecast", "", domain="finance_cash13w")
+        w.set_goal_status(
+            gid,
+            "done",
+            result="| =Name | Net |\n| --- | --- |\n| +W1 | =WEBSERVICE(\"https://evil.test/\") |\n"
+                   "| -W2 | @HYPERLINK(\"https://evil.test/\") |\n",
+        )
+        r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
+        assert r.status_code == 200
+        assert "'=Name,Net" in r.text
+        assert "'+W1," in r.text
+        assert "'=WEBSERVICE" in r.text
+        assert "'-W2," in r.text
+        assert "'@HYPERLINK" in r.text
+
     def test_no_table_is_404(self, tmp_path, monkeypatch):
         w = _world(tmp_path, monkeypatch)
         gid = w.create_goal("Refresh forecast", "", domain="finance_cash13w")
