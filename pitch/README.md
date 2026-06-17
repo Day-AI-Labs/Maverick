@@ -24,6 +24,13 @@ Supporting docs:
 | [`ONE-PAGER.md`](./ONE-PAGER.md) | The whole story on one page | The cold intro / forward; the leave-behind |
 | [`DEMO-SCRIPT.md`](./DEMO-SCRIPT.md) | 6–8 min live runbook, exact commands + real outputs | The "show, don't tell" moment; security reviews |
 
+**Going deep — the whole platform:**
+
+| File | What it is |
+|---|---|
+| [`MANIFESTO.html`](./MANIFESTO.html) | The long read — manifesto → technical deep-dive → live walkthrough. The "why this is extraordinary" piece, as a branded web page. |
+| [`deck/platform.html`](./deck/platform.html) · 16 slides | The whole platform, slide by slide — every component and governance mechanism. |
+
 See [`deck/README.md`](./deck/README.md) for how to present and export the decks.
 
 ## The proof, in four commands (all offline, no API key)
@@ -39,8 +46,8 @@ maverick domains-lint                         # 1,118 packs, 0 errors
 
 Rendered in amber across the decks. None are things I can or should invent:
 
-1. **The ask (A)** — amount + target pre-money. (Market default offered: ~$8–20M
-   pre-money for 2026 defensible-IP seed; react to it.)
+1. **The ask (A)** — amount + target pre-money. (Market context: 2026 AI seed
+   priced at ~$19M pre-money for ~20% dilution, per Carta; react to it.)
 2. **Team** — your one-line bio + the "why you" / unfair insight; any co-founders
    or advisors. (Your name — Christopher Day, Founder — is already in.)
 3. **Traction** — design-partner conversations, LOIs, pilots, or revenue. "Zero,

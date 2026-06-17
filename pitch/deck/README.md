@@ -9,6 +9,7 @@ founder-, customer-, or deal-specific facts show as a highlighted `[ FILL ]` (am
 | [`audience-a.html`](./audience-a.html) | Seed investor | 14 |
 | [`audience-b.html`](./audience-b.html) | Strategic acquirer | 12 |
 | [`audience-c.html`](./audience-c.html) | First customer / design partner | 12 |
+| [`platform.html`](./platform.html) | The whole platform — product tour | 16 |
 
 All three share one visual system (deep-navy / electric theme) and the
 governance-chokepoint hero diagram. Content sources:
