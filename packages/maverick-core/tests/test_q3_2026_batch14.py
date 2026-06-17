@@ -424,6 +424,24 @@ def test_gmail_send_confirmed(monkeypatch):
     assert "sent" in out and "m1" in out
 
 
+def test_gmail_extract_plain_malformed_base64_never_raises():
+    # A sender-controlled text/plain body whose base64url length is 1 (mod 4)
+    # used to crash _extract_plain (binascii.Error from the over-padding
+    # `+ "==="`). It must reject cleanly (return "") instead.
+    import base64
+
+    from maverick.tools.gmail_tool import _decode_b64url, _extract_plain
+
+    bad = {"mimeType": "text/plain", "body": {"data": "AAAAA"}}  # len%4 == 1
+    assert _extract_plain(bad) == ""
+    assert _decode_b64url("AAAAA") == ""
+    # Padding-stripped valid bodies (Gmail strips '=') still round-trip.
+    raw = b"hello plain body"
+    stripped = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    ok = {"mimeType": "text/plain", "body": {"data": stripped}}
+    assert _extract_plain(ok) == raw.decode()
+
+
 # ---------- Scheduler ----------
 
 def test_scheduler_parse_basic():

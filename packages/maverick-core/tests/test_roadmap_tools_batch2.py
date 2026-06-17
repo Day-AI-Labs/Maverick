@@ -96,6 +96,24 @@ def test_constrained_type_coercion_and_range():
     assert t.fn({"value": "yes", "schema": {"type": "boolean"}}) == "PASS True"
 
 
+def test_constrained_non_finite_integer_fails_cleanly():
+    # float("inf")/float("-inf") raise OverflowError (not ValueError) from
+    # int(); _coerce must catch it and FAIL cleanly rather than leak an
+    # exception traceback through the broad _run guard.
+    from maverick.tools.constrained_output import _coerce
+
+    t = constrained_output()
+    for v in (float("inf"), float("-inf")):
+        ok, _, _ = _coerce(v, "integer")
+        assert ok is False
+        out = t.fn({"value": v, "schema": {"type": "integer"}})
+        assert out.startswith("FAIL: ")
+        assert "is not an integer" in out
+        assert "OverflowError" not in out
+    # nan already failed via ValueError; keep it covered too.
+    assert t.fn({"value": float("nan"), "schema": {"type": "integer"}}).startswith("FAIL")
+
+
 def test_constrained_enum_and_pattern():
     t = constrained_output()
     assert t.fn({"value": "red", "schema": {"enum": ["red", "green"]}}) == "PASS 'red'"

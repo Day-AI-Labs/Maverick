@@ -98,6 +98,24 @@ def _op_list(args: dict) -> str:
     return "\n".join(out)
 
 
+def _decode_b64url(data: str) -> str:
+    """Decode a (sender-controlled) base64url body, never raising.
+
+    Gmail strips padding, so we re-pad to a multiple of 4. A bare ``+ "==="``
+    over-pads and raises ``binascii.Error`` for any payload whose length is
+    1 (mod 4); correct padding plus a defensive guard keeps a malformed MIME
+    body from crashing the whole ``get`` op.
+    """
+    if not isinstance(data, str):
+        return ""
+    s = data.rstrip("=")
+    s += "=" * (-len(s) % 4)
+    try:
+        return base64.urlsafe_b64decode(s).decode("utf-8", errors="replace")
+    except (ValueError, TypeError):
+        return ""
+
+
 def _extract_plain(payload: dict, _depth: int = 0) -> str:
     """Walk MIME parts for the first text/plain body."""
     # Depth cap: the MIME tree mirrors the message structure, which the
@@ -108,8 +126,7 @@ def _extract_plain(payload: dict, _depth: int = 0) -> str:
     mime = payload.get("mimeType", "")
     body = payload.get("body") or {}
     if mime == "text/plain" and body.get("data"):
-        return base64.urlsafe_b64decode(
-            body["data"] + "===").decode("utf-8", errors="replace")
+        return _decode_b64url(body["data"])
     for part in payload.get("parts") or []:
         text = _extract_plain(part, _depth + 1)
         if text:
