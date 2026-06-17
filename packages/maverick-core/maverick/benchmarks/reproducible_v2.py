@@ -268,7 +268,7 @@ def verify_signature(manifest: dict[str, Any], secret: str) -> bool:
     if not isinstance(sig, str) or not sig.startswith("sha256="):
         return False
     body = {k: v for k, v in manifest.items() if k != "signature"}
-    return hmac.compare_digest(sig, sign_manifest(body, secret))
+    return hmac.compare_digest(sig.encode(), sign_manifest(body, secret).encode())
 
 
 @dataclass
