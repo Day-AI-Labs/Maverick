@@ -28,9 +28,9 @@ Payload shapes (kind -> required fields, all events also carry
                      accepted:bool, reason:str ("" when accepted) — one half of a
                      cross-swarm delegation; reciprocity of the two halves is
                      verified by ``audit/federation.cross_verify``
-  agent_trust_denied: peer:str, direction:str (inbound|received|outbound),
-                     rule:str, reason:str, correlation_id:str — an external
-                     agent was refused by the Agent Trust Plane.
+  agent_trust_denied: peer:str, direction:str (inbound|outbound), rule:str,
+                     reason:str, correlation_id:str — an external agent was
+                     refused by the Agent Trust Plane.
 """
 from __future__ import annotations
 

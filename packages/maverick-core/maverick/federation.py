@@ -284,7 +284,7 @@ class FederationNode:
         out = agent_trust.decide_outbound(peer.name)
         if out.denied:
             agent_trust.record_denied(
-                peer.name, out, direction="sent", correlation_id=corr)
+                peer.name, out, direction="outbound", correlation_id=corr)
             self._record(
                 EventKind.FEDERATION_DELEGATE, agent="federation",
                 peer_node=peer.name, correlation_id=corr, direction="sent",
@@ -431,7 +431,7 @@ class FederationService:
             peer.name, requested_tools=requested, max_risk=req_risk)
         if decision.denied:
             agent_trust.record_denied(
-                peer.name, decision, direction="received", correlation_id=corr)
+                peer.name, decision, direction="inbound", correlation_id=corr)
             return self._refuse_recorded(peer, corr, decision.reason)
 
         # Narrow-only: the peer's request can only restrict this node's own
