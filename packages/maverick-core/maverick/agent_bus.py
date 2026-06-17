@@ -16,6 +16,7 @@ without committing to a heavier message-passing framework.
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import threading
 import time
@@ -37,12 +38,38 @@ class Message:
 _inboxes: dict[str, queue.Queue[Message]] = {}
 _inboxes_lock = threading.Lock()
 
+# An inbox is created lazily for any agent/recipient id that send/recv/peek
+# touches and is never removed by the agents themselves. In a long-running
+# process (e.g. `maverick serve`) every goal mints fresh per-run agent ids, and
+# `send_to_agent` lets the model address arbitrary never-existing recipients,
+# so without a bound `_inboxes` grows one Queue per distinct id for the whole
+# process lifetime. Cap the registry and, when over it, evict EMPTY inboxes
+# (an empty queue holds no undelivered messages, so dropping it loses nothing —
+# a later touch just re-creates it). Non-empty inboxes are kept regardless so a
+# pending message is never silently dropped here.
+try:
+    _MAX_INBOXES = max(64, int(os.environ.get("MAVERICK_AGENT_BUS_MAX_INBOXES", "4096") or "4096"))
+except ValueError:
+    _MAX_INBOXES = 4096
+
+
+def _evict_empty_inboxes_locked() -> None:
+    """Drop empty inboxes when over the cap. Caller holds ``_inboxes_lock``."""
+    if len(_inboxes) <= _MAX_INBOXES:
+        return
+    for aid in [aid for aid, q in _inboxes.items() if q.empty()]:
+        del _inboxes[aid]
+        if len(_inboxes) <= _MAX_INBOXES:
+            break
+
 
 def _get_inbox(agent_id: str) -> queue.Queue[Message]:
     """Get-or-create the inbox for an agent."""
     with _inboxes_lock:
         q = _inboxes.get(agent_id)
         if q is None:
+            if len(_inboxes) >= _MAX_INBOXES:
+                _evict_empty_inboxes_locked()
             q = queue.Queue(maxsize=1000)
             _inboxes[agent_id] = q
         return q
