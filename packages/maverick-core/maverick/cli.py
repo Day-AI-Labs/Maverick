@@ -3980,7 +3980,7 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
         if get_tax()["auto_update"]:
             status, detail = tax_constants.check_for_update()
             if status == "applied":
-                click.echo(f"[tax] {detail}")
+                click.echo(f"[tax] {detail}", err=(fmt == "json"))
     except Exception:  # the update channel must never block a prep run
         pass
     federal, state_tables, provenance = tax_constants.active_constants()
@@ -4013,7 +4013,8 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
     click.echo(package)
     if out_path:
         Path(out_path).write_text(package + "\n", encoding="utf-8")
-        click.echo(f"\nWrote review package -> {out_path}")
+        click.echo(f"\nWrote review package -> {out_path}",
+                   err=(fmt == "json"))
 
 
 @tax_group.command("backtest")
