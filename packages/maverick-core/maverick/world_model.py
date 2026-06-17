@@ -1630,17 +1630,23 @@ class WorldModel:
         Returns the keys removed so the caller can report exactly what was
         scrubbed.
         """
+        if not token:
+            return []
         keys = sorted(self.facts_matching(token).keys())
-        if keys:
-            ph = ",".join("?" * len(keys))
-            with self._writing() as conn:
+        prefix_like = self._like_escape(f"user:{token}:") + "%"
+        with self._writing() as conn:
+            if keys:
+                ph = ",".join("?" * len(keys))
                 conn.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
-                # GDPR Art.17: hard-purge the bitemporal history too, or the
-                # erased values would survive in fact_history (and stay
-                # reconstructable via get_fact(as_of=...)). A subject-erase
-                # removes the window rather than closing it. No-op (empty table)
-                # when [memory] temporal is off.
-                conn.execute(f"DELETE FROM fact_history WHERE key IN ({ph})", keys)
+            # GDPR Art.17: hard-purge the bitemporal history for the WHOLE
+            # subject prefix -- not just the currently-live keys -- so a fact
+            # that was individually deleted earlier (window closed, value
+            # retained) is erased too and can't be recovered via
+            # get_fact(as_of=...). No-op (empty table) when temporal is off.
+            conn.execute(
+                "DELETE FROM fact_history WHERE key LIKE ? ESCAPE '\\'",
+                (prefix_like,),
+            )
         return keys
 
     @staticmethod
@@ -1685,6 +1691,32 @@ class WorldModel:
             )
             for r in rows
         ]
+
+    def fact_history_matching(self, token: str) -> dict[str, list[FactVersion]]:
+        """All recorded fact versions whose key is under ``user:<token>:`` -- the
+        subject's historical fact values (including keys already removed from the
+        live table), for the GDPR Art.15 right-of-access export. Empty unless
+        ``[memory] temporal`` retained any history."""
+        if not token:
+            return {}
+        like = self._like_escape(f"user:{token}:") + "%"
+        rows = self._read_all(
+            "SELECT key, value, valid_from, valid_to, source, trust_tier, "
+            "sensitivity FROM fact_history WHERE key LIKE ? ESCAPE '\\' "
+            "ORDER BY key, valid_from",
+            (like,),
+        )
+        out: dict[str, list[FactVersion]] = {}
+        for r in rows:
+            out.setdefault(r["key"], []).append(FactVersion(
+                value=_dec_field(r["value"]),
+                valid_from=r["valid_from"],
+                valid_to=r["valid_to"],
+                source=r["source"] or "",
+                trust_tier=int(r["trust_tier"]),
+                sensitivity=r["sensitivity"] or "internal",
+            ))
+        return out
 
     def delete_fact(self, key: str) -> int:
         """Delete one fact by exact key; return rows removed (0 or 1).

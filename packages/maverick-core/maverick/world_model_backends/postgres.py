@@ -1016,6 +1016,12 @@ class PostgresWorldModel:
                 cur.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
         return keys
 
+    def fact_history_matching(self, token: str) -> dict[str, list]:
+        # Temporal fact_history is sqlite-first; Postgres retains no history, so
+        # the subject's Art.15 export has no historical fact values to add.
+        del token
+        return {}
+
     @staticmethod
     def _like_escape(s: str) -> str:
         return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

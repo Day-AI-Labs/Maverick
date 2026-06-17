@@ -115,3 +115,34 @@ def test_trust_change_records_new_version(tmp_path, monkeypatch):
     hist = w.fact_history("k")
     assert [h.trust_tier for h in hist] == [3, 1]
     assert hist[0].valid_to is None and hist[1].valid_to is not None
+
+
+def test_erase_purges_history_of_already_deleted_key(tmp_path, monkeypatch):
+    # A user-scoped fact deleted earlier keeps its value in fact_history (window
+    # closed). A later subject-erase must still purge it -- delete_facts_matching
+    # works the whole user:<token>: prefix, not just currently-live keys.
+    monkeypatch.setenv("MAVERICK_TEMPORAL_MEMORY", "1")
+    w = _wm(tmp_path)
+    old = "user:telegram:u9:old"
+    cur = "user:telegram:u9:cur"
+    w.upsert_fact(old, "old secret")
+    w.delete_fact(old)               # window closed, value retained in history
+    w.upsert_fact(cur, "current secret")
+    assert w.fact_history(old)       # the deleted key still has history
+
+    w.delete_facts_matching("telegram:u9")
+    assert w.fact_history(old) == []                  # purged despite being gone
+    assert w.fact_history(cur) == []
+    assert w.fact_history_matching("telegram:u9") == {}
+
+
+def test_fact_history_matching_scopes_to_subject(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_TEMPORAL_MEMORY", "1")
+    w = _wm(tmp_path)
+    w.upsert_fact("user:sms:alice:addr", "A1")
+    w.upsert_fact("user:sms:alice:addr", "A2")  # evolves -> 2 versions
+    w.upsert_fact("user:sms:bob:addr", "B1")    # different subject
+    w.upsert_fact("global", "G")                # unrelated
+    hist = w.fact_history_matching("sms:alice")
+    assert set(hist) == {"user:sms:alice:addr"}
+    assert [v.value for v in hist["user:sms:alice:addr"]] == ["A1", "A2"]  # asc
