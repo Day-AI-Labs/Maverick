@@ -4149,7 +4149,7 @@ async def get_started_page(request: Request) -> HTMLResponse:
     except Exception:
         has_agents = False
     try:
-        ran = bool(_world().list_goals(limit=1))
+        ran = bool(_world().list_goals(owner=goal_owner_filter(request), limit=1))
     except Exception:
         ran = False
     automated = False

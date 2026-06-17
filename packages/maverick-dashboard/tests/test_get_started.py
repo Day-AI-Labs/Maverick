@@ -20,6 +20,8 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(tpl, "USER_TEMPLATES", tmp_path / ".maverick" / "templates")
     import maverick.domain_edit as de
     monkeypatch.setattr(de, "list_agents", list)   # no overridden agents in a fresh ws
+    from maverick_dashboard import app as app_mod
+    app_mod._world_cache.clear()
 
 
 def test_fresh_workspace_nothing_done(monkeypatch, tmp_path):
@@ -45,3 +47,28 @@ def test_nav_has_get_started(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "any_provider_configured", lambda: False)
     t = _client().get("/start").text
     assert '<span class="nav-label">Get started</span>' in t and 'href="/start"' in t
+
+
+def test_run_step_uses_owner_scoped_goals(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    import maverick.config as config
+    import maverick_dashboard.auth as auth
+    from maverick import world_model
+    from maverick.oidc import VerifiedPrincipal
+
+    monkeypatch.setattr(config, "any_provider_configured", lambda: False)
+    monkeypatch.setattr(auth, "oidc_enabled", lambda: True)
+
+    def _verify(token, **_kw):
+        return VerifiedPrincipal(
+            sub=token,
+            issuer="https://issuer.example",
+            audience="maverick",
+            claims={"sub": token},
+        )
+
+    monkeypatch.setattr(auth, "verify_oidc_token", _verify)
+    world_model.WorldModel(tmp_path / "world.db").create_goal("bob-only", owner="user:bob")
+
+    t = _client().get("/start", headers={"Authorization": "Bearer alice"}).text
+    assert "0 of 3 done" in t
