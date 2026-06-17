@@ -1399,6 +1399,7 @@ class PostgresWorldModel:
                 cur.execute("DELETE FROM messages WHERE goal_id = ANY(%s)", (gids,))
                 cur.execute("DELETE FROM questions WHERE goal_id = ANY(%s)", (gids,))
                 cur.execute("DELETE FROM attachments WHERE goal_id = ANY(%s)", (gids,))
+                cur.execute("DELETE FROM artifacts WHERE goal_id = ANY(%s)", (gids,))
                 cur.execute(
                     "DELETE FROM facts WHERE source_episode_id IN "
                     "(SELECT id FROM episodes WHERE goal_id = ANY(%s))",

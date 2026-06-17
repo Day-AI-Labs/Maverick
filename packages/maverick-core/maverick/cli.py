@@ -3785,6 +3785,7 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
                 world.conn.execute(f"DELETE FROM messages    WHERE goal_id IN ({gph})", gids)
                 world.conn.execute(f"DELETE FROM questions   WHERE goal_id IN ({gph})", gids)
                 world.conn.execute(f"DELETE FROM attachments WHERE goal_id IN ({gph})", gids)
+                world.conn.execute(f"DELETE FROM artifacts   WHERE goal_id IN ({gph})", gids)
                 # facts.source_episode_id REFERENCES episodes(id): a fact the agent
                 # distilled from this user's run carries their PII in `value` AND
                 # holds an FK to the episode we're about to delete. Leaving it both

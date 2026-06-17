@@ -83,3 +83,33 @@ def test_erase_clears_llm_cache(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     # The cached prompt/answer (which held the user's PII) is gone.
     assert llm_cache_mod.LLMCache(db_path=cache_db).lookup(key) is None
+
+
+def test_erase_succeeds_and_removes_artifacts(tmp_path, monkeypatch):
+    os.environ.pop("MAVERICK_DB", None)
+    import maverick.audit as audit_mod
+    monkeypatch.setattr(audit_mod, "scrub_user", lambda *a, **k: (0, 0))
+    monkeypatch.setattr(audit_mod, "record", lambda kind, **payload: None)
+    monkeypatch.setattr(audit_mod, "reanchor_after_erase", lambda *a, **k: None)
+
+    db = tmp_path / "world.db"
+    wm = WorldModel(db)
+    conv_id = wm.get_or_create_conversation("telegram", "u123").id
+    gid = wm.create_goal("summarize my private artifact")
+    wm.append_turn(conv_id, "user", "Please use my secret artifact", goal_id=gid)
+    wm.add_artifact(gid, "text", "Private note", "Secret artifact content")
+    wm.close()
+
+    result = CliRunner().invoke(
+        cli_mod.main,
+        ["--db", str(db), "erase", "--channel", "telegram", "--user", "u123", "--yes"],
+    )
+    assert result.exit_code == 0, result.output
+
+    wm = WorldModel(db)
+    counts = {
+        table: wm.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in ("artifacts", "conversations", "goals", "turns")
+    }
+    wm.close()
+    assert counts == {"artifacts": 0, "conversations": 0, "goals": 0, "turns": 0}
