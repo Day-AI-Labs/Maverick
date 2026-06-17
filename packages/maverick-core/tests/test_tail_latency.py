@@ -46,5 +46,10 @@ def test_threshold_respected():
 
 
 def test_hunt_over_live_report_is_empty_by_default():
-    # No tool calls recorded in this fresh process -> nothing to flag.
+    # hunt() with no report reads the live tool_latency samples. Reset them
+    # first so this test is hermetic: in the full suite other tests record
+    # tool latencies into that module global, so without the reset this
+    # order-dependently sees a non-empty live report and fails.
+    from maverick import tool_latency
+    tool_latency.reset()
     assert tl.hunt() == []
