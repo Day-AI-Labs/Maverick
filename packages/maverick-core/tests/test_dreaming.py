@@ -709,6 +709,49 @@ class TestLearningGovernance:
             dreaming.rollback_learning_state("nope", directory=snapdir,
                                              stores=stores)
 
+    def test_failed_dir_restore_leaves_live_store_intact(self, tmp_path,
+                                                          monkeypatch):
+        # State-corruption-on-error guard: a rollback that fails partway while
+        # restoring a DIRECTORY store must not destroy the live store. The old
+        # code rmtree'd live then copytree'd onto it, so a mid-copy failure
+        # left the live store gone/half-restored. The atomic stage-then-replace
+        # must leave the live store byte-for-byte unchanged on failure.
+        stores = self._stores(tmp_path)
+        snapdir = tmp_path / "snaps"
+        snap = dreaming.snapshot_learning_state(
+            directory=snapdir, stores=stores, now=1000.0,
+        )
+        assert snap is not None
+        # Mutate live so we can prove the rollback did NOT partially apply.
+        (stores["learned-skills"] / "post-snap.md").write_text(
+            "# post", encoding="utf-8")
+        live_skills = stores["learned-skills"]
+
+        # Make the directory copy blow up mid-restore (e.g. disk full).
+        # rollback_learning_state does `import shutil` inside the function, so
+        # patch the module attribute the local import resolves to.
+        import shutil as _shutil
+
+        def boom_copytree(src, dst, *a, **k):
+            raise OSError("simulated disk-full during restore")
+
+        monkeypatch.setattr(_shutil, "copytree", boom_copytree)
+        restored = dreaming.rollback_learning_state(
+            "latest", directory=snapdir, stores=stores,
+        )
+        # The dir store failed to restore...
+        assert "learned-skills" not in restored
+        # ...but the live store is fully intact -- NOT deleted or half-restored.
+        assert live_skills.is_dir()
+        assert (live_skills / "a-skill.md").read_text(encoding="utf-8") == "# a"
+        assert (live_skills / "post-snap.md").exists()
+        # No staged temp left dangling next to it.
+        assert not live_skills.with_name(
+            live_skills.name + ".rollbacktmp").exists()
+        # And the file store (which copies fine) still rolled back cleanly.
+        assert "insights.ndjson" in restored
+        monkeypatch.undo()
+
     def test_dry_run_reports_without_writing(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))
         rows: list[dict] = []

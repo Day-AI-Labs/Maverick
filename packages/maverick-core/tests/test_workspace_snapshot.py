@@ -56,6 +56,37 @@ def test_snapshot_rejects_missing_dir(tmp_path):
         create_snapshot(tmp_path / "nope", tmp_path / "snaps")
 
 
+def test_failed_archive_leaves_no_corrupt_snapshot(tmp_path, monkeypatch):
+    # State-corruption-on-error guard: if archiving fails partway, the store
+    # must NOT be left with a truncated snap-*.tar.gz that list_snapshots
+    # surfaces and a later restore chokes on. The build goes to a temp file
+    # that is atomically renamed only on success.
+    src = _src(tmp_path)
+    store = tmp_path / "snaps"
+
+    real_add = tarfile.TarFile.add
+
+    def boom_add(self, *a, **k):
+        # Let the tar header start, then fail mid-archive (e.g. disk full).
+        raise OSError("simulated write failure mid-archive")
+
+    monkeypatch.setattr(tarfile.TarFile, "add", boom_add)
+    with pytest.raises(OSError):
+        create_snapshot(src, store, label="doomed")
+    monkeypatch.setattr(tarfile.TarFile, "add", real_add)
+
+    # No snapshot (corrupt or otherwise) and no leftover temp file.
+    assert list_snapshots(store) == []
+    assert list(store.glob("snap-*")) == []
+    assert list(store.glob("*.tmp")) == []
+
+    # The store is still usable: a subsequent snapshot succeeds and reuses id 1
+    # (the failed attempt never claimed a discoverable name).
+    man = create_snapshot(src, store, label="recovered")
+    assert man["id"] == "snap-0001"
+    assert list_snapshots(store)[0]["label"] == "recovered"
+
+
 def test_restore_unknown_id_errors(tmp_path):
     store = tmp_path / "snaps"
     store.mkdir()

@@ -9,6 +9,7 @@ they're unit-testable against a tmpdir.
 """
 from __future__ import annotations
 
+import os
 import re
 import tarfile
 import time
@@ -75,8 +76,26 @@ def create_snapshot(src: Path, store: Path, label: str = "") -> dict:
                     f"workspace too large to snapshot ({files} files, "
                     f"{total} bytes); raise the limit or narrow the path")
 
-    with tarfile.open(target, "w:gz") as tar:
-        tar.add(src, arcname=".", recursive=True)
+    # Build the archive into a temp sibling and atomically rename it into
+    # place. Writing tarfile.open(target) directly meant a tar.add() that
+    # failed partway (an unreadable file, a full disk, an interrupt) left a
+    # TRUNCATED .tar.gz at the discoverable snap-*.tar.gz name -- list_snapshots
+    # would list it and a later restore would fail to extract a corrupt
+    # checkpoint. With temp+os.replace the final name only ever appears once
+    # the archive is complete; a failure unlinks the temp and leaves the store
+    # with no half-written snapshot.
+    tmp = target.with_name(target.name + ".tmp")
+    try:
+        with tarfile.open(tmp, "w:gz") as tar:
+            tar.add(src, arcname=".", recursive=True)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        raise
     return {
         "id": f"snap-{num}",
         "label": label,

@@ -40,6 +40,26 @@ log = logging.getLogger(__name__)
 
 SIDECAR_BASENAME = "compaction_stream.json"
 
+# The sidecar holds one entry per conversation_id; without a reaper it grows
+# one row per conversation forever on a long-running ``maverick serve``. Each
+# entry carries a ``last`` write timestamp, so we prune entries untouched for
+# longer than this TTL on every save. 0 disables pruning (durable forever).
+_DEFAULT_TTL_DAYS = 30.0
+
+
+def _ttl_seconds() -> float:
+    """Stale-entry TTL for the sidecar, from ``[context]
+    compaction_stream_ttl_days`` (default 30; <=0 disables pruning)."""
+    try:
+        from .config import load_config
+
+        raw = load_config().get("context", {}).get(
+            "compaction_stream_ttl_days", _DEFAULT_TTL_DAYS)
+        days = float(raw)
+    except Exception:
+        days = _DEFAULT_TTL_DAYS
+    return days * 86400.0 if days > 0 else 0.0
+
 _FOLD_SYSTEM = (
     "You maintain a running summary of an agent conversation. Merge the new "
     "turns into the summary: keep every fact, file path, decision and error "
@@ -74,11 +94,13 @@ class StreamingCompactor:
 
     def __init__(
         self, llm=None, *, path: Path | None = None, clock=None, budget=None,
+        ttl_seconds: float | None = None,
     ):
         self.llm = llm
         self.budget = budget
         self.path = path if path is not None else _sidecar_path()
         self._clock = clock if clock is not None else time.time
+        self.ttl_seconds = _ttl_seconds() if ttl_seconds is None else float(ttl_seconds)
 
     # ---- sidecar I/O (fail-safe, atomic, 0600) ----
 
@@ -92,7 +114,25 @@ class StreamingCompactor:
             log.warning("compaction stream sidecar: cannot read %s: %s", self.path, e)
             return {}
 
+    def _prune_stale(self, data: dict) -> dict:
+        """Drop entries untouched for longer than the TTL (one per stale
+        conversation), bounding the sidecar on a long-running deployment.
+        Entries missing/with an unreadable ``last`` are kept (fail-safe)."""
+        if not self.ttl_seconds:
+            return data
+        cutoff = self._clock() - self.ttl_seconds
+        kept = {}
+        for cid, st in data.items():
+            try:
+                last = float(st.get("last")) if isinstance(st, dict) else None
+            except (TypeError, ValueError):
+                last = None
+            if last is None or last >= cutoff:
+                kept[cid] = st
+        return kept
+
     def _save(self, data: dict) -> None:
+        data = self._prune_stale(data)
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(

@@ -499,6 +499,21 @@ class MCPClient:
             self._pending.pop(req_id, None)
             await self._send_cancel(req_id)
             raise
+        except asyncio.CancelledError:
+            # The awaiting caller's task was cancelled (not our timeout). The
+            # request is already on the wire, so drop the pending Future
+            # synchronously -- otherwise it leaks in self._pending until the
+            # connection closes (a slow drain on a long-lived client whose
+            # callers are routinely cancelled). The pop is the leak fix; the
+            # server-side cancel notification is best-effort and an extra
+            # `await` inside a cancelled task is fragile, so it is shielded and
+            # never allowed to mask the original CancelledError.
+            self._pending.pop(req_id, None)
+            try:
+                await asyncio.shield(self._send_cancel(req_id))
+            except Exception:  # noqa: BLE001 -- request already abandoned
+                pass
+            raise
 
     async def _notify(self, method: str, params: dict) -> None:
         async with self._lock:

@@ -265,3 +265,40 @@ class TestTimeoutCancellation:
         assert len(cancels) == 1
         # The cancel must target the same id the timed-out request used (1).
         assert cancels[0]["params"] == {"requestId": 1, "reason": "client timeout"}
+
+    def test_caller_cancel_does_not_leak_pending_future(self, monkeypatch):
+        # State-leak-on-error guard: if the awaiting caller's task is CANCELLED
+        # (not our own timeout) while a request is in flight, the pending
+        # Future must be dropped from self._pending -- otherwise it leaks there
+        # until the connection closes. The server-side cancel is also emitted.
+        sent: list[dict] = []
+
+        async def fake_send(self, payload):
+            sent.append(payload)
+
+        monkeypatch.setattr(MCPClient, "_check_alive", lambda self: None)
+        monkeypatch.setattr(MCPClient, "_send", fake_send)
+        monkeypatch.setattr(MCPClient, "_ensure_reader", lambda self: None)
+        # Generous timeout so the caller-cancellation fires first, not our own
+        # wait_for timeout.
+        c = MCPClient(MCPServerSpec(name="x", command="true"), timeout=30.0)
+
+        async def scenario():
+            task = asyncio.ensure_future(
+                c._request("tools/call", {"name": "t"})
+            )
+            # Let the request register its pending Future and hit the await.
+            await asyncio.sleep(0.01)
+            assert c._pending, "request should have registered a pending Future"
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            return dict(c._pending)
+
+        leftover = asyncio.run(scenario())
+        # The pending Future was de-registered on cancel -- no leak.
+        assert leftover == {}
+        # And the server was told to stop working on the abandoned id.
+        cancels = [p for p in sent if p.get("method") == "notifications/cancelled"]
+        assert len(cancels) == 1
+        assert cancels[0]["params"]["requestId"] == 1
