@@ -126,10 +126,11 @@ _INJECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         ("exfiltrate",
          r"\b(send|post|upload|exfiltrate|forward)\b.{0,40}"
          r"(https?://|ftp://|attacker|webhook)"),
-        # curl/wget + a flag, a scheme, or a host.tld -- not prose like
-        # "curl up on the couch".
+        # curl/wget + a flag, a scheme, a host.tld, localhost, or a bare IP
+        # address -- not prose like "curl up on the couch".
         ("shell-fetch",
-         r"\b(?:curl|wget)\s+(?:-{1,2}[a-z]|\w+://|[\w-]+\.[a-z]{2,})"),
+         r"\b(?:curl|wget)\s+(?:-{1,2}[a-z]|\w+://|[\w-]+\.[a-z]{2,}|"
+         r"localhost(?::\d+|[/:?#]|$)|(?:\d{1,3}\.){3}\d{1,3}(?::\d+|[/:?#]|$))"),
         ("base64-decode", r"base64\b.{0,12}\b(decode|b64decode)"),
         # rm -rf, or an actual DROP TABLE/DATABASE ...; statement (terminated)
         # -- not a passing mention like "drop table talk and ship".
