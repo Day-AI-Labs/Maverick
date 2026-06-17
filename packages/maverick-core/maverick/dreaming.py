@@ -1372,17 +1372,44 @@ def rollback_learning_state(
         if not src.exists():
             continue
         live = Path(live)
+        # Atomic restore: stage the snapshot into a temp sibling, then
+        # os.replace it into place. The old code did `rmtree(live)` then
+        # `copytree(src, live)`; a copytree that failed partway (disk full,
+        # permission, interrupt) left the live store DELETED or half-copied --
+        # a rollback meant to RESTORE a known-good state instead destroyed it.
+        # Staging first means a failed copy aborts before the live store is
+        # touched, so the on-disk state is either fully restored or unchanged.
+        tmp = live.with_name(live.name + ".rollbacktmp")
         try:
             live.parent.mkdir(parents=True, exist_ok=True)
+            # Clear any stale temp left by a prior crashed rollback.
+            if tmp.is_dir():
+                shutil.rmtree(tmp, ignore_errors=True)
+            elif tmp.exists():
+                tmp.unlink()
             if src.is_dir():
-                if live.exists():
+                shutil.copytree(src, tmp)
+                # os.replace can't overwrite a non-empty dir; swap explicitly.
+                if live.is_dir():
                     shutil.rmtree(live)
-                shutil.copytree(src, live)
+                elif live.exists():
+                    live.unlink()
+                os.replace(tmp, live)
             else:
-                shutil.copy2(src, live)
+                shutil.copy2(src, tmp)
+                os.replace(tmp, live)  # atomic over an existing file
             restored.append(name)
         except OSError as e:
             log.warning("dreaming: rollback of %s failed: %s", name, e)
+            # Best-effort cleanup of the staged copy; the live store was not
+            # touched until the (successful) os.replace, so it stays intact.
+            try:
+                if tmp.is_dir():
+                    shutil.rmtree(tmp, ignore_errors=True)
+                elif tmp.exists():
+                    tmp.unlink()
+            except OSError:
+                pass
     return restored
 
 
