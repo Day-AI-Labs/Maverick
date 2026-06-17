@@ -2781,7 +2781,9 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("[tax]")
         lines.append("auto_update = true")
         if advanced.get("tax_update_url"):
-            lines.append(f'update_url = "{advanced["tax_update_url"]}"')
+            # User-entered free text: escape via _toml_str so a URL with a
+            # backslash or quote can't corrupt the config the wizard writes.
+            _emit_kv(lines, "update_url", advanced["tax_update_url"])
         tax_keys = advanced.get("tax_pubkeys") or []
         if tax_keys:
             quoted = ", ".join(f'"{k}"' for k in tax_keys)
