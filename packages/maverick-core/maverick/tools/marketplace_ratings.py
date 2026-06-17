@@ -81,7 +81,7 @@ def _verify_install(args: dict[str, Any]) -> str:
         return "ERROR: computed_sha256 is required"
     a = declared.strip().lower()
     b = computed.strip().lower()
-    if hmac.compare_digest(a, b):
+    if hmac.compare_digest(a.encode(), b.encode()):
         return f"VERIFIED: sha256 {a}"
     return f"MISMATCH: declared {a} != computed {b}"
 

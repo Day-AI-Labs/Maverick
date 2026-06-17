@@ -211,7 +211,7 @@ def verify_file(path: str | Path, *, key: str | None = None) -> str:
         return "UNSEALED"
     latest = entries[-1]
     expected_sig = hmac.new(k.encode(), latest.canonical(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected_sig, latest.sig):
+    if not hmac.compare_digest(expected_sig.encode(), str(latest.sig).encode()):
         return "TAMPERED"
     if not p.is_file() or _sha256_file(p) != latest.sha256:
         return "TAMPERED"
