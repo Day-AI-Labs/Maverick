@@ -80,10 +80,23 @@ MIN_LIVE_CAP = 1.0
 
 
 def _codebase_sources(codebase: str | Path) -> int:
-    """Count python sources under ``codebase`` -- the pre-flight signal that the
-    agent will actually have code to read. Zero means the run would be wasted."""
+    """Count real Python sources under ``codebase``.
+
+    Symlinked ``*.py`` entries are deliberately ignored: the worker copy also
+    skips symlinks so an attacker-controlled tree cannot smuggle host-readable
+    secrets into the LLM-visible sandbox workspace.
+    """
     p = Path(codebase).expanduser()
-    return sum(1 for _ in p.rglob("*.py")) if p.is_dir() else 0
+    if not p.is_dir():
+        return 0
+    root = p.resolve()
+    return sum(
+        1
+        for src in p.rglob("*.py")
+        if not src.is_symlink()
+        and src.is_file()
+        and src.resolve().is_relative_to(root)
+    )
 
 
 @dataclass
@@ -409,6 +422,15 @@ def _live_pair_runner(cap: float, timeout: int, orchestrator_model: str,
 _WORKER_SRC = '''\
 import json, os, shutil, time
 from pathlib import Path
+
+def _ignore_unsafe_entries(src, names):
+    ignored = []
+    for name in names:
+        entry = Path(src) / name
+        if entry.is_symlink():
+            ignored.append(name)
+    ignored.extend(shutil.ignore_patterns("__pycache__", "*.pyc")(src, names))
+    return set(ignored)
 # Two things the run needs, written into config before the kernel loads:
 #  (1) Pin the orchestrator + revisor so the task COMPLETES within the cap (the
 #      product-default Opus orchestrator truncates and starves learning).
@@ -426,7 +448,7 @@ if _src and Path(_src).is_dir():
     _ws = Path("~/ws").expanduser(); _ws.mkdir(parents=True, exist_ok=True)
     _dst = _ws / Path(_src).name
     if not _dst.exists():
-        shutil.copytree(_src, _dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        shutil.copytree(_src, _dst, ignore=_ignore_unsafe_entries)
     _lines += ["[sandbox]", 'workdir = "%s"' % _ws]
 if _lines:
     (_cfg / "config.toml").write_text("\\n".join(_lines) + "\\n")

@@ -142,6 +142,13 @@ def test_codebase_sources_counts_py_files(tmp_path):
     assert MR._codebase_sources(tmp_path / "missing") == 0
 
 
+def test_codebase_sources_ignores_symlinked_python_files(tmp_path):
+    outside = tmp_path / "outside_secret.txt"
+    outside.write_text("TOP_SECRET\n")
+    (tmp_path / "leak.py").symlink_to(outside)
+    assert MR._codebase_sources(tmp_path) == 0
+
+
 def test_run_live_preflight_refuses_empty_codebase(tmp_path):
     # The guard must raise BEFORE spending a cent when there's no code to mount
     # (the bug that invalidated the first graded run).
@@ -173,6 +180,22 @@ def test_worker_provisions_codebase_into_sandbox_workdir(tmp_path, monkeypatch):
     assert "[sandbox]" in cfg and "workdir" in cfg
     assert 'orchestrator = "claude-sonnet-4-6"' in cfg
     assert (tmp_path / "ws" / "src" / "pkg" / "mod.py").exists()  # codebase copied in
+
+
+def test_worker_skips_symlinks_when_copying_codebase(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    secret = tmp_path / "outside_secret.txt"
+    secret.write_text("TOP_SECRET\n")
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "safe.py").write_text("x = 1\n")
+    (src / "leak.py").symlink_to(secret)
+    monkeypatch.setenv("MOAT_CODEBASE", str(src))
+    prologue = MR._WORKER_SRC.split("from maverick.budget import Budget")[0]
+    exec(compile(prologue, "<prologue>", "exec"), {"__name__": "w"})
+    copied = tmp_path / "ws" / "src"
+    assert (copied / "safe.py").read_text() == "x = 1\n"
+    assert not (copied / "leak.py").exists()
 
 
 def test_total_dollar_ceiling_stops_the_run():
