@@ -49,7 +49,10 @@ class UxStore:
     def _load(self) -> dict[str, Any]:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            data.setdefault("gallery", {})
+            if not isinstance(data, dict):
+                raise ValueError("ux_store must be a JSON object")
+            for k in ("pins", "views", "annotations", "gallery"):
+                data.setdefault(k, {})
             return data
         except (OSError, ValueError):
             return {"pins": {}, "views": {}, "annotations": {}, "gallery": {}}

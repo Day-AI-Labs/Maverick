@@ -21,8 +21,11 @@ from . import Tool
 
 def _laplace(scale: float, rng: random.Random) -> float:
     # Inverse-CDF sampling of Laplace(0, scale) from a uniform draw.
+    # random() can return exactly 0.0, giving u == -0.5 and arg == 0, which
+    # makes math.log() raise a domain error; floor the argument just above 0.
     u = rng.random() - 0.5
-    return -scale * math.copysign(1.0, u) * math.log(1 - 2 * abs(u))
+    arg = max(1 - 2 * abs(u), 2.2e-308)
+    return -scale * math.copysign(1.0, u) * math.log(arg)
 
 
 def _noisy(true_value: float, sensitivity: float, epsilon: float,

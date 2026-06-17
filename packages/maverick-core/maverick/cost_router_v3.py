@@ -107,7 +107,7 @@ class ContextualBandit:
         with self._lock:
             ctx = self._table.get(context, {})
             # Highest mean reward; ties broken by arm name for determinism.
-            return max(arms, key=lambda a: (ctx.get(a, _Arm()).mean, a == arms[0], a))
+            return max(arms, key=lambda a: (ctx.get(a, _Arm()).mean, a))
 
     def stats(self, context: str) -> dict[str, dict[str, float]]:
         with self._lock:

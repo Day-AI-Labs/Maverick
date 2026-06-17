@@ -187,11 +187,16 @@ class UsageLedger:
             data = self._load()
             for principal in list(data.keys()):
                 days = data.get(principal) or {}
-                for day in [d for d in days if isinstance(d, str) and d <= cutoff_day]:
+                expired = [d for d in days if isinstance(d, str) and d <= cutoff_day]
+                remaining = len(days) - len(expired)
+                for day in expired:
                     removed_buckets += 1
                     if not dry_run:
                         del days[day]
-                if not days:
+                # A principal is dropped when no day-buckets would remain after
+                # the purge. Decide from the pre-purge counts so the dry-run
+                # report matches what a real run removes.
+                if remaining <= 0:
                     removed_principals += 1
                     if not dry_run:
                         del data[principal]
