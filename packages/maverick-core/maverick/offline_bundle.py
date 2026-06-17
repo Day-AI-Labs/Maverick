@@ -18,6 +18,7 @@ The serving endpoint (``GET /api/v1/offline/bundle``) lives in the dashboard
 package; this module is dashboard-agnostic so it can be tested with a fake
 world and reused by other read-only surfaces (watch, CLI ``--offline``).
 """
+
 from __future__ import annotations
 
 import time
@@ -31,15 +32,16 @@ EVENT_FIELDS = ("id", "goal_id", "agent", "kind", "content", "ts")
 
 MAX_GOALS = 1000
 MAX_EVENTS = 2000
-MAX_ACTIVE = 25          # active runs embedded in the bundle's glance
-_EVENT_GOALS = 10        # events come from the N most-recent goals
+MAX_ACTIVE = 25  # active runs embedded in the bundle's glance
+_EVENT_GOALS = 10  # events come from the N most-recent goals
 _TITLE_CHARS = 200
 _GLANCE_TITLE_CHARS = 120
 _TEXT_CHARS = 400
 
 
-def build_offline_glance(world, *, now: float | None = None,
-                         max_active: int = MAX_ACTIVE) -> dict[str, Any]:
+def build_offline_glance(
+    world, *, now: float | None = None, max_active: int = MAX_ACTIVE, owner: str | None = None
+) -> dict[str, Any]:
     """The richer, list-bearing glance the offline bundle embeds.
 
     Distinct from :func:`maverick.glance.build_glance` (the tiny scalar
@@ -49,8 +51,23 @@ def build_offline_glance(world, *, now: float | None = None,
     """
     as_of = float(now if now is not None else time.time())
     max_active = max(1, min(int(max_active), MAX_ACTIVE))
-    active = world.list_goals(status="active", limit=max_active, order="desc")
+    active = world.list_goals(status="active", owner=owner, limit=max_active, order="desc")
     spend = world.total_spend()
+    if owner is None:
+        pending_approvals = world.pending_approvals()
+        open_questions = world.open_questions()
+    else:
+        scoped_goal_ids = {
+            g.id for g in world.list_goals(owner=owner, limit=MAX_GOALS, order="desc")
+        }
+        pending_approvals = [
+            approval
+            for approval in world.pending_approvals()
+            if getattr(approval, "goal_id", None) in scoped_goal_ids
+        ]
+        open_questions = [
+            q for q in world.open_questions() if getattr(q, "goal_id", None) in scoped_goal_ids
+        ]
     return {
         "as_of": as_of,
         "active": [
@@ -64,8 +81,8 @@ def build_offline_glance(world, *, now: float | None = None,
         ],
         "counts": {
             "active": len(active),
-            "pending_approvals": len(world.pending_approvals()),
-            "open_questions": len(world.open_questions()),
+            "pending_approvals": len(pending_approvals),
+            "open_questions": len(open_questions),
         },
         "spend": {
             "dollars": round(float(spend.get("dollars") or 0.0), 4),
@@ -99,7 +116,7 @@ def build_bundle(
     return {
         "schema": SCHEMA,
         "as_of": as_of,
-        "glance": build_offline_glance(world, now=as_of),
+        "glance": build_offline_glance(world, now=as_of, owner=owner),
         "goals": [
             {
                 "id": g.id,

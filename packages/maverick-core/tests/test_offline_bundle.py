@@ -3,10 +3,12 @@
 Offline + deterministic: a fake in-memory world, fixed ``now`` timestamps,
 no network, no real DB.
 """
+
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 from maverick.offline_bundle import (
     EVENT_FIELDS,
@@ -49,11 +51,13 @@ class FakeWorld:
     spend: dict = field(default_factory=lambda: {"dollars": 1.25, "runs": 3})
 
     def list_goals(self, status=None, *, owner=None, limit=None, offset=0, order="asc"):
-        out = [g for g in self.goals
-               if (status is None or g.status == status)
-               and (owner is None or g.owner == owner)]
+        out = [
+            g
+            for g in self.goals
+            if (status is None or g.status == status) and (owner is None or g.owner == owner)
+        ]
         out.sort(key=lambda g: g.id, reverse=(order == "desc"))
-        return out[offset:offset + limit] if limit is not None else out
+        return out[offset : offset + limit] if limit is not None else out
 
     def recent_goal_events(self, goal_id, limit=200):
         return sorted(self.events.get(goal_id, []), key=lambda e: e.id)[-limit:]
@@ -71,8 +75,14 @@ class FakeWorld:
 def make_world(n_goals=5, events_per_goal=4) -> FakeWorld:
     w = FakeWorld()
     for i in range(1, n_goals + 1):
-        w.goals.append(FakeGoal(id=i, title=f"goal {i}", status="active" if i % 2 else "done",
-                                result=None if i % 2 else f"result {i}"))
+        w.goals.append(
+            FakeGoal(
+                id=i,
+                title=f"goal {i}",
+                status="active" if i % 2 else "done",
+                result=None if i % 2 else f"result {i}",
+            )
+        )
         w.events[i] = [
             FakeEvent(id=i * 100 + j, goal_id=i, ts=float(i * 10 + j))
             for j in range(events_per_goal)
@@ -154,6 +164,25 @@ def test_bundle_owner_scoping():
     w.goals[0].owner = "alice"
     bundle = build_bundle(w, now=1.0, owner="alice")
     assert [g["id"] for g in bundle["goals"]] == [w.goals[0].id]
+
+
+def test_bundle_owner_scopes_embedded_glance():
+    w = FakeWorld(
+        goals=[
+            FakeGoal(id=1, title="alice run", owner="alice"),
+            FakeGoal(id=2, title="bob secret", owner="bob"),
+        ],
+        approvals=[SimpleNamespace(goal_id=2)],
+        questions=[SimpleNamespace(goal_id=1), SimpleNamespace(goal_id=2)],
+    )
+    bundle = build_bundle(w, now=1.0, owner="alice")
+
+    assert [g["title"] for g in bundle["glance"]["active"]] == ["alice run"]
+    assert bundle["glance"]["counts"] == {
+        "active": 1,
+        "pending_approvals": 0,
+        "open_questions": 1,
+    }
 
 
 def test_bundle_empty_world():
