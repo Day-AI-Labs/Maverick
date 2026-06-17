@@ -14,20 +14,26 @@ proof/security moments). Every claim is verifiable from this repo.
 | `company.html` | Company, founder, contact |
 | `styles.css` | The shared design system |
 
+**Brand assets** (all derived from `Daybreak Labs Logo.jpg`): `daybreak-mark-dark.png`
+(nav + footer mark chip), `daybreak-logo.png` (full logo, transparent — used on dark
+sections), `favicon-32/180/512.png`, and `og.png` (1200×630 social card).
+
 ## Preview
 Open `index.html` in any browser. Fonts (Newsreader / Inter / JetBrains Mono)
 load from Google Fonts when online and fall back to system fonts offline.
 
-## Deploy
-It's static — host it anywhere:
-- **Netlify / Vercel / Cloudflare Pages** — drag-and-drop this folder (or connect
-  the repo), then point `daybreakailabs.com` at it.
-- **Wix** — the classic Wix Editor can't render this directly. Either use it as
-  the pixel-exact spec to rebuild in **Wix Studio**, or move the domain to static
-  hosting above.
+## Deploy — live
+Hosted on **Cloudflare Pages**, project `daybreak-labs`:
+- Production: https://daybreak-labs.pages.dev
+- Redeploy: `CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… npx wrangler pages deploy pitch/site --project-name=daybreak-labs --branch=main`
+
+**Custom domain `daybreakailabs.com`** (+ `www`) is attached to the project and goes
+live automatically once the domain's nameservers point at Cloudflare
+(`aaden.ns.cloudflare.com`, `leia.ns.cloudflare.com`). Email stays on **Google
+Workspace** — preserve the `MX` (`aspmx.l.google.com`) and the SPF/verification
+`TXT` records through the switch.
 
 ## Finish before launch
 - Replace the founder-bio placeholder in `company.html` (marked with an HTML comment).
 - Wire **Book a demo** / **Request access** to a real form (they're `mailto:` today).
-- Add a favicon and a social-share (OpenGraph) image.
 - Confirm the SOC 2 wording on `security.html` matches reality before publishing.
