@@ -29,6 +29,10 @@ SKILLS_DIR = Path.home() / ".maverick" / "skills"
 BUILTIN_SKILLS_DIR = Path(__file__).parent / "skills_builtin"
 INSTALL_TIMEOUT = 30.0
 MAX_SKILL_DOWNLOAD_BYTES = 256 * 1024
+MAX_AUTHORED_SKILL_BYTES = MAX_SKILL_DOWNLOAD_BYTES
+MAX_SKILL_CREATE_ITEMS = 64
+MAX_SKILL_CREATE_ITEM_CHARS = 200
+
 
 # Strict: at least one slash, kebab + dots allowed in org/repo; optional :path
 # inside the repo with forward slashes + dots. Rejects empty, @user, schemes.
@@ -431,18 +435,37 @@ def _slug(name: str) -> str:
     return s or "skill"
 
 
+def _clean_authored_items(items, field_name: str) -> list[str]:
+    cleaned = _clean_items(items)
+    if len(cleaned) > MAX_SKILL_CREATE_ITEMS:
+        raise ValueError(f"{field_name} may contain at most {MAX_SKILL_CREATE_ITEMS} items")
+    for item in cleaned:
+        if len(item) > MAX_SKILL_CREATE_ITEM_CHARS:
+            raise ValueError(
+                f"{field_name} entries may contain at most "
+                f"{MAX_SKILL_CREATE_ITEM_CHARS} characters"
+            )
+    return cleaned
+
+
 def build_skill_md(name: str, triggers, tools_needed, body: str) -> str:
     """Compose a SKILL.md (YAML frontmatter + body) in the exact line format the
     loader parses (``Skill.parse``) -- its inverse. The name is kebab-cased so
     the frontmatter name, filename, and publish lint all agree."""
+    cleaned_triggers = _clean_authored_items(triggers, "triggers")
     lines = ["---", f"name: {_slug(name)}", "triggers:"]
-    lines += [f"  - {t}" for t in _clean_items(triggers)]
-    tools = _clean_items(tools_needed)
+    lines += [f"  - {t}" for t in cleaned_triggers]
+    tools = _clean_authored_items(tools_needed, "tools_needed")
     if tools:
         lines.append("tools_needed:")
         lines += [f"  - {t}" for t in tools]
     lines += ["---", "", (body or "").strip(), ""]
-    return "\n".join(lines)
+    content = "\n".join(lines)
+    if len(content.encode("utf-8")) > MAX_AUTHORED_SKILL_BYTES:
+        raise ValueError(
+            f"authored skill is too large (max {MAX_AUTHORED_SKILL_BYTES} bytes)"
+        )
+    return content
 
 
 def create_skill(
@@ -457,7 +480,7 @@ def create_skill(
     ``ValueError`` on invalid input (no trigger, empty body, a name that doesn't
     yield a valid id, or content the shield blocks). ``skills_dir`` resolves to
     the live :data:`SKILLS_DIR` at call time when omitted (so it's overridable)."""
-    if not _clean_items(triggers):
+    if not _clean_authored_items(triggers, "triggers"):
         raise ValueError("a skill needs at least one trigger phrase (that's how it activates)")
     if not (body or "").strip():
         raise ValueError("a skill needs instructions (a non-empty body)")

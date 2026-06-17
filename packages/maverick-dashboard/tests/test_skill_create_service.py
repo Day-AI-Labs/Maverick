@@ -44,3 +44,23 @@ def test_create_rejects_missing_trigger(tmp_path, monkeypatch):
     bad = dict(_GOOD, triggers=[])
     r = client.post("/api/v1/skills/create", json=bad)
     assert r.status_code == 422
+
+
+def test_create_rejects_too_many_triggers_at_schema(tmp_path, monkeypatch):
+    _skills_dir(tmp_path, monkeypatch)
+    monkeypatch.setenv("MAVERICK_ALLOW_SKILL_INSTALL", "1")
+    from maverick.skills import MAX_SKILL_CREATE_ITEMS
+
+    bad = dict(_GOOD, triggers=[f"trigger {i}" for i in range(MAX_SKILL_CREATE_ITEMS + 1)])
+    r = client.post("/api/v1/skills/create", json=bad)
+    assert r.status_code == 422
+
+
+def test_create_rejects_oversized_tool_item_at_schema(tmp_path, monkeypatch):
+    _skills_dir(tmp_path, monkeypatch)
+    monkeypatch.setenv("MAVERICK_ALLOW_SKILL_INSTALL", "1")
+    from maverick.skills import MAX_SKILL_CREATE_ITEM_CHARS
+
+    bad = dict(_GOOD, tools_needed=["x" * (MAX_SKILL_CREATE_ITEM_CHARS + 1)])
+    r = client.post("/api/v1/skills/create", json=bad)
+    assert r.status_code == 422

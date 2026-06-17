@@ -6,6 +6,9 @@ from unittest.mock import patch
 
 import pytest
 from maverick.skills import (
+    MAX_AUTHORED_SKILL_BYTES,
+    MAX_SKILL_CREATE_ITEM_CHARS,
+    MAX_SKILL_CREATE_ITEMS,
     Skill,
     _safe_name,
     build_skill_md,
@@ -83,6 +86,28 @@ class TestCreateSkill:
         assert parsed.triggers == ["weekly status"]
         assert parsed.tools_needed == ["read_file"]
         assert "Body here." in parsed.body
+
+    def test_rejects_too_many_triggers(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="triggers may contain at most"):
+            create_skill(
+                "too many",
+                "Body.",
+                triggers=[f"trigger {i}" for i in range(MAX_SKILL_CREATE_ITEMS + 1)],
+                skills_dir=tmp_path / "s",
+            )
+
+    def test_rejects_oversized_trigger_item(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="triggers entries may contain at most"):
+            create_skill(
+                "large trigger",
+                "Body.",
+                triggers=["x" * (MAX_SKILL_CREATE_ITEM_CHARS + 1)],
+                skills_dir=tmp_path / "s",
+            )
+
+    def test_rejects_oversized_serialized_skill(self):
+        with pytest.raises(ValueError, match="authored skill is too large"):
+            build_skill_md("huge", ["go"], [], "x" * (MAX_AUTHORED_SKILL_BYTES + 1))
 
     def test_multiline_trigger_is_collapsed(self, tmp_path: Path):
         # A trigger with embedded newlines can't break the line-based frontmatter.

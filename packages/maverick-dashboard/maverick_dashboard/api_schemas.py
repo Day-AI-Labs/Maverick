@@ -5,7 +5,12 @@ Importing here changes no behavior: these are pure data schemas.
 """
 from __future__ import annotations
 
+from typing import Annotated
+
+from maverick.skills import MAX_SKILL_CREATE_ITEM_CHARS, MAX_SKILL_CREATE_ITEMS
 from pydantic import BaseModel, Field
+
+SkillCreateItem = Annotated[str, Field(max_length=MAX_SKILL_CREATE_ITEM_CHARS)]
 
 
 class WorkflowStepIn(BaseModel):
@@ -149,8 +154,12 @@ class SkillCreateIn(BaseModel):
     activate it, the tools it needs, and the instructions (markdown body)."""
     name: str = Field(..., max_length=80)
     instructions: str = Field(..., max_length=20000)
-    triggers: list[str] = Field(default_factory=list)
-    tools_needed: list[str] = Field(default_factory=list)
+    triggers: list[SkillCreateItem] = Field(
+        default_factory=list, max_length=MAX_SKILL_CREATE_ITEMS
+    )
+    tools_needed: list[SkillCreateItem] = Field(
+        default_factory=list, max_length=MAX_SKILL_CREATE_ITEMS
+    )
 
 
 class SkillOut(BaseModel):
