@@ -1090,6 +1090,7 @@ async def export_deliverable_csv(request: Request, goal_id: int) -> Response:
     import io as _io
 
     from maverick.deliverable import render_deliverable
+    from maverick.tools.spreadsheet import _neutralize_formula
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -1100,8 +1101,11 @@ async def export_deliverable_csv(request: Request, goal_id: int) -> Response:
         raise HTTPException(status_code=404, detail="no tabular deliverable to export")
     buf = _io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(rendered.table.headers)
-    writer.writerows(rendered.table.rows)
+    writer.writerow([_neutralize_formula(cell) for cell in rendered.table.headers])
+    writer.writerows(
+        [_neutralize_formula(cell) for cell in row]
+        for row in rendered.table.rows
+    )
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",
