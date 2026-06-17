@@ -72,6 +72,24 @@ class BackoffTransitionModel(TransitionModel):
                 return total
         return 0
 
+    def policy(self, state: tuple) -> dict:
+        """Effective behaviour-policy counts for speculation/vouching.
+
+        Speculative execution treats this support as evidence that the *current*
+        state is well-trodden, so it must obey the same novelty floor as
+        :meth:`support`. Rollout sampling may still use ``_policy_counts`` to
+        back off farther and keep simulations moving, but public policy support
+        never falls through to the fully marginal empty-prefix prior.
+        """
+        best = None
+        for pre in self._prefixes(state, floor=self.min_specificity):
+            pol = self._policy.get(pre)
+            if pol:
+                best = best or pol
+                if sum(pol.values()) >= self.min_support:
+                    return dict(pol)
+        return dict(best or {})
+
     # --- prediction (may back off all the way, to keep rollouts moving) -----
 
     def _next_counts(self, state: tuple, action: Hashable):

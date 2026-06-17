@@ -92,8 +92,7 @@ class TransitionModel:
 
     def policy(self, state: tuple) -> dict:
         """Behaviour-policy action counts for ``state`` ({} if unseen). Public
-        accessor used by speculative execution; subclasses generalise via
-        ``_policy_counts``."""
+        accessor used by speculative execution."""
         return dict(self._policy_counts(state) or {})
 
     def _next_counts(self, state: tuple, action: Hashable):

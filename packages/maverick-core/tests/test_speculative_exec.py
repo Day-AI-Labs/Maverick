@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from maverick import speculative_exec as se
 from maverick.counterfactual_rollout import Transition, TransitionModel
+from maverick.generative_world_model import BackoffTransitionModel
 
 OPS = ("ops", "coder", "")
 
@@ -36,6 +37,19 @@ def test_not_speculatable_when_thin_support():
 def test_not_speculatable_when_state_unseen():
     spec = se.predict(_model({"shell": 18}), ("novel", "role", ""))
     assert not spec.speculatable and spec.action is None
+
+
+def test_backoff_global_policy_does_not_make_novel_state_speculatable():
+    transitions = [Transition(OPS, "shell", None, 1.0)] * 9
+    model = BackoffTransitionModel(min_support=3, min_specificity=1).fit(transitions)
+
+    novel_state = ("never-seen", "newrole", "")
+    assert model.support(novel_state, "shell") == 0
+    assert model.policy(novel_state) == {}
+
+    spec = se.predict(model, novel_state, min_support=8)
+    assert not spec.speculatable
+    assert spec.action is None
 
 
 def test_accepted_match_and_mismatch():
@@ -74,3 +88,15 @@ def test_draft_model_none_for_uncertain_turn(monkeypatch):
                         lambda: _model({"shell": 10, "read": 10}))
     # ambiguous -> frontier model (None)
     assert se.draft_model_for_turn("ops", "coder", "") is None
+
+
+def test_draft_model_none_for_novel_state_despite_dominant_global_backoff(monkeypatch):
+    monkeypatch.setenv("MAVERICK_SPECULATIVE", "1")
+    monkeypatch.setattr(se, "_settings", lambda: {
+        "enable": True, "draft_model": "cheap:model", "min_confidence": 0.85, "min_support": 8})
+    model = BackoffTransitionModel(min_support=3, min_specificity=1).fit(
+        [Transition(OPS, "shell", None, 1.0)] * 9
+    )
+    monkeypatch.setattr("maverick.rehearsal_runtime.world_model", lambda: model)
+
+    assert se.draft_model_for_turn("never-seen", "newrole", "") is None
