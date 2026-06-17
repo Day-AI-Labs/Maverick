@@ -105,11 +105,11 @@
 
 ## Slide 10 — Proof it's real today
 **On slide:**
-- **Built and installable now (alpha):** ~**310K LOC** across **8 PyPI packages**, **10,400+ tests** (Py 3.10–3.12), native installers for Win / macOS / Linux, **1,118 lint-clean packs** (0 errors).
+- **Built and installable now (alpha):** ~**310K LOC** across **8 PyPI packages**, native installers for Win / macOS / Linux, **1,118 lint-clean packs** (0 errors).
 - **Run the Proof Pack yourself.**
 - `[FILL: references / named design partners]`
 
-**Visual:** A "built ✅" checklist + a big honest stat: "10,400+ tests green."
+**Visual:** A "built ✅" checklist + a big honest stat: "1,118 packs, 0 lint errors."
 
 ---
 
