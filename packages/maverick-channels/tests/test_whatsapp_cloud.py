@@ -201,3 +201,37 @@ def test_missing_allowlist_raises(monkeypatch):
     monkeypatch.delenv("WHATSAPP_CLOUD_ALLOWED_USER_IDS", raising=False)
     with pytest.raises(ValueError, match="ALLOWED_USER_IDS"):
         _channel(allowed_user_ids=None)
+
+
+@pytest.mark.parametrize("body", [
+    b"[1,2,3]",                                          # top-level JSON array
+    b'"juststring"',                                     # top-level JSON string
+    b"5",                                                # top-level int
+    b'{"entry":"x"}',                                    # entry not a list
+    b'{"entry":5}',                                      # entry a truthy non-iterable
+    b'{"entry":[1]}',                                    # entry item not a dict
+    b'{"entry":[{"changes":"x"}]}',                      # changes not a list
+    b'{"entry":[{"changes":5}]}',                        # changes a truthy non-iterable
+    b'{"entry":[{"changes":[{"value":"x"}]}]}',          # value not a dict
+    b'{"entry":[{"changes":[{"value":{"messages":5}}]}]}',  # messages non-iterable
+    b'{"entry":[{"changes":[{"value":{"messages":["x",null]}}]}]}',  # message not a dict
+])
+def test_hostile_body_shapes_do_not_500(body):
+    # A signed-but-misshapen body (Meta status updates, or anything that passes
+    # the HMAC) must NOT raise out of the webhook handler. _extract_messages
+    # type-guards every nesting level; the handler returns a clean 200.
+    ch = _channel()
+    client = TestClient(ch._app)
+    r = client.post(
+        "/webhook/whatsapp-cloud", content=body,
+        headers={"X-Hub-Signature-256": _sign(body)},
+    )
+    assert r.status_code == 200
+
+
+def test_extract_messages_ignores_junk_keeps_valid():
+    valid = _event(text="hi")
+    assert WhatsAppCloudChannel._extract_messages(valid)[0]["text"]["body"] == "hi"
+    # Junk shapes flatten to nothing rather than raising.
+    for junk in (None, "x", 5, [], {"entry": [None, "x", {"changes": [5]}]}):
+        assert WhatsAppCloudChannel._extract_messages(junk) == []

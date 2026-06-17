@@ -143,13 +143,33 @@ class WhatsAppCloudChannel(Channel):
 
     @staticmethod
     def _extract_messages(payload: dict) -> list[dict]:
-        """Flatten Meta's entry/changes nesting to text-message dicts."""
-        out = []
-        for entry in payload.get("entry") or []:
-            for change in entry.get("changes") or []:
-                value = change.get("value") or {}
-                for m in value.get("messages") or []:
-                    if m.get("type") == "text":
+        """Flatten Meta's entry/changes nesting to text-message dicts.
+
+        Every level is type-guarded: a hostile (or merely unexpected) body
+        like ``[1,2,3]``, ``{"entry":"x"}``, or a non-dict message would
+        otherwise make the chained ``.get()`` raise ``AttributeError`` ->
+        unhandled 500 (which Meta retries, amplifying load).
+        """
+        out: list[dict] = []
+        if not isinstance(payload, dict):
+            return out
+
+        def _as_list(value: object) -> list:
+            # Only real lists are iterated; a truthy non-list (int/str/...)
+            # would otherwise raise TypeError ("not iterable") or yield chars.
+            return value if isinstance(value, list) else []
+
+        for entry in _as_list(payload.get("entry")):
+            if not isinstance(entry, dict):
+                continue
+            for change in _as_list(entry.get("changes")):
+                if not isinstance(change, dict):
+                    continue
+                value = change.get("value")
+                if not isinstance(value, dict):
+                    continue
+                for m in _as_list(value.get("messages")):
+                    if isinstance(m, dict) and m.get("type") == "text":
                         out.append(m)
         return out
 
