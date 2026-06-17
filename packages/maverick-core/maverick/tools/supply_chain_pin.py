@@ -13,19 +13,29 @@ violation (a pin must be exact).
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import Tool
 
-# Characters that turn a "version" into a range/wildcard rather than a pin.
-_RANGE_CHARS = ("^", "~", ">", "<", "*", "=", "x", "X", "||", " - ")
+# Operators/markers that turn a "version" into a range/wildcard rather than a
+# pin. NOTE: 'x'/'X' are wildcards only as a whole version *component*
+# (e.g. '1.x', '1.2.X'), never as an incidental letter inside a real version
+# (e.g. '1.0.0+linux', '2.0.0b1xenial') -- matched separately below as a token
+# so an exact pin that merely contains the letter x isn't a false positive.
+_RANGE_CHARS = ("^", "~", ">", "<", "*", "=", "||", " - ")
+# A component that is exactly 'x'/'X' (start-of-string or after a '.'), i.e. the
+# wildcard forms '1.x' / '1.2.x' / 'x'. Avoids flagging 'x' inside a token.
+_WILDCARD_X_RE = re.compile(r"(?:^|\.)[xX](?:\.|$)")
 
 
 def _is_range(version: str) -> bool:
     v = version.strip()
     if not v:
         return False
-    return any(tok in v for tok in _RANGE_CHARS)
+    if any(tok in v for tok in _RANGE_CHARS):
+        return True
+    return _WILDCARD_X_RE.search(v) is not None
 
 
 def _check(args: dict[str, Any]) -> str:

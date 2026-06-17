@@ -229,17 +229,24 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
         # MAVERICK_MAX_STEPS or the 25 default — silently dropping the
         # operator's intent when the parent was constructed with a
         # specific max_steps value.
-        child = Agent(
-            ctx=parent.ctx,
-            role=role,
-            brief=task,
-            depth=parent.depth + 1,
-            parent=parent,
-            max_steps=parent.max_steps,
-            capability=_child_capability(
-                parent, role, parent.depth + 1, "spawn_subagent"
-            ),
-        )
+        # Release the reserved slot if construction raises before the child can
+        # run -- otherwise a failed Agent()/_child_capability() permanently
+        # erodes the per-goal spawn cap (#612 covers the run() path only).
+        try:
+            child = Agent(
+                ctx=parent.ctx,
+                role=role,
+                brief=task,
+                depth=parent.depth + 1,
+                parent=parent,
+                max_steps=parent.max_steps,
+                capability=_child_capability(
+                    parent, role, parent.depth + 1, "spawn_subagent"
+                ),
+            )
+        except BaseException:
+            parent.ctx.release_spawns(1)
+            raise
         return await _run_child_and_report(parent, child)
 
     return Tool(
@@ -485,20 +492,27 @@ async def _run_swarm(parent: Agent, args: dict) -> str:
             f"ERROR: per-goal spawn cap ({parent.ctx.max_total_spawns}) reached"
         )
 
-    children = [
-        Agent(
-            ctx=parent.ctx,
-            role=spec["role"],
-            brief=spec["task"],
-            depth=parent.depth + 1,
-            parent=parent,
-            max_steps=parent.max_steps,
-            capability=_child_capability(
-                parent, spec["role"], parent.depth + 1, "spawn_swarm"
-            ),
-        )
-        for spec in agents_spec
-    ]
+    # Release the whole reservation if constructing any child raises -- none of
+    # them ran, so the slots must go back (the gather() release below only
+    # covers children that were built and then failed at run()).
+    try:
+        children = [
+            Agent(
+                ctx=parent.ctx,
+                role=spec["role"],
+                brief=spec["task"],
+                depth=parent.depth + 1,
+                parent=parent,
+                max_steps=parent.max_steps,
+                capability=_child_capability(
+                    parent, spec["role"], parent.depth + 1, "spawn_swarm"
+                ),
+            )
+            for spec in agents_spec
+        ]
+    except BaseException:
+        parent.ctx.release_spawns(len(agents_spec))
+        raise
 
     parent.ctx.blackboard.post(
         parent.name,
@@ -614,12 +628,17 @@ def spawn_specialist_tool(parent: Agent) -> Tool:
         if not parent.ctx.try_reserve_spawns(1):
             return f"ERROR: per-goal spawn cap ({parent.ctx.max_total_spawns}) reached"
 
-        child = agent_from_profile(
-            profile, parent.ctx, task, parent=parent, depth=parent.depth + 1
-        )
-        # Inherit the parent's step budget (matches spawn_subagent); agent_from_
-        # profile doesn't take max_steps, so apply it before the run.
-        child.max_steps = parent.max_steps
+        # Release the reserved slot if profile construction raises before run.
+        try:
+            child = agent_from_profile(
+                profile, parent.ctx, task, parent=parent, depth=parent.depth + 1
+            )
+            # Inherit the parent's step budget (matches spawn_subagent);
+            # agent_from_profile doesn't take max_steps, so apply it before run.
+            child.max_steps = parent.max_steps
+        except BaseException:
+            parent.ctx.release_spawns(1)
+            raise
         return await _run_child_and_report(parent, child)
 
     return Tool(
