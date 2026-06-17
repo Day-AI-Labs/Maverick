@@ -36,6 +36,26 @@ def test_kernel_read_sections_are_known():
     assert not missing, sorted(missing)
 
 
+def test_council_sections_are_known():
+    """The learning-engine sections the runtime reads (config.py get_* helpers)
+    and the wizard writes -- enabling them must not make `maverick migrate` claim
+    they 'do nothing', which would lead a user to delete a live feature."""
+    council = {"data_engine", "consequence", "emergent_protocol",
+               "emergent_codec", "operations_scientist"}
+    missing = council - KNOWN_SECTIONS
+    assert not missing, f"runtime reads these but migrate would flag them: {sorted(missing)}"
+
+
+def test_council_config_lints_clean():
+    from maverick.migrate import _lint_unknown_sections
+    cfg = {s: {"enable": True} for s in
+           ("data_engine", "consequence", "emergent_protocol",
+            "emergent_codec", "operations_scientist")}
+    findings = [f for f in _lint_unknown_sections(cfg)
+                if "not a section the runtime reads" in f.message]
+    assert not findings, [f.id for f in findings]
+
+
 def test_wizard_fast_config_lints_clean(tmp_path):
     """The exact section set `maverick init --fast` writes must produce no
     'is not a section the runtime reads' lint findings."""
