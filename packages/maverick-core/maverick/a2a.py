@@ -318,6 +318,14 @@ def _mount_task_endpoint(app: Any) -> None:
         # from the presented bearer; "anon" when unauthenticated.
         principal = engine.principal_for(authorization)
 
+        from . import agent_trust
+        decision = agent_trust.decide_inbound("a2a")
+        if decision.denied:
+            return JSONResponse(
+                _rpc_error(req_id, -32003, decision.reason),
+                status_code=403,
+            )
+
         if method in STREAM_METHODS:
             async def _gen():
                 try:

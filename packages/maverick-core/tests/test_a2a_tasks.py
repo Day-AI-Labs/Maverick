@@ -295,6 +295,42 @@ def test_http_endpoint_send_and_card(monkeypatch):
     assert card["url"].endswith("/a2a/v1")
 
 
+def test_http_endpoint_denies_a2a_when_agent_trust_denies(monkeypatch):
+    pytest.importorskip("fastapi")
+    import maverick.a2a as a2a
+    import maverick.a2a_tasks as a2at
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from maverick import agent_trust
+
+    def _runner_should_not_run(text, **k):
+        raise AssertionError("A2A runner bypassed Agent Trust denial")
+
+    monkeypatch.setattr(a2at, "_default_runner", _runner_should_not_run)
+    monkeypatch.setattr(
+        agent_trust, "decide_inbound",
+        lambda agent_id: agent_trust.TrustDecision(
+            False,
+            "external agent 'a2a' is not in the trust registry",
+            "not_in_registry",
+        ),
+    )
+    monkeypatch.setenv("MAVERICK_A2A_ENABLED", "1")
+    monkeypatch.setenv("MAVERICK_A2A_TOKEN", "tok")
+    monkeypatch.delenv("MAVERICK_A2A_ALLOW_UNAUTHENTICATED", raising=False)
+
+    app = FastAPI()
+    a2a.mount(app)
+    client = TestClient(app)
+
+    rpc = {"jsonrpc": "2.0", "id": 1, "method": "message/send",
+           "params": _msg("hello")}
+    r = client.post("/a2a/v1", headers={"Authorization": "Bearer tok"}, json=rpc)
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == -32003
+    assert "trust registry" in r.json()["error"]["message"]
+
+
 def test_http_stream_emits_sse(monkeypatch):
     pytest.importorskip("fastapi")
     import maverick.a2a as a2a

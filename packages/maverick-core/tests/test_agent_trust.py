@@ -275,12 +275,11 @@ def test_federation_disengaged_unchanged(monkeypatch):
 def test_a2a_capability_tightened_by_registry(monkeypatch):
     from maverick.a2a_tasks import _a2a_capability
 
-    monkeypatch.setattr(agent_trust, "agent_trust_enforced", lambda: True)
-    monkeypatch.setattr(
-        agent_trust, "lookup",
-        lambda agent_id, **kw: TrustedAgent(id="a2a",
-                                            allow_tools=frozenset({"read_file"}))
-        if agent_id == "a2a" else None)
+    trusted = TrustedAgent(id="a2a", allow_tools=frozenset({"read_file"}))
+    allowed = agent_trust.TrustDecision(
+        True, "registered", "allow", trusted, trusted.capability(principal="a2a"),
+    )
+    monkeypatch.setattr(agent_trust, "decide_inbound", lambda agent_id: allowed)
     cap = _a2a_capability()
     assert cap.allow_tools == frozenset({"read_file"})
 
@@ -288,11 +287,25 @@ def test_a2a_capability_tightened_by_registry(monkeypatch):
 def test_a2a_capability_unchanged_when_disengaged(monkeypatch):
     from maverick.a2a_tasks import _a2a_capability
 
-    monkeypatch.setattr(agent_trust, "agent_trust_enforced", lambda: False)
+    monkeypatch.setattr(
+        agent_trust, "decide_inbound",
+        lambda agent_id: agent_trust.TrustDecision(True, "disabled", "disabled"),
+    )
     # Disengaged -> no [agent_trust] tightening; default ceiling (all tools,
     # medium risk) is preserved.
     cap = _a2a_capability()
     assert cap.allow_tools == frozenset()  # empty == all
+
+
+def test_a2a_capability_denies_missing_registry_entry(monkeypatch):
+    from maverick.a2a_tasks import _a2a_capability
+
+    denied = agent_trust.TrustDecision(
+        False, "external agent 'a2a' is not in the trust registry", "not_in_registry",
+    )
+    monkeypatch.setattr(agent_trust, "decide_inbound", lambda agent_id: denied)
+    with pytest.raises(PermissionError, match="trust registry"):
+        _a2a_capability()
 
 
 # ---- fleet-memory data-scope gating ---------------------------------------

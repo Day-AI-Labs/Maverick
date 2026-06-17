@@ -165,18 +165,16 @@ def _a2a_capability() -> Any:
         max_risk=max_risk,
     )
     # When the Agent Trust Plane is engaged, a central [agent_trust] entry with
-    # id "a2a" tightens this ceiling (intersection, never a broadening), so a
-    # company governs A2A callers from the same registry as every other
-    # external agent. No "a2a" entry / plane disengaged -> ceiling unchanged.
-    try:
-        from . import agent_trust
-        if agent_trust.agent_trust_enforced():
-            entry = agent_trust.lookup("a2a")
-            if entry is not None:
-                cap = cap.intersect(entry.capability(principal="a2a"),
-                                    principal="a2a")
-    except Exception:  # pragma: no cover - trust read never breaks A2A
-        pass
+    # id "a2a" is required by the same default-deny registry used for other
+    # external agents. Its ceiling tightens this capability by intersection
+    # (never a broadening). When the plane is disengaged, preserve legacy A2A
+    # behaviour and leave the ceiling unchanged.
+    from . import agent_trust
+    decision = agent_trust.decide_inbound("a2a")
+    if decision.denied:
+        raise PermissionError(decision.reason)
+    if decision.capability is not None:
+        cap = cap.intersect(decision.capability, principal="a2a")
     return cap
 
 
