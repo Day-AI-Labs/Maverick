@@ -54,7 +54,7 @@ def send_to_agent(agent_id: str) -> Tool:
     """Factory: ``send_to_agent`` bound to the current agent as sender."""
 
     def _run(args: dict[str, Any]) -> str:
-        to_id = (args.get("to_id") or "").strip()
+        to_id = str(args.get("to_id") or "").strip()
         if not to_id:
             return "ERROR: to_id is required"
         if "payload" not in args:
@@ -87,7 +87,10 @@ def recv_from_agent(agent_id: str, *, agent: Any = None) -> Tool:
 
     async def _run(args: dict[str, Any]) -> str:
         raw_timeout = args.get("timeout") or 0.0
-        timeout = float(raw_timeout)
+        try:
+            timeout = float(raw_timeout)
+        except (TypeError, ValueError):
+            return "ERROR: timeout must be a number"
         if not math.isfinite(timeout):
             return "ERROR: timeout must be a finite number"
         timeout = min(max(0.0, timeout), MAX_RECV_TIMEOUT_SECONDS)
@@ -168,8 +171,8 @@ def delegate_to_agent(agent: Any) -> Tool:
     """
 
     def _run(args: dict[str, Any]) -> str:
-        to_id = (args.get("to_id") or "").strip()
-        task = (args.get("task") or "").strip()
+        to_id = str(args.get("to_id") or "").strip()
+        task = str(args.get("task") or "").strip()
         if not to_id:
             return "ERROR: to_id is required"
         if not task:
