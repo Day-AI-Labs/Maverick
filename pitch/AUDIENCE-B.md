@@ -28,7 +28,7 @@
 - **Whoever owns that layer owns enterprise-AI trust.**
 - 2026 repriced the market: capital and buyers reward **defensible IP**, punish wrappers. Regulation (EU AI Act, HIPAA, SOX, GLBA) makes "ungoverned agent" a non-starter.
 
-**Visual:** Arrow — 2024 capability race → 2026 governance + defensibility. Stat: AI-governance spend **$2.2B → $11B** (2025→2036), riding a **$51B** GRC budget.
+**Visual:** Arrow — 2024 capability race → 2026 governance + defensibility. Stat: AI-governance platforms **$492M → $1B+** (2026→2030, Gartner).
 
 ---
 
