@@ -73,12 +73,12 @@ flowchart LR
 **On slide:**
 - **Adoption inflection:** enterprise agentic AI is moving from pilots to budget — but stalling on governance.
 - **Regulation is forcing the issue:** EU AI Act, sector rules (HIPAA, SOX, GLBA) make "ungoverned agent" a non-starter.
-- **The money is in governance:** AI-governance/compliance spend ~$2.2B (2025) → ~$11B by 2036, riding a $51B GRC budget — BFSI leading.
+- **The money is in governance:** Gartner sizes AI-governance platforms at ~$492M (2026) → $1B+ by 2030, as AI regulation reaches 75% of economies.
 - **The market just shifted to reward exactly us:** in 2026, *defensibility outweighs growth* — capital rewards IP-heavy companies and **punishes AI wrappers.** Maverick is the opposite of a wrapper.
 
 **Speaker notes:** "Two years ago the bet was 'who has the best agent.' In 2026 that's commoditizing — and investors have repriced accordingly, paying for defensible IP, not thin wrappers. Governance and provable safety are becoming a *requirement*, not a feature. We're early to the layer that becomes mandatory."
 
-**Visual:** A timeline arrow (2024 capability race → 2026 governance + defensibility). One stat callout: "$2.2B → $11B AI-governance market."
+**Visual:** A timeline arrow (2024 capability race → 2026 governance + defensibility). One stat callout: "$492M → $1B+ AI-governance platforms (Gartner)."
 
 ---
 
@@ -112,7 +112,7 @@ flowchart LR
 ## Slide 7 — Market & wedge
 
 **On slide:**
-- **TAM:** enterprise agent platforms (~$9B agentic, fast-growing) **at the intersection of** the $51B GRC / governance budget. We sell into both.
+- **Bottom-up SOM:** ~10,000 US regulated financial institutions; 100 customers × ~$250k ACV ≈ $25M ARR from the BFSI beachhead. Gartner sizes AI-governance platforms at $1B+ by 2030.
 - **Beachhead:** **BFSI / finance** — leads governance spend, highest regulatory pain, clearest ROI. (The finance suite already declares ~29 governed deliverables across 11 roles.)
 - **Second wedge:** **tax-prep for CPA firms** — an unusually complete, deterministic, citation-backed pipeline (docs → first-pass 1040 + state return) with a signed tax-law update channel.
 - **Expansion:** 26 suites already built — healthcare, insurance, legal, gov-contracting — land-and-expand once the wedge is proven.

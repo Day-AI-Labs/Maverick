@@ -26,8 +26,7 @@ workforce you can prove is improving, not a static model.
 
 **Why now.** Enterprise agentic AI is moving from pilots to budget but stalling
 on governance. Regulation (EU AI Act, HIPAA, SOX, GLBA) is making "ungoverned
-agent" a non-starter. AI-governance spend is forecast ~$2.2B (2025) → ~$11B by
-2036 atop a ~$51B GRC budget, BFSI leading. And the 2026 capital market has
+agent" a non-starter. Gartner sizes AI-governance platforms at ~$492M (2026) → $1B+ by 2030 as AI regulation reaches 75% of world economies. And the 2026 capital market has
 repriced to **reward defensible IP and punish thin AI wrappers.**
 
 **What's built (alpha, installable today — every number verifiable):**
@@ -56,8 +55,7 @@ governed library.** None of it is a prompt over an API — it's deep
 infrastructure a competitor doesn't replicate in a quarter and an incumbent's
 hosted product can't air-gap into a bank.
 
-**Market & wedge.** TAM = enterprise agent platforms (~$9B agentic, fast-growing)
-**×** the ~$51B GRC budget — we sell into both. **Beachhead: BFSI / finance**
+**Market & wedge.** Bottom-up: ~10,000 US regulated financial institutions; 100 customers at a ~$250k ACV ≈ $25M ARR from the BFSI beachhead alone (Gartner sizes AI-governance platforms at $1B+ by 2030). **Beachhead: BFSI / finance**
 (highest regulatory pain, clearest ROI; the finance suite already declares ~29
 governed deliverables across 11 roles). **Second wedge: tax-prep for CPA firms**
 (a deterministic, citation-backed docs → 1040 + state-return pipeline with a
@@ -80,8 +78,6 @@ LOI; pre-revenue."]`
 
 **Team.** **Christopher Day**, Founder — `[FILL: one-line credibility; the unfair insight / access; any co-founders / advisors.]`
 
-**The ask.** Raising **`[FILL: $X]`** at **`[FILL: $Y pre-money]`** (2026 market
-is pricing defensible, IP-heavy seed in the ~$8–20M pre-money range — *before*
-the traction this round delivers). **Use of funds (12–18 mo):** land 3 design
+**The ask.** Raising **`[FILL: $X]`** at **`[FILL: $Y pre-money]`** (per Carta, the 2025–26 median AI seed raised ~$4.6M at ~$19M pre-money — defensible IP commands the premium end). **Use of funds (12–18 mo):** land 3 design
 partners live, SOC 2 Type I, first paid ARR, 2 eng hires — converting a built,
 defensible asset into a revenue-generating company and a fundable Series A.
