@@ -20,6 +20,16 @@ compares the presented token against each configured peer's token, and the
 matching ``[federation]`` entry *identifies* the caller — audit rows name the
 peer from local config, never from the wire. Missing/unknown token = refused.
 
+**Signed identity (Phase 2).** When the Agent Trust Plane is engaged and a peer
+has a pinned Ed25519 key in ``[agent_trust]``, the shared token is no longer
+sufficient: the caller signs the canonical delegation envelope
+(:data:`DELEGATE_SCHEMA`) with its audit key and the receiver verifies it
+against the pinned key (:func:`maverick.agent_trust.verify_identity`), with a
+freshness window and a replay-nonce cache. ``[agent_trust] require_signed``
+extends this to refuse shared-token-only peers. Node names used as signing
+origins must be valid lowercase origins (``federation_envelope`` charset), which
+the registry ids already are.
+
 Both halves of every delegation are recorded with the reciprocity convention
 ``maverick.audit.federation`` verifies — the caller logs ``{peer_node,
 correlation_id, direction: "sent"}``, the receiver ``{..., direction:
@@ -47,7 +57,9 @@ import hmac
 import json
 import logging
 import os
+import time
 import uuid
+from collections import OrderedDict
 from collections.abc import Iterable
 from concurrent import futures
 from dataclasses import dataclass
@@ -61,6 +73,16 @@ from .capability_boot import negotiate_boot
 log = logging.getLogger(__name__)
 
 PROTOCOL = "maverick-federation/1"
+# Schema of the signed delegation envelope (Phase 2 signed-identity). The caller
+# signs it with its audit Ed25519 key; the receiver verifies against the pinned
+# key in [agent_trust]. Possession of a leaked shared token alone no longer
+# impersonates a peer that has a pinned key.
+DELEGATE_SCHEMA = "maverick-federation-delegate/1"
+_SIGN_FRESHNESS_S = 300.0  # accept a signature within ±5 min of now (replay window)
+_REPLAY_CACHE_MAX = 4096
+# Module-level cache of verified signatures already seen, oldest-first, so a
+# captured valid delegation can't be replayed within the freshness window.
+_seen_sigs: OrderedDict[str, float] = OrderedDict()
 
 _DEFAULT_ADDR = "127.0.0.1:50061"  # one port up from the goal API (50051)
 _DEFAULT_RPC_TIMEOUT_S = 10.0
@@ -214,6 +236,85 @@ def _shield_block(text: str) -> str | None:
     return None
 
 
+# -- signed-identity (Phase 2) ---------------------------------------------
+
+def require_signed() -> bool:
+    """Must inbound delegations carry a valid signature against the peer's
+    pinned key? On via ``MAVERICK_FEDERATION_REQUIRE_SIGNED`` or
+    ``[agent_trust] require_signed = true``. Independent of having a pinned key:
+    a peer WITH a pinned key is always signature-checked; this knob additionally
+    refuses peers that have *no* pinned key (closing the shared-token-only path)."""
+    env = os.environ.get("MAVERICK_FEDERATION_REQUIRE_SIGNED")
+    if env is not None and env.strip() != "":
+        return env.strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        from .config import load_config
+        return bool((load_config() or {}).get("agent_trust", {}).get("require_signed"))
+    except Exception:
+        return False
+
+
+def _delegate_envelope(
+    node: str, corr: str, title: str, description: str,
+    requested_tools: Iterable[str], max_risk: str | None, created_at: float,
+) -> dict[str, Any]:
+    """The canonical delegation body both halves sign/verify byte-for-byte.
+
+    ``origin`` is the SIGNER's node name; the receiver reconstructs it from its
+    local peer name, so a signature only verifies when the peer's self-name, the
+    receiver's ``[federation] peers`` name, and its ``[agent_trust]`` id agree.
+    """
+    return {
+        "schema": DELEGATE_SCHEMA,
+        "origin": node,
+        "created_at": created_at,
+        "correlation_id": corr,
+        "goal_title": title,
+        "goal_description": description,
+        "requested_tools": sorted(str(t) for t in requested_tools),
+        "max_risk": max_risk or "",
+    }
+
+
+def _fresh(created_at: float, *, now: float | None = None) -> bool:
+    if not created_at or created_at <= 0:
+        return False
+    now = time.time() if now is None else now
+    return abs(now - created_at) <= _SIGN_FRESHNESS_S
+
+
+def _replay_seen(sig: str) -> bool:
+    """Check-and-remember a verified signature; True if already seen (replay)."""
+    if not sig:
+        return False
+    if sig in _seen_sigs:
+        return True
+    _seen_sigs[sig] = time.time()
+    while len(_seen_sigs) > _REPLAY_CACHE_MAX:
+        _seen_sigs.popitem(last=False)
+    return False
+
+
+def _sign_delegation(
+    node: str, corr: str, title: str, description: str,
+    requested_tools: Iterable[str], max_risk: str | None,
+) -> dict[str, Any]:
+    """Return ``{sig, pubkey, key_id, created_at}`` for a delegation, or ``{}``
+    when signing is unavailable (no ``cryptography``) — an unsigned delegation
+    is still sent (a receiver that requires a signature will refuse it)."""
+    created_at = time.time()
+    try:
+        from . import federation_envelope
+        env = _delegate_envelope(node, corr, title, description,
+                                 requested_tools, max_risk, created_at)
+        signed = federation_envelope.sign_envelope(env)
+        return {"sig": signed["sig"], "pubkey": signed["pubkey"],
+                "key_id": signed["key_id"], "created_at": created_at}
+    except Exception as e:  # signing optional; receiver policy decides
+        log.debug("federation: delegation signing unavailable: %s", e)
+        return {}
+
+
 # -- client half -----------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -365,14 +466,22 @@ class FederationNode:
                 return DelegateOutcome(peer=peer.name, correlation_id=corr,
                                        accepted=False, reason=reason)
             title, description = _redact(title), _redact(description)
+        tools_sorted = sorted({str(t) for t in requested_tools})
+        # Sign the (post-redaction) delegation so a receiver can verify our
+        # identity against our pinned key, not just our shared token. Best-effort
+        # — an unsigned delegation is still sent and a receiver decides whether
+        # to require the signature.
+        signed = _sign_delegation(self.node, corr, title, description,
+                                  tools_sorted, max_risk)
         payload = {
             "goal_title": title,
             "goal_description": description,
             "correlation_id": corr,
-            "requested_tools": sorted({str(t) for t in requested_tools}),
+            "requested_tools": tools_sorted,
             "max_risk": max_risk or "",
             "deadline_ms": _to_int(deadline_ms),
             "auth_token": peer.token,
+            **signed,
         }
         try:
             reply = self._call(peer, "DelegateGoal", payload)
@@ -454,6 +563,51 @@ class FederationService:
     def _authenticate(self, payload: dict[str, Any]) -> Peer | None:
         return _match_token(self._peers, str(payload.get("auth_token") or ""))
 
+    def _verify_signed(
+        self, peer: Peer, agent: Any, payload: dict[str, Any],
+        registry: dict[str, Any], enforced: bool,
+    ) -> str | None:
+        """Verify the delegation's signature against the peer's pinned key.
+
+        Returns a refusal reason, or ``None`` to proceed. Only active when the
+        trust plane is engaged and the peer is registered. A peer WITH a pinned
+        key is always checked (a leaked token isn't enough); a peer WITHOUT one
+        is allowed through on the shared token alone unless ``require_signed`` —
+        the migration path. Freshness + replay-cache guard captured signatures.
+        """
+        if not enforced or agent is None:
+            return None
+        pinned = bool(getattr(agent, "pubkey", ""))
+        if not pinned:
+            if require_signed():
+                return ("signed delegation required but no pinned key is "
+                        f"configured for peer {peer.name!r}")
+            return None  # migration: shared-token-only peer
+        sig = str(payload.get("sig") or "")
+        if not sig:
+            return "signed delegation required: no signature present"
+        if not _fresh(float(payload.get("created_at") or 0)):
+            return "delegation signature is stale or future-dated"
+        env = _delegate_envelope(
+            peer.name, str(payload.get("correlation_id") or ""),
+            str(payload.get("goal_title") or ""),
+            str(payload.get("goal_description") or ""),
+            payload.get("requested_tools") or [],
+            str(payload.get("max_risk") or "") or None,
+            float(payload.get("created_at") or 0),
+        )
+        env["pubkey"] = str(payload.get("pubkey") or "")
+        env["key_id"] = str(payload.get("key_id") or "")
+        env["sig"] = sig
+        from . import agent_trust
+        ok, reason = agent_trust.verify_identity(
+            peer.name, env, expected_schema=DELEGATE_SCHEMA, registry=registry)
+        if not ok:
+            return f"delegation signature rejected: {reason}"
+        if _replay_seen(sig):
+            return "replayed delegation signature"
+        return None
+
     def call(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Transport-seam entry point — same signature the client consumes."""
         payload = payload or {}
@@ -509,6 +663,18 @@ class FederationService:
             agent_trust.record_denied(
                 peer.name, decision, direction="inbound", correlation_id=corr)
             return self._refuse_recorded(peer, corr, decision.reason)
+
+        # Signed-identity: prove the caller holds the peer's pinned private key,
+        # not merely a copyable shared token. No-op when disengaged or the peer
+        # has no pinned key (unless require_signed). Fail-closed on bad/stale/
+        # replayed signatures.
+        sig_reason = self._verify_signed(peer, decision.agent, payload,
+                                         registry, enforced)
+        if sig_reason:
+            agent_trust.record_denied(
+                peer.name, direction="inbound", correlation_id=corr,
+                rule="unsigned", reason=sig_reason)
+            return self._refuse_recorded(peer, corr, sig_reason)
 
         # Screen inbound external goal text for prompt-injection before it runs
         # in our orchestrator (fail-toward-gate). Only when engaged, so the
@@ -695,6 +861,10 @@ class _GrpcTransport:
                 max_risk=str(payload.get("max_risk") or ""),
                 deadline_ms=deadline_ms,
                 auth_token=token,
+                sig=str(payload.get("sig") or ""),
+                pubkey=str(payload.get("pubkey") or ""),
+                key_id=str(payload.get("key_id") or ""),
+                created_at=float(payload.get("created_at") or 0.0),
             ), timeout=timeout)
             return {"accepted": r.accepted, "goal_id": r.goal_id, "reason": r.reason}
         if method == "GoalStatus":
@@ -741,6 +911,13 @@ def _servicer(service: FederationService, pb2, pb2_grpc):
                 "max_risk": request.max_risk,
                 "deadline_ms": request.deadline_ms,
                 "auth_token": request.auth_token,
+                # Optional signed-identity fields (additive proto fields); use
+                # getattr so an older stub or a partial message degrades to
+                # unsigned rather than raising.
+                "sig": getattr(request, "sig", ""),
+                "pubkey": getattr(request, "pubkey", ""),
+                "key_id": getattr(request, "key_id", ""),
+                "created_at": getattr(request, "created_at", 0.0),
             })
             return pb2.DelegateResult(
                 accepted=bool(reply.get("accepted")),
