@@ -362,6 +362,39 @@ def _check_shield() -> None:
              fix="set [safety] profile = \"balanced\" in ~/.maverick/config.toml to re-enable")
 
 
+def _check_agent_trust() -> None:
+    """Surface the Agent Trust Plane state — especially the silent footgun
+    where the plane is ENGAGED (e.g. via enterprise mode) but the registry is
+    empty, so every external agent is denied with no other signal."""
+    try:
+        from .agent_trust import status as trust_status
+        st = trust_status()
+    except Exception as e:  # pragma: no cover - never break doctor
+        _row(YELLOW, "agent-trust", f"status unavailable: {e}")
+        return
+    if not st.get("enforced"):
+        _row(GREEN, "agent-trust", "disengaged (external agents ungoverned — default)")
+        return
+    count = int(st.get("count") or 0)
+    if count == 0:
+        _row(RED, "agent-trust",
+             "ENGAGED but the [agent_trust] registry is EMPTY — every external "
+             "agent (federation/A2A/fleet) is denied",
+             fix="add [agent_trust] agents = [...] entries, or unset enforce")
+        return
+    inactive = sum(1 for a in st.get("agents", []) if not a.get("active", True))
+    detail = f"engaged — {count} agent(s) registered"
+    if inactive:
+        _row(YELLOW, "agent-trust", detail + f"; {inactive} expired/revoked",
+             fix="rotate or remove expired/revoked entries")
+    else:
+        _row(GREEN, "agent-trust", detail)
+    # Honesty about Phase-1 coverage: these ingresses are not yet gated.
+    _row(YELLOW, "agent-trust:coverage",
+         "gRPC goal API and MCP server are NOT gated by the trust plane",
+         fix="restrict those ports at the network layer (trust-plane wiring is staged)")
+
+
 def diagnose() -> int:
     """Run every health check, print the report, and return the number of
     failed (✗) checks. 0 == healthy. The CLI exits nonzero when this is
@@ -375,6 +408,7 @@ def diagnose() -> int:
     _check_channels(cfg)
     _check_world_db()
     _check_shield()
+    _check_agent_trust()
     click.echo("")
     if _FAILURES:
         click.echo(click.style(

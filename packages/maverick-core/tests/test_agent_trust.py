@@ -197,12 +197,21 @@ class _Goals:
         return SimpleNamespace(status="done", result="ok")
 
 
+def _patch_trust(monkeypatch, *, registry, enforced=True):
+    """Patch the single trust-state IO seam, then let the real decide_* /
+    decide_memory_access logic run against the injected registry (no patching
+    of lookup/decide so the parsing+decision paths are actually exercised)."""
+    monkeypatch.setattr(agent_trust, "load_trust_state",
+                        lambda: (enforced, registry))
+    monkeypatch.setattr(agent_trust, "agent_trust_enforced",
+                        lambda cfg=None: enforced)
+
+
 def _fed_service(monkeypatch, *, registry, enforced=True):
     from maverick import federation
     from maverick.federation import FederationService, Peer
 
-    monkeypatch.setattr(agent_trust, "agent_trust_enforced", lambda: enforced)
-    monkeypatch.setattr(agent_trust, "load_registry", lambda cfg=None: registry)
+    _patch_trust(monkeypatch, registry=registry, enforced=enforced)
     rows: list[dict] = []
     svc = FederationService(
         node="B", peers=[Peer("A", "a:1", "tok")], local_grant=None,
@@ -245,8 +254,7 @@ def test_federation_inbound_tool_outside_ceiling_refused(monkeypatch):
 def test_federation_outbound_blocked_for_unregistered_peer(monkeypatch):
     from maverick.federation import FederationNode, Peer
 
-    monkeypatch.setattr(agent_trust, "agent_trust_enforced", lambda: True)
-    monkeypatch.setattr(agent_trust, "load_registry", lambda cfg=None: {})
+    _patch_trust(monkeypatch, registry={}, enforced=True)
 
     class _Boom:
         def call(self, *a, **k):  # must never be reached
@@ -303,8 +311,7 @@ def _fleet(monkeypatch, *, registry, enforced=True):
     monkeypatch.setattr(fleet_memory, "enabled", lambda: True)
     monkeypatch.setattr(fleet_memory, "roster",
                         lambda: [{"source": "acme:bot"}])
-    monkeypatch.setattr(agent_trust, "agent_trust_enforced", lambda: enforced)
-    monkeypatch.setattr(agent_trust, "load_registry", lambda cfg=None: registry)
+    _patch_trust(monkeypatch, registry=registry, enforced=enforced)
     return fleet_memory
 
 
@@ -329,3 +336,178 @@ def test_fleet_recall_unregistered_agent_denied_when_engaged(monkeypatch):
     ctx, reason = fleet_memory.recall("q", agent_id="bot", vendor="acme",
                                       domain="support")
     assert ctx == "" and "trust registry" in reason
+
+
+def test_fleet_recall_unscoped_denied_when_engaged(monkeypatch):
+    # domain=None must NOT read across all departments (the permits_scope(None)
+    # bypass the council flagged).
+    reg = _reg(TrustedAgent(id="bot", data_scopes=frozenset({"support"})))
+    fleet_memory = _fleet(monkeypatch, registry=reg)
+    ctx, reason = fleet_memory.recall("q", agent_id="bot", vendor="acme",
+                                      domain=None)
+    assert ctx == "" and "scope" in reason.lower()
+
+
+def test_fleet_recall_hard_filters_cross_department_content(monkeypatch):
+    # Even within an allowed scope, content from OTHER departments must be
+    # dropped (data_scopes is a hard filter, not just a ranking boost).
+    from types import SimpleNamespace
+
+    from maverick import reflexion
+    reg = _reg(TrustedAgent(id="bot", data_scopes=frozenset({"support"})))
+    fleet_memory = _fleet(monkeypatch, registry=reg)
+    monkeypatch.setattr(reflexion, "recall", lambda *a, **k: [
+        (0.9, SimpleNamespace(domain="support")),
+        (0.8, SimpleNamespace(domain="finance")),  # must be filtered out
+    ])
+    monkeypatch.setattr(reflexion, "format_context",
+                        lambda hits, shield=None: ",".join(h.domain for _, h in hits))
+    ctx, reason = fleet_memory.recall("wire thresholds", agent_id="bot",
+                                      vendor="acme", domain="support")
+    assert reason == "ok"
+    assert "support" in ctx and "finance" not in ctx
+
+
+def test_fleet_ingest_denied_outside_scope_when_engaged(monkeypatch):
+    # Memory-poisoning gate: an agent scoped to support cannot WRITE a finance
+    # lesson once the plane is engaged (write path now gated like read).
+    reg = _reg(TrustedAgent(id="bot", data_scopes=frozenset({"support"})))
+    fleet_memory = _fleet(monkeypatch, registry=reg)
+    ok, reason = fleet_memory.ingest({
+        "agent_id": "bot", "vendor": "acme", "kind": "lesson",
+        "goal_text": "x", "reflection": "y", "domain": "finance",
+    })
+    assert ok is False and "trust plane" in reason
+
+
+def test_fleet_ingest_unregistered_in_trust_denied(monkeypatch):
+    # On the roster but absent from the trust registry -> write refused.
+    fleet_memory = _fleet(monkeypatch, registry={})
+    ok, reason = fleet_memory.ingest({
+        "agent_id": "bot", "vendor": "acme", "kind": "lesson",
+        "goal_text": "x", "reflection": "y", "domain": "support",
+    })
+    assert ok is False
+
+
+# ---- key lifecycle --------------------------------------------------------
+
+
+def test_inbound_revoked_agent_denied():
+    reg = _reg(TrustedAgent(id="v", revoked=True))
+    d = decide_inbound("v", registry=reg, enforced=True)
+    assert d.denied and d.rule == "revoked"
+
+
+def test_inbound_expired_agent_denied():
+    reg = _reg(TrustedAgent(id="v", expires_at=1.0))  # epoch 1970
+    d = decide_inbound("v", registry=reg, enforced=True)
+    assert d.denied and d.rule == "expired"
+
+
+def test_inbound_not_yet_valid_denied():
+    reg = _reg(TrustedAgent(id="v", not_before=4_102_444_800.0))  # year 2100
+    d = decide_inbound("v", registry=reg, enforced=True)
+    assert d.denied and d.rule == "not_yet_valid"
+
+
+def test_outbound_revoked_denied():
+    reg = _reg(TrustedAgent(id="v", revoked=True))
+    assert decide_outbound("v", registry=reg, enforced=True).rule == "revoked"
+
+
+def test_capability_inherits_entry_expiry():
+    cap = TrustedAgent(id="v", expires_at=123.0).capability()
+    assert cap.expires_at == 123.0
+
+
+def test_lifecycle_fields_parse_from_config():
+    reg = load_registry({"agent_trust": {"agents": [
+        {"id": "v", "expires_at": 999.0, "not_before": 1.0, "revoked": True},
+    ]}})
+    assert reg["v"].expires_at == 999.0
+    assert reg["v"].not_before == 1.0
+    assert reg["v"].revoked is True
+
+
+# ---- max_risk hardening ---------------------------------------------------
+
+
+def test_inbound_max_risk_case_insensitive_ceiling():
+    # "HIGH" must be normalised and caught against a "low" ceiling, not waved
+    # through because the case didn't match the lowercase risk set.
+    reg = _reg(TrustedAgent(id="v", max_risk="low"))
+    d = decide_inbound("v", max_risk="HIGH", registry=reg, enforced=True)
+    assert d.denied and d.rule == "capability"
+
+
+def test_inbound_unrecognised_risk_refused():
+    reg = _reg(TrustedAgent(id="v", max_risk="high"))
+    d = decide_inbound("v", max_risk="bogus", registry=reg, enforced=True)
+    assert d.denied and d.rule == "capability"
+
+
+# ---- decide_memory_access -------------------------------------------------
+
+
+def test_decide_memory_access_unscoped_denied():
+    from maverick.agent_trust import decide_memory_access
+    reg = _reg(TrustedAgent(id="v", data_scopes=frozenset({"support"})))
+    assert decide_memory_access("v", None, registry=reg, enforced=True).denied
+    assert decide_memory_access("v", "", registry=reg, enforced=True).denied
+
+
+def test_decide_memory_access_scope_enforced():
+    from maverick.agent_trust import decide_memory_access
+    reg = _reg(TrustedAgent(id="v", data_scopes=frozenset({"support"})))
+    assert decide_memory_access("v", "finance", registry=reg, enforced=True).denied
+    assert decide_memory_access("v", "support", registry=reg, enforced=True).allowed
+    # Disengaged is a no-op allow regardless of scope.
+    assert decide_memory_access("v", None, registry=reg, enforced=False).allowed
+
+
+# ---- identity binding -----------------------------------------------------
+
+
+def test_verify_identity_rejects_origin_mismatch():
+    pytest.importorskip("cryptography")
+    from maverick import federation_envelope as fe
+
+    # Signed with origin "other", but the registry entry is keyed "vega".
+    env = fe.sign_envelope({"schema": "maverick-test/1", "origin": "other",
+                            "created_at": 1.0})
+    reg = _reg(TrustedAgent(id="vega", pubkey=env["pubkey"]))
+    ok, reason = agent_trust.verify_identity(
+        "vega", env, expected_schema="maverick-test/1", registry=reg)
+    assert not ok and "origin" in reason.lower()
+
+
+def test_verify_identity_rejects_revoked():
+    reg = _reg(TrustedAgent(id="vega", pubkey="ab" * 32, revoked=True))
+    ok, reason = agent_trust.verify_identity(
+        "vega", {"origin": "vega", "schema": "maverick-test/1"},
+        expected_schema="maverick-test/1", registry=reg)
+    assert not ok and "revoked" in reason
+
+
+# ---- A2A hard-deny --------------------------------------------------------
+
+
+def test_a2a_trust_block_denies_when_engaged_and_no_entry(monkeypatch):
+    from maverick.a2a_tasks import _a2a_trust_block
+    monkeypatch.setattr(agent_trust, "load_trust_state", lambda: (True, {}))
+    reason = _a2a_trust_block()
+    assert reason and "trust registry" in reason
+
+
+def test_a2a_trust_block_admits_with_entry(monkeypatch):
+    from maverick.a2a_tasks import _a2a_trust_block
+    reg = _reg(TrustedAgent(id="a2a", direction="both"))
+    monkeypatch.setattr(agent_trust, "load_trust_state", lambda: (True, reg))
+    assert _a2a_trust_block() is None
+
+
+def test_a2a_trust_block_noop_when_disengaged(monkeypatch):
+    from maverick.a2a_tasks import _a2a_trust_block
+    monkeypatch.setattr(agent_trust, "load_trust_state", lambda: (False, {}))
+    assert _a2a_trust_block() is None

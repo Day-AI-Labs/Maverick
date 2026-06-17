@@ -166,6 +166,24 @@ def ingest(record: dict, *, shield: Any | None = None) -> tuple[bool, str]:
     tools = [str(t)[:80] for t in (record.get("tools_used") or [])[:16]]
     domain = str(record.get("domain", "") or "") or None
 
+    # Trust-plane gate on the WRITE path (memory-poisoning defense): when
+    # engaged, an external agent may only deposit into a data scope its
+    # [agent_trust] entry permits — the same gate recall uses. Disengaged ->
+    # no-op (roster check alone, as before). Writes are the higher-trust op, so
+    # gating only recall (read) was backwards.
+    try:
+        from . import agent_trust
+        enforced, registry = agent_trust.load_trust_state()
+        if enforced:
+            d = agent_trust.decide_memory_access(
+                agent_id, domain, registry=registry, enforced=True)
+            if d.denied:
+                agent_trust.record_denied(agent_id, d, direction="inbound")
+                _audit("ingest_blocked", source=source, reason=d.rule)
+                return False, f"ingest refused by agent trust plane: {d.reason}"
+    except Exception:  # pragma: no cover - trust read never breaks the default path
+        pass
+
     if kind == "lesson":
         from . import reflexion
         ok = reflexion.record(
@@ -214,32 +232,41 @@ def recall(
     if not any(r.get("source") == source for r in roster()):
         return "", f"unregistered fleet agent {source!r}"
     # Data-scope control: when the Agent Trust Plane is engaged, an external
-    # agent may only recall memory domains its [agent_trust] entry allows. The
-    # roster (above) governs *who* can write/read at all; the trust registry's
-    # data_scopes governs *what company data* this agent may see. Disengaged ->
-    # no-op (the roster check alone, exactly as before).
+    # agent may only recall a data scope its [agent_trust] entry allows, AND the
+    # returned content is HARD-FILTERED to that scope (department is a real
+    # WHERE clause here, not just a ranking boost). An unscoped (domain=None)
+    # recall is denied when engaged — omitting the scope must not read across
+    # all departments. Disengaged -> no-op (roster check alone, as before).
+    enforced = False
     try:
         from . import agent_trust
-        if agent_trust.agent_trust_enforced():
-            ta = agent_trust.lookup(agent_id)
-            if ta is None:
-                return "", f"agent {agent_id!r} is not in the trust registry"
-            if not ta.permits_scope(domain):
-                agent_trust.record_denied(
-                    agent_id,
-                    agent_trust.TrustDecision(
-                        False, f"domain {domain!r} outside data_scopes", "data_scope"),
-                    direction="inbound")
-                return "", f"agent {agent_id!r} may not read domain {domain!r}"
-    except Exception:  # pragma: no cover - trust read never breaks recall
-        pass
+        enforced, registry = agent_trust.load_trust_state()
+        if enforced:
+            d = agent_trust.decide_memory_access(
+                agent_id, domain, registry=registry, enforced=True)
+            if d.denied:
+                agent_trust.record_denied(agent_id, d, direction="inbound")
+                return "", d.reason
+    except Exception:  # pragma: no cover - trust read never breaks the default path
+        enforced = False
     safe_query = _sanitize(query, shield=shield)
     if safe_query is None or not safe_query.strip():
         return "", "query blocked or empty"
+
+    def _in_scope(items: list) -> list:
+        # When engaged, drop any hit whose domain != the (validated) requested
+        # scope, so boost-only ranking can't surface another department's data.
+        if not enforced:
+            return items
+        return [pair for pair in items
+                if getattr(pair[1], "domain", None) == domain]
+
     blocks: list[str] = []
+    n_reflexion = n_dream = 0
     try:
         from . import reflexion
-        hits = reflexion.recall(safe_query, k=3, domain=domain)
+        hits = _in_scope(reflexion.recall(safe_query, k=3, domain=domain))
+        n_reflexion = len(hits)
         block = reflexion.format_context(hits, shield=shield)
         if block:
             blocks.append(block)
@@ -247,13 +274,16 @@ def recall(
         pass
     try:
         from . import dreaming
-        ins = dreaming.recall_insights(safe_query, domain=domain, k=3)
+        ins = _in_scope(dreaming.recall_insights(safe_query, domain=domain, k=3))
+        n_dream = len(ins)
         block = dreaming.format_context(ins, shield=shield)
         if block:
             blocks.append(block)
     except Exception:  # pragma: no cover
         pass
-    _audit("recall", source=source, domain=domain or "", hits=len(blocks))
+    # Audit what was disclosed (counts per source), not just that a read happened.
+    _audit("recall", source=source, domain=domain or "", hits=len(blocks),
+           reflexion_hits=n_reflexion, dream_hits=n_dream)
     return "\n".join(blocks), "ok"
 
 

@@ -935,15 +935,24 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `federation_envelope`'s asymmetric identity), with a **direction**
   (inbound/outbound/both), a tool/risk **capability ceiling**, a dollar+wall
   **budget ceiling**, and **data_scopes** (which memory domains it may read).
-  `decide_inbound` / `decide_outbound` are the gate every transport consults:
-  **default-deny at the company boundary** when engaged (an unregistered agent
-  is refused even with a valid shared token), a strict **no-op when disengaged**
-  (kernel rule 1 preserved). Wired into federation (inbound delegation +
-  outbound dial, with the registry ceiling intersected into capability boot and
-  the wall-clock clamped down), A2A (a central `a2a` entry tightens the caller
-  ceiling), and fleet-memory recall (data-scope gating); denials record an
-  `agent_trust_denied` audit row. In-process peer messaging (`agent_bus`) is
-  internal and never gated.
+  `decide_inbound` / `decide_outbound` / `decide_memory_access` are the gate
+  every transport consults: **default-deny at the company boundary** when
+  engaged (an unregistered agent is refused even with a valid shared token), a
+  strict **no-op when disengaged** (kernel rule 1 preserved). Entries carry a
+  **key lifecycle** (`not_before` / `expires_at` / `revoked`, propagated onto
+  the issued capability). Wired into federation (inbound + outbound + `hello` /
+  `status`, registry ceiling intersected into capability boot, **wall-clock AND
+  dollar budget clamped down**, and goal text **secret-redacted + shield-screened
+  in BOTH directions**, fail-toward-gate); A2A (**default-deny admission** when
+  engaged, plus ceiling tightening); and fleet memory (**both recall AND ingest**
+  gated by `data_scopes`, with recall **hard-filtering** returned content to the
+  declared scope — unscoped reads denied). Engagement + registry are read from a
+  **single config snapshot** per operation; `maverick doctor` warns when the
+  plane is engaged with an empty registry. Denials record an `agent_trust_denied`
+  audit row. In-process peer messaging (`agent_bus`) is internal and never gated.
+  (Signed-request identity that makes the pinned key load-bearing on federation/
+  A2A, and gating of the gRPC goal API / MCP / channel / marketplace surfaces,
+  are staged follow-ups — `doctor` flags the currently-ungated ingresses.)
 - **gRPC API v1 — stable** (`grpc_api/maverick.proto`, package `maverick.v1`;
   contract gate `grpc_api/contract.py` + committed golden
   `maverick_v1_contract.json`, wired into CI): additive changes pass; removing/

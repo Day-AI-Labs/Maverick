@@ -178,6 +178,42 @@ def _default_record(kind: str, **kw: Any) -> None:
         log.warning("federation: audit record failed: %s", e)
 
 
+def _redact(text: str) -> str:
+    """Strip detectable secrets from one field (best-effort, never raises)."""
+    try:
+        from .safety.secret_detector import redact
+        out, _ = redact(str(text or ""))
+        return out
+    except Exception:  # pragma: no cover - redaction never blocks
+        return str(text or "")
+
+
+def _shield_block(text: str) -> str | None:
+    """Shield-scan external agent text; a block reason, or ``None`` to allow.
+
+    Fail-toward-gate on a scan *error* (a broken shield blocks rather than
+    waves external traffic through); a shield that simply isn't installed
+    allows (kernel rule 1 — the shield is optional), so an operator who chose
+    not to install it isn't locked out of federation. Callers invoke this only
+    when the trust plane is engaged.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        from maverick_shield import Shield  # type: ignore
+    except Exception:
+        return None  # shield not installed -> nothing to scan with
+    try:
+        verdict = Shield().scan_input(text)
+        if not getattr(verdict, "allowed", True):
+            return "; ".join(getattr(verdict, "reasons", []) or ["blocked by shield"])
+    except Exception as e:  # pragma: no cover - fail toward the gate
+        log.warning("federation: shield scan failed (blocking): %s", e)
+        return "shield scan error"
+    return None
+
+
 # -- client half -----------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -230,6 +266,20 @@ class FederationNode:
             self._transports[peer.name] = transport
         return dict(transport.call(method, payload) or {})
 
+    def _assert_outbound(self, peer: Peer) -> None:
+        """Refuse to dial a peer the trust plane forbids outbound.
+
+        Covers ``hello``/``status`` too — not just ``delegate`` — so a peer
+        marked ``direction="inbound"`` (must not be dialed) can't be probed for
+        its agent card or polled. No-op when the plane is disengaged; records an
+        attributed denial and raises :class:`FederationError` when engaged.
+        """
+        from . import agent_trust
+        out = agent_trust.decide_outbound(peer.name)
+        if out.denied:
+            agent_trust.record_denied(peer.name, out, direction="outbound")
+            raise FederationError(f"outbound to peer {peer.name!r} refused: {out.reason}")
+
     def hello(self, peer_name: str) -> dict[str, Any]:
         """Discovery handshake -> the peer's parsed A2A agent card.
 
@@ -238,6 +288,7 @@ class FederationNode:
         ``ValueError``) — never delegate against a card you couldn't read.
         """
         peer = self.peer(peer_name)
+        self._assert_outbound(peer)
         reply = self._call(peer, "Hello", {
             "node": self.node, "protocol": PROTOCOL, "auth_token": peer.token,
         })
@@ -281,7 +332,9 @@ class FederationNode:
         # registry (or not permitted outbound) is refused before any connection
         # opens, and the refusal is still recorded for reciprocity.
         from . import agent_trust
-        out = agent_trust.decide_outbound(peer.name)
+        enforced, registry = agent_trust.load_trust_state()
+        out = agent_trust.decide_outbound(peer.name, registry=registry,
+                                          enforced=enforced)
         if out.denied:
             agent_trust.record_denied(
                 peer.name, out, direction="outbound", correlation_id=corr)
@@ -292,6 +345,26 @@ class FederationNode:
             )
             return DelegateOutcome(peer=peer.name, correlation_id=corr,
                                    accepted=False, reason=out.reason)
+        # Data-egress screening: delegating a goal ships its title/description to
+        # a third-party swarm — the same exposure tier as a cloud LLM call. When
+        # the plane is engaged, redact detectable secrets and shield-scan the
+        # text before it leaves the boundary, refusing (fail-toward-gate) on a
+        # block. Disengaged keeps the prior pass-through behaviour (rule 1).
+        if enforced:
+            block = _shield_block(title) or _shield_block(description)
+            if block:
+                reason = f"outbound delegation blocked by safety screen: {block}"
+                agent_trust.record_denied(
+                    peer.name, direction="outbound", correlation_id=corr,
+                    rule="egress_screen", reason=reason)
+                self._record(
+                    EventKind.FEDERATION_DELEGATE, agent="federation",
+                    peer_node=peer.name, correlation_id=corr, direction="sent",
+                    accepted=False, reason=reason,
+                )
+                return DelegateOutcome(peer=peer.name, correlation_id=corr,
+                                       accepted=False, reason=reason)
+            title, description = _redact(title), _redact(description)
         payload = {
             "goal_title": title,
             "goal_description": description,
@@ -321,6 +394,7 @@ class FederationNode:
         """Poll a delegated goal -> ``(status, result)``; ``("unknown", "")``
         when the peer has no such goal."""
         peer = self.peer(peer_name)
+        self._assert_outbound(peer)
         reply = self._call(peer, "GoalStatus", {
             "goal_id": _to_int(goal_id), "auth_token": peer.token,
         })
@@ -427,12 +501,24 @@ class FederationService:
         # valid shared token — registry membership, direction, and the tool/risk
         # ceiling are all checked before we equip a delegation.
         from . import agent_trust
+        enforced, registry = agent_trust.load_trust_state()
         decision = agent_trust.decide_inbound(
-            peer.name, requested_tools=requested, max_risk=req_risk)
+            peer.name, requested_tools=requested, max_risk=req_risk,
+            registry=registry, enforced=enforced)
         if decision.denied:
             agent_trust.record_denied(
                 peer.name, decision, direction="inbound", correlation_id=corr)
             return self._refuse_recorded(peer, corr, decision.reason)
+
+        # Screen inbound external goal text for prompt-injection before it runs
+        # in our orchestrator (fail-toward-gate). Only when engaged, so the
+        # default personal-agent path is unchanged (kernel rule 1).
+        if enforced:
+            block = (_shield_block(payload.get("goal_title"))
+                     or _shield_block(payload.get("goal_description")))
+            if block:
+                return self._refuse_recorded(
+                    peer, corr, f"inbound goal blocked by safety screen: {block}")
 
         # Narrow-only: the peer's request can only restrict this node's own
         # grant, and every requested tool is REQUIRED — a delegation this node
@@ -455,8 +541,10 @@ class FederationService:
             return self._refuse_recorded(peer, corr, negotiation.reason)
 
         deadline_ms = _to_int(payload.get("deadline_ms"))
-        # Clamp the run's wall-clock to the peer's registry ceiling (down only).
-        _, capped_wall = agent_trust.clamp_budget(
+        # Clamp the run's budget to the peer's registry ceiling (down only):
+        # both wall-clock AND dollars. max_dollars was previously parsed and
+        # advertised but enforced nowhere — wire it into the delegated run.
+        capped_dollars, capped_wall = agent_trust.clamp_budget(
             decision.agent,
             max_wall_seconds=(deadline_ms / 1000.0) if deadline_ms > 0 else None,
         )
@@ -466,6 +554,7 @@ class FederationService:
             goal_id = int(self._goals().start_goal(
                 str(payload.get("goal_title") or ""),
                 str(payload.get("goal_description") or ""),
+                max_dollars=capped_dollars,
                 max_wall_seconds=(deadline_ms / 1000.0) if deadline_ms > 0 else None,
                 channel="federation",
                 user_id=f"federation:{peer.name}",
