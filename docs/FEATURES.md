@@ -191,6 +191,15 @@ here.
   `--rollback latest|<name>` restore wholesale); with an active tenant,
   every learned store resolves under the tenant's data dir so one tenant's
   memory never feeds another's runs.
+- **Governed Actions** (`governed_actions.py`, `governed_connectors.py`;
+  opt-in, additive) — a consequential operation can be a typed `ActionSpec`
+  rather than a free-form call: **simulated** before commit (effect preview,
+  no side effects), **gated** on risk/approval (`[actions] require_approval_at`,
+  default `high`), and **lineage-tracked** (a tamper-evident hash chain from
+  outcome → action → inputs/sources/skills; `verify_lineage` / `trace`).
+  `Connector`s expose a system of record as `<sys>.read` (low risk) /
+  `<sys>.write` (high) governed Actions. Palantir-style action governance, for
+  self-improving agents (see `docs/palantir-playbook.md`).
 - **Specialist operating discipline** (`domain_discipline.py`, on by
   default; `[domains] discipline = false` opts out) — every domain pack's
   persona is augmented at spawn with a universal verification/escalation
