@@ -82,7 +82,10 @@ def verify_signature(
     expected = hmac.new(
         secret.encode("utf-8"), body, hashlib.sha256,
     ).hexdigest()
-    return hmac.compare_digest(expected, sig)
+    # Compare as bytes: sig is attacker-controlled and hmac.compare_digest
+    # raises TypeError on a str with any non-ASCII char, which would 500 the
+    # webhook instead of cleanly failing closed.
+    return hmac.compare_digest(expected.encode("utf-8"), sig.encode("utf-8"))
 
 
 def verify_gitlab_token(token_header: str | None, secret: str | None) -> bool:
@@ -94,7 +97,11 @@ def verify_gitlab_token(token_header: str | None, secret: str | None) -> bool:
     """
     if not secret or not token_header:
         return False
-    return hmac.compare_digest(secret.strip(), token_header.strip())
+    # Compare as bytes: token_header is attacker-controlled and
+    # hmac.compare_digest raises TypeError on a str with any non-ASCII char.
+    return hmac.compare_digest(
+        secret.strip().encode("utf-8"), token_header.strip().encode("utf-8")
+    )
 
 
 def replay_window_seconds() -> int:

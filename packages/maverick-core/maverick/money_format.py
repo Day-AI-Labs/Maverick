@@ -64,8 +64,10 @@ def format_money(amount: float, *, currency: str = "USD", locale: str = "en-US",
     symbol, decimals = _CURRENCIES.get(currency.upper(), (currency.upper() + " ", 2))
     loc = _LOCALES.get(locale, _DEFAULT_LOCALE)
     value = float(amount) * (float(rate) if rate is not None else 1.0)
-    neg = value < 0
     s = f"{abs(value):.{decimals}f}"
+    # Determine sign from the *rounded* magnitude so a tiny negative that rounds
+    # to zero (e.g. -0.004 -> "0.00") does not render a spurious "-$0.00".
+    neg = value < 0 and float(s) != 0.0
     int_str, _, frac_str = s.partition(".")
     num = _group_int(int_str, loc.group)
     if frac_str:

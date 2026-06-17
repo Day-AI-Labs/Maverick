@@ -94,7 +94,10 @@ def verify_signature(
     expected = "sha256=" + hmac.new(
         secret.encode("utf-8"), body, hashlib.sha256,
     ).hexdigest()
-    return hmac.compare_digest(expected, signature_header)
+    # Compare as bytes: signature_header is attacker-controlled and
+    # hmac.compare_digest raises TypeError on a str with any non-ASCII char,
+    # which would 500 the webhook instead of cleanly failing closed.
+    return hmac.compare_digest(expected.encode("utf-8"), signature_header.encode("utf-8"))
 
 
 def parse_webhook(event: str, payload: dict) -> WebhookPayload | None:
