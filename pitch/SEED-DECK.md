@@ -14,8 +14,8 @@
 
 **On slide:**
 - **Maverick**
-- *The governed, auditable AI agent workforce for regulated enterprises.*
-- `[FILL: founder name]` · `[FILL: contact]` · `[FILL: month 2026]`
+- *The agent workforce a regulated enterprise can actually deploy.*
+- Christopher Day, Founder · `[FILL: contact]` · `[FILL: month 2026]`
 
 **Speaker notes:** "We let regulated enterprises put AI agents to work on real, high-stakes operations — finance, legal, healthcare ops — with the governance, audit trail, and *proof of improvement* that a bank or a hospital actually requires before an agent touches their systems."
 
@@ -160,7 +160,7 @@ flowchart LR
 ## Slide 10 — Traction & what's built
 
 **On slide:**
-- **Built and installable today (alpha):** ~310K LOC across 8 packages on PyPI, **10,000+ passing tests** on Py 3.10–3.12, native installers for Win/macOS/Linux.
+- **Built and installable today (alpha):** ~310K LOC across 8 packages on PyPI, **10,400+ passing tests** on Py 3.10–3.12, native installers for Win/macOS/Linux.
 - **The product proves itself:** signed Proof Pack, the governance guarantees scoreboard, 1,118 lint-clean packs (0 errors).
 - **Design partners / pilots:** `[FILL: e.g. "2 BFSI design partners in conversation; 1 signed LOI"]`
 - **Revenue:** `[FILL: pre-revenue / $X MRR / pilot value]`
@@ -175,7 +175,7 @@ flowchart LR
 ## Slide 11 — Team
 
 **On slide:**
-- `[FILL: founder name + one-line credibility — prior company / domain / why-you]`
+- **Christopher Day**, Founder — `[FILL: one-line credibility — prior company / domain / why-you]`
 - `[FILL: any co-founders / key hires / advisors]`
 - **Why us:** `[FILL: the unfair advantage — domain access, prior exit, depth in regulated AI]`
 
