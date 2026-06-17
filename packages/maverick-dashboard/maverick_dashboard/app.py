@@ -347,6 +347,10 @@ _AUTH_EXEMPT = {
     "/auth/callback",
     "/auth/logout",
     "/auth/error",
+    # The brand logo is a public, non-sensitive image; the public share view
+    # (itself auth-exempt) references it, so an unauthenticated recipient must
+    # be able to load it.
+    "/static/daybreak-logo.jpg",
 }
 
 
@@ -4042,6 +4046,18 @@ async def embed_analytics_js() -> FileResponse:
     return FileResponse(
         _STATIC_DIR / "maverick-analytics.js",
         media_type="application/javascript; charset=utf-8",
+    )
+
+
+@app.get("/static/daybreak-logo.jpg")
+async def brand_logo() -> FileResponse:
+    """The Daybreak Labs brand logo, served same-origin for the sidebar brand,
+    the favicon, and the public share view. Auth-exempt by nature (a brand
+    image), cached a day."""
+    return FileResponse(
+        _STATIC_DIR / "daybreak-logo.jpg",
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 

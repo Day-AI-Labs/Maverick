@@ -1,4 +1,10 @@
+<p align="center">
+  <img src="Daybreak%20Labs%20Logo.jpg" alt="Daybreak Labs" width="360">
+</p>
+
 # Maverick
+
+> Maverick — by **Daybreak Labs**.
 
 [![CI](https://github.com/Day-AI-Labs/maverick/actions/workflows/ci.yml/badge.svg)](https://github.com/Day-AI-Labs/maverick/actions/workflows/ci.yml)
 [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)](./LICENSE)

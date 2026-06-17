@@ -333,7 +333,7 @@ def require_principal(
         request.state.principal = sp
         return sp
 
-    if request.url.path in _OIDC_EXEMPT_PATHS:
+    if request.url.path in _OIDC_EXEMPT_PATHS or request.url.path == "/static/daybreak-logo.jpg":
         return None
     if request.url.path.startswith("/share/"):
         # Public read-only share links carry their own revocable token (verified
