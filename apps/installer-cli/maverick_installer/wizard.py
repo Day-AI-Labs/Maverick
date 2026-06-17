@@ -2774,8 +2774,10 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("enable = true")
         keys = advanced.get("insight_pubkeys") or []
         if keys:
-            quoted = ", ".join(f'"{k}"' for k in keys)
-            lines.append(f"trusted_insight_pubkeys = [{quoted}]")
+            # Free-text user input: route through _emit_kv so each key is
+            # escaped via _toml_str (a key with a quote/backslash would
+            # otherwise corrupt the config the wizard writes).
+            _emit_kv(lines, "trusted_insight_pubkeys", keys)
     if advanced.get("tax_update_url") or advanced.get("tax_pubkeys"):
         lines.append("")
         lines.append("[tax]")
@@ -2786,8 +2788,8 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
             _emit_kv(lines, "update_url", advanced["tax_update_url"])
         tax_keys = advanced.get("tax_pubkeys") or []
         if tax_keys:
-            quoted = ", ".join(f'"{k}"' for k in tax_keys)
-            lines.append(f"trusted_constants_pubkeys = [{quoted}]")
+            # Same escaping concern as the insight pubkeys above.
+            _emit_kv(lines, "trusted_constants_pubkeys", tax_keys)
     if advanced.get("effort"):
         lines.append("")
         lines.append("[effort]")
@@ -2865,7 +2867,11 @@ def _cfg_mcp_servers(mcp_servers: dict[str, dict[str, Any]] | None) -> list[str]
     lines: list[str] = []
     for name, cfg in mcp_servers.items():
         lines.append("")
-        lines.append(f"[mcp_servers.{name}]")
+        # The server name is free text: a bare identifier goes in as-is, but a
+        # name with dots/spaces/quotes must be a quoted+escaped TOML key or it
+        # corrupts the table header (e.g. `foo"bar` or `a.b`).
+        key = name if name.replace("_", "").replace("-", "").isalnum() else _toml_str(name)
+        lines.append(f"[mcp_servers.{key}]")
         for k, v in cfg.items():
             _emit_kv(lines, k, v)
     return lines
@@ -2924,7 +2930,9 @@ def _cfg_rate_limits(rate_limits: dict[str, str] | None) -> list[str]:
     for name, spec in rate_limits.items():
         # Quote names that aren't bare identifiers (e.g. "mcp_*").
         key = name if name.replace("_", "").isalnum() else f'"{name}"'
-        lines.append(f'{key} = "{spec}"')
+        # spec is free-text ("N/seconds"); escape via _toml_str so a stray
+        # quote/backslash can't corrupt the config the wizard writes.
+        lines.append(f'{key} = {_toml_str(spec)}')
     return lines
 
 
