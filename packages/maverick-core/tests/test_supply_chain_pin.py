@@ -51,6 +51,19 @@ def test_multiple_violations_counted():
     assert "4 issue(s)" in out
 
 
+def test_exact_pin_with_letter_x_not_flagged():
+    # An exact pin that merely CONTAINS the letter 'x' is a real pin, not a
+    # wildcard -- only a standalone 'x'/'X' version component is a range.
+    out = _run(deps=[{"name": "torch", "version": "2.0.0+cuxa", "hash": "sha256:z"}])
+    assert out.startswith("OK"), out
+
+
+def test_wildcard_x_component_flagged():
+    out = _run(deps=[{"name": "react", "version": "18.x", "hash": "sha256:z"}])
+    assert out.startswith("VIOLATIONS")
+    assert "version range" in out and "react" in out
+
+
 def test_errors():
     t = supply_chain_pin()
     assert t.fn({"op": "check"}).startswith("ERROR")
