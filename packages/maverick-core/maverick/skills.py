@@ -78,6 +78,9 @@ class Skill:
     # verified against a trusted publisher key. Distinct from "the skill
     # carries sig/pubkey frontmatter" (which may be forged or untrusted).
     verified: bool = False
+    # PBAC: purposes this skill may be recalled FOR (empty = any purpose).
+    # Enforced default-open by relevant_skills via maverick.access_policy.
+    purposes: tuple[str, ...] = ()
 
     @classmethod
     def parse(cls, text: str, path: Path) -> Skill:
@@ -130,6 +133,7 @@ class Skill:
             path=path,
             sig=sig if isinstance(sig, str) else None,
             pubkey=pubkey if isinstance(pubkey, str) else None,
+            purposes=tuple(meta["purposes"]) if isinstance(meta.get("purposes"), list) else (),
         )
 
 
@@ -301,6 +305,19 @@ def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3,
     return [s for _, s in scored[:max_n]]
 
 
+def _purpose_allowed(skills: list[Skill]) -> list[Skill]:
+    """PBAC: drop skills not allowed for the run's active purpose. Default-OPEN
+    (a skill with no ``purposes`` is unrestricted) and fail-open (access control
+    never blocks recall). A purpose-scoped skill is recalled only when the run
+    declares a matching purpose (``access_policy.purpose_scope`` / MAVERICK_PURPOSE)."""
+    try:
+        from .access_policy import AccessPolicy, check
+        return [s for s in skills
+                if check(AccessPolicy(purposes=getattr(s, "purposes", ()) or ())).allowed]
+    except Exception:  # pragma: no cover -- access control must never block recall
+        return list(skills)
+
+
 def relevant_skills(goal: str, all_skills: list[Skill], max_n: int = 3) -> list[Skill]:
     """Recall the skills relevant to ``goal``, relevance-GATED so weak/irrelevant
     matches are never injected. Precision >> recall for agent memory: noisy recall
@@ -308,6 +325,7 @@ def relevant_skills(goal: str, all_skills: list[Skill], max_n: int = 3) -> list[
     ``[skills].embed_threshold`` (default 0.35) and the lexical fallback only
     at/above ``[skills].lexical_min_relevance`` (default a real two-word/phrase
     match). This gives the "warm is never worse than cold" property."""
+    all_skills = _purpose_allowed(all_skills)  # PBAC: purpose-scope before relevance
     try:
         from . import config as _config
         cfg = _config.get_skills()
