@@ -122,7 +122,7 @@ _SCHEMA = {
 
 
 def _run(args: dict[str, Any]) -> str:
-    name = (args.get("name") or "").strip()
+    name = str(args.get("name") or "").strip()
     if not name:
         return "ERROR: name is required"
     path = _list_path()

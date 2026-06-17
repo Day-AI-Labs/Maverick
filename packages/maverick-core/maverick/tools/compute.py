@@ -260,7 +260,7 @@ def _run(args: dict[str, Any]) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
-    if op not in _VALID_OPS:
+    if not isinstance(op, str) or op not in _VALID_OPS:
         return f"ERROR: unknown op {op!r}"
 
     if op == "evaluate":

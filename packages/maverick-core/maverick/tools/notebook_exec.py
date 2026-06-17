@@ -62,23 +62,26 @@ def _extract_code(nb: dict) -> str:
 
 
 def _run(args: dict[str, Any], sandbox) -> str:
-    path = (args.get("path") or "").strip()
+    path = str(args.get("path") or "").strip()
     if not path:
         return "ERROR: path is required"
     try:
         p = _safe_path(sandbox, path)
     except ValueError:
         return f"ERROR: path escapes the workspace: {path!r}"
-    if not p.exists():
-        return f"ERROR: no such notebook {path!r}"
     try:
+        if not p.exists():
+            return f"ERROR: no such notebook {path!r}"
         nb = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as e:
         return f"ERROR: cannot read notebook: {e}"
     code = _extract_code(nb)
     if not code:
         return "(notebook has no executable code cells)"
-    timeout = float(args.get("timeout") or 120)
+    try:
+        timeout = float(args.get("timeout") or 120)
+    except (TypeError, ValueError):
+        timeout = 120.0
     code, stdout, stderr = sandbox_run(
         sandbox, ["python", "-"], stdin=code, timeout=timeout)
     parts = [f"exit_code: {code}"]

@@ -117,7 +117,7 @@ def _run(args: dict[str, Any]) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
-    text = args.get("text") or ""
+    text = str(args.get("text") or "")
     if not text.strip():
         return "ERROR: text is required"
     try:

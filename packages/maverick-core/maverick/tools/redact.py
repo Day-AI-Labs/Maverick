@@ -29,6 +29,7 @@ def _run(args: dict[str, Any]) -> str:
     text = args.get("text")
     if text is None:
         return "ERROR: text is required"
+    text = str(text)
     from ..provable_redaction import redact_proven, verify_redacted
     if op == "redact":
         proof = redact_proven(text)

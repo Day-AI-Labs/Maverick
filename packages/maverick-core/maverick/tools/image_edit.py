@@ -247,6 +247,8 @@ def _run(args: dict[str, Any], sandbox: Any) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
+    if not isinstance(op, str):
+        return f"ERROR: unknown op {op!r}"
     local = {"crop": _op_crop, "resize": _op_resize, "rotate": _op_rotate}
     if op in local:
         return local[op](args, sandbox)

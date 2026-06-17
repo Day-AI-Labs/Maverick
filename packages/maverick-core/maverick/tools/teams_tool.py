@@ -51,7 +51,7 @@ def _run(args: dict[str, Any]) -> str:
     op = args.get("op") or "send"
     if op != "send":
         return f"ERROR: unknown op {op!r}"
-    text = (args.get("text") or "").strip()
+    text = str(args.get("text") or "").strip()
     if not text:
         return "ERROR: text is required"
     url = _webhook(args)
@@ -60,7 +60,7 @@ def _run(args: dict[str, Any]) -> str:
     parsed = urlparse(url)
     if parsed.scheme != "https":
         return "ERROR: Teams webhook must be https://"
-    card = _build_card(text, (args.get("title") or "").strip())
+    card = _build_card(text, str(args.get("title") or "").strip())
     # Pin the connection to the validated public IP (resolve-once-then-pin)
     # rather than validate-then-reconnect with is_blocked_host, which is a
     # DNS-rebinding TOCTOU: a hostile resolver could pass the check and then
