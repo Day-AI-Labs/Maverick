@@ -1095,6 +1095,14 @@ async def export_deliverable_csv(request: Request, goal_id: int) -> Response:
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
+    gate = _goal_gate(g.domain)
+    if gate is not None:
+        signoff = w.signoff_for(goal_id)
+        if signoff is None or signoff.get("decision") != "approved":
+            raise HTTPException(
+                status_code=403,
+                detail=f"{gate} sign-off is required before exporting this deliverable",
+            )
     rendered = render_deliverable(_goal_shape(g.domain), g.result)
     if rendered.table is None:
         raise HTTPException(status_code=404, detail="no tabular deliverable to export")

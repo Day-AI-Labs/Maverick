@@ -70,15 +70,32 @@ class TestSignoffApi:
 
 
 class TestDeliverableExport:
-    def test_forecast_exports_as_csv(self, tmp_path, monkeypatch):
+    def test_forecast_exports_as_csv_after_approval(self, tmp_path, monkeypatch):
         w = _world(tmp_path, monkeypatch)
         gid = _forecast_goal(w)
+        w.record_signoff(gid, "approved", decided_by="user:alice", note="ok")
         r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("text/csv")
         body = r.text
         assert "Week,Net" in body
         assert "W1,300" in body
+
+    def test_gated_table_export_requires_approved_signoff(self, tmp_path, monkeypatch):
+        w = _world(tmp_path, monkeypatch)
+        gid = w.create_goal("Prepare payment batch", "", domain="finance_ap")
+        w.set_goal_status(gid, "done", result=_TABLE)
+
+        r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
+        assert r.status_code == 403
+
+        w.record_signoff(gid, "rejected", decided_by="user:alice", note="hold")
+        r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
+        assert r.status_code == 403
+
+        w.record_signoff(gid, "approved", decided_by="user:alice", note="ok")
+        r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
+        assert r.status_code == 200
 
     def test_no_table_is_404(self, tmp_path, monkeypatch):
         w = _world(tmp_path, monkeypatch)
