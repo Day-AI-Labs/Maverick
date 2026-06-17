@@ -7,6 +7,7 @@ const $ = (id) => document.getElementById(id);
 let pollTimer = null;
 let goalId = null;
 let sinceId = 0;
+let polling = false; // in-flight guard: skip overlapping ticks (shared sinceId)
 
 function setStatus(text, isError) {
   const el = $("status");
@@ -42,22 +43,30 @@ function ask(msg) {
 const TERMINAL = ["done", "failed", "cancelled", "blocked", "error"];
 
 async function poll() {
-  if (goalId === null) return;
-  const resp = await ask({ type: "events", goalId: goalId, since: sinceId });
-  if (!resp.ok) {
-    setStatus(resp.error, true);
-    return; // transient: keep the timer running and retry
-  }
-  const data = resp.data;
-  for (const e of data.events || []) {
-    sinceId = Math.max(sinceId, e.id);
-    appendEvent(e.agent || "agent", e.content || "");
-  }
-  setStatus("goal #" + goalId + " — " + data.status);
-  if (TERMINAL.indexOf(data.status) !== -1) {
-    if (data.result) appendEvent("result", data.result);
-    clearInterval(pollTimer);
-    pollTimer = null;
+  if (goalId === null || polling) return;
+  // A slow round-trip must not let the next interval tick start a second,
+  // concurrent poll: both would read the same sinceId and append the same
+  // events twice. Serialize ticks with an in-flight guard.
+  polling = true;
+  try {
+    const resp = await ask({ type: "events", goalId: goalId, since: sinceId });
+    if (!resp.ok) {
+      setStatus(resp.error, true);
+      return; // transient: keep the timer running and retry
+    }
+    const data = resp.data;
+    for (const e of data.events || []) {
+      sinceId = Math.max(sinceId, e.id);
+      appendEvent(e.agent || "agent", e.content || "");
+    }
+    setStatus("goal #" + goalId + " — " + data.status);
+    if (TERMINAL.indexOf(data.status) !== -1) {
+      if (data.result) appendEvent("result", data.result);
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  } finally {
+    polling = false;
   }
 }
 

@@ -22,7 +22,13 @@
 
   function el(tag, props, css) {
     var n = document.createElement(tag);
-    if (props) Object.keys(props).forEach(function (k) { n[k] = props[k]; });
+    if (props) Object.keys(props).forEach(function (k) {
+      // Hyphenated keys (e.g. "aria-label") are attributes, not IDL
+      // properties: assigning n["aria-label"] creates a dead expando and the
+      // attribute is never set. Route those through setAttribute.
+      if (k.indexOf("-") !== -1) { n.setAttribute(k, props[k]); }
+      else { n[k] = props[k]; }
+    });
     if (css) Object.keys(css).forEach(function (k) { n.style[k] = css[k]; });
     return n;
   }

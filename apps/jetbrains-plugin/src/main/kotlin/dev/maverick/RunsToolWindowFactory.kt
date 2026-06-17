@@ -7,6 +7,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import java.net.HttpURLConnection
 import java.net.URI
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.JTextField
@@ -24,19 +25,19 @@ class RunsToolWindowFactory : ToolWindowFactory {
         val goalField = JTextField(8)
         val watch = JButton("Watch live")
         val stop = JButton("Stop")
-        @Volatile var stopped = true
+        val stopped = AtomicBoolean(true)
 
         fun appendLine(line: String) =
             javax.swing.SwingUtilities.invokeLater { output.append(line + "\n") }
 
         watch.addActionListener {
             val goalId = goalField.text.trim().toLongOrNull() ?: return@addActionListener
-            stopped = false
+            stopped.set(false)
             thread(isDaemon = true, name = "maverick-sse-$goalId") {
                 var backoffMs = 1000L
                 val base = System.getenv("MAVERICK_DASHBOARD_URL") ?: "http://127.0.0.1:8765"
                 val token = System.getenv("MAVERICK_DASHBOARD_TOKEN")
-                while (!stopped) {
+                while (!stopped.get()) {
                     try {
                         val conn = URI("$base/api/v1/goals/$goalId/events/stream")
                             .toURL().openConnection() as HttpURLConnection
@@ -46,14 +47,14 @@ class RunsToolWindowFactory : ToolWindowFactory {
                         conn.inputStream.bufferedReader().useLines { lines ->
                             backoffMs = 1000L
                             lines.forEach { line ->
-                                if (stopped) return@forEach
+                                if (stopped.get()) return@forEach
                                 if (line.startsWith("data:")) appendLine(line.removePrefix("data:").trim())
                             }
                         }
                     } catch (e: Exception) {
                         appendLine("[stream error: ${e.message}; retrying in ${backoffMs / 1000}s]")
                     }
-                    if (!stopped) {
+                    if (!stopped.get()) {
                         Thread.sleep(backoffMs)
                         backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
                     }
@@ -61,7 +62,7 @@ class RunsToolWindowFactory : ToolWindowFactory {
                 appendLine("[live watch stopped]")
             }
         }
-        stop.addActionListener { stopped = true }
+        stop.addActionListener { stopped.set(true) }
 
         val controls = JPanel().apply { add(goalField); add(watch); add(stop) }
         val panel = JPanel(java.awt.BorderLayout()).apply {

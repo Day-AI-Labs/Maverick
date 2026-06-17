@@ -2,8 +2,8 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-env-changed=MAVERICK_INSTALL_REF");
-    println!("cargo:rerun-if-changed=../../deploy/desktop/install.sh");
-    println!("cargo:rerun-if-changed=../../deploy/desktop/install.ps1");
+    println!("cargo:rerun-if-changed=../../../deploy/desktop/install.sh");
+    println!("cargo:rerun-if-changed=../../../deploy/desktop/install.ps1");
 
     let install_ref = std::env::var("MAVERICK_INSTALL_REF")
         .ok()
