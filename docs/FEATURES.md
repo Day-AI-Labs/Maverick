@@ -200,6 +200,15 @@ here.
   `Connector`s expose a system of record as `<sys>.read` (low risk) /
   `<sys>.write` (high) governed Actions. Palantir-style action governance, for
   self-improving agents (see `docs/palantir-playbook.md`).
+- **Governed learning at scale** (`access_policy.py`, `learning_rollout.py`;
+  opt-in, additive) — **PBAC**: a skill declares `purposes:` and
+  `relevant_skills` recalls it only under a matching run purpose
+  (`purpose_scope` / `MAVERICK_PURPOSE`; default-open). On the run path, per-goal
+  action **lineage** is recorded when `[actions] enable` is set (tenant-scoped),
+  and `impact_of` answers "revoke X → what did it touch?". Apollo-style
+  `run_rollout` promotes a learned skill across the fleet only behind eval/health
+  constraints, staged with auto-rollback. Inspect with
+  `maverick governance lineage|impact`.
 - **Specialist operating discipline** (`domain_discipline.py`, on by
   default; `[domains] discipline = false` opts out) — every domain pack's
   persona is augmented at spawn with a universal verification/escalation
