@@ -89,23 +89,54 @@ def learn(messages, *, max_codes: int = 128, min_count: int = 2,
 
 def encode(text: str, codebook: Codebook) -> str:
     """Compress ``text`` with the codebook. Longest phrases first so a longer
-    coded phrase wins over a sub-phrase; an empty codebook is the identity."""
+    coded phrase wins over a sub-phrase; an empty codebook is the identity.
+
+    Any literal ``_OPEN`` already in ``text`` is first doubled (``⟦`` -> ``⟦⟦``),
+    so that in the output a *single* ``_OPEN`` can only begin a real code. Without
+    this, content that itself contained a sentinel (e.g. an agent emitting the
+    literal ``⟦0⟧``) would be misread as a code on ``decode`` -- silently breaking
+    the round-trip, which is the whole audit guarantee."""
     if not codebook.forward:
         return text
+    text = text.replace(_OPEN, _OPEN + _OPEN)   # escape literal sentinels first
     for phrase in sorted(codebook.forward, key=len, reverse=True):
         text = text.replace(phrase, codebook.forward[phrase])
     return text
 
 
 def decode(text: str, codebook: Codebook) -> str:
-    """The audit layer: expand every code back to its exact English."""
+    """The audit layer: expand every code back to its exact English.
+
+    A left-to-right scan (not ``str.replace``): a doubled ``_OPEN`` is a literal
+    sentinel character, a single ``_OPEN`` + digits + ``_CLOSE`` is a code. This is
+    what makes ``decode(encode(x)) == x`` hold even when ``x`` itself contains the
+    sentinel brackets."""
     if not codebook.reverse:
         return text
-    # Longest codes first is irrelevant (codes are disjoint sentinels), but expand
-    # repeatedly is unnecessary -- a code's expansion never contains another code.
-    for code, phrase in codebook.reverse.items():
-        text = text.replace(code, phrase)
-    return text
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == _OPEN:
+            if i + 1 < n and text[i + 1] == _OPEN:   # ⟦⟦ -> literal ⟦
+                out.append(_OPEN)
+                i += 2
+                continue
+            j = i + 1                                 # try to read a code ⟦digits⟧
+            while j < n and text[j].isdigit():
+                j += 1
+            if j > i + 1 and j < n and text[j] == _CLOSE:
+                phrase = codebook.reverse.get(text[i:j + 1])
+                if phrase is not None:
+                    out.append(phrase)
+                    i = j + 1
+                    continue
+            out.append(_OPEN)                         # malformed -> literal open
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
 def compression_ratio(messages, codebook: Codebook) -> float:
