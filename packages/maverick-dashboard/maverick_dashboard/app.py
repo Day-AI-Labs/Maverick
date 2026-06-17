@@ -973,12 +973,19 @@ async def project_detail(request: Request, project_id: int) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="no such project")
     # Owner-scoped like goals: a project you don't own 404s rather than leaks.
     owner = goal_owner_filter(request)
-    if owner is not None and project["owner"] not in ("", owner):
+    if owner is not None and project["owner"] != owner:
         raise HTTPException(status_code=404, detail="no such project")
-    goals = w.list_goals(project_id=project_id, order="desc")
+    goals = w.list_goals(project_id=project_id, owner=owner, order="desc")
+    counts: dict[str, int]
+    if owner is None:
+        counts = w.project_status_counts(project_id)
+    else:
+        counts = {}
+        for goal in goals:
+            counts[goal.status] = counts.get(goal.status, 0) + 1
     return templates.TemplateResponse(
         request, "project_detail.html",
-        {"project": project, "goals": goals, "counts": w.project_status_counts(project_id)})
+        {"project": project, "goals": goals, "counts": counts})
 
 
 @app.post("/chat/goal/{goal_id}/project")
@@ -994,6 +1001,11 @@ async def goal_set_project(request: Request, goal_id: int,
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
     pid = int(project_id) if project_id.strip() else None
+    if pid is not None:
+        project = w.get_project(pid)
+        owner = goal_owner_filter(request)
+        if project is None or (owner is not None and project["owner"] != owner):
+            raise HTTPException(status_code=404, detail="no such project")
     w.set_goal_project(goal_id, pid)
     return RedirectResponse(f"/chat/goal/{goal_id}", status_code=303)
 

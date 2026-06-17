@@ -66,3 +66,84 @@ def test_file_goal_under_project_from_goal_page(tmp_path, monkeypatch):
     # clear it (empty value)
     client.post(f"/chat/goal/{gid}/project", data={"project_id": ""}, follow_redirects=False)
     assert w.get_goal(gid).project_id is None
+
+
+def _enable_oidc_principal_map(monkeypatch):
+    """OIDC on; map ``Bearer <name>`` to principal ``user:<name>``."""
+    import maverick_dashboard.auth as auth
+    from maverick.oidc import VerifiedPrincipal
+
+    monkeypatch.setattr(auth, "oidc_enabled", lambda: True)
+
+    def _verify(token, **_kw):
+        return VerifiedPrincipal(
+            sub=token,
+            issuer="https://issuer.example",
+            audience="maverick",
+            claims={"sub": token},
+        )
+
+    monkeypatch.setattr(auth, "verify_oidc_token", _verify)
+
+
+def _as(user: str, *, post: bool = False) -> dict[str, str]:
+    headers = {"Authorization": f"Bearer {user}"}
+    if post:
+        headers["Origin"] = "http://testserver"
+    return headers
+
+
+def test_project_detail_hides_ownerless_project_from_authenticated_user(tmp_path, monkeypatch):
+    _enable_oidc_principal_map(monkeypatch)
+    w = _world(tmp_path, monkeypatch)
+    pid = w.create_project("Legacy Admin Project", owner="")
+    w.create_goal("Legacy Secret", "", owner="", project_id=pid)
+
+    r = client.get(f"/projects/{pid}", headers=_as("alice"))
+
+    assert r.status_code == 404
+    assert "Legacy Secret" not in r.text
+
+
+def test_project_detail_scopes_member_goals_to_project_owner(tmp_path, monkeypatch):
+    _enable_oidc_principal_map(monkeypatch)
+    w = _world(tmp_path, monkeypatch)
+    pid = w.create_project("Alice Project", owner="user:alice")
+    w.create_goal("Alice Visible", "", owner="user:alice", project_id=pid)
+    bob_goal = w.create_goal("Bob Secret", "", owner="user:bob", project_id=pid)
+    w.set_goal_status(bob_goal, "done")
+
+    r = client.get(f"/projects/{pid}", headers=_as("alice"))
+
+    assert r.status_code == 200
+    assert "Alice Visible" in r.text
+    assert "Bob Secret" not in r.text
+    assert ">done<" not in r.text
+
+
+def test_goal_project_assignment_requires_accessible_project(tmp_path, monkeypatch):
+    _enable_oidc_principal_map(monkeypatch)
+    w = _world(tmp_path, monkeypatch)
+    alice_goal = w.create_goal("Alice Goal", "", owner="user:alice")
+    bob_project = w.create_project("Bob Project", owner="user:bob")
+    legacy_project = w.create_project("Legacy Project", owner="")
+
+    for pid in (bob_project, legacy_project):
+        r = client.post(
+            f"/chat/goal/{alice_goal}/project",
+            headers=_as("alice", post=True),
+            data={"project_id": str(pid)},
+            follow_redirects=False,
+        )
+        assert r.status_code == 404
+        assert w.get_goal(alice_goal).project_id is None
+
+    alice_project = w.create_project("Alice Project", owner="user:alice")
+    r = client.post(
+        f"/chat/goal/{alice_goal}/project",
+        headers=_as("alice", post=True),
+        data={"project_id": str(alice_project)},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert w.get_goal(alice_goal).project_id == alice_project
