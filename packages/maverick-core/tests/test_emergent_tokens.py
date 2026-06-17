@@ -90,3 +90,45 @@ def test_single_token_markers_filters():
     assert "CC" not in out      # 2 tokens
     assert ESC not in out       # the escape
     assert "B" not in out       # present in corpus
+
+
+def _toks(s: str) -> int:
+    # A "tokenizer" where a 4-char word is ONE token -- the dangerous case: a
+    # multi-character string that is nonetheless a single token (like " the").
+    return len(s.split()) or len(s)
+
+
+def test_single_token_markers_rejects_multichar_single_tokens():
+    # " the" is 1 token but 4 chars; decode reads one char past escape, so it
+    # MUST be rejected or the round-trip (audit contract) breaks.
+    out = et.single_token_markers(_toks, [" the", "Z"], escape=ESC)
+    assert " the" not in out
+    assert "Z" in out
+
+
+def test_multichar_marker_dropped_round_trip_safe():
+    # A multi-char marker passed straight to learn is dropped, never producing a
+    # codebook that would corrupt meaning -- it degrades to "no compression".
+    book = et.learn(["alpha beta gamma"] * 4, escape=ESC, markers=[" the", "QQ"])
+    assert book.size == 0
+    msg = "alpha beta gamma"
+    assert et.decode(et.encode(msg, book), book) == msg
+
+
+def test_multichar_escape_yields_identity():
+    book = et.learn(["alpha beta gamma"] * 4, escape="ESC", markers=["A", "B"])
+    assert book.size == 0
+    assert book.escape == ""            # invalid escape not retained
+    msg = "alpha beta gamma"
+    assert et.decode(et.encode(msg, book), book) == msg
+
+
+def test_audit_contract_holds_for_mixed_valid_invalid_markers():
+    # Valid single-char markers still code; invalid ones are silently skipped;
+    # the round-trip is exact regardless.
+    book = et.learn(["alpha beta gamma", "alpha beta"] * 5,
+                    escape=ESC, markers=["A", " the", "B", "CC", "C"])
+    assert book.size > 0
+    assert all(len(code) == 2 for code in book.forward.values())  # esc + 1 char
+    for m in ["alpha beta gamma", "alpha beta", "alpha beta gamma and more"]:
+        assert et.decode(et.encode(m, book), book) == m

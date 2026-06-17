@@ -37,6 +37,20 @@ def test_codec_learn_persists_and_reports(tmp_path, monkeypatch):
     assert et.decode(et.encode(msg, book), book) == msg
 
 
+def test_codec_learn_clean_error_without_tokenizer(tmp_path, monkeypatch):
+    # No tiktoken + no model: a clean ClickException, not a raw traceback.
+    monkeypatch.setattr("maverick.cli.open_world", lambda db: _World())
+
+    def _no_counter(**_kw):
+        raise RuntimeError("no token counter available: `pip install tiktoken`")
+
+    monkeypatch.setattr("maverick.codec_probe.resolve_counter", _no_counter)
+    res = CliRunner().invoke(main, ["--db", str(tmp_path / "w.db"), "codec-learn"])
+    assert res.exit_code != 0
+    assert "pip install tiktoken" in res.output
+    assert res.exc_info is None or not isinstance(res.exception, RuntimeError)
+
+
 def test_codec_learn_no_messages(tmp_path, monkeypatch):
     monkeypatch.setattr("maverick.cli.open_world",
                         lambda db: type("E", (), {"recent_event_contents": lambda s, limit=5000: []})())

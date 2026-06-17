@@ -65,16 +65,20 @@ def learn(messages, *, escape: str, markers, max_codes: int = 128,
 
     Reuses the phrase-scoring of the sentinel codec (the phrases worth coding are
     the same), then assigns each a cheap ``escape + marker`` code. ``escape`` and
-    ``markers`` are caller-supplied single-token strings; any marker equal to the
-    escape, or already present, is skipped. An empty/duplicate pool yields fewer
-    codes; a fully unusable one yields the identity transform.
+    each ``marker`` MUST be a single character: ``decode`` scans one character past
+    the escape, so a multi-character escape or marker would silently break the
+    round-trip (the audit contract). Multi-character or duplicate markers, and any
+    equal to the escape, are dropped; a non-single-character escape yields the
+    identity transform. So a misuse degrades to "no compression", never to a codec
+    that corrupts meaning.
     """
-    if not escape or not markers:
-        return TokenCodebook(escape=escape)
+    if not escape or len(escape) != 1 or not markers:
+        return TokenCodebook(escape=escape if len(escape) == 1 else "")
 
     phrase_book = _learn_phrases(messages, max_codes=max_codes,
                                  min_count=min_count, max_words=max_words)
-    pool = [m for m in dict.fromkeys(markers) if m and m != escape]
+    # Single-character markers only -- the invariant decode() relies on.
+    pool = [m for m in dict.fromkeys(markers) if len(m) == 1 and m != escape]
 
     forward, reverse = {}, {}
     for phrase, marker in zip(phrase_book.forward, pool, strict=False):  # pool may be shorter
@@ -140,12 +144,15 @@ def token_savings(messages, book: TokenCodebook, *, count_tokens) -> float:
 
 def single_token_markers(count_tokens, candidates, *, escape: str,
                          corpus=(), limit: int = 256) -> list[str]:
-    """Pick collision-cheap markers: single-token ``candidates`` absent from the
-    corpus (so they never need stuffing), excluding the escape. Pure -- the
-    tokenizer is injected via ``count_tokens``.
+    """Pick collision-cheap markers: single-CHARACTER, single-token ``candidates``
+    absent from the corpus (so they never need stuffing), excluding the escape.
+    Pure -- the tokenizer is injected via ``count_tokens``.
 
-    ``corpus`` absence is a token-saving nicety, not a correctness requirement:
-    byte-stuffing keeps decode exact even if a marker appears in content.
+    Single-character is a correctness requirement, not just thrift: ``decode``
+    scans exactly one character past the escape, so a multi-character marker (even
+    one that is a single *token*, like `` the``) would break the round-trip. The
+    ``corpus`` absence is the thrift part -- byte-stuffing keeps decode exact even
+    if a marker appears in content.
     """
     seen = Counter()
     for m in corpus:
@@ -154,6 +161,8 @@ def single_token_markers(count_tokens, candidates, *, escape: str,
     for cand in candidates:
         if cand == escape or cand in out:
             continue
+        if len(cand) != 1:
+            continue                      # decode reads one char past escape
         if seen.get(cand):
             continue                      # in the corpus -> would force stuffing
         if count_tokens(cand) != 1:

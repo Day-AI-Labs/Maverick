@@ -1298,7 +1298,10 @@ def codec_probe(ctx, limit: int, encoding: str, model: str | None, as_json: bool
         click.echo("no coordination messages to probe")
         return
     book = learn(msgs)
-    counter = resolve_counter(encoding=encoding, model=model)
+    try:
+        counter = resolve_counter(encoding=encoding, model=model)
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
     delta = measure(msgs, book, count_tokens=counter)
     d = delta.to_dict()
     if as_json:
@@ -1336,7 +1339,10 @@ def codec_learn(ctx, limit: int, encoding: str, model: str | None) -> None:
     if not msgs:
         click.echo("no coordination messages to learn from")
         return
-    counter = resolve_counter(encoding=encoding, model=model)
+    try:
+        counter = resolve_counter(encoding=encoding, model=model)
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
     # Candidate codes: printable ASCII + Latin/symbol ranges, filtered to the
     # tokenizer's single-token chars that don't occur in the corpus. First viable
     # one is the reserved escape; the rest are markers.
