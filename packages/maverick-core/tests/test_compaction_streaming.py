@@ -162,6 +162,43 @@ class TestFold:
         sc.reset("conv")
         assert sc.state("conv") == (0, "")
 
+    def test_stale_conversations_pruned_on_save(self, tmp_path):
+        # One entry per conversation accumulates forever without a reaper; a
+        # write past the TTL must drop conversations untouched beyond it.
+        path = tmp_path / "s.json"
+        now = {"t": 1000.0}
+        ttl = 100.0  # seconds
+        sc = StreamingCompactor(
+            path=path, clock=lambda: now["t"], ttl_seconds=ttl)
+        sc.fold("old", _turns(1))         # last = 1000
+        now["t"] = 1000.0 + ttl + 1       # advance past the TTL
+        sc.fold("new", _turns(1))         # save() prunes "old", keeps "new"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert "old" not in data
+        assert "new" in data
+        assert sc.state("old") == (0, "")
+
+    def test_recently_active_conversation_survives_prune(self, tmp_path):
+        path = tmp_path / "s.json"
+        now = {"t": 1000.0}
+        sc = StreamingCompactor(
+            path=path, clock=lambda: now["t"], ttl_seconds=100.0)
+        sc.fold("a", _turns(1))
+        now["t"] = 1050.0  # within the TTL window
+        sc.fold("b", _turns(1))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert set(data) == {"a", "b"}
+
+    def test_ttl_zero_disables_pruning(self, tmp_path):
+        path = tmp_path / "s.json"
+        now = {"t": 1000.0}
+        sc = StreamingCompactor(path=path, clock=lambda: now["t"], ttl_seconds=0)
+        sc.fold("old", _turns(1))
+        now["t"] = 10**9  # far future
+        sc.fold("new", _turns(1))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert set(data) == {"old", "new"}
+
 
 class TestFolderCoroutine:
     def test_send_new_turns_yields_running_summary(self, tmp_path):
