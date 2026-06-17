@@ -187,6 +187,17 @@ def screen_write(text: str, prov: Provenance, *, shield=None) -> WriteDecision:
     return WriteDecision(True, "clean")
 
 
+def _passes_floor(trust: int, floor: int, *, high_risk: bool) -> bool:
+    """Trust-tier decision shared by :func:`allow_recall` and :func:`filter_facts`
+    -- the latter precomputes ``floor`` once so its per-fact loop reads no config.
+    """
+    if trust < floor:
+        return False
+    if high_risk and trust < int(TrustTier.LEARNED):
+        return False
+    return True
+
+
 def allow_recall(prov: Provenance, *, high_risk: bool = False,
                  min_trust: int | None = None) -> bool:
     """Whether a memory of provenance ``prov`` may be surfaced to the agent.
@@ -199,11 +210,7 @@ def allow_recall(prov: Provenance, *, high_risk: bool = False,
     if not enabled():
         return True
     floor = min_recall_trust() if min_trust is None else int(min_trust)
-    if int(prov.trust) < floor:
-        return False
-    if high_risk and prov.trust < TrustTier.LEARNED:
-        return False
-    return True
+    return _passes_floor(int(prov.trust), floor, high_risk=high_risk)
 
 
 def filter_facts(facts: dict[str, tuple[str, int]], *,
@@ -212,19 +219,21 @@ def filter_facts(facts: dict[str, tuple[str, int]], *,
     by :meth:`maverick.world_model.WorldModel.get_facts_with_trust`) and return
     the kept ``{key: value}``.
 
-    This is the production entry point: it runs :func:`allow_recall` per fact so
-    the trust floor -- and, with ``high_risk=True``, the stricter
-    irreversible-action gate -- is enforced in one place. Every fact passes
-    through unchanged when the guard is disabled."""
+    This is the production entry point. The trust floor is read ONCE (not per
+    fact -- this runs on the brief-assembly hot path, and the config read is
+    uncached file I/O), then applied to every fact; with ``high_risk=True`` the
+    stricter irreversible-action gate applies. Every fact passes through
+    unchanged when the guard is disabled."""
     if not enabled():
         return {k: v for k, (v, _tier) in facts.items()}
+    floor = min_recall_trust()
     out: dict[str, str] = {}
     for k, (v, tier) in facts.items():
         try:
-            trust = TrustTier(int(tier))
+            trust = int(TrustTier(int(tier)))
         except ValueError:
-            trust = TrustTier.EXTERNAL  # unknown tier -> least trusted (safe)
-        if allow_recall(Provenance(trust=trust), high_risk=high_risk):
+            trust = int(TrustTier.EXTERNAL)  # unknown tier -> least trusted (safe)
+        if _passes_floor(trust, floor, high_risk=high_risk):
             out[k] = v
     return out
 
@@ -239,7 +248,13 @@ def agent_fact_provenance() -> Provenance:
 
 def audit_write(key: str, prov: Provenance, decision: WriteDecision, *,
                 goal_id: int | None = None) -> None:
-    """Log one memory write to the signed audit chain (fail-safe)."""
+    """Log one memory write to the signed audit chain (fail-safe).
+
+    No-op when the guard is disabled: a MEMORY_GUARD event records *guard
+    activity*, so auditing every write while the guard is off is just noise (and
+    needlessly logs the key, which may embed a subject identifier)."""
+    if not enabled():
+        return
     try:
         from . import audit
         audit.record(
