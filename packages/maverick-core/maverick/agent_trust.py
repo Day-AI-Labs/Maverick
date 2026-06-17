@@ -56,8 +56,12 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # import only for type-checkers/IDEs; never at runtime
+    from .capability import Capability
 
 log = logging.getLogger(__name__)
 
@@ -137,12 +141,35 @@ class TrustedAgent:
     max_dollars: float | None = None
     max_wall_seconds: float | None = None
     data_scopes: frozenset[str] = frozenset()
+    # Key lifecycle (all default to "always valid" so existing configs are
+    # byte-for-byte unchanged): a revoked or out-of-window entry is denied by
+    # decide_inbound/decide_outbound/verify_identity. `not_before`/`expires_at`
+    # are epoch seconds; supporting an overlap window (old key valid until
+    # expires_at, new key not_before) is the zero-downtime rotation primitive.
+    not_before: float | None = None
+    expires_at: float | None = None
+    revoked: bool = False
 
     def permits_inbound(self) -> bool:
         return self.direction in ("inbound", "both")
 
     def permits_outbound(self) -> bool:
         return self.direction in ("outbound", "both")
+
+    def is_active(self, now: float | None = None) -> tuple[bool, str]:
+        """``(active, rule)``. An expired/revoked/not-yet-valid entry is dead.
+
+        ``rule`` is one of ``active`` / ``revoked`` / ``not_yet_valid`` /
+        ``expired`` so a denial names *why* the credential is no longer good.
+        """
+        if self.revoked:
+            return False, "revoked"
+        t = time.time() if now is None else now
+        if self.not_before is not None and t < self.not_before:
+            return False, "not_yet_valid"
+        if self.expires_at is not None and t >= self.expires_at:
+            return False, "expired"
+        return True, "active"
 
     def permits_scope(self, scope: str | None) -> bool:
         """True iff the agent may read memory tagged ``scope``.
@@ -155,11 +182,13 @@ class TrustedAgent:
             return True
         return scope in self.data_scopes
 
-    def capability(self, principal: str | None = None):
+    def capability(self, principal: str | None = None) -> Capability:
         """The tool ceiling this agent runs under, as a ``Capability``.
 
         Built lazily so the kernel imports without pulling in the capability
-        module until a decision actually needs it.
+        module until a decision actually needs it. The entry's ``expires_at``
+        propagates onto the grant so the handed-out capability expires with the
+        registry entry (a grant must never outlive the trust that minted it).
         """
         from .capability import Capability
         return Capability(
@@ -167,6 +196,7 @@ class TrustedAgent:
             allow_tools=self.allow_tools,
             deny_tools=self.deny_tools,
             max_risk=self.max_risk,
+            expires_at=self.expires_at,
         )
 
 
@@ -175,7 +205,8 @@ class TrustDecision:
     """The outcome of a trust-plane check.
 
     ``rule`` names the clause that fired (``disabled`` / ``not_in_registry`` /
-    ``direction`` / ``capability`` / ``allow``) so the choice lands in the audit
+    ``direction`` / ``capability`` / ``revoked`` / ``not_yet_valid`` /
+    ``expired`` / ``data_scope`` / ``allow``) so the choice lands in the audit
     record with a reason, not just an allow/deny bit. ``capability`` is the tool
     ceiling the caller should narrow the run against — ``None`` when the plane
     is disengaged (no-op) so callers stay byte-for-byte identical to today.
@@ -185,7 +216,7 @@ class TrustDecision:
     reason: str
     rule: str
     agent: TrustedAgent | None = None
-    capability: Any = None  # Capability | None
+    capability: Capability | None = None
 
     @property
     def denied(self) -> bool:
@@ -194,7 +225,7 @@ class TrustDecision:
 
 # -- config ----------------------------------------------------------------
 
-def agent_trust_enforced() -> bool:
+def agent_trust_enforced(cfg: dict | None = None) -> bool:
     """Is the trust plane engaged (default-deny for external agents)?
 
     On when ``MAVERICK_AGENT_TRUST`` is truthy, ``[agent_trust] enforce =
@@ -202,6 +233,11 @@ def agent_trust_enforced() -> bool:
     zero-trust boundary automatically). Off by default — disengaged means every
     decision is a no-op ALLOW, preserving kernel rule 1. Mirrors
     :func:`maverick.capability.capability_enforced`.
+
+    Pass ``cfg`` (a pre-loaded config) to read engagement from the *same*
+    config snapshot the registry is read from — :func:`load_trust_state` does
+    this so one operation observes one consistent config view (no TOCTOU
+    between the enforced flag and the registry).
     """
     env = os.environ.get("MAVERICK_AGENT_TRUST")
     if env is not None and env.strip() != "":
@@ -213,11 +249,30 @@ def agent_trust_enforced() -> bool:
     except Exception:  # pragma: no cover - enterprise read never blocks
         pass
     try:
-        from .config import load_config
-        cfg = (load_config() or {}).get("agent_trust") or {}
-        return _truthy(cfg.get("enforce"))
+        if cfg is None:
+            from .config import load_config
+            cfg = load_config() or {}
+        return _truthy((cfg.get("agent_trust") or {}).get("enforce"))
     except Exception:
         return False
+
+
+def load_trust_state() -> tuple[bool, dict[str, TrustedAgent]]:
+    """Load ``(enforced, registry)`` from a SINGLE config read.
+
+    Every cross-agent operation should take one snapshot of the trust state and
+    thread it through :func:`decide_inbound` / :func:`decide_outbound` /
+    :func:`clamp_budget` (which all accept ``registry=`` / ``enforced=``), so a
+    config edit mid-request can't make one check see "engaged, old registry"
+    and the next see "disengaged, new registry". Env/enterprise still win for
+    the enforced flag (they're not part of the config table).
+    """
+    try:
+        from .config import load_config
+        cfg = load_config() or {}
+    except Exception:
+        cfg = {}
+    return agent_trust_enforced(cfg), load_registry(cfg)
 
 
 def _agent_from_entry(entry: dict) -> TrustedAgent | None:
@@ -246,6 +301,9 @@ def _agent_from_entry(entry: dict) -> TrustedAgent | None:
         max_dollars=_positive_float(entry.get("max_dollars")),
         max_wall_seconds=_positive_float(entry.get("max_wall_seconds")),
         data_scopes=_names(entry.get("data_scopes")),
+        not_before=_positive_float(entry.get("not_before")),
+        expires_at=_positive_float(entry.get("expires_at")),
+        revoked=bool(entry.get("revoked")),
     )
 
 
@@ -316,16 +374,26 @@ def decide_inbound(
         return TrustDecision(
             False, f"external agent {agent_id!r} is not in the trust registry",
             "not_in_registry")
+    active, why = agent.is_active()
+    if not active:
+        return TrustDecision(
+            False, f"agent {agent_id!r} credential is {why}", why, agent)
     if not agent.permits_inbound():
         return TrustDecision(
             False, f"agent {agent_id!r} is not permitted inbound "
                    f"(direction={agent.direction!r})", "direction", agent)
     cap = agent.capability()
     requested = _names(requested_tools)
-    if max_risk and _risk(max_risk) is None:
-        # An unrecognized risk word is treated as the safe default rather than
-        # silently lifting the ceiling.
-        max_risk = None
+    # Normalise case BEFORE validating: a request for "HIGH"/"Critical" must not
+    # slip past the ceiling because it didn't match the lowercase risk set. An
+    # unrecognised risk word is REFUSED (fail-closed), never waved through.
+    if max_risk is not None:
+        norm = str(max_risk).strip().lower()
+        if norm and _risk(norm) is None:
+            return TrustDecision(
+                False, f"agent {agent_id!r} requested unrecognised risk "
+                       f"{max_risk!r}", "capability", agent, cap)
+        max_risk = norm or None
     denied = sorted(t for t in requested if not cap.permits(t))
     if denied:
         return TrustDecision(
@@ -357,10 +425,58 @@ def decide_outbound(
         return TrustDecision(
             False, f"external agent {agent_id!r} is not in the trust registry",
             "not_in_registry")
+    active, why = agent.is_active()
+    if not active:
+        return TrustDecision(
+            False, f"agent {agent_id!r} credential is {why}", why, agent)
     if not agent.permits_outbound():
         return TrustDecision(
             False, f"agent {agent_id!r} is not permitted outbound "
                    f"(direction={agent.direction!r})", "direction", agent)
+    return TrustDecision(True, "permitted", "allow", agent, agent.capability())
+
+
+def decide_memory_access(
+    agent_id: str,
+    domain: str | None,
+    *,
+    registry: dict[str, TrustedAgent] | None = None,
+    enforced: bool | None = None,
+) -> TrustDecision:
+    """Decide whether external agent ``agent_id`` may read/write memory tagged
+    ``domain`` — the gate shared by fleet-memory ingest AND recall.
+
+    Disengaged -> no-op ALLOW. Engaged: the agent must be registered, active,
+    inbound-permitted, and ``domain`` must be a NON-EMPTY scope the agent's
+    ``data_scopes`` allows. An unscoped (``domain=None``) request is **denied**
+    when engaged — an external agent cannot read across all departments by
+    simply omitting the scope (the old ``permits_scope(None) -> True`` bypass).
+    """
+    if not _resolve(enforced):
+        return TrustDecision(True, "agent trust plane disengaged", "disabled")
+    agent = lookup(agent_id, registry=registry)
+    if agent is None:
+        return TrustDecision(
+            False, f"external agent {agent_id!r} is not in the trust registry",
+            "not_in_registry")
+    active, why = agent.is_active()
+    if not active:
+        return TrustDecision(
+            False, f"agent {agent_id!r} credential is {why}", why, agent)
+    if not agent.permits_inbound():
+        return TrustDecision(
+            False, f"agent {agent_id!r} is not permitted inbound "
+                   f"(direction={agent.direction!r})", "direction", agent)
+    scope = (domain or "").strip()
+    if not scope:
+        return TrustDecision(
+            False, f"agent {agent_id!r} must declare a data scope (one of "
+                   f"{sorted(agent.data_scopes)}) — unscoped access is denied",
+            "data_scope", agent)
+    if not agent.permits_scope(scope):
+        return TrustDecision(
+            False, f"agent {agent_id!r} may not access data scope {scope!r}",
+            "data_scope", agent)
     return TrustDecision(True, "permitted", "allow", agent, agent.capability())
 
 
@@ -416,8 +532,23 @@ def verify_identity(
     agent = lookup(agent_id, registry=registry)
     if agent is None:
         return False, f"agent {agent_id!r} is not in the trust registry"
+    active, why = agent.is_active()
+    if not active:
+        return False, f"agent {agent_id!r} credential is {why}"
     if not agent.pubkey:
         return False, f"agent {agent_id!r} has no pinned public key"
+    # Bind the claimed identity to the signed envelope explicitly. verify_envelope
+    # keys peers on the envelope's own `origin`, so without this check an envelope
+    # whose origin differs from agent_id would be rejected with a confusing "not
+    # in peer trust list" (or, if a deployment's signing origin legitimately
+    # differs from its registry id, a valid envelope would silently fail). Assert
+    # the binding up front with a clear reason.
+    if not isinstance(envelope, dict):
+        return False, "envelope is not an object"
+    origin = envelope.get("origin")
+    if origin != agent_id:
+        return False, (f"envelope origin {origin!r} does not match the claimed "
+                       f"agent {agent_id!r}")
     from .federation_envelope import verify_envelope
     return verify_envelope(
         envelope,
@@ -430,24 +561,30 @@ def verify_identity(
 
 def record_denied(
     agent_id: str,
-    decision: TrustDecision,
+    decision: TrustDecision | None = None,
     *,
     direction: str,
     correlation_id: str = "",
+    rule: str | None = None,
+    reason: str | None = None,
 ) -> None:
     """Record a trust-plane denial to the audit chain (fail-safe).
 
-    A denial is a security-relevant event, so it lands in the Operating Record
-    alongside capability/governance denials. Never raises — an audit-path
-    failure must not change the deny outcome.
+    Pass a :class:`TrustDecision` (the usual case) or ``rule=``/``reason=``
+    directly — the latter lets a caller log a denial without fabricating a
+    throwaway decision object. A denial is a security-relevant event, so it
+    lands in the Operating Record alongside capability/governance denials.
+    Never raises — an audit-path failure must not change the deny outcome.
     """
+    if decision is not None:
+        rule, reason = decision.rule, decision.reason
     try:
         from .audit import record
         from .audit.events import EventKind
         record(
             EventKind.AGENT_TRUST_DENIED, agent="agent_trust",
-            peer=agent_id, direction=direction, rule=decision.rule,
-            reason=decision.reason, correlation_id=correlation_id,
+            peer=agent_id, direction=direction, rule=rule or "denied",
+            reason=reason or "", correlation_id=correlation_id,
         )
     except Exception as e:  # pragma: no cover - audit is best-effort here
         log.warning("agent_trust: audit record failed: %s", e)
@@ -455,9 +592,9 @@ def record_denied(
 
 def status() -> dict[str, Any]:
     """A summary for ``maverick doctor`` / dashboards: engaged flag + roster."""
-    reg = load_registry()
+    enforced, reg = load_trust_state()
     return {
-        "enforced": agent_trust_enforced(),
+        "enforced": enforced,
         "count": len(reg),
         "agents": [
             {
@@ -466,6 +603,7 @@ def status() -> dict[str, Any]:
                 "pinned_key": bool(a.pubkey),
                 "max_risk": a.max_risk,
                 "data_scopes": sorted(a.data_scopes),
+                "active": a.is_active()[0],
             }
             for a in reg.values()
         ],
@@ -477,10 +615,12 @@ __all__ = [
     "TrustedAgent",
     "TrustDecision",
     "agent_trust_enforced",
+    "load_trust_state",
     "load_registry",
     "lookup",
     "decide_inbound",
     "decide_outbound",
+    "decide_memory_access",
     "clamp_budget",
     "verify_identity",
     "record_denied",

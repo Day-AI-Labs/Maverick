@@ -167,7 +167,8 @@ def _a2a_capability() -> Any:
     # When the Agent Trust Plane is engaged, a central [agent_trust] entry with
     # id "a2a" tightens this ceiling (intersection, never a broadening), so a
     # company governs A2A callers from the same registry as every other
-    # external agent. No "a2a" entry / plane disengaged -> ceiling unchanged.
+    # external agent. Admission itself is gated separately by _a2a_trust_block
+    # (default-deny); here we only narrow the ceiling for an admitted caller.
     try:
         from . import agent_trust
         if agent_trust.agent_trust_enforced():
@@ -175,9 +176,36 @@ def _a2a_capability() -> Any:
             if entry is not None:
                 cap = cap.intersect(entry.capability(principal="a2a"),
                                     principal="a2a")
-    except Exception:  # pragma: no cover - trust read never breaks A2A
-        pass
+    except Exception as e:  # narrow: log, don't silently widen the ceiling
+        log.warning("a2a: trust ceiling read failed (using base ceiling): %s", e)
     return cap
+
+
+def _a2a_trust_block() -> str | None:
+    """Default-deny admission for the A2A surface when the plane is engaged.
+
+    Returns a denial reason (and records it) when the trust plane is engaged but
+    no ``[agent_trust]`` entry with id ``"a2a"`` permits inbound — so turning on
+    enterprise mode does NOT leave A2A open at its medium-risk ceiling to anyone
+    holding the shared bearer (the prior "tighten-only, fail-open" gap). Returns
+    ``None`` (admit) when disengaged, so the default path is unchanged.
+
+    NOTE: A2A carries a single shared bearer (no per-caller identity), so the
+    ``"a2a"`` entry is a *surface-wide* gate, not per-caller governance —
+    per-caller A2A identity is tracked as Phase 3 of the trust-plane rebuild.
+    """
+    try:
+        from . import agent_trust
+        enforced, registry = agent_trust.load_trust_state()
+    except Exception:  # config unreadable -> can't assert engagement; admit
+        return None
+    if not enforced:
+        return None
+    decision = agent_trust.decide_inbound("a2a", registry=registry, enforced=True)
+    if decision.denied:
+        agent_trust.record_denied("a2a", decision, direction="inbound")
+        return decision.reason
+    return None
 
 
 def _default_runner(
@@ -429,6 +457,11 @@ class TaskEngine:
             task.set_state("rejected")
             task.add_artifact("empty message: no text parts to act on", "error")
             return
+        tblock = _a2a_trust_block()
+        if tblock:
+            task.set_state("rejected")
+            task.add_artifact(f"refused by agent trust plane: {tblock}", "error")
+            return
         block = self._shield_block(text)
         if block:
             task.set_state("rejected")
@@ -475,7 +508,7 @@ class TaskEngine:
         text = _message_text(task.messages[0])
         block = None if text else "empty message"
         if not block:
-            block = self._shield_block(text)
+            block = _a2a_trust_block() or self._shield_block(text)
         if block:
             task.set_state("rejected")
             yield _status_event(task, final=True)
