@@ -125,3 +125,21 @@ def test_persisted_lineage_detects_tampering(tmp_path):
 def test_record_tool_lineage_is_fail_open(tmp_path):
     # A bad goal_id type must not raise (lineage never breaks a run).
     ga_mod.record_tool_lineage("not-an-int", "shell", {}, store_dir=tmp_path)  # no exception
+
+
+def test_impact_of_finds_actions_that_used_a_skill_or_source(tmp_path):
+    ga_mod.record_tool_lineage(10, "write_file", {"p": "a"},
+                               skills=("auth-skill",), sources=("kb-1",), store_dir=tmp_path)
+    ga_mod.record_tool_lineage(11, "shell", {"cmd": "x"},
+                               skills=("auth-skill",), sources=("kb-2",), store_dir=tmp_path)
+    ga_mod.record_tool_lineage(11, "shell", {"cmd": "y"},
+                               skills=("other",), sources=("kb-2",), store_dir=tmp_path)
+    # revoke auth-skill -> what did it touch? (across goals)
+    hits = ga_mod.impact_of("auth-skill", kind="skill", store_dir=tmp_path)
+    assert sorted(h["goal_id"] for h in hits) == [10, 11]
+    assert all(h["via"] == "skill" for h in hits)
+    # by source
+    src = ga_mod.impact_of("kb-2", kind="source", store_dir=tmp_path)
+    assert {h["goal_id"] for h in src} == {11} and len(src) == 2
+    # nothing for an unused identifier
+    assert ga_mod.impact_of("nope", store_dir=tmp_path) == []

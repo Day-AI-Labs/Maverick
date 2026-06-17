@@ -203,8 +203,45 @@ class GovernedActions:
                 "approver": link.approver, "hash": link.hash[:12]}
 
 
+def impact_of(identifier: str, *, kind: str = "any",
+              store_dir: str | Path | None = None) -> list[dict]:
+    """Impact analysis: every recorded consequential action that depended on a
+    given skill or source. Use when a skill/source is revoked or found bad --
+    "what did it touch?" -- the inverse of lineage. Scans all per-goal ledgers;
+    ``kind`` is ``skill`` | ``source`` | ``any``. Read-only, fail-open."""
+    out: list[dict] = []
+    try:
+        d = _lineage_dir(store_dir)
+        if not d.exists():
+            return out
+        want_skill = kind in ("skill", "any")
+        want_source = kind in ("source", "any")
+        for f in sorted(d.glob("*.ndjson")):
+            try:
+                goal_id: object = int(f.stem)
+            except ValueError:
+                goal_id = f.stem
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                link = json.loads(line)
+                skills = link.get("skills") or []
+                sources = link.get("sources") or []
+                via = ("skill" if (want_skill and identifier in skills)
+                       else "source" if (want_source and identifier in sources)
+                       else None)
+                if via:
+                    out.append({"goal_id": goal_id, "action": link.get("action"),
+                                "ts": link.get("ts"), "via": via,
+                                "hash": str(link.get("hash", ""))[:12]})
+    except Exception:  # pragma: no cover -- impact analysis never raises
+        return out
+    return out
+
+
 __all__ = ["ActionSpec", "Preview", "LineageLink", "GovernedActions", "ActionError",
-           "enabled", "record_tool_lineage", "load_lineage", "verify_lineage_file"]
+           "enabled", "record_tool_lineage", "load_lineage", "verify_lineage_file",
+           "impact_of"]
 
 
 # --------------------------------------------------------------------------
