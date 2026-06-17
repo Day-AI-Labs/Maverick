@@ -69,3 +69,28 @@ def test_enabled_off_by_default(monkeypatch):
     assert ep.enabled() is False
     monkeypatch.setenv("MAVERICK_EMERGENT_PROTOCOL", "1")
     assert ep.enabled() is True
+
+
+def test_round_trip_holds_when_content_contains_sentinels():
+    """The audit contract decode(encode(x)) == x must hold even when x itself
+    contains the sentinel brackets -- a literal '⟦0⟧' in coordination content used
+    to be misread as a code and corrupted on round-trip."""
+    book = ep.learn(["alpha beta gamma", "alpha beta", "gamma delta"] * 5)
+    for msg in [
+        "alpha beta ⟦0⟧ gamma",       # literal that collides with a real code
+        "⟦999⟧ alpha beta",           # code-shaped literal, out of range
+        "alpha ⟦ beta ⟧ gamma",       # lone brackets
+        "⟦⟦⟦ nested opens",
+        "⟦0⟧⟦1⟧ back to back",
+    ]:
+        assert ep.decode(ep.encode(msg, book), book) == msg
+
+
+def test_round_trip_fuzz_with_sentinel_alphabet():
+    import random
+    book = ep.learn(["alpha beta gamma", "alpha beta", "gamma delta"] * 5)
+    alphabet = list("alpha beta gamma delta ") + ["⟦", "⟧", "0", "1", "9"]
+    rng = random.Random(7)
+    for _ in range(3000):
+        s = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 30)))
+        assert ep.decode(ep.encode(s, book), book) == s
