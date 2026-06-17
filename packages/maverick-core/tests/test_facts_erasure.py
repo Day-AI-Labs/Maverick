@@ -106,3 +106,29 @@ def test_export_user_includes_only_user_scoped_facts(tmp_path):
     assert res.exit_code == 0, res.output
     data = json.loads(res.output)
     assert data["facts"] == {"user:telegram:u123:addr": "secret place"}
+
+
+def test_export_user_includes_fact_history(tmp_path, monkeypatch):
+    # Art.15: with temporal memory on, superseded fact values are the subject's
+    # personal data and must appear in the export (not just the current value).
+    monkeypatch.setenv("MAVERICK_TEMPORAL_MEMORY", "1")
+    from click.testing import CliRunner
+    from maverick import cli as cli_mod
+    from maverick.world_model import WorldModel
+
+    db = tmp_path / "world.db"
+    w = WorldModel(db)
+    w.get_or_create_conversation("telegram", "u123")
+    k = "user:telegram:u123:addr"
+    w.upsert_fact(k, "first place")
+    w.upsert_fact(k, "second place")  # evolves -> history
+    w.close()
+
+    res = CliRunner().invoke(cli_mod.main, [
+        "--db", str(db), "export-user", "--channel", "telegram", "--user", "u123",
+    ])
+    assert res.exit_code == 0, res.output
+    data = json.loads(res.output)
+    vals = [v["value"] for v in data["fact_history"][k]]
+    assert vals == ["first place", "second place"]  # oldest-first, both retained
+    assert data["facts"][k] == "second place"       # current value still correct

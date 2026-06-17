@@ -4800,6 +4800,18 @@ def export_user(ctx, channel: str, user: str, output) -> None:
         # user:<channel>:<user_id>:<name> rather than arbitrary substring
         # matches.
         "facts": world.facts_matching(_fact_subject_token(channel, user)),
+        # Art.15 completeness: when [memory] temporal is on, superseded fact
+        # values are retained in fact_history and are themselves the subject's
+        # personal data, so include them (empty when temporal is off).
+        "fact_history": {
+            k: [
+                {"value": v.value, "valid_from": v.valid_from,
+                 "valid_to": v.valid_to, "source": v.source}
+                for v in versions
+            ]
+            for k, versions in world.fact_history_matching(
+                _fact_subject_token(channel, user)).items()
+        },
     }
     for c in convs:
         turns = world.recent_turns(c.id, limit=10_000)

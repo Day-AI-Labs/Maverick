@@ -973,9 +973,23 @@ class MCPServer:
                     return f"⚠ fact rejected by Shield: {reasons}"
             except Exception:  # pragma: no cover -- fail open (kernel rule 1)
                 pass
+        # Memory Guard (OWASP ASI06): an MCP client is an untrusted author, so
+        # stamp the fact TOOL-trust (not the upsert default of first-party) and
+        # run it through the guard's injection tripwire before storing -- the
+        # same screen kv_memory gets. Provenance is recorded even when the guard
+        # is off, so enabling it later governs this fact.
+        from maverick import memory_guard as _mg
+        prov = _mg.Provenance(source="mcp:fact_set", trust=_mg.TrustTier.TOOL)
+        decision = _mg.screen_write(args["value"], prov)
+        _mg.audit_write(args["key"], prov, decision)
+        if not decision.allowed:
+            return f"⚠ fact rejected by Memory Guard: {decision.reason}"
         from maverick.world_model import WorldModel
         w = WorldModel()
-        w.upsert_fact(args["key"], args["value"])
+        w.upsert_fact(
+            args["key"], args["value"], source=prov.source,
+            trust_tier=int(prov.trust), sensitivity=prov.sensitivity.value,
+        )
         self._structured_override = {"key": args["key"]}
         return f"set {args['key']}"
 
