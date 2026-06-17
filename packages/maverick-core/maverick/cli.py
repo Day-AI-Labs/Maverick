@@ -4990,7 +4990,12 @@ def watch(ctx, path: str, run: bool, max_dollars: float) -> None:
 
         if run:
             # Don't sys.exit in the watch loop: just skip this marker and continue.
-            if not any(os.environ.get(v) for v in _PROVIDER_ENV_VARS):
+            # Mirror _require_llm_key(): a provider configured in config.toml
+            # (local / OpenAI-compatible setups keep credentials there, not in a
+            # well-known env var) counts too, so a config-only install isn't
+            # wrongly told "no provider key set" and skipped.
+            if (not any(os.environ.get(v) for v in _PROVIDER_ENV_VARS)
+                    and not _has_configured_provider()):
                 click.echo(
                     "Skipping --run: no provider key set. Run 'maverick init' to configure.",
                     err=True,
