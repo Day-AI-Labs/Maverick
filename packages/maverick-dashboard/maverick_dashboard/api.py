@@ -2390,6 +2390,7 @@ async def compose_goal(request: Request, payload: ComposeIn, bg: BackgroundTasks
     agent reads; the budget block additionally becomes the run's real
     ``max_dollars`` cap. Steps become a markdown checklist.
     """
+    require_permission(request, "operate")
     if not _any_provider_key_set():
         raise HTTPException(
             status_code=400,
@@ -2722,6 +2723,7 @@ async def resume_goal(goal_id: int, request: Request, bg: BackgroundTasks) -> No
     brand-new one. This route flips status back to 'pending' and
     re-queues the runner, so the next goal-event poll picks it back up.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:

@@ -88,6 +88,19 @@ def test_viewer_is_read_only(monkeypatch, tmp_path):
     assert c.post("/chat/send", data={"title": "hi"}).status_code == 403   # operate
 
 
+def test_viewer_cannot_run_goals_via_compose_or_resume(monkeypatch, tmp_path):
+    # compose and resume both spend provider money (they queue run_goal_in_thread),
+    # so they are "operate" actions: a read-only viewer must be 403'd before any
+    # provider-key / goal-state check, exactly like /chat/send and POST /goals.
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import rbac
+    rbac.set_role("user:vz", "viewer")
+    _as(monkeypatch, "user:vz")
+    assert c.post("/api/v1/goals/compose",
+                  json={"title": "spend money"}).status_code == 403
+    assert c.post("/api/v1/goals/1/resume").status_code == 403
+
+
 def test_operator_can_operate_but_not_admin(monkeypatch, tmp_path):
     monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "")
     c = _client(monkeypatch, tmp_path)

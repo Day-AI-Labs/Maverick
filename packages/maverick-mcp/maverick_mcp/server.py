@@ -21,6 +21,13 @@ _RESOURCE_SUBSCRIPTIONS_CTX: contextvars.ContextVar[set[str] | None] = contextva
 _RESOURCE_PENDING_UPDATES_CTX: contextvars.ContextVar[list[str] | None] = contextvars.ContextVar(
     "maverick_mcp_pending_resource_updates", default=None
 )
+# Sentinel: the structured-override ContextVar is "active" (a per-request scope
+# is in effect) vs unset (fall back to the instance attribute). Using a sentinel
+# rather than None lets an active scope hold the value None (the per-call reset).
+_NO_OVERRIDE = object()
+_STRUCTURED_OVERRIDE_CTX: contextvars.ContextVar[object] = contextvars.ContextVar(
+    "maverick_mcp_structured_override", default=_NO_OVERRIDE
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -373,6 +380,27 @@ class MCPServer:
         # notifications/tasks/status while the main loop may be writing a
         # response, so the two must not interleave a half-line on stdout.
         self._send_lock = threading.Lock()
+        # Side-effectful tools stash their structured result here during
+        # dispatch. stdio maps one server to one client so the instance attr is
+        # safe; HTTP reuses ONE server across concurrent clients, so the
+        # property routes to a per-request ContextVar (set by
+        # resource_update_scope) to keep one client's structured result from
+        # leaking into another's response.
+        self._structured_override_attr: dict | None = None
+
+    @property
+    def _structured_override(self) -> dict | None:
+        cur = _STRUCTURED_OVERRIDE_CTX.get()
+        if cur is _NO_OVERRIDE:
+            return self._structured_override_attr
+        return cur  # type: ignore[return-value]
+
+    @_structured_override.setter
+    def _structured_override(self, value: dict | None) -> None:
+        if _STRUCTURED_OVERRIDE_CTX.get() is _NO_OVERRIDE:
+            self._structured_override_attr = value
+        else:
+            _STRUCTURED_OVERRIDE_CTX.set(value)
 
     @staticmethod
     def _build_shield():
@@ -506,9 +534,15 @@ class MCPServer:
         pending: list[str] = []
         sub_token = _RESOURCE_SUBSCRIPTIONS_CTX.set(subscriptions)
         pending_token = _RESOURCE_PENDING_UPDATES_CTX.set(pending)
+        # Activate the per-request structured-override slot too: the shared HTTP
+        # MCPServer must not let one client's stashed structured result leak into
+        # a concurrent client's response (the instance attr is shared; this is
+        # not). Starts as None — the same per-call reset handle_tools_call does.
+        override_token = _STRUCTURED_OVERRIDE_CTX.set(None)
         try:
             yield
         finally:
+            _STRUCTURED_OVERRIDE_CTX.reset(override_token)
             _RESOURCE_PENDING_UPDATES_CTX.reset(pending_token)
             _RESOURCE_SUBSCRIPTIONS_CTX.reset(sub_token)
 
