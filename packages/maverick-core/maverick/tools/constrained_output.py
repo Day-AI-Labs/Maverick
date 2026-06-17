@@ -42,7 +42,7 @@ def _coerce(value: Any, typ: str) -> tuple[bool, Any, str]:
             return False, None, "boolean is not a number"
         try:
             num = int(value) if typ == "integer" else float(value)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return False, None, f"{value!r} is not {'an integer' if typ == 'integer' else 'a number'}"
         return True, num, ""
     return False, None, f"unknown type {typ!r}"
