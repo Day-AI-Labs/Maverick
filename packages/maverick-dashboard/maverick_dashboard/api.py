@@ -1068,6 +1068,10 @@ def _handoff_approved_deliverable(g, decided_by: str) -> None:
         rendered = render_deliverable(_goal_shape(g.domain), g.result)
         table = ({"headers": rendered.table.headers, "rows": rendered.table.rows}
                  if rendered.table else None)
+        # Keep the outbound payload aligned with the reviewed artifact.
+        # Structured table deliverables render only the parsed cells in the
+        # dashboard, so do not include surrounding raw model text that the
+        # reviewer did not approve. Prose fallbacks carry the rendered prose.
         webhooks.fire_deliverable_handoff({
             "goal_id": g.id,
             "domain": g.domain,
@@ -1075,7 +1079,7 @@ def _handoff_approved_deliverable(g, decided_by: str) -> None:
             "shape": rendered.shape,
             "decided_by": decided_by,
             "table": table,
-            "result": g.result or "",
+            "result": rendered.prose,
         })
     except Exception:  # pragma: no cover -- hand-off is best-effort
         log.warning("deliverable hand-off failed for goal %s", getattr(g, "id", "?"))
