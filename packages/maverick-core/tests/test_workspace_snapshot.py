@@ -61,8 +61,6 @@ def test_failed_archive_leaves_no_corrupt_snapshot(tmp_path, monkeypatch):
     # must NOT be left with a truncated snap-*.tar.gz that list_snapshots
     # surfaces and a later restore chokes on. The build goes to a temp file
     # that is atomically renamed only on success.
-    import maverick.workspace_snapshot as ws
-
     src = _src(tmp_path)
     store = tmp_path / "snaps"
 
