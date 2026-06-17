@@ -681,6 +681,14 @@ class MCPServer:
         if name not in _TOOL_NAMES:
             raise _ProtocolError(-32602, f"unknown tool: {name!r}")
         arguments = params.get("arguments", {}) or {}
+        # A client can send `arguments` as a non-object (number/bool/string/
+        # list). A truthy non-dict (e.g. 5, True) survives the `or {}` and then
+        # raises TypeError on the `r not in arguments` membership test below,
+        # escaping this dispatch helper as a scrubbed -32603. Reject it as the
+        # correct -32602 invalid-params instead -- mirrors the non-dict `params`
+        # coercion in _handle_stdio_line.
+        if not isinstance(arguments, dict):
+            raise _ProtocolError(-32602, f"arguments for {name} must be an object")
         tool_spec = next(t for t in TOOLS if t["name"] == name)
         required = tool_spec.get("inputSchema", {}).get("required", []) or []
         missing = [r for r in required if r not in arguments]

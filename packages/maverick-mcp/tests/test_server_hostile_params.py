@@ -13,7 +13,8 @@ import io
 import json
 import sys
 
-from maverick_mcp.server import MCPServer
+import pytest
+from maverick_mcp.server import MCPServer, _ProtocolError
 
 
 def _run_lines(monkeypatch, *lines: str) -> list[dict]:
@@ -35,6 +36,32 @@ def test_non_dict_params_is_invalid_params_not_crash(monkeypatch):
     assert "error" in resp, f"expected a JSON-RPC error, got {resp}"
     # Coerced params -> handler reports invalid params, not a scrubbed internal error.
     assert resp["error"]["code"] == -32602
+
+
+def test_non_dict_arguments_is_invalid_params_not_crash(monkeypatch):
+    # A truthy non-dict `arguments` (number/bool) survived the `or {}` guard and
+    # raised TypeError on the required-argument membership test, escaping the
+    # tools/call dispatch helper as a scrubbed -32603. It must be -32602 instead.
+    for bad in ("5", "true", "3.14", '"str"'):
+        req = (
+            '{"jsonrpc":"2.0","id":2,"method":"tools/call",'
+            '"params":{"name":"maverick_start","arguments":' + bad + "}}"
+        )
+        msgs = _run_lines(monkeypatch, req)
+        assert msgs, "server produced no response"
+        resp = msgs[-1]
+        assert resp.get("id") == 2
+        assert "error" in resp, f"expected a JSON-RPC error, got {resp}"
+        assert resp["error"]["code"] == -32602, resp
+
+
+def test_handle_tools_call_non_dict_arguments_raises_protocol_error():
+    # Direct dispatch-helper invariant: never a raw TypeError out of the helper.
+    srv = MCPServer()
+    for bad in (5, True, 3.14):
+        with pytest.raises(_ProtocolError) as ei:
+            srv.handle_tools_call({"name": "maverick_start", "arguments": bad})
+        assert ei.value.code == -32602
 
 
 def test_various_non_dict_params_never_crash(monkeypatch):
