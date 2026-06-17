@@ -267,3 +267,65 @@ def test_federation_disengaged_unchanged(monkeypatch):
     reply = svc.delegate_goal({"auth_token": "tok", "correlation_id": "c4",
                                "goal_title": "legacy"})
     assert reply["accepted"] is True
+
+
+# ---- A2A wiring -----------------------------------------------------------
+
+
+def test_a2a_capability_tightened_by_registry(monkeypatch):
+    from maverick.a2a_tasks import _a2a_capability
+
+    monkeypatch.setattr(agent_trust, "agent_trust_enforced", lambda: True)
+    monkeypatch.setattr(
+        agent_trust, "lookup",
+        lambda agent_id, **kw: TrustedAgent(id="a2a",
+                                            allow_tools=frozenset({"read_file"}))
+        if agent_id == "a2a" else None)
+    cap = _a2a_capability()
+    assert cap.allow_tools == frozenset({"read_file"})
+
+
+def test_a2a_capability_unchanged_when_disengaged(monkeypatch):
+    from maverick.a2a_tasks import _a2a_capability
+
+    monkeypatch.setattr(agent_trust, "agent_trust_enforced", lambda: False)
+    # Disengaged -> no [agent_trust] tightening; default ceiling (all tools,
+    # medium risk) is preserved.
+    cap = _a2a_capability()
+    assert cap.allow_tools == frozenset()  # empty == all
+
+
+# ---- fleet-memory data-scope gating ---------------------------------------
+
+
+def _fleet(monkeypatch, *, registry, enforced=True):
+    from maverick import fleet_memory
+    monkeypatch.setattr(fleet_memory, "enabled", lambda: True)
+    monkeypatch.setattr(fleet_memory, "roster",
+                        lambda: [{"source": "acme:bot"}])
+    monkeypatch.setattr(agent_trust, "agent_trust_enforced", lambda: enforced)
+    monkeypatch.setattr(agent_trust, "load_registry", lambda cfg=None: registry)
+    return fleet_memory
+
+
+def test_fleet_recall_denied_outside_data_scope(monkeypatch):
+    reg = _reg(TrustedAgent(id="bot", data_scopes=frozenset({"support"})))
+    fleet_memory = _fleet(monkeypatch, registry=reg)
+    ctx, reason = fleet_memory.recall("q", agent_id="bot", vendor="acme",
+                                      domain="finance")
+    assert ctx == "" and "finance" in reason
+
+
+def test_fleet_recall_allowed_within_data_scope(monkeypatch):
+    reg = _reg(TrustedAgent(id="bot", data_scopes=frozenset({"support"})))
+    fleet_memory = _fleet(monkeypatch, registry=reg)
+    _ctx, reason = fleet_memory.recall("q", agent_id="bot", vendor="acme",
+                                       domain="support")
+    assert reason == "ok"  # passed the scope gate
+
+
+def test_fleet_recall_unregistered_agent_denied_when_engaged(monkeypatch):
+    fleet_memory = _fleet(monkeypatch, registry={})
+    ctx, reason = fleet_memory.recall("q", agent_id="bot", vendor="acme",
+                                      domain="support")
+    assert ctx == "" and "trust registry" in reason
