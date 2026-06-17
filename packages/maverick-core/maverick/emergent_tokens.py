@@ -80,8 +80,16 @@ def learn(messages, *, escape: str, markers, max_codes: int = 128,
     # Single-character markers only -- the invariant decode() relies on.
     pool = [m for m in dict.fromkeys(markers) if len(m) == 1 and m != escape]
 
+    # A phrase that itself contains the escape character cannot be coded
+    # safely: encode() byte-stuffs every literal escape (E -> EE) *before*
+    # replacing phrases, so the phrase's own escape gets stuffed and either
+    # no longer matches or collides with the stuffed escapes -- corrupting the
+    # decode() round-trip (e.g. corpus phrase "deploy #prod" with escape "#").
+    # Drop such phrases: degrade to no-compression, never to corruption.
+    codable = [p for p in phrase_book.forward if escape not in p]
+
     forward, reverse = {}, {}
-    for phrase, marker in zip(phrase_book.forward, pool, strict=False):  # pool may be shorter
+    for phrase, marker in zip(codable, pool, strict=False):  # pool may be shorter
         forward[phrase] = escape + marker
         reverse[marker] = phrase
     return TokenCodebook(escape=escape, forward=forward, reverse=reverse)
@@ -97,6 +105,12 @@ def encode(text: str, book: TokenCodebook) -> str:
         return text
     text = text.replace(book.escape, book.escape + book.escape)  # byte-stuff literals
     for phrase in sorted(book.forward, key=len, reverse=True):    # longest phrase wins
+        # Skip any phrase containing the escape: stuffing it above would make
+        # the phrase un-matchable / collide with stuffed escapes and corrupt
+        # the round-trip. learn() already drops these; this guards a codebook
+        # loaded from disk that predates that fix.
+        if book.escape in phrase:
+            continue
         text = text.replace(phrase, book.forward[phrase])
     return text
 
