@@ -141,11 +141,14 @@ class TrustedAgent:
     max_dollars: float | None = None
     max_wall_seconds: float | None = None
     data_scopes: frozenset[str] = frozenset()
-    # Per-caller A2A bearer: A2A carries no per-caller identity in-protocol, so an
-    # operator can mint one bearer per agent here. A request presenting it
-    # resolves to principal "agent:<id>" and is governed by THIS entry, not a
-    # shared "a2a" surface entry. "" = this agent has no A2A bearer.
+    # Per-caller bearers for the single-shared-bearer surfaces (A2A / gRPC goal
+    # API / MCP), which carry no per-caller identity in-protocol. A request
+    # presenting one resolves to principal "agent:<id>" and is governed by THIS
+    # entry. Distinct per surface so a token leaked on one surface can't
+    # authenticate another. "" = this agent has no bearer for that surface.
     a2a_token: str = ""
+    grpc_token: str = ""
+    mcp_token: str = ""
     # Key lifecycle (all default to "always valid" so existing configs are
     # byte-for-byte unchanged): a revoked or out-of-window entry is denied by
     # decide_inbound/decide_outbound/verify_identity. `not_before`/`expires_at`
@@ -307,6 +310,8 @@ def _agent_from_entry(entry: dict) -> TrustedAgent | None:
         max_wall_seconds=_positive_float(entry.get("max_wall_seconds")),
         data_scopes=_names(entry.get("data_scopes")),
         a2a_token=str(entry.get("a2a_token") or ""),
+        grpc_token=str(entry.get("grpc_token") or ""),
+        mcp_token=str(entry.get("mcp_token") or ""),
         not_before=_positive_float(entry.get("not_before")),
         expires_at=_positive_float(entry.get("expires_at")),
         revoked=bool(entry.get("revoked")),
@@ -349,25 +354,39 @@ def lookup(agent_id: str, *, registry: dict[str, TrustedAgent] | None = None) ->
     return reg.get(agent_id)
 
 
-def agent_for_a2a_token(
-    token: str, *, registry: dict[str, TrustedAgent] | None = None,
-) -> TrustedAgent | None:
-    """Resolve a presented A2A bearer to its registered agent, or ``None``.
+_TOKEN_ATTRS = {"a2a": "a2a_token", "grpc": "grpc_token", "mcp": "mcp_token"}
 
-    Constant-time compares against every entry's ``a2a_token`` (scanning all so
+
+def agent_for_token(
+    token: str, surface: str, *, registry: dict[str, TrustedAgent] | None = None,
+) -> TrustedAgent | None:
+    """Resolve a presented per-caller bearer for ``surface`` (a2a/grpc/mcp) to
+    its registered agent, or ``None``.
+
+    Constant-time compares against every entry's surface token (scanning all so
     timing doesn't reveal which matched); an empty token never matches. This is
-    how a per-caller A2A bearer maps to a specific :class:`TrustedAgent` so the
-    registry can govern individual A2A callers instead of one shared surface."""
+    how a per-caller bearer maps to a specific :class:`TrustedAgent` so the
+    registry can govern individual callers on a single-shared-bearer surface."""
     import hmac
+    attr = _TOKEN_ATTRS.get(surface)
     presented = (token or "").encode()
-    if not presented:
+    if attr is None or not presented:
         return None
     reg = load_registry() if registry is None else registry
     matched: TrustedAgent | None = None
     for agent in reg.values():
-        if agent.a2a_token and hmac.compare_digest(agent.a2a_token.encode(), presented):
+        configured = getattr(agent, attr, "")
+        if configured and hmac.compare_digest(configured.encode(), presented):
             matched = matched or agent
     return matched
+
+
+def agent_for_a2a_token(
+    token: str, *, registry: dict[str, TrustedAgent] | None = None,
+) -> TrustedAgent | None:
+    """Back-compat wrapper: resolve a per-caller A2A bearer (see
+    :func:`agent_for_token`)."""
+    return agent_for_token(token, "a2a", registry=registry)
 
 
 # -- decision point --------------------------------------------------------
@@ -645,6 +664,7 @@ __all__ = [
     "load_trust_state",
     "load_registry",
     "lookup",
+    "agent_for_token",
     "agent_for_a2a_token",
     "decide_inbound",
     "decide_outbound",

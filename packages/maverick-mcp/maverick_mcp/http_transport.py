@@ -210,16 +210,51 @@ def _check_bearer(authorization: str | None) -> bool:
     """Bearer-token gate for network HTTP transport.
 
     Unlike stdio, HTTP requests are network-reachable; token auth is
-    therefore mandatory and a missing MAVERICK_MCP_TOKEN rejects all
-    requests.
+    therefore mandatory. Two accepted credentials: the shared
+    ``MAVERICK_MCP_TOKEN`` and a per-caller ``[agent_trust] mcp_token`` (real
+    per-caller identity). On top of authentication, when the Agent Trust Plane
+    is engaged the caller must be a permitted inbound agent — a per-caller token
+    gates on its own entry, a shared-token caller on the surface-wide ``"mcp"``
+    entry — so engaging the plane default-denies MCP instead of leaving it open
+    on the shared bearer. No-op (auth only) when disengaged.
     """
     expected = os.environ.get("MAVERICK_MCP_TOKEN")
-    if not expected:
+    given = ""
+    if authorization and authorization.startswith("Bearer "):
+        given = authorization[len("Bearer "):].strip()
+    if not given:
         return False
-    if not authorization or not authorization.startswith("Bearer "):
+    agent = None
+    try:
+        from maverick.agent_trust import agent_for_token
+        agent = agent_for_token(given, "mcp")
+    except Exception:  # pragma: no cover - never break auth on a read error
+        agent = None
+    authed = bool(
+        (expected and hmac.compare_digest(expected.encode(), given.encode()))
+        or agent is not None
+    )
+    if not authed:
         return False
-    given = authorization[len("Bearer "):].strip()
-    return hmac.compare_digest(expected.encode(), given.encode())
+    return _mcp_trust_ok(agent)
+
+
+def _mcp_trust_ok(agent) -> bool:
+    """Agent Trust Plane admission for MCP. True to admit; default-deny (when
+    engaged) for a caller that isn't a registered inbound agent."""
+    try:
+        from maverick import agent_trust
+        enforced, registry = agent_trust.load_trust_state()
+    except Exception:  # pragma: no cover - config read never breaks auth
+        return True
+    if not enforced:
+        return True
+    agent_id = agent.id if agent is not None else "mcp"
+    decision = agent_trust.decide_inbound(agent_id, registry=registry, enforced=True)
+    if decision.denied:
+        agent_trust.record_denied(agent_id, decision, direction="inbound")
+        return False
+    return True
 
 
 def _result_envelope(request_id, result: dict) -> dict:

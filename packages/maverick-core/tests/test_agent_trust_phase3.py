@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 from maverick import agent_trust
 from maverick.agent_trust import TrustedAgent
 
@@ -154,3 +155,82 @@ def test_marketplace_federation_gated_by_registry(monkeypatch):
            "listings": [], "pubkey": "x", "key_id": "k", "sig": "s"}
     report = mf.import_listings(env, peers={"ghost": {"origin": "ghost", "pubkey": "x"}})
     assert "trust registry" in (report.get("reason") or "")
+
+
+# ---- per-surface token isolation ------------------------------------------
+
+
+def test_token_surface_isolation():
+    # A token configured for one surface must not authenticate another.
+    reg = {"vega": TrustedAgent(id="vega", grpc_token="g", mcp_token="m",
+                                a2a_token="a")}
+    assert agent_trust.agent_for_token("g", "grpc", registry=reg).id == "vega"
+    assert agent_trust.agent_for_token("g", "mcp", registry=reg) is None
+    assert agent_trust.agent_for_token("g", "a2a", registry=reg) is None
+    assert agent_trust.agent_for_token("m", "mcp", registry=reg).id == "vega"
+
+
+# ---- gRPC goal API gating -------------------------------------------------
+
+
+class _Ctx:
+    def abort(self, code, details):
+        raise PermissionError(details)
+
+
+def test_grpc_trust_capability_denies_unregistered(monkeypatch):
+    pytest.importorskip("grpc")
+    from maverick.grpc_api import server
+    _patch(monkeypatch, {})  # engaged, no surface-wide "grpc" entry
+    with pytest.raises(PermissionError):
+        server._trust_capability(_Ctx(), None)
+
+
+def test_grpc_trust_capability_allows_registered(monkeypatch):
+    pytest.importorskip("grpc")
+    from maverick.grpc_api import server
+    reg = {"grpc": TrustedAgent(id="grpc", allow_tools=frozenset({"read_file"}))}
+    _patch(monkeypatch, reg)
+    cap = server._trust_capability(_Ctx(), None)
+    assert cap is not None and cap.permits("read_file") and not cap.permits("shell")
+
+
+def test_grpc_trust_capability_noop_when_disengaged(monkeypatch):
+    pytest.importorskip("grpc")
+    from maverick.grpc_api import server
+    _patch(monkeypatch, {}, enforced=False)
+    assert server._trust_capability(_Ctx(), None) is None
+
+
+# ---- MCP gating -----------------------------------------------------------
+
+
+def test_mcp_admits_registered_shared_token(monkeypatch):
+    from maverick_mcp import http_transport as ht
+    monkeypatch.setenv("MAVERICK_MCP_TOKEN", "shared")
+    _patch(monkeypatch, {"mcp": TrustedAgent(id="mcp", direction="both")})
+    assert ht._check_bearer("Bearer shared") is True
+
+
+def test_mcp_denies_when_engaged_no_entry(monkeypatch):
+    from maverick_mcp import http_transport as ht
+    monkeypatch.setenv("MAVERICK_MCP_TOKEN", "shared")
+    _patch(monkeypatch, {})  # engaged, no "mcp" surface entry
+    assert ht._check_bearer("Bearer shared") is False
+
+
+def test_mcp_per_caller_token(monkeypatch):
+    from maverick_mcp import http_transport as ht
+    monkeypatch.delenv("MAVERICK_MCP_TOKEN", raising=False)
+    reg = {"vega": TrustedAgent(id="vega", mcp_token="v-tok", direction="both")}
+    _patch(monkeypatch, reg)
+    assert ht._check_bearer("Bearer v-tok") is True
+    assert ht._check_bearer("Bearer nope") is False
+
+
+def test_mcp_disengaged_auth_only(monkeypatch):
+    from maverick_mcp import http_transport as ht
+    monkeypatch.setenv("MAVERICK_MCP_TOKEN", "shared")
+    _patch(monkeypatch, {}, enforced=False)
+    assert ht._check_bearer("Bearer shared") is True
+    assert ht._check_bearer("Bearer wrong") is False
