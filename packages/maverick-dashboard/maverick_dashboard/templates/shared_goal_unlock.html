@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Open shared Maverick view</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 560px;
+           margin: 0 auto; padding: 2rem 1.25rem; line-height: 1.5; color: #1a1a1a; background: #fff; }
+    @media (prefers-color-scheme: dark) { body { color: #e8e8e8; background: #161616; } }
+    .muted { color: #777; }
+    button { font: inherit; padding: .55rem .85rem; border-radius: 6px; border: 1px solid rgba(127,127,127,.45); }
+  </style>
+</head>
+<body>
+  <h1>Open shared Maverick view</h1>
+  <p class="muted">This read-only link is protected by a revocable token.</p>
+  <form method="post" action="/share/{{ link_id }}">
+    <input type="hidden" name="token" id="share-token" value="">
+    <button type="submit">Open shared view</button>
+  </form>
+  <script>
+    (function () {
+      var token = window.location.hash ? window.location.hash.slice(1) : '';
+      var input = document.getElementById('share-token');
+      input.value = token;
+      if (token) input.form.submit();
+    })();
+  </script>
+</body>
+</html>

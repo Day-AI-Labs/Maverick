@@ -27,12 +27,16 @@ def test_create_and_view_then_revoke(tmp_path, monkeypatch):
     r = client.post(f"/api/v1/goals/{gid}/share")
     assert r.status_code == 201, r.text
     body = r.json()
-    assert "/share/" in body["url"]
-    token = body["url"].split("/share/")[1]
+    assert f"/share/{body['id']}#" in body["url"]
+    token = body["url"].split("#", 1)[1]
+    assert token not in body["url"].split("#", 1)[0]
 
     # public view works WITHOUT auth headers (the token is the credential)
     anon = TestClient(app)  # no Origin / no bearer
-    page = anon.get(f"/share/{token}")
+    landing = anon.get(f"/share/{body['id']}")
+    assert landing.status_code == 200
+    assert token not in landing.request.url.path
+    page = anon.post(f"/share/{body['id']}", data={"token": token})
     assert page.status_code == 200
     assert "Refresh forecast" in page.text
     assert "<td>300</td>" in page.text          # deliverable rendered
@@ -41,12 +45,13 @@ def test_create_and_view_then_revoke(tmp_path, monkeypatch):
     # revoke -> the link dies
     rev = client.post(f"/api/v1/goals/{gid}/share/{body['id']}/revoke")
     assert rev.status_code == 200 and rev.json()["ok"] is True
-    assert anon.get(f"/share/{token}").status_code == 404
+    assert anon.post(f"/share/{body['id']}", data={"token": token}).status_code == 404
 
 
 def test_bad_token_404(tmp_path, monkeypatch):
     _world(tmp_path, monkeypatch)
     assert TestClient(app).get("/share/not-a-real-token").status_code == 404
+    assert TestClient(app).post("/share/1", data={"token": "not-a-real-token"}).status_code == 404
 
 
 def test_share_section_on_goal_page(tmp_path, monkeypatch):
@@ -60,8 +65,9 @@ def test_revoke_is_goal_scoped(tmp_path, monkeypatch):
     w = _world(tmp_path, monkeypatch)
     g1 = _make_goal(w)
     g2 = _make_goal(w)
-    token = client.post(f"/api/v1/goals/{g1}/share").json()["url"].split("/share/")[1]
+    created = client.post(f"/api/v1/goals/{g1}/share").json()
+    token = created["url"].split("#", 1)[1]
     lid = w.share_links_for_goal(g1)[0]["id"]
     # try to revoke g1's link via g2's path -> no-op, link stays live
     client.post(f"/api/v1/goals/{g2}/share/{lid}/revoke")
-    assert TestClient(app).get(f"/share/{token}").status_code == 200
+    assert TestClient(app).post(f"/share/{created['id']}", data={"token": token}).status_code == 200

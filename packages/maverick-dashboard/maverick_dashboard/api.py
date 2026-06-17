@@ -1164,7 +1164,9 @@ async def create_goal_share(request: Request, goal_id: int) -> dict:
     require_permission(request, "operate")
     link_id, token = w.create_share_link(
         goal_id, created_by=caller_principal(request) or "", ttl_seconds=_SHARE_TTL_SECONDS)
-    url = str(request.base_url).rstrip("/") + "/share/" + token
+    # Keep the bearer token in the URL fragment so reverse-proxy access logs only
+    # see /share/<id>; browsers do not send fragments in HTTP request URIs.
+    url = str(request.base_url).rstrip("/") + f"/share/{link_id}#" + token
     return {"id": link_id, "url": url}
 
 

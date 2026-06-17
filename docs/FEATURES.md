@@ -1147,10 +1147,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   config.toml), set on the page (operator role, validated against the registry).
   Injected in `agent.py` beside the persona block, additive and fail-open.
   Per-conversation selection + custom styles are the planned follow-ons.
-- **Share links (`/share/<token>`)** — a revocable, expiring, read-only link to a
+- **Share links (`/share/<id>#<token>`)** — a revocable, expiring, read-only link to a
   goal's deliverable for someone without a dashboard login. v20 `share_links`
   stores only the token's SHA-256 (like a password-reset token), so the DB never
-  holds anything that grants access and the clear token is shown exactly once;
+  holds anything that grants access and the clear token is shown exactly once.
+  The browser keeps the bearer token in the URL fragment and submits it in a
+  POST body, so default reverse-proxy access logs see only `/share/<id>`;
   `create_share_link` / `resolve_share_link` (rejects unknown / revoked /
   expired) / `revoke_share_link` (goal-scoped) / `share_links_for_goal`. The
   public view is auth-exempt (the token IS the credential — bearer + OIDC

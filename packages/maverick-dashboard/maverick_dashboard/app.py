@@ -3567,16 +3567,40 @@ def _goal_artifacts(w, goal_id: int) -> list[dict]:
         return []
 
 
-@app.get("/share/{token}", response_class=HTMLResponse)
-async def shared_goal(request: Request, token: str) -> HTMLResponse:
+@app.get("/share/{link_id}", response_class=HTMLResponse)
+async def shared_goal_unlock(request: Request, link_id: str) -> HTMLResponse:
+    """Landing page for a public share link.
+
+    The clear bearer token is carried in the URL fragment (``/share/<id>#token``),
+    which browsers do not send in HTTP request URIs. This page submits the
+    fragment as POST body data so default proxy access logs do not persist it.
+    """
+    try:
+        int(link_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="this share link is invalid, revoked, or expired") from None
+    return templates.TemplateResponse(request, "shared_goal_unlock.html", {"link_id": link_id})
+
+
+@app.post("/share/{link_id}", response_class=HTMLResponse)
+async def shared_goal(request: Request, link_id: str) -> HTMLResponse:
     """Public, read-only view of a goal's deliverable behind a share token.
 
     Auth-exempt (the token IS the credential): an unknown, revoked, or expired
     token 404s with no detail. Renders only the title + deliverable + artifacts
     -- never the worklog, spend, controls, or nav."""
+    try:
+        share_id = int(link_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="this share link is invalid, revoked, or expired") from None
+    form = await request.form()
+    token = str(form.get("token") or "")
     w = _world()
     goal_id = w.resolve_share_link(token)
     if goal_id is None:
+        raise HTTPException(status_code=404, detail="this share link is invalid, revoked, or expired")
+    links = w.share_links_for_goal(goal_id)
+    if not any(s.get("id") == share_id and s.get("active") for s in links):
         raise HTTPException(status_code=404, detail="this share link is invalid, revoked, or expired")
     g = w.get_goal(goal_id)
     if g is None:  # pragma: no cover -- link resolved but goal gone
