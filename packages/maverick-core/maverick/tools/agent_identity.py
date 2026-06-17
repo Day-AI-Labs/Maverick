@@ -71,7 +71,7 @@ def _run(args: dict[str, Any]) -> str:
         if "payload" not in args:
             return "ERROR: payload is required"
         expected = _sign_bytes(str(args["key"]), str(args["name"]), namespace, args["payload"])
-        ok = hmac.compare_digest(expected, str(args["signature"]))
+        ok = hmac.compare_digest(expected.encode(), str(args["signature"]).encode())
         return "VALID" if ok else "INVALID"
 
     return f"ERROR: unknown op {op!r} (expected id/sign/verify)"

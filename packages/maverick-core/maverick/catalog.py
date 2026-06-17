@@ -260,7 +260,7 @@ def verify_sha256(content: str, expected: str) -> bool:
     if not expected:
         return False
     actual = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    return hmac.compare_digest(actual, expected.lower())
+    return hmac.compare_digest(actual.encode(), expected.lower().encode())
 
 
 __all__ = [

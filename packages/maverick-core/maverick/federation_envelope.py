@@ -188,7 +188,7 @@ def verify_envelope(
     pinned = str(peer.get("pubkey") or "")
     if not pinned:
         return False, f"no pinned pubkey for origin {origin!r}"
-    if not hmac.compare_digest(pubkey.lower(), pinned.lower()):
+    if not hmac.compare_digest(pubkey.lower().encode(), pinned.lower().encode()):
         return False, "envelope pubkey does not match the pinned key for this origin"
     from .audit import signing as audit_signing
     if not audit_signing._have_crypto():

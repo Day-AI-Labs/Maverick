@@ -117,7 +117,7 @@ def verify_session(cookie: str, secret: str, *, now: float | None = None) -> dic
     expected_sig = _mac(payload_bytes, secret)
     # Constant-time compare: never short-circuit on the first differing byte, so
     # the signature can't be recovered via a timing oracle.
-    if not hmac.compare_digest(expected_sig, sig):
+    if not hmac.compare_digest(expected_sig.encode(), sig.encode()):
         return None
 
     try:

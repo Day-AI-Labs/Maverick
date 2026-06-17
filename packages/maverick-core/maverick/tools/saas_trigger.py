@@ -52,7 +52,7 @@ def _verify(args: dict[str, Any]) -> str:
     expected = hmac.new(
         secret.encode("utf-8"), payload.encode("utf-8"), _ALGOS[algo]
     ).hexdigest()
-    if hmac.compare_digest(expected, presented):
+    if hmac.compare_digest(expected.encode(), presented.encode()):
         return f"VALID: {algo} signature"
     return "INVALID: signature mismatch"
 

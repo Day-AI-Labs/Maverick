@@ -84,7 +84,7 @@ def verify_share_link(token: str, *, now: float | None = None) -> int:
     except ValueError as e:
         raise ValueError("malformed share token") from e
     expected = _sign(f"share:{gid}:{expires}", secret)
-    if not hmac.compare_digest(sig, expected):
+    if not hmac.compare_digest(sig.encode(), expected.encode()):
         raise ValueError("invalid share token signature")
     if float(now if now is not None else time.time()) >= expires:
         raise ValueError("share token expired")
@@ -174,7 +174,7 @@ def claim_handoff(code: str, *, now: float | None = None,
         body = body_bytes.decode("utf-8")
     except (ValueError, UnicodeDecodeError) as e:
         raise ValueError("malformed handoff code") from e
-    if not hmac.compare_digest(sig, _sign(body, secret)):
+    if not hmac.compare_digest(sig.encode(), _sign(body, secret).encode()):
         raise ValueError("invalid handoff signature")
     try:
         payload = json.loads(body)
