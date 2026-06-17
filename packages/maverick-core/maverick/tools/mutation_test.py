@@ -68,12 +68,12 @@ def _mutants(source: str, cap: int) -> list[tuple[int, str, str]]:
 def _run(args: dict[str, Any]) -> str:
     if args.get("op") not in (None, "mutants"):
         return f"ERROR: unknown op {args.get('op')!r}"
-    source = args.get("source") or ""
+    source = str(args.get("source") or "")
     if not source.strip():
         return "ERROR: source is required"
     try:
         cap = int(args.get("max", 50))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         cap = 50
     cap = max(1, min(cap, 500))
     try:

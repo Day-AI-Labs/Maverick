@@ -175,7 +175,8 @@ def _cycles(edges: dict[tuple[str, str], int]) -> list[list[str]]:
 def _run_factory(sandbox: Any | None):
     def _run(args: dict[str, Any]) -> str:
         op = args.get("op")
-        raw_paths = [p for p in (args.get("paths") or []) if isinstance(p, str) and p.strip()]
+        paths_arg = args.get("paths")
+        raw_paths = [p for p in paths_arg if isinstance(p, str) and p.strip()] if isinstance(paths_arg, list) else []
         paths, err = _safe_roots(sandbox, raw_paths)
         if err:
             return f"ERROR: {err}"

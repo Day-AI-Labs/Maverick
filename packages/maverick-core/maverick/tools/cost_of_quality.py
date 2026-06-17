@@ -35,7 +35,7 @@ def _analyze(runs: list) -> str:
             return "ERROR: every run needs a boolean 'passed'"
         try:
             retries += int(r.get("retries", 0) or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return "ERROR: 'retries' must be an integer"
         total += cost
         if passed:

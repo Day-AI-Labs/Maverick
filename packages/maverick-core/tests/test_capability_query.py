@@ -47,3 +47,9 @@ def test_check_requires_tool_name():
 
 def test_unknown_op():
     assert capability_query().fn({"op": "bogus"}).startswith("ERROR")
+
+
+def test_check_non_string_tool_does_not_crash():
+    out = capability_query().fn({"op": "check", "tool": 5})
+    assert not out.startswith("Traceback")
+    assert out.startswith("ERROR") or "permitted" in out or "denied" in out

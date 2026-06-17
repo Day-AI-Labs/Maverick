@@ -29,7 +29,7 @@ def _run(args: dict[str, Any]) -> str:
             f"misses: {s['misses']}\nhit_rate: {rate:.1f}%"
         )
     if op == "purge":
-        tool = (args.get("tool") or "").strip() or None
+        tool = str(args.get("tool") or "").strip() or None
         removed = tool_cache.purge(tool)
         scope = f" for {tool!r}" if tool else ""
         return f"purged {removed} cached entr{'y' if removed == 1 else 'ies'}{scope}"

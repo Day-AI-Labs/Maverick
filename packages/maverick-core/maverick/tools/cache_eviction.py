@@ -66,7 +66,7 @@ def _run(args: dict[str, Any]) -> str:
         return f"ERROR: unknown op {args.get('op')!r}"
     try:
         capacity = int(args.get("capacity"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return "ERROR: capacity (positive integer) is required"
     if capacity <= 0:
         return "ERROR: capacity must be > 0"

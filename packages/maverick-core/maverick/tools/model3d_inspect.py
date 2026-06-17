@@ -147,7 +147,7 @@ def _resolve_path(path: str, workdir: Path) -> tuple[Path | None, str | None]:
 def _run(args: dict[str, Any], workdir: Path | None = None) -> str:
     if args.get("op") not in (None, "inspect"):
         return f"ERROR: unknown op {args.get('op')!r}"
-    path = (args.get("path") or "").strip()
+    path = str(args.get("path") or "").strip()
     if not path:
         return "ERROR: path is required"
     root = (workdir or Path.cwd()).resolve()

@@ -21,6 +21,8 @@ _DIMS = ("principal", "tenant", "tool", "tag", "model", "role")
 def _report(items: list[dict], by: list[str], top: int) -> str:
     total = 0.0
     for it in items:
+        if not isinstance(it, dict):
+            return "ERROR: each item must be an object {cost, ...dims}"
         try:
             total += float(it.get("cost", 0) or 0)
         except (TypeError, ValueError):
@@ -54,7 +56,7 @@ def _run(args: dict[str, Any]) -> str:
         return f"ERROR: unknown dimension(s) {bad}; choose from {list(_DIMS)}"
     try:
         top = int(args.get("top", 10))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return "ERROR: top must be an integer"
     return _report(items, by, max(1, top))
 

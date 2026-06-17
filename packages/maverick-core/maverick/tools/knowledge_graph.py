@@ -79,7 +79,9 @@ def _extract(text: str) -> list[list[str]]:
 
 def _as_triples(raw: Any) -> list[list[str]]:
     out: list[list[str]] = []
-    for t in raw or []:
+    if not isinstance(raw, (list, tuple)):
+        return out
+    for t in raw:
         if isinstance(t, (list, tuple)) and len(t) == 3:
             out.append([str(t[0]).strip(), str(t[1]).strip(), str(t[2]).strip()])
     return out
@@ -117,7 +119,7 @@ def _dot(triples: list[list[str]]) -> str:
 def _run(args: dict[str, Any]) -> str:
     op = args.get("op")
     if op == "extract":
-        triples = _extract(args.get("text") or "")
+        triples = _extract(str(args.get("text") or ""))
         if not triples:
             return "no triples extracted"
         return "\n".join(f"{s} | {r} | {o}" for s, r, o in triples)
@@ -125,12 +127,12 @@ def _run(args: dict[str, Any]) -> str:
     if op == "query":
         return _query(
             triples,
-            (args.get("subject") or "").strip(),
-            (args.get("relation") or "").strip(),
-            (args.get("object") or "").strip(),
+            str(args.get("subject") or "").strip(),
+            str(args.get("relation") or "").strip(),
+            str(args.get("object") or "").strip(),
         )
     if op == "neighbors":
-        node = (args.get("node") or "").strip()
+        node = str(args.get("node") or "").strip()
         if not node:
             return "ERROR: neighbors requires node"
         return _neighbors(triples, node)

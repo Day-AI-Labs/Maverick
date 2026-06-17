@@ -73,3 +73,13 @@ def test_errors():
         agents=[{"id": "a", "pending": 1}, {"id": "a", "pending": 1}], slots=2
     ).startswith("ERROR")  # duplicate id
     assert t.fn({"op": "nope", "agents": [{"id": "a", "pending": 1}], "slots": 1}).startswith("ERROR")
+
+
+def test_non_finite_weight_does_not_crash():
+    out = _run(agents=[{"id": "a", "pending": 1, "weight": float("inf")}], slots=2)
+    assert out.startswith("ERROR")
+
+
+def test_infinite_pending_and_slots_do_not_crash():
+    assert _run(agents=[{"id": "a", "pending": float("inf")}], slots=2).startswith("ERROR")
+    assert _run(agents=[{"id": "a", "pending": 1}], slots=float("inf")).startswith("ERROR")

@@ -217,7 +217,7 @@ def _resolve_workdir_path(sandbox, rel: str) -> Path:
 def _make_run(sandbox):
     def _run(args: dict[str, Any]) -> str:
         op = args.get("op")
-        path_arg = args.get("path") or ""
+        path_arg = str(args.get("path") or "")
         if not op:
             return "ERROR: op is required"
         if not path_arg:
