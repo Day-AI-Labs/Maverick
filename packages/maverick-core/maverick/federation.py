@@ -255,24 +255,28 @@ def require_signed() -> bool:
 
 
 def _delegate_envelope(
-    node: str, corr: str, title: str, description: str,
-    requested_tools: Iterable[str], max_risk: str | None, created_at: float,
+    node: str, audience: str, corr: str, title: str, description: str,
+    requested_tools: Iterable[str], max_risk: str | None, deadline_ms: int,
+    created_at: float,
 ) -> dict[str, Any]:
     """The canonical delegation body both halves sign/verify byte-for-byte.
 
-    ``origin`` is the SIGNER's node name; the receiver reconstructs it from its
-    local peer name, so a signature only verifies when the peer's self-name, the
-    receiver's ``[federation] peers`` name, and its ``[agent_trust]`` id agree.
+    ``origin`` is the SIGNER's node name and ``audience`` is the intended
+    receiver node. The receiver reconstructs both from local configuration, so a
+    signature only verifies for the configured caller/recipient pair and cannot
+    be replayed to a different trusting node.
     """
     return {
         "schema": DELEGATE_SCHEMA,
         "origin": node,
+        "audience": audience,
         "created_at": created_at,
         "correlation_id": corr,
         "goal_title": title,
         "goal_description": description,
         "requested_tools": sorted(str(t) for t in requested_tools),
         "max_risk": max_risk or "",
+        "deadline_ms": _to_int(deadline_ms),
     }
 
 
@@ -296,8 +300,8 @@ def _replay_seen(sig: str) -> bool:
 
 
 def _sign_delegation(
-    node: str, corr: str, title: str, description: str,
-    requested_tools: Iterable[str], max_risk: str | None,
+    node: str, audience: str, corr: str, title: str, description: str,
+    requested_tools: Iterable[str], max_risk: str | None, deadline_ms: int,
 ) -> dict[str, Any]:
     """Return ``{sig, pubkey, key_id, created_at}`` for a delegation, or ``{}``
     when signing is unavailable (no ``cryptography``) — an unsigned delegation
@@ -305,8 +309,9 @@ def _sign_delegation(
     created_at = time.time()
     try:
         from . import federation_envelope
-        env = _delegate_envelope(node, corr, title, description,
-                                 requested_tools, max_risk, created_at)
+        env = _delegate_envelope(node, audience, corr, title, description,
+                                 requested_tools, max_risk, deadline_ms,
+                                 created_at)
         signed = federation_envelope.sign_envelope(env)
         return {"sig": signed["sig"], "pubkey": signed["pubkey"],
                 "key_id": signed["key_id"], "created_at": created_at}
@@ -471,15 +476,16 @@ class FederationNode:
         # identity against our pinned key, not just our shared token. Best-effort
         # — an unsigned delegation is still sent and a receiver decides whether
         # to require the signature.
-        signed = _sign_delegation(self.node, corr, title, description,
-                                  tools_sorted, max_risk)
+        deadline_i = _to_int(deadline_ms)
+        signed = _sign_delegation(self.node, peer.name, corr, title, description,
+                                  tools_sorted, max_risk, deadline_i)
         payload = {
             "goal_title": title,
             "goal_description": description,
             "correlation_id": corr,
             "requested_tools": tools_sorted,
             "max_risk": max_risk or "",
-            "deadline_ms": _to_int(deadline_ms),
+            "deadline_ms": deadline_i,
             "auth_token": peer.token,
             **signed,
         }
@@ -589,11 +595,12 @@ class FederationService:
         if not _fresh(float(payload.get("created_at") or 0)):
             return "delegation signature is stale or future-dated"
         env = _delegate_envelope(
-            peer.name, str(payload.get("correlation_id") or ""),
+            peer.name, self.node, str(payload.get("correlation_id") or ""),
             str(payload.get("goal_title") or ""),
             str(payload.get("goal_description") or ""),
             payload.get("requested_tools") or [],
             str(payload.get("max_risk") or "") or None,
+            _to_int(payload.get("deadline_ms")),
             float(payload.get("created_at") or 0),
         )
         env["pubkey"] = str(payload.get("pubkey") or "")

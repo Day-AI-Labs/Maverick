@@ -69,11 +69,13 @@ def _signed_payload(**over):
     title = over.pop("goal_title", "do it")
     desc = over.pop("goal_description", "")
     tools = over.pop("requested_tools", ["read_file"])
-    signed = federation._sign_delegation("a", corr, title, desc, tools, None)
+    deadline = over.pop("deadline_ms", 1000)
+    signed = federation._sign_delegation("a", "b", corr, title, desc, tools,
+                                         None, deadline)
     payload = {
         "auth_token": "tok", "correlation_id": corr, "goal_title": title,
         "goal_description": desc, "requested_tools": tools, "max_risk": "",
-        **signed,
+        "deadline_ms": deadline, **signed,
     }
     payload.update(over)
     return payload
@@ -125,6 +127,27 @@ def test_stale_signature_refused(monkeypatch):
     reply = _service().delegate_goal(payload)
     assert reply["accepted"] is False and (
         "stale" in reply["reason"].lower() or "future" in reply["reason"].lower())
+
+
+def test_deadline_tampering_refused(monkeypatch):
+    _engage(monkeypatch, _both_sides(_local_pubkey()))
+    payload = _signed_payload(deadline_ms=1000)
+    payload["deadline_ms"] = 600_000
+    reply = _service().delegate_goal(payload)
+    assert reply["accepted"] is False
+    assert "signature" in reply["reason"].lower()
+
+
+def test_signed_delegation_is_audience_bound(monkeypatch):
+    _engage(monkeypatch, _both_sides(_local_pubkey()))
+    payload = _signed_payload(deadline_ms=1000)
+    other = FederationService(
+        node="c", peers=[Peer("a", "a:1", "tok")], local_grant=None,
+        goal_service=_Goals(), record=lambda *a, **k: None,
+    )
+    reply = other.delegate_goal(payload)
+    assert reply["accepted"] is False
+    assert "signature" in reply["reason"].lower()
 
 
 # ---- require_signed + migration -------------------------------------------
