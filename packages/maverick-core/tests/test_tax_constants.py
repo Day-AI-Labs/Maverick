@@ -230,3 +230,12 @@ class TestUpdateChannel:
         res = CliRunner().invoke(main, [
             "--db", str(tmp_path / "x.db"), "tax", "update", "--status"])
         assert res.exit_code == 0 and "bundle v1" in res.output
+
+
+def test_validate_payload_rejects_non_finite_numeric_header():
+    # A JSON bundle with an out-of-range number (1e400) parses to float inf;
+    # int(inf) raises OverflowError, which must be caught and reported as a
+    # malformed header rather than escaping validate_payload.
+    from maverick.tax_constants import validate_payload
+    errs = validate_payload({"schema_version": float("inf"), "year": 2025, "version": 1})
+    assert errs == ["malformed header fields"]

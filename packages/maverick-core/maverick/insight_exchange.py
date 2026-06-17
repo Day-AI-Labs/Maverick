@@ -164,7 +164,7 @@ def import_insights(
         try:
             evidence = max(1, int(row.get("evidence", 1) or 1))
             row_ts = float(row.get("ts", ts) or ts)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         incoming.append(DreamInsight(
             ts=row_ts,

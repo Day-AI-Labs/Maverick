@@ -167,7 +167,7 @@ def validate_payload(payload: dict) -> list[str]:
             errs.append("implausible tax year")
         if int(payload.get("version", 0)) < 1:
             errs.append("bundle version must be >= 1")
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return ["malformed header fields"]
     _validate_federal(payload.get("federal") or {}, errs)
     _validate_state(payload.get("state") or {}, errs)
