@@ -22,6 +22,17 @@ def test_agent_for_a2a_token_resolves():
     assert agent_trust.agent_for_a2a_token("", registry={"x": TrustedAgent(id="x")}) is None
 
 
+def test_agent_for_a2a_token_rejects_inactive_or_outbound_only_entries():
+    reg = {
+        "revoked": TrustedAgent(id="revoked", a2a_token="revoked-token", revoked=True),
+        "expired": TrustedAgent(id="expired", a2a_token="expired-token", expires_at=1),
+        "future": TrustedAgent(id="future", a2a_token="future-token", not_before=9_999_999_999),
+        "outbound": TrustedAgent(id="outbound", a2a_token="outbound-token", direction="outbound"),
+    }
+    for token in reg:
+        assert agent_trust.agent_for_a2a_token(f"{token}-token", registry=reg) is None
+
+
 def test_a2a_token_parses_from_config():
     reg = agent_trust.load_registry({"agent_trust": {"agents": [
         {"id": "vega", "a2a_token": "tok-123"},
@@ -47,6 +58,16 @@ def test_a2a_auth_accepts_per_caller_token(monkeypatch):
     assert eng.auth_error("Bearer s3cret") is None          # valid per-caller token
     assert eng.auth_error("Bearer wrong") is not None       # unknown bearer
     assert eng.principal_for("Bearer s3cret") == "agent:vega"
+
+
+def test_a2a_auth_rejects_revoked_per_caller_token(monkeypatch):
+    from maverick.a2a_tasks import TaskEngine
+    monkeypatch.delenv("MAVERICK_A2A_TOKEN", raising=False)
+    reg = {"vega": TrustedAgent(id="vega", a2a_token="s3cret", revoked=True)}
+    _patch(monkeypatch, reg)
+    eng = TaskEngine()
+    assert eng.auth_error("Bearer s3cret") is not None
+    assert eng.principal_for("Bearer s3cret") != "agent:vega"
 
 
 def test_a2a_trust_block_per_caller(monkeypatch):

@@ -352,12 +352,15 @@ def lookup(agent_id: str, *, registry: dict[str, TrustedAgent] | None = None) ->
 def agent_for_a2a_token(
     token: str, *, registry: dict[str, TrustedAgent] | None = None,
 ) -> TrustedAgent | None:
-    """Resolve a presented A2A bearer to its registered agent, or ``None``.
+    """Resolve a valid presented A2A bearer to its registered agent.
 
     Constant-time compares against every entry's ``a2a_token`` (scanning all so
-    timing doesn't reveal which matched); an empty token never matches. This is
-    how a per-caller A2A bearer maps to a specific :class:`TrustedAgent` so the
-    registry can govern individual A2A callers instead of one shared surface."""
+    timing doesn't reveal which matched); an empty token never matches. A token
+    is an authentication credential, so it only resolves while the matching
+    trust entry is active and permitted for inbound calls. Revoked, expired,
+    not-yet-valid, or outbound-only entries therefore fail authentication for
+    A2A management methods as well as task execution.
+    """
     import hmac
     presented = (token or "").encode()
     if not presented:
@@ -366,7 +369,9 @@ def agent_for_a2a_token(
     matched: TrustedAgent | None = None
     for agent in reg.values():
         if agent.a2a_token and hmac.compare_digest(agent.a2a_token.encode(), presented):
-            matched = matched or agent
+            active, _ = agent.is_active()
+            if active and agent.permits_inbound():
+                matched = matched or agent
     return matched
 
 
