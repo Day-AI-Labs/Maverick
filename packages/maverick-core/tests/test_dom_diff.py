@@ -44,6 +44,26 @@ def test_invisible_text_ignored():
     assert "var secret=1" not in d["text_added"]
 
 
+def test_self_closing_void_invisible_tags_do_not_expose_hidden_text():
+    after = (
+        "<html><head><meta/><title>hidden instructions</title></head>"
+        "<body>Visible</body></html>"
+    )
+    d = diff_html("", after)
+    assert "hidden instructions" not in d["text_added"]
+    assert "Visible" in d["text_added"]
+
+
+def test_self_closing_link_does_not_close_invisible_parent():
+    after = (
+        "<html><template><link/>hidden template instructions</template>"
+        "<body>Visible</body></html>"
+    )
+    d = diff_html("", after)
+    assert "hidden template instructions" not in d["text_added"]
+    assert "Visible" in d["text_added"]
+
+
 def test_malformed_html_does_not_raise():
     d = diff_html("<div><p>unclosed", "<div><p>unclosed<span>")
     assert isinstance(d, dict) and "added" in d
