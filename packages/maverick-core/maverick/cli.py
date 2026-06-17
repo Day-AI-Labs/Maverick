@@ -1094,6 +1094,58 @@ def failures_cmd(as_json: bool) -> None:
         click.echo(f"  {mode:<10} {n}")
 
 
+# Extends the existing `governance` group (oversight policy) with the
+# governed-action audit trail: what a run did, and what a skill/source touched.
+@governance.command("lineage")
+@click.argument("goal_id", type=int)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def governance_lineage(goal_id: int, as_json: bool) -> None:
+    """Show + verify the tamper-evident action lineage for a goal."""
+    import json as _json
+
+    from . import governed_actions as _ga
+    links = _ga.load_lineage(goal_id)
+    status = _ga.verify_lineage_file(goal_id)
+    if as_json:
+        click.echo(_json.dumps({"links": links, "verify": status}))
+        return
+    if not links:
+        click.echo(f"no recorded actions for goal {goal_id} "
+                   "(governed actions off? set [actions] enable).")
+        return
+    click.echo(click.style(f"Action lineage for goal {goal_id}", bold=True))
+    for i, link in enumerate(links):
+        click.echo(f"  {i}. {link.get('action')}  skills={link.get('skills') or []}  "
+                   f"sources={link.get('sources') or []}  {str(link.get('hash',''))[:12]}")
+    click.echo(status)
+
+
+@governance.command("impact")
+@click.argument("identifier")
+@click.option("--kind", type=click.Choice(["skill", "source", "any"]), default="any",
+              help="Match the identifier as a skill, a source, or either.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def governance_impact(identifier: str, kind: str, as_json: bool) -> None:
+    """Impact analysis: which recorded actions depended on a skill/source.
+
+    Use after revoking a skill or flagging a bad source to see exactly what it
+    touched across every run.
+    """
+    import json as _json
+
+    from . import governed_actions as _ga
+    hits = _ga.impact_of(identifier, kind=kind)
+    if as_json:
+        click.echo(_json.dumps(hits))
+        return
+    if not hits:
+        click.echo(f"no recorded actions depended on {identifier!r}.")
+        return
+    click.echo(click.style(f"Impact of {identifier!r}: {len(hits)} action(s)", bold=True))
+    for h in hits:
+        click.echo(f"  goal {h['goal_id']}  {h['action']}  via {h['via']}  {h['hash']}")
+
+
 @main.command("analytics")
 @click.option("--sql", default=None, help="Ad-hoc read-only SQL over goals/episodes.")
 @click.option("--top", type=int, default=10, help="Top-N costliest goals (default view).")

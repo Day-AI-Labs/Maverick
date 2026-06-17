@@ -218,3 +218,43 @@ class TestRelevantSkills:
         skills = [self._make_skill(f"s{i}", ["test trigger"]) for i in range(10)]
         out = relevant_skills("test trigger", skills, max_n=3)
         assert len(out) == 3
+
+
+class TestPurposeScopedRecall:
+    @pytest.fixture(autouse=True)
+    def _force_lexical(self, monkeypatch):
+        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed", lambda: False)
+
+    def _skill(self, purposes=()):
+        return Skill(name="s", triggers=["reconcile the general ledger"],
+                     tools_needed=[], body="", path=Path("/x"), purposes=purposes)
+
+    def test_unrestricted_skill_always_recalled(self):
+        s = self._skill()
+        assert s in relevant_skills("reconcile the general ledger now", [s])
+
+    def test_purpose_scoped_hidden_without_purpose(self):
+        # PBAC default: a purpose-scoped skill is NOT recalled when no purpose
+        # is declared for the run.
+        s = self._skill(purposes=("audit",))
+        assert relevant_skills("reconcile the general ledger now", [s]) == []
+
+    def test_purpose_scoped_recalled_within_matching_purpose(self):
+        from maverick.access_policy import purpose_scope
+        s = self._skill(purposes=("audit",))
+        with purpose_scope("audit"):
+            assert s in relevant_skills("reconcile the general ledger now", [s])
+
+    def test_purpose_scoped_hidden_under_wrong_purpose(self):
+        from maverick.access_policy import purpose_scope
+        s = self._skill(purposes=("audit",))
+        with purpose_scope("marketing"):
+            assert relevant_skills("reconcile the general ledger now", [s]) == []
+
+
+class TestSkillPurposeParse:
+    def test_parse_reads_purposes_frontmatter(self, tmp_path):
+        text = ("---\nname: p\ntriggers:\n  - do x\npurposes:\n  - audit\n  - finance\n"
+                "---\n\n# What\n\nA body long enough to be a valid skill file.\n")
+        s = Skill.parse(text, tmp_path / "p.md")
+        assert s.purposes == ("audit", "finance")
