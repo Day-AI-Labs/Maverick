@@ -9,7 +9,7 @@ top of :mod:`maverick.safety.consent` — never around it:
     style as the ``plain_language`` tool), so a non-technical operator
     understands the ask.
   * **Session memory**: remember "ask once per session for this exact
-    ``(action, scope)``" in an injected, expiring session store. This is **not** a
+    request/policy fingerprint in an injected, expiring session store. This is **not** a
     persistent grant — it lives only for the session, has a TTL, and is a cache
     of *a decision the human already made this session*, re-checked, never a way
     to skip a first decision.
@@ -64,9 +64,14 @@ class PendingConsent:
     risk: str = "medium"
     detail: str = ""
 
-    def key(self) -> tuple[str, str]:
-        """The session-memory identity: exact (action, scope)."""
-        return (self.action.strip(), self.scope.strip())
+    def key(self) -> tuple[str, str, str, str]:
+        """The request identity: exact (action, scope, risk, detail)."""
+        return (
+            self.action.strip(),
+            self.scope.strip(),
+            (self.risk.strip() or "medium"),
+            self.detail.strip(),
+        )
 
 
 @dataclass
@@ -86,7 +91,7 @@ class ConsentGroup:
 class SessionConsentMemory:
     """An in-memory, expiring record of decisions made *this session*.
 
-    Stores only granted (action, scope) keys with an expiry timestamp. Not
+    Stores only granted request/policy keys with an expiry timestamp. Not
     persisted anywhere — instantiate one per session and drop it to forget. A
     caller may supply any mapping-like store and a clock for tests.
     """
@@ -95,12 +100,12 @@ class SessionConsentMemory:
                  store: dict | None = None):
         self.ttl_s = float(ttl_s)
         self._clock = clock
-        self._store: dict[tuple[str, str], float] = store if store is not None else {}
+        self._store: dict[tuple, float] = store if store is not None else {}
 
-    def remember_grant(self, key: tuple[str, str]) -> None:
+    def remember_grant(self, key: tuple) -> None:
         self._store[key] = self._clock() + self.ttl_s
 
-    def has_grant(self, key: tuple[str, str]) -> bool:
+    def has_grant(self, key: tuple) -> bool:
         """True iff a non-expired grant for ``key`` was made this session."""
         exp = self._store.get(key)
         if exp is None:
@@ -113,6 +118,21 @@ class SessionConsentMemory:
 
     def clear(self) -> None:
         self._store.clear()
+
+
+def _policy_fingerprint(consent_kwargs: dict) -> tuple[tuple[str, str], ...]:
+    """Stable identity for options that affect consent decisions.
+
+    Session memory must not replay a grant across stricter consent policy, such
+    as ``allow_auto_approve=False`` or ``consult_ledger=False``. Values are
+    represented rather than stored by identity so callers can pass simple
+    JSON-like kwargs deterministically.
+    """
+    return tuple((str(k), repr(v)) for k, v in sorted(consent_kwargs.items()))
+
+
+def _memory_key(p: PendingConsent, consent_kwargs: dict | None = None) -> tuple:
+    return (*p.key(), _policy_fingerprint(consent_kwargs or {}))
 
 
 def _phrase(action: str) -> str:
@@ -172,7 +192,7 @@ def dry_run(pending: list[PendingConsent], memory: SessionConsentMemory) -> dict
     remembered: list[PendingConsent] = []
     would_ask: list[PendingConsent] = []
     for p in pending or []:
-        (remembered if memory.has_grant(p.key()) else would_ask).append(p)
+        (remembered if memory.has_grant(_memory_key(p)) else would_ask).append(p)
     groups = group_pending(would_ask)
     return {
         "remembered_this_session": [
@@ -195,8 +215,9 @@ def ask(
 ) -> dict:
     """Resolve pending prompts, composing with the consent primitive.
 
-    For each prompt: if this session already granted its exact ``(action,
-    scope)`` (a non-expired memory), the grant is replayed (no re-prompt).
+    For each prompt: if this session already granted the exact same request and
+    consent-policy fingerprint (a non-expired memory), the grant is replayed (no
+    re-prompt).
     Otherwise the real ``consent_fn`` (default ``consent.require_consent``)
     decides; a granted decision is remembered for the session, a denial is not
     (so it will be asked again).
@@ -209,10 +230,10 @@ def ask(
         from .safety.consent import require_consent as consent_fn  # noqa: N806
 
     results: list[dict] = []
-    granted: list[tuple[str, str]] = []
-    denied: list[tuple[str, str]] = []
+    granted: list[tuple] = []
+    denied: list[tuple] = []
     for p in pending or []:
-        key = p.key()
+        key = _memory_key(p, consent_kwargs)
         if memory.has_grant(key):
             results.append({"action": p.action, "scope": p.scope,
                             "granted": True, "source": "session-memory"})
