@@ -12,6 +12,7 @@ Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agen
 - 🧾 **Tamper-evident & audit-ready.** A signed, hash-chained, append-only audit log (`maverick audit verify`) with SIEM export, encryption-at-rest, DSAR, and SOC2-aligned evidence — built to survive a security review.
 - 🔒 **Self-host & air-gap.** Runs entirely in your environment — laptop, VPC, Kubernetes, or a disconnected network with no required data egress. No hyperscaler dependency, no telemetry.
 - 📈 **A workforce that provably improves.** Closed-loop learning — offline experience consolidation ("dreaming"), per-department memory, skill distillation with safe forgetting — every learned artifact audited, snapshotted, and rollback-able. `maverick hindsight` detects if learning ever regressed; `maverick proof` reports deliverables, cost avoided, ROI, and the improvement curve.
+- 🔬 **Causal learning, not vibes (opt-in).** A **Cognitive Data Engine** (`maverick flywheel`) triages production failures by their *causal* impact on real outcomes — stratified ATE with confidence intervals, placebo refutation, and a trustworthiness gate — then mines self-retiring **guardrails**, consolidates **habits**, and lets an **Operations Scientist** prove a better process in a world-model before spending a real experiment. The **Consequence Engine** (`maverick record-outcome`) grounds all of it in what *actually* happened — an invoice paid, a ticket reopened — so the workforce learns from reality, not a model grading its own work. All OFF by default.
 - 🏢 **1,118 prebuilt specialists across 26 business suites.** Customer support, finance, legal, HR, ops, GTM, marketing, procurement, data, security ops, tax preparation for CPA firms, and 10 industry verticals (healthcare, insurance, banking, gov contracting, …) — every pack a real agent with a least-privilege tool envelope and risk ceiling. Run `maverick domains-lint` and check for yourself: 0 errors, 0 warnings.
 - 🧠 **Long-horizon multi-agent depth.** A recursive orchestrator spawns specialist sub-agents that work for hours under hard dollar / wall-clock / tool-call caps — frontier-agent depth, on the models *you* choose, with the governance and learning layers no coding-agent runtime ships.
 
@@ -121,6 +122,10 @@ maverick version                         # installed package versions
 | `maverick skill install / remove / info` | Manage the skill marketplace |
 | `maverick template list / show` | Goal templates with `{{ var }}` substitution |
 | `maverick budget` | Total + per-run cost history |
+| `maverick flywheel` | Cognitive Data Engine: causal failure triage → guardrails → habits (opt-in `[data_engine]`) |
+| `maverick record-outcome GOAL EP VALUE` | Feed a real downstream outcome to a past episode (Consequence Engine) |
+| `maverick codebook / codec-learn` | Learn the swarm's auditable coordination shorthand from real messages |
+| `maverick codec-probe` | Measure the codec's real token (not just byte) savings with the target tokenizer |
 
 ## Repository layout
 

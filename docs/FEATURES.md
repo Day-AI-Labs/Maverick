@@ -336,6 +336,54 @@ here.
   in the same Postgres database as the world-model backend (cosine `<=>`
   search); it takes an injected embedder rather than embedding itself, so
   recall reuses the local fastembed model.
+- **Cognitive Data Engine — the causal improvement flywheel** (`data_engine.py`
+  + `flywheel.py`, `maverick flywheel`, opt-in `[data_engine] enable` /
+  `MAVERICK_DATA_ENGINE`) — the Tesla-style data engine for a governed
+  workforce: production failures are triaged by their **causal** impact on real
+  outcomes (fix what moves reality most, not what's merely frequent), the worst
+  actions are mined into **guardrails** (`negative_knowledge.py` — kept only
+  when the causal harm is trustworthy and self-retired when it's gone),
+  beneficial actions consolidate into **habits** (`procedural_memory.py`, a
+  reinforce/forget curve), and the whole loop composes in one pass. OFF by
+  default; reads the trajectory store, mutates nothing until enabled. Observable
+  read-only at `GET /api/v1/flywheel` (mined guardrails + consolidated habits).
+- **Causal estimators — the rigor under the flywheel** (`promotion_effect.py`,
+  `counterfactual_rollout.py`) — effects are estimated, not guessed: a
+  stratified/subclassification ATE with a confidence interval, a placebo
+  refutation, and a `trustworthy` calibration gate (`estimate_effect`), plus a
+  g-computation rollout over a learned tabular world-model
+  (`estimate_effect_via_rollout`). An untrustworthy estimate never promotes a
+  change. Validated to recover a known effect under confounding while rejecting
+  the naive (confounded) contrast.
+- **Operations Scientist — discover a better process and prove it**
+  (`operations_scientist.py`, opt-in `[operations_scientist] enable` /
+  `MAVERICK_OPERATIONS_SCIENTIST`) — pairs a causally-harmful action with the
+  beneficial habit that should replace it ("stop A; do B"), validates the swap
+  in the world-model **before** spending a real experiment, and only a
+  trustworthy positive lift is promoted to a live trial. Discovery, not just
+  labour; OFF by default.
+- **Consequence Engine — reality is the reward** (`consequence.py`, `maverick
+  record-outcome`, dashboard `POST /api/v1/outcomes`, opt-in `[consequence]
+  enable` / `MAVERICK_CONSEQUENCE`) — when a real downstream result lands (an
+  invoice paid, a ticket reopened), it **overrides the verifier's self-graded
+  proxy** so the flywheel learns from what actually happened, not from a model
+  grading its own work. Newest outcome wins, clamped to [0,1]; inert (proxy
+  passes through) until enabled. The HTTP entry point a CRM/ERP/ticketing
+  connector calls once reality reports back.
+- **Emergent Substrate — an auditable coordination shorthand** (`emergent_protocol.py`
+  + `emergent_tokens.py`, `maverick codebook` / `codec-learn` / `codec-probe`,
+  opt-in `[emergent_protocol]` / `[emergent_codec]` / `MAVERICK_EMERGENT_CODEC`) —
+  swarms coordinate in English, most of which is boilerplate they repeat. The
+  codec learns short codes for that boilerplate from the swarm's *actual*
+  messages, and — unlike opaque emergent languages — **every code decodes
+  EXACTLY back to English** (`decode(encode(x)) == x`, fuzz-tested against
+  adversarial content), so the Shield and a human always read plain text while
+  agents move the compressed form. `maverick codec-probe` measures the real
+  token (not just byte) savings with the target tokenizer; the token-aware codec
+  measures **~28% token savings** on realistic coordination in benchmark. OFF by
+  default and currently **measure-only** when wired into the live blackboard
+  (`GET /api/v1/codec` reports what it would save on real traffic) — agents
+  reading the codes to *realize* the savings is a separate, gated step.
 
 ## Tools
 

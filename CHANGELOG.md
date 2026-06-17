@@ -19,6 +19,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   detection.
 - `maverick proof` — workforce value report (deliverables, cost avoided,
   ROI, improvement curve), with per-vendor `--fleet` breakdown.
+- Cognitive Data Engine (`maverick flywheel`, opt-in `[data_engine]`) —
+  causal failure triage (stratified ATE + confidence intervals + placebo
+  refutation + a trustworthiness gate) → self-retiring guardrails →
+  consolidated habits, composed in one pass; observable at
+  `GET /api/v1/flywheel`.
+- Operations Scientist (opt-in `[operations_scientist]`) — propose a
+  harmful→beneficial action swap and validate it in a g-computation
+  world-model before spending a real experiment.
+- Consequence Engine (`maverick record-outcome`, `POST /api/v1/outcomes`,
+  opt-in `[consequence]`) — a real downstream outcome overrides the
+  verifier's self-graded proxy so learning is grounded in reality.
+- Emergent Substrate (`maverick codebook` / `codec-learn` / `codec-probe`,
+  opt-in `[emergent_protocol]` / `[emergent_codec]`) — an auditable
+  coordination codec that learns short codes for repeated boilerplate;
+  every code decodes EXACTLY back to English (`decode(encode(x)) == x`,
+  fuzz-tested). `codec-probe` measures real token (not just byte) savings;
+  the token-aware codec measures ~28% in benchmark. Measure-only on the live
+  blackboard (`GET /api/v1/codec`); agents reading codes is a separate step.
 - Fleet memory (`maverick fleet-memory`, MCP tools `maverick_fleet_ingest`
   / `maverick_fleet_recall`) — governed, audited memory plane for external
   agents.
