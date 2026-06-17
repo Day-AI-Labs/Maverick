@@ -116,10 +116,9 @@ def promote_skill_live(candidate: str, constraints, *,
 
     def deploy(cand: str, fraction: float) -> None:
         try:
-            from .audit import events, record
-            record(events.AuditEvent(
-                kind=events.EventKind.LEARNING_UPDATE, agent="learning_rollout",
-                payload={"candidate": cand, "stage_fraction": fraction, "phase": "deploy"}))
+            from .audit import EventKind, record
+            record(EventKind.LEARNING_UPDATE, agent="learning_rollout",
+                   candidate=cand, stage_fraction=fraction, phase="deploy")
         except Exception:
             pass
 

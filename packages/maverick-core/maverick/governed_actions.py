@@ -51,18 +51,20 @@ def _require_approval_at() -> str:
         return "high"
 
 
-def _canonical(params: dict) -> str:
-    """Stable JSON for hashing/lineage; secrets redacted (fail-open)."""
+def _canonical(params: dict, *, max_len: int = 4000) -> str:
+    """Stable JSON for hashing/lineage; secrets redacted THEN size-capped
+    (fail-open). The cap bounds the ledger and avoids persisting large tool
+    inputs (e.g. full file contents) verbatim."""
     try:
         raw = json.dumps(params, sort_keys=True, default=str)
     except Exception:  # pragma: no cover -- unserializable -> repr
         raw = repr(params)
     try:
         from .safety.secret_detector import redact
-        red, _ = redact(raw)
-        return red
+        raw, _ = redact(raw)
     except Exception:  # pragma: no cover -- detector optional
-        return raw
+        pass
+    return raw if len(raw) <= max_len else raw[:max_len] + "...(truncated)"
 
 
 def _link_hash(action: str, params_json: str, prev_hash: str) -> str:
@@ -264,7 +266,18 @@ def enabled() -> bool:
 
 
 def _lineage_dir(store_dir: str | Path | None = None) -> Path:
-    return Path(store_dir).expanduser() if store_dir else Path("~/.maverick/lineage").expanduser()
+    """Where per-goal lineage lives. With an ACTIVE tenant it resolves under the
+    tenant's data dir (one tenant's audit trail never mixes with another's),
+    matching the other learned stores; single-tenant keeps the legacy path."""
+    if store_dir is not None:
+        return Path(store_dir).expanduser()
+    try:
+        from .paths import current_tenant, data_dir
+        if current_tenant():
+            return data_dir("lineage")
+    except Exception:  # pragma: no cover -- isolation never blocks lineage
+        pass
+    return Path("~/.maverick/lineage").expanduser()
 
 
 def record_tool_lineage(goal_id: int, action: str, params: object, *,

@@ -143,3 +143,24 @@ def test_impact_of_finds_actions_that_used_a_skill_or_source(tmp_path):
     assert {h["goal_id"] for h in src} == {11} and len(src) == 2
     # nothing for an unused identifier
     assert ga_mod.impact_of("nope", store_dir=tmp_path) == []
+
+
+def test_lineage_is_tenant_scoped(monkeypatch, tmp_path):
+    # With an active tenant, lineage lives under the tenant's data dir -- one
+    # tenant's audit trail must never mix with another's (matches the other
+    # learned stores). Patch the tenant resolver to avoid coupling to its API.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    tbase = tmp_path / "tenants" / "acme"
+    monkeypatch.setattr("maverick.paths.current_tenant", lambda: "acme")
+    monkeypatch.setattr("maverick.paths.data_dir", lambda *p: tbase.joinpath(*p))
+    ga_mod.record_tool_lineage(4, "shell", {"c": "y"})
+    assert ga_mod.load_lineage(4)[0]["action"] == "shell"
+    assert (tbase / "lineage" / "4.ndjson").exists()
+    assert not (tmp_path / ".maverick" / "lineage" / "4.ndjson").exists()  # not the flat dir
+
+
+def test_lineage_caps_large_params(tmp_path):
+    # A huge tool input (e.g. full file content) must not be stored verbatim.
+    ga_mod.record_tool_lineage(2, "write_file", {"content": "x" * 10000}, store_dir=tmp_path)
+    pj = ga_mod.load_lineage(2, store_dir=tmp_path)[0]["params_json"]
+    assert pj.endswith("...(truncated)") and len(pj) < 5000
