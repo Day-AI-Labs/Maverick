@@ -69,6 +69,7 @@ KNOWN_SCHEMA: dict[str, set[str] | None] = {
         # capability-enforcement feature, or the deferred-tools knob, got a
         # false "unknown key" warning (client-journey finding).
         "enforce",
+        "per_call_tokens",
         "deferred_tools",
     },
     # Tamper-evident audit log. The runtime reads [audit] sign (audit/writer.py)
@@ -170,6 +171,7 @@ _BOOL_KEYS: dict[str, set[str]] = {
         "mobile_tools",
         "code_exec",
         "enforce",
+        "per_call_tokens",
         "deferred_tools",
     },
     "audit": {"sign"},

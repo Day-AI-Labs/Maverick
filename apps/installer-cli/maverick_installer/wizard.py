@@ -1311,6 +1311,13 @@ def pick_advanced() -> dict[str, Any]:
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
             default=False,
         ),
+        "per_call_token_exchange": _q_confirm(
+            "Per-call token exchange? Each tool call trades the run-long grant for "
+            "a freshly minted, single-tool, short-lived signed token (zero-trust; "
+            "shrinks the blast radius of a mid-run compromise). Needs capability "
+            "enforcement.",
+            default=False,
+        ),
         "enforce_quotas": _q_confirm(
             "Enforce per-principal usage quotas? Track spend (dollars + tokens) per "
             "user per day and refuse to start a new goal once the daily cap is hit "
@@ -3028,6 +3035,12 @@ def write_config(
         capability_config["web_search"] = True
     if advanced and advanced.get("enforce_capabilities"):
         capability_config["enforce"] = True
+    if advanced and advanced.get("per_call_token_exchange"):
+        # Per-call token exchange only makes sense atop capability enforcement
+        # (a token minted from no grant has nothing to scope), so turning it on
+        # implies enforcement.
+        capability_config["enforce"] = True
+        capability_config["per_call_tokens"] = True
 
     # The embedded-device flash gate lives under [embedded], not
     # [capabilities] -- pull it out before emitting the capabilities block.

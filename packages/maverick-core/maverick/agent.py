@@ -1105,6 +1105,59 @@ class Agent:
             f"not granted tool {name!r}. The tool was not executed."
         )
 
+    def _tool_token_denial(self, name: str, cap) -> str | None:
+        """Per-call token exchange: trade the run-long grant for a freshly
+        minted, single-tool-scoped, short-lived, signed token and verify it
+        before dispatch (Kagenti-style "token exchange for every tool call",
+        mapped onto our own capability + Ed25519 primitives).
+
+        No-op unless ``[capabilities] per_call_tokens`` is on AND a grant exists
+        (== capability enforcement is on). Minting/verification never crashing
+        the agent loop is treated as fail-open -- the static ``permits()`` check
+        above already authorized the call; a verification *failure* (expired,
+        tampered, replayed, wrong tool) fail-closes only because the operator
+        explicitly turned the feature on.
+        """
+        if cap is None:
+            return None
+        from .tool_token import tool_tokens_enabled
+        if not tool_tokens_enabled():
+            return None
+        from .tool_token import mint_tool_token, verify_tool_token
+        try:
+            token = mint_tool_token(cap, name)
+            ok = verify_tool_token(token, name)
+        except Exception:  # pragma: no cover -- exchange must never brick a run
+            return None
+        if ok:
+            try:  # auditable record of the scoped credential this call ran under
+                from .audit import EventKind, record
+                record(
+                    EventKind.TOKEN_EXCHANGE, agent=self.name,
+                    goal_id=self.ctx.goal_id, tool=name, principal=cap.principal,
+                    jti=token.jti, expires_at=token.expires_at,
+                    signed=token.signature is not None,
+                )
+            except Exception:  # pragma: no cover
+                pass
+            return None
+        self.ctx.blackboard.post(
+            self.name, "error",
+            f"tool={name} DENIED: per-call token verification failed "
+            f"(principal={cap.principal})",
+        )
+        try:  # tamper-evident record of the denial; never block on audit
+            from .audit import EventKind, record
+            record(EventKind.CAPABILITY_DENIED, agent=self.name,
+                   goal_id=self.ctx.goal_id, tool=name,
+                   principal=cap.principal, reason="tool_token_invalid")
+        except Exception:  # pragma: no cover
+            pass
+        return (
+            f"⚠ DENIED by capability policy: per-call token for tool {name!r} "
+            "could not be verified. The tool was not executed."
+        )
+
     def _capability_path_denial(self, name: str, args: dict, cap) -> str | None:
         # P0 capability layer (path resource-scopes): for known filesystem
         # tools, gate the canonical workspace-relative path(s) they will touch.
@@ -1381,12 +1434,19 @@ class Agent:
         # no-op unless capability enforcement was opted in. Deny wins -- the
         # tool never runs and the model gets a clear, non-leaky refusal.
         cap = self._effective_capability(name)
-        # Capability gates (revocation kill-switch, tool grant, path scopes).
-        # Each returns a non-leaky refusal string when it denies, else None.
-        if (d := self._capability_revocation_denial(name, cap)) is not None:
-            return d
-        if (d := self._capability_permits_denial(name, cap)) is not None:
-            return d
+        # Capability gates that key only on (name, cap): the revocation
+        # kill-switch, the tool-grant check, and the zero-trust per-call token
+        # exchange (scope the grant to this one tool, short-lived + signed, and
+        # verify before dispatch -- no-op unless [capabilities] per_call_tokens
+        # is on). Each returns a non-leaky refusal string when it denies, else
+        # None; checked in order so deny wins and the tool never runs.
+        for _gate in (
+            self._capability_revocation_denial,
+            self._capability_permits_denial,
+            self._tool_token_denial,
+        ):
+            if (d := _gate(name, cap)) is not None:
+                return d
         if (d := self._capability_path_denial(name, args, cap)) is not None:
             return d
         # Operating-Twin pre-execution gates (both no-op + fail-open by default):

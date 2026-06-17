@@ -943,7 +943,15 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 - **Access control** — tool ACLs, consent prompts + a persistent **consent
   ledger** (`safety/consent.py`; `MAVERICK_CONSENT_MODE` =
   auto-approve / auto-deny / ask / dashboard), capability tokens
-  (`capability.py`), role-based access control over capabilities, the
+  (`capability.py`), **per-call token exchange** (`tool_token.py`, opt-in
+  `[capabilities] per_call_tokens` / `MAVERICK_TOOL_TOKENS=1`): each tool call
+  *exchanges* the run-long grant for a freshly minted, single-tool-scoped,
+  short-lived (default 30s), single-use, Ed25519-signed token — verified before
+  dispatch and recorded as a `token_exchange` audit row — so a mid-run
+  compromise can only ever wield one tool for a few seconds, not the whole
+  grant (zero-trust "token exchange for every tool call", mapped onto our own
+  capability + audit-signing primitives — no new deps; fail-open and a no-op
+  unless enabled), role-based access control over capabilities, the
   `self_capability` self-report tool, **capability boot negotiation**
   (`capability_boot.py`): a spawned child may declare a narrower requested
   scope (tools/max_risk/paths/hosts), and `negotiate_boot` resolves it against
