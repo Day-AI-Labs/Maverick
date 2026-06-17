@@ -131,6 +131,25 @@ enable = true
 # snapshots / promote_shared / user_notes -- see FEATURES.md "Dreaming".
 trusted_insight_pubkeys = []   # peers for `maverick insights-import`
 
+[data_engine]              # Cognitive Data Engine flywheel (default off)
+enable = true              # causal failure triage -> guardrails -> habits
+# Reads the trajectory store; mutates nothing until enabled. `maverick flywheel`.
+
+[operations_scientist]     # discover + prove a better process (default off)
+enable = true              # propose a swap, validate it in the world-model first
+
+[consequence]              # reality is the reward (default off)
+enable = true              # a recorded outcome overrides the verifier proxy
+# Feed outcomes via `maverick record-outcome` or POST /api/v1/outcomes.
+
+[emergent_protocol]        # auditable coordination shorthand (default off)
+enable = true              # learn short codes for repeated boilerplate; every
+                           # code decodes EXACTLY back to English. `maverick codebook`.
+
+[emergent_codec]           # token-aware codec, live measurement (default off)
+enable = true              # measure (never apply) the codec's token savings on
+                           # the real coordination stream; GET /api/v1/codec.
+
 [reflexion]                # cross-run failure lessons (default off)
 enable = true
 

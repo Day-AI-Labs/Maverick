@@ -74,6 +74,11 @@ for false unless noted otherwise.
 | `MAVERICK_TOT_CANDIDATES` | built-in | Number of candidate plans tree-of-thought forks. |
 | `MAVERICK_REFLEXION` | config `[reflexion] enable` (off) | Enable the reflexion self-critique loop. |
 | `MAVERICK_DREAMING` | config `[dreaming] enable` (off) | Enable offline experience consolidation (`maverick dream`). |
+| `MAVERICK_DATA_ENGINE` | config `[data_engine] enable` (off) | Enable the Cognitive Data Engine flywheel: causal failure triage → guardrails → habits (`maverick flywheel`). |
+| `MAVERICK_OPERATIONS_SCIENTIST` | config `[operations_scientist] enable` (off) | Enable the Operations Scientist: propose + simulate a better process before a real experiment. |
+| `MAVERICK_CONSEQUENCE` | config `[consequence] enable` (off) | Ground learning in real downstream outcomes over the verifier proxy (`maverick record-outcome`). |
+| `MAVERICK_EMERGENT_PROTOCOL` | config `[emergent_protocol] enable` (off) | Enable the auditable coordination codec (sentinel form; `maverick codebook`). |
+| `MAVERICK_EMERGENT_CODEC` | config `[emergent_codec] enable` (off) | Measure the token-aware codec on the live coordination stream (telemetry only; `maverick codec-learn`). |
 | `MAVERICK_DOMAIN_DISCIPLINE` | config `[domains] discipline` (on) | Append suite operating discipline to specialist personas at spawn. |
 | `MAVERICK_FLEET_MEMORY` | config `[fleet_memory] enable` (off) | Allow registered external agents to use the governed memory plane. |
 | `MAVERICK_PRM` | `null` | Process reward model: `null`, `heuristic`, or `remote`. |
