@@ -146,3 +146,30 @@ def test_fact_history_matching_scopes_to_subject(tmp_path, monkeypatch):
     hist = w.fact_history_matching("sms:alice")
     assert set(hist) == {"user:sms:alice:addr"}
     assert [v.value for v in hist["user:sms:alice:addr"]] == ["A1", "A2"]  # asc
+
+
+def test_fact_history_matching_is_case_sensitive(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_TEMPORAL_MEMORY", "1")
+    w = _wm(tmp_path)
+    lower = "user:sms:alice:addr"
+    upper = "user:sms:Alice:addr"
+    w.upsert_fact(lower, "lower")
+    w.upsert_fact(upper, "upper")
+
+    hist = w.fact_history_matching("sms:alice")
+    assert set(hist) == {lower}
+    assert [v.value for v in hist[lower]] == ["lower"]
+
+
+def test_delete_facts_matching_history_purge_is_case_sensitive(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_TEMPORAL_MEMORY", "1")
+    w = _wm(tmp_path)
+    lower = "user:sms:alice:addr"
+    upper = "user:sms:Alice:addr"
+    w.upsert_fact(lower, "lower")
+    w.upsert_fact(upper, "upper")
+
+    assert w.delete_facts_matching("sms:alice") == [lower]
+    assert w.fact_history(lower) == []
+    assert [v.value for v in w.fact_history(upper)] == ["upper"]
+    assert w.get_fact(upper) == "upper"

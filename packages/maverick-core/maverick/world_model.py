@@ -1633,7 +1633,7 @@ class WorldModel:
         if not token:
             return []
         keys = sorted(self.facts_matching(token).keys())
-        prefix_like = self._like_escape(f"user:{token}:") + "%"
+        prefix = f"user:{token}:"
         with self._writing() as conn:
             if keys:
                 ph = ",".join("?" * len(keys))
@@ -1644,8 +1644,8 @@ class WorldModel:
             # retained) is erased too and can't be recovered via
             # get_fact(as_of=...). No-op (empty table) when temporal is off.
             conn.execute(
-                "DELETE FROM fact_history WHERE key LIKE ? ESCAPE '\\'",
-                (prefix_like,),
+                "DELETE FROM fact_history WHERE substr(key, 1, ?) = ?",
+                (len(prefix), prefix),
             )
         return keys
 
@@ -1699,12 +1699,12 @@ class WorldModel:
         ``[memory] temporal`` retained any history."""
         if not token:
             return {}
-        like = self._like_escape(f"user:{token}:") + "%"
+        prefix = f"user:{token}:"
         rows = self._read_all(
             "SELECT key, value, valid_from, valid_to, source, trust_tier, "
-            "sensitivity FROM fact_history WHERE key LIKE ? ESCAPE '\\' "
+            "sensitivity FROM fact_history WHERE substr(key, 1, ?) = ? "
             "ORDER BY key, valid_from",
-            (like,),
+            (len(prefix), prefix),
         )
         out: dict[str, list[FactVersion]] = {}
         for r in rows:
