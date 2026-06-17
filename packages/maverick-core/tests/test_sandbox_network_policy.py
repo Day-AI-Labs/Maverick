@@ -52,6 +52,20 @@ def test_trailing_root_dot_canonicalized_for_allow_rules():
     assert host_allowed("http_fetch", "api.openai.com.", policy)
 
 
+def test_scalar_string_deny_rule_is_honored():
+    # A hand-edited config may give a bare string instead of a list. Iterating a
+    # string yields characters, which used to make a string deny rule silently
+    # never match (fail-OPEN). A lone string must act as a single-pattern list.
+    assert not host_allowed("shell", "anything.com", {"shell": {"deny_egress": "*"}})
+    assert not host_allowed(
+        "http_fetch", "api.evil.com", {"http_fetch": {"deny_egress": "api.evil.com"}}
+    )
+    # And a scalar allow rule restricts to exactly that host.
+    pol = {"http_fetch": {"allow_egress": "api.github.com"}}
+    assert host_allowed("http_fetch", "api.github.com", pol)
+    assert not host_allowed("http_fetch", "evil.com", pol)
+
+
 def test_describe():
     assert "unrestricted" in describe("unknown", _POLICY)
     assert "allow=" in describe("http_fetch", _POLICY)

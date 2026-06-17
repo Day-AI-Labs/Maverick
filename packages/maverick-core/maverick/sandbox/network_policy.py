@@ -52,6 +52,12 @@ def _canonical_dns_name(name: str) -> str:
 
 
 def _matches(host: str, patterns) -> bool:
+    # A hand-edited config may give a bare string (``deny_egress = "*"``) instead
+    # of a list. Iterating a string yields its characters, so a string deny rule
+    # would silently never match -- a fail-OPEN on the security-critical deny
+    # path. Treat a lone string as a single-pattern list.
+    if isinstance(patterns, str):
+        patterns = [patterns]
     h = _canonical_dns_name(host)
     return any(fnmatch(h, _canonical_dns_name(str(p))) for p in (patterns or []))
 

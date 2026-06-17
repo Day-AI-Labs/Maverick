@@ -141,9 +141,13 @@ def _parse_stream_response(stream_text: str) -> str:
                         if isinstance(cand, list) and len(cand) > 1:
                             content = cand[1]
                             if isinstance(content, list) and content:
-                                text = _extract_text(content[0])
-                                if text:
-                                    pieces.append(text)
+                                # Use a distinct name: reassigning `text` here
+                                # would clobber the stream buffer the outer
+                                # `while idx < len(text)` loop iterates over,
+                                # so only the first chunk would ever parse.
+                                cand_text = _extract_text(content[0])
+                                if cand_text:
+                                    pieces.append(cand_text)
                                     break
         except (json.JSONDecodeError, IndexError, TypeError):
             continue
