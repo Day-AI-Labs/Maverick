@@ -76,6 +76,11 @@
       }
     },
     "RunGoalRequest": {
+      "capability_json": {
+        "label": "",
+        "number": 7,
+        "type": "string"
+      },
       "channel": {
         "label": "",
         "number": 4,
@@ -85,6 +90,11 @@
         "label": "",
         "number": 1,
         "type": "int64"
+      },
+      "max_depth": {
+        "label": "",
+        "number": 6,
+        "type": "int32"
       },
       "max_dollars": {
         "label": "",

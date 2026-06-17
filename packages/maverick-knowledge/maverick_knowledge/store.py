@@ -109,6 +109,19 @@ class SqliteVectorStore:
         ).fetchone()
         return n
 
+    def close(self) -> None:
+        """Close the underlying SQLite connection (idempotent)."""
+        db = getattr(self, "_db", None)
+        if db is not None:
+            db.close()
+            self._db = None
+
+    def __enter__(self) -> SqliteVectorStore:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
 
 def build_store(cfg: dict | None = None):
     """Select a vector store from config. Defaults to embedded SQLite; pgvector

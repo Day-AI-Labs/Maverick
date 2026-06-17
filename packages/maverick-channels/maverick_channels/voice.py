@@ -125,7 +125,7 @@ class VoiceChannel(Channel):
         if not authorization or not authorization.startswith("Bearer "):
             return False
         given = authorization[len("Bearer "):].strip()
-        return hmac.compare_digest(expected, given)
+        return hmac.compare_digest(expected.encode("utf-8"), given.encode("utf-8"))
 
     async def _handle_webhook(
         self,

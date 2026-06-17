@@ -461,11 +461,11 @@ def build_app(server) -> FastAPI:
         body = await _read_limited_json(request, HTTPException)
         if not isinstance(body, dict):
             raise HTTPException(status_code=400, detail="body must be a JSON object")
+        # Match the stdio transport: a JSON-RPC notification is a message with
+        # NO id key. An explicit `"id": null` is a request still owed a reply,
+        # so it must NOT be treated as a notification.
+        is_notification = "id" not in body
         request_id = body.get("id")
-        # Match the stdio transport: a JSON-RPC notification is a message
-        # with no id (or id == null). Keying on `"id" not in body` diverged
-        # from stdio, which treats {"id": null} as a notification.
-        is_notification = request_id is None
         method = body.get("method", "")
         params = body.get("params", {}) or {}
         if not isinstance(params, dict):

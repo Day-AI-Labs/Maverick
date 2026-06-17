@@ -57,6 +57,11 @@ class ChromaStore:
             pass
 
         self._client = PersistentClient(path=str(store_path))
+        # Remember the embedding function so reset() recreates the collection in
+        # the SAME embedding space. Recreating without it would silently fall
+        # back to Chroma's default embedder, so post-reset vectors live in a
+        # different space and never match the originals.
+        self._embedding_function = embedding_function
         self._collection = self._client.get_or_create_collection(
             name=collection,
             embedding_function=embedding_function,
@@ -130,6 +135,7 @@ class ChromaStore:
             pass
         self._collection = self._client.get_or_create_collection(
             name=self._collection_name,
+            embedding_function=self._embedding_function,
         )
 
 

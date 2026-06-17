@@ -23,6 +23,23 @@ import uuid as _uuid
 log = logging.getLogger(__name__)
 
 
+def _active_tenant() -> str | None:
+    """Tenant scope for vector ids, or ``None`` for legacy single-tenant use."""
+    try:
+        from ..paths import current_tenant
+        return current_tenant()
+    except Exception:  # pragma: no cover -- tenancy never blocks vector ops
+        return None
+
+
+def _stored_id(doc_id: str, tenant_id: str | None) -> str:
+    """Namespace an id by tenant so one tenant can't delete another's vectors
+    -- the same scheme the pgvector adapter uses for its row ids."""
+    if tenant_id is None:
+        return doc_id
+    return f"tenant:{tenant_id}:{doc_id}"
+
+
 def _uuid_for(doc_id: str) -> str:
     """Weaviate object IDs must be UUIDs; map an arbitrary string id onto a
     stable UUID5 so re-adding the same id upserts rather than duplicates."""
@@ -89,13 +106,17 @@ class WeaviateStore:
         if metadatas is not None and len(metadatas) != len(documents):
             raise ValueError(
                 f"metadatas length {len(metadatas)} != documents length {len(documents)}")
+        tenant_id = _active_tenant()
         coll = self._client.collections.get(self._collection)
         with coll.batch.dynamic() as batch:
             for i, doc in enumerate(documents):
                 props = {"document": doc}
                 if metadatas:
                     props.update(metadatas[i] or {})
-                batch.add_object(properties=props, uuid=_uuid_for(ids[i]))
+                batch.add_object(
+                    properties=props,
+                    uuid=_uuid_for(_stored_id(ids[i], tenant_id)),
+                )
 
     def query(self, text: str, *, top_k: int = 5) -> list[dict]:
         if not text:
@@ -122,10 +143,11 @@ class WeaviateStore:
     def delete(self, ids: list[str]) -> None:
         if not ids:
             return
+        tenant_id = _active_tenant()
         coll = self._client.collections.get(self._collection)
         for doc_id in ids:
             try:
-                coll.data.delete_by_id(_uuid_for(doc_id))
+                coll.data.delete_by_id(_uuid_for(_stored_id(doc_id, tenant_id)))
             except Exception as e:  # pragma: no cover -- backend-specific
                 log.debug("weaviate: delete %s failed: %s", doc_id, e)
 

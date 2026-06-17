@@ -79,10 +79,19 @@ class ApplySummary:
     """Result of applying one or more SEARCH/REPLACE blocks."""
     results: list[ApplyResult] = field(default_factory=list)
     files_touched: set[str] = field(default_factory=set)
+    # June 17 council fix (SR audit #5): paths whose atomic-rollback
+    # restore/unlink itself failed, leaving on-disk state mutated despite
+    # the transaction reporting failure. Non-empty => the workspace is
+    # NOT clean; callers must not trust a "rolled back" outcome.
+    rollback_failures: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        return bool(self.results) and all(r.ok for r in self.results)
+        return (
+            bool(self.results)
+            and all(r.ok for r in self.results)
+            and not self.rollback_failures
+        )
 
     @property
     def num_failed(self) -> int:
@@ -106,6 +115,11 @@ class ApplySummary:
                 parts.append(f"  ✓ {r.block.path} ({r.match_kind})")
             else:
                 parts.append(f"  ✗ {r.block.path}: {r.reason}")
+        if self.rollback_failures:
+            parts.append(
+                "  ⚠ ROLLBACK INCOMPLETE — workspace left mutated for: "
+                + ", ".join(self.rollback_failures)
+            )
         return "\n".join(parts)
 
 
@@ -258,10 +272,15 @@ def _find_with_fuzzy(content: str, needle: str) -> tuple[int | None, int | None,
         return idx, idx + len(needle), "exact"
 
     # 2. Trailing-whitespace-stripped per-line match.
+    # June 17 council fix (SR audit #4): the step-1 ambiguity guard in
+    # `_apply_one` only counts EXACT needle occurrences; an rstrip-equal
+    # needle could still match 2+ locations here, and the find()-based
+    # map-back would silently edit the FIRST. Mirror step 3's guard:
+    # only accept an UNAMBIGUOUS rstrip match.
     needle_rs = _rstrip_lines(needle)
     content_rs = _rstrip_lines(content)
     idx = content_rs.find(needle_rs)
-    if idx >= 0:
+    if idx >= 0 and needle_rs and content_rs.count(needle_rs) == 1:
         # Map back to the original `content` by counting characters up
         # to the same logical position. Since we only stripped trailing
         # whitespace per line, line boundaries are preserved.
@@ -558,17 +577,22 @@ def apply_blocks(blocks: list[SearchReplaceBlock], workdir: Path,
             break
 
     if rollback_needed:
+        # June 17 council fix (SR audit #5): a failed restore write (or a
+        # failed unlink of a created file) used to be swallowed, leaving a
+        # mutated file on disk while the summary still read as a clean
+        # rollback. Collect the failures and surface them so the caller
+        # knows the workspace is dirty.
         for target, original in snapshots.items():
             try:
                 target.write_bytes(original)
-            except OSError:
-                pass
+            except OSError as e:
+                summary.rollback_failures.append(f"{target}: {e}")
         for target in created:
             if target.exists():
                 try:
                     target.unlink()
-                except OSError:
-                    pass
+                except OSError as e:
+                    summary.rollback_failures.append(f"{target}: {e}")
     return summary
 
 

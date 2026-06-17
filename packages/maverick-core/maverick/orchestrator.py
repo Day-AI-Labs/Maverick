@@ -601,9 +601,13 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
     _fire_webhook("goal_created", {"goal_id": goal_id, "title": goal.title})
 
     mcp_specs = load_mcp_specs_from_config()
-    mcp_clients = await start_mcp_clients(mcp_specs) if mcp_specs else []
+    mcp_clients: list = []
 
     try:
+        # Start MCP clients INSIDE the try so the finally below always stops
+        # them: starting them outside leaked subprocesses on any exception
+        # between start and entering the try.
+        mcp_clients = await start_mcp_clients(mcp_specs) if mcp_specs else []
         ctx = SwarmContext(
             llm=llm, world=world, budget=budget, blackboard=blackboard,
             sandbox=sandbox, goal_id=goal_id, max_depth=max_depth,
@@ -1543,6 +1547,16 @@ async def run_goal_best_of_n(
             break
         per_attempt_dollars = remaining_dollars / remaining_attempts
         per_attempt_wall = remaining_wall / remaining_attempts
+
+        # Minimum-viable floor: launching an attempt with a sub-cent dollar
+        # cap just trips BudgetExceeded immediately after paying for MCP
+        # startup. Stop instead of burning that overhead for a doomed attempt.
+        if per_attempt_dollars < 0.01:
+            log.info(
+                "best-of-N early break: per-attempt budget $%.4f below floor",
+                per_attempt_dollars,
+            )
+            break
 
         from .budget import Budget as _Budget
         attempt_budget = _Budget(

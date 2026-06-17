@@ -60,9 +60,9 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # (BEGIN..END, DOTALL, non-greedy) when an END marker is present so the
     # base64 key MATERIAL is redacted -- the prior marker-only pattern left the
     # actual private key body and END line in cleartext (round-7 adversarial
-    # finding). Kept as a single pattern (not two) because scan() only dedupes
-    # EXACT spans, so a separate marker pattern would overlap and corrupt
-    # redact().
+    # finding). Kept as a single pattern (not two) for clarity; scan() now
+    # coalesces overlapping spans, so an extra marker pattern would be
+    # redundant rather than corrupting.
     ("private_key_pem",    re.compile(
         r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"
         r"(?:"
@@ -120,21 +120,39 @@ def scan(text: str) -> list[SecretMatch]:
     """Return all secret matches found in ``text``."""
     if not text:
         return []
-    matches: list[SecretMatch] = []
-    seen_spans: set[tuple[int, int]] = set()
+    found: list[SecretMatch] = []
     for name, pat in _PATTERNS:
         for m in pat.finditer(text):
             # Patterns may redact only a value sub-group (named ``val``),
             # e.g. ``env_secret`` keeps the ``NAME=`` prefix visible.
             grp = "val" if "val" in m.re.groupindex else 0
             span = m.span(grp)
-            if span in seen_spans:
-                continue
-            seen_spans.add(span)
             raw = m.group(grp)
             preview = raw[:6] + "..." if len(raw) > 12 else "..."
-            matches.append(SecretMatch(name=name, span=span, value_preview=preview))
-    return matches
+            found.append(SecretMatch(name=name, span=span, value_preview=preview))
+
+    # Coalesce overlapping spans into one redaction range per cluster (mirrors
+    # pii_detector.scan). Different patterns can match overlapping (non-
+    # identical) regions; reverse-order splicing of overlapping spans in
+    # redact() corrupts offsets and can leave secret material in cleartext,
+    # while dropping later overlaps can leave the later match's tail exposed.
+    # Redacting the union ensures no portion of an overlap cluster leaks.
+    found.sort(key=lambda m: (m.span[0], -(m.span[1] - m.span[0])))
+    out: list[SecretMatch] = []
+    for m in found:
+        if not out or m.span[0] >= out[-1].span[1]:
+            out.append(m)
+            continue
+
+        prev = out[-1]
+        merged_end = max(prev.span[1], m.span[1])
+        if merged_end != prev.span[1]:
+            out[-1] = SecretMatch(
+                name=prev.name,
+                span=(prev.span[0], merged_end),
+                value_preview=prev.value_preview,
+            )
+    return out
 
 
 def redact(text: str) -> tuple[str, list[SecretMatch]]:

@@ -77,20 +77,26 @@ class KubernetesBackend:
         self.workdir = Path(self.workdir)
         self._verify_kubectl()
 
-    def _pod_overrides(self) -> dict:
+    def _pod_overrides(self, container_name: str) -> dict:
         """A non-root, resource-bounded pod spec for ``kubectl run --overrides``.
 
         ``kubectl run`` otherwise emits a bare pod that runs as the image's
         default user (often root) with no resource limits. We pin a non-root
         securityContext + drop all capabilities + block privilege escalation,
-        and set requests/limits so a runaway can't starve the node."""
+        and set requests/limits so a runaway can't starve the node.
+
+        ``container_name`` MUST be the pod name: ``kubectl run`` names the
+        single container after the pod, and a per-container ``securityContext``
+        only takes effect when the override's container name matches the
+        generated one. A hard-coded mismatched name would silently leave the
+        container hardening (drop-ALL caps, no-priv-escalation) unapplied."""
         limits: dict[str, str] = {}
         if self.memory:
             limits["memory"] = str(self.memory)
         if self.cpus:
             limits["cpu"] = str(self.cpus)
         container: dict = {
-            "name": "maverick",
+            "name": container_name,
             "securityContext": {
                 "allowPrivilegeEscalation": False,
                 "capabilities": {"drop": ["ALL"]},
@@ -190,7 +196,7 @@ class KubernetesBackend:
             "run", pod_name,
             "--rm", "-i", "--restart=Never", "--quiet",
             f"--image={self.image}",
-            "--overrides", json.dumps(self._pod_overrides()),
+            "--overrides", json.dumps(self._pod_overrides(pod_name)),
             "--",
             "sh", "-c", wrapped,
         ]

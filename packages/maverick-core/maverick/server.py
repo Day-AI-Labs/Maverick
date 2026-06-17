@@ -283,8 +283,8 @@ def _wire_telegram(server, cfg):
     server.add_channel(TelegramChannel(
         handler=server._handle_message,
         token=token,
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
-        allowed_chat_ids={str(v) for v in allowed_chat_ids} if allowed_chat_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
+        allowed_chat_ids={str(v) for v in allowed_chat_ids} if allowed_chat_ids is not None else None,
     ))
 
 
@@ -295,7 +295,7 @@ def _wire_discord(server, cfg):
     server.add_channel(DiscordChannel(
         handler=server._handle_message,
         token=token,
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
     ))
 
 
@@ -306,7 +306,7 @@ def _wire_slack(server, cfg):
         handler=server._handle_message,
         app_token=cfg.get("app_token") or os.environ.get("SLACK_APP_TOKEN"),
         bot_token=cfg.get("bot_token") or os.environ.get("SLACK_BOT_TOKEN"),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
         # [channels.slack] thread_replies: answers post under the asking
         # message's thread instead of interleaving into the channel.
         thread_replies=cfg.get("thread_replies"),
@@ -323,7 +323,7 @@ def _wire_signal(server, cfg):
         handler=server._handle_message,
         phone_number=phone,
         signal_cli_path=cfg.get("signal_cli_path"),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
     ))
 
 
@@ -340,7 +340,7 @@ def _wire_email(server, cfg):
         smtp_password=cfg["smtp_password"],
         smtp_port=cfg.get("smtp_port", 465),
         poll_interval=cfg.get("poll_interval", 30),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
     ))
 
 
@@ -352,7 +352,7 @@ def _wire_matrix(server, cfg):
         homeserver=cfg["homeserver"],
         user_id=cfg["user_id"],
         access_token=cfg.get("access_token") or os.environ.get("MATRIX_ACCESS_TOKEN"),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
     ))
 
 
@@ -365,7 +365,7 @@ def _wire_bluesky(server, cfg):
         handler=server._handle_message,
         handle=cfg.get("handle") or os.environ.get("BLUESKY_HANDLE"),
         password=cfg.get("password") or os.environ.get("BLUESKY_PASSWORD"),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
         poll_interval=cfg.get("poll_interval", 30),
     ))
 
@@ -377,7 +377,7 @@ def _wire_mastodon(server, cfg):
         handler=server._handle_message,
         instance=cfg.get("instance") or os.environ.get("MASTODON_INSTANCE"),
         access_token=cfg.get("access_token") or os.environ.get("MASTODON_ACCESS_TOKEN"),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
         poll_interval=cfg.get("poll_interval", 30),
     ))
 
@@ -390,7 +390,7 @@ def _wire_whatsapp(server, cfg):
         auth_token=cfg.get("auth_token") or os.environ.get("TWILIO_AUTH_TOKEN"),
         from_number=cfg.get("from_number"),
         port=cfg.get("port", 8765),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
     ))
 
 
@@ -405,7 +405,7 @@ def _wire_whatsapp_cloud(server, cfg):
         verify_token=cfg.get("verify_token") or os.environ.get("WHATSAPP_CLOUD_VERIFY_TOKEN"),
         app_secret=cfg.get("app_secret") or os.environ.get("WHATSAPP_CLOUD_APP_SECRET"),
         port=cfg.get("port", 8767),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
     ))
 
 
@@ -416,7 +416,7 @@ def _wire_threads(server, cfg):
         handler=server._handle_message,
         access_token=cfg.get("access_token") or os.environ.get("THREADS_ACCESS_TOKEN"),
         user_id=cfg.get("user_id") or os.environ.get("THREADS_USER_ID"),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
         poll_seconds=cfg.get("poll_seconds", 30),
     ))
 
@@ -431,7 +431,7 @@ def _wire_rcs(server, cfg):
         or os.environ.get("RCS_SERVICE_ACCOUNT_JSON"),
         webhook_token=cfg.get("webhook_token") or os.environ.get("RCS_WEBHOOK_TOKEN"),
         port=cfg.get("port", 8768),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
     ))
 
 
@@ -444,7 +444,7 @@ def _wire_sms(server, cfg):
         auth_token=cfg.get("auth_token") or os.environ.get("TWILIO_AUTH_TOKEN"),
         from_number=cfg.get("from_number"),
         port=cfg.get("port", 8766),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
     ))
 
 
@@ -454,7 +454,7 @@ def _wire_imessage(server, cfg):
     server.add_channel(iMessageChannel(
         handler=server._handle_message,
         poll_interval=cfg.get("poll_interval", 5),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
     ))
 
 
@@ -469,7 +469,7 @@ def _wire_irc(server, cfg):
         tls=cfg.get("tls", True),
         channels=cfg.get("channels"),
         password=cfg.get("password") or os.environ.get("IRC_PASSWORD"),
-        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids is not None else None,
     ))
 
 
@@ -527,7 +527,10 @@ def build_from_config() -> Server:
     llm = LLM()
     sandbox_cfg = cfg.get("sandbox", {})
     backend = sandbox_cfg.get("backend")
-    workdir = Path(sandbox_cfg.get("workdir", str(Path.cwd()))).expanduser()
+    # Default workdir mirrors config.get_sandbox()'s documented ~/maverick-workspace
+    # default rather than Path.cwd(), so `serve` and the rest of the kernel agree.
+    from .config import get_sandbox
+    workdir = Path(sandbox_cfg.get("workdir", get_sandbox()["workdir"])).expanduser()
     sandbox = build_sandbox(workdir=workdir, backend=backend)
     server = Server(world=world, llm=llm, sandbox=sandbox)
 

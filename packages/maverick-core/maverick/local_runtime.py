@@ -366,6 +366,10 @@ class Launcher:
         handle = self._replicas.get(replica)
         if handle is not None and self.runner.alive(handle):
             return endpoint_for(self.cfg, replica)
+        if handle is not None:
+            # The prior handle is dead. Reap it before spawning the replacement
+            # so a crashed replica doesn't leak a zombie on restart.
+            self.runner.stop(handle)
         argv, env = self.plan(replica)
         self._replicas[replica] = self.runner.spawn(argv, env=env or None)
         return endpoint_for(self.cfg, replica)

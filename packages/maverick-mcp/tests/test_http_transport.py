@@ -270,16 +270,20 @@ class TestHTTPNotifications:
         assert resp.status_code == 204
         assert resp.content == b""
 
-    def test_id_null_treated_as_notification_like_stdio(self, monkeypatch):
-        # {"id": null} is a notification per JSON-RPC; HTTP keyed on
-        # "id" not in body and diverged from the stdio transport.
+    def test_id_null_is_a_request_not_a_notification(self, monkeypatch):
+        # A MISSING "id" is a notification (204); an explicit {"id": null} is a
+        # request still owed a response. The two must NOT be conflated -- HTTP
+        # and stdio both distinguish "id" not in body from body["id"] is None.
         monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
         client = self._client()
         resp = client.post("/mcp", json={
             "jsonrpc": "2.0", "id": None, "method": "notifications/initialized",
         }, headers={"Authorization": "Bearer s3cr3t"})
-        assert resp.status_code == 204
-        assert resp.content == b""
+        # id is present (null) -> request -> a JSON-RPC response, not a 204.
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] is None
+        assert body.get("result") == {}
 
 
 @pytest.mark.skipif(not _have_fastapi(), reason="fastapi not installed")

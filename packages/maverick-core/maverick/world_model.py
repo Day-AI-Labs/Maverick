@@ -1982,7 +1982,7 @@ class WorldModel:
                 "SELECT * FROM conversations WHERE channel = ? AND user_id = ?",
                 (channel, user_id),
             ).fetchone()
-        return Conversation(**dict(row))
+        return Conversation(**_row_for(Conversation, dict(row)))
 
     def append_turn(
         self,
@@ -2026,7 +2026,7 @@ class WorldModel:
             rows = self._read_all(
                 "SELECT * FROM conversations ORDER BY last_seen DESC"
             )
-        return [Conversation(**dict(r)) for r in rows]
+        return [Conversation(**_row_for(Conversation, dict(r))) for r in rows]
 
     # ----- channel dedup -----
     def mark_message_processed(

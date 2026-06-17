@@ -749,13 +749,17 @@ def _max_goals_global_per_min() -> int:
 def _rate_limit_key(request: Request | None, source: str | None = None) -> str:
     """Identify the principal/source for rate-limiting.
 
-    Assumption (documented): we don't have per-request auth principals
-    threaded through here, so we key on the client IP (the safe, IP-based
-    option called out in the issue). HMAC webhooks pass an explicit
-    ``source`` label since their callers share no useful client identity.
+    Prefer the authenticated principal when one is established (so a reverse
+    proxy that collapses every user onto one client IP doesn't lump them into
+    a single bucket), falling back to the client IP otherwise. HMAC webhooks
+    pass an explicit ``source`` label since their callers share no useful
+    client identity.
     """
     if source:
         return f"source:{source}"
+    principal = caller_principal(request) if request else None
+    if principal:
+        return f"principal:{principal}"
     host = request.client.host if (request and request.client) else "unknown"
     return f"ip:{host}"
 

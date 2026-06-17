@@ -79,6 +79,11 @@ def test_default_port_for_ws(monkeypatch):
     monkeypatch.setitem(sys.modules, "websockets", _install_fake_websockets(captured))
     import maverick.tools._ssrf as ssrf
     monkeypatch.setattr(ssrf, "resolve_pinned_ip", lambda host: "203.0.113.7")
+    # This test exercises default-port selection, not the SSRF guard. The host
+    # is a non-resolvable placeholder; the pre-flight host check now fails
+    # closed on a DNS failure, so allow private to short-circuit it (the pinned
+    # resolver is already stubbed above) and let _run reach connect().
+    monkeypatch.setenv("MAVERICK_FETCH_ALLOW_PRIVATE", "1")
     asyncio.run(wst._run({"url": "ws://plain.example/x", "recv": True}))
     assert captured["kwargs"]["port"] == 80
     assert "server_hostname" not in captured["kwargs"]  # ws (no TLS)

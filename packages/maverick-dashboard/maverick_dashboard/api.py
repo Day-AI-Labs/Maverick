@@ -458,7 +458,8 @@ async def list_facts() -> dict[str, str]:
 
 
 @router.post("/facts", status_code=204)
-async def set_fact(payload: FactIn) -> None:
+async def set_fact(request: Request, payload: FactIn) -> None:
+    require_permission(request, "operate")
     key = (payload.key or "").strip()
     if not key:
         raise HTTPException(status_code=400, detail="fact key is required")
@@ -466,7 +467,7 @@ async def set_fact(payload: FactIn) -> None:
 
 
 @router.post("/outcomes", status_code=204)
-async def record_outcome(payload: OutcomeIn) -> None:
+async def record_outcome(request: Request, payload: OutcomeIn) -> None:
     """Ingest a real downstream outcome for a past episode (the grounded reward).
 
     The HTTP entrypoint a system-of-record connector (CRM / ERP / ticketing
@@ -475,6 +476,7 @@ async def record_outcome(payload: OutcomeIn) -> None:
     prefers this over the verifier proxy on its next turn, so learning is grounded
     in what actually happened. ``value`` is clamped to [0, 1] by the store.
     """
+    require_permission(request, "operate")
     from maverick.consequence import record_outcome as _rec
     _rec(int(payload.goal_id), int(payload.episode_id), float(payload.value),
          kind=(payload.kind or ""))
@@ -935,12 +937,13 @@ async def halt_status() -> dict:
 
 
 @router.post("/halt", status_code=204)
-async def halt_set(payload: HaltIn) -> None:
+async def halt_set(request: Request, payload: HaltIn) -> None:
     """Arm the killswitch by touching ~/.maverick/HALT.
 
     Honoured by every agent at the next tool-call boundary. Use the
     DELETE endpoint or ``rm ~/.maverick/HALT`` to clear.
     """
+    require_permission(request, "operate")
     from maverick.killswitch import _halt_file_path
     p = _halt_file_path()
     try:
@@ -951,8 +954,9 @@ async def halt_set(payload: HaltIn) -> None:
 
 
 @router.delete("/halt", status_code=204)
-async def halt_clear() -> None:
+async def halt_clear(request: Request) -> None:
     """Clear the killswitch (delete ~/.maverick/HALT)."""
+    require_permission(request, "operate")
     from maverick.killswitch import _halt_file_path, clear
     p = _halt_file_path()
     if p.exists():
@@ -1637,13 +1641,14 @@ async def permissions() -> dict:
 
 
 @router.post("/permissions/tools/{name}/disable", status_code=204)
-async def disable_tool(name: str) -> None:
+async def disable_tool(request: Request, name: str) -> None:
     """Disable a tool via the dashboard runtime overlay.
 
     Writes ~/.maverick/runtime-overrides.toml (NOT config.toml), which
     the kernel unions into the deny-list. Takes effect on the next goal
     with no restart.
     """
+    require_permission(request, "operate")
     from maverick.runtime_overrides import disable_tool as _disable
     try:
         _disable(name)
@@ -1652,13 +1657,14 @@ async def disable_tool(name: str) -> None:
 
 
 @router.post("/permissions/tools/{name}/enable", status_code=204)
-async def enable_tool(name: str) -> None:
+async def enable_tool(request: Request, name: str) -> None:
     """Clear a dashboard-set tool override.
 
     Only clears overrides set here; a tool denied in config.toml itself
     stays denied (the response is still 204 — the overlay no longer
     denies it, config does).
     """
+    require_permission(request, "operate")
     from maverick.runtime_overrides import enable_tool as _enable
     try:
         _enable(name)
@@ -1698,6 +1704,7 @@ def _supervisor(request: Request) -> str:
 @router.post("/approvals/{approval_id}/approve", status_code=204)
 async def approve_approval(request: Request, approval_id: int) -> None:
     """Approve a parked action; the polling consent path then proceeds."""
+    require_permission(request, "operate")
     if not _world().decide_approval(approval_id, "approved",
                                     decided_by=_supervisor(request)):
         raise HTTPException(status_code=404, detail="no such pending approval")
@@ -1706,6 +1713,7 @@ async def approve_approval(request: Request, approval_id: int) -> None:
 @router.post("/approvals/{approval_id}/deny", status_code=204)
 async def deny_approval(request: Request, approval_id: int) -> None:
     """Deny a parked action; the polling consent path then refuses it."""
+    require_permission(request, "operate")
     if not _world().decide_approval(approval_id, "denied",
                                     decided_by=_supervisor(request)):
         raise HTTPException(status_code=404, detail="no such pending approval")
@@ -2244,12 +2252,13 @@ async def cache_stats() -> dict:
 
 
 @router.post("/cache/purge")
-async def cache_purge(payload: CachePurgeIn) -> dict:
+async def cache_purge(request: Request, payload: CachePurgeIn) -> dict:
     """Purge one or more cache scopes.
 
     Valid scopes (from maverick.cache._VALID_SCOPES): files, repo_map,
     skill_embeddings, all. Unknown scopes are ignored.
     """
+    require_permission(request, "operate")
     from maverick.cache import purge
     return purge(payload.scopes or ["all"])
 

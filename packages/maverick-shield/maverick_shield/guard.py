@@ -276,7 +276,12 @@ class Shield:
         # with newlines preserves each value's real boundaries.
         leaves = _collect_arg_strings(args)
         payload = "\n".join([f"tool={tool_name}", *leaves])
-        return self._scan_via_backend(payload)
+        verdict = self._scan_via_backend(payload)
+        # Compose operator-defined constitutional rules onto the tool-call
+        # surface too -- the most dangerous sink. scan_input/scan_output do
+        # this; omitting it here left the constitution unenforced exactly where
+        # it matters most. Fail-open semantics preserved by _apply_constitution.
+        return self._apply_constitution(payload, verdict)
 
     def scan_output(self, text: str, known_prompt: str | None = None) -> ShieldVerdict:
         if not self._scan_output_enabled:

@@ -225,9 +225,9 @@ def test_currency_convert_exchangerate(monkeypatch):
         "result": 92.345,
         "info": {"rate": 0.92345},
     })
-    fake_httpx = types.ModuleType("httpx")
-    fake_httpx.get = MagicMock(return_value=resp)
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    # currency now fetches through the SSRF-safe pinned client, so patch
+    # _ssrf.safe_get rather than a raw httpx.get.
+    monkeypatch.setattr("maverick.tools._ssrf.safe_get", MagicMock(return_value=resp))
     from maverick.tools.currency import currency
     out = currency().fn({
         "op": "convert", "amount": 100, "from": "USD", "to": "EUR",
@@ -251,9 +251,7 @@ def test_currency_falls_back_to_frankfurter(monkeypatch):
             resp.json = MagicMock(return_value={"rates": {"JPY": 15000.0}})
         return resp
 
-    fake_httpx = types.ModuleType("httpx")
-    fake_httpx.get = _get
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    monkeypatch.setattr("maverick.tools._ssrf.safe_get", _get)
     from maverick.tools.currency import currency
     out = currency().fn({
         "op": "convert", "amount": 100, "from": "USD", "to": "JPY",
@@ -268,9 +266,7 @@ def test_currency_rates_renders(monkeypatch):
     resp.json = MagicMock(return_value={"rates": {
         "EUR": 0.92, "JPY": 150.0,
     }})
-    fake_httpx = types.ModuleType("httpx")
-    fake_httpx.get = MagicMock(return_value=resp)
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    monkeypatch.setattr("maverick.tools._ssrf.safe_get", MagicMock(return_value=resp))
     from maverick.tools.currency import currency
     out = currency().fn({"op": "rates", "base": "USD"})
     assert "USD -> EUR" in out and "USD -> JPY" in out

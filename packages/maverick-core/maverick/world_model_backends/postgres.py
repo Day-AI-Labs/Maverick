@@ -31,6 +31,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from urllib.parse import quote
 
 log = logging.getLogger(__name__)
 
@@ -1368,6 +1369,15 @@ class PostgresWorldModel:
 
         conv_ids = [int(cid) for cid in conversation_ids]
         with self._tx() as cur:
+            # The (channel, user_id) of the conversations being erased -- used
+            # to scrub the subject's explicitly user-scoped facts by key prefix
+            # below, the same subject the SQLite path derives in the CLI.
+            cur.execute(
+                "SELECT channel, user_id FROM conversations WHERE id = ANY(%s)",
+                (conv_ids,),
+            )
+            subjects = [(str(row[0]), str(row[1])) for row in cur.fetchall()]
+
             cur.execute(
                 "SELECT DISTINCT goal_id FROM turns "
                 "WHERE conversation_id = ANY(%s) AND goal_id IS NOT NULL",
@@ -1405,11 +1415,6 @@ class PostgresWorldModel:
                 cur.execute("DELETE FROM messages WHERE goal_id = ANY(%s)", (gids,))
                 cur.execute("DELETE FROM questions WHERE goal_id = ANY(%s)", (gids,))
                 cur.execute("DELETE FROM attachments WHERE goal_id = ANY(%s)", (gids,))
-                cur.execute(
-                    "DELETE FROM facts WHERE source_episode_id IN "
-                    "(SELECT id FROM episodes WHERE goal_id = ANY(%s))",
-                    (gids,),
-                )
                 cur.execute("DELETE FROM episodes WHERE goal_id = ANY(%s)", (gids,))
                 cur.execute("DELETE FROM processed_messages WHERE goal_id = ANY(%s)", (gids,))
                 # Postgres self-referential FKs are checked per statement by
@@ -1418,6 +1423,20 @@ class PostgresWorldModel:
                 # a single goal DELETE cannot fail on parent_id references.
                 cur.execute("UPDATE goals SET parent_id = NULL WHERE parent_id = ANY(%s)", (gids,))
                 cur.execute("DELETE FROM goals WHERE id = ANY(%s)", (gids,))
+
+            # Scrub the subject's explicitly user-scoped facts. Facts are global
+            # UNIQUE(key) memory with no per-episode subject attribution, so the
+            # only safe subject-scoped delete is by the deliberate
+            # ``user:<token>:`` key prefix -- mirroring delete_facts_matching and
+            # the SQLite erase path. The previous source_episode_id-based delete
+            # both missed these prefixed keys AND deleted unrelated global facts
+            # that merely happened to reference a deleted episode.
+            for channel, user_id in subjects:
+                token = f"{quote(channel, safe='')}:{quote(user_id, safe='')}"
+                like = self._like_escape(f"user:{token}:") + "%"
+                cur.execute(
+                    "DELETE FROM facts WHERE key LIKE %s ESCAPE '\\'", (like,),
+                )
 
             cur.execute("DELETE FROM conversations WHERE id = ANY(%s)", (conv_ids,))
 

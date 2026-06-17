@@ -318,7 +318,16 @@ async def verify_proposal_ensemble(
         if _routing_allowed_providers() is not None:
             return VerifierVerdict.reject("no allowed ensemble verifier providers configured")
         cross = _cross_family_fallback(proposer_model or "")
-        panel = [cross] if cross else [model_for_role("verifier")]
+        if cross:
+            panel = [cross]
+        else:
+            # Parity with the single-verifier path: when no cross-family
+            # fallback is configured we fall back to a same-family verifier;
+            # surface the lockstep-jailbreak risk ONCE instead of silently.
+            fallback = model_for_role("verifier")
+            if proposer_model and _same_family(proposer_model, fallback):
+                _warn_same_family_verifier(fallback)
+            panel = [fallback]
 
     import asyncio
     user_msg = (

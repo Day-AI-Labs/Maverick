@@ -51,8 +51,16 @@ def _default_config_path() -> Path:
     return Path.home() / DEFAULT_CONFIG_BASENAME[0] / DEFAULT_CONFIG_BASENAME[1]
 
 
-# Back-compat: many call sites still reference the constant.
-DEFAULT_CONFIG_PATH = _default_config_path()
+def __getattr__(name: str):
+    # Back-compat: `DEFAULT_CONFIG_PATH` used to be a module-level constant, but
+    # caching it bound Path.home() at import time (stale under HOME changes /
+    # monkeypatch — exactly what the comment above warns against). Resolve it
+    # lazily on attribute access so every read reflects the current HOME.
+    if name == "DEFAULT_CONFIG_PATH":
+        return _default_config_path()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 CONFIG_OVERLAY_ENV = "MAVERICK_CONFIG_OVERLAY"
 
 # Dashboard Settings overlay for config-read settings (provider keys,

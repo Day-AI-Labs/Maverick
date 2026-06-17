@@ -133,7 +133,10 @@ class RcsChannel(Channel):
         Accepted from the ``clientToken`` query param or header (RBM does not
         document a delivery-time signature, so deployments register the
         webhook URL with ``?clientToken=...`` appended). Fail-closed."""
-        return hmac.compare_digest(self._request_token(request), self.webhook_token or "")
+        return hmac.compare_digest(
+            self._request_token(request).encode("utf-8"),
+            (self.webhook_token or "").encode("utf-8"),
+        )
 
     async def _handle_verify(self, request: Request):
         """Webhook URL verification (GET).
@@ -201,7 +204,8 @@ class RcsChannel(Channel):
             payload = await self._small_handshake_payload(request)
             if "secret" in payload and "clientToken" in payload:
                 if not hmac.compare_digest(
-                    str(payload.get("clientToken") or ""), self.webhook_token or "",
+                    str(payload.get("clientToken") or "").encode("utf-8"),
+                    (self.webhook_token or "").encode("utf-8"),
                 ):
                     raise HTTPException(status_code=403, detail="client token invalid")
                 return {"secret": payload["secret"]}

@@ -1586,9 +1586,13 @@ def run_failing_tests(
         except Exception:
             pass
 
-    def _run(test_ids: list[str]) -> tuple[int, int, str]:
+    def _run(test_ids: list[str]) -> tuple[int, int, str, bool]:
+        # Returns (passed, failed, output, incomplete). `incomplete` is
+        # True when a chunk's exec raised or its parser couldn't read a
+        # summary, so the remaining ids never executed and the (passed,
+        # failed) tally does NOT reflect the full requested set.
         if not test_ids:
-            return 0, 0, ""
+            return 0, 0, "", False
         cmd = _cmd_for(runner, test_ids)
         cmds = cmd if isinstance(cmd, list) else [cmd]
         passed = failed = 0
@@ -1611,23 +1615,43 @@ def run_failing_tests(
                 unrun = len(cmds) - chunk_idx if len(cmds) > 1 else (
                     len(test_ids) - passed - failed
                 )
-                return passed, failed + max(unrun, 0), f"sandbox exec failed: {e}"
+                return passed, failed + max(unrun, 0), f"sandbox exec failed: {e}", True
             out = (r.stdout or "") + "\n" + (r.stderr or "")
             p, f, ok = parse(out)
             chunks.append(out[-1000:])
             if not ok:
                 unrun = len(cmds) - chunk_idx if len(cmds) > 1 else 1
-                return passed, failed + max(unrun, 0), "\n".join(chunks)
+                return passed, failed + max(unrun, 0), "\n".join(chunks), True
             passed += p
             failed += f
-        return passed, failed, "\n".join(chunks)
+        return passed, failed, "\n".join(chunks), False
 
     try:
-        f_pass, _, f_out = _run(fail_to_pass)
+        f_pass, _f_fail, f_out, f_incomplete = _run(fail_to_pass)
         result.fail_to_pass_passing = f_pass
-        p_pass, _, p_out = _run(pass_to_pass)
+        p_pass, _p_fail, p_out, p_incomplete = _run(pass_to_pass)
         result.pass_to_pass_passing = p_pass
         result.raw_output = (f_out + "\n" + p_out)[-2000:]
+        # June 17 council fix (test-runner audit #3): both call sites
+        # previously discarded `_run`'s `failed` return, so a mid-stream
+        # parse/sandbox failure — where `_run` early-returns with the
+        # un-executed ids folded into `failed` and the rest never run —
+        # left `*_passing` reflecting only the chunks that DID run. A
+        # PASS_TO_PASS regression hidden behind an aborted chunk could
+        # then score clean. `_run` now flags the incomplete case
+        # explicitly (count math is unreliable: skips/parametrization
+        # make passed+failed != total on healthy runs); surface it as an
+        # error so `score`/`all_pass` both treat the run as a failure.
+        if f_incomplete or p_incomplete:
+            which = []
+            if f_incomplete:
+                which.append("FAIL_TO_PASS")
+            if p_incomplete:
+                which.append("PASS_TO_PASS")
+            result.error = (
+                "incomplete test run (parse/sandbox failure mid-stream): "
+                + ", ".join(which)
+            )
     finally:
         if prior_timeout is not None:
             try:

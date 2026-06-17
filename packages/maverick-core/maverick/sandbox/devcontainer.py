@@ -50,9 +50,14 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .local import ExecResult
+from .local import _SECRET_ENV_RE, ExecResult, scrub_env
 
 log = logging.getLogger(__name__)
+
+# containerEnv keys come from a repo-supplied devcontainer.json (attacker-
+# influenced). Only inject keys matching a safe shell identifier shape so a
+# crafted name can't smuggle extra `docker run` semantics.
+_SAFE_ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _strip_jsonc(text: str) -> str:
@@ -166,7 +171,7 @@ class DevcontainerBackend:
         try:
             subprocess.run(
                 ["docker", "version"],
-                capture_output=True, timeout=5, check=True,
+                capture_output=True, timeout=5, check=True, env=scrub_env(),
             )
         except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             raise RuntimeError(
@@ -199,6 +204,21 @@ class DevcontainerBackend:
         if self.spec.remote_user and self.spec.remote_user != "root":
             args.extend(["--user", self.spec.remote_user])
         for k, v in self.spec.container_env.items():
+            # containerEnv is repo-supplied: reject names that aren't plain
+            # shell identifiers, and skip secret-shaped names so a malicious
+            # spec can't seed the container with attacker-controlled creds.
+            if not _SAFE_ENV_NAME_RE.match(k):
+                log.warning(
+                    "devcontainer: skipping containerEnv key %r "
+                    "(not a valid identifier)", k,
+                )
+                continue
+            if _SECRET_ENV_RE.search(k):
+                log.warning(
+                    "devcontainer: skipping containerEnv key %r "
+                    "(matches secret-name pattern)", k,
+                )
+                continue
             args.extend(["-e", f"{k}={v}"])
         if not self.allow_network:
             args.extend(["--network", "none"])
@@ -207,6 +227,7 @@ class DevcontainerBackend:
         try:
             result = subprocess.run(
                 args, capture_output=True, text=True, timeout=effective,
+                env=scrub_env(),
             )
             return ExecResult(
                 stdout=result.stdout[-8000:],
@@ -219,7 +240,7 @@ class DevcontainerBackend:
             try:
                 subprocess.run(
                     ["docker", "rm", "-f", container_name],
-                    capture_output=True, timeout=10,
+                    capture_output=True, timeout=10, env=scrub_env(),
                 )
             except Exception:
                 pass

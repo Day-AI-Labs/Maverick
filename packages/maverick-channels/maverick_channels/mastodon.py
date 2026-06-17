@@ -80,8 +80,12 @@ class MastodonChannel(Channel):
 
     @property
     def _base_url(self) -> str:
-        if self.instance.startswith("http"):
+        # Force TLS: bearer tokens must never ride plaintext. An explicit
+        # http:// scheme is upgraded to https://; a bare host gets https://.
+        if self.instance.startswith("https://"):
             return self.instance
+        if self.instance.startswith("http://"):
+            return "https://" + self.instance[len("http://"):]
         return f"https://{self.instance}"
 
     def _headers(self) -> dict:

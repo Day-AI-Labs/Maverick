@@ -166,6 +166,10 @@ def test_schema_includes_save_session():
 
 def test_navigate_denies_disallowed_redirect_final_host(monkeypatch):
     monkeypatch.setenv("MAVERICK_BROWSER_DISABLE", "0")
+    # allowed.example.com is a non-resolvable placeholder; the SSRF pre-flight
+    # now fails closed on DNS failure, so use the documented escape hatch to let
+    # navigation reach the capability-based redirect check this test exercises.
+    monkeypatch.setenv("MAVERICK_FETCH_ALLOW_PRIVATE", "1")
     fake = _FakeSession()
     fake.page.goto_url = "https://evil.com/private"
     monkeypatch.setattr(browser_mod, "_get_session", lambda: fake)
