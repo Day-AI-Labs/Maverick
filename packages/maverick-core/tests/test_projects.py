@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from maverick.world_model import WorldModel
+from maverick.world_model import SCHEMA_VERSION, WorldModel
 
 
 def test_create_list_and_count(tmp_path):
@@ -69,8 +69,8 @@ def test_migration_from_v18_adds_project_id(tmp_path):
     )
     conn.commit()
     conn.close()
-    w = WorldModel(db)  # opening runs the v19 (projects) migration
-    assert w.schema_version == 19
+    w = WorldModel(db)  # opening runs the v19 (projects) migration + any later
+    assert w.schema_version == SCHEMA_VERSION
     assert w.get_goal(1).project_id is None          # legacy goal: unfiled
     pid = w.create_project("New")
     w.set_goal_project(1, pid)                        # and it can now be filed

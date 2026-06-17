@@ -1147,6 +1147,40 @@ async def goal_artifact_history(request: Request, goal_id: int, title: str) -> d
     return {"title": title, "versions": out}
 
 
+# Default share-link lifetime (7 days). Operators revoke early from the goal page.
+_SHARE_TTL_SECONDS = 7 * 24 * 3600
+
+
+@router.post("/goals/{goal_id}/share", status_code=201)
+async def create_goal_share(request: Request, goal_id: int) -> dict:
+    """Mint a read-only share link to a goal's deliverable (default 7-day
+    expiry). Operator role + goal access. The clear token is returned ONCE --
+    only its hash is stored, so it can't be re-fetched later, only revoked."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    require_permission(request, "operate")
+    link_id, token = w.create_share_link(
+        goal_id, created_by=caller_principal(request) or "", ttl_seconds=_SHARE_TTL_SECONDS)
+    url = str(request.base_url).rstrip("/") + "/share/" + token
+    return {"id": link_id, "url": url}
+
+
+@router.post("/goals/{goal_id}/share/{link_id}/revoke")
+async def revoke_goal_share(request: Request, goal_id: int, link_id: int) -> dict:
+    """Revoke a share link. Operator role + goal access; the revoke is scoped to
+    this goal so a caller can't revoke another goal's link by id."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    require_permission(request, "operate")
+    return {"ok": w.revoke_share_link(link_id, goal_id=goal_id)}
+
+
 @router.get("/plugins")
 async def list_plugins() -> dict:
     """Discovered + allow-listed plugins, broken out by kind."""

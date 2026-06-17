@@ -490,7 +490,10 @@ def _is_proxied(request: Request) -> bool:
 @app.middleware("http")
 async def bearer_auth(request: Request, call_next):
     expected = os.environ.get("MAVERICK_DASHBOARD_TOKEN")
-    if request.url.path in _AUTH_EXEMPT:
+    if request.url.path in _AUTH_EXEMPT or request.url.path.startswith("/share/"):
+        # /share/<token> self-authenticates with its signed, revocable token
+        # (verified in the route, which 404s an invalid/expired/revoked one) --
+        # an external recipient has no dashboard bearer, like the webhook paths.
         return await call_next(request)
     if not expected:
         # No token configured: serve loopback only. An operator who binds
@@ -3536,10 +3539,15 @@ async def chat_goal(request: Request, goal_id: int) -> HTMLResponse:
         projects = w.list_projects(owner=goal_owner_filter(request))
     except Exception:  # pragma: no cover -- never 500 the goal page
         projects = []
+    try:
+        share_links = [s for s in w.share_links_for_goal(goal_id) if s["active"]]
+    except Exception:  # pragma: no cover -- never 500 the goal page
+        share_links = []
     return templates.TemplateResponse(
         request, "chat_goal.html",
         {"goal": g, "deliverable": contract, "rendered": rendered,
-         "signoff": signoff, "artifacts": artifacts, "projects": projects},
+         "signoff": signoff, "artifacts": artifacts, "projects": projects,
+         "share_links": share_links},
     )
 
 
@@ -3557,6 +3565,27 @@ def _goal_artifacts(w, goal_id: int) -> list[dict]:
         return out
     except Exception:  # pragma: no cover -- never 500 the goal page
         return []
+
+
+@app.get("/share/{token}", response_class=HTMLResponse)
+async def shared_goal(request: Request, token: str) -> HTMLResponse:
+    """Public, read-only view of a goal's deliverable behind a share token.
+
+    Auth-exempt (the token IS the credential): an unknown, revoked, or expired
+    token 404s with no detail. Renders only the title + deliverable + artifacts
+    -- never the worklog, spend, controls, or nav."""
+    w = _world()
+    goal_id = w.resolve_share_link(token)
+    if goal_id is None:
+        raise HTTPException(status_code=404, detail="this share link is invalid, revoked, or expired")
+    g = w.get_goal(goal_id)
+    if g is None:  # pragma: no cover -- link resolved but goal gone
+        raise HTTPException(status_code=404, detail="not found")
+    contract, rendered = _goal_deliverable(g)
+    artifacts = _goal_artifacts(w, goal_id)
+    return templates.TemplateResponse(
+        request, "shared_goal.html",
+        {"goal": g, "deliverable": contract, "rendered": rendered, "artifacts": artifacts})
 
 
 @app.get("/api/goal/{goal_id}")

@@ -12,8 +12,10 @@ v0.1.6 reliability hardening:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import os
+import secrets
 import sqlite3
 import threading
 import time
@@ -25,7 +27,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -63,6 +65,21 @@ CREATE TABLE IF NOT EXISTS projects (
     domain TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'active',
     created_at REAL NOT NULL
+);
+
+-- v20 share links: a revocable, expiring read-only link to a goal's
+-- deliverable for someone without a dashboard login. The token is random and
+-- only its SHA-256 is stored (like a password-reset token), so the DB never
+-- holds anything that grants access; the clear token is shown to the creator
+-- exactly once.
+CREATE TABLE IF NOT EXISTS share_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    goal_id INTEGER NOT NULL REFERENCES goals(id),
+    token_sha256 TEXT NOT NULL UNIQUE,
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    expires_at REAL,
+    revoked INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_goals_status     ON goals(status);
@@ -394,6 +411,9 @@ MIGRATIONS: dict[int, list[str]] = {
     19: [
         "ALTER TABLE goals ADD COLUMN project_id INTEGER",
     ],
+    # v20 share links: the share_links table is in SCHEMA (idempotent CREATE);
+    # listed here so existing DBs bump the version on next open.
+    20: [],
 }
 
 
@@ -1146,6 +1166,75 @@ class WorldModel:
             (int(project_id),),
         )
         return {r["status"]: int(r["n"]) for r in rows}
+
+    # ---- share links: revocable, expiring read-only access to a goal --------
+
+    def create_share_link(self, goal_id: int, *, created_by: str = "",
+                          ttl_seconds: float | None = None) -> tuple[int, str]:
+        """Mint a read-only share link for a goal. Returns ``(id, clear_token)``;
+        only the token's SHA-256 is persisted, so the clear token is shown to the
+        creator exactly once and the DB never holds anything that grants access."""
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        now = time.time()
+        exp = now + float(ttl_seconds) if ttl_seconds else None
+        with self._writing() as conn:
+            cur = conn.execute(
+                "INSERT INTO share_links(goal_id, token_sha256, created_by, created_at, "
+                "expires_at) VALUES(?, ?, ?, ?, ?)",
+                (int(goal_id), token_hash, created_by or "", now, exp),
+            )
+            return int(cur.lastrowid), token
+
+    def resolve_share_link(self, token: str) -> int | None:
+        """The goal_id a share token grants read access to, or ``None`` if the
+        token is unknown, revoked, or expired. Lookup is by hash -- the clear
+        token is never stored."""
+        if not token:
+            return None
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        row = self._read_one(
+            "SELECT goal_id, expires_at, revoked FROM share_links WHERE token_sha256 = ?",
+            (token_hash,),
+        )
+        if not row or row["revoked"]:
+            return None
+        if row["expires_at"] is not None and float(row["expires_at"]) < time.time():
+            return None
+        return int(row["goal_id"])
+
+    def share_links_for_goal(self, goal_id: int) -> list[dict]:
+        """Share links for a goal (manage UI), newest first. Tokens are NOT
+        returned (only the hash exists); each row carries its lifecycle state."""
+        rows = self._read_all(
+            "SELECT id, created_by, created_at, expires_at, revoked FROM share_links "
+            "WHERE goal_id = ? ORDER BY id DESC",
+            (int(goal_id),),
+        )
+        now = time.time()
+        out = []
+        for r in rows:
+            expired = r["expires_at"] is not None and float(r["expires_at"]) < now
+            out.append({
+                "id": r["id"], "created_by": r["created_by"], "created_at": r["created_at"],
+                "expires_at": r["expires_at"], "revoked": bool(r["revoked"]),
+                "expired": expired, "active": not r["revoked"] and not expired,
+            })
+        return out
+
+    def revoke_share_link(self, link_id: int, *, goal_id: int | None = None) -> bool:
+        """Revoke a share link. When ``goal_id`` is given the revoke only applies
+        if the link belongs to it (so a caller can't revoke another goal's link).
+        Returns whether a row was changed."""
+        with self._writing() as conn:
+            if goal_id is None:
+                cur = conn.execute("UPDATE share_links SET revoked = 1 WHERE id = ?",
+                                   (int(link_id),))
+            else:
+                cur = conn.execute(
+                    "UPDATE share_links SET revoked = 1 WHERE id = ? AND goal_id = ?",
+                    (int(link_id), int(goal_id)))
+            return cur.rowcount > 0
 
     def set_goal_domain(self, goal_id: int, domain: str) -> None:
         """Record the department (domain pack) a goal is running as.
