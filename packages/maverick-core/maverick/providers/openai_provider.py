@@ -316,6 +316,15 @@ class OpenAIClient:
         model: str | None = None,
         price_model_prefix: str = "",
     ) -> LLMResponse:
+        if not getattr(resp, "choices", None):
+            # Some OpenAI-compatible gateways (and OpenAI/Azure content-filter)
+            # return an empty ``choices`` list on an upstream/filter error. An
+            # unguarded ``resp.choices[0]`` would raise a cryptic IndexError that
+            # propagates out of Agent.run(); surface a clear, actionable message.
+            raise RuntimeError(
+                "OpenAI-compatible provider returned no choices "
+                "(empty response — content filter or upstream gateway error)"
+            )
         choice = resp.choices[0]
         text = choice.message.content or ""
         # DeepSeek reasoner and Gemini-thinking (via the OpenAI-compat shim)
