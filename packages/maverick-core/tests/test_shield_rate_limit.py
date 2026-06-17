@@ -173,3 +173,42 @@ class TestConfig:
         srl.reset_shared()
         lim = srl.shared()
         assert lim is not None and lim.max_calls == 2
+
+
+class TestIdleKeySweep:
+    """Regression: per-goal dicts must not grow without bound over a long run.
+
+    Goal ids are unique per goal and never recur; before the idle sweep, every
+    distinct goal that ever called ``allow`` left a permanent ``{gid: deque}``
+    entry, leaking memory for the process lifetime of a `maverick serve`.
+    """
+
+    def test_idle_goal_keys_are_swept_so_dict_stays_bounded(self, monkeypatch):
+        clock = FakeClock()
+        # Make the sweep fire frequently so the test drives a realistic many-goal
+        # stream without millions of iterations.
+        monkeypatch.setattr(srl.ShieldRateLimiter, "_SWEEP_EVERY", 64)
+        lim = srl.ShieldRateLimiter(5, 10.0, clock=clock)
+        # Each "goal" hits the limiter once then never again, while time marches
+        # forward so prior goals' windows fully expire.
+        for i in range(10_000):
+            clock.now += 1.0
+            assert lim.allow(f"goal-{i}") is True
+        # Without the sweep this would hold ~10_000 keys. With it, the live set
+        # is bounded by how many goals fit inside one window plus one sweep
+        # interval — a small constant, not O(goals).
+        assert len(lim._hits) <= srl.ShieldRateLimiter._SWEEP_EVERY + lim.max_calls
+        assert len(lim._suppressed) <= srl.ShieldRateLimiter._SWEEP_EVERY + lim.max_calls
+        assert len(lim._last_alert) <= srl.ShieldRateLimiter._SWEEP_EVERY + lim.max_calls
+
+    def test_sweep_keeps_active_goal(self, monkeypatch):
+        """A goal still inside its window is never swept (correctness preserved)."""
+        clock = FakeClock()
+        monkeypatch.setattr(srl.ShieldRateLimiter, "_SWEEP_EVERY", 4)
+        lim = srl.ShieldRateLimiter(100, 100.0, clock=clock)
+        lim.allow("hot")  # one hit at t=0, window is 100s
+        for i in range(20):  # trigger several sweeps with throwaway goals
+            clock.now += 0.1
+            lim.allow(f"cold-{i}")
+        # "hot" is still within its 100s window -> must survive the sweeps.
+        assert "hot" in lim._hits

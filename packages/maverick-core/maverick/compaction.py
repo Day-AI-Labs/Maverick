@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -155,6 +156,14 @@ def _shrink_tool_result(
         joined = str(content)
     if len(joined) <= max_bytes:
         return block
+    # Idempotence guard: a result already shrunk to a preview digest stays as
+    # is, even though the digest text can exceed max_bytes (the preview frame +
+    # truncation note have a fixed floor). Without this, a second compaction
+    # pass re-shrinks the digest, nesting another <tool_output_preview> frame
+    # and re-hashing on every turn — defeating both idempotence and the
+    # content-addressed ref the digest is supposed to carry.
+    if joined.startswith("<tool_output_preview "):
+        return block
     canonical = _canonical_tool_result_text(joined)
     import hashlib
     full_sha = hashlib.sha256(canonical.encode("utf-8", "replace")).hexdigest()
@@ -177,12 +186,22 @@ def _shrink_tool_result(
     return new_block
 
 
+_TEXT_TRUNC_RE = re.compile(r" \.\.\. \[\d+B truncated to \d+B\]$")
+_STR_TRUNC_RE = re.compile(r" \.\.\. \[\d+B truncated\]$")
+
+
 def _shrink_text_block(block: dict, max_bytes: int) -> dict:
     """Hint-and-truncate large 'text' blocks the agent emitted earlier."""
     if not isinstance(block, dict) or block.get("type") != "text":
         return block
     text = block.get("text", "") or ""
     if len(text) <= max_bytes:
+        return block
+    # Idempotence guard: an already-truncated block carries the truncation
+    # note as its suffix and can still exceed max_bytes (the note itself has a
+    # floor). Re-truncating it would churn the note's byte count every pass —
+    # a second compaction must be a no-op. Leave it as is.
+    if _TEXT_TRUNC_RE.search(text):
         return block
     new_block = dict(block)
     new_block["text"] = (
@@ -243,7 +262,12 @@ def compact_messages(
             new_msg = dict(msg)
             new_msg["content"] = new_content
             out.append(new_msg)
-        elif isinstance(content, str) and len(content) > max_tool_bytes:
+        elif (isinstance(content, str) and len(content) > max_tool_bytes
+              and not _STR_TRUNC_RE.search(content)):
+            # The trailing guard keeps a second pass a no-op: an already-
+            # truncated string still exceeds max_tool_bytes (its note has a
+            # floor) and would otherwise be re-truncated, churning the byte
+            # count on every compaction.
             new_msg = dict(msg)
             new_msg["content"] = (
                 content[:max_tool_bytes].rstrip()

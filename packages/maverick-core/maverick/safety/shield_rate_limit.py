@@ -109,6 +109,31 @@ class ShieldRateLimiter:
         self._hits: dict[str, deque[float]] = {}
         self._suppressed: dict[str, int] = {}    # since the last alert
         self._last_alert: dict[str, float] = {}
+        # Sweep idle goal keys so the per-goal dicts don't grow without bound
+        # over a long-running process: goal ids are unique per goal and never
+        # recur, so a key whose window has fully drained (and whose throttle
+        # alert is older than a window) is dead weight. Sweeping is amortised
+        # (every _SWEEP_EVERY allow() calls) so it stays O(1) on the hot path.
+        self._calls_since_sweep = 0
+
+    _SWEEP_EVERY = 1024
+
+    def _sweep_idle(self, now: float) -> None:
+        """Drop goal keys whose window has fully expired. Caller holds the lock."""
+        cutoff = now - self.per_seconds
+        dead = [
+            gid for gid, window in self._hits.items()
+            if not window or window[-1] <= cutoff
+        ]
+        for gid in dead:
+            self._hits.pop(gid, None)
+            # Keep a goal's suppression bookkeeping only while its alert is
+            # still within a window (so the once-per-window throttle holds);
+            # otherwise it's stale and can go with the key.
+            last = self._last_alert.get(gid)
+            if last is None or last <= cutoff:
+                self._suppressed.pop(gid, None)
+                self._last_alert.pop(gid, None)
 
     def allow(self, goal_id: str | int) -> bool:
         """True = scan; False = SKIP the scan and pass the text through.
@@ -120,6 +145,10 @@ class ShieldRateLimiter:
         now = self._clock()
         fire: int | None = None
         with self._lock:
+            self._calls_since_sweep += 1
+            if self._calls_since_sweep >= self._SWEEP_EVERY:
+                self._calls_since_sweep = 0
+                self._sweep_idle(now)
             window = self._hits.setdefault(gid, deque())
             cutoff = now - self.per_seconds
             while window and window[0] <= cutoff:

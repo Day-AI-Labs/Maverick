@@ -152,6 +152,40 @@ def test_agent_bus_peek():
     assert agent_bus.peek("bob") == 2
 
 
+def test_agent_bus_inboxes_bounded_under_unique_recipient_flood(monkeypatch):
+    """Regression: `_inboxes` must stay bounded over a long-running process.
+
+    Each goal mints fresh per-run agent ids and the model can address arbitrary
+    recipients, so without eviction the registry grew one Queue per distinct id
+    forever. Empty inboxes carry no undelivered messages, so they may be evicted
+    once over the cap.
+    """
+    from maverick import agent_bus
+    agent_bus.clear()
+    monkeypatch.setattr(agent_bus, "_MAX_INBOXES", 64)
+    # Each send is to a unique never-recurring recipient that nobody drains, but
+    # the message is immediately consumed below so the inbox goes empty and is
+    # eligible for eviction. Simulate the realistic case: peek (touch) many ids.
+    for i in range(10_000):
+        agent_bus.peek(f"ephemeral-{i}")  # creates an empty inbox per id
+    # Empty inboxes are evicted once over the cap, so the live set stays near
+    # the cap rather than growing to O(ids).
+    assert len(agent_bus._inboxes) <= agent_bus._MAX_INBOXES + 1
+
+
+def test_agent_bus_eviction_keeps_nonempty_inboxes(monkeypatch):
+    """A pending (non-empty) inbox is never silently dropped by eviction."""
+    from maverick import agent_bus
+    agent_bus.clear()
+    monkeypatch.setattr(agent_bus, "_MAX_INBOXES", 8)
+    agent_bus.send("a", "keepme", {"important": True})  # non-empty inbox
+    for i in range(100):
+        agent_bus.peek(f"empty-{i}")  # flood with evictable empty inboxes
+    assert "keepme" in agent_bus._inboxes
+    msg = agent_bus.recv("keepme")
+    assert msg is not None and msg.payload == {"important": True}
+
+
 def test_agent_bus_tools_round_trip():
     """send_to_agent then recv_from_agent (bound to the recipient) returns
     the payload; both tools register in a ToolRegistry."""

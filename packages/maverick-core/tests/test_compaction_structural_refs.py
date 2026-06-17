@@ -147,3 +147,38 @@ def test_structural_ref_is_idempotent():
          for i in range(6)]
     once = compact_messages(msgs)
     assert compact_messages(once) == once  # second pass is a no-op
+
+
+def test_idempotent_when_digest_exceeds_max_bytes():
+    """Regression: when the digest itself is larger than ``max_tool_bytes``
+    (small cap / very large payload), a second compaction pass used to
+    RE-shrink the already-shrunk digest — nesting another preview frame and
+    re-hashing on every turn, growing the trace and breaking the content-
+    addressed ref. The shrink paths must be true no-ops on already-shrunk
+    content regardless of size."""
+    cap = 100  # smaller than the preview-frame + sha + note floor
+    msgs = [
+        {"role": "user", "content": "GOAL"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t1", "name": "read_file",
+             "input": {"path": "/a/b.py"}}]},
+        # tool_result block path
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": "A" * 5000}]},
+        # text block path
+        {"role": "assistant", "content": [{"type": "text", "text": "B" * 5000}]},
+        # plain string content path
+        {"role": "assistant", "content": "C" * 5000},
+    ] + [{"role": "assistant", "content": [{"type": "text", "text": f"s{i}"}]}
+         for i in range(6)]
+
+    once = compact_messages(msgs, max_tool_bytes=cap)
+    twice = compact_messages(once, max_tool_bytes=cap)
+    assert twice == once  # byte-for-byte no-op, no nested frames / re-hash
+
+    # The shrunk tool_result must carry exactly one preview frame, not nested.
+    tr = once[2]["content"][0]["content"]
+    assert tr.count("<tool_output_preview ") == 1
+    tr2 = twice[2]["content"][0]["content"]
+    assert tr2.count("<tool_output_preview ") == 1
+    assert tr2 == tr
