@@ -1126,7 +1126,7 @@ class Agent:
         from .tool_token import mint_tool_token, verify_tool_token
         try:
             token = mint_tool_token(cap, name)
-            ok = verify_tool_token(token, name)
+            ok = verify_tool_token(token, name, require_signature=True)
         except Exception:  # pragma: no cover -- exchange must never brick a run
             return None
         if ok:

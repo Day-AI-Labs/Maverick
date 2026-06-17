@@ -13,6 +13,17 @@ from maverick.capability import Capability
 from maverick.tools import Tool
 
 
+def _crypto_keypair():
+    try:
+        from maverick.audit.signing import _generate_keypair, _have_crypto
+        if not _have_crypto():
+            pytest.skip("cryptography not installed")
+        priv, pub, key_id = _generate_keypair()
+    except BaseException:  # noqa: BLE001 -- pyo3 PanicException isn't an Exception
+        pytest.skip("cryptography unavailable/broken in this environment")
+    return priv.hex(), pub.hex(), key_id
+
+
 def _agent(tmp_path):
     from maverick.agent import Agent
     from maverick.blackboard import Blackboard
@@ -43,6 +54,8 @@ def _spy_tool(name: str, calls: list) -> Tool:
 @pytest.mark.asyncio
 async def test_valid_exchange_is_transparent(tmp_path, monkeypatch):
     monkeypatch.setenv("MAVERICK_TOOL_TOKENS", "1")
+    keypair = _crypto_keypair()
+    monkeypatch.setattr("maverick.tool_token._deployment_keypair", lambda: keypair)
     agent = _agent(tmp_path)
     agent.capability = Capability(principal="agent:coder-1")
     calls: list = []

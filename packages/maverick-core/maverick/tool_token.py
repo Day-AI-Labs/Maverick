@@ -27,7 +27,9 @@ never authorize a tool the grant did not already permit -- exchange only ever
 tightens authority, never broadens it.
 
 Opt-in and fail-open, exactly like capability enforcement: with the feature off
-(the default) minting/verification is a no-op and behaviour is unchanged.
+(the default) token exchange is a no-op and behaviour is unchanged. When
+verifying a token, signatures are mandatory unless a caller explicitly opts into
+local unsigned checks for tests or same-process fallback use.
 Enable with ``[capabilities] per_call_tokens = true`` or
 ``MAVERICK_TOOL_TOKENS=1``. It is only meaningful alongside capability
 enforcement -- a token minted from no grant has nothing to scope.
@@ -55,7 +57,7 @@ class ToolToken:
 
     ``capability`` is the parent grant attenuated to exactly ``{tool}``. The
     token is the unit a verifier checks: tool match, not-expired, single-use
-    ``jti``, and -- when present -- a valid signature over :meth:`signing_bytes`.
+    ``jti``, and (by default) a valid signature over :meth:`signing_bytes`.
     """
 
     capability: Capability
@@ -146,7 +148,8 @@ def _deployment_keypair() -> tuple[str, str, str] | None:
     Reuses the existing Ed25519 audit-signing keypair so per-call tokens add no
     new key material or dependency. Returns ``None`` when ``cryptography`` is
     unavailable -- callers then mint *unsigned* tokens (still scoped + expiring +
-    single-use), so the feature degrades rather than failing the run.
+    single-use). Verifiers reject those unsigned tokens by default; callers that
+    intentionally need same-process fallback must opt in explicitly.
     """
     try:
         from .audit.signing import _have_crypto, _load_or_create_keypair
@@ -205,15 +208,17 @@ def verify_tool_token(
     now: float | None = None,
     public_key_hex: str | None = None,
     replay_cache: _ReplayCache | None = None,
-    require_signature: bool = False,
+    require_signature: bool = True,
 ) -> bool:
     """Verify a minted token authorizes exactly ``expected_tool``, right now.
 
     Checks, in order (all must hold): the token is scoped to ``expected_tool``;
-    its capability still permits it; it has not expired; its signature (if any)
-    verifies under the deployment/passed pubkey; and its ``jti`` has not been
-    seen before (single-use replay defense). ``require_signature`` rejects an
-    unsigned token outright -- use it where a signed exchange is mandatory.
+    its capability still permits it; it has not expired; its signature verifies
+    under the deployment/passed pubkey; and its ``jti`` has not been seen before
+    (single-use replay defense). ``require_signature`` defaults to ``True`` so
+    exported verifier consumers do not accidentally trust attacker-controlled
+    unsigned tokens; set it to ``False`` only for intentional same-process
+    fallback checks where the token object did not cross a trust boundary.
 
     Returns ``False`` (never raises) on any failure.
     """
