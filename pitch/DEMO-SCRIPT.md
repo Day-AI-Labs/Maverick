@@ -150,8 +150,8 @@ maverick domains-lint
 **They see (real):** `1118 pack(s): 0 error(s), 0 warning(s)`
 
 **Land the point:** "**1,118 least-privilege specialist packs across 26 suites,
-zero lint errors.** Plus ~310,000 lines of infrastructure and **10,601 tests**
-green on three Python versions. This is the part a competitor doesn't reproduce
+zero lint errors.** Plus ~310,000 lines of infrastructure that runs self-hosted
+or air-gapped. This is the part a competitor doesn't reproduce
 in a quarter — and that an incumbent's hosted product can't air-gap into your
 bank."
 

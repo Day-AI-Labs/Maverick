@@ -103,7 +103,7 @@ flowchart LR
 - **1,118 prebuilt, least-privilege specialist packs across 26 suites** — `maverick domains-lint`: **0 errors, 0 warnings.** Run it yourself.
 - **The thing a frontier lab won't ship into a bank:** a system that *rewrites itself in production* — governed, gated, and reversible.
 
-**Speaker notes:** "Three compounding moats: the governance substrate, the provable-learning loop, and the 1,118-pack library — all audited. None of it is a prompt over an API; it's ~310,000 lines of infrastructure with 10,000+ tests. A competitor doesn't catch up in a quarter, and an incumbent's hosted product can't be self-hosted into an air-gapped bank."
+**Speaker notes:** "Three compounding moats: the governance substrate, the provable-learning loop, and the 1,118-pack library — all audited. None of it is a prompt over an API; it's ~310,000 lines of infrastructure. A competitor doesn't catch up in a quarter, and an incumbent's hosted product can't be self-hosted into an air-gapped bank."
 
 **Visual:** Three stacked "moat" bars (Governance · Provable learning · Governed library), each with a one-line proof underneath.
 
@@ -160,7 +160,7 @@ flowchart LR
 ## Slide 10 — Traction & what's built
 
 **On slide:**
-- **Built and installable today (alpha):** ~310K LOC across 8 packages on PyPI, **10,400+ passing tests** on Py 3.10–3.12, native installers for Win/macOS/Linux.
+- **Built and installable today (alpha):** ~310K LOC across 8 packages on PyPI, native installers for Win/macOS/Linux, self-host or air-gap.
 - **The product proves itself:** signed Proof Pack, the governance guarantees scoreboard, 1,118 lint-clean packs (0 errors).
 - **Design partners / pilots:** `[FILL: e.g. "2 BFSI design partners in conversation; 1 signed LOI"]`
 - **Revenue:** `[FILL: pre-revenue / $X MRR / pilot value]`
@@ -168,7 +168,7 @@ flowchart LR
 
 **Speaker notes (be honest):** "We're pre-revenue and alpha — and unusually far along on *substance*: the hard infrastructure is built and tested, and the product can prove its own guarantees on the spot. What this round buys is the validation layer — design partners, SOC 2, first ARR — that turns a strong asset into a company."
 
-**Visual:** Two columns — "Built (✅ checklist)" vs "Next 12 months (→ milestones)". Big honest stat: "10,400+ tests green."
+**Visual:** Two columns — "Built (✅ checklist)" vs "Next 12 months (→ milestones)". Big honest stat: "~310K LOC, installable today."
 
 ---
 
