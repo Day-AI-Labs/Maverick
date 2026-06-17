@@ -36,11 +36,25 @@ import logging
 import os
 import uuid
 from collections.abc import AsyncIterator, Callable
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
 
 log = logging.getLogger(__name__)
+
+# The resolved trust-registry id of the current A2A caller (set per task from
+# its principal; read by _a2a_capability to apply that caller's ceiling). A
+# contextvar so it propagates into the worker thread (asyncio.to_thread copies
+# the context) without threading it through the fixed Runner signature.
+_caller_agent: ContextVar[str | None] = ContextVar("a2a_caller_agent", default=None)
+
+
+def _agent_id_of(principal: str | None) -> str | None:
+    """The registry agent id behind a principal, or ``None`` for shared/anon."""
+    if principal and principal.startswith("agent:"):
+        return principal[len("agent:"):]
+    return None
 
 TERMINAL_STATES = {"completed", "failed", "canceled", "rejected"}
 
@@ -164,15 +178,18 @@ def _a2a_capability() -> Any:
         deny_tools=_names("deny_tools", "MAVERICK_A2A_DENY_TOOLS"),
         max_risk=max_risk,
     )
-    # When the Agent Trust Plane is engaged, a central [agent_trust] entry with
-    # id "a2a" tightens this ceiling (intersection, never a broadening), so a
-    # company governs A2A callers from the same registry as every other
-    # external agent. Admission itself is gated separately by _a2a_trust_block
-    # (default-deny); here we only narrow the ceiling for an admitted caller.
+    # When the Agent Trust Plane is engaged, the caller's [agent_trust] entry
+    # tightens this ceiling (intersection, never a broadening). A per-caller
+    # bearer resolves to that caller's own entry (via the _caller_agent
+    # contextvar); a shared-bearer/anon caller falls back to the surface-wide
+    # "a2a" entry. Admission itself is gated separately by _a2a_trust_block.
     try:
         from . import agent_trust
         if agent_trust.agent_trust_enforced():
-            entry = agent_trust.lookup("a2a")
+            caller = _caller_agent.get()
+            entry = agent_trust.lookup(caller) if caller else None
+            if entry is None:
+                entry = agent_trust.lookup("a2a")
             if entry is not None:
                 cap = cap.intersect(entry.capability(principal="a2a"),
                                     principal="a2a")
@@ -181,18 +198,14 @@ def _a2a_capability() -> Any:
     return cap
 
 
-def _a2a_trust_block() -> str | None:
+def _a2a_trust_block(principal: str = "anon") -> str | None:
     """Default-deny admission for the A2A surface when the plane is engaged.
 
-    Returns a denial reason (and records it) when the trust plane is engaged but
-    no ``[agent_trust]`` entry with id ``"a2a"`` permits inbound — so turning on
-    enterprise mode does NOT leave A2A open at its medium-risk ceiling to anyone
-    holding the shared bearer (the prior "tighten-only, fail-open" gap). Returns
-    ``None`` (admit) when disengaged, so the default path is unchanged.
-
-    NOTE: A2A carries a single shared bearer (no per-caller identity), so the
-    ``"a2a"`` entry is a *surface-wide* gate, not per-caller governance —
-    per-caller A2A identity is tracked as Phase 3 of the trust-plane rebuild.
+    Gates on the CALLER's registry entry: a per-caller bearer (principal
+    ``agent:<id>``) is governed by that agent's entry; a shared-bearer/anon
+    caller falls back to the surface-wide ``"a2a"`` entry. So engaging the plane
+    does not leave A2A open at its medium ceiling to anyone with the bearer (the
+    prior tighten-only, fail-open gap). Returns ``None`` (admit) when disengaged.
     """
     try:
         from . import agent_trust
@@ -201,9 +214,10 @@ def _a2a_trust_block() -> str | None:
         return None
     if not enforced:
         return None
-    decision = agent_trust.decide_inbound("a2a", registry=registry, enforced=True)
+    agent_id = _agent_id_of(principal) or "a2a"
+    decision = agent_trust.decide_inbound(agent_id, registry=registry, enforced=True)
     if decision.denied:
-        agent_trust.record_denied("a2a", decision, direction="inbound")
+        agent_trust.record_denied(agent_id, decision, direction="inbound")
         return decision.reason
     return None
 
@@ -298,23 +312,40 @@ class TaskEngine:
 
     def auth_error(self, authorization: str | None) -> dict | None:
         """Return a JSON-RPC error object if the request isn't authorised,
-        else None. Bearer required unless explicitly opted out."""
-        token = os.environ.get("MAVERICK_A2A_TOKEN", "").strip()
-        if not token:
+        else None.
+
+        Two accepted credentials: the shared operator bearer
+        (``MAVERICK_A2A_TOKEN``) and a per-caller ``[agent_trust] a2a_token``
+        (which also establishes per-caller identity, see ``principal_for``).
+        Bearer required unless ``MAVERICK_A2A_ALLOW_UNAUTHENTICATED`` and no
+        token of either kind is configured."""
+        env_token = os.environ.get("MAVERICK_A2A_TOKEN", "").strip()
+        given = ""
+        if authorization and authorization.startswith("Bearer "):
+            given = authorization[len("Bearer "):].strip()
+        per_caller = None
+        if given:
+            try:
+                from . import agent_trust
+                per_caller = agent_trust.agent_for_a2a_token(given)
+            except Exception:  # pragma: no cover - never break auth on read error
+                per_caller = None
+        if not env_token and per_caller is None and not given:
             if _env_true("MAVERICK_A2A_ALLOW_UNAUTHENTICATED"):
                 return None
             return _err(
                 _AUTH_REQUIRED,
-                "A2A task endpoint requires auth: set MAVERICK_A2A_TOKEN "
-                "(or MAVERICK_A2A_ALLOW_UNAUTHENTICATED=1 for trusted "
-                "localhost).",
+                "A2A task endpoint requires auth: set MAVERICK_A2A_TOKEN, a "
+                "per-caller [agent_trust] a2a_token (or "
+                "MAVERICK_A2A_ALLOW_UNAUTHENTICATED=1 for trusted localhost).",
             )
-        if not authorization or not authorization.startswith("Bearer "):
+        if not given:
             return _err(_AUTH_REQUIRED, "missing bearer token")
-        given = authorization[len("Bearer "):].strip()
-        if not hmac.compare_digest(token.encode(), given.encode()):
-            return _err(_AUTH_REQUIRED, "invalid bearer token")
-        return None
+        if env_token and hmac.compare_digest(env_token.encode(), given.encode()):
+            return None
+        if per_caller is not None:
+            return None
+        return _err(_AUTH_REQUIRED, "invalid bearer token")
 
     @staticmethod
     def principal_for(authorization: str | None) -> str:
@@ -324,17 +355,21 @@ class TaskEngine:
         get/cancel/push-config reject a mismatch -- so one A2A caller cannot
         read, cancel, or redirect another caller's task.
 
-        NOTE: the A2A bearer is a single shared operator token (the protocol
-        carries no per-caller identity), so all callers presenting the *same*
-        bearer share one principal. The scope this enforces is between
-        *different bearer values* and between unauthenticated callers -- the
-        latter being the ``MAVERICK_A2A_ALLOW_UNAUTHENTICATED=1`` case the issue
-        calls out, where any local client could otherwise reach another's task.
-        We key on a hash of the presented bearer (never stored raw) and fall
-        back to ``anon`` when none is presented."""
+        A per-caller ``[agent_trust] a2a_token`` resolves to the stable
+        principal ``agent:<id>`` — real per-caller identity the trust plane
+        governs individually. Otherwise the shared operator bearer maps all its
+        callers to one ``bearer:<hash>`` principal (we never store the raw
+        bearer), and an unauthenticated request is ``anon``."""
         if authorization and authorization.startswith("Bearer "):
             given = authorization[len("Bearer "):].strip()
             if given:
+                try:
+                    from . import agent_trust
+                    agent = agent_trust.agent_for_a2a_token(given)
+                    if agent is not None:
+                        return f"agent:{agent.id}"
+                except Exception:  # pragma: no cover - fall back to bearer hash
+                    pass
                 return "bearer:" + hashlib.sha256(given.encode()).hexdigest()
         return "anon"
 
@@ -457,7 +492,7 @@ class TaskEngine:
             task.set_state("rejected")
             task.add_artifact("empty message: no text parts to act on", "error")
             return
-        tblock = _a2a_trust_block()
+        tblock = _a2a_trust_block(task.principal)
         if tblock:
             task.set_state("rejected")
             task.add_artifact(f"refused by agent trust plane: {tblock}", "error")
@@ -469,6 +504,9 @@ class TaskEngine:
             return
         task.set_state("working")
         limits = self._limits(task)
+        # Bind the caller id so _a2a_capability applies THIS caller's ceiling
+        # (the contextvar copies into the worker thread).
+        cv = _caller_agent.set(_agent_id_of(task.principal))
         try:
             result = await asyncio.to_thread(
                 self._runner,
@@ -482,6 +520,8 @@ class TaskEngine:
             task.set_state("failed")
             task.add_artifact(f"task failed: {e}", "error")
             return
+        finally:
+            _caller_agent.reset(cv)
         if task.cancel_requested:
             # A cancel landed while we were running; honour it and drop the
             # result rather than reporting completion.
@@ -508,7 +548,7 @@ class TaskEngine:
         text = _message_text(task.messages[0])
         block = None if text else "empty message"
         if not block:
-            block = _a2a_trust_block() or self._shield_block(text)
+            block = _a2a_trust_block(task.principal) or self._shield_block(text)
         if block:
             task.set_state("rejected")
             yield _status_event(task, final=True)
@@ -519,6 +559,7 @@ class TaskEngine:
         yield _status_event(task, final=False)
         # 3. run.
         limits = self._limits(task)
+        cv = _caller_agent.set(_agent_id_of(task.principal))
         try:
             result = await asyncio.to_thread(
                 self._runner, text,
@@ -533,6 +574,8 @@ class TaskEngine:
             yield _status_event(task, final=True)
             await self._fire_push(task)
             return
+        finally:
+            _caller_agent.reset(cv)
         if task.cancel_requested:
             task.set_state("canceled")
             yield _status_event(task, final=True)

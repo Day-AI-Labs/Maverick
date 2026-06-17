@@ -608,6 +608,29 @@ class FederationService:
             return "replayed delegation signature"
         return None
 
+    @staticmethod
+    def _governance_block(peer: Peer, decision: Any, req_risk: str | None) -> str | None:
+        """Org-policy gate for accepting a delegation. Returns a refusal reason
+        or ``None``. Pure no-op when no ``[governance]`` policy is configured.
+
+        ``capability=None`` is passed deliberately: the *tool* ceiling was
+        already enforced by boot negotiation, so this evaluates the org policy
+        (deny/require-human action lists + risk floors) against the synthetic
+        ``federation_delegate`` action, not against the agent's tool grant.
+        """
+        try:
+            from .governance import Decision, evaluate
+            verdict = evaluate("federation_delegate", risk=req_risk, capability=None)
+        except Exception as e:  # pragma: no cover - governance never breaks the path
+            log.debug("federation: governance eval skipped: %s", e)
+            return None
+        if verdict.decision is Decision.DENY:
+            return f"denied by org governance policy ({verdict.rule}): {verdict.reason}"
+        if verdict.decision is Decision.REQUIRE_HUMAN:
+            return (f"delegation requires human approval ({verdict.rule}): "
+                    f"{verdict.reason} — refused (no synchronous approval path)")
+        return None
+
     def call(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Transport-seam entry point — same signature the client consumes."""
         payload = payload or {}
@@ -675,6 +698,21 @@ class FederationService:
                 peer.name, direction="inbound", correlation_id=corr,
                 rule="unsigned", reason=sig_reason)
             return self._refuse_recorded(peer, corr, sig_reason)
+
+        # Org governance: accepting a delegation is itself a consequential action
+        # an org policy may gate. When engaged, run it through the same PDP that
+        # gates tool calls: DENY refuses; REQUIRE_HUMAN refuses fail-closed (a
+        # synchronous delegation can't pause for sign-off, so it is rejected
+        # pending human approval rather than silently auto-accepted). No-op with
+        # no [governance] policy configured, so non-governed deployments are
+        # unaffected across the board.
+        if enforced:
+            gov_reason = self._governance_block(peer, decision, req_risk)
+            if gov_reason:
+                agent_trust.record_denied(
+                    peer.name, direction="inbound", correlation_id=corr,
+                    rule="governance", reason=gov_reason)
+                return self._refuse_recorded(peer, corr, gov_reason)
 
         # Screen inbound external goal text for prompt-injection before it runs
         # in our orchestrator (fail-toward-gate). Only when engaged, so the

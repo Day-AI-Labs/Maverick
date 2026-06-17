@@ -303,6 +303,15 @@ class InboundApplier:
                     "reason": f"envelope addressed to {envelope.get('to')!r}, not "
                               f"{self.local!r} (replay across peers?)",
                     "result": None}
+        # Agent Trust Plane: when engaged, the (signature-verified) origin must
+        # also be a registered, inbound-permitted agent — so the trust registry
+        # is the single allowlist, not just the [federation] channel_peers pins.
+        # No-op when disengaged (kernel rule 1).
+        from . import agent_trust
+        decision = agent_trust.decide_inbound(origin)
+        if decision.denied:
+            agent_trust.record_denied(origin, decision, direction="inbound")
+            return {"applied": False, "reason": decision.reason, "result": None}
         channel = envelope.get("channel")
         user_id = envelope.get("user_id")
         text = envelope.get("text")
