@@ -30,7 +30,7 @@ from .rehearsal import PROCEED, RehearsalVerdict
 _REFRESH_EVERY = 64  # rebuild the model when the corpus grows by this many rows
 
 _lock = threading.Lock()
-_cache: dict = {"model": None, "n": -1}
+_cache: dict = {}
 
 
 def encode_state(domain, role, last_tool) -> tuple:
@@ -38,15 +38,18 @@ def encode_state(domain, role, last_tool) -> tuple:
     return (str(domain or ""), str(role or ""), str(last_tool or ""))
 
 
-def _build_model():
+def _build_model(store=None):
     """Fit a backoff world-model from the captured Operating Record (None if no
     usable data). The fit-time state encoding MUST match :func:`encode_state`."""
-    try:
-        from .counterfactual_rollout import transitions_from_trajectories
-        from .generative_world_model import BackoffTransitionModel
+    from .counterfactual_rollout import transitions_from_trajectories
+    from .generative_world_model import BackoffTransitionModel
+
+    if store is None:
         from .trajectory_store import shared
 
-        steps = list(shared().iter_steps())
+        store = shared()
+    try:
+        steps = list(store.iter_steps())
         if not steps:
             return None
 
@@ -75,24 +78,33 @@ def _build_model():
 
 
 def _model():
-    """Cached world-model, rebuilt when the trajectory corpus moves materially."""
-    try:
-        from .trajectory_store import shared
+    """Cached world-model, isolated by trajectory-store path.
 
-        n = shared().count()
+    The trajectory store is tenant-scoped, so the fitted model cache must be as
+    well. A process-global model keyed only by row count can let one tenant's
+    successful history vouch for another tenant's high-risk tool.
+    """
+    from .trajectory_store import shared
+
+    try:
+        store = shared()
+        path = store.path
+        n = store.count()
     except Exception:  # pragma: no cover
+        store = None
+        path = None
         n = 0
     with _lock:
-        if _cache["model"] is None or abs(n - _cache["n"]) >= _REFRESH_EVERY:
-            _cache["model"] = _build_model()
-            _cache["n"] = n
-        return _cache["model"]
+        entry = _cache.get(path)
+        if entry is None or entry["model"] is None or abs(n - entry["n"]) >= _REFRESH_EVERY:
+            entry = {"model": _build_model(store), "n": n}
+            _cache[path] = entry
+        return entry["model"]
 
 
 def reset_cache() -> None:
     with _lock:
-        _cache["model"] = None
-        _cache["n"] = -1
+        _cache.clear()
 
 
 def gate_tool(*, domain, role, last_tool, tool_name) -> RehearsalVerdict:

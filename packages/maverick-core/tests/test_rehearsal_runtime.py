@@ -70,3 +70,42 @@ def test_build_model_generalises_across_role(tmp_path, monkeypatch):
     assert model is not None
     # exact context known; novel last_tool within the same (domain, role) backs off
     assert model.support(("ops", "coder", "novel_prev"), "shell") >= 3
+
+def test_model_cache_is_partitioned_by_trajectory_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_REHEARSAL", "1")
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+
+    from maverick.paths import reset_tenant, set_tenant
+    from maverick.trajectory_store import reset_shared, shared
+
+    reset_shared()
+    rt.reset_cache()
+
+    token = set_tenant("tenant-a")
+    try:
+        store_a = shared()
+        for e in range(6):
+            store_a.record(TrajectoryStep(ts=1.0, goal_id=1, episode_id=e, step=0,
+                                          role="coder", tool="shell", domain="ops"))
+            store_a.record(TrajectoryStep(ts=1.0, goal_id=1, episode_id=e, step=1,
+                                          role="coder", tool="", domain="ops",
+                                          is_final=True, outcome=0.9))
+        verdict_a = rt.gate_tool(domain="ops", role="coder", last_tool="", tool_name="shell")
+    finally:
+        reset_tenant(token)
+
+    assert verdict_a.decision == rh.PROCEED and verdict_a.known
+
+    token = set_tenant("tenant-b")
+    try:
+        store_b = shared()
+        assert store_b.path != store_a.path
+        assert store_b.count() == 0
+        verdict_b = rt.gate_tool(domain="ops", role="coder", last_tool="", tool_name="shell")
+    finally:
+        reset_tenant(token)
+
+    assert verdict_b.decision == rh.PROCEED
+    assert not verdict_b.known
+    assert "no world-model" in verdict_b.reason
