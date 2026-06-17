@@ -267,6 +267,21 @@ def _lineage_dir(store_dir: str | Path | None = None) -> Path:
     return Path(store_dir).expanduser() if store_dir else Path("~/.maverick/lineage").expanduser()
 
 
+def _parse_lineage_file(f: Path) -> tuple[list[dict], str | None]:
+    links: list[dict] = []
+    try:
+        for line_no, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                links.append(json.loads(line))
+            except json.JSONDecodeError:
+                return links, f"line {line_no} malformed JSON"
+    except OSError as e:
+        return links, str(e)
+    return links, None
+
+
 def record_tool_lineage(goal_id: int, action: str, params: object, *,
                         skills: tuple[str, ...] = (), sources: tuple[str, ...] = (),
                         actor: str = "", store_dir: str | Path | None = None) -> None:
@@ -282,9 +297,15 @@ def record_tool_lineage(goal_id: int, action: str, params: object, *,
         f = f / f"{int(goal_id)}.ndjson"
         prev = _GENESIS
         if f.exists():
-            for line in f.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    prev = json.loads(line).get("hash", prev)
+            links, error = _parse_lineage_file(f)
+            for link in links:
+                prev = link.get("hash", prev)
+            if error:
+                # Keep recording the current consequential action even when a
+                # previous log entry is corrupt.  The deliberately broken
+                # prev_hash makes verification flag the file as tampered
+                # instead of silently omitting this action.
+                prev = f"BROKEN: {error}"
         pj = _canonical(params if isinstance(params, dict) else {"input": params})
         rec = {"ts": time(), "actor": str(actor), "action": str(action),
                "params_json": pj, "skills": list(skills), "sources": list(sources),
@@ -301,7 +322,8 @@ def load_lineage(goal_id: int, store_dir: str | Path | None = None) -> list[dict
         f = _lineage_dir(store_dir) / f"{int(goal_id)}.ndjson"
         if not f.exists():
             return []
-        return [json.loads(ln) for ln in f.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        links, _error = _parse_lineage_file(f)
+        return links
     except Exception:  # pragma: no cover
         return []
 
@@ -309,7 +331,17 @@ def load_lineage(goal_id: int, store_dir: str | Path | None = None) -> list[dict
 def verify_lineage_file(goal_id: int, store_dir: str | Path | None = None) -> str:
     """``VALID`` or ``BROKEN`` over a goal's persisted lineage chain -- the
     tamper-evidence for "what consequential actions did this run take?"."""
-    links = load_lineage(goal_id, store_dir)
+    try:
+        f = _lineage_dir(store_dir) / f"{int(goal_id)}.ndjson"
+        if not f.exists():
+            links: list[dict] = []
+            error = None
+        else:
+            links, error = _parse_lineage_file(f)
+    except Exception as e:  # pragma: no cover
+        return f"BROKEN: cannot read lineage ({e})"
+    if error:
+        return f"BROKEN: {error}"
     expected = _GENESIS
     for i, link in enumerate(links):
         if link.get("prev_hash") != expected:

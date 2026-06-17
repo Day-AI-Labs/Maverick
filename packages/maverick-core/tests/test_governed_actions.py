@@ -122,6 +122,20 @@ def test_persisted_lineage_detects_tampering(tmp_path):
     assert ga_mod.verify_lineage_file(1, store_dir=tmp_path).startswith("BROKEN")
 
 
+def test_persisted_lineage_reports_malformed_json_as_broken(tmp_path):
+    f = tmp_path / "2.ndjson"
+    f.write_text("{not json}\n", encoding="utf-8")
+    assert ga_mod.verify_lineage_file(2, store_dir=tmp_path).startswith("BROKEN")
+
+
+def test_record_tool_lineage_appends_after_malformed_json(tmp_path):
+    f = tmp_path / "3.ndjson"
+    f.write_text("{not json}\n", encoding="utf-8")
+    ga_mod.record_tool_lineage(3, "shell", {"cmd": "hidden"}, store_dir=tmp_path)
+    assert len(f.read_text(encoding="utf-8").splitlines()) == 2
+    assert ga_mod.verify_lineage_file(3, store_dir=tmp_path).startswith("BROKEN")
+
+
 def test_record_tool_lineage_is_fail_open(tmp_path):
     # A bad goal_id type must not raise (lineage never breaks a run).
     ga_mod.record_tool_lineage("not-an-int", "shell", {}, store_dir=tmp_path)  # no exception

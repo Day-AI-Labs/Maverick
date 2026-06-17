@@ -620,6 +620,28 @@ class TestGovernedActionLineage:
         assert any(len(a) >= 2 and a[1] == "ask_user" for a in calls)
 
     @pytest.mark.asyncio
+    async def test_records_lineage_before_tool_runs(
+        self, ctx, fake_llm, make_llm_response, monkeypatch,
+    ):
+        monkeypatch.setenv("MAVERICK_GOVERNED_ACTIONS", "1")
+        calls: list = []
+        monkeypatch.setattr("maverick.governed_actions.record_tool_lineage",
+                            lambda *a, **k: calls.append(a))
+
+        async def fake_run_tool(self, name, tool_input):
+            assert any(len(a) >= 2 and a[1] == name for a in calls)
+            return "ok"
+
+        monkeypatch.setattr(Agent, "_run_tool", fake_run_tool)
+        fake_llm.scripted = [
+            make_llm_response(
+                text="need info",
+                tool_calls=[ToolCall(id="t1", name="ask_user",
+                                     input={"question": "q?"})]),
+        ]
+        await Agent(ctx=ctx, role="orchestrator", brief="x").run()
+
+    @pytest.mark.asyncio
     async def test_no_lineage_when_disabled(
         self, ctx, fake_llm, make_llm_response, monkeypatch,
     ):
