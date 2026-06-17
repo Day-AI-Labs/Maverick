@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security &amp; deployment — Maverick</title>
+<meta name="description" content="Every control your reviewers ask about maps to a mechanism in Maverick — self-host or air-gap, egress lock, capability tokens, a policy engine, and a signed, hash-chained audit you can verify offline. Security overview and SOC 2 status available on request.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html">Maverick <span class="by">by Daybreak Labs</span></a>
+    <nav class="nav-links">
+      <a href="product.html">How it works</a>
+      <a href="security.html">Security</a>
+      <a href="company.html">Company</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-primary" href="mailto:info@daybreakailabs.com?subject=Request%20a%20Maverick%20demo">Book a demo</a>
+    </div>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-text">
+      <span class="eyebrow">Security &amp; deployment</span>
+      <h1 style="margin-top:18px">Built to clear your security review.</h1>
+      <p class="lede">Every control your reviewers ask about maps to a mechanism in the platform — not a promise on a slide.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="mailto:info@daybreakailabs.com?subject=Maverick%20security%20overview">Request the security overview</a>
+        <a class="btn btn-ghost" href="product.html">How it works</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- CONTROL → MECHANISM -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">The controls</span>
+      <h2>Mapped, not promised.</h2>
+    </div>
+    <table class="maptbl">
+      <thead><tr><th>What your reviewers require</th><th>The mechanism</th></tr></thead>
+      <tbody>
+        <tr><td class="ctrl">Data never leaves your environment</td><td class="mech"><b>Self-host or air-gap</b> — your VPC or fully offline, on your data.</td></tr>
+        <tr><td class="ctrl">No data exfiltration</td><td class="mech"><b>Egress lock</b> — a successful prompt injection still can't move data out.</td></tr>
+        <tr><td class="ctrl">Least privilege, per action</td><td class="mech"><b>Capability tokens</b> (attenuate-only) — an agent narrows its rights, never widens.</td></tr>
+        <tr><td class="ctrl">Bounded blast radius</td><td class="mech"><b>Sandbox, network-off by default</b> &middot; hard budget caps on tokens, dollars, wall-clock, and tools.</td></tr>
+        <tr><td class="ctrl">A human stays in control</td><td class="mech"><b>Policy on every action</b> — allow, deny, or require a human.</td></tr>
+        <tr><td class="ctrl">A provable, immutable record</td><td class="mech"><b>Signed, hash-chained audit</b> (the Operating Record) — tamper-evident, verifiable offline.</td></tr>
+        <tr><td class="ctrl">Evidence on demand</td><td class="mech"><b>Proof Pack</b> — an Ed25519-signed bundle that verifies offline and refuses to fabricate.</td></tr>
+        <tr><td class="ctrl">Your data trains no one's model</td><td class="mech"><b>It runs on your infrastructure</b> — nothing leaves to be trained on.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- DEPLOYMENT MODELS -->
+<section style="background:var(--paper-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Deployment</span>
+      <h2>Runs where your policy requires.</h2>
+    </div>
+    <div class="cols cols-3">
+      <div class="card">
+        <div class="idx">01</div>
+        <h3>Self-host</h3>
+        <p>Your VPC — your cloud account, your keys. Nothing routes through us.</p>
+      </div>
+      <div class="card">
+        <div class="idx">02</div>
+        <h3>Air-gapped</h3>
+        <p>Fully offline — no required egress at all. The platform never has to reach the network.</p>
+      </div>
+      <div class="card">
+        <div class="idx">03</div>
+        <h3>Your stack</h3>
+        <p>Docker, Kubernetes, or a single VPS. Integrates with Salesforce and ServiceNow over the MCP server.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- AUDIT & EVIDENCE (dark) -->
+<section class="on-navy">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Audit &amp; evidence</span>
+      <h2>Proof a reviewer can verify — offline.</h2>
+      <p>The Operating Record is a signed, hash-chained log of every governed action. Each entry signs the one before it. Alter a single row after the fact and the chain breaks — so tampering is detected, not assumed away.</p>
+    </div>
+    <div class="cols cols-2">
+      <div class="term">
+        <div class="bar"><span class="chip">operating record</span><span style="font-size:12px;color:var(--mint)">&#9679; chain verified</span></div>
+        <div class="body">
+          <div class="c"># each entry signs the one before it</div>
+          <div class="row"><span>0xA2 &middot; deny $60k wire</span><span class="ok">&#10003; signed</span></div>
+          <div class="row"><span>0xA3 &middot; require-human $6k</span><span class="ok">&#10003; signed</span></div>
+          <div class="row"><span>0xA4 &middot; cap runaway loop</span><span class="ok">&#10003; signed</span></div>
+          <div class="row"><span class="c">&mdash; alter 0xA2 after the fact &mdash;</span><span class="deny">&#10007; CAUGHT</span></div>
+        </div>
+      </div>
+      <div class="term">
+        <div class="bar"><span class="chip">maverick proof-pack</span><span style="font-size:12px;color:var(--mint)">&#9679; Ed25519 signed</span></div>
+        <div class="body">
+          <div class="c"># PROOF.md &mdash; verifies offline</div>
+          <div class="row"><span>signature</span><span class="ok">&#10003; Ed25519</span></div>
+          <div class="row"><span>chain</span><span class="ok">&#10003; intact</span></div>
+          <div class="row"><span>fabricate a result</span><span class="deny">&#10007; REFUSED</span></div>
+        </div>
+      </div>
+    </div>
+    <p style="margin-top:30px;font-size:16.5px">The Proof Pack is an Ed25519-signed evidence bundle: it verifies offline and refuses to fabricate a result it cannot prove.</p>
+  </div>
+</section>
+
+<!-- COMPLIANCE & STATUS -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Compliance &amp; status</span>
+      <h2>Mapped to the frameworks you answer to.</h2>
+      <p>The controls above map to the expectations behind the frameworks regulated teams report against. Maverick is in alpha; we present control-mapping rather than badges. SOC&nbsp;2 status and a full security overview are available on request.</p>
+    </div>
+    <div style="margin-top:40px;display:flex;gap:12px;flex-wrap:wrap">
+      <span class="pill">SOC&nbsp;2</span>
+      <span class="pill">HIPAA</span>
+      <span class="pill">SOX</span>
+      <span class="pill">GLBA</span>
+    </div>
+    <p class="muted" style="margin-top:26px;font-size:16px">No completed certification is claimed. We share our security overview and current SOC&nbsp;2 status on request, and map your questionnaire to the platform control by control.</p>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="cta-final">
+  <div class="wrap">
+    <span class="eyebrow">Get started</span>
+    <h2 style="margin-top:14px">Send us your security questionnaire.</h2>
+    <p class="lede">We'll map it to the platform, control by control.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="mailto:info@daybreakailabs.com?subject=Maverick%20security%20overview">Request the security overview</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <div class="brand">Maverick</div>
+        <p class="blurb">The governed AI agent workforce for regulated enterprises. A product of Daybreak Labs.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="product.html">How it works</a></li>
+          <li><a href="security.html">Security</a></li>
+          <li><a href="mailto:info@daybreakailabs.com?subject=Request%20a%20Maverick%20demo">Book a demo</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="company.html">About</a></li>
+          <li><a href="company.html#contact">Contact</a></li>
+          <li><a href="mailto:info@daybreakailabs.com?subject=Maverick%20access">Request access</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="mailto:info@daybreakailabs.com">info@daybreakailabs.com</a></li>
+          <li><a href="tel:+14233229722">(423) 322-9722</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="legal">
+      <span>&copy; 2026 Daybreak Labs. Maverick is a product of Daybreak Labs.</span>
+      <span>Private alpha &middot; built for regulated enterprises</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
