@@ -45,7 +45,7 @@ def _check_url(url: str) -> str | None:
 
 
 async def _run(args: dict[str, Any]) -> str:
-    url = (args.get("url") or "").strip()
+    url = str(args.get("url") or "").strip()
     if not url:
         return "ERROR: url is required"
     bad = _check_url(url)

@@ -206,6 +206,8 @@ async def _run_child_and_report(parent, child) -> str:
 
 def spawn_subagent_tool(parent: Agent) -> Tool:
     async def fn(args: dict) -> str:
+        if "role" not in args or "task" not in args:
+            return "ERROR: spawn_subagent requires 'role' and 'task'"
         role = args["role"]
         task = args["task"]
         from ..agent import Agent
@@ -278,6 +280,8 @@ def _validate_swarm_spec(agents_spec) -> str | None:
     for spec in agents_spec:
         if not isinstance(spec, dict):
             return "ERROR: each swarm agent must be an object"
+        if "role" not in spec or "task" not in spec:
+            return "ERROR: each swarm agent needs 'role' and 'task'"
         _blocked_role = _reserved_role_error(spec.get("role"))
         if _blocked_role is not None:
             return _blocked_role
@@ -460,7 +464,7 @@ def _format_swarm_results(parent: Agent, children: list, results: list,
 async def _run_swarm(parent: Agent, args: dict) -> str:
     from ..agent import Agent
 
-    agents_spec = args["agents"]
+    agents_spec = args.get("agents")
     _bad_spec = _validate_swarm_spec(agents_spec)
     if _bad_spec is not None:
         return _bad_spec
@@ -610,8 +614,12 @@ def spawn_specialist_tool(parent: Agent) -> Tool:
     async def fn(args: dict) -> str:
         from ..domain import agent_from_profile, enabled_domains
 
+        if "domain" not in args or "task" not in args:
+            return "ERROR: spawn_specialist requires 'domain' and 'task'"
         domain = args["domain"]
         task = args["task"]
+        if not isinstance(domain, str):
+            return "ERROR: 'domain' must be a string (a specialist domain-pack name)"
         domains = enabled_domains()
         profile = domains.get(domain)
         if profile is None:
