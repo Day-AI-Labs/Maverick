@@ -1220,6 +1220,11 @@ def pick_advanced() -> dict[str, Any]:
             "on a clarifying question. Best for batch / unattended runs.",
             default=False,
         ),
+        "governed_actions": _q_confirm(
+            "Governed actions? Record a tamper-evident lineage of every consequential "
+            "agent action (writes, shell) so a run's actions are auditable end-to-end.",
+            default=False,
+        ),
         "calibration_enforce": _q_confirm(
             "Calibration interlock? Freeze self-improvement (trajectory donation) "
             "if the verifier stops telling correct answers from incorrect ones on "
@@ -2589,6 +2594,10 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         # Independent axis: assume-and-proceed instead of blocking on ask_user.
         if advanced.get("headless_assume"):
             lines.append("headless_assume = true")
+    if advanced.get("governed_actions"):
+        lines.append("")
+        lines.append("[actions]")
+        lines.append("enable = true")
     if advanced.get("calibration_enforce"):
         lines.append("")
         lines.append("[calibration]")

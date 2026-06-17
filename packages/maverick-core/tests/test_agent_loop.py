@@ -596,3 +596,40 @@ class TestCodeExecGating:
         monkeypatch.setenv("MAVERICK_CODE_EXEC", "1")
         agent = Agent(ctx=ctx, role="researcher", brief="x")
         assert "code_exec" in {t.name for t in agent.tools.all()}
+
+
+class TestGovernedActionLineage:
+    @pytest.mark.asyncio
+    async def test_records_lineage_for_a_tool_call_when_enabled(
+        self, ctx, fake_llm, make_llm_response, monkeypatch,
+    ):
+        # With [actions] on, each serial tool call fires the (fail-open) lineage
+        # hook with the tool name -- proving the run path is wired up.
+        monkeypatch.setenv("MAVERICK_GOVERNED_ACTIONS", "1")
+        calls: list = []
+        monkeypatch.setattr("maverick.governed_actions.record_tool_lineage",
+                            lambda *a, **k: calls.append(a))
+        fake_llm.scripted = [
+            make_llm_response(
+                text="need info",
+                tool_calls=[ToolCall(id="t1", name="ask_user",
+                                     input={"question": "q?"})]),
+        ]
+        agent = Agent(ctx=ctx, role="orchestrator", brief="x")
+        await agent.run()
+        assert any(len(a) >= 2 and a[1] == "ask_user" for a in calls)
+
+    @pytest.mark.asyncio
+    async def test_no_lineage_when_disabled(
+        self, ctx, fake_llm, make_llm_response, monkeypatch,
+    ):
+        monkeypatch.setenv("MAVERICK_GOVERNED_ACTIONS", "0")
+        calls: list = []
+        monkeypatch.setattr("maverick.governed_actions.record_tool_lineage",
+                            lambda *a, **k: calls.append(a))
+        fake_llm.scripted = [
+            make_llm_response(text="need info",
+                tool_calls=[ToolCall(id="t1", name="ask_user", input={"question": "q?"})]),
+        ]
+        await Agent(ctx=ctx, role="orchestrator", brief="x").run()
+        assert calls == []

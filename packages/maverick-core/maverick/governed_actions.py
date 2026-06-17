@@ -23,8 +23,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from time import time
 
 from .safety.tool_risk import RISK_LEVELS, risk_rank
@@ -201,4 +203,118 @@ class GovernedActions:
                 "approver": link.approver, "hash": link.hash[:12]}
 
 
-__all__ = ["ActionSpec", "Preview", "LineageLink", "GovernedActions", "ActionError"]
+def impact_of(identifier: str, *, kind: str = "any",
+              store_dir: str | Path | None = None) -> list[dict]:
+    """Impact analysis: every recorded consequential action that depended on a
+    given skill or source. Use when a skill/source is revoked or found bad --
+    "what did it touch?" -- the inverse of lineage. Scans all per-goal ledgers;
+    ``kind`` is ``skill`` | ``source`` | ``any``. Read-only, fail-open."""
+    out: list[dict] = []
+    try:
+        d = _lineage_dir(store_dir)
+        if not d.exists():
+            return out
+        want_skill = kind in ("skill", "any")
+        want_source = kind in ("source", "any")
+        for f in sorted(d.glob("*.ndjson")):
+            try:
+                goal_id: object = int(f.stem)
+            except ValueError:
+                goal_id = f.stem
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                link = json.loads(line)
+                skills = link.get("skills") or []
+                sources = link.get("sources") or []
+                via = ("skill" if (want_skill and identifier in skills)
+                       else "source" if (want_source and identifier in sources)
+                       else None)
+                if via:
+                    out.append({"goal_id": goal_id, "action": link.get("action"),
+                                "ts": link.get("ts"), "via": via,
+                                "hash": str(link.get("hash", ""))[:12]})
+    except Exception:  # pragma: no cover -- impact analysis never raises
+        return out
+    return out
+
+
+__all__ = ["ActionSpec", "Preview", "LineageLink", "GovernedActions", "ActionError",
+           "enabled", "record_tool_lineage", "load_lineage", "verify_lineage_file",
+           "impact_of"]
+
+
+# --------------------------------------------------------------------------
+# Run-path wiring: persistent, per-goal lineage of consequential tool calls.
+# Off by default (kernel rule 1); fail-open (lineage never breaks a run).
+# --------------------------------------------------------------------------
+def enabled() -> bool:
+    """Whether the run path records governed-action lineage. Off by default;
+    ``[actions] enable`` / ``MAVERICK_GOVERNED_ACTIONS`` turns it on. Never raises."""
+    env = os.environ.get("MAVERICK_GOVERNED_ACTIONS", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    try:
+        from .config import load_config
+        return bool((load_config() or {}).get("actions", {}).get("enable", False))
+    except Exception:  # pragma: no cover -- config must never block a run
+        return False
+
+
+def _lineage_dir(store_dir: str | Path | None = None) -> Path:
+    return Path(store_dir).expanduser() if store_dir else Path("~/.maverick/lineage").expanduser()
+
+
+def record_tool_lineage(goal_id: int, action: str, params: object, *,
+                        skills: tuple[str, ...] = (), sources: tuple[str, ...] = (),
+                        actor: str = "", store_dir: str | Path | None = None) -> None:
+    """Append a tamper-evident lineage link for a CONSEQUENTIAL tool call
+    (risk >= medium) to ``<store>/<goal_id>.ndjson``. Fail-open: a low-risk tool
+    is skipped and any error is swallowed -- lineage must never break a run."""
+    try:
+        from .safety.tool_risk import risk_rank, tool_risk
+        if risk_rank(tool_risk(str(action))) < risk_rank("medium"):
+            return  # only consequential actions are traced
+        f = _lineage_dir(store_dir)
+        f.mkdir(parents=True, exist_ok=True)
+        f = f / f"{int(goal_id)}.ndjson"
+        prev = _GENESIS
+        if f.exists():
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    prev = json.loads(line).get("hash", prev)
+        pj = _canonical(params if isinstance(params, dict) else {"input": params})
+        rec = {"ts": time(), "actor": str(actor), "action": str(action),
+               "params_json": pj, "skills": list(skills), "sources": list(sources),
+               "prev_hash": prev, "hash": _link_hash(str(action), pj, prev)}
+        with open(f, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
+    except Exception:  # pragma: no cover -- lineage is best-effort, never fatal
+        pass
+
+
+def load_lineage(goal_id: int, store_dir: str | Path | None = None) -> list[dict]:
+    """The persisted lineage links for one goal (oldest first)."""
+    try:
+        f = _lineage_dir(store_dir) / f"{int(goal_id)}.ndjson"
+        if not f.exists():
+            return []
+        return [json.loads(ln) for ln in f.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    except Exception:  # pragma: no cover
+        return []
+
+
+def verify_lineage_file(goal_id: int, store_dir: str | Path | None = None) -> str:
+    """``VALID`` or ``BROKEN`` over a goal's persisted lineage chain -- the
+    tamper-evidence for "what consequential actions did this run take?"."""
+    links = load_lineage(goal_id, store_dir)
+    expected = _GENESIS
+    for i, link in enumerate(links):
+        if link.get("prev_hash") != expected:
+            return f"BROKEN: link {i} ({link.get('action')}) prev_hash mismatch"
+        if link.get("hash") != _link_hash(str(link.get("action")), str(link.get("params_json")), expected):
+            return f"BROKEN: link {i} ({link.get('action')}) content hash mismatch"
+        expected = str(link.get("hash"))
+    return f"VALID: {len(links)} link(s)" + (f", head {expected[:12]}..." if links else " (empty)")

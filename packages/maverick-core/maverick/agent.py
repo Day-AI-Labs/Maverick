@@ -2870,6 +2870,21 @@ class Agent:
                         tool_succeeded=not _tool_call_failed(output),
                     )
                     tool_results.append(self._make_tool_result(tc.id, output))
+                    # Governed-action lineage (opt-in via [actions] enable /
+                    # MAVERICK_GOVERNED_ACTIONS; off by default). Record a
+                    # tamper-evident link for each CONSEQUENTIAL tool call so a
+                    # run's actions are traceable. Fail-open: never breaks a run.
+                    try:
+                        from . import governed_actions as _gov
+                        if getattr(self, "_lineage_on", None) is None:
+                            self._lineage_on = _gov.enabled()
+                        if self._lineage_on:
+                            _gov.record_tool_lineage(
+                                self.ctx.goal_id, tc.name, tc.input,
+                                skills=tuple(sorted(self.ctx.skills_used or ())),
+                                actor=self.name)
+                    except Exception:
+                        pass
 
             # Step-budget awareness: when only a few tool-using turns remain
             # before max_steps force-stops the run, tell the model so it
