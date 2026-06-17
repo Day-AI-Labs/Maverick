@@ -1,37 +1,35 @@
-# Maverick — Visual Deck (Audience A: pre-seed / seed)
+# Maverick — Visual Decks (Daybreak Labs)
 
-The visual build of [`../SEED-DECK.md`](../SEED-DECK.md). Same content, same honesty
-rule: every number is verifiable from this repo, or shown as a highlighted
-`[ FILL ]` for a founder-only fact (the ask, the team, the traction).
+Self-contained HTML decks for **Maverick** by **Daybreak Labs**. No build step,
+no dependencies — open in a browser. Every number is verifiable from this repo;
+founder-, customer-, or deal-specific facts show as a highlighted `[ FILL ]` (amber).
 
-There are two renderings of the same 13 slides:
-
-| Rendering | What it is | Best for |
+| Deck | Audience | Slides |
 |---|---|---|
-| [`audience-a.html`](./audience-a.html) | Self-contained HTML deck (no build step, no deps) | Presenting in a browser; one-click export to PDF |
-| Figma (editable) | The same deck as native Figma frames | Hand-editing, restyling, exporting assets |
+| [`audience-a.html`](./audience-a.html) | Seed investor | 13 |
+| [`audience-b.html`](./audience-b.html) | Strategic acquirer | 12 |
+| [`audience-c.html`](./audience-c.html) | First customer / design partner | 12 |
 
-## Present / export the HTML deck
+All three share one visual system (deep-navy / electric theme) and the
+governance-chokepoint hero diagram. Content sources:
+[`../SEED-DECK.md`](../SEED-DECK.md), [`../AUDIENCE-B.md`](../AUDIENCE-B.md),
+[`../AUDIENCE-C.md`](../AUDIENCE-C.md).
 
-1. Open `audience-a.html` in any modern browser (double-click it).
+## Present / export
+
+1. Open the `.html` in any modern browser (double-click).
 2. **Navigate:** `←` / `→` (or `Space`); press `F` for fullscreen.
 3. **Export to PDF:** `Cmd/Ctrl-P` → *Save as PDF* → **Landscape**, margins
    **None**, **Background graphics ON**. Each slide prints as one 16:9 page.
 
-The deck loads the Inter typeface from Google Fonts when online, and falls back
-to the system sans-serif offline — so it still presents on a plane.
+Inter loads from Google Fonts when online and falls back to the system sans
+offline — so it still presents on a plane.
 
-## The 13 slides
+## Before you send
 
-1. Title · 2. Problem · 3. Solution (hero governance-chokepoint) · 4. Why now ·
-5. Product (proof-pack / golden-path receipts / deliverables inbox) ·
-6. Moat · 7. Market & wedge (bullseye) · 8. Go-to-market ·
-9. Competition (comparison table) · 10. Traction · 11. Team ·
-12. The ask · 13. Vision.
+Search the deck for `FILL` (amber) and fill the founder-, customer-, or deal-only
+facts. Everything else is grounded in the product.
 
-## Before you send it
-
-Search the deck for `FILL` (rendered in amber) and fill the four founder-only
-facts — the ask, the team, the traction, and the contact / data-room link.
-Everything else is already grounded in the product. See the checklist at the
-bottom of [`../SEED-DECK.md`](../SEED-DECK.md).
+> An editable **Figma** rendering of Deck A exists; it currently carries the
+> earlier copy (only the wordmark/footer were rebranded to Daybreak Labs). Ask to
+> have Figma synced to the current voice and to add B/C boards.

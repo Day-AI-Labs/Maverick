@@ -1,8 +1,8 @@
 # Maverick — One-Pager
 
-> **The governed, auditable AI agent workforce for regulated enterprises.**
+> **Maverick, by Daybreak Labs** — the agent workforce a regulated enterprise can actually deploy.
 > Self-hostable. Tamper-evident. Provably improving.
-> `[FILL: founder name]` · `[FILL: email]` · `[FILL: data-room link]` · 2026
+> Christopher Day, Founder · `[FILL: email]` · `[FILL: data-room link]` · 2026
 
 ---
 
@@ -28,13 +28,12 @@ workforce you can prove is improving, not a static model.
 on governance. Regulation (EU AI Act, HIPAA, SOX, GLBA) is making "ungoverned
 agent" a non-starter. AI-governance spend is forecast ~$2.2B (2025) → ~$11B by
 2036 atop a ~$51B GRC budget, BFSI leading. And the 2026 capital market has
-repriced to **reward defensible IP and punish thin AI wrappers** — Maverick is
-the opposite of a wrapper.
+repriced to **reward defensible IP and punish thin AI wrappers.**
 
 **What's built (alpha, installable today — every number verifiable):**
 - **~310K LOC** across **8 PyPI packages**; FastAPI dashboard; native installers
   for Windows / macOS / Linux; an MCP server; a GitHub Action.
-- **10,601 tests** collected and green on Python 3.10–3.12.
+- **10,400+ tests** green on Python 3.10–3.12.
 - **1,118 least-privilege specialist packs across 26 suites** —
   `maverick domains-lint` → **0 errors, 0 warnings.**
 - **The product proves its own guarantees:** `maverick proof-pack` emits an
@@ -79,8 +78,7 @@ workforce for regulated work."**
 **Traction.** `[FILL: e.g. "2 BFSI design partners in conversation; 1 signed
 LOI; pre-revenue."]`
 
-**Team.** `[FILL: founder name + one-line credibility; the unfair insight/access;
-any co-founders/advisors.]`
+**Team.** **Christopher Day**, Founder — `[FILL: one-line credibility; the unfair insight / access; any co-founders / advisors.]`
 
 **The ask.** Raising **`[FILL: $X]`** at **`[FILL: $Y pre-money]`** (2026 market
 is pricing defensible, IP-heavy seed in the ~$8–20M pre-money range — *before*
