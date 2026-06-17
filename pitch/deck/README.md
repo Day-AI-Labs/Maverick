@@ -6,7 +6,7 @@ founder-, customer-, or deal-specific facts show as a highlighted `[ FILL ]` (am
 
 | Deck | Audience | Slides |
 |---|---|---|
-| [`audience-a.html`](./audience-a.html) | Seed investor | 13 |
+| [`audience-a.html`](./audience-a.html) | Seed investor | 14 |
 | [`audience-b.html`](./audience-b.html) | Strategic acquirer | 12 |
 | [`audience-c.html`](./audience-c.html) | First customer / design partner | 12 |
 
