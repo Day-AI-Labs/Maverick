@@ -950,9 +950,16 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   **single config snapshot** per operation; `maverick doctor` warns when the
   plane is engaged with an empty registry. Denials record an `agent_trust_denied`
   audit row. In-process peer messaging (`agent_bus`) is internal and never gated.
-  (Signed-request identity that makes the pinned key load-bearing on federation/
-  A2A, and gating of the gRPC goal API / MCP / channel / marketplace surfaces,
-  are staged follow-ups — `doctor` flags the currently-ungated ingresses.)
+  **Signed-request identity** makes the pinned key *load-bearing* on federation
+  delegation: the caller signs the canonical delegation envelope
+  (`maverick-federation-delegate/1`) with its audit Ed25519 key and the receiver
+  verifies it against the pinned key — so a leaked shared token alone can no
+  longer impersonate a peer that has a pinned key. Freshness + a replay-nonce
+  cache reject captured signatures; `[agent_trust] require_signed = true` refuses
+  even shared-token-only peers (peers without a pinned key remain a documented
+  migration path). (Signed A2A requests and gating of the gRPC goal API / MCP /
+  channel / marketplace surfaces are staged follow-ups — `doctor` flags the
+  currently-ungated ingresses.)
 - **gRPC API v1 — stable** (`grpc_api/maverick.proto`, package `maverick.v1`;
   contract gate `grpc_api/contract.py` + committed golden
   `maverick_v1_contract.json`, wired into CI): additive changes pass; removing/

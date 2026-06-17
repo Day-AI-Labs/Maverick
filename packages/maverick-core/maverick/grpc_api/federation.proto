@@ -87,6 +87,19 @@ message DelegateRequest {
                                     // wall clock at this budget and the caller
                                     // uses it as the RPC deadline too
   string auth_token = 7;
+
+  // Signed-identity (maverick-federation-delegate/1) — additive, optional for
+  // back-compat. The caller signs the canonical delegation envelope with its
+  // audit Ed25519 key; the receiver verifies the signature against the pinned
+  // public key in its [agent_trust] registry for this peer. When the peer has a
+  // pinned key (or [agent_trust] require_signed is set), an absent or invalid
+  // signature is REFUSED — so a leaked shared token alone can no longer
+  // impersonate the peer. created_at gates replay freshness.
+  string sig = 8;          // Ed25519 signature hex over the canonical envelope
+  string pubkey = 9;       // signer's raw Ed25519 public key hex (informational;
+                           // verified against the pinned key, never trusted alone)
+  string key_id = 10;      // signer key fingerprint
+  double created_at = 11;  // epoch seconds; receiver rejects stale/early requests
 }
 
 message DelegateResult {

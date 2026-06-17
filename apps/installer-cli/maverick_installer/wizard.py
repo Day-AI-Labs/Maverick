@@ -2721,9 +2721,15 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[agent_trust]")
         lines.append("enforce = true")
+        # require_signed: refuse a federation peer that authenticates with only a
+        # shared token (no pinned-key signature). Peers WITH a pinned key are
+        # always signature-verified regardless of this flag.
+        lines.append("require_signed = false")
         # Default-deny: external agents must be listed here, by pinned Ed25519
-        # public key, with the direction and ceiling they're trusted within.
-        # Swap pubkeys out of band (data_dir('audit','keys')/<key_id>.pub).
+        # public key (lowercase id, e.g. "vega"), with the direction and ceiling
+        # they're trusted within. Swap pubkeys out of band
+        # (data_dir('audit','keys')/<key_id>.pub). expires_at/not_before (epoch
+        # seconds) and revoked support key rotation/revocation.
         lines.append("# agents = [")
         lines.append('#   { id = "vega", pubkey = "<64-hex Ed25519>", '
                      'direction = "both", allow_tools = ["read_file", '
