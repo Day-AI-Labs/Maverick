@@ -1296,6 +1296,13 @@ def pick_advanced() -> dict[str, Any]:
             "ships the proven win. Discovery, not just labour; off by default.",
             default=False,
         ),
+        "consequence": _q_confirm(
+            "Consequence Engine? Ground the workforce's learning in REAL outcomes instead "
+            "of a model's self-graded proxy: when a downstream result lands (an invoice "
+            "paid, a ticket reopened), it overrides the proxy reward so the data engine "
+            "learns from reality. Reality is the reward signal; off by default.",
+            default=False,
+        ),
         "emergent_protocol": _q_confirm(
             "Emergent coordination shorthand? Swarms evolve short codes for the boilerplate "
             "they repeat (cheaper coordination), while every code decodes EXACTLY back to "
@@ -2664,6 +2671,13 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("# Discover a better process and prove it: pair a harmful action with")
         lines.append("# the beneficial habit that should replace it, validate the swap in the")
         lines.append("# world-model, then experiment for real (maverick.operations_scientist).")
+        lines.append("enable = true")
+    if advanced.get("consequence"):
+        lines.append("")
+        lines.append("[consequence]")
+        lines.append("# Ground learning in REAL downstream outcomes: a recorded consequence")
+        lines.append("# (invoice paid, ticket reopened) overrides the model's self-graded")
+        lines.append("# proxy reward, so the data engine learns from reality (maverick.consequence).")
         lines.append("enable = true")
     if advanced.get("emergent_protocol"):
         lines.append("")

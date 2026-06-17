@@ -441,6 +441,20 @@ def test_write_config_tools_block_coexists(tmp_path: Path, monkeypatch):
     assert parsed["tools"]["hardware_sensors"] is True
 
 
+def test_write_config_emits_consequence_when_enabled(tmp_path: Path, monkeypatch):
+    # The Consequence Engine had a config knob + kernel reader but no wizard step,
+    # so it was unreachable through the installer. Pin that it now emits.
+    parsed = _write_full_config(
+        tmp_path, monkeypatch, advanced={"consequence": True},
+    )
+    assert parsed["consequence"]["enable"] is True
+
+
+def test_write_config_omits_consequence_by_default(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(tmp_path, monkeypatch, advanced={"consequence": False})
+    assert "consequence" not in parsed
+
+
 def test_write_config_emits_routing_energy_aware(tmp_path: Path, monkeypatch):
     parsed = _write_full_config(
         tmp_path, monkeypatch, advanced={"energy_aware": True},
