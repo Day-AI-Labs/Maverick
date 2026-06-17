@@ -1,7 +1,7 @@
 # Maverick — Seed Deck
 
 > **Audience:** pre-seed / seed investors (technical + enterprise-SaaS focused).
-> **Format:** ~13 slides. Each slide below = the on-slide copy (terse) + speaker
+> **Format:** ~14 slides. Each slide below = the on-slide copy (terse) + speaker
 > notes (what you *say*) + visual direction (what the designer builds).
 > **Honesty rule:** every number here is real and verifiable, or marked `[FILL]`
 > for facts only you know (ask, team, traction). Don't invent traction — at
@@ -73,7 +73,7 @@ flowchart LR
 **On slide:**
 - **Adoption inflection:** enterprise agentic AI is moving from pilots to budget — but stalling on governance.
 - **Regulation is forcing the issue:** EU AI Act, sector rules (HIPAA, SOX, GLBA) make "ungoverned agent" a non-starter.
-- **The money is in governance:** Gartner sizes AI-governance platforms at ~$492M (2026) → $1B+ by 2030, as AI regulation reaches 75% of economies.
+- **The money is in governance:** Gartner sizes AI-governance platforms at ~$492M (2026) → $1B+ by 2030, with AI regulation reaching 75% of economies by then.
 - **The market just shifted to reward exactly us:** in 2026, *defensibility outweighs growth* — capital rewards IP-heavy companies and **punishes AI wrappers.** Maverick is the opposite of a wrapper.
 
 **Speaker notes:** "Two years ago the bet was 'who has the best agent.' In 2026 that's commoditizing — and investors have repriced accordingly, paying for defensible IP, not thin wrappers. Governance and provable safety are becoming a *requirement*, not a feature. We're early to the layer that becomes mandatory."
@@ -137,7 +137,21 @@ flowchart LR
 
 ---
 
-## Slide 9 — Competition
+## Slide 9 — Business model
+
+**On slide:**
+- **Annual platform license, self-hosted** — priced per deployment and seat-band. Land with one governed workflow.
+- **Land → expand:** pilot → production workflow → adjacent suites. 26 suites already built means expansion is a config change, not a new sale — net revenue retention by design.
+- **Why it compounds:** self-host + signed audit + the learning loop = high switching cost; software gross margins. The overlay motion (govern others' agents) adds a second revenue line.
+- Pricing scales with **governed surface area** — seats, agents, and suites under management. `[FILL: pilot price · production ACV band]`
+
+**Speaker notes:** "We sell an annual platform license, self-hosted, so the buyer's data never leaves. We land on one governed workflow and expand across the 26 suites that are already built — expansion is a config change, not a new sale. Self-host plus a signed audit trail and a learning loop make us very sticky, at software margins."
+
+**Visual:** Three cards — How we charge · Land → expand · Why it compounds.
+
+---
+
+## Slide 10 — Competition
 
 **On slide:**
 
@@ -157,7 +171,7 @@ flowchart LR
 
 ---
 
-## Slide 10 — Traction & what's built
+## Slide 11 — Traction & what's built
 
 **On slide:**
 - **Built and installable today (alpha):** ~310K LOC across 8 packages on PyPI, native installers for Win/macOS/Linux, self-host or air-gap.
@@ -172,7 +186,7 @@ flowchart LR
 
 ---
 
-## Slide 11 — Team
+## Slide 12 — Team
 
 **On slide:**
 - **Christopher Day**, Founder — `[FILL: one-line credibility — prior company / domain / why-you]`
@@ -185,7 +199,7 @@ flowchart LR
 
 ---
 
-## Slide 12 — The ask
+## Slide 13 — The ask
 
 **On slide:**
 - **Raising `[FILL: $X]` at `[FILL: $Y pre-money]`.**
@@ -198,7 +212,7 @@ flowchart LR
 
 ---
 
-## Slide 13 — Vision
+## Slide 14 — Vision
 
 **On slide:**
 - **The AI workforce of record for regulated enterprises.**

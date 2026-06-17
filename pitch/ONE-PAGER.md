@@ -26,7 +26,7 @@ workforce you can prove is improving, not a static model.
 
 **Why now.** Enterprise agentic AI is moving from pilots to budget but stalling
 on governance. Regulation (EU AI Act, HIPAA, SOX, GLBA) is making "ungoverned
-agent" a non-starter. Gartner sizes AI-governance platforms at ~$492M (2026) → $1B+ by 2030 as AI regulation reaches 75% of world economies. And the 2026 capital market has
+agent" a non-starter. Gartner sizes AI-governance platforms at ~$492M (2026) → $1B+ by 2030, with AI regulation reaching 75% of economies by then. And the 2026 capital market has
 repriced to **reward defensible IP and punish thin AI wrappers.**
 
 **What's built (alpha, installable today — every number verifiable):**
@@ -78,6 +78,6 @@ LOI; pre-revenue."]`
 
 **Team.** **Christopher Day**, Founder — `[FILL: one-line credibility; the unfair insight / access; any co-founders / advisors.]`
 
-**The ask.** Raising **`[FILL: $X]`** at **`[FILL: $Y pre-money]`** (per Carta, the 2025–26 median AI seed raised ~$4.6M at ~$19M pre-money — defensible IP commands the premium end). **Use of funds (12–18 mo):** land 3 design
+**The ask.** Raising **`[FILL: $X]`** at **`[FILL: $Y pre-money]`** (per Carta, the 2025–26 median AI seed priced at ~$19M pre-money for ~20% dilution — about a $4.5M round; defensible IP commands the premium end). **Use of funds (12–18 mo):** land 3 design
 partners live, SOC 2 Type I, first paid ARR, 2 eng hires — converting a built,
 defensible asset into a revenue-generating company and a fundable Series A.

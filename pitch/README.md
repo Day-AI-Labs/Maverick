@@ -13,7 +13,7 @@ The same story, retargeted for three rooms. Same facts, different framing.
 
 | Audience | Deck | Content source | The room |
 |---|---|---|---|
-| **A — Seed investor** | [`deck/audience-a.html`](./deck/audience-a.html) · 13 slides | [`SEED-DECK.md`](./SEED-DECK.md) | The raise |
+| **A — Seed investor** | [`deck/audience-a.html`](./deck/audience-a.html) · 14 slides | [`SEED-DECK.md`](./SEED-DECK.md) | The raise |
 | **B — Strategic acquirer** | [`deck/audience-b.html`](./deck/audience-b.html) · 12 slides | [`AUDIENCE-B.md`](./AUDIENCE-B.md) | Build-vs-buy / M&A |
 | **C — First customer** | [`deck/audience-c.html`](./deck/audience-c.html) · 12 slides | [`AUDIENCE-C.md`](./AUDIENCE-C.md) | A regulated buyer's security review |
 
