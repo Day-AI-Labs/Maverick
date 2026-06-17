@@ -79,3 +79,12 @@ def test_registered():
 
     names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
     assert "two_person_rule" in names
+
+
+def test_non_finite_min_approvers_does_not_crash():
+    # Regression: int(args["min_approvers"]) raised OverflowError on inf; it now
+    # falls back to the default of 2.
+    t = two_person_rule()
+    out = t.fn({"op": "check", "min_approvers": float("inf"), "signoffs": [{"approver": "a"}]})
+    assert isinstance(out, str)
+    assert not out.startswith("ERROR") or "need" in out

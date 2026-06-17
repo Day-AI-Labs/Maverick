@@ -21,7 +21,7 @@ def _check(args: dict[str, Any]) -> str:
         return "ERROR: approvals must be an array of {approver, role?}"
     try:
         required = int(args.get("required"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return "ERROR: required (M, a positive integer) is required"
     if required < 1:
         return "ERROR: required must be >= 1"

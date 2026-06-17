@@ -18,6 +18,7 @@ Policy:  ``{"hot_days", "max_hot_mb"?}``.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from . import Tool
@@ -28,8 +29,8 @@ def _plan(records: list, policy: dict) -> str:
         hot_days = float(policy.get("hot_days"))
     except (TypeError, ValueError):
         return "ERROR: policy.hot_days (number) is required"
-    if hot_days < 0:
-        return "ERROR: policy.hot_days must be >= 0"
+    if not math.isfinite(hot_days) or hot_days < 0:
+        return "ERROR: policy.hot_days must be a finite number >= 0"
 
     max_hot_mb = policy.get("max_hot_mb")
     if max_hot_mb is not None:
@@ -37,8 +38,8 @@ def _plan(records: list, policy: dict) -> str:
             max_hot_mb = float(max_hot_mb)
         except (TypeError, ValueError):
             return "ERROR: policy.max_hot_mb must be a number"
-        if max_hot_mb < 0:
-            return "ERROR: policy.max_hot_mb must be >= 0"
+        if not math.isfinite(max_hot_mb) or max_hot_mb < 0:
+            return "ERROR: policy.max_hot_mb must be a finite number >= 0"
 
     parsed: list[tuple[str, float, float]] = []
     for r in records:
@@ -52,6 +53,10 @@ def _plan(records: list, policy: dict) -> str:
             size = float(r.get("size_kb"))
         except (TypeError, ValueError):
             return "ERROR: each record needs numeric last_access_days and size_kb"
+        if not math.isfinite(age) or not math.isfinite(size):
+            return "ERROR: each record needs finite last_access_days and size_kb"
+        if size < 0:
+            return "ERROR: each record size_kb must be >= 0"
         parsed.append((str(rid), age, size))
 
     # Recency split: COLD if idle longer than the hot window.
@@ -71,8 +76,12 @@ def _plan(records: list, policy: dict) -> str:
             cold.append((rid, age, size))
             hot_kb -= size
 
-    hot_bytes = int(round(sum(s for _, _, s in hot) * 1024))
-    cold_bytes = int(round(sum(s for _, _, s in cold) * 1024))
+    hot_byte_total = sum(s for _, _, s in hot) * 1024
+    cold_byte_total = sum(s for _, _, s in cold) * 1024
+    if not math.isfinite(hot_byte_total) or not math.isfinite(cold_byte_total):
+        return "ERROR: total size overflows; size_kb values are too large"
+    hot_bytes = int(round(hot_byte_total))
+    cold_bytes = int(round(cold_byte_total))
     migrate = sorted(rid for rid, _, _ in cold)
     shown = ", ".join(migrate) if migrate else "(none)"
     return (

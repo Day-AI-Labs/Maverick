@@ -46,3 +46,11 @@ def test_errors():
     assert t.fn({"op": "check", "approvals": []}).startswith("ERROR")  # no required
     assert t.fn({"op": "check", "approvals": [], "required": 0}).startswith("ERROR")
     assert t.fn({"op": "nope", "approvals": [], "required": 1}).startswith("ERROR")
+
+
+def test_non_finite_required_does_not_crash():
+    # Regression: int(args["required"]) raised OverflowError on a non-finite value.
+    t = quorum_approval()
+    for bad in (float("inf"), float("-inf")):
+        out = t.fn({"op": "check", "approvals": [{"approver": "a"}], "required": bad})
+        assert out.startswith("ERROR")

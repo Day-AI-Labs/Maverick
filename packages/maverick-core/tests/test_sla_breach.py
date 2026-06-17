@@ -64,3 +64,14 @@ def test_errors():
     assert _check(slo={"metric": "m", "comparator": "lt", "window": 1},
                   measurements=_ms([1])).startswith("ERROR")  # no threshold
     assert t.fn({"op": "nope", "slo": _LT, "measurements": _ms([1])}).startswith("ERROR")
+
+
+def test_non_finite_window_does_not_crash():
+    # Regression: int(slo["window"]) raised OverflowError on a non-finite,
+    # model-supplied window.
+    t = sla_breach()
+    for bad in (float("inf"), float("-inf")):
+        out = t.fn({"op": "check",
+                    "slo": {"metric": "m", "threshold": 1, "window": bad, "comparator": "lt"},
+                    "measurements": [{"t": 1, "value": 1}]})
+        assert out.startswith("ERROR")

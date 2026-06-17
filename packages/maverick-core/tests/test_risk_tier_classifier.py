@@ -57,3 +57,11 @@ def test_errors():
     assert t.fn({"op": "score"}).startswith("ERROR")  # no signals
     assert t.fn({"op": "nope", "signals": {}}).startswith("ERROR")
     assert t.fn({"op": "score", "signals": {"custom_weight": "x"}}).startswith("ERROR")
+
+
+def test_non_finite_custom_weight_does_not_crash():
+    # Regression: int(signals["custom_weight"]) raised OverflowError on inf.
+    t = risk_tier_classifier()
+    for bad in (float("inf"), float("-inf")):
+        out = t.fn({"op": "score", "signals": {"custom_weight": bad}})
+        assert out.startswith("ERROR")

@@ -23,7 +23,7 @@ def _check(args: dict[str, Any]) -> str:
     requester = str(args.get("requester") or "").strip().lower()
     try:
         need = int(args.get("min_approvers", 2))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         need = 2
     need = max(2, need)
     require_roles = bool(args.get("require_distinct_roles", False))

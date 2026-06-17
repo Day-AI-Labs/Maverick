@@ -72,3 +72,31 @@ def test_errors():
     assert _plan(records=[{"id": "a", "last_access_days": 1, "size_kb": 1}],
                  policy={"hot_days": -1}).startswith("ERROR")
     assert t.fn({"op": "nope", "records": [], "policy": {"hot_days": 1}}).startswith("ERROR")
+
+
+def test_non_finite_and_overflow_sizes_do_not_crash():
+    # Regression: int(round(sum * 1024)) raised OverflowError/ValueError on
+    # non-finite or overflowing size_kb (model-supplied, untrusted).
+    t = tiered_storage()
+    for bad in (float("inf"), float("-inf"), float("nan")):
+        out = t.fn({"op": "plan",
+                    "records": [{"id": "a", "last_access_days": 1, "size_kb": bad}],
+                    "policy": {"hot_days": 7}})
+        assert out.startswith("ERROR")
+        out = t.fn({"op": "plan",
+                    "records": [{"id": "a", "last_access_days": bad, "size_kb": 1}],
+                    "policy": {"hot_days": 7}})
+        assert out.startswith("ERROR")
+    # negative size rejected
+    assert t.fn({"op": "plan",
+                 "records": [{"id": "a", "last_access_days": 1, "size_kb": -5}],
+                 "policy": {"hot_days": 7}}).startswith("ERROR")
+    # finite-but-overflowing total bytes handled cleanly
+    assert t.fn({"op": "plan",
+                 "records": [{"id": "a", "last_access_days": 1, "size_kb": 1e308},
+                             {"id": "b", "last_access_days": 1, "size_kb": 1e308}],
+                 "policy": {"hot_days": 7}}).startswith("ERROR")
+    # non-finite policy values rejected
+    assert t.fn({"op": "plan",
+                 "records": [{"id": "a", "last_access_days": 1, "size_kb": 1}],
+                 "policy": {"hot_days": float("inf")}}).startswith("ERROR")

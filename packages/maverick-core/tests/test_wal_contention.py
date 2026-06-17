@@ -75,3 +75,11 @@ def test_errors():
                             {"writers": 1, "p50_ms": 2, "p99_ms": 2}])
     assert dup.startswith("ERROR")
     assert t.fn({"op": "nope", "buckets": [{"writers": 1, "p50_ms": 1, "p99_ms": 1}]}).startswith("ERROR")
+
+
+def test_non_finite_writers_does_not_crash():
+    # Regression: int(bucket["writers"]) raised OverflowError on a non-finite value.
+    t = wal_contention()
+    out = t.fn({"op": "analyze",
+                "buckets": [{"writers": float("inf"), "p50_ms": 1, "p99_ms": 2}]})
+    assert out.startswith("ERROR")

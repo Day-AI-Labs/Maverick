@@ -19,7 +19,12 @@ from typing import Any
 
 from . import Tool
 
-_CORE = re.compile(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$")
+# Numeric components are bounded to 18 digits: a real semver number never
+# approaches this, and an unbounded \d+ lets a multi-thousand-digit string reach
+# int() and trip CPython's int_max_str_digits ValueError (DoS on model input).
+_CORE = re.compile(
+    r"^(\d{1,18})(?:\.(\d{1,18}))?(?:\.(\d{1,18}))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$"
+)
 
 
 def _parse(v: str):
@@ -45,9 +50,14 @@ def _cmp_pre(a: tuple, b: tuple) -> int:
     for x, y in zip(a, b, strict=False):
         xn, yn = x.isdigit(), y.isdigit()
         if xn and yn:
-            xi, yi = int(x), int(y)
-            if xi != yi:
-                return -1 if xi < yi else 1
+            # Compare numerically without int() — an unbounded prerelease digit
+            # run would trip CPython's int_max_str_digits limit. Strip leading
+            # zeros, then longer = larger; equal length compares lexically.
+            xs, ys = x.lstrip("0") or "0", y.lstrip("0") or "0"
+            if len(xs) != len(ys):
+                return -1 if len(xs) < len(ys) else 1
+            if xs != ys:
+                return -1 if xs < ys else 1
         elif xn != yn:
             return -1 if xn else 1  # numeric identifiers are lower than alphanumeric
         elif x != y:
