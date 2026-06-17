@@ -180,3 +180,30 @@ def test_memory_brief_does_not_render_prompt_injection_filenames(mem):
     brief = memory_brief()
     assert "SYSTEM OVERRIDE" not in brief
     assert "evil" not in brief
+
+
+# ---- malformed model-supplied args must not crash ---------------------------
+
+def test_non_string_command_does_not_crash(mem):
+    assert mem({"command": 5}).startswith("ERROR")
+
+
+def test_non_string_path_does_not_crash(mem):
+    assert mem({"command": "view", "path": 5}).startswith("ERROR")
+
+
+def test_create_non_string_file_text(mem):
+    assert mem({"command": "create", "path": "f.txt", "file_text": 5}).startswith("ERROR")
+    assert mem({"command": "create", "path": "f.txt", "file_text": [1, 2]}).startswith("ERROR")
+
+
+def test_str_replace_non_string_args(mem):
+    mem({"command": "create", "path": "g.txt", "file_text": "hello"})
+    assert mem({"command": "str_replace", "path": "g.txt", "old_str": 5, "new_str": "x"}).startswith("ERROR")
+    assert mem({"command": "str_replace", "path": "g.txt", "old_str": "hello", "new_str": 5}).startswith("ERROR")
+
+
+def test_insert_non_finite_line_and_non_string_text(mem):
+    mem({"command": "create", "path": "h.txt", "file_text": "a\nb"})
+    assert mem({"command": "insert", "path": "h.txt", "insert_line": float("inf"), "insert_text": "x"}).startswith("ERROR")
+    assert mem({"command": "insert", "path": "h.txt", "insert_line": 0, "insert_text": 5}).startswith("ERROR")

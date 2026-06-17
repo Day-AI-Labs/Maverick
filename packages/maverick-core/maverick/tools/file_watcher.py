@@ -76,20 +76,26 @@ def _walk_files(root: Path, *, include_hidden: bool):
 
 
 def _run(sandbox, args: dict[str, Any]) -> str:
-    raw_path = (args.get("path") or "").strip()
+    raw_path = str(args.get("path") or "").strip()
     if not raw_path:
         return "ERROR: path is required"
     try:
         root = _safe_resolve(sandbox, raw_path)
     except ValueError as e:
         return f"ERROR: {e}"
-    if not root.exists():
-        return f"ERROR: path does not exist: {root}"
-    if not root.is_dir():
-        return f"ERROR: path is not a directory: {root}"
+    try:
+        if not root.exists():
+            return f"ERROR: path does not exist: {root}"
+        if not root.is_dir():
+            return f"ERROR: path is not a directory: {root}"
+    except OSError as e:
+        return f"ERROR: cannot access path: {e}"
 
     pattern = (args.get("pattern") or "*").strip() or "*"
-    max_files = max(1, min(int(args.get("max_files") or 200), 2000))
+    try:
+        max_files = max(1, min(int(float(args.get("max_files") or 200)), 2000))
+    except (TypeError, ValueError, OverflowError):
+        max_files = 200
     include_hidden = bool(args.get("include_hidden"))
     since = args.get("since")
 

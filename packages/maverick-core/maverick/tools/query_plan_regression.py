@@ -31,7 +31,7 @@ def _parse_plan(plan: Any, label: str) -> tuple[dict[str, Any] | None, str]:
     try:
         rows = int(plan.get("rows_scanned"))
         cost = float(plan.get("cost"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None, f"ERROR: {label} needs numeric rows_scanned and cost"
     if rows < 0 or cost < 0:
         return None, f"ERROR: {label} rows_scanned and cost must be >= 0"

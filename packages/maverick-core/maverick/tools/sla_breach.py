@@ -43,7 +43,7 @@ def _check(slo: dict, measurements: list) -> str:
         return "ERROR: slo.threshold (number) is required"
     try:
         window = int(slo.get("window"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return "ERROR: slo.window (integer) is required"
     if window <= 0:
         return "ERROR: slo.window must be > 0"

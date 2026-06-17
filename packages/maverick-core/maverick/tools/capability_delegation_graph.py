@@ -51,6 +51,8 @@ def _analyze(grants: list[dict], sensitive: set[str]) -> str:
     fanout: defaultdict[str, set[str]] = defaultdict(set)
 
     for g in grants:
+        if not isinstance(g, dict):
+            continue
         src = str(g.get("from", "")).strip()
         dst = str(g.get("to", "")).strip()
         cap = str(g.get("capability", "")).strip()

@@ -12,6 +12,7 @@ ops:
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from . import Tool
@@ -86,7 +87,7 @@ def _schedule(agents_in: list[Any], slots: int) -> str:
         seen.add(aid)
         try:
             pending = int(a.get("pending"))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return f"ERROR: agent {aid!r} pending must be an integer"
         if pending < 0:
             return f"ERROR: agent {aid!r} pending must be >= 0"
@@ -94,6 +95,8 @@ def _schedule(agents_in: list[Any], slots: int) -> str:
             weight = float(a.get("weight", 1))
         except (TypeError, ValueError):
             return f"ERROR: agent {aid!r} weight must be a number"
+        if not math.isfinite(weight):
+            return f"ERROR: agent {aid!r} weight must be a finite number"
         if weight < 0:
             return f"ERROR: agent {aid!r} weight must be >= 0"
         agents.append({"id": aid, "weight": weight, "pending": pending})
@@ -131,7 +134,7 @@ def _run(args: dict[str, Any]) -> str:
         return "ERROR: agents (non-empty array of {id, weight?, pending}) is required"
     try:
         slots = int(args.get("slots"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return "ERROR: slots (integer) is required"
     if slots < 0:
         return "ERROR: slots must be >= 0"

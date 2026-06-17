@@ -176,7 +176,7 @@ _VALID_OPS = {"evaluate", "simplify", "solve", "diff", "integrate"}
 
 
 def _run_evaluate(args: dict[str, Any]) -> str:
-    expr = (args.get("expr") or "").strip()
+    expr = str(args.get("expr") or "").strip()
     if not expr:
         return "ERROR: evaluate requires expr"
     try:
@@ -190,7 +190,7 @@ def _run_evaluate(args: dict[str, Any]) -> str:
 def _run_simplify(args: dict[str, Any]) -> str:
     import sympy
 
-    expr = (args.get("expr") or "").strip()
+    expr = str(args.get("expr") or "").strip()
     if not expr:
         return "ERROR: simplify requires expr"
     try:
@@ -202,10 +202,10 @@ def _run_simplify(args: dict[str, Any]) -> str:
 def _run_solve(args: dict[str, Any]) -> str:
     import sympy
 
-    eqn = (args.get("equation") or args.get("expr") or "").strip()
+    eqn = str(args.get("equation") or args.get("expr") or "").strip()
     if not eqn:
         return "ERROR: solve requires equation"
-    var_name = (args.get("var") or "x").strip()
+    var_name = str(args.get("var") or "x").strip()
     try:
         var = sympy.Symbol(var_name)
         # Parse "A = B" -> A - B. If no "=", treat as "expr = 0".
@@ -229,10 +229,10 @@ def _run_solve(args: dict[str, Any]) -> str:
 def _run_diff(args: dict[str, Any]) -> str:
     import sympy
 
-    expr = (args.get("expr") or "").strip()
+    expr = str(args.get("expr") or "").strip()
     if not expr:
         return "ERROR: diff requires expr"
-    var_name = (args.get("var") or "x").strip()
+    var_name = str(args.get("var") or "x").strip()
     try:
         return str(sympy.diff(
             _safe_parse_expr(expr, evaluate=True), sympy.Symbol(var_name),
@@ -244,10 +244,10 @@ def _run_diff(args: dict[str, Any]) -> str:
 def _run_integrate(args: dict[str, Any]) -> str:
     import sympy
 
-    expr = (args.get("expr") or "").strip()
+    expr = str(args.get("expr") or "").strip()
     if not expr:
         return "ERROR: integrate requires expr"
-    var_name = (args.get("var") or "x").strip()
+    var_name = str(args.get("var") or "x").strip()
     try:
         return str(sympy.integrate(
             _safe_parse_expr(expr, evaluate=True), sympy.Symbol(var_name),
@@ -260,7 +260,7 @@ def _run(args: dict[str, Any]) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
-    if op not in _VALID_OPS:
+    if not isinstance(op, str) or op not in _VALID_OPS:
         return f"ERROR: unknown op {op!r}"
 
     if op == "evaluate":

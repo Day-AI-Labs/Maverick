@@ -149,7 +149,7 @@ def _collect_files(paths: list[str], sandbox: Any = None) -> tuple[list[Path], l
 def _run(args: dict[str, Any], sandbox: Any = None) -> str:
     if args.get("op") not in (None, "search"):
         return f"ERROR: unknown op {args.get('op')!r}"
-    query = (args.get("query") or "").strip()
+    query = str(args.get("query") or "").strip()
     if not query:
         return "ERROR: query is required"
     raw_paths = [p for p in (args.get("paths") or []) if isinstance(p, str)]

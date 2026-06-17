@@ -73,7 +73,7 @@ def _render_pdf(latex: str, sandbox, engine: str, out: str) -> str:
 
 def _run(args: dict[str, Any], sandbox) -> str:
     op = args.get("op") or "mathml"
-    latex = args.get("latex") or ""
+    latex = str(args.get("latex") or "")
     if not latex.strip():
         return "ERROR: latex source is required"
     try:

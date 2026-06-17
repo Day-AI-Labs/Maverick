@@ -83,3 +83,22 @@ def test_registered():
 
     names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
     assert "semver_check" in names
+
+
+def test_huge_numeric_components_do_not_crash():
+    # Regression: int() on an unbounded \d+ run tripped CPython's
+    # int_max_str_digits ValueError on a model-supplied version/constraint.
+    t = semver_check()
+    big = "1" * 5000
+    assert t.fn({"op": "check", "version": big, "constraint": ">=1.0.0"}).startswith("ERROR")
+    assert t.fn({"op": "check", "version": "1.0.0", "constraint": ">=" + big}).startswith("ERROR")
+    # huge numeric prerelease identifier compares without int()
+    out = t.fn({"op": "check", "version": "1.0.0-" + big, "constraint": ">=1.0.0-1"})
+    assert out.startswith(("SATISFIED", "UNSATISFIED"))
+
+
+def test_numeric_prerelease_ordering():
+    t = semver_check()
+    # 2 < 10 numerically (longer digit run = larger), not lexically
+    assert t.fn({"op": "check", "version": "1.0.0-2", "constraint": "<1.0.0-10"}).startswith("SATISFIED")
+    assert t.fn({"op": "check", "version": "1.0.0-10", "constraint": ">1.0.0-2"}).startswith("SATISFIED")

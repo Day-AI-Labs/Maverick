@@ -71,3 +71,9 @@ def test_registered():
 
     names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
     assert "cache_admin" in names
+
+
+def test_purge_non_string_tool_does_not_crash():
+    # A model may pass a non-string 'tool'; must not raise.
+    out = cache_admin().fn({"op": "purge", "tool": 5})
+    assert out.startswith("purged")

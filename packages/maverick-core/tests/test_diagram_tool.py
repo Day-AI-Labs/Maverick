@@ -76,3 +76,16 @@ def test_out_escaping_workspace_is_rejected(tmp_path):
         {"engine": "dot", "source": "digraph{a->b}", "out": "../escaped.svg"})
     assert res.startswith("ERROR") and "escape" in res.lower()
     assert not (tmp_path.parent / "escaped.svg").exists()
+
+
+def test_non_string_engine_does_not_crash(tmp_path):
+    fn = diagram_tool(_FakeSandbox(tmp_path)).fn
+    assert fn({"engine": 5, "source": "digraph{a}"}).startswith("ERROR")
+
+
+def test_non_string_source_does_not_crash(tmp_path):
+    # Non-string source is coerced to str; must return a string, never raise.
+    fn = diagram_tool(_FakeSandbox(tmp_path)).fn
+    out = fn({"engine": "dot", "source": 5})
+    assert isinstance(out, str)
+    assert not out.startswith("Traceback")

@@ -50,3 +50,8 @@ def test_errors():
     assert t.fn({"op": "simulate", "capacity": 2, "accesses": "A"}).startswith("ERROR")
     assert t.fn({"op": "simulate", "capacity": 2, "accesses": ["A"], "policy": "arc"}).startswith("ERROR")
     assert t.fn({"op": "nope", "capacity": 2, "accesses": []}).startswith("ERROR")
+
+
+def test_capacity_infinity_does_not_crash():
+    out = _sim(capacity=float("inf"), accesses=["A"])
+    assert out.startswith("ERROR")

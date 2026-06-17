@@ -58,7 +58,7 @@ def _score(signals: dict[str, Any]) -> str:
     if "custom_weight" in signals:
         try:
             extra = int(signals["custom_weight"])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return "ERROR: custom_weight must be an integer"
         if extra:
             total += extra

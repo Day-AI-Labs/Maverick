@@ -77,3 +77,9 @@ def test_render_out_escaping_workspace_is_rejected(tmp_path):
                    "out": "../escaped.pdf"})
     assert out.startswith("ERROR") and "escape" in out.lower()
     assert not (tmp_path.parent / "escaped.pdf").exists()
+
+
+def test_non_string_latex_does_not_crash(tmp_path):
+    fn = latex_tool(_FakeSandbox(tmp_path)).fn
+    assert fn({"op": "mathml", "latex": 5}).startswith("ERROR")
+    assert fn({"op": "mathml", "latex": [1, 2]}).startswith("ERROR")

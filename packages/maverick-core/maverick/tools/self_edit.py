@@ -72,11 +72,12 @@ def _apply_edit(text: str, find: str, replace: str) -> tuple[str | None, str]:
 
 def _run(args: dict[str, Any]) -> str:
     op = args.get("op")
-    path = Path((args.get("path") or "").strip()).expanduser()
-    find = args.get("find") or ""
+    path = Path(str(args.get("path") or "").strip()).expanduser()
+    find = str(args.get("find") or "")
     replace = args.get("replace")
     if replace is None:
         return "ERROR: 'replace' is required"
+    replace = str(replace)
     if not _confined(path):
         return ("ERROR: refusing to edit outside the maverick package or "
                 "~/.maverick (self-edit is path-confined)")

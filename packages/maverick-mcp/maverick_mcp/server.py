@@ -933,7 +933,7 @@ class MCPServer:
         else:
             try:
                 goal_id = int(goal_id)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 raise _ProtocolError(-32602, f"invalid goal_id: {goal_id!r}") from None
         # Clamp to the same operator ceilings as _tool_start. Over HTTP the
         # budget is client-controlled; a bare Budget() let a resume bypass
@@ -968,7 +968,7 @@ class MCPServer:
         # apart (the old `int(...)` surfaced an isError tool result instead).
         try:
             qid = int(args["question_id"])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise _ProtocolError(-32602, f"invalid question_id: {args.get('question_id')!r}") from None
         answer = str(args["answer"])
         # An answer to an open question is fed straight back into the agent loop

@@ -38,3 +38,9 @@ def test_sensitive_capability_holder():
 
 def test_missing_grants_errors():
     assert capability_delegation_graph().fn({"op": "analyze"}).startswith("ERROR")
+
+
+def test_non_dict_grant_does_not_crash():
+    # Model-supplied grants may contain non-objects; must not raise.
+    assert _an([1, 2, 3]).startswith(("CLEAN", "RISK"))
+    assert _an([None, {"from": "a", "to": "b"}]).startswith(("CLEAN", "RISK"))

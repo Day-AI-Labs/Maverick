@@ -54,7 +54,7 @@ def _run(args: dict, user_id: str | None) -> str:
             "allow_hosts": sorted(cap.allow_hosts) or "(all)",
         }, indent=2)
     if op == "check":
-        name = (args.get("tool") or "").strip()
+        name = str(args.get("tool") or "").strip()
         if not name:
             return "ERROR: check requires a tool name"
         cap = _grant(principal)

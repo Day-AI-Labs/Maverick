@@ -43,13 +43,13 @@ def _argv(engine: str, infile: str, outfile: str, fmt: str) -> list[str]:
 
 
 def _run(args: dict[str, Any], sandbox) -> str:
-    engine = (args.get("engine") or "").strip().lower()
+    engine = str(args.get("engine") or "").strip().lower()
     if engine not in _ENGINES:
         return f"ERROR: engine must be one of {_ENGINES}"
-    source = args.get("source") or ""
+    source = str(args.get("source") or "")
     if not source.strip():
         return "ERROR: diagram source is required"
-    fmt = (args.get("format") or "svg").strip().lower()
+    fmt = str(args.get("format") or "svg").strip().lower()
     if fmt not in _FORMATS:
         return f"ERROR: format must be one of {_FORMATS}"
 

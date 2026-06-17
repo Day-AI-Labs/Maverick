@@ -39,3 +39,15 @@ def test_unknown_dimension_errors():
 
 def test_non_numeric_cost_errors():
     assert _report([{"cost": "free"}]).startswith("ERROR")
+
+
+def test_non_dict_item_does_not_crash():
+    # Model-supplied items may contain non-objects; must not raise.
+    out = _report([1, 2, 3])
+    assert out.startswith("ERROR")
+    assert _report([None]).startswith("ERROR")
+
+
+def test_top_infinity_does_not_crash():
+    out = _report([{"cost": 1, "principal": "a"}], top=float("inf"))
+    assert out.startswith("ERROR")

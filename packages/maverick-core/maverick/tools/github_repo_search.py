@@ -94,12 +94,15 @@ def _run(args: dict[str, Any]) -> str:
     op = args.get("op") or "repos"
     if op not in ("repos", "code"):
         return f"ERROR: unknown op {op!r}"
-    query = (args.get("query") or "").strip()
+    query = str(args.get("query") or "").strip()
     if not query:
         return "ERROR: query is required"
     if op == "code" and not os.environ.get("GITHUB_TOKEN", "").strip():
         return "ERROR: set GITHUB_TOKEN to search code (code search requires auth)"
-    limit = max(1, min(int(args.get("limit") or 20), 100))
+    try:
+        limit = max(1, min(int(float(args.get("limit") or 20)), 100))
+    except (TypeError, ValueError, OverflowError):
+        limit = 20
     url = _build_url(op, query, limit)
     try:
         code, data = _http_get_json(url)

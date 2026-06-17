@@ -67,7 +67,7 @@ def _resolve(root: Path, rel: str) -> Path:
     looking memory paths) by treating everything as relative to the root.
     ``.resolve()`` collapses ``..`` and follows symlinks, so a traversal or a
     symlink pointing outside the root lands outside and is refused."""
-    cleaned = (rel or "").strip()
+    cleaned = str(rel or "").strip()
     for prefix in ("/memories/", "memories/", "/"):
         if cleaned.startswith(prefix):
             cleaned = cleaned[len(prefix):]
@@ -172,6 +172,8 @@ def _cmd_create(root: Path, target: Path, args: dict) -> str:
     if target == root:
         return "ERROR: create requires a file `path`"
     text = args.get("file_text") or args.get("content") or ""
+    if not isinstance(text, str):
+        return "ERROR: `file_text` must be a string"
     err = _fits(root, target, text)
     if err:
         return err
@@ -188,6 +190,8 @@ def _cmd_str_replace(root: Path, target: Path, args: dict) -> str:
     new = args.get("new_str")
     if old is None or new is None:
         return "ERROR: str_replace requires `old_str` and `new_str`"
+    if not isinstance(old, str) or not isinstance(new, str):
+        return "ERROR: `old_str` and `new_str` must be strings"
     if not target.is_file():
         return f"ERROR: {_rel(target, root)} not found"
     data = _read_text(target)
@@ -215,13 +219,15 @@ def _cmd_insert(root: Path, target: Path, args: dict) -> str:
     text = args.get("insert_text")
     if text is None:
         text = args.get("new_str", "")
+    if not isinstance(text, str):
+        return "ERROR: `insert_text` must be a string"
     if after is None:
         return "ERROR: insert requires `insert_line` (0 = before first line)"
     if not target.is_file():
         return f"ERROR: {_rel(target, root)} not found"
     try:
         idx = int(after)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return f"ERROR: insert_line must be an integer; got {after!r}"
     data = _read_text(target)
     lines = data.split("\n")
@@ -267,7 +273,7 @@ _PATH_CMDS = {
 
 
 def _run_impl(args: dict) -> str:
-    cmd = (args.get("command") or "").strip()
+    cmd = str(args.get("command") or "").strip()
     if not cmd:
         return ("ERROR: missing `command` (view, create, str_replace, insert, "
                 "delete, rename)")

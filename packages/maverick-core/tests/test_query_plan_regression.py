@@ -63,3 +63,11 @@ def test_errors():
         {"op": "compare", "baseline": {"rows_scanned": "x", "cost": 1},
          "candidate": {"rows_scanned": 1, "cost": 1}}
     ).startswith("ERROR")
+
+
+def test_non_finite_rows_scanned_does_not_crash():
+    # Regression: int(plan["rows_scanned"]) raised OverflowError on a non-finite value.
+    t = query_plan_regression()
+    out = t.fn({"baseline": {"rows_scanned": float("inf"), "cost": 1},
+                "candidate": {"rows_scanned": 1, "cost": 1}})
+    assert out.startswith("ERROR")

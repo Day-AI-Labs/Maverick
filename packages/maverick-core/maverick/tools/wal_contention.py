@@ -34,7 +34,7 @@ def _analyze(buckets: list, tolerance: float) -> str:
             writers = int(b.get("writers"))
             p50 = float(b.get("p50_ms"))
             p99 = float(b.get("p99_ms"))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return "ERROR: each bucket needs writers, p50_ms, p99_ms"
         if writers <= 0:
             return "ERROR: writers must be > 0"

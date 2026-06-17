@@ -94,6 +94,8 @@ def _run(args: dict[str, Any]) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
+    if not isinstance(op, str):
+        return f"ERROR: unknown op {op!r}"
     return {
         "key_for": _op_key_for,
         "put_url": _op_put_url,

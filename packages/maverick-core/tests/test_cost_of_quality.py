@@ -57,3 +57,8 @@ def test_errors():
     assert _analyze([{"passed": True, "cost": "free"}]).startswith("ERROR")  # bad cost
     assert _analyze([{"cost": 1.0, "passed": "yes"}]).startswith("ERROR")  # non-bool passed
     assert t.fn({"op": "nope", "runs": [{"cost": 1.0, "passed": True}]}).startswith("ERROR")
+
+
+def test_retries_infinity_does_not_crash():
+    out = _analyze([{"cost": 1, "passed": True, "retries": float("inf")}])
+    assert out.startswith("ERROR")

@@ -83,7 +83,7 @@ def _is_safe_path(rel: str, workdir: Path) -> bool:
 
 def _make_run(sandbox):
     def _run(args: dict[str, Any]) -> str:
-        patch_text = args.get("patch") or ""
+        patch_text = str(args.get("patch") or "")
         if not patch_text.strip():
             return "ERROR: patch is required"
         dry_run = bool(args.get("dry_run"))
