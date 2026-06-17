@@ -49,6 +49,22 @@ def test_validation_errors():
     assert _run(op="nope", value=10, epsilon=1).startswith("ERROR")
 
 
+def test_laplace_no_domain_error_when_random_returns_zero():
+    # Regression: _laplace did `math.log(1 - 2*abs(u))`; when rng.random()
+    # returns exactly 0.0, u == -0.5 and the argument is 0 -> math domain error.
+    # The argument must be floored just above 0 so the draw is always defined.
+    import math
+
+    from maverick.tools.differential_privacy import _laplace
+
+    class _ZeroRng:
+        def random(self):
+            return 0.0
+
+    val = _laplace(_ZeroRng(), 1.0)
+    assert math.isfinite(val)
+
+
 def test_registered():
     from maverick.tools import base_registry
 

@@ -21,9 +21,15 @@ from . import Tool
 
 
 def _laplace(rng: random.Random, scale: float) -> float:
-    """Sample Laplace(0, scale) via inverse CDF."""
+    """Sample Laplace(0, scale) via inverse CDF.
+
+    ``rng.random()`` can return exactly 0.0, giving ``u == -0.5`` and
+    ``1 - 2*abs(u) == 0`` -> ``math.log(0)`` raises a domain error. Floor the
+    argument just above 0 so the draw is always defined.
+    """
     u = rng.random() - 0.5
-    return -scale * math.copysign(1.0, u) * math.log(1.0 - 2.0 * abs(u))
+    arg = max(1.0 - 2.0 * abs(u), 2.2e-308)
+    return -scale * math.copysign(1.0, u) * math.log(arg)
 
 
 def _numeric(args: dict, key: str) -> tuple[float | None, str]:

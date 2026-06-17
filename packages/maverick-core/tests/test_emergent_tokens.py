@@ -123,6 +123,33 @@ def test_multichar_escape_yields_identity():
     assert et.decode(et.encode(msg, book), book) == msg
 
 
+def test_phrase_containing_escape_does_not_corrupt_round_trip():
+    # Regression: a learned phrase that itself contains the escape character
+    # broke decode(encode(x)) == x. encode() byte-stuffs every literal escape
+    # (E -> EE) BEFORE replacing phrases, so a phrase like "deploy #prod"
+    # (escape "#") got its own escape stuffed and either no longer matched or
+    # collided with the stuffed escapes, corrupting the audit round-trip.
+    # learn() must drop such phrases (degrade to no-compression, never corrupt).
+    msgs = ["deploy #prod now", "deploy #prod fast"] * 3
+    book = et.learn(msgs, escape="#", markers=["A", "B", "C", "D"])
+    assert all("#" not in phrase for phrase in book.forward)
+    for m in msgs:
+        assert et.decode(et.encode(m, book), book) == m
+
+
+def test_encode_skips_escape_bearing_phrase_from_stale_codebook():
+    # Defense-in-depth: a codebook loaded from disk (predating the learn() fix)
+    # may still hold an escape-bearing phrase. encode() must skip it rather than
+    # corrupt the round-trip.
+    book = et.TokenCodebook(
+        escape="#",
+        forward={"a#b": "#A"},
+        reverse={"A": "a#b"},
+    )
+    msg = "a#b and plain #text"
+    assert et.decode(et.encode(msg, book), book) == msg
+
+
 def test_audit_contract_holds_for_mixed_valid_invalid_markers():
     # Valid single-char markers still code; invalid ones are silently skipped;
     # the round-trip is exact regardless.
