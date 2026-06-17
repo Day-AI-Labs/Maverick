@@ -11,6 +11,7 @@ ops:
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from . import Tool
@@ -21,9 +22,14 @@ def _check(args: dict[str, Any]) -> str:
     if not isinstance(signoffs, list):
         return "ERROR: signoffs must be an array of {approver[, role]}"
     requester = str(args.get("requester") or "").strip().lower()
+    raw_min_approvers = args.get("min_approvers", 2)
+    if isinstance(raw_min_approvers, float) and not math.isfinite(raw_min_approvers):
+        return "ERROR: min_approvers must be a finite integer"
     try:
-        need = int(args.get("min_approvers", 2))
-    except (TypeError, ValueError, OverflowError):
+        need = int(raw_min_approvers)
+    except OverflowError:
+        return "ERROR: min_approvers must be a finite integer"
+    except (TypeError, ValueError):
         need = 2
     need = max(2, need)
     require_roles = bool(args.get("require_distinct_roles", False))

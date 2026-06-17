@@ -81,10 +81,27 @@ def test_registered():
     assert "two_person_rule" in names
 
 
-def test_non_finite_min_approvers_does_not_crash():
-    # Regression: int(args["min_approvers"]) raised OverflowError on inf; it now
-    # falls back to the default of 2.
+def test_non_finite_min_approvers_fails_closed():
     t = two_person_rule()
-    out = t.fn({"op": "check", "min_approvers": float("inf"), "signoffs": [{"approver": "a"}]})
-    assert isinstance(out, str)
-    assert not out.startswith("ERROR") or "need" in out
+    out = t.fn(
+        {
+            "op": "check",
+            "min_approvers": float("inf"),
+            "signoffs": [{"approver": "a"}, {"approver": "b"}],
+        }
+    )
+    assert out.startswith("ERROR")
+    assert "finite integer" in out
+
+
+def test_nan_min_approvers_fails_closed():
+    t = two_person_rule()
+    out = t.fn(
+        {
+            "op": "check",
+            "min_approvers": float("nan"),
+            "signoffs": [{"approver": "a"}, {"approver": "b"}],
+        }
+    )
+    assert out.startswith("ERROR")
+    assert "finite integer" in out
