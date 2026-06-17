@@ -67,8 +67,10 @@ def _canonical(params: dict, *, max_len: int = 4000) -> str:
     return raw if len(raw) <= max_len else raw[:max_len] + "...(truncated)"
 
 
-def _link_hash(action: str, params_json: str, prev_hash: str) -> str:
-    return hashlib.sha256(f"{action}|{params_json}|{prev_hash}".encode()).hexdigest()
+def _link_hash(**fields: object) -> str:
+    """Hash a lineage link's committed audit fields in a stable order."""
+    payload = json.dumps(fields, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -174,10 +176,16 @@ class GovernedActions:
                         result: str, sources, skills, approver: str) -> None:
         prev = self.lineage[-1].hash if self.lineage else _GENESIS
         pj = _canonical(params)
-        h = _link_hash(spec.name, pj, prev)
+        ts = time()
+        sources_t = tuple(sources)
+        skills_t = tuple(skills)
+        h = _link_hash(
+            ts=ts, action=spec.name, params_json=pj, effect=effect,
+            result=result, sources=sources_t, skills=skills_t,
+            approver=approver, prev_hash=prev)
         self.lineage.append(LineageLink(
-            ts=time(), action=spec.name, params_json=pj, effect=effect,
-            result=result, sources=tuple(sources), skills=tuple(skills),
+            ts=ts, action=spec.name, params_json=pj, effect=effect,
+            result=result, sources=sources_t, skills=skills_t,
             approver=approver, prev_hash=prev, hash=h))
 
     def verify_lineage(self) -> str:
@@ -187,7 +195,10 @@ class GovernedActions:
         for i, link in enumerate(self.lineage):
             if link.prev_hash != expected:
                 return f"BROKEN: link {i} ({link.action}) prev_hash mismatch"
-            if link.hash != _link_hash(link.action, link.params_json, link.prev_hash):
+            if link.hash != _link_hash(
+                ts=link.ts, action=link.action, params_json=link.params_json,
+                effect=link.effect, result=link.result, sources=link.sources,
+                skills=link.skills, approver=link.approver, prev_hash=link.prev_hash):
                 return f"BROKEN: link {i} ({link.action}) content hash mismatch"
             expected = link.hash
         return f"VALID: {len(self.lineage)} link(s), head {expected[:12]}..."
@@ -299,9 +310,11 @@ def record_tool_lineage(goal_id: int, action: str, params: object, *,
                 if line.strip():
                     prev = json.loads(line).get("hash", prev)
         pj = _canonical(params if isinstance(params, dict) else {"input": params})
-        rec = {"ts": time(), "actor": str(actor), "action": str(action),
+        ts = time()
+        rec = {"ts": ts, "actor": str(actor), "action": str(action),
                "params_json": pj, "skills": list(skills), "sources": list(sources),
-               "prev_hash": prev, "hash": _link_hash(str(action), pj, prev)}
+               "prev_hash": prev}
+        rec["hash"] = _link_hash(**rec)
         with open(f, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec) + "\n")
     except Exception:  # pragma: no cover -- lineage is best-effort, never fatal
@@ -327,7 +340,9 @@ def verify_lineage_file(goal_id: int, store_dir: str | Path | None = None) -> st
     for i, link in enumerate(links):
         if link.get("prev_hash") != expected:
             return f"BROKEN: link {i} ({link.get('action')}) prev_hash mismatch"
-        if link.get("hash") != _link_hash(str(link.get("action")), str(link.get("params_json")), expected):
+        content = dict(link)
+        recorded_hash = str(content.pop("hash", ""))
+        if recorded_hash != _link_hash(**content):
             return f"BROKEN: link {i} ({link.get('action')}) content hash mismatch"
         expected = str(link.get("hash"))
     return f"VALID: {len(links)} link(s)" + (f", head {expected[:12]}..." if links else " (empty)")

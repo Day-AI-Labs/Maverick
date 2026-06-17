@@ -72,6 +72,28 @@ def test_lineage_detects_tampering():
     assert ga.verify_lineage().startswith("BROKEN")
 
 
+def test_lineage_detects_audit_field_tampering():
+    ga = GovernedActions()
+    ga.register(ActionSpec(
+        "delete_customer", {"id": int}, risk="high",
+        simulate=lambda p: "would delete customer", apply=lambda p: "deleted"))
+    ga.commit("delete_customer", {"id": 1}, approver="alice",
+              sources=("ticket-1",), skills=("deletion-skill",))
+    assert ga.verify_lineage().startswith("VALID")
+
+    original = ga.lineage[0]
+    for field, value in {
+        "ts": original.ts + 1,
+        "effect": "benign preview",
+        "result": "no-op",
+        "sources": ("forged-source",),
+        "skills": ("forged-skill",),
+        "approver": "mallory",
+    }.items():
+        ga.lineage[0] = dataclasses.replace(original, **{field: value})
+        assert ga.verify_lineage().startswith("BROKEN"), field
+
+
 def test_trace_is_the_decision_lineage():
     ga = GovernedActions()
     ga.register(ActionSpec("recommend", {"q": str}, risk="low",
@@ -120,6 +142,26 @@ def test_persisted_lineage_detects_tampering(tmp_path):
     lines[0] = json.dumps(rec)
     f.write_text("\n".join(lines) + "\n")
     assert ga_mod.verify_lineage_file(1, store_dir=tmp_path).startswith("BROKEN")
+
+
+def test_persisted_lineage_detects_audit_field_tampering(tmp_path):
+    ga_mod.record_tool_lineage(1, "shell", {"cmd": "a"},
+                               skills=("skill-a",), sources=("source-a",),
+                               actor="alice", store_dir=tmp_path)
+    assert ga_mod.verify_lineage_file(1, store_dir=tmp_path).startswith("VALID")
+    f = tmp_path / "1.ndjson"
+    import json
+    original = json.loads(f.read_text().splitlines()[0])
+    for field, value in {
+        "ts": original["ts"] + 1,
+        "actor": "mallory",
+        "skills": ["forged-skill"],
+        "sources": ["forged-source"],
+    }.items():
+        rec = dict(original)
+        rec[field] = value
+        f.write_text(json.dumps(rec) + "\n")
+        assert ga_mod.verify_lineage_file(1, store_dir=tmp_path).startswith("BROKEN"), field
 
 
 def test_record_tool_lineage_is_fail_open(tmp_path):
