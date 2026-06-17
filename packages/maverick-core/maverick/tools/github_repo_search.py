@@ -49,6 +49,7 @@ def _build_url(op: str, query: str, limit: int) -> str:
 def _parse_repos(data: dict) -> str:
     """Parse a /search/repositories JSON dict into a compact listing."""
     items = data.get("items") or []
+    items = [it for it in items if isinstance(it, dict)]
     if not items:
         return "no repositories"
     lines = []
@@ -63,12 +64,14 @@ def _parse_repos(data: dict) -> str:
 def _parse_code(data: dict) -> str:
     """Parse a /search/code JSON dict into a compact listing."""
     items = data.get("items") or []
+    items = [it for it in items if isinstance(it, dict)]
     if not items:
         return "no code matches"
     lines = []
     for it in items:
         path = it.get("path") or "?"
-        repo = (it.get("repository") or {}).get("full_name", "?")
+        repository = it.get("repository")
+        repo = repository.get("full_name", "?") if isinstance(repository, dict) else "?"
         lines.append(f"  {repo}  {path}")
     return "\n".join(lines)
 
