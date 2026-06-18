@@ -42,10 +42,24 @@ spec:
       labels:
         app: maverick
     spec:
+      # The image runs as the unprivileged "maverick" user (uid/gid 1000).
+      # fsGroup makes the RWO volume group-writable by that user; the hardening
+      # below satisfies the "restricted" Pod Security Standard.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: maverick
           image: REGISTRY/maverick:latest
           args: ["dashboard", "--host", "0.0.0.0", "--port", "8765"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 8765
               name: http
@@ -54,7 +68,7 @@ spec:
                 name: maverick-secrets
           volumeMounts:
             - name: state
-              mountPath: /root/.maverick
+              mountPath: /home/maverick/.maverick
           readinessProbe:
             httpGet: {path: "/", port: 8765}
             initialDelaySeconds: 5

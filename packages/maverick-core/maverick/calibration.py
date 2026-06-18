@@ -39,8 +39,31 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+# Legacy/global fallback locations (single-tenant). Multi-tenant deployments
+# resolve these per-tenant at call time via :func:`_samples_path`/:func:`_verdict_path`
+# so one tenant's calibration samples and learning-freeze verdict never bleed
+# into another's self-improvement loop. With no active tenant these resolve to
+# exactly the historical paths below (single-tenant behaviour unchanged).
 SAMPLES_PATH = Path.home() / ".maverick" / "calibration.ndjson"
 VERDICT_PATH = Path.home() / ".maverick" / "calibration_verdict.json"
+
+
+def _samples_path() -> Path:
+    """Tenant-scoped calibration-sample ledger (legacy root when no tenant active)."""
+    try:
+        from .paths import data_dir
+        return data_dir("calibration.ndjson")
+    except Exception:  # pragma: no cover -- never let path resolution block a run
+        return SAMPLES_PATH
+
+
+def _verdict_path() -> Path:
+    """Tenant-scoped learning-freeze verdict (legacy root when no tenant active)."""
+    try:
+        from .paths import data_dir
+        return data_dir("calibration_verdict.json")
+    except Exception:  # pragma: no cover -- never let path resolution block a run
+        return VERDICT_PATH
 
 # Last-resort defaults; live values come from ``[calibration]`` (config.get_calibration).
 _DEFAULTS = {
@@ -184,9 +207,11 @@ def _clamp01(v: float) -> float:
 
 def record_sample(
     confidence: float, correct: bool, *, source: str = "",
-    path: Path = SAMPLES_PATH,
+    path: Path | None = None,
 ) -> bool:
     """Append one ``(confidence, ground_truth)`` calibration sample. Never raises."""
+    if path is None:
+        path = _samples_path()
     entry = CalibrationSample(
         confidence=_clamp01(confidence), correct=bool(correct),
         ts=time.time(), source=str(source or "")[:120],
@@ -206,8 +231,10 @@ def record_sample(
             return False
 
 
-def load_samples(path: Path = SAMPLES_PATH) -> list[CalibrationSample]:
+def load_samples(path: Path | None = None) -> list[CalibrationSample]:
     """Read the calibration-sample ledger (most recent last). Never raises."""
+    if path is None:
+        path = _samples_path()
     if not path.exists():
         return []
     out: list[CalibrationSample] = []
@@ -232,9 +259,13 @@ def load_samples(path: Path = SAMPLES_PATH) -> list[CalibrationSample]:
 
 
 def run_assessment(
-    *, samples_path: Path = SAMPLES_PATH, verdict_path: Path = VERDICT_PATH,
+    *, samples_path: Path | None = None, verdict_path: Path | None = None,
 ) -> CalibrationReport:
     """Assess the ledger and persist the verdict that :func:`learning_frozen` reads."""
+    if samples_path is None:
+        samples_path = _samples_path()
+    if verdict_path is None:
+        verdict_path = _verdict_path()
     report = assess(load_samples(samples_path))
     with _lock:
         try:
@@ -249,7 +280,9 @@ def run_assessment(
     return report
 
 
-def _load_verdict(path: Path = VERDICT_PATH) -> dict | None:
+def _load_verdict(path: Path | None = None) -> dict | None:
+    if path is None:
+        path = _verdict_path()
     if not path.exists():
         return None
     try:
@@ -259,16 +292,21 @@ def _load_verdict(path: Path = VERDICT_PATH) -> dict | None:
     return verdict if isinstance(verdict, dict) else None
 
 
-def learning_frozen(*, verdict_path: Path = VERDICT_PATH) -> bool:
+def learning_frozen(*, verdict_path: Path | None = None) -> bool:
     """Whether self-improvement should be frozen because the verifier drifted.
 
     True only when enforcement is enabled AND a persisted assessment exists and
     found the verifier inadequate. With enforcement off, or no assessment yet,
     returns False (learning proceeds as today). Fail-open.
+
+    The verdict is resolved per-tenant: a freeze raised by one tenant's drifting
+    verifier does not freeze learning for other tenants.
     """
     s = _settings()
     if not s["enforce"]:
         return False
+    if verdict_path is None:
+        verdict_path = _verdict_path()
     verdict = _load_verdict(verdict_path)
     if verdict is None:
         # No assessment has run: we have no evidence of drift, so don't freeze.

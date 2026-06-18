@@ -2089,6 +2089,10 @@ def tenant_create(tenant_id: str, plan: str, display_name: str,
         click.echo(f"ERROR: {e}", err=True)
         sys.exit(2)
     click.echo(f"created tenant {rec.id!r} (plan {rec.plan}, status {rec.status})")
+    # Tell the operator where to drop this tenant's own provider keys / models /
+    # budget so each client can use its own credentials (overlays global config).
+    from .workspace import Workspace
+    click.echo(f"  per-tenant config: {Workspace(rec.id).root / 'config.toml'}")
 
 
 @tenant.command("list")

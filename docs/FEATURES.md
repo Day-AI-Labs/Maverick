@@ -2044,7 +2044,7 @@ tested without spawning py-spy.
 - **Deployment blueprints** — reference architectures for **Kubernetes / AWS
   ECS (Fargate) / Fly.io / Railway** (`deploy/reference-architectures/`):
   contract-tested manifests sharing the canonical image, `:8765` dashboard
-  surface, `/root/.maverick` state volume, and secrets-from-platform-store
+  surface, `/home/maverick/.maverick` state volume (image runs as the unprivileged `maverick` user, not root), and secrets-from-platform-store
   rule. **Devcontainer + Codespaces template** (`.devcontainer/`) mirrors CI's
   editable install so `maverick --help` and the test suite work on open.
 - **Scaffold generators** — `template_generator` tool: emit a validator-clean

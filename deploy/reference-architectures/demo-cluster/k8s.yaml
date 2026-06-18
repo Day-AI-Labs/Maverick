@@ -87,7 +87,7 @@ spec:
           command: ["python", "/seed/seed_demo.py"]
           volumeMounts:
             - name: state
-              mountPath: /root/.maverick
+              mountPath: /home/maverick/.maverick
             - name: seed
               mountPath: /seed
           resources:
@@ -107,7 +107,7 @@ spec:
                   key: MAVERICK_DASHBOARD_TOKEN
           volumeMounts:
             - name: state
-              mountPath: /root/.maverick
+              mountPath: /home/maverick/.maverick
           # Exec probe: an httpGet probe targets the pod IP, which the
           # loopback-bound dashboard deliberately does not answer.
           readinessProbe:

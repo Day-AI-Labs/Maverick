@@ -163,6 +163,27 @@ def dashboard_overrides_path() -> Path:
     return config_path().parent / DASHBOARD_OVERRIDES_BASENAME
 
 
+def tenant_config_path() -> Path | None:
+    """Path to the active tenant's config overlay, or None in single-tenant mode.
+
+    Resolves to ``~/.maverick/tenants/<tenant>/config.toml`` when a tenant is
+    active via an explicit ``set_tenant`` scope or the ``MAVERICK_TENANT`` env
+    var, and None otherwise. Deliberately config-free: it reads only the tenant
+    ContextVar and env var, NOT ``current_tenant_id()`` (whose client-binding
+    branch reads config and would recurse back into ``load_config`` on every
+    call -- a hot-path blow-up). A client-bound single deployment already loads
+    its own ``config.toml``, so it needs no separate per-tenant overlay.
+    """
+    try:
+        from .paths import _TENANT, _tenant_segment, maverick_home
+        tid = _TENANT.get() or os.environ.get("MAVERICK_TENANT", "").strip() or None
+        if not tid:
+            return None
+        return maverick_home() / "tenants" / _tenant_segment(tid) / "config.toml"
+    except Exception:  # pragma: no cover -- config resolution never blocks a run
+        return None
+
+
 def load_config(path: Path | None = None) -> dict:
     if path is not None:
         return _load_config_file(path)
@@ -176,6 +197,13 @@ def load_config(path: Path | None = None) -> dict:
     overlay = os.environ.get(CONFIG_OVERLAY_ENV)
     if overlay:
         cfg = _deep_merge_config(cfg, _load_config_file(Path(overlay).expanduser()))
+    # Per-tenant overlay (highest precedence): when a tenant is active, its own
+    # config.toml wins, so each client supplies its own provider API keys, model
+    # choices and budget without sharing one global credential set. Skipped in
+    # single-tenant mode, so the legacy path is byte-for-byte unchanged.
+    tcfg = tenant_config_path()
+    if tcfg is not None and tcfg.exists():
+        cfg = _deep_merge_config(cfg, _load_config_file(tcfg))
     return cfg
 
 

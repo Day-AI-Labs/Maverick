@@ -59,6 +59,11 @@ from .api_schemas import (
     SkillCreateIn,
     SkillInstallIn,
     SkillOut,
+    TenantCreateIn,
+    TenantOut,
+    TenantPlanIn,
+    TenantQuotaIn,
+    TenantRoleIn,
     TriggerIn,
     TriggerOut,
     WorkflowDraftIn,
@@ -105,6 +110,142 @@ def _to_goal_out(g) -> GoalOut:
         id=g.id, status=g.status, title=g.title,
         description=g.description, result=g.result,
     )
+
+
+# --- Tenant provisioning (admin only) ----------------------------------------
+# A control-plane surface so operators can spin tenants up/down without shelling
+# into the box for `maverick tenant ...`. All endpoints require the "admin"
+# permission; auth-off (single-operator) deployments treat the local caller as
+# admin, matching the rest of the API.
+
+def _to_tenant_out(rec) -> TenantOut:
+    from maverick.workspace import Workspace
+    config_path = str(Workspace(rec.id).root / "config.toml")
+    return TenantOut(
+        id=rec.id, status=rec.status, plan=rec.plan,
+        display_name=rec.display_name, max_daily_dollars=rec.max_daily_dollars,
+        created_at=rec.created_at, updated_at=rec.updated_at,
+        config_path=config_path,
+    )
+
+
+def _get_tenant_or_404(tenant_id: str):
+    from maverick import tenant_registry
+    rec = tenant_registry.get_tenant(tenant_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="no such tenant")
+    return rec
+
+
+@router.get("/admin/tenants", response_model=list[TenantOut])
+async def list_tenants(request: Request) -> list[TenantOut]:
+    require_permission(request, "admin")
+    from maverick import tenant_registry
+    return [_to_tenant_out(r) for r in tenant_registry.list_tenants()]
+
+
+@router.post("/admin/tenants", response_model=TenantOut, status_code=201)
+async def create_tenant(request: Request, body: TenantCreateIn) -> TenantOut:
+    require_permission(request, "admin")
+    from maverick import tenant_registry
+    try:
+        rec = tenant_registry.create_tenant(
+            body.id, plan=body.plan, display_name=body.display_name,
+            max_daily_dollars=body.max_daily_dollars,
+        )
+    except ValueError as e:
+        # Already exists, or an invalid/over-long id.
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return _to_tenant_out(rec)
+
+
+@router.get("/admin/tenants/{tenant_id}", response_model=TenantOut)
+async def get_tenant(request: Request, tenant_id: str) -> TenantOut:
+    require_permission(request, "admin")
+    return _to_tenant_out(_get_tenant_or_404(tenant_id))
+
+
+@router.post("/admin/tenants/{tenant_id}/suspend", response_model=TenantOut)
+async def suspend_tenant(request: Request, tenant_id: str) -> TenantOut:
+    require_permission(request, "admin")
+    from maverick import tenant_registry
+    _get_tenant_or_404(tenant_id)
+    return _to_tenant_out(tenant_registry.suspend_tenant(tenant_id))
+
+
+@router.post("/admin/tenants/{tenant_id}/resume", response_model=TenantOut)
+async def resume_tenant(request: Request, tenant_id: str) -> TenantOut:
+    require_permission(request, "admin")
+    from maverick import tenant_registry
+    _get_tenant_or_404(tenant_id)
+    return _to_tenant_out(tenant_registry.resume_tenant(tenant_id))
+
+
+@router.post("/admin/tenants/{tenant_id}/plan", response_model=TenantOut)
+async def set_tenant_plan(
+    request: Request, tenant_id: str, body: TenantPlanIn,
+) -> TenantOut:
+    require_permission(request, "admin")
+    from maverick import tenant_registry
+    _get_tenant_or_404(tenant_id)
+    return _to_tenant_out(tenant_registry.set_plan(tenant_id, body.plan))
+
+
+@router.post("/admin/tenants/{tenant_id}/quota", response_model=TenantOut)
+async def set_tenant_quota(
+    request: Request, tenant_id: str, body: TenantQuotaIn,
+) -> TenantOut:
+    require_permission(request, "admin")
+    from maverick import tenant_registry
+    _get_tenant_or_404(tenant_id)
+    return _to_tenant_out(
+        tenant_registry.set_quota(tenant_id, body.max_daily_dollars)
+    )
+
+
+@router.delete("/admin/tenants/{tenant_id}", status_code=204)
+async def delete_tenant(
+    request: Request, tenant_id: str, purge: bool = False,
+) -> Response:
+    require_permission(request, "admin")
+    from maverick import tenant_registry
+    _get_tenant_or_404(tenant_id)
+    tenant_registry.delete_tenant(tenant_id, purge=purge)
+    return Response(status_code=204)
+
+
+# Per-tenant RBAC: a principal can hold a different role in each tenant. These
+# memberships override the global role for that tenant only (bootstrap admins
+# stay globally admin). Managed admin-only.
+
+@router.get("/admin/tenants/{tenant_id}/roles", response_model=dict[str, str])
+async def list_tenant_roles(request: Request, tenant_id: str) -> dict[str, str]:
+    require_permission(request, "admin")
+    from maverick_dashboard import rbac
+    _get_tenant_or_404(tenant_id)
+    return rbac.list_tenant_roles(tenant_id)
+
+
+@router.put("/admin/tenants/{tenant_id}/roles/{principal}", status_code=204)
+async def set_tenant_role(
+    request: Request, tenant_id: str, principal: str, body: TenantRoleIn,
+) -> Response:
+    require_permission(request, "admin")
+    from maverick_dashboard import rbac
+    _get_tenant_or_404(tenant_id)
+    rbac.set_tenant_role(tenant_id, principal, body.role)
+    return Response(status_code=204)
+
+
+@router.delete("/admin/tenants/{tenant_id}/roles/{principal}", status_code=204)
+async def remove_tenant_role(
+    request: Request, tenant_id: str, principal: str,
+) -> Response:
+    require_permission(request, "admin")
+    from maverick_dashboard import rbac
+    _get_tenant_or_404(tenant_id)
+    rbac.remove_tenant_role(tenant_id, principal)
+    return Response(status_code=204)
 
 
 @router.post("/goals", response_model=GoalOut, status_code=201)

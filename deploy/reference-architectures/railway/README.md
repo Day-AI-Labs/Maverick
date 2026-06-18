@@ -7,7 +7,7 @@ Dockerfile deploy with a persistent volume and env-driven secrets.
 1. Create a Railway project from this repo (or `railway init` + `railway up`).
    `railway.json` points the builder at `deploy/docker/Dockerfile` and sets the
    start command to the dashboard on port 8765.
-2. **Volume**: attach a volume mounted at `/root/.maverick` (Service →
+2. **Volume**: attach a volume mounted at `/home/maverick/.maverick` (Service →
    Settings → Volumes). Without it, config/runs/audit reset on every deploy.
 3. **Secrets**: set `ANTHROPIC_API_KEY` (and any connector tokens) as service
    variables; Railway injects them as env vars.

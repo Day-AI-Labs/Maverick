@@ -177,61 +177,75 @@ class Server:
                     log.warning("message refused: %s", quota_reason)
                     return f"⚠ {quota_reason}"
 
-        # Multi-turn: a single (channel, user_id) gets one conversation
-        # row. Every inbound message becomes a 'user' turn; the
-        # orchestrator's final answer is appended as 'assistant' turn
-        # inside run_goal so future messages have history.
+        # Per-tenant concurrency ceiling (noisy-neighbor protection). Derived
+        # from the tenant's plan entitlement; no-op when tenant is None or the
+        # plan is unlimited. Held across the whole goal run and released in the
+        # finally below so a crash never leaks a slot.
+        from . import tenant_concurrency
+        if not tenant_concurrency.acquire(tenant):
+            log.warning("message refused: tenant %s at concurrency ceiling", tenant)
+            return ("⚠ This workspace is at its concurrent-task limit. "
+                    "Try again once a running task finishes.")
 
-        # EU AI Act Article 50: disclose AI to new channel users on
-        # first turn. `first_turn_disclosure` checks the conversation
-        # row (creates if needed) and returns None on follow-up turns.
-        from .compliance import first_turn_disclosure
-        disclosure = first_turn_disclosure(
-            world,
-            channel=msg.channel or "unknown",
-            user_id=principal_id,
-        )
-
-        conversation = world.get_or_create_conversation(
-            channel=msg.channel or "unknown",
-            user_id=principal_id,
-        )
-        world.append_turn(conversation.id, "user", msg.text)
-
-        title = msg.text[:80]
-        goal_id = world.create_goal(title, msg.text)
-
-        budget = budget_from_config()
         try:
-            # Per-user tenant isolation when enabled (no-op otherwise): scopes
-            # the run's cross-session memory to the authenticated sender, then
-            # restores. Room-based adapters keep msg.user_id as the reply target
-            # and expose the sender via msg.principal_id.
-            with tenant_scope(channel=msg.channel, user_id=principal_id):
-                result = await run_goal(
-                    self.llm, world, budget, goal_id,
-                    sandbox=self.sandbox, max_depth=self.max_depth,
-                    conversation_id=conversation.id,
-                    channel=msg.channel or "unknown",
-                    user_id=f"{msg.channel or 'unknown'}:{principal_id}",
-                )
-        except Exception:
-            log.exception("goal #%s run failed", goal_id)
+            # Multi-turn: a single (channel, user_id) gets one conversation
+            # row. Every inbound message becomes a 'user' turn; the
+            # orchestrator's final answer is appended as 'assistant' turn
+            # inside run_goal so future messages have history.
+
+            # EU AI Act Article 50: disclose AI to new channel users on
+            # first turn. `first_turn_disclosure` checks the conversation
+            # row (creates if needed) and returns None on follow-up turns.
+            from .compliance import first_turn_disclosure
+            disclosure = first_turn_disclosure(
+                world,
+                channel=msg.channel or "unknown",
+                user_id=principal_id,
+            )
+
+            conversation = world.get_or_create_conversation(
+                channel=msg.channel or "unknown",
+                user_id=principal_id,
+            )
+            world.append_turn(conversation.id, "user", msg.text)
+
+            title = msg.text[:80]
+            goal_id = world.create_goal(title, msg.text)
+
+            budget = budget_from_config()
             try:
-                world.set_goal_status(goal_id, "blocked", result="internal error")
-            except Exception:  # pragma: no cover
-                pass
-            # Don't leak internal error details to untrusted channel users.
-            return "⚠ An internal error occurred. Try again or check the logs."
+                # Per-user tenant isolation when enabled (no-op otherwise): scopes
+                # the run's cross-session memory to the authenticated sender, then
+                # restores. Room-based adapters keep msg.user_id as the reply target
+                # and expose the sender via msg.principal_id.
+                with tenant_scope(channel=msg.channel, user_id=principal_id):
+                    result = await run_goal(
+                        self.llm, world, budget, goal_id,
+                        sandbox=self.sandbox, max_depth=self.max_depth,
+                        conversation_id=conversation.id,
+                        channel=msg.channel or "unknown",
+                        user_id=f"{msg.channel or 'unknown'}:{principal_id}",
+                    )
+            except Exception:
+                log.exception("goal #%s run failed", goal_id)
+                try:
+                    world.set_goal_status(goal_id, "blocked", result="internal error")
+                except Exception:  # pragma: no cover
+                    pass
+                # Don't leak internal error details to untrusted channel users.
+                return "⚠ An internal error occurred. Try again or check the logs."
 
-        if self._shield is not None:
-            verdict = self._shield.scan_output(result)
-            if not verdict.allowed:
-                return f"⚠ Output blocked: {'; '.join(verdict.reasons)}"
+            if self._shield is not None:
+                verdict = self._shield.scan_output(result)
+                if not verdict.allowed:
+                    return f"⚠ Output blocked: {'; '.join(verdict.reasons)}"
 
-        if disclosure is not None:
-            return f"{disclosure}\n\n{result}"
-        return result
+            if disclosure is not None:
+                return f"{disclosure}\n\n{result}"
+            return result
+        finally:
+            # Always free the tenant's concurrency slot, on every exit path.
+            tenant_concurrency.release(tenant)
 
     def add_channel(self, channel) -> None:
         self._channels.append(channel)
@@ -509,6 +523,35 @@ _WIRES = {
 }
 
 
+def _advise_channel_tenancy(server) -> None:
+    """Warn when a multi-tenant deployment shares one global channel identity.
+
+    Channels are global listeners built once from ``[channels.*]``: a single
+    Slack/Telegram/email bot identity per process. Inbound replies still route
+    back to the originating channel (no cross-tenant reply leak), but every
+    tenant shares that one bot identity and its allow-lists. When distinct
+    per-tenant bot identities are required, run one Maverick instance per tenant
+    (the Helm chart + per-tenant ``tenants/<id>/config.toml`` overlay make this
+    cheap) rather than many tenants behind one process. Advisory only; never
+    blocks boot.
+    """
+    try:
+        from .paths import tenant_by_user_enabled
+        from .tenant_registry import list_tenants
+        multi = tenant_by_user_enabled() or len(list_tenants()) > 1
+        if multi and server._channels:
+            log.warning(
+                "multi-tenant deployment detected with %d global channel(s) (%s): "
+                "all tenants share one bot identity per channel. For distinct "
+                "per-tenant bot identities, run one instance per tenant "
+                "(see deploy/helm + per-tenant config). See docs/multi-tenancy.md.",
+                len(server._channels),
+                ", ".join(c.name for c in server._channels),
+            )
+    except Exception:  # pragma: no cover -- advisory must never block boot
+        pass
+
+
 def build_from_config() -> Server:
     cfg = load_config()
     # Shared predicate (maverick.config): env keys, base-url envs, or a
@@ -552,6 +595,8 @@ def build_from_config() -> Server:
             "No channels enabled (or all failed to initialize). Edit "
             "~/.maverick/config.toml and set [channels.<name>] enabled = true."
         )
+
+    _advise_channel_tenancy(server)
 
     # If [queue] backend selects a task queue, run goals out-of-process on a
     # worker pool instead of in this channel-server process. No-op by default.

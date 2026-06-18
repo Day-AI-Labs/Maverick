@@ -192,6 +192,19 @@ def role_for_principal(principal: str | None) -> str | None:
     if is_dashboard_admin(principal):
         return "admin"
     from . import rbac
+    # Per-tenant membership wins over the global role, but only for the active
+    # tenant. No active tenant or no membership -> the global behaviour below,
+    # unchanged. Bootstrap admin (above) always wins, so this can't lock admins
+    # out of a tenant.
+    try:
+        from maverick.paths import current_tenant_id
+        tid = current_tenant_id()
+        if tid:
+            tenant_role = rbac.get_tenant_role(tid, principal)
+            if tenant_role:
+                return tenant_role
+    except Exception:  # pragma: no cover - tenant resolution never gates auth
+        pass
     return rbac.get_stored_role(principal) or rbac.default_role()
 
 

@@ -671,6 +671,18 @@ def _approval_from_row(row) -> Approval:
 class WorldModel:
     def __init__(self, path: Path = DEFAULT_DB):
         self.path = path
+        # Whether this DB already held data before we opened it. Captured BEFORE
+        # any file creation below so a brand-new world.db (every fresh
+        # install/tenant) is not mistaken for a legacy DB needing a
+        # pre-migration backup -- only a pre-existing, non-empty DB gets one.
+        try:
+            self._db_preexisted = (
+                str(path) != ":memory:"
+                and path.exists()
+                and path.stat().st_size > 0
+            )
+        except OSError:  # pragma: no cover -- stat race; assume fresh
+            self._db_preexisted = False
         path.parent.mkdir(parents=True, exist_ok=True)
         # world.db holds all conversation content, messages, and facts.
         # The audit dir is locked to 0700/0600 but this DB inherited the
@@ -999,10 +1011,73 @@ class WorldModel:
             "SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM schema_version)"
         )
 
+    def _backup_before_migration(self, from_version: int) -> None:
+        """Best-effort recovery snapshot taken before applying schema migrations.
+
+        Migrations are forward-only and irreversible; an interrupted upgrade can
+        leave the world DB partially migrated with no automated rollback. Before
+        the first pending migration in this open, snapshot the DB -- via SQLite's
+        online-backup API, so it is consistent even under WAL -- to a sibling
+        ``<db>.pre-migration-v<from>.bak`` an operator can restore from.
+
+        Best-effort and fail-open: a snapshot failure logs and does NOT block the
+        upgrade (startup must still proceed). Skipped for in-memory DBs and when
+        ``[world_model] pre_migration_backup = false``.
+        """
+        path = getattr(self, "path", None)
+        if path is None or str(path) == ":memory:":
+            return
+        # Only a pre-existing DB has data worth protecting; a fresh world.db
+        # "migrates" v1->current on first open but has nothing to lose.
+        if not getattr(self, "_db_preexisted", False):
+            return
+        try:
+            from .config import load_config
+            if load_config().get("world_model", {}).get(
+                "pre_migration_backup", True
+            ) is False:
+                return
+        except Exception:  # pragma: no cover -- config never blocks a migration
+            pass
+        dest = Path(f"{path}.pre-migration-v{from_version}.bak")
+        if dest.exists():  # idempotent across the open-time lock-retry loop
+            return
+        try:
+            # Quiesce the source first. executescript(SCHEMA)/_init_schema_version()
+            # leave an uncommitted write transaction holding a lock on self.conn,
+            # and SQLite's online backup of a connection that is mid-write-
+            # transaction deadlocks (observed as a hung migration). Commit so the
+            # snapshot is a clean, lock-free read of the pre-migration state; the
+            # migration loop opens its own writes immediately after.
+            try:
+                self.conn.commit()
+            except sqlite3.Error:  # pragma: no cover -- best-effort quiesce
+                pass
+            bdst = sqlite3.connect(str(dest))
+            try:
+                self.conn.backup(bdst)
+            finally:
+                bdst.close()  # sqlite3's context manager commits but never closes
+            try:
+                os.chmod(dest, 0o600)
+            except OSError:
+                pass
+            log.info(
+                "world: wrote pre-migration backup %s (v%s -> v%s)",
+                dest, from_version, SCHEMA_VERSION,
+            )
+        except Exception as e:  # pragma: no cover -- snapshot is best-effort
+            log.warning(
+                "world: pre-migration backup failed (%s); proceeding with upgrade", e,
+            )
+
     def _apply_migrations(self) -> None:
         current = self.conn.execute(
             "SELECT version FROM schema_version LIMIT 1"
         ).fetchone()[0]
+        # A recovery point before any forward-only migration runs.
+        if current < SCHEMA_VERSION:
+            self._backup_before_migration(current)
         # Wave 12 hardening: temporarily bump busy_timeout for the
         # migration. CREATE INDEX on a multi-million-row table
         # (long-lived production DB) can take 30s+ and the 5s default

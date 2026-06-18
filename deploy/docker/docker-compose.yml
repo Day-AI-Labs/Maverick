@@ -16,12 +16,15 @@ services:
       dockerfile: deploy/docker/Dockerfile
     image: maverick:latest
     container_name: maverick
+    # The image runs as the unprivileged "maverick" user (uid/gid 1000), so
+    # state lives under /home/maverick/.maverick, not /root. Ensure the host
+    # ${HOME}/.maverick dir is readable/writable by uid 1000.
     volumes:
-      - ${HOME}/.maverick:/root/.maverick
+      - ${HOME}/.maverick:/home/maverick/.maverick
       - ${HOME}/maverick-workspace:/workspace
     env_file:
       - ${HOME}/.maverick/.env
     environment:
-      MAVERICK_CONFIG: /root/.maverick/config.toml
+      MAVERICK_CONFIG: /home/maverick/.maverick/config.toml
     stdin_open: true
     tty: true

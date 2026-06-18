@@ -12,7 +12,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DC = _REPO_ROOT / "deploy" / "reference-architectures" / "demo-cluster"
 _PORT = "8765"
-_STATE = "/root/.maverick"
+_STATE = "/home/maverick/.maverick"
 
 
 def test_compose_invariants():

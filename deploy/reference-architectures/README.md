@@ -16,7 +16,7 @@ Shared assumptions:
 
 - **Image**: built from [`deploy/docker/Dockerfile`](../docker/Dockerfile)
   (`docker build -f deploy/docker/Dockerfile -t <registry>/maverick:latest .`).
-- **State**: everything lives under `/root/.maverick` — mount a persistent
+- **State**: everything lives under `/home/maverick/.maverick` — mount a persistent
   volume there or runs/audit/config vanish on redeploy.
 - **Secrets**: provider API keys (e.g. `ANTHROPIC_API_KEY`) come from the
   platform's secret store, never baked into the image.

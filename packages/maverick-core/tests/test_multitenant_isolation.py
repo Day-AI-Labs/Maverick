@@ -89,6 +89,84 @@ def test_world_for_tenant_caches_same_instance():
     world_model._tenant_worlds.clear()
 
 
+# ---- per-tenant config / credential isolation ----
+
+def test_provider_keys_are_per_tenant(tmp_path, monkeypatch):
+    """Each tenant's own config.toml overlay supplies its own provider API key;
+    with no active tenant the global config is used unchanged."""
+    from maverick import config
+    home = tmp_path / "home"
+    monkeypatch.setenv("MAVERICK_HOME", str(home))
+    monkeypatch.setattr(config, "config_path", lambda: home / "config.toml")
+    # No env-var key in play for this test.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    # Global config (single-tenant / shared default).
+    (home).mkdir(parents=True, exist_ok=True)
+    (home / "config.toml").write_text(
+        '[providers.anthropic]\napi_key = "global-key"\n',  # pragma: allowlist secret
+        encoding="utf-8",
+    )
+    # Tenant acme overrides with its own key.
+    acme_dir = data_dir(tenant="acme")
+    acme_dir.mkdir(parents=True, exist_ok=True)
+    (acme_dir / "config.toml").write_text(
+        '[providers.anthropic]\napi_key = "acme-key"\n',  # pragma: allowlist secret
+        encoding="utf-8",
+    )
+
+    # No tenant -> global key.
+    assert config.get_provider_config("anthropic")["api_key"] == "global-key"  # pragma: allowlist secret
+    # Active tenant acme -> acme's key.
+    tok = set_tenant("acme")
+    try:
+        assert config.get_provider_config("anthropic")["api_key"] == "acme-key"  # pragma: allowlist secret
+    finally:
+        reset_tenant(tok)
+    # A tenant with no overlay falls back to the global key (not acme's).
+    tok = set_tenant("globex")
+    try:
+        assert config.get_provider_config("anthropic")["api_key"] == "global-key"  # pragma: allowlist secret
+    finally:
+        reset_tenant(tok)
+
+
+# ---- per-tenant calibration / learning-freeze isolation ----
+
+def test_calibration_samples_and_freeze_are_per_tenant(monkeypatch):
+    """One tenant's calibration ledger and learning-freeze verdict must not
+    bleed into another's self-improvement loop."""
+    from maverick import calibration
+    # Enforcement on so learning_frozen() actually consults the verdict.
+    monkeypatch.setattr(
+        calibration, "_settings",
+        lambda: {"enforce": True, "min_samples": 20,
+                 "min_discrimination": 0.15, "collect_from_coding": False},
+    )
+
+    # Tenant A: feed a drifted verifier (confident on right AND wrong answers)
+    # and assess -> A's learning should freeze.
+    tok = set_tenant("acme")
+    try:
+        for _ in range(15):
+            calibration.record_sample(0.9, True)
+            calibration.record_sample(0.85, False)
+        calibration.run_assessment()
+        assert calibration.learning_frozen() is True
+        # A's ledger is under A's tenant dir.
+        assert "tenants/acme/" in str(data_dir("calibration.ndjson")).replace("\\", "/")
+    finally:
+        reset_tenant(tok)
+
+    # Tenant B never recorded anything: no verdict, so learning proceeds.
+    tok = set_tenant("globex")
+    try:
+        assert calibration.load_samples() == []
+        assert calibration.learning_frozen() is False
+    finally:
+        reset_tenant(tok)
+
+
 # ---- per-tenant KMS isolation ----
 
 def test_tenant_dek_distinct_and_non_transferable():

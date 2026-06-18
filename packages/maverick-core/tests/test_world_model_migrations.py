@@ -98,6 +98,52 @@ def _build_legacy_db(path) -> int:
     return goal_id
 
 
+def test_pre_migration_backup_written_for_existing_db(tmp_path):
+    """Upgrading a pre-existing DB writes a recovery snapshot at the old version
+    before the forward-only migrations run."""
+    db = tmp_path / "world.db"
+    _build_legacy_db(db)  # real data at schema v1
+
+    wm = WorldModel(path=db)
+    assert wm.schema_version == SCHEMA_VERSION
+
+    bak = tmp_path / "world.db.pre-migration-v1.bak"
+    assert bak.exists(), "expected a pre-migration backup of the v1 DB"
+    # The snapshot captured the PRE-migration state (v1), not the upgraded one.
+    bconn = sqlite3.connect(str(bak))
+    try:
+        ver = bconn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()[0]
+        # And the legacy data is intact in the snapshot.
+        title = bconn.execute("SELECT title FROM goals LIMIT 1").fetchone()[0]
+    finally:
+        bconn.close()
+    assert ver == 1
+    assert title == "legacy goal"
+
+
+def test_pre_migration_backup_skipped_for_fresh_db(tmp_path):
+    """A brand-new world.db 'migrates' v1->current on first open but has no data
+    to protect, so no backup file is written (no per-install/-tenant litter)."""
+    db = tmp_path / "world.db"
+    wm = WorldModel(path=db)
+    assert wm.schema_version == SCHEMA_VERSION
+    assert not list(tmp_path.glob("world.db.pre-migration-*.bak"))
+
+
+def test_pre_migration_backup_can_be_disabled(tmp_path, monkeypatch):
+    """[world_model] pre_migration_backup = false opts out."""
+    import maverick.config as cfg
+    db = tmp_path / "world.db"
+    _build_legacy_db(db)
+    monkeypatch.setattr(
+        cfg, "load_config",
+        lambda *a, **k: {"world_model": {"pre_migration_backup": False}},
+    )
+    wm = WorldModel(path=db)
+    assert wm.schema_version == SCHEMA_VERSION
+    assert not list(tmp_path.glob("world.db.pre-migration-*.bak"))
+
+
 def test_migrates_v1_to_current(tmp_path):
     db = tmp_path / "world.db"
     goal_id = _build_legacy_db(db)

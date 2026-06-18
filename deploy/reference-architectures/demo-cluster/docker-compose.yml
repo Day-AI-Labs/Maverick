@@ -21,7 +21,7 @@ services:
     image: maverick:demo
     entrypoint: ["python", "/seed/seed_demo.py"]
     volumes:
-      - demo-state:/root/.maverick
+      - demo-state:/home/maverick/.maverick
       - ./seed_demo.py:/seed/seed_demo.py:ro
     restart: "no"          # one-shot; idempotent on re-run
 
@@ -33,7 +33,7 @@ services:
       # Only nginx knows it; the public never does.
       MAVERICK_DASHBOARD_TOKEN: ${MAVERICK_DASHBOARD_TOKEN:?set a strong random token}
     volumes:
-      - demo-state:/root/.maverick
+      - demo-state:/home/maverick/.maverick
     expose:
       - "8765"             # reachable by the proxy only; no host port mapping
     depends_on:

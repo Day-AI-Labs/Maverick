@@ -249,3 +249,37 @@ class WorkflowSaveIn(BaseModel):
     params: list[str] = Field(default_factory=list)
     budget_dollars: float = Field(5.0, ge=0.0, le=100.0)
     budget_wall_seconds: float = Field(3600.0, ge=1.0, le=86400.0)
+
+
+class TenantCreateIn(BaseModel):
+    """Provision a new tenant (admin only)."""
+    id: str = Field(..., max_length=128)
+    plan: str = Field("free", pattern="^(free|pro|enterprise)$")
+    display_name: str = Field("", max_length=200)
+    max_daily_dollars: float = Field(0.0, ge=0.0)
+
+
+class TenantPlanIn(BaseModel):
+    plan: str = Field(..., pattern="^(free|pro|enterprise)$")
+
+
+class TenantQuotaIn(BaseModel):
+    max_daily_dollars: float = Field(..., ge=0.0)
+
+
+class TenantOut(BaseModel):
+    """A provisioned tenant. ``config_path`` is where to drop this tenant's own
+    config.toml (its provider keys / model choices / budget overlay)."""
+    id: str
+    status: str
+    plan: str
+    display_name: str
+    max_daily_dollars: float
+    created_at: float
+    updated_at: float
+    config_path: str
+
+
+class TenantRoleIn(BaseModel):
+    """Grant a principal a role within one tenant (per-tenant RBAC)."""
+    role: str = Field(..., pattern="^(admin|operator|viewer)$")

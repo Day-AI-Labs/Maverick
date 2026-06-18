@@ -1,0 +1,99 @@
+# Multi-tenancy
+
+Maverick can isolate many tenants (organizations / workspaces / end-users) on
+shared infrastructure, or run one instance per tenant. This page is the map of
+what is isolated, how to provision, and where the boundaries are.
+
+## Turning it on
+
+Tenancy is **opt-in and fail-open**: with nothing configured, Maverick is a
+single-tenant install and behaves exactly as before.
+
+- `MAVERICK_TENANT_BY_USER=1` (or `[tenancy] by_user = true`) — each channel
+  user becomes their own tenant (`<channel>:<principal>`), with isolated world
+  DB, memory, audit, and knowledge.
+- `MAVERICK_TENANT=<id>` or an explicit `set_tenant(...)` scope — pin a tenant
+  for a process / request.
+- A bound client (`[client] id` / `MAVERICK_CLIENT_ID`) — one deployment = one
+  enterprise client; that client id is the tenant floor.
+
+## What is isolated per tenant
+
+| Concern | Isolation | Where |
+|---------|-----------|-------|
+| World DB (goals, conversations, facts) | separate `world.db` per tenant | `~/.maverick/tenants/<id>/world.db` |
+| Cross-session memory | per-tenant dir | `tenants/<id>/memory/` |
+| Audit log | per-tenant, signed/hash-chained | `tenants/<id>/audit/` |
+| Knowledge store | per-tenant via Workspace | `tenants/<id>/knowledge.db` |
+| Encryption-at-rest key | distinct DEK per tenant (AEAD-bound) | `tenant_kms` |
+| **Config & credentials** | per-tenant overlay | `tenants/<id>/config.toml` |
+| **Calibration / learning-freeze** | per-tenant | `tenants/<id>/calibration*` |
+| **Concurrency ceiling** | per-tenant, from plan | `billing.entitlements` |
+| **RBAC role** | per-tenant membership overrides global | `dashboard-tenant-roles.json` |
+| Spend cap | per-tenant `max_daily_dollars` | tenant registry |
+| Postgres rows | optional row-level security | `MAVERICK_PG_RLS=1` |
+
+## Per-tenant credentials
+
+Each tenant supplies its own provider API keys, model choices, and budget by
+dropping a `config.toml` at `~/.maverick/tenants/<id>/config.toml`. It overlays
+the global config (highest precedence) only while that tenant is active:
+
+```toml
+# ~/.maverick/tenants/acme/config.toml
+[providers.anthropic]
+api_key = "${ACME_ANTHROPIC_API_KEY}"   # ${VAR} interpolates from the env
+
+[models]
+orchestrator = "anthropic:claude-opus-4-8"
+
+[budget]
+max_dollars = 50
+```
+
+`maverick tenant create <id>` prints this path; the provisioning API returns it
+as `config_path`.
+
+## Provisioning
+
+```bash
+# CLI
+maverick tenant create acme --plan enterprise --max-daily-dollars 100
+maverick tenant list
+maverick tenant suspend acme   # / resume / quota / delete --purge
+```
+
+```text
+# REST (admin only)
+GET/POST           /api/v1/admin/tenants
+GET/DELETE         /api/v1/admin/tenants/{id}
+POST               /api/v1/admin/tenants/{id}/{suspend,resume,plan,quota}
+GET/PUT/DELETE     /api/v1/admin/tenants/{id}/roles[/{principal}]
+```
+
+A suspended or over-quota tenant is refused at the channel door before any goal
+runs; a tenant at its plan's concurrency ceiling is told to retry.
+
+## Channels are a per-instance boundary
+
+Channels (Slack, Telegram, email, …) are **global listeners** built once at
+startup: one bot identity per channel type, per process. Inbound replies route
+back to the originating channel — there is **no cross-tenant reply leak** — but
+all tenants behind one process share that one bot identity and its allow-lists.
+
+When tenants need **distinct bot identities** (their own Slack workspace bot,
+their own inbound email address/webhook), run **one Maverick instance per
+tenant**. The Helm chart (`deploy/helm`) plus the per-tenant config overlay make
+this cheap: one release per tenant, each with its own `[channels.*]` and
+credentials. `maverick serve` logs an advisory when it detects a multi-tenant
+deployment using shared global channels.
+
+For purely API/dashboard-driven tenants (no inbound chat bots), a single
+multi-tenant instance is fine.
+
+## Scaling
+
+SQLite is single-writer (one replica per state volume). To run multiple
+replicas, move the world model to Postgres — see
+[`deploy/postgres/README.md`](../deploy/postgres/README.md). Row-level security
+(`MAVERICK_PG_RLS=1`) enforces the tenant boundary in the database itself.
