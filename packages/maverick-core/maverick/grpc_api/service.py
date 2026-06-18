@@ -43,6 +43,7 @@ class GoalStatusDTO:
     goal_id: int
     status: str
     result: str | None
+    owner: str = ""  # who the goal belongs to (e.g. "federation:<peer>")
 
 
 def _default_world():  # pragma: no cover -- exercised only with a real DB
@@ -95,14 +96,20 @@ class GoalService:
         channel: str | None = None,
         user_id: str | None = None,
         capability: Any | None = None,
+        owner: str = "",
     ) -> int:
         """Create a goal and dispatch it for background execution. Returns the
-        new goal id immediately (the run proceeds asynchronously)."""
+        new goal id immediately (the run proceeds asynchronously).
+
+        ``owner`` is persisted on the goal row so a later status poll can be
+        scoped to whoever created it (the federation surface uses this to keep
+        one peer from reading another peer's delegated-goal results)."""
         if not (title or "").strip():
             raise ValueError("title is required")
         world = self._world_factory()
         try:
-            goal_id = int(world.create_goal(title.strip(), description or ""))
+            goal_id = int(world.create_goal(title.strip(), description or "",
+                                            owner=owner or ""))
         finally:
             _close(world)
 
@@ -194,7 +201,8 @@ class GoalService:
             if g is None:
                 return None
             return GoalStatusDTO(
-                goal_id=goal_id, status=g.status, result=getattr(g, "result", None)
+                goal_id=goal_id, status=g.status, result=getattr(g, "result", None),
+                owner=getattr(g, "owner", "") or "",
             )
         finally:
             _close(world)

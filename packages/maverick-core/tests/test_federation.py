@@ -50,8 +50,10 @@ class _Goals:
     def status(self, goal_id):
         if not 1 <= goal_id <= len(self.started):
             return None
-        title = self.started[goal_id - 1]["title"]
-        return SimpleNamespace(goal_id=goal_id, status="done", result=f"did: {title}")
+        row = self.started[goal_id - 1]
+        return SimpleNamespace(goal_id=goal_id, status="done",
+                               result=f"did: {row['title']}",
+                               owner=row.get("owner", ""))
 
 
 def _service(**kw):
@@ -253,6 +255,28 @@ def test_delegate_missing_token_fail_closed():
 def test_status_requires_token():
     with pytest.raises(FederationAuthError):
         _service().call("GoalStatus", {"goal_id": 1, "auth_token": "wrong"})
+
+
+def test_status_owner_scoped_across_peers():
+    """A peer may only poll goals IT delegated. Peer B presenting its own valid
+    token must not read peer A's delegated goal (status or result) — it gets
+    "unknown", indistinguishable from a non-existent id."""
+    goals = _Goals()
+    svc = _service(peers=[Peer("A", "a:1", "tok-a"), Peer("B", "b:1", "tok-b")],
+                   goal_service=goals)
+    # A delegates a goal -> owner "federation:A", goal_id 1.
+    out = svc.call("DelegateGoal", {
+        "goal_title": "A's secret task", "correlation_id": "ca",
+        "auth_token": "tok-a"})
+    assert out["accepted"] is True and out["goal_id"] == 1
+
+    # A can read its own goal.
+    mine = svc.call("GoalStatus", {"goal_id": 1, "auth_token": "tok-a"})
+    assert mine["status"] == "done" and "A's secret task" in mine["result"]
+
+    # B (valid token, different peer) is denied — no status, no result leak.
+    theirs = svc.call("GoalStatus", {"goal_id": 1, "auth_token": "tok-b"})
+    assert theirs == {"status": "unknown", "result": ""}
 
 
 # ---- capability narrowing on accept ----------------------------------------
