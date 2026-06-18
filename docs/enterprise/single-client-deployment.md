@@ -77,15 +77,19 @@ Sequenced by leverage. Each phase is independently shippable.
 - **Warm standby**: cron `backup create`, ship the `.tgz` offsite + to a standby
   host, `backup restore` + start on failover (see runbook §3.6).
 
-### Phase 4 — Security hardening
-- **Mandatory shield**: `[safety] require_shield = true` (auto under enterprise)
-  that treats a missing/erroring shield as a refusal on network-facing surfaces.
-- **Disable loopback-trust** when client-bound/enterprise — always require a
-  token or OIDC at the dashboard edge.
-- **Secrets hygiene**: warn on world-readable `config.toml`; encourage/enforce
-  `${ENV}` refs for all tokens; never literal secrets in the file.
-- **BYOK**: at least one real KMS backend (AWS KMS / GCP KMS / Vault) behind the
-  existing `tenant_kms.KMS` Protocol, for customer-managed keys.
+### Phase 4 — Security hardening ✅ (BYOK follow-up)
+- **Mandatory shield** ✅: `maverick/shield_policy.py` — `[safety] require_shield`
+  / `MAVERICK_REQUIRE_SHIELD` / enterprise mode make the shield required;
+  `scan_block` fails toward the gate (a *missing* shield blocks external traffic
+  when required, a scan error always blocks). Federation inbound + A2A route
+  through it; `doctor` goes RED when the shield is required but absent.
+- **Loopback-trust disabled** ✅ when client-bound/enterprise — the dashboard's
+  no-token mode is refused; a token (or OIDC) is required.
+- **Secrets hygiene** ✅: `doctor` warns when `config.toml` is group/world-
+  accessible; use `${ENV}` refs for tokens (the systemd unit injects them).
+- **BYOK** (follow-up): a real KMS backend (AWS/GCP/Vault) behind the existing
+  `tenant_kms.KMS` Protocol; today customer-managed keys arrive via env
+  injection (`MAVERICK_ENCRYPTION_KEY` / KEK).
 
 ### Phase 5 — Packaging & headless provisioning (VM + image)
 - **Build-time gRPC stubs**: pre-generate `*_pb2.py` into the wheels so nothing

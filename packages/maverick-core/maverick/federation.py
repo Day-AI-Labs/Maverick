@@ -213,27 +213,14 @@ def _redact(text: str) -> str:
 def _shield_block(text: str) -> str | None:
     """Shield-scan external agent text; a block reason, or ``None`` to allow.
 
-    Fail-toward-gate on a scan *error* (a broken shield blocks rather than
-    waves external traffic through); a shield that simply isn't installed
-    allows (kernel rule 1 — the shield is optional), so an operator who chose
-    not to install it isn't locked out of federation. Callers invoke this only
-    when the trust plane is engaged.
+    Delegates to :func:`maverick.shield_policy.scan_block`, so the
+    fail-toward-gate behaviour (scan error blocks; a *missing* shield blocks only
+    when the shield is required — enterprise/`require_shield`) is consistent
+    across every external surface. Callers invoke this only when the trust plane
+    is engaged.
     """
-    text = (text or "").strip()
-    if not text:
-        return None
-    try:
-        from maverick_shield import Shield  # type: ignore
-    except Exception:
-        return None  # shield not installed -> nothing to scan with
-    try:
-        verdict = Shield().scan_input(text)
-        if not getattr(verdict, "allowed", True):
-            return "; ".join(getattr(verdict, "reasons", []) or ["blocked by shield"])
-    except Exception as e:  # pragma: no cover - fail toward the gate
-        log.warning("federation: shield scan failed (blocking): %s", e)
-        return "shield scan error"
-    return None
+    from .shield_policy import scan_block
+    return scan_block(text)
 
 
 # -- signed-identity (Phase 2) ---------------------------------------------

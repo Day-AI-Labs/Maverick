@@ -500,6 +500,21 @@ async def bearer_auth(request: Request, call_next):
         # an external recipient has no dashboard bearer, like the webhook paths.
         return await call_next(request)
     if not expected:
+        # Client-bound / enterprise: loopback-trust (no-token) mode is DISABLED.
+        # In a hosted/regulated deployment any process sharing the loopback
+        # namespace (a sidecar, a co-located container, an SSRF pivot to
+        # 127.0.0.1) must never become an unauthenticated admin — require a
+        # token (or OIDC) explicitly.
+        try:
+            from maverick.client import client_binding_enforced
+            if client_binding_enforced():
+                return JSONResponse(
+                    {"detail": "dashboard requires MAVERICK_DASHBOARD_TOKEN "
+                               "(or OIDC) under client binding / enterprise mode"},
+                    status_code=401,
+                )
+        except Exception:  # pragma: no cover - never break auth on a read error
+            pass
         # No token configured: serve loopback only. An operator who binds
         # --host 0.0.0.0 without setting a token must NOT silently expose
         # run history, spend, and the control surface unauthenticated to
