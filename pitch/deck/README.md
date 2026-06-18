@@ -1,6 +1,6 @@
-# Maverick — Visual Decks (Daybreak Labs)
+# Lightwork — Visual Decks (Daybreak Labs)
 
-Self-contained HTML decks for **Maverick** by **Daybreak Labs**. No build step,
+Self-contained HTML decks for **Lightwork** by **Daybreak Labs**. No build step,
 no dependencies — open in a browser. Every number is verifiable from this repo;
 founder-, customer-, or deal-specific facts show as a highlighted `[ FILL ]` (amber).
 

@@ -1,4 +1,4 @@
-# Maverick — For a First Customer / Design Partner (Audience C)
+# Lightwork — For a First Customer / Design Partner (Audience C)
 
 > **Audience:** an enterprise buyer / design partner in a regulated industry —
 > the CISO, compliance officer, head of ops, and GC who decide whether an agent
@@ -13,7 +13,7 @@
 
 ## Slide 1 — Title
 **On slide:**
-- **Maverick** — *by Daybreak Labs*
+- **Lightwork** — *by Daybreak Labs*
 - *Put your AI agents to work — under governance you can prove.*
 - Tag (top-right): **For `[FILL: customer]` · Confidential**
 - `[FILL: contact]`
@@ -42,7 +42,7 @@
 
 ---
 
-## Slide 4 — Meet Maverick
+## Slide 4 — Meet Lightwork
 **On slide:**
 - **A governed agent workforce — not a chatbot, not a framework.**
 - Every action passes **one chokepoint**: capability → policy (allow / deny / require-human) → safety shield → hard budget → tamper-evident audit.
@@ -70,7 +70,7 @@
 - **Signed, hash-chained audit** — tamper-evident, offline-verifiable.
 - Maps to `[FILL: your controls — SOC 2 / HIPAA / SOX / GLBA / data-residency]`.
 
-**Visual:** A control → Maverick-mechanism mapping table.
+**Visual:** A control → Lightwork-mechanism mapping table.
 
 ---
 

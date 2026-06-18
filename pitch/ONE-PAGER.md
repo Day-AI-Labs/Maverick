@@ -1,6 +1,6 @@
-# Maverick — One-Pager
+# Lightwork — One-Pager
 
-> **Maverick, by Daybreak Labs** — the agent workforce a regulated enterprise can actually deploy.
+> **Lightwork, by Daybreak Labs** — the agent workforce a regulated enterprise can actually deploy.
 > Self-hostable. Tamper-evident. Provably improving.
 > Christopher Day, Founder · `[FILL: email]` · `[FILL: data-room link]` · 2026
 
@@ -15,7 +15,7 @@ prove it won't quietly get worse. Today's options force a bad trade — **hosted
 black boxes** you can't run on your own data, or **ungoverned frameworks** you
 have to secure yourself.
 
-**The solution.** Maverick is a governed agent **runtime** — not a chatbot, not
+**The solution.** Lightwork is a governed agent **runtime** — not a chatbot, not
 a framework. A recursive multi-agent swarm where **every single action passes
 one chokepoint:** capability check → governance policy (allow / deny /
 require-human) → safety shield → hard budget → **tamper-evident, signed audit
@@ -63,7 +63,7 @@ signed tax-law update channel). 26 suites already built for land-and-expand.
 
 **Go-to-market.** Two motions: **direct** — 2–3 BFSI design partners → paid
 pilot → expand across suites; and an **overlay wedge** — *"bring your existing
-Agentforce / Copilot / LangChain agents under Maverick governance"* — the
+Agentforce / Copilot / LangChain agents under Lightwork governance"* — the
 easiest enterprise entry and a natural acquisition story for a GRC / ServiceNow
 buyer.
 

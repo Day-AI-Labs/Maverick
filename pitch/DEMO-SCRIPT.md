@@ -1,4 +1,4 @@
-# Maverick — Live Demo Script (the receipts)
+# Lightwork — Live Demo Script (the receipts)
 
 > **Purpose:** a 6–8 minute live demo for a seed investor (or a design-partner
 > security review) that *shows* the governance and learning instead of claiming
@@ -73,7 +73,7 @@ maverick audit verify --file /tmp/gp/audit.ndjson
 
 ## Act 2 — Proof: it signs its own guarantees (≈1.5 min)
 
-**Say:** "Most vendors hand you a PDF of claims. Maverick emits a **signed
+**Say:** "Most vendors hand you a PDF of claims. Lightwork emits a **signed
 evidence bundle** — and it's honest about what it *hasn't* measured."
 
 **Run:**
