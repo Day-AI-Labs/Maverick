@@ -74,6 +74,30 @@ def _deserialize_capability(raw: Any) -> Any | None:
     )
 
 
+def _worker_capability(
+    capability: Any | None, *, channel: str | None = None, user_id: str | None = None,
+) -> Any | None:
+    """Attenuate a queued capability grant by the WORKER's own local policy.
+
+    A job payload travels through the queue backend (Redis/arq) — a storage and
+    wire boundary. Being on the queue is not proof the grant is a trusted,
+    least-privilege one for THIS worker, which may run on a different host with a
+    tighter policy. When capability enforcement is on, intersect the deserialized
+    grant with the worker's local policy so a distributed worker enforces its own
+    ceiling and can only narrow, never broaden it — mirroring the gRPC RunGoal
+    path (``grpc_api.server._rpc_capability``). Default-open (``None``) is
+    preserved; with enforcement off the grant is returned unchanged.
+    """
+    if capability is None:
+        return None
+    from .capability import capability_enforced, capability_from_config
+    if not capability_enforced():
+        return capability
+    local = capability_from_config(
+        principal=f"user:{user_id or 'local'}", channel=channel, user_id=user_id)
+    return local.intersect(capability, principal=local.principal)
+
+
 def _payload(
     goal_id: int,
     *,
@@ -137,14 +161,20 @@ def run_queued_goal(payload: dict) -> str | None:
     act on a failed run."""
     from .runner import DEFAULT_MAX_DEPTH, LocalThreadDispatcher
 
+    channel = payload.get("channel")
+    user_id = payload.get("user_id")
     return LocalThreadDispatcher().submit(
         int(payload["goal_id"]),
         max_dollars=payload.get("max_dollars"),
         max_wall_seconds=payload.get("max_wall_seconds"),
         max_depth=payload.get("max_depth") or DEFAULT_MAX_DEPTH,
-        channel=payload.get("channel"),
-        user_id=payload.get("user_id"),
-        capability=_deserialize_capability(payload.get("capability")),
+        channel=channel,
+        user_id=user_id,
+        # Re-attenuate by THIS worker's local policy before running (zero-trust
+        # across the queue boundary); no-op when enforcement is off.
+        capability=_worker_capability(
+            _deserialize_capability(payload.get("capability")),
+            channel=channel, user_id=user_id),
     )
 
 
