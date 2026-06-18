@@ -31,15 +31,17 @@ from .fs import (
     _is_dotgit_path,
     _is_opaque_blocked_resolved,
     _safe_resolve,
+    read_text_contained,
+    write_text_contained,
 )
 
 _MAX_VIEW_BYTES = 12000
 
 
-def _view_file(target: Path) -> str:
+def _view_file(sandbox, target: Path) -> str:
     try:
-        data = target.read_text(encoding="utf-8", errors="replace")
-    except (PermissionError, OSError) as e:
+        data = read_text_contained(sandbox, target, errors="replace")
+    except (ValueError, PermissionError, OSError) as e:
         return f"ERROR: {e}"
     lines = data.splitlines()
     width = len(str(len(lines))) if lines else 1
@@ -89,10 +91,10 @@ def _cmd_view(sandbox, target: Path, path_arg: str) -> str:
         return f"ERROR: {target} not found"
     if target.is_dir():
         return _view_dir(target)
-    return _view_file(target)
+    return _view_file(sandbox, target)
 
 
-def _cmd_create(target: Path, args: dict) -> str:
+def _cmd_create(sandbox, target: Path, args: dict) -> str:
     if target.exists():
         return (
             f"ERROR: {target} already exists; use str_replace or "
@@ -100,9 +102,8 @@ def _cmd_create(target: Path, args: dict) -> str:
         )
     content = args.get("file_text") or args.get("content") or ""
     try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-    except (PermissionError, OSError) as e:
+        write_text_contained(sandbox, target, content)
+    except (ValueError, PermissionError, OSError) as e:
         return f"ERROR: {e}"
     return f"created {target} ({len(content)} bytes)"
 
@@ -134,7 +135,7 @@ def _str_replace_count_error(data: str, old: str, count: int) -> str:
     )
 
 
-def _cmd_str_replace(target: Path, args: dict) -> str:
+def _cmd_str_replace(sandbox, target: Path, args: dict) -> str:
     old = args.get("old_str")
     new = args.get("new_str")
     if old is None or new is None:
@@ -145,23 +146,23 @@ def _cmd_str_replace(target: Path, args: dict) -> str:
     if not target.exists():
         return f"ERROR: {target} not found"
     try:
-        data = target.read_text(encoding="utf-8")
-    except (PermissionError, OSError, UnicodeDecodeError) as e:
+        data = read_text_contained(sandbox, target)
+    except (ValueError, PermissionError, OSError, UnicodeDecodeError) as e:
         return f"ERROR: {e}"
     count = data.count(old)
     if count != 1:
         return _str_replace_count_error(data, old, count)
     try:
         new_data = data.replace(old, new, 1)
-        target.write_text(new_data, encoding="utf-8")
-    except (PermissionError, OSError) as e:
+        write_text_contained(sandbox, target, new_data)
+    except (ValueError, PermissionError, OSError) as e:
         return f"ERROR: {e}"
     delta = len(new_data) - len(data)
     sign = "+" if delta >= 0 else ""
     return f"edited {target} ({sign}{delta} bytes)"
 
 
-def _cmd_insert(target: Path, args: dict) -> str:
+def _cmd_insert(sandbox, target: Path, args: dict) -> str:
     after = args.get("insert_line")
     text = args.get("new_str", "")
     if after is None:
@@ -169,8 +170,8 @@ def _cmd_insert(target: Path, args: dict) -> str:
     if not target.exists():
         return f"ERROR: {target} not found"
     try:
-        data = target.read_text(encoding="utf-8")
-    except (PermissionError, OSError, UnicodeDecodeError) as e:
+        data = read_text_contained(sandbox, target)
+    except (ValueError, PermissionError, OSError, UnicodeDecodeError) as e:
         return f"ERROR: {e}"
     # Preserve the file's line ending. Splitting/rejoining on "\n"
     # unconditionally turned a CRLF file into mixed endings (kept lines
@@ -190,8 +191,8 @@ def _cmd_insert(target: Path, args: dict) -> str:
     ins = text.replace("\r\n", "\n").split("\n")
     new_lines = lines[:idx] + ins + lines[idx:]
     try:
-        target.write_text(eol.join(new_lines), encoding="utf-8")
-    except (PermissionError, OSError) as e:
+        write_text_contained(sandbox, target, eol.join(new_lines))
+    except (ValueError, PermissionError, OSError) as e:
         return f"ERROR: {e}"
     return f"inserted at line {idx} of {target}"
 
@@ -211,11 +212,11 @@ def _dispatch_editor_command(sandbox, args: dict) -> str:
     if cmd == "view":
         return _cmd_view(sandbox, target, path_arg)
     if cmd == "create":
-        return _cmd_create(target, args)
+        return _cmd_create(sandbox, target, args)
     if cmd == "str_replace":
-        return _cmd_str_replace(target, args)
+        return _cmd_str_replace(sandbox, target, args)
     if cmd == "insert":
-        return _cmd_insert(target, args)
+        return _cmd_insert(sandbox, target, args)
 
     return (
         f"ERROR: unknown command {cmd!r}; expected one of: "

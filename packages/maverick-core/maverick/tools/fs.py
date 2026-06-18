@@ -12,6 +12,7 @@ that's its purpose. Shield's `scan_tool_call` chokepoint guards it.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from . import Tool
@@ -33,6 +34,96 @@ def _safe_resolve(sandbox, user_path: str) -> Path:
             f"path {user_path!r} escapes the workspace"
         ) from e
     return candidate
+
+
+def _fd_real_path(fd: int) -> Path | None:
+    """The real filesystem path the descriptor is bound to, or ``None`` when the
+    platform doesn't expose one.
+
+    Linux: ``/proc/self/fd/<fd>`` is a kernel symlink to the inode actually
+    opened, so reading it is immune to any symlink swapped in along the path
+    AFTER the open. Returns ``None`` on platforms without ``/proc`` (macOS,
+    Windows) or for non-file descriptors (pipes/sockets) — callers then fall
+    back to the resolve-time containment check (no weaker than before).
+    """
+    try:
+        link = os.readlink(f"/proc/self/fd/{fd}")
+    except (OSError, ValueError):
+        return None
+    # A file unlinked after open shows up as "<path> (deleted)".
+    link = link.removesuffix(" (deleted)")
+    if not link.startswith("/"):
+        return None  # e.g. "pipe:[...]", "anon_inode:..." — not a real path
+    return Path(link)
+
+
+def _open_contained(workdir: Path, target: Path, flags: int, mode: int = 0o666) -> int:
+    """Open ``target`` and verify, THROUGH the opened descriptor, that the inode
+    it is bound to still lives under ``workdir``.
+
+    This closes the symlink TOCTOU between :func:`_safe_resolve` (which resolves
+    + range-checks the path) and the actual open: a symlink swapped into any path
+    component after the check would otherwise redirect the open outside the
+    workspace. ``os.open`` follows symlinks exactly as before, so legitimate
+    in-workspace symlinks keep working; we then confirm via :func:`_fd_real_path`
+    that what we actually opened is contained — and that check cannot be raced
+    because the descriptor is already bound to the resolved inode.
+
+    Returns the open fd (caller owns it). Raises ``ValueError`` if the opened
+    inode escaped the workspace (closing the fd first); ``OSError`` propagates.
+    """
+    fd = os.open(str(target), flags, mode)
+    real = _fd_real_path(fd)
+    if real is not None:
+        try:
+            real.relative_to(workdir)
+        except ValueError as e:
+            os.close(fd)
+            raise ValueError(
+                f"path {target.name!r} resolved outside the workspace after "
+                "open (symlink race)"
+            ) from e
+    return fd
+
+
+def read_text_contained(sandbox, target: Path, *, errors: str = "strict") -> str:
+    """Read text from an already-resolved ``target`` through a descriptor that is
+    verified to be inside ``sandbox.workdir`` (TOCTOU-safe).
+
+    The sibling file tools (``str_replace_editor``, ``ast_edit``) share this so
+    the symlink-race guard lives in one place. Raises ``ValueError`` if the
+    opened inode escaped the workspace; ``OSError`` / ``UnicodeDecodeError``
+    propagate so callers handle them exactly as ``Path.read_text`` would.
+    """
+    workdir = Path(sandbox.workdir).resolve()
+    fd = _open_contained(workdir, target, os.O_RDONLY)
+    with os.fdopen(fd, encoding="utf-8", errors=errors) as fh:
+        return fh.read()
+
+
+def write_text_contained(sandbox, target: Path, content: str) -> None:
+    """Write ``content`` to an already-resolved ``target`` through a descriptor
+    verified inside ``sandbox.workdir`` (TOCTOU-safe).
+
+    Opens ``O_CREAT`` without ``O_TRUNC``, verifies containment, and only then
+    truncates + writes — so a symlink swapped in after the path check can never
+    truncate or write content to a file outside the workspace. Raises
+    ``ValueError`` on escape; ``OSError`` propagates.
+    """
+    workdir = Path(sandbox.workdir).resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd = _open_contained(workdir, target, os.O_WRONLY | os.O_CREAT)
+    # fdopen takes ownership of fd; close fd ourselves only if it (or ftruncate)
+    # fails before that hand-off, to avoid a double close.
+    try:
+        os.ftruncate(fd, 0)
+        fh = os.fdopen(fd, "w", encoding="utf-8")
+    except BaseException:
+        os.close(fd)
+        raise
+    with fh:
+        fh.write(content)
+
 
 
 def _is_test_path(rel_path: str) -> bool:
@@ -155,9 +246,12 @@ def read_file(sandbox) -> Tool:
             return f"ERROR: {target} not found"
         if not target.is_file():
             return f"ERROR: {target} is not a file"
+        # Read through a descriptor whose bound inode is verified to be inside
+        # the workspace — a symlink swapped in after _safe_resolve can't
+        # redirect the read outside (TOCTOU).
         try:
-            data = target.read_text(encoding="utf-8", errors="replace")
-        except (PermissionError, OSError) as e:
+            data = read_text_contained(sandbox, target, errors="replace")
+        except (ValueError, PermissionError, OSError) as e:
             return f"ERROR: {e}"
         if len(data) > MAX_READ_BYTES:
             return data[:MAX_READ_BYTES] + f"\n... [truncated, total {len(data)} bytes]"
@@ -213,12 +307,14 @@ def write_file(sandbox, goal_id: str | int | None = "default") -> Tool:
         )
         if not ok:
             return f"ERROR: {msg}"
+        content = args["content"]
+        # TOCTOU-safe write: a symlink swapped in after the path check can never
+        # truncate or write content to a file outside the workspace.
         try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(args["content"], encoding="utf-8")
-        except (PermissionError, OSError) as e:
+            write_text_contained(sandbox, target, content)
+        except (ValueError, PermissionError, OSError) as e:
             return f"ERROR: {e}"
-        return f"wrote {len(args['content'])} bytes to {target}"
+        return f"wrote {len(content)} bytes to {target}"
 
     return Tool(
         name="write_file",
@@ -273,14 +369,30 @@ def list_dir(sandbox) -> Tool:
         # branch + the grader's FAIL_TO_PASS test filenames in benchmark mode.
         if _is_opaque_blocked_resolved(sandbox, args.get("path", ".")):
             return "ERROR: list_dir blocked in benchmark opaque mode (.git/tests)"
-        entries = []
+        workdir = Path(sandbox.workdir).resolve()
+        # Verify + list through one directory descriptor so a symlink swapped in
+        # after the path check can't redirect the listing outside the workspace.
         try:
-            for entry in sorted(target.iterdir()):
-                kind = "d" if entry.is_dir() else "-"
-                entries.append(f"{kind} {entry.name}")
-        except (PermissionError, OSError) as e:
+            fd = _open_contained(
+                workdir, target, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        except (ValueError, OSError) as e:
             return f"ERROR: {e}"
-        return "\n".join(entries) if entries else "(empty)"
+        # os.scandir(fd) does NOT take ownership of fd, so close it ourselves.
+        try:
+            with os.scandir(fd) as it:
+                entries = [
+                    f"{'d' if entry.is_dir() else '-'} {entry.name}"
+                    for entry in sorted(it, key=lambda e: e.name)
+                ]
+            result = "\n".join(entries) if entries else "(empty)"
+        except (PermissionError, OSError) as e:
+            result = f"ERROR: {e}"
+        finally:
+            try:
+                os.close(fd)
+            except OSError:  # pragma: no cover - already closed
+                pass
+        return result
 
     return Tool(
         name="list_dir",
