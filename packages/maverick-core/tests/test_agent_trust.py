@@ -430,6 +430,31 @@ def test_lifecycle_fields_parse_from_config():
     assert reg["v"].revoked is True
 
 
+def test_absent_lifecycle_fields_mean_no_bound():
+    # Missing not_before/expires_at is legitimate (no bound) -> entry kept.
+    reg = load_registry({"agent_trust": {"agents": [{"id": "v"}]}})
+    assert reg["v"].expires_at is None
+    assert reg["v"].not_before is None
+
+
+@pytest.mark.parametrize("bad", ["not-a-date", 0, -5, "2026-13-99", ""])
+def test_malformed_expiry_fails_closed(bad):
+    # A present-but-malformed lifecycle bound must NOT coerce to "never expires"
+    # (that would mint an immortal credential). Fail closed: drop the entry, so
+    # the agent is simply untrusted rather than permanently valid.
+    reg = load_registry({"agent_trust": {"agents": [
+        {"id": "v", "expires_at": bad},
+    ]}})
+    assert "v" not in reg
+
+
+def test_malformed_not_before_fails_closed():
+    reg = load_registry({"agent_trust": {"agents": [
+        {"id": "v", "not_before": "garbage"},
+    ]}})
+    assert "v" not in reg
+
+
 # ---- max_risk hardening ---------------------------------------------------
 
 
