@@ -443,18 +443,15 @@ class TaskEngine:
 
     def _shield_block(self, text: str) -> str | None:
         """Return a reason string if the shield blocks the input, else None.
-        Fail-open: any error/absence means allow."""
-        try:
-            from maverick_shield import Shield  # type: ignore
-        except Exception:
-            return None
-        try:
-            verdict = Shield().scan_input(text)
-            if not getattr(verdict, "allowed", True):
-                return "; ".join(getattr(verdict, "reasons", []) or ["blocked"])
-        except Exception as e:  # pragma: no cover
-            log.warning("a2a shield scan failed (fail-open): %s", e)
-        return None
+
+        Delegates to :func:`maverick.shield_policy.scan_block`: a scan error
+        blocks (fail-toward-gate), and a *missing* shield blocks only when the
+        shield is required (enterprise / [safety] require_shield) — so an
+        outward-facing A2A surface can't silently admit unscreened input on a
+        regulated deployment, while personal installs keep the fail-open default.
+        """
+        from .shield_policy import scan_block
+        return scan_block(text)
 
     # ---- task helpers --------------------------------------------------
 

@@ -340,6 +340,13 @@ def _check_shield() -> None:
     try:
         from maverick_shield import Shield
     except ImportError:
+        from .shield_policy import shield_required
+        if shield_required():
+            _row(RED, "shield",
+                 "shield REQUIRED (enterprise / [safety] require_shield) but "
+                 "maverick-shield is not installed — external traffic is refused",
+                 fix="pip install maverick-shield")
+            return
         _row(YELLOW, "shield", "maverick-shield not installed",
              fix="pip install maverick-shield  (built-in fallback rules will activate)")
         return
@@ -360,6 +367,24 @@ def _check_shield() -> None:
     else:
         _row(RED, "shield", backend_label,
              fix="set [safety] profile = \"balanced\" in ~/.maverick/config.toml to re-enable")
+
+
+def _check_config_perms() -> None:
+    """Config may hold tokens/secrets — warn if it's group/world-accessible."""
+    try:
+        from .config import config_path
+        p = config_path()
+        if not p.exists():
+            return
+        mode = p.stat().st_mode & 0o777
+    except Exception:  # pragma: no cover - never break doctor
+        return
+    if mode & 0o077:
+        _row(YELLOW, "config-perms",
+             f"{p} is group/world-accessible (mode {oct(mode)})",
+             fix=f"chmod 600 {p} — it may hold tokens/secrets")
+    else:
+        _row(GREEN, "config-perms", "config.toml is owner-only (0600)")
 
 
 def _check_client_binding() -> None:
@@ -422,6 +447,7 @@ def diagnose() -> int:
     _FAILURES.clear()
     click.echo(click.style("Maverick health check\n", bold=True))
     cfg = _check_config()
+    _check_config_perms()
     _check_client_binding()
     _check_anthropic()
     _check_openai()
