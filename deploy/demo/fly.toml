@@ -2,9 +2,8 @@
 #
 # Run these from the REPO ROOT (the build context must include every package):
 #   flyctl launch --copy-config --config deploy/demo/fly.toml --no-deploy
-#   flyctl secrets set --config deploy/demo/fly.toml \
-#       ANTHROPIC_API_KEY=your-key-here \
-#       MAVERICK_DASHBOARD_TOKEN=$(openssl rand -hex 24)
+#   # then set your two secrets — the agent's provider key and a dashboard token:
+#   flyctl secrets set --config deploy/demo/fly.toml ANTHROPIC_API_KEY=... MAVERICK_DASHBOARD_TOKEN=...  # pragma: allowlist secret
 #   flyctl deploy --config deploy/demo/fly.toml
 #
 # Your demo link is then:
