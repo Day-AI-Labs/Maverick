@@ -12,6 +12,42 @@
     </p>
   </div>
 
+  {% if graph and graph.nodes %}
+  <div class="panel">
+    <svg viewBox="0 0 {{ graph.width }} {{ graph.height }}" width="100%"
+         style="max-width:{{ graph.width }}px" role="img"
+         aria-label="Agent trust permission graph">
+      <defs>
+        <marker id="tg-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"></path>
+        </marker>
+      </defs>
+      {% for n in graph.nodes %}
+      <line x1="{{ graph.cx }}" y1="{{ graph.cy }}" x2="{{ n.x }}" y2="{{ n.y }}"
+            stroke="#94a3b8" stroke-width="1.5"
+            {% if n.outbound %}marker-end="url(#tg-arrow)"{% endif %}
+            {% if n.inbound %}marker-start="url(#tg-arrow)"{% endif %}></line>
+      {% endfor %}
+      {% for n in graph.nodes %}
+      <circle cx="{{ n.x }}" cy="{{ n.y }}" r="9" fill="{{ n.color }}"></circle>
+      <text x="{{ n.x }}" y="{{ n.y - 14 }}" text-anchor="middle" font-size="12"
+            fill="currentColor">{{ n.id }}</text>
+      {% endfor %}
+      <circle cx="{{ graph.cx }}" cy="{{ graph.cy }}" r="13" fill="#0f172a"
+              stroke="#475569" stroke-width="1.5"></circle>
+      <text x="{{ graph.cx }}" y="{{ graph.cy + 31 }}" text-anchor="middle"
+            font-size="12" fill="currentColor">Maverick</text>
+    </svg>
+    <p class="muted" style="margin-top:.5rem">
+      Arrow into Maverick = the agent may initiate inbound; arrow out = Maverick may dial it.
+      <span style="color:#2563eb">&#9679;</span> bounded ·
+      <span style="color:#d97706">&#9679;</span> high-risk ceiling ·
+      <span style="color:#dc2626">&#9679;</span> revoked/expired
+    </p>
+  </div>
+  {% endif %}
+
   <div class="panel">
     {% if agents %}
     <table>

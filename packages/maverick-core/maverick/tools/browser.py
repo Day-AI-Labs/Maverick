@@ -40,7 +40,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from ..safety.action_gate import gate_browser_action
+from ..safety.action_evidence import seal_bracketed
+from ..safety.action_gate import browser_action_risk, gate_browser_action
 from . import Tool
 from .http_fetch import _scan_fetched
 
@@ -569,6 +570,14 @@ def _run_browser_action(args: dict[str, Any]) -> str:
     if denied is not None:
         return denied
 
+    if browser_action_risk(action, args) == "high":
+        # Bracket a high-risk action with sealed before/after captures
+        # (no-op unless screenshot sealing is configured).
+        return seal_bracketed(
+            lambda: base64.b64encode(page.screenshot(full_page=False)).decode("ascii"),
+            lambda: _dispatch_browser_action(action, session, page, args, timeout, allow_hosts),
+            action=f"browser.{action}",
+        )
     return _dispatch_browser_action(
         action, session, page, args, timeout, allow_hosts,
     )

@@ -33,8 +33,11 @@ from .signing import (  # noqa: F401
 from .writer import (  # noqa: F401
     AuditLog,
     default_audit_log,
+    goal_context,
     reanchor_after_erase,
     record,
+    reset_goal_context,
+    set_goal_context,
 )
 
 __all__ = [
@@ -55,4 +58,7 @@ __all__ = [
     "day_files",
     "event_paths",
     "iter_events",
+    "set_goal_context",
+    "reset_goal_context",
+    "goal_context",
 ]

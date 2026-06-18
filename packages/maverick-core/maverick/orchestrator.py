@@ -1452,7 +1452,20 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
 
 
 def run_goal_sync(*args, **kwargs) -> str:
-    return asyncio.run(run_goal(*args, **kwargs))
+    # Bind the goal-id audit context for the whole run so events logged deep in
+    # the tool/consent stack (which don't carry a goal id -- e.g. the consent
+    # gate) still attribute to this run. asyncio.run copies the current context
+    # into the root task, so binding here reaches every nested call. goal_id is
+    # the 4th positional arg / 'goal_id' kwarg of run_goal.
+    from .audit import reset_goal_context, set_goal_context
+    goal_id = kwargs.get("goal_id")
+    if goal_id is None and len(args) >= 4:
+        goal_id = args[3]
+    token = set_goal_context(goal_id)
+    try:
+        return asyncio.run(run_goal(*args, **kwargs))
+    finally:
+        reset_goal_context(token)
 
 
 async def run_goal_best_of_n(
