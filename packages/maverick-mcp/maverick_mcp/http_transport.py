@@ -212,6 +212,10 @@ def _http_tasks_enabled() -> bool:
 # --- per-caller request rate limiting (sliding 60s window) -------------------
 _RATE_LOCK = threading.Lock()
 _RATE_HITS: dict[str, deque] = {}
+# Cap the number of tracked callers so a long-running server facing many
+# distinct IPs/tokens can't grow this map without bound. When exceeded, idle
+# buckets (no hits inside the window) are swept; memory stays ~O(active callers).
+_RATE_MAX_KEYS = 8192
 
 
 def _rate_limit_per_min() -> int:
@@ -239,10 +243,16 @@ def _rate_ok(key: str) -> bool:
         return True
     now = time.monotonic()
     with _RATE_LOCK:
-        dq = _RATE_HITS.setdefault(key, deque())
         cutoff = now - 60.0
+        dq = _RATE_HITS.setdefault(key, deque())
         while dq and dq[0] < cutoff:
             dq.popleft()
+        # Sweep idle buckets when the map grows large, so stale callers don't
+        # leak. Keep the current key even if momentarily empty.
+        if len(_RATE_HITS) > _RATE_MAX_KEYS:
+            for k in [k for k, d in _RATE_HITS.items()
+                      if k != key and (not d or d[-1] < cutoff)]:
+                del _RATE_HITS[k]
         if len(dq) >= limit:
             return False
         dq.append(now)

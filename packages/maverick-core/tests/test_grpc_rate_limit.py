@@ -56,3 +56,16 @@ def test_key_prefers_agent_then_peer():
     assert key.startswith("peer:")
     # Distinct peers get distinct buckets.
     assert key != gs._grpc_rate_key(_Ctx("ipv4:10.0.0.8:5"), None)
+
+
+def test_idle_buckets_are_swept(monkeypatch):
+    """Idle per-caller buckets are reclaimed when the map exceeds the cap."""
+    from collections import deque
+    monkeypatch.setenv("MAVERICK_GRPC_RATE_LIMIT", "5")
+    monkeypatch.setattr(gs, "_GRPC_RATE_MAX_KEYS", 10)
+    old = gs.time.monotonic() - 120.0
+    for i in range(50):
+        gs._GRPC_RATE_HITS[f"agent:stale{i}"] = deque([old])
+    assert gs._grpc_rate_ok("agent:active") is True
+    assert len(gs._GRPC_RATE_HITS) < 50
+    assert "agent:active" in gs._GRPC_RATE_HITS

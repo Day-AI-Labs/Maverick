@@ -107,6 +107,10 @@ def config_path() -> Path:
 # inbound A2A delegate triggers ~6-10 full parses); this removes the redundant
 # I/O + tokenize while preserving exact semantics.
 _toml_cache: dict[str, tuple[int, int, dict]] = {}
+# Bound the cache so a deployment with many per-tenant config paths
+# (~/.maverick/tenants/<t>/config.toml) can't grow it without limit. Entries
+# are cheap to rebuild (a stat + parse), so a simple oldest-first cap is enough.
+_TOML_CACHE_MAX = 512
 
 
 def reset_config_cache() -> None:
@@ -138,6 +142,10 @@ def _read_toml_raw(path: Path) -> dict:
             path, type(e).__name__, e,
         )
         raw = {}
+    # Evict oldest entries first when over the cap (dicts preserve insertion
+    # order). Re-fetching ``key`` below keeps the just-read path resident.
+    while len(_toml_cache) >= _TOML_CACHE_MAX:
+        _toml_cache.pop(next(iter(_toml_cache)), None)
     _toml_cache[key] = (st.st_mtime_ns, st.st_size, raw)
     return raw
 

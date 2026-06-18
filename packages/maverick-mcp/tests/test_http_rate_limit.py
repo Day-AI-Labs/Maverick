@@ -49,3 +49,17 @@ def test_key_prefers_bearer_then_ip():
     req = _Req()
     assert ht._rate_key("Bearer sekret", req).startswith("tok:")  # pragma: allowlist secret
     assert ht._rate_key(None, req) == "ip:10.0.0.9"
+
+
+def test_idle_buckets_are_swept(monkeypatch):
+    """Stale callers must not leak: when the map exceeds the cap, buckets with
+    no hits inside the window are evicted (memory ~ active callers, not total)."""
+    from collections import deque
+    monkeypatch.setenv("MAVERICK_MCP_RATE_LIMIT", "5")
+    monkeypatch.setattr(ht, "_RATE_MAX_KEYS", 10)
+    old = ht.time.monotonic() - 120.0  # outside the 60s window -> idle
+    for i in range(50):
+        ht._RATE_HITS[f"ip:stale{i}"] = deque([old])
+    assert ht._rate_ok("ip:active") is True       # triggers the sweep
+    assert len(ht._RATE_HITS) < 50                # idle buckets reclaimed
+    assert "ip:active" in ht._RATE_HITS
