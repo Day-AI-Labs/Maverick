@@ -798,10 +798,18 @@ async def remove_generated_tool(name: str) -> None:
 
 
 @router.get("/spend")
-async def get_spend() -> dict:
+async def get_spend(request: Request) -> dict:
+    """Spend + recent run costs, scoped to the caller's own runs.
+
+    ``goal_owner_filter`` returns the caller's principal (so each user sees
+    only their own spend/episodes) or ``None`` for an admin / auth-off caller
+    (the deployment-wide view). Previously this returned every user's runs and
+    total spend to any authenticated caller.
+    """
+    owner = goal_owner_filter(request)
     w = _world()
-    total = w.total_spend()
-    episodes = w.list_episodes(limit=30)
+    total = w.total_spend(owner=owner)
+    episodes = w.list_episodes(limit=30, owner=owner)
     return {
         "total": total,
         "episodes": [
@@ -1700,8 +1708,16 @@ async def enable_tool(request: Request, name: str) -> None:
 
 
 @router.get("/approvals")
-async def list_approvals() -> dict:
-    """Pending high-risk actions parked by safety.consent (dashboard mode)."""
+async def list_approvals(request: Request) -> dict:
+    """Pending high-risk actions parked by safety.consent (dashboard mode).
+
+    This is the operators' collaborative supervision queue (an approval has no
+    per-user owner and may carry another user's goal content in ``detail``), so
+    listing it requires the ``operate`` permission — the same gate as
+    approve/deny/claim. Previously any authenticated caller, including a
+    view-only user, could read every parked action.
+    """
+    require_permission(request, "operate")
     w = _world()
     return {
         "approvals": [

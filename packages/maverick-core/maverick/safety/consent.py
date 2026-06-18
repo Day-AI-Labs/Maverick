@@ -256,8 +256,8 @@ def _decide_via_dashboard(
     the interactive/non-tty path (fail-open per the kernel contract).
     """
     try:
-        from ..world_model import DEFAULT_DB, WorldModel
-        wm = WorldModel(DEFAULT_DB)
+        from ..world_model import open_world
+        wm = open_world()  # client/tenant-floored: the same DB the dashboard reads
     except Exception as e:  # world model missing/unwritable -> fail-open
         log.warning("consent: dashboard mode unavailable, falling back: %s", e)
         return None
