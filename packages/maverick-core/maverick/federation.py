@@ -60,7 +60,7 @@ import os
 import threading
 import time
 import uuid
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Iterable
 from concurrent import futures
 from dataclasses import dataclass
@@ -92,6 +92,19 @@ _seen_sigs: OrderedDict[str, float] = OrderedDict()
 # can raise "OrderedDict mutated during iteration". Replay protection is
 # security-critical, so serialise the whole check-and-remember.
 _seen_sigs_lock = threading.Lock()
+
+# Per-peer request-rate limiter for inbound delegations. The sibling gRPC API
+# (maverick.grpc_api.server) pairs maximum_concurrent_rpcs (an in-flight cap)
+# with a per-caller request-rate cap at the auth chokepoint; federation had only
+# the former. DelegateGoal is heavier than a typical RPC -- every accepted call
+# launches a real goal run -- so one authenticated-but-misbehaving peer could
+# spawn goals as fast as it can call, exhausting workers/budget even though each
+# run is individually budget-capped. This sliding 60s window bounds delegations
+# per peer; idle buckets are swept when the map grows so a long-running server
+# can't leak one entry per distinct peer forever.
+_fed_rate_hits: dict[str, deque[float]] = {}
+_fed_rate_lock = threading.Lock()
+_FED_RATE_MAX_KEYS = 8192
 
 _DEFAULT_ADDR = "127.0.0.1:50061"  # one port up from the goal API (50051)
 _DEFAULT_RPC_TIMEOUT_S = 10.0
@@ -309,6 +322,40 @@ def _replay_seen(sig: str, *, now: float | None = None) -> bool:
             return True
         _seen_sigs[sig] = now
         return False
+
+
+def _fed_rate_limit_per_min() -> int:
+    """Inbound delegations/minute per peer. Default 600; 0 disables. Mirrors
+    ``MAVERICK_GRPC_RATE_LIMIT`` on the sibling gRPC API."""
+    try:
+        return max(0, int(os.environ.get("MAVERICK_FEDERATION_RATE_LIMIT", "600")))
+    except ValueError:
+        return 600
+
+
+def _fed_rate_ok(key: str, *, now: float | None = None) -> bool:
+    """Sliding-window per-peer rate gate for inbound delegations. True to admit.
+
+    Returns True (no-op) when the limit is 0/disabled. Sweeps idle buckets once
+    the tracked-peer map exceeds ``_FED_RATE_MAX_KEYS`` so the map can't grow
+    without bound on a long-running server."""
+    limit = _fed_rate_limit_per_min()
+    if limit <= 0:
+        return True
+    now = time.monotonic() if now is None else now
+    with _fed_rate_lock:
+        cutoff = now - 60.0
+        dq = _fed_rate_hits.setdefault(key, deque())
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(_fed_rate_hits) > _FED_RATE_MAX_KEYS:
+            for k in [k for k, d in _fed_rate_hits.items()
+                      if k != key and (not d or d[-1] < cutoff)]:
+                del _fed_rate_hits[k]
+        if len(dq) >= limit:
+            return False
+        dq.append(now)
+        return True
 
 
 def _sign_delegation(
@@ -685,6 +732,11 @@ class FederationService:
             return self._refuse("unauthorized: missing or invalid token")
         if not corr:
             return self._refuse_recorded(peer, corr, "correlation_id is required")
+
+        # Per-peer request-rate cap (post-auth): each accepted delegation spawns
+        # a goal run, so throttle a flooding peer before we do any of that work.
+        if not _fed_rate_ok(f"peer:{peer.name}"):
+            return self._refuse_recorded(peer, corr, "rate limit exceeded")
 
         requested = {str(t) for t in (payload.get("requested_tools") or [])
                      if str(t).strip()}
