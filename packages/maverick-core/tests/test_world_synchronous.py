@@ -16,7 +16,7 @@ def _pragma(db) -> int:
 
 def test_default_is_normal(tmp_path, monkeypatch):
     monkeypatch.delenv("MAVERICK_WORLD_SYNCHRONOUS", raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     assert _synchronous_mode() == "NORMAL"
     assert _pragma(tmp_path / "w.db") == 1  # 1 == NORMAL
 
