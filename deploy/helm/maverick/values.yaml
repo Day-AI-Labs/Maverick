@@ -1,0 +1,99 @@
+# Default values for the maverick chart.
+# Override with `helm install maverick ./deploy/helm/maverick -f my-values.yaml`.
+
+image:
+  repository: ghcr.io/day-ai-labs/maverick
+  tag: ""              # defaults to .Chart.AppVersion when empty
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Dashboard listen port (the image's `dashboard` subcommand).
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8765
+
+# Replicas. IMPORTANT: SQLite is single-writer on a RWO volume, so keep this at
+# 1 unless you have moved the world model to Postgres (see worldModel below).
+# The chart refuses to render >1 replica without worldModel.backend=postgres.
+replicaCount: 1
+
+# Persistent state (~/.maverick). Required for the default SQLite backend.
+persistence:
+  enabled: true
+  size: 10Gi
+  accessMode: ReadWriteOnce
+  storageClass: ""     # "" = cluster default
+  # Mounted at the non-root user's home; do not change unless the image does.
+  mountPath: /home/maverick/.maverick
+
+# World-model backend. "sqlite" (default) pins replicaCount to 1. Set to
+# "postgres" + provide a DSN (via secret) to scale horizontally.
+worldModel:
+  backend: sqlite      # sqlite | postgres
+  # When backend=postgres, the DSN is read from env MAVERICK_PG_DSN, sourced
+  # from the secret below (key: MAVERICK_PG_DSN). Enable Postgres row-level
+  # security for DB-enforced tenant isolation.
+  postgres:
+    rls: true
+
+# Secrets. Provide provider keys / tokens here (chart creates a Secret) OR set
+# create=false and reference an existing Secret by name.
+secret:
+  create: true
+  name: ""             # defaults to <fullname>-secrets
+  # Key/value pairs rendered into the Secret (base64-encoded by Helm).
+  # e.g. ANTHROPIC_API_KEY, MAVERICK_DASHBOARD_TOKEN, MAVERICK_PG_DSN.
+  data: {}
+  #   ANTHROPIC_API_KEY: sk-ant-...
+  #   MAVERICK_DASHBOARD_TOKEN: <strong-random>
+
+# Extra plain (non-secret) env vars.
+env: {}
+#   MAVERICK_TENANT_BY_USER: "1"
+
+# Pod/container security. Matches the image: unprivileged uid/gid 1000.
+# Satisfies the restricted Pod Security Standard.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false   # workspace + sqlite need writes under $HOME
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+# Liveness/readiness hit the dashboard root. The dashboard has its own auth;
+# do not expose it without TLS — front with your Ingress/Gateway.
+probes:
+  enabled: true
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: maverick.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: maverick
+description: >-
+  Maverick — governed, self-improving AI workforce. Runs the dashboard
+  (web UI + API + webhooks) with persistent state. Single-writer SQLite by
+  default; point [world_model] at Postgres to scale past one replica.
+type: application
+# Chart version is independent of the app; bump on template changes.
+version: 0.1.0
+# Tracks the maverick package cohort.
+appVersion: "0.1.6"
+home: https://github.com/Day-AI-Labs/Maverick
+sources:
+  - https://github.com/Day-AI-Labs/Maverick
+maintainers:
+  - name: Day AI Labs
+keywords:
+  - ai-agent
+  - dashboard
+  - enterprise
