@@ -324,7 +324,7 @@ def _require_pyjwt():
         raise OIDCError(
             "OIDC verification requires PyJWT, which isn't installed. "
             "Install the optional extra:  pip install 'maverick-agent[oidc]'  "
-            "(or  pip install 'pyjwt[crypto]>=2.8' )."
+            "(or  pip install 'pyjwt[crypto]>=2.13.0' )."
         ) from e
 
 
