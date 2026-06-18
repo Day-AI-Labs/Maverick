@@ -6,8 +6,57 @@ the package imports clean without them.
 """
 from __future__ import annotations
 
+import os
+import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
+
+# Cap the on-disk size of a document read into memory. Without it a single huge
+# file (a multi-GB .txt/.pdf) OOMs the process during extract_text -- mirroring
+# the byte cap image.py already enforces before decoding an image. 0 disables.
+DEFAULT_MAX_DOC_BYTES = 25 * 1024 * 1024
+# Cap the DECOMPRESSED size of a zip-based document (DOCX). A small .docx can
+# inflate to gigabytes (a zip bomb); python-docx applies no such limit, and the
+# on-disk cap above bounds only the compressed input, not the expansion. 0 off.
+DEFAULT_MAX_DOCX_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _check_on_disk_size(path: Path) -> None:
+    cap = _int_env("MAVERICK_KNOWLEDGE_MAX_DOC_BYTES", DEFAULT_MAX_DOC_BYTES)
+    if cap <= 0:
+        return
+    size = path.stat().st_size
+    if size > cap:
+        raise ValueError(
+            f"document too large to ingest ({size} bytes > {cap} bytes); raise "
+            "MAVERICK_KNOWLEDGE_MAX_DOC_BYTES to allow it"
+        )
+
+
+def _check_docx_uncompressed_size(path: Path) -> None:
+    """Reject a DOCX whose declared uncompressed size exceeds the cap, BEFORE
+    handing it to python-docx (which would expand a zip bomb into memory)."""
+    cap = _int_env("MAVERICK_KNOWLEDGE_MAX_DOCX_UNCOMPRESSED_BYTES",
+                   DEFAULT_MAX_DOCX_UNCOMPRESSED_BYTES)
+    if cap <= 0:
+        return
+    try:
+        with zipfile.ZipFile(path) as zf:
+            total = sum(info.file_size for info in zf.infolist())
+    except zipfile.BadZipFile as e:
+        raise ValueError("not a valid .docx (corrupt zip container)") from e
+    if total > cap:
+        raise ValueError(
+            f"docx decompresses too large ({total} bytes > {cap} bytes); "
+            "refusing to expand a possible zip bomb"
+        )
 
 
 class _TextExtractor(HTMLParser):
@@ -52,6 +101,9 @@ def extract_text(path: str | Path) -> str:
     required (PDF/DOCX) but not installed, or for an image (route via a describer)."""
     path = Path(path)
     suffix = path.suffix.lower()
+    # Bound the on-disk size before any read/parse loads the file into memory.
+    if not is_image(path):
+        _check_on_disk_size(path)
     if suffix in (".html", ".htm"):
         return _html_to_text(path.read_text(encoding="utf-8", errors="replace"))
     if suffix == ".pdf":
@@ -72,6 +124,7 @@ def extract_text(path: str | Path) -> str:
                 "DOCX parsing needs the 'parsers' extra: "
                 "pip install maverick-knowledge[parsers]"
             ) from e
+        _check_docx_uncompressed_size(path)
         return "\n".join(p.text for p in docx.Document(str(path)).paragraphs)
     if is_image(path):
         raise RuntimeError(
