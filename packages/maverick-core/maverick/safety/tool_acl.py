@@ -41,6 +41,14 @@ from collections.abc import Iterable
 
 log = logging.getLogger(__name__)
 
+# An allow-list that no real tool can satisfy (tool names are identifiers; the
+# NUL byte guarantees no collision). Used as a fail-closed signal: when a
+# RESTRICTED principal's ACL config cannot be read, we return this as that
+# layer's allow-list so the allow-intersection (and thus the kept tool set)
+# collapses to empty — the principal gets NO tools rather than silently
+# regaining full access because its deny-list/ceiling vanished.
+_FAIL_CLOSED = frozenset({"\x00acl-load-failed"})
+
 
 def _load_lists() -> tuple[set[str], set[str]]:
     """Load global (allowed, denied) sets from ~/.maverick/config.toml."""
@@ -57,12 +65,20 @@ def _load_lists() -> tuple[set[str], set[str]]:
 
 
 def _load_lists_for_channel(channel: str) -> tuple[set[str], set[str]]:
-    """Per-channel ACL: ``[security.channels.<channel>]``."""
+    """Per-channel ACL: ``[security.channels.<channel>]``.
+
+    Fails CLOSED: if the config can't be read we cannot know this channel's
+    deny-list / restrictions, so we return the fail-closed allow-list rather
+    than an empty (= unrestricted) one. A readable config with no entry for the
+    channel still returns empty (no per-channel restriction — unchanged).
+    """
     try:
         from ..config import load_config
         cfg = load_config() or {}
-    except Exception:
-        return set(), set()
+    except Exception as e:
+        log.warning("tool_acl: cannot read channel ACL for %r; failing closed: %s",
+                    channel, e)
+        return set(_FAIL_CLOSED), set()
     sec = ((cfg.get("security") or {}).get("channels") or {}).get(channel) or {}
     return set(sec.get("allowed_tools") or []), set(sec.get("denied_tools") or [])
 
@@ -71,13 +87,16 @@ def _load_lists_for_user(user_id: str) -> tuple[set[str], set[str]]:
     """Per-user ACL: ``[security.users."channel:id"]``.
 
     ``user_id`` should be the channel-qualified form (``tg:12345``,
-    ``slack:U02ABC``) so two channels' user-ids can't collide.
+    ``slack:U02ABC``) so two channels' user-ids can't collide. Fails CLOSED on
+    a config-read error, like :func:`_load_lists_for_channel`.
     """
     try:
         from ..config import load_config
         cfg = load_config() or {}
-    except Exception:
-        return set(), set()
+    except Exception as e:
+        log.warning("tool_acl: cannot read user ACL for %r; failing closed: %s",
+                    user_id, e)
+        return set(_FAIL_CLOSED), set()
     users = (cfg.get("security") or {}).get("users") or {}
     sec = users.get(user_id) or {}
     return set(sec.get("allowed_tools") or []), set(sec.get("denied_tools") or [])
@@ -95,12 +114,19 @@ def resolve_max_risk(
     configured ceiling wins. Returns ``None`` when no layer sets one, i.e.
     no cap -- behaviour is unchanged unless a ceiling is configured.
     """
+    from .tool_risk import RISK_LEVELS, risk_rank
     try:
         from ..config import load_config
         cfg = load_config() or {}
-    except Exception:
+    except Exception as e:
+        # Fail closed for a restricted principal: if we can't read the config we
+        # can't know its risk ceiling, so apply the tightest one rather than
+        # leaving the agent uncapped. No channel/user context -> unchanged (None).
+        if channel or user_id:
+            log.warning("tool_acl: cannot read max_risk for channel=%r user=%r; "
+                        "applying tightest ceiling: %s", channel, user_id, e)
+            return min(RISK_LEVELS, key=risk_rank)
         return None
-    from .tool_risk import RISK_LEVELS, risk_rank
 
     sec = cfg.get("security") or {}
     candidates: list[str] = []
