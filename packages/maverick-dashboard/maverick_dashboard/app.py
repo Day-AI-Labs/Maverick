@@ -4574,6 +4574,22 @@ async def metrics() -> PlainTextResponse:
         "# TYPE maverick_max_concurrent_goals gauge",
         f"maverick_max_concurrent_goals {MAX_CONCURRENT_GOALS}",
     ]
+
+    # Job-queue depth + dead-letter — a growing pending backlog or rising failed
+    # (dead-letter) count is the leading ops signal the goal counts can't show
+    # (queued jobs never hit the world-DB goals table until claimed).
+    try:
+        from maverick.job_queue import JobQueue
+        qcounts = JobQueue().counts()
+    except Exception:
+        qcounts = {}
+    lines += [
+        "# HELP maverick_queue_jobs Job-queue jobs by status (incl. pending backlog and failed dead-letter)",
+        "# TYPE maverick_queue_jobs gauge",
+    ]
+    for qstatus, qn in sorted(qcounts.items()):
+        lines.append(f'maverick_queue_jobs{{status="{qstatus}"}} {qn}')
+
     return PlainTextResponse("\n".join(lines) + "\n")
 
 
