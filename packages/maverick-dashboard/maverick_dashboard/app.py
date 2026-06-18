@@ -4608,6 +4608,27 @@ async def metrics() -> PlainTextResponse:
             lines.append(
                 f'maverick_user_spend_dollars_today{{principal="{label}"}} {dollars:.4f}')
 
+    # Storage leading indicators: world-DB growth + free disk on the data
+    # volume, so an SRE can alert BEFORE SQLite slows or the disk fills (the
+    # episodes/goal_events tables grow without bound until archival runs).
+    try:
+        import shutil
+
+        from maverick.world_model import DEFAULT_DB
+        db_bytes = DEFAULT_DB.stat().st_size if DEFAULT_DB.exists() else 0
+        probe = DEFAULT_DB.parent if DEFAULT_DB.parent.exists() else None
+        usage = shutil.disk_usage(str(probe) if probe else ".")
+        lines += [
+            "# HELP maverick_world_db_bytes Size of the world.db file on disk",
+            "# TYPE maverick_world_db_bytes gauge",
+            f"maverick_world_db_bytes {db_bytes}",
+            "# HELP maverick_data_disk_free_bytes Free space on the data volume",
+            "# TYPE maverick_data_disk_free_bytes gauge",
+            f"maverick_data_disk_free_bytes {usage.free}",
+        ]
+    except Exception:
+        pass
+
     return PlainTextResponse("\n".join(lines) + "\n")
 
 
