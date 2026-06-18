@@ -217,6 +217,7 @@ Config equivalents live under `[effort]` (`enabled`, `default`, `<role>`) and
 | `MAVERICK_OTEL_ENDPOINT` | `http://localhost:4318/v1/traces` | OTLP collector endpoint. |
 | `MAVERICK_PROMETHEUS_PORT` | unset (off) | Set a port to expose Prometheus metrics. |
 | `MAVERICK_PROMETHEUS_ADDR` | `127.0.0.1` | Bind address for the Prometheus metrics server. |
+| `MAVERICK_ALERTS` | config `[alerts] enabled` (off) | Enable OPERATIONAL alerts — page the operator (via the configured notification backends) on infrastructure events like a killswitch trip or a deployment-wide provider cost-cap exhaustion. Distinct from agent-task notifications. |
 
 ## Plugins
 

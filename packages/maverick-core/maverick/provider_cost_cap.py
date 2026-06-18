@@ -214,6 +214,11 @@ def would_exceed(provider: str, projected_dollars: float, *,
     return st.spent + max(0.0, float(projected_dollars or 0.0)) > st.cap
 
 
+# (provider, period) pairs we've already paged the operator about, so a blown
+# cap alerts ONCE per period instead of on every subsequently-blocked dispatch.
+_alerted: set[tuple[str, str]] = set()
+
+
 def enforce(provider: str, *, now: float | None = None,
             path: Path | None = None) -> CapStatus:
     """The LLM dispatch gate: raise :class:`ProviderCapExceeded` when the
@@ -221,8 +226,19 @@ def enforce(provider: str, *, now: float | None = None,
     (so the caller can log remaining headroom). No cap -> no-op."""
     st = check(provider, now=now, path=path)
     if not st.allowed:
-        raise ProviderCapExceeded(_canon(provider), st.spent, float(st.cap or 0.0),
-                                  period_key(now))
+        period = period_key(now)
+        canon = _canon(provider)
+        if (canon, period) not in _alerted:
+            _alerted.add((canon, period))
+            try:  # page the operator once: deployment-wide spend is exhausted
+                from .ops_alert import alert
+                alert("provider_cost_cap_exhausted",
+                      f"{canon} spend ${st.spent:.2f} reached the ${st.cap:.2f} "
+                      f"cap for period {period}; LLM calls are now blocked",
+                      severity="critical")
+            except Exception:  # pragma: no cover - alerting never blocks the gate
+                pass
+        raise ProviderCapExceeded(canon, st.spent, float(st.cap or 0.0), period)
     return st
 
 

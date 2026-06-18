@@ -68,6 +68,13 @@ def halt(reason: str, source: str = "manual") -> None:
         record(EventKind.HALT, source=source, detail=reason)
     except Exception:  # pragma: no cover -- never crash on audit
         pass
+    # Page the operator: a halt stops all work, so it's the canonical event an
+    # SRE must hear about. No-op unless [alerts] enabled (never blocks the halt).
+    try:
+        from .ops_alert import alert
+        alert("killswitch_tripped", f"{reason} (source={source})", severity="critical")
+    except Exception:  # pragma: no cover -- alerting never blocks the halt
+        pass
 
 
 def clear() -> None:
