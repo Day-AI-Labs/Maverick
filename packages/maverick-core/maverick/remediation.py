@@ -216,7 +216,10 @@ def _write_config_atomic(path, text: str, *, prior: str) -> str:
         backup = str(bak)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".config-", suffix=".tmp")
     try:
-        os.fchmod(fd, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+        except (OSError, AttributeError):  # os.fchmod is absent on Windows
+            pass  # mkstemp already created the file owner-only
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
             f.flush()
