@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from ..safety.action_gate import gate_browser_action
 from . import Tool
 from .http_fetch import _scan_fetched
 
@@ -559,6 +560,14 @@ def _run_browser_action(args: dict[str, Any]) -> str:
         denial = _deny_and_close_current_page(page, allow_hosts)
         if denial is not None:
             return denial
+
+    # Per-action approval gate (mutating actions only -- navigate/click/type/
+    # fill_form/press). No-op in the default auto-approve consent mode; routes
+    # the action through the approval queue when gating is on. Read actions
+    # (extract_*/screenshot/find_text/...) are never gated.
+    denied = gate_browser_action(action, args)
+    if denied is not None:
+        return denied
 
     return _dispatch_browser_action(
         action, session, page, args, timeout, allow_hosts,
