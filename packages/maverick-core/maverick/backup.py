@@ -90,11 +90,19 @@ def _world_schema_version(root: Path) -> int | None:
 
 
 def _stage(root: Path, stage: Path) -> None:
-    """Copy the client data tree into ``stage``; ``*.db`` via the backup API."""
+    """Copy the client data tree into ``stage``; ``*.db`` via the backup API.
+
+    The ``backups/`` subtree is excluded: it lives under the client root, so
+    without this every new backup would sweep in all prior ``.tgz`` files and
+    grow quadratically (a backup containing every earlier backup).
+    """
+    backups_dir = data_backups_dir().resolve()
     for src in sorted(root.rglob("*")):
         if src.is_symlink() or not src.is_file():
             continue
         if src.name.endswith(_SKIP_SUFFIXES):
+            continue
+        if backups_dir in src.resolve().parents:
             continue
         rel = src.relative_to(root)
         dst = stage / rel

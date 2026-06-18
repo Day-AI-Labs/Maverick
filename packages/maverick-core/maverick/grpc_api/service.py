@@ -46,8 +46,8 @@ class GoalStatusDTO:
 
 
 def _default_world():  # pragma: no cover -- exercised only with a real DB
-    from ..world_model import DEFAULT_DB, open_world
-    return open_world(DEFAULT_DB)
+    from ..world_model import open_world
+    return open_world()  # client/tenant-floored canonical world
 
 
 def _default_dispatch(goal_id: int, **kw) -> None:  # pragma: no cover -- real run

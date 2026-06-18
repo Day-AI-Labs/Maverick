@@ -105,7 +105,7 @@ def test_run_goal_in_thread_threads_capability_into_ctx(monkeypatch):
         captured["user_id"] = ctx.user_id
         return "DONE."
 
-    monkeypatch.setattr(world_model, "open_world", lambda _db: FakeWorld())
+    monkeypatch.setattr(world_model, "open_world", lambda *a, **k: FakeWorld())
     monkeypatch.setattr(llm_mod, "LLM", lambda: object())
     monkeypatch.setattr(sandbox_mod, "build_sandbox", lambda: object())
     monkeypatch.setattr(budget_mod, "budget_from_config", lambda **_kwargs: object())
@@ -139,7 +139,7 @@ def test_run_goal_in_thread_closes_sandbox(monkeypatch):
         def close(self):
             closed["sandbox"] = True
 
-    monkeypatch.setattr(world_model, "open_world", lambda _db: FakeWorld())
+    monkeypatch.setattr(world_model, "open_world", lambda *a, **k: FakeWorld())
     monkeypatch.setattr(llm_mod, "LLM", lambda: object())
     monkeypatch.setattr(sandbox_mod, "build_sandbox", lambda: FakeSandbox())
     monkeypatch.setattr(budget_mod, "budget_from_config", lambda **_kwargs: object())
@@ -168,7 +168,7 @@ def test_run_goal_in_thread_default_capability_is_none(monkeypatch):
         captured["cap"] = kwargs.get("capability", "MISSING")
         return "DONE."
 
-    monkeypatch.setattr(world_model, "open_world", lambda _db: FakeWorld())
+    monkeypatch.setattr(world_model, "open_world", lambda *a, **k: FakeWorld())
     monkeypatch.setattr(llm_mod, "LLM", lambda: object())
     monkeypatch.setattr(sandbox_mod, "build_sandbox", lambda: object())
     monkeypatch.setattr(budget_mod, "budget_from_config", lambda **_kwargs: object())

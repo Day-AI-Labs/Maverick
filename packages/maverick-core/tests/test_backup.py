@@ -89,6 +89,22 @@ def test_restore_rejects_path_traversal(tmp_path):
         backup.restore_backup(bad)
 
 
+def test_backup_excludes_prior_backups(monkeypatch):
+    """The backups/ subtree lives under the client root; it must NOT be swept
+    into a new backup, or each backup would contain every earlier one and grow
+    quadratically."""
+    from maverick.paths import data_dir
+    _seed(data_dir())
+    first = backup.create_backup()
+    assert first.exists()
+    # A second backup must not contain the first .tgz under data/backups/.
+    second = backup.create_backup()
+    with tarfile.open(second, "r:gz") as tar:
+        members = tar.getnames()
+    assert not any(name.startswith("data/backups/") for name in members), members
+    assert "data/world.db" in members
+
+
 def test_create_errors_when_no_data(monkeypatch, tmp_path):
     # Point at an empty home with a fresh client -> no data root.
     monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "empty"))

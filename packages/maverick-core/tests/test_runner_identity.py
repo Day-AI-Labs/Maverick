@@ -23,7 +23,7 @@ def test_run_goal_in_thread_propagates_execution_identity(monkeypatch):
         captured.update(kwargs)
         return "DONE."
 
-    monkeypatch.setattr(world_model, "open_world", lambda _db: FakeWorld())
+    monkeypatch.setattr(world_model, "open_world", lambda *a, **k: FakeWorld())
     monkeypatch.setattr(llm_mod, "LLM", lambda: object())
     monkeypatch.setattr(sandbox_mod, "build_sandbox", lambda: object())
     monkeypatch.setattr(budget_mod, "budget_from_config", lambda **_kwargs: object())
