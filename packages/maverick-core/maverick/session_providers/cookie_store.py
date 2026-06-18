@@ -41,11 +41,25 @@ def save_session(provider: str, blob: dict) -> Path:
     except OSError:
         pass
     record = {"saved_at": time.time(), **blob}
-    # Write atomically: write to tmp + chmod + rename. Avoids leaving a
-    # half-written file with mode 644 visible to other users mid-write.
+    # Write atomically with mode-at-creation: create the temp file 0o600 BEFORE
+    # any bytes are written, then rename. The previous write_text() + later
+    # os.chmod() created the temp at the process umask (commonly 0o644) and
+    # wrote the session blob into it BEFORE tightening — a window in which
+    # another local user could read the cookies/tokens. os.open with the mode
+    # closes that window; fchmod additionally tightens a leftover temp from a
+    # crashed prior write (Windows lacks fchmod -> AttributeError, ignored:
+    # there the protection is the per-user profile ACL, not the POSIX bit).
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(record, indent=2))
-    os.chmod(tmp, 0o600)
+    data = json.dumps(record, indent=2).encode("utf-8")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        try:
+            os.fchmod(fd, 0o600)
+        except (OSError, AttributeError):  # pragma: no cover - non-POSIX
+            pass
+        os.write(fd, data)
+    finally:
+        os.close(fd)
     tmp.replace(path)
     return path
 
