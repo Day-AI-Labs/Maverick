@@ -1686,6 +1686,10 @@ async def plugins_toggle(request: Request, name: str = Form(...),
     overlay, never config.toml. Enabling loads the plugin's code on the next goal."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    # Enabling a plugin loads its code on the next goal -- a control-plane
+    # change as privileged as /plugins/install (which requires admin). Gate it
+    # the same way so a viewer/operator can't alter what code the agent loads.
+    require_permission(request, "admin")
     from maverick.runtime_overrides import (
         disable_plugin,
         enable_plugin,
