@@ -114,3 +114,19 @@ def test_get_safety_preserves_constitution_rules(monkeypatch):
         ]
     finally:
         path.unlink()
+
+
+def test_toml_cache_is_bounded(tmp_path, monkeypatch):
+    """The parsed-TOML cache must not grow without bound across many distinct
+    config paths (e.g. one per tenant). Oldest entries are evicted past the cap."""
+    from maverick import config as cfg
+    cfg.reset_config_cache()
+    monkeypatch.setattr(cfg, "_TOML_CACHE_MAX", 8)
+    try:
+        for i in range(40):
+            p = tmp_path / f"t{i}.toml"
+            p.write_text(f'[budget]\nmax_dollars = {i}\n', encoding="utf-8")
+            assert cfg._read_toml_raw(p) == {"budget": {"max_dollars": i}}
+        assert len(cfg._toml_cache) <= 8     # bounded, not 40
+    finally:
+        cfg.reset_config_cache()

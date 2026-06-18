@@ -60,3 +60,21 @@ def test_sample_favors_higher_score():
 
 def test_sample_empty_returns_none():
     assert Archive().sample(random.Random(0)) is None
+
+
+def test_save_is_atomic_no_temp_residue(tmp_path):
+    """save() must write atomically (temp + rename) so a crash mid-write can't
+    leave a half-written, unloadable archive. Verify round-trip + no .tmp left."""
+    from maverick_evolve.archive import Archive, Candidate
+
+    path = tmp_path / "archive.json"
+    arc = Archive()
+    arc.add(Candidate(config={"orchestrator": "x"}, score=0.5))
+    arc.save(path)
+    arc.save(path)  # overwrite an existing file -- the atomic-rename path
+
+    assert path.exists()
+    assert not (tmp_path / "archive.json.tmp").exists()  # no leftover temp
+    assert list(tmp_path.glob("*.tmp")) == []
+    reloaded = Archive.load(path)
+    assert len(reloaded.candidates) == len(arc.candidates)

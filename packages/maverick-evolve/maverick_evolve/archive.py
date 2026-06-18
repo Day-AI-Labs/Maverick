@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -121,9 +122,14 @@ class Archive:
         return arch
 
     def save(self, path: str | Path) -> None:
+        # Atomic write: a crash mid-write must not corrupt the archive (load()
+        # would then return an empty archive, silently discarding accumulated
+        # evolution state). Write a sibling temp file, then rename into place.
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        os.replace(tmp, p)
 
     @classmethod
     def load(cls, path: str | Path) -> Archive:

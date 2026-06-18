@@ -51,6 +51,7 @@ Requires::
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hmac
 import json
@@ -289,7 +290,10 @@ class RcsChannel(Channel):
 
     async def send(self, user_id: str, text: str) -> None:
         import httpx
-        token = self._bearer_token()
+        # _bearer_token() may do a blocking OAuth2 credentials.refresh() (a
+        # network round-trip) when the token has expired (~hourly). Run it off
+        # the event loop so a refresh doesn't stall every other channel/handler.
+        token = await asyncio.to_thread(self._bearer_token)
         url = f"{RBM_BASE}/v1/phones/{user_id}/agentMessages"
         for chunk in [text[i:i + TEXT_LIMIT] for i in range(0, max(len(text), 1), TEXT_LIMIT)]:
             async with httpx.AsyncClient(timeout=30) as client:

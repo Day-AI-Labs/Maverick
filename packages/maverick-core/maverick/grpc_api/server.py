@@ -109,6 +109,9 @@ def _require_authorized(context, bearer_token: str) -> None:
 # --- per-caller request rate limiting (sliding 60s window) -------------------
 _GRPC_RATE_LOCK = threading.Lock()
 _GRPC_RATE_HITS: dict[str, deque] = {}
+# Bound the tracked-caller map; idle buckets are swept when it grows large so a
+# long-running server can't leak one entry per distinct agent/peer forever.
+_GRPC_RATE_MAX_KEYS = 8192
 
 
 def _grpc_rate_limit_per_min() -> int:
@@ -138,10 +141,14 @@ def _grpc_rate_ok(key: str) -> bool:
         return True
     now = time.monotonic()
     with _GRPC_RATE_LOCK:
-        dq = _GRPC_RATE_HITS.setdefault(key, deque())
         cutoff = now - 60.0
+        dq = _GRPC_RATE_HITS.setdefault(key, deque())
         while dq and dq[0] < cutoff:
             dq.popleft()
+        if len(_GRPC_RATE_HITS) > _GRPC_RATE_MAX_KEYS:
+            for k in [k for k, d in _GRPC_RATE_HITS.items()
+                      if k != key and (not d or d[-1] < cutoff)]:
+                del _GRPC_RATE_HITS[k]
         if len(dq) >= limit:
             return False
         dq.append(now)
