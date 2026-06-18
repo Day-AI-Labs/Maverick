@@ -164,6 +164,19 @@ class UsageLedger:
             "out_tokens": int(cell.get("out_tokens", 0)),
         }
 
+    def spend_by_principal(self, *, day: str | None = None) -> dict[str, float]:
+        """``{principal: dollars}`` for ``day`` (default today) — the per-user
+        spend enumeration the point lookup :meth:`usage` couldn't provide (no
+        way to answer "which user is burning budget?"). Skips zero-spend
+        principals; empty when nothing is recorded."""
+        day = day or _today()
+        out: dict[str, float] = {}
+        for principal, days in (self._load() or {}).items():
+            dollars = float(((days or {}).get(day) or {}).get("dollars", 0.0))
+            if dollars:
+                out[str(principal)] = dollars
+        return out
+
     def prune(self, keep_days: int, *, now: float | None = None,
               dry_run: bool = False) -> dict:
         """Drop ``(principal, day)`` buckets older than ``keep_days`` days.
