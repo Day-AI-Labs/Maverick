@@ -65,6 +65,29 @@ NDJSON: one JSON object per line, UTF-8.
 The protocol is language-neutral — anything that speaks it can be loaded the
 same way; this SDK is just the TypeScript implementation.
 
+## Structured page context
+
+The Maverick browser extension (`extensions/browser/`) can attach a bounded,
+observe-only accessibility/DOM snapshot of the active page to a goal. This SDK
+exports types and a safe parser for consuming that snapshot in a plugin:
+
+```ts
+import { parseStructuredPageContext, summarizePageContext } from "@maverick/plugin-sdk";
+
+const ctx = parseStructuredPageContext(args.page); // object or JSON string
+if (ctx) {
+  console.error(summarizePageContext(ctx)); // logging goes to stderr
+  // ctx.elements: interactive controls (name/role/tag/selector/type/value)
+  // ctx.landmarks: landmarks + headings; ctx.lang/counts/truncated metadata
+}
+```
+
+`parseStructuredPageContext` validates untrusted input and re-applies the
+extension's caps (≤60 elements, ≤25 landmarks, per-string length limits),
+returning `null` for anything that isn't a usable snapshot — so a plugin never
+trusts oversized or malformed page context. See `StructuredPageContext`,
+`PageElement`, and `PageLandmark` for the shapes.
+
 ## Developing
 
 ```sh
