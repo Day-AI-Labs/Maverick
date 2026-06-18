@@ -871,7 +871,18 @@ class _GrpcTransport:
         if self._stub is None:
             grpc = _require_grpc()
             pb2, pb2_grpc = _load_stubs()
-            channel = grpc.insecure_channel(self.peer.target)
+            from .grpc_tls import channel_credentials, tls_required
+            creds = channel_credentials("federation")
+            if creds is not None:
+                channel = grpc.secure_channel(self.peer.target, creds)
+            else:
+                # Refuse to ship cross-swarm data in the clear when TLS is
+                # required (client-bound/enterprise); else legacy insecure dial.
+                if tls_required("federation"):
+                    raise FederationError(
+                        f"refusing to dial peer {self.peer.name!r} without TLS: "
+                        "[federation] tls is required but not configured")
+                channel = grpc.insecure_channel(self.peer.target)
             self._stub = pb2_grpc.MaverickFederationStub(channel)
             self._pb2 = pb2
         return self._stub, self._pb2
@@ -1006,9 +1017,12 @@ def serve(
     pb2_grpc.add_MaverickFederationServicer_to_server(
         _servicer(service, pb2, pb2_grpc), server
     )
-    server.add_insecure_port(address)
+    # TLS when configured; fail closed if required (client-bound/enterprise).
+    from .grpc_tls import bind_port
+    secure = bind_port(server, address, "federation")
     server.start()
-    log.info("Maverick federation listening on %s (node=%s)", address, service.node)
+    log.info("Maverick federation listening on %s (node=%s, %s)", address,
+             service.node, "TLS" if secure else "plaintext")
     return server
 
 
