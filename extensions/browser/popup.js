@@ -94,8 +94,43 @@ async function sendChat() {
   await startGoal(title, text);
 }
 
-// "Send this page": ask the content script for {title, url, selection} and
-// ship it as goal context alongside whatever is in the chat box.
+// Render the bounded, observe-only accessibility/DOM snapshot the content
+// script returns into compact lines for the goal brief. Read-only formatting:
+// the structured context is already capped by content.js; we keep it tight.
+function renderStructured(structured) {
+  if (!structured) return "";
+  let out = "\n\n--- structured page context (observe-only) ---";
+  if (structured.lang) out += "\nlang: " + structured.lang;
+  const c = structured.counts || {};
+  out += "\ncounts: " + (c.elements || 0) + " interactive, " + (c.landmarks || 0) + " landmarks";
+  if (structured.truncated) out += " (truncated)";
+  const landmarks = structured.landmarks || [];
+  if (landmarks.length) {
+    out += "\nlandmarks/headings:";
+    for (const l of landmarks) {
+      out += "\n  - " + l.tag + (l.role && l.role !== l.tag ? " [" + l.role + "]" : "") +
+             (l.name ? ": " + l.name : "");
+    }
+  }
+  const elements = structured.elements || [];
+  if (elements.length) {
+    out += "\ninteractive elements:";
+    for (const e of elements) {
+      let line = "\n  - " + (e.role || e.tag);
+      if (e.name) line += ' "' + e.name + '"';
+      if (e.type) line += " type=" + e.type;
+      if (e.value) line += " value=" + JSON.stringify(e.value);
+      if (e.disabled) line += " (disabled)";
+      if (e.selector) line += "  @ " + e.selector;
+      out += line;
+    }
+  }
+  return out;
+}
+
+// "Send this page": ask the content script for {title, url, selection,
+// structured} and ship it as goal context alongside whatever is in the chat
+// box. Same user-triggered, localhost-only, bearer-gated path as before.
 async function sendPage() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const tab = tabs && tabs[0];
@@ -113,6 +148,7 @@ async function sendPage() {
     let description = (ask_ || "Review this page.") + "\n\n--- page context ---";
     description += "\ntitle: " + ctx.title + "\nurl: " + ctx.url;
     if (ctx.selection) description += "\nselection:\n" + ctx.selection;
+    description += renderStructured(ctx.structured);
     await startGoal(title, description);
   });
 }
