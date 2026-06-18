@@ -438,6 +438,68 @@ def _check_agent_trust() -> None:
              fix="rotate or remove expired/revoked entries")
     else:
         _row(GREEN, "agent-trust", detail)
+    # Proactive expiry horizon: warn BEFORE a credential lapses (federation/mTLS
+    # then starts failing with no prior signal), not just after.
+    import time as _time
+    now = _time.time()
+    soon = [a for a in st.get("agents", [])
+            if a.get("active", True) and isinstance(a.get("expires_at"), (int, float))
+            and 0 < (a["expires_at"] - now) <= _EXPIRY_HORIZON_S]
+    for a in sorted(soon, key=lambda a: a["expires_at"]):
+        days = (a["expires_at"] - now) / 86400.0
+        _row(YELLOW, "agent-trust",
+             f"agent {a['id']!r} expires in {days:.1f} day(s)",
+             fix="rotate the credential before it lapses (maverick trust ...)")
+
+
+_EXPIRY_HORIZON_S = 14 * 86400  # warn when a credential expires within 14 days
+_TLS_CERT_HORIZON_S = 30 * 86400  # warn when a TLS cert expires within 30 days
+
+
+def _check_tls_cert_expiry() -> None:
+    """Warn before a configured gRPC/federation TLS server cert expires — there
+    is no other signal until clients suddenly fail to connect."""
+    try:
+        from .config import load_config
+        from .grpc_tls import tls_enabled
+        cfg = load_config() or {}
+    except Exception:  # pragma: no cover - never break doctor
+        return
+    try:
+        from cryptography import x509
+    except Exception:
+        return  # cert parsing needs cryptography; at-rest check already flags it
+    import datetime as _dt
+    now = _dt.datetime.now(_dt.timezone.utc)
+    for section in ("grpc", "federation"):
+        try:
+            if not tls_enabled(section, cfg):
+                continue
+            path = ((cfg.get(section) or {}).get("tls_cert"))
+            if not path:
+                continue
+            from pathlib import Path as _P
+            data = _P(str(path)).expanduser().read_bytes()
+            cert = x509.load_pem_x509_certificate(data)
+            try:
+                not_after = cert.not_valid_after_utc  # cryptography >= 42
+            except AttributeError:  # pragma: no cover - older cryptography
+                not_after = cert.not_valid_after.replace(tzinfo=_dt.timezone.utc)
+            remaining = (not_after - now).total_seconds()
+            if remaining <= 0:
+                _row(RED, f"tls:{section}",
+                     f"server cert EXPIRED ({not_after:%Y-%m-%d})",
+                     fix=f"renew [{section}] tls_cert")
+            elif remaining <= _TLS_CERT_HORIZON_S:
+                _row(YELLOW, f"tls:{section}",
+                     f"server cert expires in {remaining / 86400:.1f} day(s) "
+                     f"({not_after:%Y-%m-%d})",
+                     fix=f"renew [{section}] tls_cert before it lapses")
+            else:
+                _row(GREEN, f"tls:{section}",
+                     f"server cert valid until {not_after:%Y-%m-%d}")
+        except Exception as e:  # pragma: no cover - a misconfigured cert path
+            _row(YELLOW, f"tls:{section}", f"cert unreadable: {type(e).__name__}")
 
 
 def diagnose() -> int:
@@ -456,6 +518,7 @@ def diagnose() -> int:
     _check_world_db()
     _check_shield()
     _check_agent_trust()
+    _check_tls_cert_expiry()
     click.echo("")
     if _FAILURES:
         click.echo(click.style(
