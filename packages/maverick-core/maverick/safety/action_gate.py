@@ -96,17 +96,27 @@ def _require(name: str, risk: str, scope: str | None, detail: str | None) -> str
     return None
 
 
+def computer_action_risk(action: str, args: dict[str, Any]) -> str | None:
+    """Risk of a computer action: ``'high'``/``'medium'`` for a mutating
+    actuation, ``None`` for a read/observe action (which is never gated)."""
+    if action not in _COMPUTER_MUTATING:
+        return None
+    text = args.get("text")
+    high = _matches_high_risk(text, key=text if action == "key" else None)
+    return "high" if high else "medium"
+
+
 def gate_computer_action(action: str, args: dict[str, Any]) -> str | None:
     """Gate one computer-use action.
 
     Returns an ``ERROR:`` string if the action is denied (for the tool to
     return verbatim), or ``None`` to proceed. A no-op for non-mutating actions.
     """
-    if action not in _COMPUTER_MUTATING:
+    risk = computer_action_risk(action, args)
+    if risk is None:
         return None
     text = args.get("text")
     coord = args.get("coordinate")
-    high = _matches_high_risk(text, key=text if action == "key" else None)
     scope = f"{action} at {coord}" if coord else action
     # Value-bearing actions log a length, not the value (could be a secret).
     if action == "type":
@@ -115,7 +125,22 @@ def gate_computer_action(action: str, args: dict[str, Any]) -> str | None:
         detail = f"key {text}"  # a key chord ('ctrl+v', 'Return') is not secret
     else:
         detail = f"at {coord}" if coord else action
-    return _require(f"computer.{action}", "high" if high else "medium", scope, detail)
+    return _require(f"computer.{action}", risk, scope, detail)
+
+
+def browser_action_risk(action: str, args: dict[str, Any]) -> str | None:
+    """Risk of a browser action: ``'high'``/``'medium'`` for a mutating action,
+    ``None`` for a read action (which is never gated). Scans selectors *and*
+    field values for the high-risk signal."""
+    if action not in _BROWSER_MUTATING:
+        return None
+    text = args.get("text")
+    raw_fields = args.get("fields")
+    fields = raw_fields if isinstance(raw_fields, dict) else {}
+    field_parts = [str(k) for k in fields] + [str(v) for v in fields.values()]
+    key = text if action == "press" else None
+    high = _matches_high_risk(args.get("selector"), args.get("url"), *field_parts, key=key)
+    return "high" if high else "medium"
 
 
 def gate_browser_action(action: str, args: dict[str, Any]) -> str | None:
@@ -124,22 +149,15 @@ def gate_browser_action(action: str, args: dict[str, Any]) -> str | None:
     Returns an ``ERROR:`` string if the action is denied, or ``None`` to
     proceed. A no-op for non-mutating actions.
     """
-    if action not in _BROWSER_MUTATING:
+    risk = browser_action_risk(action, args)
+    if risk is None:
         return None
     selector = args.get("selector")
     text = args.get("text")
     url = args.get("url")
     raw_fields = args.get("fields")
     fields = raw_fields if isinstance(raw_fields, dict) else None
-    # Scan selectors *and* values for the risk signal, but only ever log keys.
     field_keys = list(fields.keys()) if fields else []
-    field_values = list(fields.values()) if fields else []
-    key = text if action == "press" else None
-    high = _matches_high_risk(
-        selector, url, *(str(k) for k in field_keys),
-        *(str(v) for v in field_values), key=key,
-    )
-
     if action == "navigate":
         scope = detail = url or action
     elif action == "fill_form":
@@ -155,7 +173,12 @@ def gate_browser_action(action: str, args: dict[str, Any]) -> str | None:
     else:  # click -- the selector is the operator-visible target, safe to log
         scope = selector or action
         detail = f"click {selector}" if selector else action
-    return _require(f"browser.{action}", "high" if high else "medium", scope, detail)
+    return _require(f"browser.{action}", risk, scope, detail)
 
 
-__all__ = ["gate_computer_action", "gate_browser_action"]
+__all__ = [
+    "gate_computer_action",
+    "gate_browser_action",
+    "computer_action_risk",
+    "browser_action_risk",
+]

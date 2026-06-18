@@ -106,6 +106,11 @@ class EventKind:
     # payload: action:str (write|write_blocked|recall_filter), plus key/source/
     # trust/sensitivity/reason/markers (writes) or kept/dropped/min_trust (recall).
     MEMORY_GUARD = "memory_guard"
+    # Tamper-evident before/after capture for a governed computer/browser action.
+    # payload: action:str (e.g. "browser.click"), phase:str (before|after),
+    # file:str (capture basename under data_dir("captures")), sha256:str (sealed
+    # digest, verifiable via screenshot_seal.verify_file).
+    EVIDENCE_CAPTURE = "evidence_capture"
 
 
 @dataclass

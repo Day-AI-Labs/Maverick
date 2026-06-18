@@ -30,7 +30,8 @@ import tempfile
 import time
 from typing import Any
 
-from ..safety.action_gate import gate_computer_action
+from ..safety.action_evidence import seal_bracketed
+from ..safety.action_gate import computer_action_risk, gate_computer_action
 from . import Tool
 
 log = logging.getLogger(__name__)
@@ -388,6 +389,14 @@ def _run_computer_action(args: dict[str, Any]) -> str:
 
     handler = _PYAUTOGUI_ACTIONS.get(action)
     if handler is not None:
+        if computer_action_risk(action, args) == "high":
+            # Bracket a high-risk actuation with sealed before/after captures
+            # (no-op unless screenshot sealing is configured).
+            return seal_bracketed(
+                _screenshot_png_b64,
+                lambda: handler(pyautogui, coord, args),
+                action=f"computer.{action}",
+            )
         return handler(pyautogui, coord, args)
 
     # Defense in depth -- _VALID_ACTIONS guard at the top should make

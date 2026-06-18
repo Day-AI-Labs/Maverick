@@ -43,6 +43,7 @@ _KIND_LABELS: dict[str, tuple[str, str]] = {
     "agent_trust_denied": ("Agent-trust denied", "block"),
     "memory_guard": ("Memory guard", "block"),
     "secret_redacted": ("Secret redacted", "redaction"),
+    "evidence_capture": ("Evidence captured", "evidence"),
     "config_remediated": ("Config remediated", "lifecycle"),
     "halt": ("Killswitch halt", "block"),
 }
@@ -114,6 +115,9 @@ def _summarize(ev: dict[str, Any]) -> str:
         return f"{ev.get('peer', '?')} {ev.get('direction', '')}: {ev.get('reason', '')}".strip()
     if kind == "egress_blocked":
         return ev.get("host") or ev.get("provider") or ev.get("reason") or "egress denied"
+    if kind == "evidence_capture":
+        sha = str(ev.get("sha256", ""))[:12]
+        return f"{ev.get('phase', '')} {ev.get('action', '')} · {ev.get('file', '')} (sha256 {sha})".strip()
     if kind == "secret_redacted":
         return "secret value redacted before it reached disk"
     if kind in ("goal_start", "goal_end"):
