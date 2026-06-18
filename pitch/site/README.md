@@ -1,6 +1,6 @@
-# Maverick — marketing site (Daybreak Labs)
+# Lightwork — marketing site (Daybreak Labs)
 
-A self-contained, premium marketing site for **Maverick**, built in plain HTML +
+A self-contained, premium marketing site for **Lightwork**, built in plain HTML +
 CSS — no build step, no framework. Design: editorial restraint (warm paper, an
 editorial serif for headlines, Inter for body, one accent, dark sections for the
 proof/security moments). Every claim is verifiable from this repo.
