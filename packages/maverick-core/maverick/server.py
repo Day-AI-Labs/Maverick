@@ -177,61 +177,75 @@ class Server:
                     log.warning("message refused: %s", quota_reason)
                     return f"⚠ {quota_reason}"
 
-        # Multi-turn: a single (channel, user_id) gets one conversation
-        # row. Every inbound message becomes a 'user' turn; the
-        # orchestrator's final answer is appended as 'assistant' turn
-        # inside run_goal so future messages have history.
+        # Per-tenant concurrency ceiling (noisy-neighbor protection). Derived
+        # from the tenant's plan entitlement; no-op when tenant is None or the
+        # plan is unlimited. Held across the whole goal run and released in the
+        # finally below so a crash never leaks a slot.
+        from . import tenant_concurrency
+        if not tenant_concurrency.acquire(tenant):
+            log.warning("message refused: tenant %s at concurrency ceiling", tenant)
+            return ("⚠ This workspace is at its concurrent-task limit. "
+                    "Try again once a running task finishes.")
 
-        # EU AI Act Article 50: disclose AI to new channel users on
-        # first turn. `first_turn_disclosure` checks the conversation
-        # row (creates if needed) and returns None on follow-up turns.
-        from .compliance import first_turn_disclosure
-        disclosure = first_turn_disclosure(
-            world,
-            channel=msg.channel or "unknown",
-            user_id=principal_id,
-        )
-
-        conversation = world.get_or_create_conversation(
-            channel=msg.channel or "unknown",
-            user_id=principal_id,
-        )
-        world.append_turn(conversation.id, "user", msg.text)
-
-        title = msg.text[:80]
-        goal_id = world.create_goal(title, msg.text)
-
-        budget = budget_from_config()
         try:
-            # Per-user tenant isolation when enabled (no-op otherwise): scopes
-            # the run's cross-session memory to the authenticated sender, then
-            # restores. Room-based adapters keep msg.user_id as the reply target
-            # and expose the sender via msg.principal_id.
-            with tenant_scope(channel=msg.channel, user_id=principal_id):
-                result = await run_goal(
-                    self.llm, world, budget, goal_id,
-                    sandbox=self.sandbox, max_depth=self.max_depth,
-                    conversation_id=conversation.id,
-                    channel=msg.channel or "unknown",
-                    user_id=f"{msg.channel or 'unknown'}:{principal_id}",
-                )
-        except Exception:
-            log.exception("goal #%s run failed", goal_id)
+            # Multi-turn: a single (channel, user_id) gets one conversation
+            # row. Every inbound message becomes a 'user' turn; the
+            # orchestrator's final answer is appended as 'assistant' turn
+            # inside run_goal so future messages have history.
+
+            # EU AI Act Article 50: disclose AI to new channel users on
+            # first turn. `first_turn_disclosure` checks the conversation
+            # row (creates if needed) and returns None on follow-up turns.
+            from .compliance import first_turn_disclosure
+            disclosure = first_turn_disclosure(
+                world,
+                channel=msg.channel or "unknown",
+                user_id=principal_id,
+            )
+
+            conversation = world.get_or_create_conversation(
+                channel=msg.channel or "unknown",
+                user_id=principal_id,
+            )
+            world.append_turn(conversation.id, "user", msg.text)
+
+            title = msg.text[:80]
+            goal_id = world.create_goal(title, msg.text)
+
+            budget = budget_from_config()
             try:
-                world.set_goal_status(goal_id, "blocked", result="internal error")
-            except Exception:  # pragma: no cover
-                pass
-            # Don't leak internal error details to untrusted channel users.
-            return "⚠ An internal error occurred. Try again or check the logs."
+                # Per-user tenant isolation when enabled (no-op otherwise): scopes
+                # the run's cross-session memory to the authenticated sender, then
+                # restores. Room-based adapters keep msg.user_id as the reply target
+                # and expose the sender via msg.principal_id.
+                with tenant_scope(channel=msg.channel, user_id=principal_id):
+                    result = await run_goal(
+                        self.llm, world, budget, goal_id,
+                        sandbox=self.sandbox, max_depth=self.max_depth,
+                        conversation_id=conversation.id,
+                        channel=msg.channel or "unknown",
+                        user_id=f"{msg.channel or 'unknown'}:{principal_id}",
+                    )
+            except Exception:
+                log.exception("goal #%s run failed", goal_id)
+                try:
+                    world.set_goal_status(goal_id, "blocked", result="internal error")
+                except Exception:  # pragma: no cover
+                    pass
+                # Don't leak internal error details to untrusted channel users.
+                return "⚠ An internal error occurred. Try again or check the logs."
 
-        if self._shield is not None:
-            verdict = self._shield.scan_output(result)
-            if not verdict.allowed:
-                return f"⚠ Output blocked: {'; '.join(verdict.reasons)}"
+            if self._shield is not None:
+                verdict = self._shield.scan_output(result)
+                if not verdict.allowed:
+                    return f"⚠ Output blocked: {'; '.join(verdict.reasons)}"
 
-        if disclosure is not None:
-            return f"{disclosure}\n\n{result}"
-        return result
+            if disclosure is not None:
+                return f"{disclosure}\n\n{result}"
+            return result
+        finally:
+            # Always free the tenant's concurrency slot, on every exit path.
+            tenant_concurrency.release(tenant)
 
     def add_channel(self, channel) -> None:
         self._channels.append(channel)
