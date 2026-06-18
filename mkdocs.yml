@@ -94,6 +94,7 @@ nav:
       - Streaming parity: performance/streaming-parity.md
   - Security:
       - Threat model: security/threat-model.md
+      - Capability attenuation (verified): security/capability-attenuation.md
       - Shield benchmark: security/shield-benchmark.md
       - Encryption at rest: encryption.md
       - Regulated deployment: regulated-deployment.md
