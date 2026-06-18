@@ -37,3 +37,31 @@ def test_fresh_nonces_survive_high_volume():
     # All 5000 are still within the freshness window, so every replay is caught.
     for i, s in enumerate(sigs):
         assert federation._replay_seen(s, now=base + 1.0 + i * 0.001) is True
+
+
+def test_concurrent_same_sig_admits_exactly_one():
+    """The federation server is multithreaded, so _replay_seen must be atomic:
+    when many threads race the SAME fresh signature, exactly one sees it as
+    new (False) and the rest as a replay (True). A non-atomic check-then-insert
+    would admit the captured signature more than once."""
+    import threading
+
+    barrier = threading.Barrier(32)
+    results: list[bool] = []
+    lock = threading.Lock()
+
+    def _worker():
+        barrier.wait()  # maximise the race on the shared cache
+        seen = federation._replay_seen("race-sig", now=2000.0)
+        with lock:
+            results.append(seen)
+
+    threads = [threading.Thread(target=_worker) for _ in range(32)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # Exactly one admission (False); every other call is a replay (True).
+    assert results.count(False) == 1
+    assert results.count(True) == 31

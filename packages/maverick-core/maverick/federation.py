@@ -57,6 +57,7 @@ import hmac
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -84,6 +85,13 @@ _SIGN_FRESHNESS_S = 300.0  # accept a signature within ±5 min of now (replay wi
 # freshness window. Pruned by AGE (see _replay_seen), so a still-fresh nonce is
 # never evicted early.
 _seen_sigs: OrderedDict[str, float] = OrderedDict()
+# Guards every read/mutate of _seen_sigs. The federation gRPC server runs a
+# ThreadPoolExecutor, so concurrent DelegateGoal RPCs hit _replay_seen at once.
+# Without this lock the check-then-insert is not atomic (two threads could both
+# admit the same captured signature — a replay), and the iterate-and-pop prune
+# can raise "OrderedDict mutated during iteration". Replay protection is
+# security-critical, so serialise the whole check-and-remember.
+_seen_sigs_lock = threading.Lock()
 
 _DEFAULT_ADDR = "127.0.0.1:50061"  # one port up from the goal API (50051)
 _DEFAULT_RPC_TIMEOUT_S = 10.0
@@ -291,15 +299,16 @@ def _replay_seen(sig: str, *, now: float | None = None) -> bool:
         return False
     now = time.time() if now is None else now
     cutoff = now - _SIGN_FRESHNESS_S
-    while _seen_sigs:
-        _oldest, ts = next(iter(_seen_sigs.items()))
-        if ts >= cutoff:
-            break
-        _seen_sigs.popitem(last=False)
-    if sig in _seen_sigs:
-        return True
-    _seen_sigs[sig] = now
-    return False
+    with _seen_sigs_lock:
+        while _seen_sigs:
+            _oldest, ts = next(iter(_seen_sigs.items()))
+            if ts >= cutoff:
+                break
+            _seen_sigs.popitem(last=False)
+        if sig in _seen_sigs:
+            return True
+        _seen_sigs[sig] = now
+        return False
 
 
 def _sign_delegation(
