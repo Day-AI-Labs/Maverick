@@ -656,6 +656,172 @@ def capability_revocations_cmd(as_json: bool) -> None:
                    + (f"  — {r.reason}" if r.reason else ""))
 
 
+@main.group("trust")
+def trust_group() -> None:
+    """Administer the Agent Trust registry (which OUTSIDE agents may be talked to).
+
+    The registry governs every external surface (federation, A2A, fleet, channel,
+    marketplace, gRPC, MCP). Hand-edited ``[agent_trust] agents`` in config stays
+    read-only; these commands manage a per-client overlay (``agent_trust.json``)
+    so you can add / rotate / revoke peers and their pinned keys without editing
+    TOML. Engaged via enterprise mode or ``[agent_trust] enforce = true``."""
+
+
+@trust_group.command("status")
+def trust_status_cmd() -> None:
+    """Show whether the trust plane is engaged + the registered-agent count."""
+    from . import agent_trust
+    st = agent_trust.status()
+    state = click.style("ENGAGED", fg="green") if st["enforced"] else click.style(
+        "disengaged", fg="yellow")
+    click.echo(f"agent trust plane: {state}  ({st['count']} agent(s))")
+    if st["enforced"] and st["count"] == 0:
+        click.echo(click.style(
+            "  ! engaged with an EMPTY registry — every external agent is denied",
+            fg="red"))
+
+
+@trust_group.command("list")
+def trust_list_cmd() -> None:
+    """List trusted external agents (id, direction, key, risk, scopes, active)."""
+    from . import agent_trust
+    reg = agent_trust.load_registry()
+    if not reg:
+        click.echo("(no trusted agents configured)")
+        return
+    for a in reg.values():
+        active, why = a.is_active()
+        flag = click.style("active", fg="green") if active else click.style(
+            why, fg="red")
+        key = (a.pubkey[:12] + "…") if a.pubkey else click.style("no-key", fg="yellow")
+        click.echo(f"  {a.id:24}  {a.direction:8}  key={key}  "
+                   f"risk={a.max_risk or 'any'}  scopes={sorted(a.data_scopes) or '-'}  "
+                   f"[{flag}]")
+
+
+@trust_group.command("show")
+@click.argument("agent_id")
+def trust_show_cmd(agent_id: str) -> None:
+    """Show one agent's full trust entry."""
+    from . import agent_trust
+    a = agent_trust.lookup(agent_id)
+    if a is None:
+        raise click.ClickException(f"no trusted agent {agent_id!r}")
+    active, why = a.is_active()
+    click.echo(f"id:           {a.id}")
+    click.echo(f"direction:    {a.direction}")
+    click.echo(f"pubkey:       {a.pubkey or '(none — token-only, discouraged)'}")
+    click.echo(f"allow_tools:  {sorted(a.allow_tools) or '(all)'}")
+    click.echo(f"deny_tools:   {sorted(a.deny_tools) or '-'}")
+    click.echo(f"max_risk:     {a.max_risk or 'any'}")
+    click.echo(f"max_dollars:  {a.max_dollars if a.max_dollars is not None else '-'}")
+    click.echo(f"data_scopes:  {sorted(a.data_scopes) or '-'}")
+    click.echo(f"active:       {active} ({why})")
+
+
+@trust_group.command("pubkey")
+def trust_pubkey_cmd() -> None:
+    """Print THIS deployment's pinned Ed25519 public key (hand to peers)."""
+    from . import agent_trust
+    pk = agent_trust.local_pubkey()
+    if not pk:
+        raise click.ClickException(
+            "no audit key available (install the [audit-signing] extra)")
+    click.echo(pk)
+
+
+@trust_group.command("add")
+@click.argument("agent_id")
+@click.option("--pubkey", default="", help="Pinned Ed25519 public key (hex).")
+@click.option("--direction", type=click.Choice(["inbound", "outbound", "both"]),
+              default="both")
+@click.option("--allow-tools", default="", help="Comma-separated tool allowlist.")
+@click.option("--max-risk", type=click.Choice(["low", "medium", "high"]), default=None)
+@click.option("--max-dollars", type=float, default=None)
+@click.option("--data-scopes", default="", help="Comma-separated memory scopes.")
+@click.option("--a2a-token", default="", help="Per-caller A2A bearer.")
+@click.option("--grpc-token", default="", help="Per-caller gRPC bearer.")
+@click.option("--mcp-token", default="", help="Per-caller MCP bearer.")
+def trust_add_cmd(agent_id, pubkey, direction, allow_tools, max_risk, max_dollars,
+                  data_scopes, a2a_token, grpc_token, mcp_token) -> None:
+    """Add or replace a trusted external agent (managed overlay)."""
+    from . import agent_trust
+
+    def _split(s):
+        return [x.strip() for x in s.split(",") if x.strip()]
+
+    entry = {
+        "id": agent_id, "pubkey": pubkey, "direction": direction,
+        "allow_tools": _split(allow_tools), "max_risk": max_risk,
+        "max_dollars": max_dollars, "data_scopes": _split(data_scopes),
+        "a2a_token": a2a_token, "grpc_token": grpc_token, "mcp_token": mcp_token,
+    }
+    try:
+        a = agent_trust.put_agent(entry)
+    except agent_trust.AgentTrustError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(click.style(f"trusted agent {a.id!r} saved", fg="green"))
+
+
+@trust_group.command("rm")
+@click.argument("agent_id")
+def trust_rm_cmd(agent_id: str) -> None:
+    """Remove a managed trusted agent."""
+    from . import agent_trust
+    if agent_trust.remove_agent(agent_id):
+        click.echo(click.style(f"removed {agent_id!r}", fg="yellow"))
+    else:
+        raise click.ClickException(
+            f"no managed agent {agent_id!r} (hand-edited [agent_trust] entries "
+            "are removed from config.toml)")
+
+
+@trust_group.command("revoke")
+@click.argument("agent_id")
+def trust_revoke_cmd(agent_id: str) -> None:
+    """Revoke a trusted agent immediately (denied even mid-rotation)."""
+    from . import agent_trust
+    if not agent_trust.lookup(agent_id):
+        raise click.ClickException(f"no trusted agent {agent_id!r}")
+    if agent_trust.set_revoked(agent_id, True):
+        click.echo(click.style(f"revoked {agent_id!r}", fg="yellow"))
+    else:
+        raise click.ClickException(
+            f"{agent_id!r} is a hand-edited config entry — set revoked = true in "
+            "[agent_trust], or re-add it via `maverick trust add` to manage it")
+
+
+@trust_group.command("unrevoke")
+@click.argument("agent_id")
+def trust_unrevoke_cmd(agent_id: str) -> None:
+    """Lift a revocation on a managed agent."""
+    from . import agent_trust
+    if agent_trust.set_revoked(agent_id, False):
+        click.echo(click.style(f"unrevoked {agent_id!r}", fg="green"))
+    else:
+        raise click.ClickException(f"no managed agent {agent_id!r}")
+
+
+@trust_group.command("verify")
+@click.argument("agent_id")
+@click.option("--tools", default="", help="Comma-separated required tools.")
+@click.option("--risk", type=click.Choice(["low", "medium", "high"]), default=None)
+@click.option("--direction", type=click.Choice(["inbound", "outbound"]),
+              default="inbound")
+def trust_verify_cmd(agent_id, tools, risk, direction) -> None:
+    """Replay the trust decision for AGENT_ID and print allow/deny + reason."""
+    from . import agent_trust
+    req = [x.strip() for x in tools.split(",") if x.strip()]
+    if direction == "outbound":
+        d = agent_trust.decide_outbound(agent_id, enforced=True)
+    else:
+        d = agent_trust.decide_inbound(agent_id, requested_tools=req, max_risk=risk,
+                                       enforced=True)
+    verdict = click.style("ALLOW", fg="green") if d.allowed else click.style(
+        "DENY", fg="red")
+    click.echo(f"{direction} {agent_id!r}: {verdict}  rule={d.rule}  {d.reason}")
+
+
 @main.group("overrides")
 def overrides_group() -> None:
     """Export / load this workspace's agent customizations as a portable bundle.

@@ -54,11 +54,16 @@ Sequenced by leverage. Each phase is independently shippable.
 - Still document TLS termination for the dashboard + MCP HTTP surfaces (reverse
   proxy or native). The federation shared token never crosses plaintext now.
 
-### Phase 2 — Trust-plane & key administration (`maverick trust` CLI)
-- `maverick trust list/show/add/rm/rotate/revoke` over `[agent_trust] agents`.
-- `maverick trust keygen` + `export-pubkey` to mint and publish pinned keys.
-- Zero-downtime rotation via the existing `expires_at` / `not_before` overlap.
-- Mirror in the dashboard (read-only at minimum).
+### Phase 2 — Trust-plane & key administration (`maverick trust` CLI) ✅
+- `maverick trust status / list / show / add / rm / revoke / unrevoke / verify`
+  and `maverick trust pubkey` (print this deployment's pinned key to hand to
+  peers). Write-ops manage a per-client JSON overlay (`agent_trust.json`, under
+  the client's data dir) that `load_registry` merges over the hand-edited
+  `[agent_trust] agents` — so peers/keys are managed without editing TOML.
+- `revoke` flips `revoked` (denied immediately via `is_active`); rotation is
+  `add --pubkey <new>` (overlay overrides config), with `expires_at` /
+  `not_before` available for zero-downtime overlap.
+- Mirror in the dashboard (read-only at minimum) — remaining follow-up.
 
 ### Phase 3 — Backup / restore / failover (HA for single-node)
 - `maverick backup` / `maverick restore` covering the **world DB**, **signed

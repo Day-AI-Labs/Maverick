@@ -53,6 +53,7 @@ Registry format (``~/.maverick/config.toml``)::
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import re
@@ -334,19 +335,123 @@ def load_registry(cfg: dict | None = None) -> dict[str, TrustedAgent]:
             log.warning("agent_trust: config unreadable; registry is empty")
             return {}
     raw = (cfg.get("agent_trust") or {}).get("agents")
-    if not isinstance(raw, list):
-        if raw is not None:
-            log.warning("[agent_trust] agents must be a list; ignoring")
-        return {}
     out: dict[str, TrustedAgent] = {}
-    for item in raw[:_MAX_AGENTS]:
-        if not isinstance(item, dict):
-            log.warning("[agent_trust] skipping non-table entry %r", item)
-            continue
+    if isinstance(raw, list):
+        for item in raw[:_MAX_AGENTS]:
+            if not isinstance(item, dict):
+                log.warning("[agent_trust] skipping non-table entry %r", item)
+                continue
+            agent = _agent_from_entry(item)
+            if agent is not None and agent.id not in out:
+                out[agent.id] = agent
+    elif raw is not None:
+        log.warning("[agent_trust] agents must be a list; ignoring")
+    # Merge the CLI-managed registry overlay (agent_trust.json, client-scoped):
+    # managed entries add to / override the hand-edited config ones, so
+    # `maverick trust` add/rotate/revoke take effect without editing TOML.
+    for item in _load_managed():
         agent = _agent_from_entry(item)
-        if agent is not None and agent.id not in out:
+        if agent is None:
+            continue
+        if agent.id in out or len(out) < _MAX_AGENTS:
             out[agent.id] = agent
     return out
+
+
+# -- CLI-managed registry overlay (JSON; client-scoped via the tenant floor) --
+
+def managed_path():
+    """Path to the CLI-managed registry overlay (``agent_trust.json``).
+
+    Under the active client's data dir (the tenant floor), so the managed
+    registry is automatically per-deployment/per-client.
+    """
+    from .paths import data_dir
+    return data_dir("agent_trust.json")
+
+
+def _load_managed() -> list[dict]:
+    import json
+    try:
+        p = managed_path()
+        if not p.exists():
+            return []
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:  # pragma: no cover - a corrupt overlay must not crash reads
+        log.warning("agent_trust: managed registry unreadable: %s", e)
+        return []
+    return [a for a in data if isinstance(a, dict)] if isinstance(data, list) else []
+
+
+def _save_managed(entries: list[dict]) -> None:
+    import json
+    import os as _os
+    import tempfile
+    p = managed_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=".agent_trust.", suffix=".json")
+    try:
+        with _os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(entries[:_MAX_AGENTS], f, indent=2, sort_keys=True)
+        _os.chmod(tmp, 0o600)
+        _os.replace(tmp, p)
+    except Exception:
+        with contextlib.suppress(OSError):
+            _os.unlink(tmp)
+        raise
+
+
+def put_agent(entry: dict) -> TrustedAgent:
+    """Add or replace a managed agent (by ``id``). Returns the parsed agent.
+
+    Validates via :func:`_agent_from_entry`; raises :class:`AgentTrustError` on a
+    malformed entry so the CLI surfaces a clear error instead of silently
+    dropping it."""
+    agent = _agent_from_entry(entry)
+    if agent is None:
+        raise AgentTrustError(f"invalid agent entry: {entry!r}")
+    entries = [e for e in _load_managed() if str(e.get("id") or "") != agent.id]
+    clean = {k: v for k, v in entry.items() if v not in (None, "", [], {})}
+    clean["id"] = agent.id
+    entries.append(clean)
+    _save_managed(entries)
+    return agent
+
+
+def remove_agent(agent_id: str) -> bool:
+    """Delete a managed agent by id. Returns True if one was removed."""
+    entries = _load_managed()
+    kept = [e for e in entries if str(e.get("id") or "") != agent_id]
+    if len(kept) == len(entries):
+        return False
+    _save_managed(kept)
+    return True
+
+
+def set_revoked(agent_id: str, revoked: bool) -> bool:
+    """Mark a managed agent revoked / unrevoked. Returns True if it existed."""
+    entries = _load_managed()
+    found = False
+    for e in entries:
+        if str(e.get("id") or "") == agent_id:
+            e["revoked"] = bool(revoked)
+            found = True
+    if found:
+        _save_managed(entries)
+    return found
+
+
+def local_pubkey() -> str | None:
+    """This deployment's pinned Ed25519 public key (hex) for out-of-band
+    distribution to peers, or ``None`` when ``cryptography`` is unavailable."""
+    try:
+        from .audit import signing as audit_signing
+        if not audit_signing._have_crypto():
+            return None
+        _priv, pub, _key_id = audit_signing._load_or_create_keypair()
+        return pub.hex()
+    except Exception:  # pragma: no cover
+        return None
 
 
 def lookup(agent_id: str, *, registry: dict[str, TrustedAgent] | None = None) -> TrustedAgent | None:
@@ -669,6 +774,11 @@ __all__ = [
     "agent_trust_enforced",
     "load_trust_state",
     "load_registry",
+    "managed_path",
+    "put_agent",
+    "remove_agent",
+    "set_revoked",
+    "local_pubkey",
     "lookup",
     "agent_for_token",
     "agent_for_a2a_token",
