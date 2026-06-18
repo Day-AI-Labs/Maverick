@@ -66,6 +66,30 @@ def test_require_binding_ok_when_bound(monkeypatch):
     assert client.require_client_binding() == "acme"
 
 
+def test_uppercase_client_id_resolves_to_none(monkeypatch):
+    # Hot path stays resilient: an invalid (uppercase) id doesn't crash callers.
+    monkeypatch.setenv("MAVERICK_CLIENT_ID", "Acme")
+    client.reset_client_cache()
+    assert client.client_id() is None
+
+
+@pytest.mark.parametrize("bad", ["Acme", "ACME", "acme Corp", "acmé"])
+def test_require_binding_rejects_noncanonical_id(monkeypatch, bad):
+    # A configured-but-invalid id fails closed at startup even when not enforced,
+    # rather than silently serving from the shared root.
+    monkeypatch.setenv("MAVERICK_CLIENT_ID", bad)
+    monkeypatch.delenv("MAVERICK_CLIENT_ENFORCE", raising=False)
+    client.reset_client_cache()
+    with pytest.raises(client.ClientBindingError, match="invalid"):
+        client.require_client_binding()
+
+
+def test_lowercase_client_id_accepted(monkeypatch):
+    monkeypatch.setenv("MAVERICK_CLIENT_ID", "acme-corp.eu_1")
+    client.reset_client_cache()
+    assert client.require_client_binding() == "acme-corp.eu_1"
+
+
 def test_require_binding_noop_when_not_enforced(monkeypatch):
     monkeypatch.delenv("MAVERICK_CLIENT_ID", raising=False)
     monkeypatch.delenv("MAVERICK_CLIENT_ENFORCE", raising=False)

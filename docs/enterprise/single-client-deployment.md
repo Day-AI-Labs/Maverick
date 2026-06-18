@@ -153,7 +153,11 @@ fast at boot rather than invoking `protoc` at request time.
 
 ```toml
 [client]
-id = "acme-corp"          # this deployment serves ONLY acme-corp
+id = "acme-corp"          # this deployment serves ONLY acme-corp.
+                          # MUST be lowercase letters/digits/._- (it is a
+                          # directory name; a case-insensitive filesystem would
+                          # otherwise collide "Acme" with "acme"). A non-canonical
+                          # id fails closed at startup rather than serving unbound.
 enforce = true            # refuse to start unbound — data can't hit the shared root
 
 [enterprise]

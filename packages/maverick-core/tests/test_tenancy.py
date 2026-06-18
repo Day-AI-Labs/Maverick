@@ -52,6 +52,16 @@ def test_tenant_encoding_is_collision_resistant(monkeypatch):
     ).resolve()
 
 
+def test_tenant_segment_nfc_normalised(monkeypatch):
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    import unicodedata
+    nfc = unicodedata.normalize("NFC", "josé")   # "josé" precomposed
+    nfd = unicodedata.normalize("NFD", "josé")   # "josé" decomposed
+    assert nfc != nfd  # distinct byte sequences pre-normalisation
+    # ...but the same on-disk namespace, so one tenant's data isn't split in two.
+    assert data_dir("memory", tenant=nfc) == data_dir("memory", tenant=nfd)
+
+
 # --- data_dir --------------------------------------------------------------
 
 def test_data_dir_no_tenant(monkeypatch):
