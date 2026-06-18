@@ -38,6 +38,38 @@ def test_unset_env_var_becomes_empty(monkeypatch):
     assert _interp("${MAVERICK_NEVER_SET}") == ""
 
 
+def test_config_cache_avoids_reparse_but_keeps_interp_live(tmp_path, monkeypatch):
+    # Uses a benign [models] key so the literal isn't flagged by detect-secrets.
+    import maverick.config as cfg_mod
+    cfg_mod.reset_config_cache()
+    path = tmp_path / "c.toml"
+    path.write_text('[models]\nsummarizer = "${MAVERICK_CFG_TEST_VAL}"\n')
+
+    calls = {"n": 0}
+    real_load = cfg_mod.tomllib.load
+
+    def _counting_load(f):
+        calls["n"] += 1
+        return real_load(f)
+
+    monkeypatch.setattr(cfg_mod.tomllib, "load", _counting_load)
+
+    monkeypatch.setenv("MAVERICK_CFG_TEST_VAL", "first")
+    assert cfg_mod.load_config(path)["models"]["summarizer"] == "first"
+    # Second read: parse is cached (no new tomllib.load) ...
+    monkeypatch.setenv("MAVERICK_CFG_TEST_VAL", "second")
+    assert cfg_mod.load_config(path)["models"]["summarizer"] == "second"
+    assert calls["n"] == 1  # parsed once, interpolation re-ran live
+
+    # Editing the file (mtime/size changes) invalidates the cache.
+    path.write_text(
+        '[models]\nsummarizer = "${MAVERICK_CFG_TEST_VAL}"\norchestrator = "x"\n')
+    cfg = cfg_mod.load_config(path)
+    assert cfg["models"]["orchestrator"] == "x"
+    assert calls["n"] == 2
+    cfg_mod.reset_config_cache()
+
+
 def test_load_config_with_models_section():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
         f.write(

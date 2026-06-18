@@ -99,12 +99,35 @@ def config_path() -> Path:
     return _default_config_path()
 
 
-def _load_config_file(path: Path) -> dict:
-    if not path.exists():
-        return {}
+# Parsed-TOML cache keyed by absolute path -> (mtime_ns, size, raw_dict). Only
+# the expensive part (file read + TOML parse) is memoized; env-var interpolation
+# and the overlay deep-merge still run on every load_config() call, so a changed
+# ${VAR} or edited overlay is always reflected. Invalidated when the file's mtime
+# OR size changes (a rewrite). load_config() is on many hot paths (a single
+# inbound A2A delegate triggers ~6-10 full parses); this removes the redundant
+# I/O + tokenize while preserving exact semantics.
+_toml_cache: dict[str, tuple[int, int, dict]] = {}
+
+
+def reset_config_cache() -> None:
+    """Drop the parsed-TOML cache (test hook; prod files rarely change)."""
+    _toml_cache.clear()
+
+
+def _read_toml_raw(path: Path) -> dict:
+    """Parsed TOML for ``path`` (NO interpolation), memoized by mtime+size.
+    Returns ``{}`` for a missing file, and ``{}`` + a warning for a corrupt one."""
+    try:
+        st = path.stat()
+    except OSError:
+        return {}  # missing/inaccessible -> defaults (no warning, like before)
+    key = str(path)
+    cached = _toml_cache.get(key)
+    if cached is not None and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
+        return cached[2]
     try:
         with open(path, "rb") as f:
-            return _interp(tomllib.load(f))
+            raw = tomllib.load(f)
     except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
         # The kernel must tolerate a missing config (returns {} above); a
         # corrupt/unreadable one is the adjacent case. Fail soft to defaults
@@ -114,7 +137,15 @@ def _load_config_file(path: Path) -> dict:
             "ignoring unreadable %s (%s: %s); using defaults",
             path, type(e).__name__, e,
         )
-        return {}
+        raw = {}
+    _toml_cache[key] = (st.st_mtime_ns, st.st_size, raw)
+    return raw
+
+
+def _load_config_file(path: Path) -> dict:
+    # _interp returns a fresh dict tree on every call, so the cached raw dict is
+    # never mutated by callers; env substitution stays live.
+    return _interp(_read_toml_raw(path))
 
 
 def _deep_merge_config(base: dict, overlay: dict) -> dict:
