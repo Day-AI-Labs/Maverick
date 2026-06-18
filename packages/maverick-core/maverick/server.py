@@ -523,6 +523,35 @@ _WIRES = {
 }
 
 
+def _advise_channel_tenancy(server) -> None:
+    """Warn when a multi-tenant deployment shares one global channel identity.
+
+    Channels are global listeners built once from ``[channels.*]``: a single
+    Slack/Telegram/email bot identity per process. Inbound replies still route
+    back to the originating channel (no cross-tenant reply leak), but every
+    tenant shares that one bot identity and its allow-lists. When distinct
+    per-tenant bot identities are required, run one Maverick instance per tenant
+    (the Helm chart + per-tenant ``tenants/<id>/config.toml`` overlay make this
+    cheap) rather than many tenants behind one process. Advisory only; never
+    blocks boot.
+    """
+    try:
+        from .paths import tenant_by_user_enabled
+        from .tenant_registry import list_tenants
+        multi = tenant_by_user_enabled() or len(list_tenants()) > 1
+        if multi and server._channels:
+            log.warning(
+                "multi-tenant deployment detected with %d global channel(s) (%s): "
+                "all tenants share one bot identity per channel. For distinct "
+                "per-tenant bot identities, run one instance per tenant "
+                "(see deploy/helm + per-tenant config). See docs/multi-tenancy.md.",
+                len(server._channels),
+                ", ".join(c.name for c in server._channels),
+            )
+    except Exception:  # pragma: no cover -- advisory must never block boot
+        pass
+
+
 def build_from_config() -> Server:
     cfg = load_config()
     # Shared predicate (maverick.config): env keys, base-url envs, or a
@@ -566,6 +595,8 @@ def build_from_config() -> Server:
             "No channels enabled (or all failed to initialize). Edit "
             "~/.maverick/config.toml and set [channels.<name>] enabled = true."
         )
+
+    _advise_channel_tenancy(server)
 
     # If [queue] backend selects a task queue, run goals out-of-process on a
     # worker pool instead of in this channel-server process. No-op by default.
