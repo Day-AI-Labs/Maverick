@@ -475,3 +475,70 @@ def test_unseal_wrong_key_or_tamper_raises_encryption_unavailable(monkeypatch, t
         car.unseal(car._MAGIC + b"short")
     # A clean round-trip still works.
     assert car.unseal(blob) == b"secret data"
+
+
+# --- key rotation (additive keyring) ----------------------------------------
+
+@requires_crypto
+def test_no_keyring_keeps_v1_format():
+    # With no keyring, seal() produces the legacy v1 header (no behaviour change).
+    blob = car.seal(b"hello")
+    assert blob[: len(car._MAGIC)] == car._MAGIC
+    assert car.unseal(blob) == b"hello"
+
+
+@requires_crypto
+def test_rotation_keeps_old_data_readable(monkeypatch):
+    # The data-safety guarantee: data sealed BEFORE rotation must still unseal
+    # AFTER rotation (old key retained), and new writes use the new key (v2).
+    old_blob = car.seal(b"pre-rotation secret")          # v1, under the legacy key
+    assert old_blob[: len(car._MAGIC)] == car._MAGIC
+
+    new_id = car.rotate_at_rest_key()
+    assert len(new_id) == car._KEYID_BYTES * 2           # hex of the 8-byte id
+
+    # Old v1 data still opens (legacy key is still resolvable).
+    assert car.unseal(old_blob) == b"pre-rotation secret"
+
+    # New writes are v2 under the rotated key, and round-trip.
+    new_blob = car.seal(b"post-rotation secret")
+    assert new_blob[: len(car._MAGIC_V2)] == car._MAGIC_V2
+    assert car.unseal(new_blob) == b"post-rotation secret"
+
+
+@requires_crypto
+def test_two_rotations_all_generations_readable():
+    import time
+
+    car.rotate_at_rest_key()
+    blob1 = car.seal(b"gen-1")
+    time.sleep(0.01)  # ensure the second key is unambiguously newest (active)
+    car.rotate_at_rest_key()
+    blob2 = car.seal(b"gen-2")
+
+    # Both generations decrypt -- each v2 blob names its own key-id, so a
+    # superseded key still opens the data it sealed.
+    assert car.unseal(blob1) == b"gen-1"
+    assert car.unseal(blob2) == b"gen-2"
+
+
+@requires_crypto
+def test_v2_blob_with_unknown_keyid_fails_closed():
+    car.rotate_at_rest_key()
+    blob = car.seal(b"x")
+    # Corrupt the embedded key-id so no key resolves -> fail closed.
+    body = bytearray(blob)
+    start = len(car._MAGIC_V2)
+    for i in range(start, start + car._KEYID_BYTES):
+        body[i] ^= 0xFF
+    with pytest.raises(car.EncryptionUnavailable):
+        car.unseal(bytes(body))
+
+
+@requires_crypto
+def test_rotated_key_file_is_private(monkeypatch):
+    import stat as _stat
+    car.rotate_at_rest_key()
+    for p in car._keyring_dir().glob("*.key"):
+        mode = _stat.S_IMODE(p.stat().st_mode)
+        assert mode & 0o077 == 0, f"{p} is group/world accessible ({oct(mode)})"
