@@ -1830,6 +1830,49 @@ async def audit_grep(pattern: str, day: str | None = None) -> dict:
     return {"events": matches[:200]}
 
 
+@router.get("/replay/{goal_id}")
+async def replay_json(request: Request, goal_id: int) -> dict:
+    """Flight-recorder timeline + chain-verification verdict for one run."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from .control_plane import build_replay, evidence_packet
+    replay = build_replay(goal_id, window=(g.created_at, g.updated_at))
+    return evidence_packet(g, replay)
+
+
+@router.get("/replay/{goal_id}/evidence")
+async def replay_evidence(request: Request, goal_id: int) -> Response:
+    """Download the run's evidence packet as a standalone JSON artifact."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from .control_plane import build_replay, evidence_packet
+    replay = build_replay(goal_id, window=(g.created_at, g.updated_at))
+    body = json.dumps(
+        evidence_packet(g, replay), indent=2, ensure_ascii=False, default=str,
+    )
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="evidence-goal-{goal_id}.json"',
+        },
+    )
+
+
+@router.get("/trust/agents")
+async def trust_agents(request: Request) -> dict:
+    """The Agent Trust Plane registry: external agents + their tool/risk/budget
+    ceilings and lifecycle status (the cross-agent permission graph as JSON)."""
+    from .control_plane import trust_overview
+    return trust_overview()
+
+
 @router.get("/permissions")
 async def permissions() -> dict:
     """Everything the agent is currently allowed to do (read-only)."""

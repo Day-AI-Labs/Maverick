@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Agent Trust · Maverick{% endblock %}
+{% block content %}
+  <h1 class="page-title">Agent trust</h1>
+  <p class="page-subtitle">Every external agent allowed to interact with this deployment — the tools and risk it may reach, its budget ceiling, and its lifecycle status. The cross-agent permission graph.</p>
+
+  <div class="panel">
+    <p>
+      Enforcement:
+      {% if enforced %}<span class="badge active">enforced</span>{% else %}<span class="badge">advisory (registry only)</span>{% endif %}
+      {% if not available %}<span class="badge danger">registry unavailable</span>{% endif %}
+    </p>
+  </div>
+
+  <div class="panel">
+    {% if agents %}
+    <table>
+      <thead>
+        <tr><th>Agent</th><th>Direction</th><th>Allowed tools</th><th>Denied</th><th>Max risk</th><th>Budget</th><th>Data scopes</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for a in agents %}
+        <tr>
+          <td><strong>{{ a.id }}</strong></td>
+          <td><span class="badge">{{ a.direction }}</span></td>
+          <td>{{ a.allow_tools | join(', ') }}</td>
+          <td>{{ a.deny_tools | join(', ') or '—' }}</td>
+          <td><span class="badge {{ 'danger' if a.max_risk == 'high' else '' }}">{{ a.max_risk }}</span></td>
+          <td>
+            {% if a.max_dollars is not none %}${{ '%.2f' | format(a.max_dollars) }}{% else %}—{% endif %}
+            {% if a.max_wall_seconds is not none %} · {{ a.max_wall_seconds | int }}s{% endif %}
+          </td>
+          <td>{{ a.data_scopes | join(', ') or '—' }}</td>
+          <td>
+            {% if a.revoked %}<span class="badge danger">revoked</span>
+            {% elif a.active %}<span class="badge active">{{ a.status }}</span>
+            {% else %}<span class="badge danger">{{ a.status }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No external agents are registered. Add them under <code>[agent_trust]</code> in <code>~/.maverick/config.toml</code> to govern federation / A2A / MCP peers with pinned keys, tool/risk ceilings, and per-run budgets.</p>
+    {% endif %}
+  </div>
+{% endblock %}

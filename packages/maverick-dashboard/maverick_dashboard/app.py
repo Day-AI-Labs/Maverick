@@ -201,7 +201,15 @@ async def _lifespan(app: FastAPI):
     startup steps (orphan-goal reclaim, queue-dispatcher install) run in their
     original registration order; their bodies each guard with try/except so a
     failure never blocks startup. No shutdown work is needed.
+
+    One exception to "never blocks startup": when the deployment has opted into
+    a mandatory enterprise boundary (MAVERICK_REQUIRE_ENTERPRISE=1 /
+    ``[enterprise] require = true``), the preflight is allowed to raise and abort
+    startup -- that is the point of a deploy gate. It is a silent no-op
+    otherwise, so the default fail-open posture is unchanged (kernel rule 1).
     """
+    from maverick.deployment import require_enterprise_or_die
+    require_enterprise_or_die()
     await _reclaim_orphans()
     await _install_queue_dispatcher()
     yield
@@ -1288,6 +1296,42 @@ async def audit_page(request: Request) -> HTMLResponse:
         request, "audit.html",
         {"events": events, "n": n, "day": day, "kind": kind, "kinds": kinds},
     )
+
+
+@app.get("/replay", response_class=HTMLResponse)
+async def replay_page(request: Request) -> HTMLResponse:
+    """Flight recorder: reconstruct a run's action timeline from the signed
+    audit log, verify the tamper-evident chain, and offer an evidence export.
+
+    With no ``?goal=<id>`` it lists recent runs (owner-scoped) to pick from.
+    """
+    from maverick.world_model import open_world
+
+    from .control_plane import build_replay
+    raw = (request.query_params.get("goal") or "").strip()
+    goal_id = int(raw) if raw.isdigit() else None
+    w = open_world()
+    if goal_id is None:
+        goals = w.list_goals(limit=50, order="desc", owner=goal_owner_filter(request))
+        return templates.TemplateResponse(
+            request, "replay.html", {"goal": None, "goals": goals, "replay": None},
+        )
+    goal = w.get_goal(goal_id)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, goal)
+    replay = build_replay(goal_id, window=(goal.created_at, goal.updated_at))
+    return templates.TemplateResponse(
+        request, "replay.html", {"goal": goal, "goals": None, "replay": replay},
+    )
+
+
+@app.get("/trust", response_class=HTMLResponse)
+async def trust_page(request: Request) -> HTMLResponse:
+    """Agent Trust Plane: the cross-agent permission graph -- every external
+    agent allowed to interact, with its tool/risk/budget ceilings + lifecycle."""
+    from .control_plane import trust_overview
+    return templates.TemplateResponse(request, "trust.html", trust_overview())
 
 
 @app.get("/compartments", response_class=HTMLResponse)

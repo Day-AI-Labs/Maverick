@@ -30,6 +30,7 @@ import tempfile
 import time
 from typing import Any
 
+from ..safety.action_gate import gate_computer_action
 from . import Tool
 
 log = logging.getLogger(__name__)
@@ -355,6 +356,15 @@ def _run_computer_action(args: dict[str, Any]) -> str:
     # validating the schema get a clear error even without optional deps.
     if action not in _VALID_ACTIONS:
         return f"ERROR: unknown action {action!r}"
+
+    # Per-action approval gate (mutating actuations only -- clicks/keystrokes/
+    # drag). No-op in the default auto-approve consent mode; routes the action
+    # through the approval queue / TTY prompt when an operator turns gating on
+    # (or enterprise mode flips the default to 'ask'). Read-only actions
+    # (screenshot/cursor_position/wait/mouse_move/scroll) are never gated.
+    denied = gate_computer_action(action, args)
+    if denied is not None:
+        return denied
 
     # Screenshot is the most common action; handle separately (doesn't
     # need pyautogui, just mss).

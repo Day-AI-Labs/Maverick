@@ -5958,7 +5958,12 @@ def enterprise_group() -> None:
 @enterprise_group.command("verify")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
               help="Output format.")
-def enterprise_verify(fmt: str) -> None:
+@click.option("--require", "require", is_flag=True,
+              help="Treat this as a deploy gate: exit non-zero unless every "
+                   "boundary guarantee holds (same as setting "
+                   "MAVERICK_REQUIRE_ENTERPRISE=1). Without it, the command still "
+                   "exits non-zero on any failure but is advisory.")
+def enterprise_verify(fmt: str, require: bool) -> None:
     """Actively verify the regulated-deployment guarantees (exits non-zero if any fail).
 
     Unlike 'maverick compliance' (which maps configured controls to articles),
@@ -5966,11 +5971,28 @@ def enterprise_verify(fmt: str) -> None:
     refuses a cloud provider and that at-rest sealing round-trips on this box,
     upgrading "the flag is on" to "the boundary holds." Wire it into CI / a
     deploy gate the same way as 'maverick compliance --strict'.
+
+    Pass --require to make it an explicit *preflight gate* (the same one the
+    container/dashboard startup runs when MAVERICK_REQUIRE_ENTERPRISE=1): it
+    prints a summary of which guarantees failed and exits non-zero so an unsafe
+    deployment is blocked rather than merely reported.
     """
-    from .deployment import all_passed, render_json, render_text, verify_deployment
+    from .deployment import (
+        _preflight_summary,
+        all_passed,
+        render_json,
+        render_text,
+        verify_deployment,
+    )
     checks = verify_deployment()
     click.echo(render_json(checks) if fmt == "json" else render_text(checks))
-    if not all_passed(checks):
+    passed = all_passed(checks)
+    if require and not passed:
+        # Explicit deploy gate: surface which guarantees failed on stderr, the
+        # same summary require_enterprise_or_die() raises at startup, and block.
+        click.echo("", err=True)
+        click.echo(_preflight_summary(checks), err=True)
+    if not passed:
         sys.exit(1)
 
 

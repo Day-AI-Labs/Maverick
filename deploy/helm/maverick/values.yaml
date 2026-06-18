@@ -55,6 +55,17 @@ secret:
 env: {}
 #   MAVERICK_TENANT_BY_USER: "1"
 
+# Enterprise (regulated-deployment) hardening. Off by default: the kernel runs
+# fail-open and cloud-capable unless you opt in. When required=true the chart
+# sets MAVERICK_REQUIRE_ENTERPRISE=1 so the dashboard refuses to start unless the
+# data-boundary guarantees actually hold (egress lock, at-rest sealing, audit
+# signing). Turn the boundary ON separately via the enterprise config / its env
+# (e.g. env.MAVERICK_ENTERPRISE: "1" + a self-hosted provider); requiring the
+# preflight without enabling the boundary is exactly the misconfiguration this
+# gate is meant to catch.
+enterprise:
+  required: false
+
 # Pod/container security. Matches the image: unprivileged uid/gid 1000.
 # Satisfies the restricted Pod Security Standard.
 podSecurityContext:
