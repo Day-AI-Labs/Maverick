@@ -136,14 +136,19 @@ def tenant_config_path() -> Path | None:
     """Path to the active tenant's config overlay, or None in single-tenant mode.
 
     Resolves to ``~/.maverick/tenants/<tenant>/config.toml`` when a tenant is
-    active (per-user tenancy, ``MAVERICK_TENANT``, or a bound client) and None
-    otherwise, so the legacy single-tenant load is left exactly as it was.
+    active via an explicit ``set_tenant`` scope or the ``MAVERICK_TENANT`` env
+    var, and None otherwise. Deliberately config-free: it reads only the tenant
+    ContextVar and env var, NOT ``current_tenant_id()`` (whose client-binding
+    branch reads config and would recurse back into ``load_config`` on every
+    call -- a hot-path blow-up). A client-bound single deployment already loads
+    its own ``config.toml``, so it needs no separate per-tenant overlay.
     """
     try:
-        from .paths import current_tenant_id, data_dir
-        if current_tenant_id() is None:
+        from .paths import _TENANT, _tenant_segment, maverick_home
+        tid = _TENANT.get() or os.environ.get("MAVERICK_TENANT", "").strip() or None
+        if not tid:
             return None
-        return data_dir("config.toml")
+        return maverick_home() / "tenants" / _tenant_segment(tid) / "config.toml"
     except Exception:  # pragma: no cover -- config resolution never blocks a run
         return None
 
