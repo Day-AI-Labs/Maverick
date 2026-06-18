@@ -3,8 +3,8 @@
 The agent exchanges its run-long grant for a freshly minted, single-tool,
 short-lived, signed token at the tool chokepoint. These tests cover the
 exchange unit in isolation: scoping (the token authorizes ONE tool), expiry,
-single-use replay defense, signature tamper-evidence, the unsigned/no-crypto
-fallback, and the off-by-default enable gate.
+single-use replay defense, signature tamper-evidence, default rejection of
+unsigned tokens, and the off-by-default enable gate.
 """
 import time
 
@@ -107,7 +107,7 @@ def test_expired_token_rejected():
     ) is False
     # still inside the window it verifies.
     assert verify_tool_token(
-        token, "read_file", now=now + 5, replay_cache=_ReplayCache(),
+        token, "read_file", now=now + 5, replay_cache=_ReplayCache(), require_signature=False,
     ) is True
 
 
@@ -117,7 +117,7 @@ def test_token_is_single_use():
     cap = Capability(principal="p")
     cache = _ReplayCache()
     token = mint_tool_token(cap, "read_file", private_key_hex=None)
-    assert verify_tool_token(token, "read_file", replay_cache=cache) is True
+    assert verify_tool_token(token, "read_file", replay_cache=cache, require_signature=False) is True
     # A second verify of the same nonce is a replay.
     assert verify_tool_token(token, "read_file", replay_cache=cache) is False
 
@@ -140,21 +140,35 @@ def test_replay_cache_evicts_expired():
 
 # --- unsigned fallback -----------------------------------------------------
 
-def test_unsigned_token_scopes_and_expires_but_require_signature_rejects(monkeypatch):
+def test_unsigned_token_requires_explicit_unsigned_mode(monkeypatch):
     # Force the no-key path (as if cryptography were absent) so the token is
     # genuinely unsigned -- otherwise mint falls back to the deployment key.
     monkeypatch.setattr("maverick.tool_token._deployment_keypair", lambda: None)
     cap = Capability(principal="p")
     token = mint_tool_token(cap, "read_file", private_key_hex=None)
     assert token.signature is None
-    # Unsigned still gives scope + expiry + single-use.
+    # Unsigned tokens are refused by default so exported verifier consumers do
+    # not accidentally trust attacker-controlled ToolToken objects.
     assert verify_tool_token(
         token, "read_file", replay_cache=_ReplayCache(),
-    ) is True
-    # Where a signed exchange is mandatory, an unsigned token is refused.
-    assert verify_tool_token(
-        token, "read_file", require_signature=True, replay_cache=_ReplayCache(),
     ) is False
+    # Same-process fallback checks must opt in explicitly.
+    assert verify_tool_token(
+        token, "read_file", require_signature=False, replay_cache=_ReplayCache(),
+    ) is True
+
+
+def test_forged_unsigned_token_rejected_by_default():
+    now = time.time()
+    forged = ToolToken(
+        capability=Capability(principal="attacker", allow_tools=frozenset({"shell"})),
+        tool="shell",
+        jti="attacker-fresh-nonce",
+        issued_at=now,
+        expires_at=now + 30,
+        signature=None,
+    )
+    assert verify_tool_token(forged, "shell", replay_cache=_ReplayCache()) is False
 
 
 # --- enable gate -----------------------------------------------------------
