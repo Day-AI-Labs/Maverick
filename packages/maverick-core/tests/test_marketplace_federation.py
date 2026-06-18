@@ -163,6 +163,24 @@ def test_import_rejects_missing_created_at(tmp_path):
     assert not report["ok"] and "created_at" in report["reason"]
 
 
+def test_verify_envelope_rejects_recursion_bomb():
+    """A deeply-nested envelope must be rejected at the depth gate, not crash the
+    digest (json.dumps) with a RecursionError. The pubkey here matches the pinned
+    key, so without the guard verification would reach _digest and blow the stack
+    — an unauthenticated DoS (the pinned pubkey is public)."""
+    from maverick.federation_envelope import verify_envelope
+    deep: dict = {}
+    cur = deep
+    for _ in range(5000):
+        cur["x"] = {}
+        cur = cur["x"]
+    deep.update({"schema": SCHEMA, "origin": "o", "sig": "ab", "pubkey": "ab" * 32})
+    peers = {"o": {"origin": "o", "pubkey": "ab" * 32}}
+    ok, reason = verify_envelope(deep, expected_schema=SCHEMA, peers=peers)
+    assert ok is False
+    assert "deep" in reason  # rejected cleanly, not via RecursionError
+
+
 def test_distinct_origins_have_independent_watermarks(tmp_path):
     """One origin's watermark must not block a different origin's first import."""
     store = tmp_path / "imports.json"
