@@ -40,3 +40,32 @@ def test_governance_impact_text_and_json(tmp_path, monkeypatch):
     assert text.exit_code == 0 and "goal 7" in text.output
     js = CliRunner().invoke(main, ["governance", "impact", "kb-9", "--json"])
     assert js.exit_code == 0 and json.loads(js.output)[0]["goal_id"] == 7
+
+
+def test_governance_lineage_detects_attribution_tamper(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from maverick import governed_actions as ga
+    ga.record_tool_lineage(42, "shell", {"cmd": "x"}, actor="trusted", skills=("sk",), sources=("kb",))
+    ledger = tmp_path / ".maverick" / "lineage" / "42.ndjson"
+    link = json.loads(ledger.read_text(encoding="utf-8"))
+    link["skills"] = ["evil"]
+    link["sources"] = []
+    link["actor"] = "intruder"
+    ledger.write_text(json.dumps(link) + "\n", encoding="utf-8")
+
+    from maverick.cli import main
+    r = CliRunner().invoke(main, ["governance", "lineage", "42"])
+    assert r.exit_code == 0, r.output
+    assert "BROKEN" in r.output and "content hash mismatch" in r.output
+
+
+def test_governance_impact_ignores_tampered_attribution(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from maverick import governed_actions as ga
+    ga.record_tool_lineage(43, "shell", {"cmd": "x"}, skills=("sk",), sources=("kb",))
+    ledger = tmp_path / ".maverick" / "lineage" / "43.ndjson"
+    link = json.loads(ledger.read_text(encoding="utf-8"))
+    link["skills"] = ["evil"]
+    ledger.write_text(json.dumps(link) + "\n", encoding="utf-8")
+
+    assert ga.impact_of("evil", kind="skill") == []
