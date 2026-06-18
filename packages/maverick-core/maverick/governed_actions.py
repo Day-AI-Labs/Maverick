@@ -67,8 +67,12 @@ def _canonical(params: dict, *, max_len: int = 4000) -> str:
     return raw if len(raw) <= max_len else raw[:max_len] + "...(truncated)"
 
 
-def _link_hash(action: str, params_json: str, prev_hash: str) -> str:
-    return hashlib.sha256(f"{action}|{params_json}|{prev_hash}".encode()).hexdigest()
+def _link_hash(fields: dict, prev_hash: str) -> str:
+    """Hash all lineage fields that consumers treat as verified audit data."""
+    payload = dict(fields)
+    payload["prev_hash"] = prev_hash
+    payload.pop("hash", None)
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -174,9 +178,14 @@ class GovernedActions:
                         result: str, sources, skills, approver: str) -> None:
         prev = self.lineage[-1].hash if self.lineage else _GENESIS
         pj = _canonical(params)
-        h = _link_hash(spec.name, pj, prev)
+        ts = time()
+        fields = {"ts": ts, "action": spec.name, "params_json": pj,
+                  "effect": effect, "result": result,
+                  "sources": list(sources), "skills": list(skills),
+                  "approver": approver}
+        h = _link_hash(fields, prev)
         self.lineage.append(LineageLink(
-            ts=time(), action=spec.name, params_json=pj, effect=effect,
+            ts=ts, action=spec.name, params_json=pj, effect=effect,
             result=result, sources=tuple(sources), skills=tuple(skills),
             approver=approver, prev_hash=prev, hash=h))
 
@@ -187,7 +196,11 @@ class GovernedActions:
         for i, link in enumerate(self.lineage):
             if link.prev_hash != expected:
                 return f"BROKEN: link {i} ({link.action}) prev_hash mismatch"
-            if link.hash != _link_hash(link.action, link.params_json, link.prev_hash):
+            fields = {"ts": link.ts, "action": link.action, "params_json": link.params_json,
+                      "effect": link.effect, "result": link.result,
+                      "sources": list(link.sources), "skills": list(link.skills),
+                      "approver": link.approver}
+            if link.hash != _link_hash(fields, link.prev_hash):
                 return f"BROKEN: link {i} ({link.action}) content hash mismatch"
             expected = link.hash
         return f"VALID: {len(self.lineage)} link(s), head {expected[:12]}..."
@@ -223,10 +236,11 @@ def impact_of(identifier: str, *, kind: str = "any",
                 goal_id: object = int(f.stem)
             except ValueError:
                 goal_id = f.stem
-            for line in f.read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                link = json.loads(line)
+            links = [json.loads(line) for line in f.read_text(encoding="utf-8").splitlines()
+                     if line.strip()]
+            if _verify_links(links).startswith("BROKEN"):
+                continue
+            for link in links:
                 skills = link.get("skills") or []
                 sources = link.get("sources") or []
                 via = ("skill" if (want_skill and identifier in skills)
@@ -301,7 +315,8 @@ def record_tool_lineage(goal_id: int, action: str, params: object, *,
         pj = _canonical(params if isinstance(params, dict) else {"input": params})
         rec = {"ts": time(), "actor": str(actor), "action": str(action),
                "params_json": pj, "skills": list(skills), "sources": list(sources),
-               "prev_hash": prev, "hash": _link_hash(str(action), pj, prev)}
+               "prev_hash": prev}
+        rec["hash"] = _link_hash(rec, prev)
         with open(f, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec) + "\n")
     except Exception:  # pragma: no cover -- lineage is best-effort, never fatal
@@ -319,15 +334,18 @@ def load_lineage(goal_id: int, store_dir: str | Path | None = None) -> list[dict
         return []
 
 
-def verify_lineage_file(goal_id: int, store_dir: str | Path | None = None) -> str:
-    """``VALID`` or ``BROKEN`` over a goal's persisted lineage chain -- the
-    tamper-evidence for "what consequential actions did this run take?"."""
-    links = load_lineage(goal_id, store_dir)
+def _verify_links(links: list[dict]) -> str:
     expected = _GENESIS
     for i, link in enumerate(links):
         if link.get("prev_hash") != expected:
             return f"BROKEN: link {i} ({link.get('action')}) prev_hash mismatch"
-        if link.get("hash") != _link_hash(str(link.get("action")), str(link.get("params_json")), expected):
+        if link.get("hash") != _link_hash(link, expected):
             return f"BROKEN: link {i} ({link.get('action')}) content hash mismatch"
         expected = str(link.get("hash"))
     return f"VALID: {len(links)} link(s)" + (f", head {expected[:12]}..." if links else " (empty)")
+
+
+def verify_lineage_file(goal_id: int, store_dir: str | Path | None = None) -> str:
+    """``VALID`` or ``BROKEN`` over a goal's persisted lineage chain -- the
+    tamper-evidence for "what consequential actions did this run take?"."""
+    return _verify_links(load_lineage(goal_id, store_dir))
