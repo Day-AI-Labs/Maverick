@@ -34,7 +34,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .local import ExecResult
+from .local import ExecResult, scrub_env
 
 log = logging.getLogger(__name__)
 
@@ -223,8 +223,12 @@ class FirecrackerBackend:
             )
         args += ["--", "/bin/sh", "-c", cmd]
         try:
+            # Scrub secrets from the host firectl invocation, matching every
+            # other backend's host-CLI calls (docker/podman/k8s/ssh) -- the
+            # CLI shouldn't inherit ANTHROPIC_API_KEY et al.
             proc = subprocess.run(
                 args, capture_output=True, text=True, timeout=self.timeout,
+                env=scrub_env(),
             )
         except subprocess.TimeoutExpired:
             return ExecResult(exit_code=124, stdout="", stderr="firecracker timeout")
@@ -258,6 +262,7 @@ class FirecrackerBackend:
         try:
             proc = subprocess.run(
                 args, capture_output=True, text=True, timeout=self.timeout,
+                env=scrub_env(),
             )
         except subprocess.TimeoutExpired:
             return ExecResult(exit_code=124, stdout="", stderr="docker timeout")

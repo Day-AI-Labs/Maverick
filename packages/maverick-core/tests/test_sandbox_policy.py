@@ -37,6 +37,22 @@ def test_local_refused_under_enterprise_mode(monkeypatch):
         build_sandbox(backend="local")
 
 
+def test_unknown_backend_refused_when_require_container(monkeypatch):
+    # Regression: the gate must also catch the degrade-to-local path. A typo'd
+    # backend name matched no known backend and would otherwise fall through to
+    # an unsandboxed host LocalBackend -- the exact fail-open the gate prevents.
+    monkeypatch.setenv("MAVERICK_REQUIRE_CONTAINER_BACKEND", "1")
+    with pytest.raises(SandboxPolicyError):
+        build_sandbox(backend="dcoker")  # typo for "docker"
+
+
+def test_unknown_backend_still_degrades_to_local_without_policy():
+    # With no policy active, an unrecognized backend keeps the documented
+    # warn-and-degrade behavior (so the fix is scoped to require-container).
+    sb = build_sandbox(backend="dcoker")
+    assert sb is not None
+
+
 def test_container_backend_not_refused_by_policy(monkeypatch):
     # The gate refuses ONLY 'local'. A container backend must not trip it; in an
     # env without a Docker daemon build_sandbox may raise a different error
