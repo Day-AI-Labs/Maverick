@@ -18,6 +18,16 @@
 Everything else (channels, dashboard, IDE extensions, installers, deploy targets, SDKs)
 is plumbing *inside* Product 1, not a separate thing to sell.
 
+> **Data & learning principle (non-negotiable).** Each customer's usage improves
+> *their own* isolated workforce — on their own data, inside their own boundary.
+> Maverick never pools, aggregates, or learns across customers: no hivemind, no
+> telemetry, and one tenant's learning never feeds another's runs. The compounding
+> benefit is the *customer's* (a bespoke, portable, sticky instance they own); our
+> defensibility is the specialist packs, the governance/compliance control plane,
+> and the switching cost that earned value creates — never a data network effect.
+> Any cross-instance sharing (federated insight exchange) is opt-in, operator-run,
+> signed, and consolidated lessons only — never raw data, never automatic.
+
 ---
 
 ## Product 1 — Maverick Platform
