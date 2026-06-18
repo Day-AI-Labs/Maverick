@@ -14,6 +14,7 @@ Surfaced as ``maverick enterprise verify``.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass
 
 # The one reference profile. Enabling these together makes
@@ -244,6 +245,116 @@ def render_json(checks: list[GuaranteeCheck]) -> str:
     )
 
 
+# ----- Enforceable preflight ------------------------------------------------
+# Enterprise hardening is opt-in (CLAUDE.md kernel rule 1: never *require* it
+# unless explicitly asked). These helpers turn it into a deploy/startup gate
+# *only when an operator demands it* via MAVERICK_REQUIRE_ENTERPRISE=1 (or
+# ``[enterprise] require = true``); they are a no-op otherwise, so the default
+# fail-open posture is unchanged.
+
+# Env flag that promotes the verifier into a hard startup gate. Distinct from
+# ``MAVERICK_ENTERPRISE`` (which *turns the boundary on*): this one asserts the
+# boundary must already hold, and aborts the deployment if it does not.
+REQUIRE_ENTERPRISE_ENV = "MAVERICK_REQUIRE_ENTERPRISE"
+
+_TRUE_WORDS = frozenset({"1", "true", "yes", "on", "enable", "enabled", "y", "t"})
+
+
+class EnterpriseRequiredError(RuntimeError):
+    """A required enterprise preflight failed -- the deployment is not safe to run.
+
+    Carries the failing :class:`GuaranteeCheck` list and a human-readable summary
+    so a caller (CLI, dashboard startup, container entrypoint) can log exactly
+    which boundary guarantee did not hold before it aborts.
+    """
+
+    def __init__(self, checks: list[GuaranteeCheck], summary: str):
+        super().__init__(summary)
+        self.checks = checks
+        self.summary = summary
+
+
+def enterprise_required() -> bool:
+    """True if this deployment has *opted in* to a blocking enterprise preflight.
+
+    Reads ``MAVERICK_REQUIRE_ENTERPRISE`` (a recognized truthy value wins over
+    config) then ``[enterprise] require`` in ``~/.maverick/config.toml``. Off by
+    default -- with neither set the preflight is a no-op and the kernel keeps its
+    fail-open posture. Note this is independent of whether enterprise mode is
+    *on*: requiring the preflight while the boundary is off is exactly the
+    misconfiguration the gate is meant to catch.
+    """
+    env = os.environ.get(REQUIRE_ENTERPRISE_ENV)
+    if env is not None and env.strip() != "":
+        return env.strip().lower() in _TRUE_WORDS
+    try:
+        from .config import load_config
+        val = ((load_config() or {}).get("enterprise") or {}).get("require")
+    except Exception:
+        return False
+    if isinstance(val, str):
+        return val.strip().lower() in _TRUE_WORDS
+    return bool(val)
+
+
+def _preflight_summary(checks: list[GuaranteeCheck]) -> str:
+    failed = [c for c in checks if not c.passed]
+    head = (
+        f"enterprise preflight FAILED: {len(failed)} of {len(checks)} "
+        "data-boundary guarantees do not hold; refusing to start"
+    )
+    lines = [head, ""]
+    lines += [f"  - {c.name}: {c.detail}" for c in failed]
+    lines += [
+        "",
+        "Apply the regulated profile (docs/regulated-deployment.md) and re-run, "
+        "or unset MAVERICK_REQUIRE_ENTERPRISE / [enterprise] require to allow a "
+        "non-hardened deployment.",
+    ]
+    return "\n".join(lines)
+
+
+def preflight_enterprise(
+    *, force: bool | None = None
+) -> tuple[bool, str | None]:
+    """Non-raising enterprise preflight: ``(ok, report)``.
+
+    ``ok`` is True (and ``report`` is None) when the preflight is not required --
+    so callers that always invoke it stay fail-open by default. When required (or
+    ``force=True``), runs :func:`verify_deployment` and returns ``ok=False`` with a
+    human-readable failure ``report`` if any guarantee does not hold, else
+    ``ok=True`` and a short pass summary.
+
+    ``force`` overrides the env/config detection (e.g. a ``--require`` CLI flag).
+    """
+    required = enterprise_required() if force is None else force
+    if not required:
+        return True, None
+    checks = verify_deployment()
+    if all_passed(checks):
+        return True, f"enterprise preflight OK: {len(checks)} guarantees hold"
+    return False, _preflight_summary(checks)
+
+
+def require_enterprise_or_die(*, force: bool | None = None) -> None:
+    """Blocking enterprise preflight. NO-OP unless required.
+
+    Required = ``MAVERICK_REQUIRE_ENTERPRISE`` truthy or ``[enterprise] require =
+    true`` (or ``force=True``). When required and any data-boundary guarantee
+    fails (enterprise mode off, audit signing off, egress not locked, at-rest
+    sealing broken), raises :class:`EnterpriseRequiredError` with a summary of
+    what failed so an unsafe deployment is aborted at startup. Otherwise returns
+    silently -- the kernel's default fail-open behaviour is unchanged.
+    """
+    if force is None:
+        force = enterprise_required()
+    if not force:
+        return
+    checks = verify_deployment()
+    if not all_passed(checks):
+        raise EnterpriseRequiredError(checks, _preflight_summary(checks))
+
+
 __all__ = [
     "REGULATED_PROFILE",
     "GuaranteeCheck",
@@ -251,4 +362,8 @@ __all__ = [
     "all_passed",
     "render_text",
     "render_json",
+    "EnterpriseRequiredError",
+    "enterprise_required",
+    "preflight_enterprise",
+    "require_enterprise_or_die",
 ]

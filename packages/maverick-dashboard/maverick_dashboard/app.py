@@ -201,7 +201,15 @@ async def _lifespan(app: FastAPI):
     startup steps (orphan-goal reclaim, queue-dispatcher install) run in their
     original registration order; their bodies each guard with try/except so a
     failure never blocks startup. No shutdown work is needed.
+
+    One exception to "never blocks startup": when the deployment has opted into
+    a mandatory enterprise boundary (MAVERICK_REQUIRE_ENTERPRISE=1 /
+    ``[enterprise] require = true``), the preflight is allowed to raise and abort
+    startup -- that is the point of a deploy gate. It is a silent no-op
+    otherwise, so the default fail-open posture is unchanged (kernel rule 1).
     """
+    from maverick.deployment import require_enterprise_or_die
+    require_enterprise_or_die()
     await _reclaim_orphans()
     await _install_queue_dispatcher()
     yield

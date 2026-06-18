@@ -46,6 +46,12 @@ spec:
               value: "1"
             {{- end }}
             {{- end }}
+            {{- if .Values.enterprise.required }}
+            # Hard preflight gate: dashboard startup aborts unless the enterprise
+            # data-boundary guarantees hold (see values.yaml: enterprise.required).
+            - name: MAVERICK_REQUIRE_ENTERPRISE
+              value: "1"
+            {{- end }}
             {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
