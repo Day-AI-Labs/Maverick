@@ -4593,6 +4593,17 @@ def main() -> None:
             "MAVERICK_DASHBOARD_TOKEN set."
         )
 
+    # Apply Maverick's shared logging config (JSON via MAVERICK_LOG_FORMAT=json,
+    # correlation-id context filter, secret scrubbing) at the real process
+    # entrypoint — not in the lifespan, so the in-process TestClient never
+    # reconfigures global logging. The most network-exposed process otherwise
+    # inherited raw uvicorn logging with none of the CLI's hygiene.
+    try:
+        from maverick.logging_config import configure_logging
+        configure_logging()
+    except Exception:  # pragma: no cover - logging setup never blocks startup
+        pass
+
     import uvicorn
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
