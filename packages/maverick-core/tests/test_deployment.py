@@ -84,7 +84,12 @@ def test_regulated_profile_passes_seals_data_and_is_compliant(monkeypatch, tmp_p
     monkeypatch.setenv("MAVERICK_ANON", "1")
     monkeypatch.setattr(
         "maverick.config.load_config",
-        lambda *a, **k: {"retention": {"audit_days": 365}},
+        lambda *a, **k: {
+            "retention": {"audit_days": 365},
+            # A regulated deployment must run agent code in a container, not the
+            # unsandboxed 'local' backend (Sandbox isolation guarantee).
+            "sandbox": {"backend": "docker"},
+        },
     )
 
     # Every boundary guarantee holds (the dict comprehension surfaces details on

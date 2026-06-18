@@ -37,13 +37,16 @@ across major clients; we ship Streamable HTTP as the GA transport.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import ipaddress
 import json
 import logging
 import os
 import secrets
-from collections import OrderedDict
+import threading
+import time
+from collections import OrderedDict, deque
 from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
@@ -204,6 +207,46 @@ def _http_tasks_enabled() -> bool:
     """
     return os.environ.get("MAVERICK_MCP_HTTP_TASKS", "").strip().lower() in (
         "1", "true", "yes", "on")
+
+
+# --- per-caller request rate limiting (sliding 60s window) -------------------
+_RATE_LOCK = threading.Lock()
+_RATE_HITS: dict[str, deque] = {}
+
+
+def _rate_limit_per_min() -> int:
+    """Requests/minute allowed per caller. Default 600; 0 disables. An authed
+    caller can otherwise spam goal-spawning RPCs with unbounded concurrency."""
+    try:
+        return max(0, int(os.environ.get("MAVERICK_MCP_RATE_LIMIT", "600")))
+    except ValueError:
+        return 600
+
+
+def _rate_key(authorization: str | None, request) -> str:
+    """Bucket by bearer token (hashed) when present, else by client IP."""
+    if authorization and authorization.startswith("Bearer "):
+        tok = authorization[len("Bearer "):].strip()
+        return "tok:" + hashlib.sha256(tok.encode("utf-8")).hexdigest()[:16]
+    host = getattr(getattr(request, "client", None), "host", None) or "?"
+    return "ip:" + str(host)
+
+
+def _rate_ok(key: str) -> bool:
+    """True if ``key`` is under its per-minute budget (and records the hit)."""
+    limit = _rate_limit_per_min()
+    if limit <= 0:
+        return True
+    now = time.monotonic()
+    with _RATE_LOCK:
+        dq = _RATE_HITS.setdefault(key, deque())
+        cutoff = now - 60.0
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= limit:
+            return False
+        dq.append(now)
+        return True
 
 
 def _check_bearer(authorization: str | None) -> bool:
@@ -484,6 +527,10 @@ def build_app(server) -> FastAPI:
             )
         if not _check_bearer(authorization):
             raise HTTPException(status_code=401, detail="invalid bearer")
+        # Per-caller rate limit (after auth so unauthenticated probes can't
+        # exhaust a victim's budget). Returns 429 over the per-minute cap.
+        if not _rate_ok(_rate_key(authorization, request)):
+            raise HTTPException(status_code=429, detail="rate limit exceeded")
         # Opt-in, consent-gated client-language analytics (off by default; no-op
         # and never raises when disabled). Feeds the language-bindings decision.
         try:

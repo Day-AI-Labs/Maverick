@@ -6,6 +6,46 @@ from __future__ import annotations
 import pytest
 from maverick import grpc_tls
 
+# (_FakeServer is defined further down with the other bind_port tests.)
+
+
+@pytest.fixture
+def _no_tls_config(monkeypatch):
+    # Hermetic for the bind tests: no TLS configured, not client-bound/enterprise,
+    # no insecure opt-out -- so only the loopback check decides the outcome.
+    monkeypatch.setattr(grpc_tls, "_section", lambda name: {})
+    monkeypatch.setattr(grpc_tls, "tls_required", lambda *a, **k: False)
+    monkeypatch.delenv("MAVERICK_ALLOW_INSECURE_GRPC", raising=False)
+
+
+def test_host_parsing():
+    assert grpc_tls._is_loopback_address("127.0.0.1:50051")
+    assert grpc_tls._is_loopback_address("localhost:50051")
+    assert grpc_tls._is_loopback_address("[::1]:50051")
+    assert not grpc_tls._is_loopback_address("0.0.0.0:50051")
+    assert not grpc_tls._is_loopback_address("10.0.0.5:50051")
+
+
+def test_loopback_plaintext_allowed(_no_tls_config):
+    s = _FakeServer()
+    assert grpc_tls.bind_port(s, "127.0.0.1:50051", "grpc") is False
+    assert s.insecure == "127.0.0.1:50051"
+
+
+def test_nonloopback_plaintext_refused_fail_closed(_no_tls_config):
+    s = _FakeServer()
+    with pytest.raises(grpc_tls.TlsConfigError):
+        grpc_tls.bind_port(s, "0.0.0.0:50051", "grpc")
+    assert s.insecure is None  # nothing bound
+
+
+def test_nonloopback_plaintext_allowed_with_explicit_optout(monkeypatch, _no_tls_config):
+    monkeypatch.setenv("MAVERICK_ALLOW_INSECURE_GRPC", "1")
+    s = _FakeServer()
+    assert grpc_tls.bind_port(s, "0.0.0.0:50051", "grpc") is False
+    assert s.insecure == "0.0.0.0:50051"
+
+
 # ---- enabled / required logic (hermetic via cfg=) -------------------------
 
 
