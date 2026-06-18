@@ -230,6 +230,12 @@ Config equivalents live under `[effort]` (`enabled`, `default`, `<role>`) and
 | Env var | Default | Description |
 | --- | --- | --- |
 | `MAVERICK_WEBHOOK_SECRET` | unset | Optional HMAC signing key for inbound webhooks. |
+| `MAVERICK_WEBHOOK_WORKERS` | config `[webhooks] workers` (4) | Outbound webhook dispatch thread-pool size. |
+| `MAVERICK_WEBHOOK_MAX_INFLIGHT` | config `[webhooks] max_inflight` (16×workers) | Cap on queued+running dispatches; excess is dropped + logged (bounds memory under a burst against a slow receiver). |
+| `MAVERICK_GRPC_MAX_WORKERS` | config `[grpc] max_workers` (8) | gRPC goal-API server thread-pool size. |
+| `MAVERICK_GRPC_MAX_CONCURRENT` | config `[grpc] max_concurrent_rpcs` (unbounded) | Max in-flight gRPC RPCs (RESOURCE_EXHAUSTED backpressure past the cap). |
+| `MAVERICK_FEDERATION_MAX_WORKERS` | config `[federation] max_workers` (8) | Federation server thread-pool size. |
+| `MAVERICK_FEDERATION_MAX_CONCURRENT` | config `[federation] max_concurrent_rpcs` (unbounded) | Max in-flight federation RPCs. |
 | `MAVERICK_GH_APP_WEBHOOK_SECRET` | unset | Webhook secret for the GitHub App; requests are rejected if unset. |
 | `MAVERICK_TRIGGER_LABELS` / `MAVERICK_GH_TRIGGER_LABELS` | built-in default | Comma-separated issue labels that trigger a GitHub-App run. |
 | `MAVERICK_BOT_LINEAR_ID` | unset | Linear user id identifying "the bot" for issue webhooks. |
