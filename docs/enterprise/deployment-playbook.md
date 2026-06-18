@@ -189,6 +189,7 @@ and capability enforcement.
 - **gRPC API** (if exposed): set `[grpc] tls = true` with cert/key, and
   `tls_client_ca` for **mTLS**. Set `MAVERICK_GRPC_BEARER_TOKEN`. A non-loopback
   **plaintext bind is now refused** unless `MAVERICK_ALLOW_INSECURE_GRPC=1`.
+  Per-caller rate limit via `MAVERICK_GRPC_RATE_LIMIT` (default 600/min).
 - **MCP server** (if exposed): set `MAVERICK_MCP_TOKEN`, restrict
   `MAVERICK_MCP_ALLOWED_ORIGINS` to your gateway, and prefer per-agent tokens via
   the Agent Trust Plane (`[agent_trust] enforce = true`). Per-caller rate limit
@@ -277,8 +278,10 @@ be online-safe for rolling upgrades. Rollback = stop → restore the snapshot �
 start the prior version.
 
 **Secret / key rotation:** API keys — edit `~/.maverick/.env` and reload (no
-downtime). The audit signing key and at-rest encryption key are long-lived with
-**no built-in rotation** — plan an offline re-seal if rotation is required (§10).
+downtime). **Audit signing key:** `maverick audit rotate-key` (additive — old
+public keys retained, chain stays verifiable; restart `maverick serve` to sign
+with the new key). **At-rest encryption key:** no graceful rotation yet (sealed
+blobs carry no key-id) — back up, then re-seal offline with both keys held (§10).
 
 **Tenant offboarding (GDPR Art. 15/17/20):**
 ```bash
@@ -306,16 +309,16 @@ Honest, current state — what's now enforced in code vs. what genuinely remains
 | **Sandbox** | `build_sandbox` now **refuses the unsandboxed `local` backend fail-closed** under enterprise mode / `MAVERICK_REQUIRE_CONTAINER_BACKEND=1` / `[sandbox] require_container=true` (`SandboxPolicyError`). `maverick enterprise verify` reports a "Sandbox isolation" guarantee. Still set `[sandbox] backend=docker` explicitly. |
 | **gRPC TLS** | A **non-loopback plaintext bind is now refused** (`TlsConfigError`) unless TLS is configured or `MAVERICK_ALLOW_INSECURE_GRPC=1` is set. Set `[grpc] tls=true` + `tls_client_ca` for mTLS. |
 | **MCP rate limiting** | Per-caller sliding-window limiter (bearer/IP), `MAVERICK_MCP_RATE_LIMIT` (default 600/min; 0 disables) → 429 over cap. |
+| **gRPC rate limiting** | Per-caller sliding-window limiter at the auth chokepoint (agent id / hashed peer), `MAVERICK_GRPC_RATE_LIMIT` (default 600/min; 0 disables) → RESOURCE_EXHAUSTED. Complements `maximum_concurrent_rpcs`. |
 | **Plugins** | Correction: load-time **allowlist** (`[plugins] enabled` / `MAVERICK_PLUGINS_ALLOW`) **and permission-grant enforcement are real and default-deny** (`enforce_permissions=true`) — an ungranted permission *skips* the plugin. (Earlier draft mis-stated this as unenforced.) |
 
 ### Remaining (disclose to the customer / roadmap)
 | Area | Gap | Interim mitigation |
 |---|---|---|
-| gRPC | Per-caller **rate limiting** not built in (only `max_concurrent_rpcs` + thread pool). | Enforce at the gateway; cap via Agent Trust per-agent ceilings. |
 | MCP | Shared bearer grants full tool access; per-tenant gating only via Agent Trust Plane (opt-in). | `[agent_trust] enforce=true` with per-agent tokens. |
 | Plugins | Granted plugins run **in-process** — no runtime syscall/network sandbox (load-time grants only). | Vet + code-review allowlisted plugins. |
 | Firecracker | Silently falls back to Docker if the VM layer is unavailable. | Monitor logs; alert on fallback. |
-| Keys | No **automated rotation** for audit-signing / at-rest keys. | Manual re-seal (`maverick encryption migrate`); schedule offline. |
+| Keys | **Audit-signing key rotation** now ships (`maverick audit rotate-key` — additive, old pubs retained, chain stays verifiable). **At-rest** key rotation is still manual (sealed blobs carry no key-id, so it's a both-keys-held re-seal, not graceful). | Rotate audit key via the command; for at-rest, back up then re-seal offline. |
 | Billing | Metering + invoicing exist; **no payment integration** (Stripe). | Export usage; bill externally. |
 | Compliance | **DPA / sub-processor / SLA templates** now ship in `docs/enterprise/legal/`; **SOC 2 Type II + penetration test require external auditors** (not code). | Engage auditor/pen-test firm; complete the templates with counsel. |
 
