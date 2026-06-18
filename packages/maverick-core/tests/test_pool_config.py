@@ -2,9 +2,6 @@
 gRPC / federation worker + concurrency settings resolved from env/config."""
 from __future__ import annotations
 
-import pytest
-
-
 # ---- webhook dispatch: configurable workers + bounded queue ---------------
 
 
@@ -60,7 +57,7 @@ def test_grpc_worker_setting_env_and_config(monkeypatch):
 def test_grpc_concurrent_defaults_none(monkeypatch):
     from maverick.grpc_api import server
     monkeypatch.delenv("MAVERICK_GRPC_MAX_CONCURRENT", raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     assert server._grpc_int_setting(
         "MAVERICK_GRPC_MAX_CONCURRENT", "max_concurrent_rpcs", None) is None
 
