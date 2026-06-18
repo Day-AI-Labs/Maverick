@@ -18,12 +18,12 @@ from __future__ import annotations
 
 import ast
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any
 
 from . import Tool
+from .fs import read_text_contained, write_text_contained
 
 log = logging.getLogger(__name__)
 
@@ -57,10 +57,12 @@ _AST_EDIT_SCHEMA: dict[str, Any] = {
 _IDENT_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b")
 
 
-def _read(path: Path) -> str | None:
+def _read(sandbox, path: Path) -> str | None:
+    # Read through a workspace-contained descriptor (TOCTOU-safe): a ValueError
+    # means the resolved path escaped the workspace via a swapped symlink.
     try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
+        return read_text_contained(sandbox, path)
+    except (ValueError, OSError, UnicodeDecodeError):
         return None
 
 
@@ -226,7 +228,7 @@ def _make_run(sandbox):
             target = _resolve_workdir_path(sandbox, path_arg)
         except ValueError as e:
             return f"ERROR: {e}"
-        src = _read(target)
+        src = _read(sandbox, target)
         if src is None:
             return f"ERROR: cannot read {path_arg}"
         if op == "info":
@@ -255,9 +257,8 @@ def _make_run(sandbox):
                 f"{path_arg} (was {len(src)} bytes; delta {len(new_src) - len(src):+d})"
             )
         try:
-            os.makedirs(target.parent, exist_ok=True)
-            target.write_text(new_src, encoding="utf-8")
-        except OSError as e:
+            write_text_contained(sandbox, target, new_src)
+        except (ValueError, OSError) as e:
             return f"ERROR: write failed: {e}"
         return (
             f"wrote {path_arg}: {len(new_src)} bytes "
