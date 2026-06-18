@@ -55,8 +55,9 @@ From their IdP (Okta/Entra/Auth0/Google):
 
 ### 2.3 Database (for scale / HA)
 - ◇ A **Postgres 14+** instance (managed RDS/CloudSQL/Azure DB recommended),
-  multi-AZ, automated backups w/ PITR → DSN `postgres://user:pass@host:5432/db`
-  for `MAVERICK_PG_DSN`. SQLite (no dependency) is fine for a single-replica
+  multi-AZ, automated backups w/ PITR → a DSN of the form
+  `postgres://…@HOST:5432/DBNAME` (credentials from their secret store) for
+  `MAVERICK_PG_DSN`. SQLite (no dependency) is fine for a single-replica
   per-customer instance.
 
 ### 2.4 Network / TLS
