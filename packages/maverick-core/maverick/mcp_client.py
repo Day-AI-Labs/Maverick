@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2024-11-05"
 DEFAULT_TIMEOUT = 30.0
+_CANCEL_NOTICE_TIMEOUT = 1.0
 # Bound remote HTTP MCP replies so a malicious server cannot keep an SSE
 # response open forever or force the client to buffer unbounded data.
 _MAX_HTTP_RESPONSE_BYTES = 1024 * 1024
@@ -505,14 +506,11 @@ class MCPClient:
             # synchronously -- otherwise it leaks in self._pending until the
             # connection closes (a slow drain on a long-lived client whose
             # callers are routinely cancelled). The pop is the leak fix; the
-            # server-side cancel notification is best-effort and an extra
-            # `await` inside a cancelled task is fragile, so it is shielded and
-            # never allowed to mask the original CancelledError.
+            # server-side cancel notification is best-effort, so send it from
+            # a bounded background task; awaiting it here would let blocked
+            # cleanup I/O delay propagation of the original cancellation.
             self._pending.pop(req_id, None)
-            try:
-                await asyncio.shield(self._send_cancel(req_id))
-            except Exception:  # noqa: BLE001 -- request already abandoned
-                pass
+            self._schedule_cancel_notice(req_id)
             raise
 
     async def _notify(self, method: str, params: dict) -> None:
@@ -533,6 +531,21 @@ class MCPClient:
                 })
         except Exception:  # noqa: BLE001 -- the request is already lost
             pass
+
+    def _schedule_cancel_notice(self, request_id: int) -> None:
+        """Send a best-effort cancellation notice without blocking callers."""
+
+        async def _bounded_send_cancel() -> None:
+            try:
+                await asyncio.wait_for(
+                    self._send_cancel(request_id),
+                    timeout=_CANCEL_NOTICE_TIMEOUT,
+                )
+            except Exception:  # noqa: BLE001 -- request already abandoned
+                pass
+
+        task = asyncio.create_task(_bounded_send_cancel())
+        task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
 
     async def _send(self, payload: dict) -> None:
         assert self._proc is not None and self._proc.stdin is not None

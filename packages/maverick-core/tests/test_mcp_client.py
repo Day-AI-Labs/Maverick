@@ -293,6 +293,10 @@ class TestTimeoutCancellation:
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
+            # The best-effort cancellation notice is sent by a background task
+            # so caller cancellation propagation is never blocked by cleanup
+            # I/O. Yield once so the non-blocking fake send can run.
+            await asyncio.sleep(0)
             return dict(c._pending)
 
         leftover = asyncio.run(scenario())
@@ -302,3 +306,43 @@ class TestTimeoutCancellation:
         cancels = [p for p in sent if p.get("method") == "notifications/cancelled"]
         assert len(cancels) == 1
         assert cancels[0]["params"]["requestId"] == 1
+
+    def test_caller_cancel_does_not_wait_for_cancel_notice_lock(self, monkeypatch):
+        # The server-side cancel notification is best-effort. If its I/O path
+        # is blocked, propagating the caller's CancelledError must not wait for
+        # that cleanup to finish.
+        sent: list[dict] = []
+
+        async def fake_send(self, payload):
+            sent.append(payload)
+
+        monkeypatch.setattr(MCPClient, "_check_alive", lambda self: None)
+        monkeypatch.setattr(MCPClient, "_send", fake_send)
+        monkeypatch.setattr(MCPClient, "_ensure_reader", lambda self: None)
+        c = MCPClient(MCPServerSpec(name="x", command="true"), timeout=30.0)
+
+        async def scenario():
+            task = asyncio.ensure_future(
+                c._request("tools/call", {"name": "t"})
+            )
+            await asyncio.sleep(0.01)
+            assert c._pending, "request should have registered a pending Future"
+
+            await c._lock.acquire()
+            try:
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(task, timeout=0.1)
+                assert c._pending == {}
+                # Initial request was sent, but the cleanup notification is
+                # stuck behind the lock we still hold.
+                assert [p.get("method") for p in sent] == ["tools/call"]
+            finally:
+                c._lock.release()
+
+            await asyncio.sleep(0)
+            cancels = [p for p in sent if p.get("method") == "notifications/cancelled"]
+            assert len(cancels) == 1
+            assert cancels[0]["params"]["requestId"] == 1
+
+        asyncio.run(scenario())
