@@ -5624,6 +5624,28 @@ def audit_seal(dry_run: bool) -> None:
     click.echo(f"{'Would seal' if dry_run else 'Sealed'} {done} segment(s).")
 
 
+@audit.command("rotate-key")
+def audit_rotate_key() -> None:
+    """Rotate the audit signing key (Ed25519).
+
+    Mints a new keypair and makes it the active signer. Safe and additive: prior
+    public keys are retained so 'audit verify' still validates rows signed under
+    the old key (each row carries its key_id) -- no audit data is rewritten.
+    Takes effect for the next day-file / process restart; restart a running
+    'maverick serve' to begin signing with the new key.
+    """
+    from .audit.signing import _have_crypto, rotate_audit_keypair
+    if not _have_crypto():
+        raise click.ClickException(
+            "audit signing needs the 'cryptography' package (pip install "
+            "'pyjwt[crypto]' or cryptography)."
+        )
+    key_id = rotate_audit_keypair()
+    click.echo(f"rotated audit signing key; new active key_id = {key_id}")
+    click.echo("old public keys retained for verification. Restart "
+               "'maverick serve' to sign new entries with it.")
+
+
 @audit.command("export")
 @click.option("--format", "fmt", type=click.Choice(["json", "cef"]), default="json",
               help="Output format for SIEM ingestion (default: json).")

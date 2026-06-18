@@ -278,8 +278,10 @@ be online-safe for rolling upgrades. Rollback = stop → restore the snapshot �
 start the prior version.
 
 **Secret / key rotation:** API keys — edit `~/.maverick/.env` and reload (no
-downtime). The audit signing key and at-rest encryption key are long-lived with
-**no built-in rotation** — plan an offline re-seal if rotation is required (§10).
+downtime). **Audit signing key:** `maverick audit rotate-key` (additive — old
+public keys retained, chain stays verifiable; restart `maverick serve` to sign
+with the new key). **At-rest encryption key:** no graceful rotation yet (sealed
+blobs carry no key-id) — back up, then re-seal offline with both keys held (§10).
 
 **Tenant offboarding (GDPR Art. 15/17/20):**
 ```bash
@@ -316,7 +318,7 @@ Honest, current state — what's now enforced in code vs. what genuinely remains
 | MCP | Shared bearer grants full tool access; per-tenant gating only via Agent Trust Plane (opt-in). | `[agent_trust] enforce=true` with per-agent tokens. |
 | Plugins | Granted plugins run **in-process** — no runtime syscall/network sandbox (load-time grants only). | Vet + code-review allowlisted plugins. |
 | Firecracker | Silently falls back to Docker if the VM layer is unavailable. | Monitor logs; alert on fallback. |
-| Keys | No **automated rotation** for audit-signing / at-rest keys. | Manual re-seal (`maverick encryption migrate`); schedule offline. |
+| Keys | **Audit-signing key rotation** now ships (`maverick audit rotate-key` — additive, old pubs retained, chain stays verifiable). **At-rest** key rotation is still manual (sealed blobs carry no key-id, so it's a both-keys-held re-seal, not graceful). | Rotate audit key via the command; for at-rest, back up then re-seal offline. |
 | Billing | Metering + invoicing exist; **no payment integration** (Stripe). | Export usage; bill externally. |
 | Compliance | **DPA / sub-processor / SLA templates** now ship in `docs/enterprise/legal/`; **SOC 2 Type II + penetration test require external auditors** (not code). | Engage auditor/pen-test firm; complete the templates with counsel. |
 

@@ -183,6 +183,23 @@ def _save_keypair(priv: bytes, pub: bytes, key_id: str) -> Path:
     return priv_path
 
 
+def rotate_audit_keypair() -> str:
+    """Mint a fresh Ed25519 signing keypair and make it the active signer.
+
+    Safe and additive: the new key becomes active because it is the most-recent
+    ``.key`` (see :func:`_load_or_create_keypair`), while every prior ``<id>.pub``
+    is retained so ``verify_chain`` still validates rows signed under old keys
+    (each row carries its ``key_id``). No existing audit data is rewritten.
+
+    Returns the new ``key_id``. Takes effect for new :class:`AuditSigner`
+    instances (next day-file / process restart); a long-running signer keeps its
+    in-memory key until restarted.
+    """
+    priv, pub, key_id = _generate_keypair()
+    _save_keypair(priv, pub, key_id)
+    return key_id
+
+
 def _load_or_create_keypair() -> tuple[bytes, bytes, str]:
     """Load the most-recent keypair or generate one if none exists."""
     key_dir = _key_dir()
@@ -771,4 +788,5 @@ __all__ = [
     "ChainBreak",
     "KEY_DIR",
     "reanchor_file",
+    "rotate_audit_keypair",
 ]
