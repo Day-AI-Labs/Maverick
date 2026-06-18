@@ -4423,6 +4423,45 @@ async def livez() -> dict:
     return {"status": "ok"}
 
 
+def _readiness_deep_checks() -> tuple[bool, dict[str, str]]:
+    """The deep readiness checks ``maverick doctor`` runs but a shallow health
+    probe misses — the silent footguns where a pod accepts traffic yet refuses
+    all work: client binding enforced-but-unset, the shield required-but-absent,
+    and the Agent Trust Plane engaged with an empty registry (denies every
+    external agent). Returns ``(ok, checks)``; never raises."""
+    checks: dict[str, str] = {}
+    ok = True
+    try:
+        from maverick.client import client_binding_enforced, client_id
+        if client_binding_enforced() and not client_id():
+            checks["client_binding"] = "fail: enforced but no valid client id"
+            ok = False
+        else:
+            checks["client_binding"] = "ok"
+    except Exception as e:  # pragma: no cover - never break the probe
+        checks["client_binding"] = f"unknown: {type(e).__name__}"
+    try:
+        from maverick.shield_policy import shield_available, shield_required
+        if shield_required() and not shield_available():
+            checks["shield"] = "fail: required but not installed/available"
+            ok = False
+        else:
+            checks["shield"] = "ok"
+    except Exception as e:  # pragma: no cover
+        checks["shield"] = f"unknown: {type(e).__name__}"
+    try:
+        from maverick.agent_trust import load_trust_state
+        enforced, registry = load_trust_state()
+        if enforced and not registry:
+            checks["agent_trust"] = "fail: engaged but registry empty (denies all)"
+            ok = False
+        else:
+            checks["agent_trust"] = "ok"
+    except Exception as e:  # pragma: no cover
+        checks["agent_trust"] = f"unknown: {type(e).__name__}"
+    return ok, checks
+
+
 @app.get("/healthz")
 async def healthz() -> JSONResponse:
     """Deep health: DB writable, LLM provider key present, runner alive."""
@@ -4480,8 +4519,23 @@ async def healthz() -> JSONResponse:
 
 @app.get("/readyz")
 async def readyz() -> JSONResponse:
-    """Ready to serve traffic (alias for healthz today)."""
-    return await healthz()
+    """Ready to serve traffic: the /healthz checks PLUS the deep readiness
+    checks (client binding, shield-required, agent-trust registry) so a
+    k8s/LB never routes to a pod that is up but configured to refuse all work.
+    """
+    health = await healthz()
+    health_ok = health.status_code == 200
+    deep_ok, deep_checks = await run_in_threadpool(_readiness_deep_checks)
+    overall_ok = health_ok and deep_ok
+    if os.environ.get("MAVERICK_DASHBOARD_TOKEN"):
+        payload: dict[str, Any] = {"status": "ok" if overall_ok else "not_ready"}
+    else:
+        import json as _json
+        health_body = _json.loads(bytes(health.body).decode("utf-8"))
+        checks = dict(health_body.get("checks", {}))
+        checks.update(deep_checks)
+        payload = {"status": "ok" if overall_ok else "not_ready", "checks": checks}
+    return JSONResponse(payload, status_code=200 if overall_ok else 503)
 
 
 @app.get("/metrics", response_class=PlainTextResponse)

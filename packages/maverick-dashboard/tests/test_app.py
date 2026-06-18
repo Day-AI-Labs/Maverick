@@ -28,6 +28,45 @@ def test_healthz_returns_check_breakdown(monkeypatch):
     assert "checks" in body
 
 
+def test_readyz_deep_check_client_binding(tmp_path, monkeypatch):
+    """/readyz fails (503 not_ready) when client binding is enforced but unset —
+    a pod that is up yet refuses all work. A plain /healthz wouldn't catch it."""
+    from maverick import client, world_model
+    monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+    monkeypatch.setenv("MAVERICK_CLIENT_ENFORCE", "1")
+    monkeypatch.delenv("MAVERICK_CLIENT_ID", raising=False)
+    client.reset_client_cache()
+    try:
+        resp = client_get_readyz()
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["status"] == "not_ready"
+        assert "enforced" in body["checks"]["client_binding"]
+    finally:
+        client.reset_client_cache()
+
+
+def test_readyz_ok_when_bound(tmp_path, monkeypatch):
+    from maverick import client, world_model
+    monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+    monkeypatch.setenv("MAVERICK_CLIENT_ENFORCE", "1")
+    monkeypatch.setenv("MAVERICK_CLIENT_ID", "acme")
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    client.reset_client_cache()
+    try:
+        resp = client_get_readyz()
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+    finally:
+        client.reset_client_cache()
+
+
+def client_get_readyz():
+    return client.get("/readyz")
+
+
 def test_index_renders(tmp_path, monkeypatch):
     # Point the WorldModel at a fresh tmp DB so we don't depend on
     # ~/.maverick/world.db existing on the runner.
