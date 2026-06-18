@@ -246,6 +246,14 @@ class Budget:
             # extension landed. Fall back to wall clock.
             return time.time() - self.started_at
 
+    def remaining_wall(self) -> float:
+        """Seconds left before the wall-clock cap (<= 0 means already over).
+
+        Lets a caller bound an in-flight async await (e.g. an LLM generation)
+        so the wall cap is HARD — interrupting a long generation — rather than
+        only checked at turn boundaries."""
+        return self.max_wall_seconds - self.elapsed()
+
     def __post_init__(self) -> None:
         self._started_monotonic = time.monotonic()
         # Wave 12 (F12b): per-instance lock for atomic counter updates.
