@@ -73,6 +73,15 @@ class TestGoals:
         # 422 = Pydantic validation error
         assert resp.status_code == 422
 
+    def test_create_rejects_oversized_description(self, monkeypatch):
+        """An unbounded description is a cost/DB-bloat amplification vector;
+        the bound rejects it with 422 rather than silently storing it."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+        resp = client.post("/api/v1/goals", json={
+            "title": "ok", "description": "x" * 16_001,
+        })
+        assert resp.status_code == 422
+
     def test_list_returns_array(self):
         resp = client.get("/api/v1/goals")
         assert resp.status_code == 200

@@ -51,7 +51,11 @@ class RoleOverrideIn(BaseModel):
 
 class GoalIn(BaseModel):
     title: str = Field(..., max_length=200)
-    description: str = ""
+    # Bound the description like the title: it flows into SQLite, the at-rest
+    # seal, and every downstream prompt, so an unbounded value from an untrusted
+    # REST caller is a cost / DB-bloat amplification vector. 16k chars is ample
+    # for a goal brief; oversized payloads get a 422 rather than silent bloat.
+    description: str = Field("", max_length=16000)
     max_dollars: float = Field(5.0, ge=0.0, le=100.0)
     max_wall_seconds: float = Field(3600.0, ge=1.0, le=86400.0)
     max_depth: int = Field(3, ge=1, le=5)
