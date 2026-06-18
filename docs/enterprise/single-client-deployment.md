@@ -91,13 +91,15 @@ Sequenced by leverage. Each phase is independently shippable.
   `tenant_kms.KMS` Protocol; today customer-managed keys arrive via env
   injection (`MAVERICK_ENCRYPTION_KEY` / KEK).
 
-### Phase 5 — Packaging & headless provisioning (VM + image)
-- **Build-time gRPC stubs**: pre-generate `*_pb2.py` into the wheels so nothing
-  runs `protoc` at runtime (immutable/read-only FS; SBOM/reproducibility).
-- **Declarative install**: `maverick init --from-file client.toml` (and the
-  installer accepting an answer file) so a VM/image bakes a fully-configured
-  client non-interactively.
-- Ship a hardened `systemd` unit + install script (below) and a baked image.
+### Phase 5 — Packaging & headless provisioning (VM + image) ✅
+- **Build-time gRPC stubs** ✅: `maverick gen-stubs` pre-generates every
+  `*_pb2.py`; set `MAVERICK_NO_RUNTIME_PROTOC=1` in the runtime so a missing stub
+  **fails fast** instead of invoking `protoc` (immutable/read-only FS; SBOM).
+  Both loaders honour the guard.
+- **Declarative install** ✅: `maverick init --from-file client.toml` validates
+  and installs the config (0600) with no prompts — bake it into the image/VM.
+- Hardened `systemd` unit + install script and baked image: see the runbook (the
+  image just runs `gen-stubs` + `init --from-file` at build).
 
 ### Phase 6 — Compliance & data-subject operations
 - **Per-client export + erasure**: one command that exports/erases the client's
@@ -126,9 +128,14 @@ python3 -m pip install --no-index --find-links /opt/maverick/wheels \
   maverick-core maverick-shield maverick-channels maverick-dashboard \
   maverick-mcp maverick-knowledge agent-shield
 
-# 3. Provision config non-interactively (Phase 5: --from-file).
-maverick init --from-file /opt/maverick/<client>.toml   # roadmap
+# 3. Pre-generate gRPC stubs (so the runtime never compiles on a read-only FS),
+#    then provision config non-interactively.
+maverick gen-stubs
+maverick init --from-file /opt/maverick/<client>.toml
 ```
+
+Set `MAVERICK_NO_RUNTIME_PROTOC=1` in the service unit so a missing stub fails
+fast at boot rather than invoking `protoc` at request time.
 
 ### 3.2 Bind the client (the critical step)
 

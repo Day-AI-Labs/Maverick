@@ -818,6 +818,8 @@ def _load_stubs():
         from .grpc_api import federation_pb2, federation_pb2_grpc  # type: ignore
         return federation_pb2, federation_pb2_grpc
     except ImportError:
+        from .grpc_stubs import guard_runtime_generation
+        guard_runtime_generation("federation.proto")
         _generate_stubs()
         from .grpc_api import federation_pb2, federation_pb2_grpc  # type: ignore
         return federation_pb2, federation_pb2_grpc

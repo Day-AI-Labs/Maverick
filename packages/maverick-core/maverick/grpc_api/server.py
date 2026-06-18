@@ -43,6 +43,8 @@ def _load_stubs():
         from . import maverick_pb2, maverick_pb2_grpc  # type: ignore
         return maverick_pb2, maverick_pb2_grpc
     except ImportError:
+        from ..grpc_stubs import guard_runtime_generation
+        guard_runtime_generation("maverick.proto")
         _generate_stubs()
         from . import maverick_pb2, maverick_pb2_grpc  # type: ignore
         return maverick_pb2, maverick_pb2_grpc

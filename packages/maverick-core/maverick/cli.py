@@ -325,13 +325,66 @@ def main(ctx: click.Context, db: str | None, model: str | None) -> None:
         os.environ["MAVERICK_MODEL_OVERRIDE"] = model
 
 
+@main.command("gen-stubs")
+def gen_stubs_cmd() -> None:
+    """Pre-generate gRPC stubs (for immutable/locked-down images).
+
+    Run at image/VM build time, then set MAVERICK_NO_RUNTIME_PROTOC=1 so the
+    runtime never invokes protoc (read-only FS / SBOM integrity)."""
+    from .grpc_stubs import generate_all
+    try:
+        done = generate_all()
+    except Exception as e:
+        raise click.ClickException(f"stub generation failed: {e}") from e
+    click.echo(click.style("generated: " + ", ".join(done), fg="green"))
+
+
+def _install_config_from_file(src: str) -> None:
+    """Headless provisioning: validate SRC and install it as config.toml (0600)."""
+    import shutil
+    from pathlib import Path as _P
+
+    from .config import config_path
+    src_path = _P(src).expanduser()
+    if not src_path.is_file():
+        raise click.ClickException(f"no such config file: {src}")
+    try:
+        try:
+            import tomllib
+        except ModuleNotFoundError:  # 3.10
+            import tomli as tomllib  # type: ignore
+        with open(src_path, "rb") as f:
+            cfg = tomllib.load(f)
+    except Exception as e:
+        raise click.ClickException(f"invalid TOML in {src}: {e}") from e
+    # Surface unknown-section / type problems, but don't block (operators may use
+    # newer keys than this build knows).
+    try:
+        from .config_lint import lint_config
+        for finding in lint_config(cfg):
+            click.echo(click.style(f"  ! {finding.section}: {finding.message}",
+                                   fg="yellow"), err=True)
+    except Exception:
+        pass
+    dst = config_path()
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src_path, dst)
+    os.chmod(dst, 0o600)
+    click.echo(click.style(f"installed config -> {dst} (0600)", fg="green"))
+
+
 @main.command()
 @click.option("--fast", is_flag=True,
               help="Skip every prompt; use recommended defaults.")
 @click.option("--resume", is_flag=True,
               help="Resume from the last unanswered wizard question.")
-def init(fast: bool, resume: bool) -> None:
-    """Run the interactive setup wizard."""
+@click.option("--from-file", "from_file", default=None,
+              help="Headless: install this config.toml (validated) — no prompts.")
+def init(fast: bool, resume: bool, from_file: str | None) -> None:
+    """Run the interactive setup wizard (or --from-file for headless provisioning)."""
+    if from_file:
+        _install_config_from_file(from_file)
+        return
     try:
         from maverick_installer.wizard import run as run_wizard
     except ImportError:
