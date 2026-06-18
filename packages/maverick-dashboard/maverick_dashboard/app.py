@@ -202,16 +202,6 @@ async def _lifespan(app: FastAPI):
     original registration order; their bodies each guard with try/except so a
     failure never blocks startup. No shutdown work is needed.
     """
-    # Apply Maverick's shared logging config (JSON via MAVERICK_LOG_FORMAT=json,
-    # correlation-id context filter, secret scrubbing) instead of inheriting raw
-    # uvicorn logging — the most network-exposed process had none of the hygiene
-    # the CLI has. Idempotent + stderr (safe), so it never clobbers uvicorn's
-    # stdout or double-configures.
-    try:
-        from maverick.logging_config import configure_logging
-        configure_logging()
-    except Exception:  # pragma: no cover - logging setup never blocks startup
-        pass
     await _reclaim_orphans()
     await _install_queue_dispatcher()
     yield
@@ -4602,6 +4592,17 @@ def main() -> None:
             "Refusing to bind dashboard to a non-loopback host without "
             "MAVERICK_DASHBOARD_TOKEN set."
         )
+
+    # Apply Maverick's shared logging config (JSON via MAVERICK_LOG_FORMAT=json,
+    # correlation-id context filter, secret scrubbing) at the real process
+    # entrypoint — not in the lifespan, so the in-process TestClient never
+    # reconfigures global logging. The most network-exposed process otherwise
+    # inherited raw uvicorn logging with none of the CLI's hygiene.
+    try:
+        from maverick.logging_config import configure_logging
+        configure_logging()
+    except Exception:  # pragma: no cover - logging setup never blocks startup
+        pass
 
     import uvicorn
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

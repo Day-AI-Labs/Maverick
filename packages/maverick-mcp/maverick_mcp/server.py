@@ -29,19 +29,21 @@ _STRUCTURED_OVERRIDE_CTX: contextvars.ContextVar[object] = contextvars.ContextVa
     "maverick_mcp_structured_override", default=_NO_OVERRIDE
 )
 
-# Use Maverick's shared logging config (honors MAVERICK_LOG_FORMAT=json, the
-# correlation-id context filter, and secret scrubbing) instead of a bespoke
-# basicConfig. It logs to STDERR — never stdout, which is the MCP stdio protocol
-# channel — and is idempotent.
-try:
-    from maverick.logging_config import configure_logging as _configure_logging
-    _configure_logging()
-except Exception:  # pragma: no cover - fall back to a stderr basicConfig
-    logging.basicConfig(
-        level=logging.INFO,
-        stream=sys.stderr,
-        format="%(asctime)s [%(levelname)s] mcp: %(message)s",
-    )
+def _configure_mcp_logging() -> None:
+    """Apply Maverick's shared logging config (honors MAVERICK_LOG_FORMAT=json,
+    the correlation-id context filter, and secret scrubbing). Logs to STDERR —
+    never stdout, which is the MCP stdio protocol channel. Called from main(),
+    NOT at import, so importing the server (e.g. in tests) never reconfigures
+    global logging. Falls back to a stderr basicConfig if core import fails."""
+    try:
+        from maverick.logging_config import configure_logging
+        configure_logging()
+    except Exception:  # pragma: no cover - fall back to a stderr basicConfig
+        logging.basicConfig(
+            level=logging.INFO,
+            stream=sys.stderr,
+            format="%(asctime)s [%(levelname)s] mcp: %(message)s",
+        )
 
 # Protocol version. MCP 2025-11-25 ships Tasks / Resources / Elicitation /
 # Sampling / MCP Apps; we negotiate down to the older spec when a client
@@ -1478,6 +1480,7 @@ def main() -> None:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8771)
     args = ap.parse_args()
+    _configure_mcp_logging()
     if args.http:
         from .http_transport import serve
         serve(host=args.host, port=args.port)

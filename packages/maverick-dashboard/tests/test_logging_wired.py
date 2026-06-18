@@ -1,30 +1,40 @@
-"""The dashboard must apply Maverick's shared logging config on startup (JSON
-option + correlation-id filter + secret scrubbing), not inherit raw uvicorn
-logging — it's the most network-exposed process."""
+"""The dashboard + MCP server apply Maverick's shared logging config at their
+real process entrypoint (main()) — not in the lifespan/at import, so the
+in-process TestClient and bare imports never reconfigure global logging."""
 from __future__ import annotations
 
 import logging
 import sys
-
-from fastapi.testclient import TestClient
-
-
-def test_lifespan_configures_logging(monkeypatch):
-    import maverick.logging_config as lc
-    from maverick_dashboard.app import app
-
-    saved_handlers = logging.getLogger().handlers[:]
-    saved_configured = lc._configured
-    lc._configured = False
-    try:
-        with TestClient(app):  # entering the context runs lifespan startup
-            assert lc._configured is True  # configure_logging() ran
-    finally:
-        lc._configured = saved_configured
-        logging.getLogger().handlers[:] = saved_handlers
+import types
 
 
-def test_shared_logging_targets_stderr_not_stdout(monkeypatch):
+def test_dashboard_main_configures_logging(monkeypatch):
+    import maverick_dashboard.app as app_mod
+
+    calls: list[int] = []
+    monkeypatch.setattr("maverick.logging_config.configure_logging",
+                        lambda *a, **k: calls.append(1))
+    # Stub uvicorn so main() doesn't actually bind/serve.
+    monkeypatch.setitem(sys.modules, "uvicorn",
+                        types.SimpleNamespace(run=lambda *a, **k: None))
+    monkeypatch.setattr(sys, "argv",
+                        ["maverick-dashboard", "--host", "127.0.0.1", "--port", "0"])
+    app_mod.main()
+    assert calls == [1]
+
+
+def test_mcp_main_configures_logging(monkeypatch):
+    import maverick_mcp.server as server
+
+    calls: list[int] = []
+    monkeypatch.setattr(server, "_configure_mcp_logging", lambda: calls.append(1))
+    monkeypatch.setattr(server.MCPServer, "run", lambda self: None)
+    monkeypatch.setattr(sys, "argv", ["maverick-mcp"])
+    server.main()
+    assert calls == [1]
+
+
+def test_shared_logging_targets_stderr_not_stdout():
     # MCP runs over stdio: a log handler on stdout would corrupt the protocol.
     import maverick.logging_config as lc
 
