@@ -111,6 +111,22 @@ def test_captions_authenticated_non_admin_cannot_stream_global_source(
     assert r.json()["detail"] == "no such caption source"
 
 
+def test_captions_503_when_sse_capacity_full(scripted_source, monkeypatch):
+    """The caption stream shares the SSE concurrency cap: when the semaphore is
+    already fully held it returns 503 instead of opening an unbounded stream."""
+    import asyncio
+
+    import maverick_dashboard.api as api
+
+    # A zero-permit semaphore is already locked() -> every SSE slot in use ->
+    # the route must 503 before opening (acquiring) a new stream.
+    monkeypatch.setattr(api, "_sse_semaphore", asyncio.Semaphore(0))
+
+    r = client.get("/api/v1/voice/captions")
+    assert r.status_code == 503
+    assert r.headers.get("Retry-After") == "5"
+
+
 def test_captions_dashboard_admin_can_stream_global_source(scripted_source, monkeypatch):
     _enable_oidc_principal_map(monkeypatch)
     monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "user:root")

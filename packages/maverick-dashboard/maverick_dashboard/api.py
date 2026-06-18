@@ -804,11 +804,32 @@ async def voice_captions(
     except (TypeError, ValueError):
         max_chars = 160
 
+    # Bound concurrent caption streams and release the slot on disconnect/error,
+    # exactly like the goal-events stream. A live caption source never exhausts
+    # on its own, so without this an abandoned (or maliciously opened-and-never-
+    # read) connection would pin an async task + fd indefinitely, and unlimited
+    # such connections would exhaust the event loop. Shares the SSE semaphore.
+    sem = _get_sse_semaphore()
+    if sem.locked():
+        raise HTTPException(
+            status_code=503,
+            detail="too many concurrent caption streams; retry shortly",
+            headers={"Retry-After": "5"},
+        )
+    await sem.acquire()
+
     async def _gen():
-        yield ": captions\n\n"
-        async for frame in caption_stream(factory(), max_chars=max_chars):
-            yield f"data: {json.dumps(frame)}\n\n"
-        yield "event: end\ndata: {}\n\n"
+        try:
+            yield ": captions\n\n"
+            async for frame in caption_stream(factory(), max_chars=max_chars):
+                if await request.is_disconnected():
+                    return
+                yield f"data: {json.dumps(frame)}\n\n"
+            yield "event: end\ndata: {}\n\n"
+        except asyncio.CancelledError:
+            return
+        finally:
+            sem.release()
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
 
