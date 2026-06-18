@@ -66,6 +66,21 @@ def _max_inbound_chars() -> int:
         return 100000
 
 
+def backoff_delay(base_interval: float, consecutive_errors: int, *, cap: float = 300.0) -> float:
+    """Poll-loop sleep after ``consecutive_errors`` consecutive failures.
+
+    No failures -> the normal ``base_interval``. After each consecutive failure
+    the delay doubles (base*2, base*4, ...) up to ``cap`` seconds, so a
+    persistently failing upstream (API down, token revoked, instance
+    unreachable) is polled progressively less often instead of hammered every
+    ``base_interval`` -- which otherwise burns CPU, floods the logs, and can get
+    the account rate-limited or banned. Callers reset ``consecutive_errors`` to
+    0 on the first successful poll, which returns to ``base_interval``."""
+    if consecutive_errors <= 0:
+        return base_interval
+    return min(cap, base_interval * (2 ** consecutive_errors))
+
+
 def webhook_body_limit() -> int:
     """Max inbound webhook body in bytes. Webhook listeners read the body
     *before* the HMAC/signature check (they must, to compute it), so without a

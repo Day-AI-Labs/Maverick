@@ -245,6 +245,35 @@ def test_long_replies_chunked_at_500(monkeypatch):
                for c in calls if c["url"].endswith(f"/{SELF_ID}/threads"))
 
 
+def test_chunked_send_aborts_and_logs_on_midstream_failure(monkeypatch, caplog):
+    """A multi-chunk reply whose 2nd chunk fails to create must stop (the
+    publish edge is sequential and can't be rewound) and log how many chunks
+    went undelivered instead of truncating silently."""
+    ch = _channel()
+    calls = []
+    state = {"creates": 0}
+
+    def _responder(method, url, payload):
+        if url.endswith("/threads_publish"):
+            return _Resp({"id": "MEDIA1"})
+        if url.endswith("/threads"):
+            state["creates"] += 1
+            if state["creates"] == 2:  # second chunk's create fails
+                return _Resp({}, status_code=500)
+            return _Resp({"id": "CREATION1"})
+        return _Resp({})
+
+    _install_httpx(monkeypatch, calls, _responder)
+
+    with caplog.at_level("WARNING"):
+        asyncio.run(ch.send(REPLY_ID, "x" * 1200))  # 3 chunks of 500/500/200
+
+    # chunk 1 create+publish, chunk 2 create (fails) -> stop. Chunk 3 never sent.
+    assert state["creates"] == 2
+    assert not any(c["url"].endswith("/threads_publish") for c in calls[2:])
+    assert any("2/3 chunk(s) undelivered" in r.message for r in caplog.records)
+
+
 def test_missing_credentials_raise(monkeypatch):
     monkeypatch.delenv("THREADS_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("THREADS_USER_ID", raising=False)
