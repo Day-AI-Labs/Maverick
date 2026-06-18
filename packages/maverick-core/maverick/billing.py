@@ -200,8 +200,46 @@ def tenant_entitled(tenant_id: str, feature: str) -> bool:
     return entitled(rec.plan if rec else "free", feature)
 
 
+def feature_allowed(feature: str, *, tenant: str | None = None) -> bool:
+    """Enforcement-side gate: may the active deployment use ``feature``?
+
+    Resolves the tenant from the argument or the active context
+    (:func:`maverick.paths.current_tenant_id`). The gate is deliberately
+    permissive at the edges so it never breaks existing single-tenant or
+    not-yet-provisioned deployments -- only an operator who has *explicitly*
+    provisioned a tenant with a limited plan can be denied:
+
+      * no active tenant (single-tenant / self-host) -> allowed;
+      * a tenant that is not in the registry (e.g. the per-user tenant id used
+        by ``MAVERICK_TENANT_BY_USER`` with no roster) -> allowed;
+      * a registered tenant -> allowed iff its plan includes ``feature``.
+
+    Fail-open: any lookup error allows the feature (never block on billing).
+    """
+    try:
+        tid = tenant or _active_tenant_id()
+        if not tid:
+            return True
+        from .tenant_registry import get_tenant
+        rec = get_tenant(tid)
+        if rec is None:
+            return True
+        return entitled(rec.plan, feature)
+    except Exception:  # pragma: no cover -- entitlement checks never block a run
+        return True
+
+
+def _active_tenant_id() -> str | None:
+    try:
+        from .paths import current_tenant_id
+        return current_tenant_id()
+    except Exception:  # pragma: no cover
+        return None
+
+
 __all__ = [
     "RateCard", "LineItem", "Invoice",
     "rate_ledger", "generate_invoice", "ledger_for_tenant",
-    "Entitlements", "DEFAULT_PLANS", "entitlements_for", "entitled", "tenant_entitled",
+    "Entitlements", "DEFAULT_PLANS", "entitlements_for", "entitled",
+    "tenant_entitled", "feature_allowed",
 ]

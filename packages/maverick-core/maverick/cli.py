@@ -5666,6 +5666,19 @@ def audit_export(
                 click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
                 sys.exit(2)
 
+    # Plan feature gating: SIEM audit export is a paid-tier entitlement. Only
+    # denied when an explicit --tenant names a provisioned tenant whose plan
+    # omits "audit_export"; unscoped/self-host export is unaffected.
+    if tenant:
+        from .billing import feature_allowed
+        if not feature_allowed("audit_export", tenant=tenant):
+            click.echo(
+                f"ERROR: tenant '{tenant}' plan does not include SIEM audit "
+                "export (audit_export entitlement). Upgrade the tenant's plan.",
+                err=True,
+            )
+            sys.exit(2)
+
     from .audit.export import audit_event_paths, iter_audit_events, to_cef, to_jsonl
 
     render = to_cef if fmt == "cef" else to_jsonl
