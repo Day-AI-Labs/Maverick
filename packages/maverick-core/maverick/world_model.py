@@ -1461,36 +1461,57 @@ class WorldModel:
         self,
         limit: int = 50,
         goal_id: int | None = None,
+        owner: str | None = None,
     ) -> list[EpisodeSpend]:
+        """Recent run-cost episodes, newest first.
+
+        ``owner`` scopes to one principal's runs by joining ``episodes`` to the
+        owning goal (the episodes table has no owner column of its own).
+        ``None`` is the admin / auth-off view — every principal's episodes.
+        Without this filter ``/api/v1/spend`` returned every user's runs + cost
+        to any caller.
+        """
+        cols = (
+            "e.id, e.goal_id, e.started_at, e.ended_at, e.outcome, "
+            "COALESCE(e.cost_dollars, 0) AS cost_dollars, "
+            "COALESCE(e.input_tokens, 0) AS input_tokens, "
+            "COALESCE(e.output_tokens, 0) AS output_tokens, "
+            "COALESCE(e.tool_calls, 0) AS tool_calls "
+        )
+        join = ("FROM episodes e JOIN goals g ON e.goal_id = g.id "
+                if owner is not None else "FROM episodes e ")
+        where, params = [], []
         if goal_id is not None:
-            rows = self._read_all(
-                "SELECT id, goal_id, started_at, ended_at, outcome, "
-                "COALESCE(cost_dollars, 0) AS cost_dollars, "
-                "COALESCE(input_tokens, 0) AS input_tokens, "
-                "COALESCE(output_tokens, 0) AS output_tokens, "
-                "COALESCE(tool_calls, 0) AS tool_calls "
-                "FROM episodes WHERE goal_id = ? "
-                "ORDER BY started_at DESC LIMIT ?",
-                (goal_id, limit),
-            )
-        else:
-            rows = self._read_all(
-                "SELECT id, goal_id, started_at, ended_at, outcome, "
-                "COALESCE(cost_dollars, 0) AS cost_dollars, "
-                "COALESCE(input_tokens, 0) AS input_tokens, "
-                "COALESCE(output_tokens, 0) AS output_tokens, "
-                "COALESCE(tool_calls, 0) AS tool_calls "
-                "FROM episodes ORDER BY started_at DESC LIMIT ?",
-                (limit,),
-            )
+            where.append("e.goal_id = ?")
+            params.append(goal_id)
+        if owner is not None:
+            where.append("g.owner = ?")
+            params.append(owner)
+        sql = "SELECT " + cols + join
+        if where:
+            sql += "WHERE " + " AND ".join(where) + " "
+        sql += "ORDER BY e.started_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self._read_all(sql, tuple(params))
         return [_episode_spend_from_row(r) for r in rows]
 
-    def total_spend(self) -> dict[str, float]:
+    def total_spend(self, owner: str | None = None) -> dict[str, float]:
+        """Aggregate spend. ``owner`` scopes to one principal's runs (join to
+        the owning goal); ``None`` is the deployment-wide admin / auth-off view.
+        """
+        join = ("FROM episodes e JOIN goals g ON e.goal_id = g.id "
+                if owner is not None else "FROM episodes e ")
+        where = "WHERE e.ended_at IS NOT NULL"
+        params: tuple = ()
+        if owner is not None:
+            where += " AND g.owner = ?"
+            params = (owner,)
         row = self._read_one(
-            "SELECT COALESCE(SUM(cost_dollars), 0) AS dollars, "
-            "COALESCE(SUM(input_tokens), 0) AS in_tok, "
-            "COALESCE(SUM(output_tokens), 0) AS out_tok, "
-            "COUNT(*) AS runs FROM episodes WHERE ended_at IS NOT NULL"
+            "SELECT COALESCE(SUM(e.cost_dollars), 0) AS dollars, "
+            "COALESCE(SUM(e.input_tokens), 0) AS in_tok, "
+            "COALESCE(SUM(e.output_tokens), 0) AS out_tok, "
+            "COUNT(*) AS runs " + join + where,
+            params,
         )
         return {
             "dollars": row["dollars"],
