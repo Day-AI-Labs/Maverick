@@ -39,18 +39,35 @@ _TEXT_CHARS = 400
 
 
 def build_offline_glance(world, *, now: float | None = None,
-                         max_active: int = MAX_ACTIVE) -> dict[str, Any]:
+                         max_active: int = MAX_ACTIVE,
+                         owner: str | None = None) -> dict[str, Any]:
     """The richer, list-bearing glance the offline bundle embeds.
 
     Distinct from :func:`maverick.glance.build_glance` (the tiny scalar
     watch payload): this carries the *active-run list* + headline counts +
     spend the mobile app renders when offline. Bounded + read-only; only
-    world-DB rows, never secrets.
+    world-DB rows, never secrets. When ``owner`` is given the glance is
+    scoped to that owner's goals so an owner-bundle never surfaces another
+    owner's active titles or open questions.
     """
     as_of = float(now if now is not None else time.time())
     max_active = max(1, min(int(max_active), MAX_ACTIVE))
-    active = world.list_goals(status="active", limit=max_active, order="desc")
+    active = world.list_goals(status="active", owner=owner, limit=max_active, order="desc")
     spend = world.total_spend()
+    if owner is None:
+        open_questions = world.open_questions()
+    else:
+        scoped_goal_ids = {
+            g.id for g in world.list_goals(owner=owner, limit=MAX_GOALS, order="desc")
+        }
+        open_questions = [
+            q for q in world.open_questions()
+            if getattr(q, "goal_id", None) in scoped_goal_ids
+        ]
+    # Approvals are a standalone operator queue with no goal/owner linkage, so
+    # they can't be owner-scoped; surface the global count (a bare number, no
+    # titles) rather than silently reporting zero.
+    pending_approvals = world.pending_approvals()
     return {
         "as_of": as_of,
         "active": [
@@ -64,8 +81,8 @@ def build_offline_glance(world, *, now: float | None = None,
         ],
         "counts": {
             "active": len(active),
-            "pending_approvals": len(world.pending_approvals()),
-            "open_questions": len(world.open_questions()),
+            "pending_approvals": len(pending_approvals),
+            "open_questions": len(open_questions),
         },
         "spend": {
             "dollars": round(float(spend.get("dollars") or 0.0), 4),
@@ -99,7 +116,7 @@ def build_bundle(
     return {
         "schema": SCHEMA,
         "as_of": as_of,
-        "glance": build_offline_glance(world, now=as_of),
+        "glance": build_offline_glance(world, now=as_of, owner=owner),
         "goals": [
             {
                 "id": g.id,

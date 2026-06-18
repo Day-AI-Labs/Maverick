@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 from maverick.offline_bundle import (
     EVENT_FIELDS,
@@ -154,6 +155,30 @@ def test_bundle_owner_scoping():
     w.goals[0].owner = "alice"
     bundle = build_bundle(w, now=1.0, owner="alice")
     assert [g["id"] for g in bundle["goals"]] == [w.goals[0].id]
+
+
+def test_bundle_owner_scopes_embedded_glance():
+    # alice owns goal 1, bob owns goal 2. An owner-scoped bundle must not leak
+    # bob's active title or his open question into alice's embedded glance.
+    # Approvals are a global operator queue with no goal linkage, so their count
+    # stays global (a bare number, never another owner's titles).
+    w = FakeWorld(
+        goals=[
+            FakeGoal(id=1, title="alice run", owner="alice"),
+            FakeGoal(id=2, title="bob secret", owner="bob"),
+        ],
+        approvals=[SimpleNamespace(id=1)],
+        questions=[SimpleNamespace(goal_id=1), SimpleNamespace(goal_id=2)],
+    )
+    bundle = build_bundle(w, now=1.0, owner="alice")
+
+    assert [g["title"] for g in bundle["glance"]["active"]] == ["alice run"]
+    assert "bob secret" not in json.dumps(bundle["glance"])
+    assert bundle["glance"]["counts"] == {
+        "active": 1,
+        "pending_approvals": 1,  # global operator queue, not owner-scoped
+        "open_questions": 1,  # only alice's goal-1 question
+    }
 
 
 def test_bundle_empty_world():

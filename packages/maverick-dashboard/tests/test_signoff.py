@@ -2,6 +2,9 @@
 the goal page, and export the deliverable as CSV for downstream loading."""
 from __future__ import annotations
 
+import csv
+import io
+
 from fastapi.testclient import TestClient
 from maverick_dashboard.app import app
 
@@ -93,15 +96,61 @@ class TestSignoffApi:
 
 
 class TestDeliverableExport:
-    def test_forecast_exports_as_csv(self, tmp_path, monkeypatch):
+    def test_forecast_exports_as_csv_after_approval(self, tmp_path, monkeypatch):
         w = _world(tmp_path, monkeypatch)
         gid = _forecast_goal(w)
+        w.record_signoff(gid, "approved", decided_by="user:alice", note="ok")
         r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("text/csv")
         body = r.text
         assert "Week,Net" in body
         assert "W1,300" in body
+
+    def test_gated_table_export_requires_approved_signoff(self, tmp_path, monkeypatch):
+        w = _world(tmp_path, monkeypatch)
+        gid = w.create_goal("Prepare payment batch", "", domain="finance_ap")
+        w.set_goal_status(gid, "done", result=_TABLE)
+
+        r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
+        assert r.status_code == 403
+
+        w.record_signoff(gid, "rejected", decided_by="user:alice", note="hold")
+        r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
+        assert r.status_code == 403
+
+        w.record_signoff(gid, "approved", decided_by="user:alice", note="ok")
+        r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
+        assert r.status_code == 200
+
+    def test_export_neutralizes_spreadsheet_formulas(self, tmp_path, monkeypatch):
+        w = _world(tmp_path, monkeypatch)
+        gid = w.create_goal("Review AML alerts", "", domain="bank_aml_alerts")
+        w.set_goal_status(
+            gid,
+            "done",
+            result=(
+                "| Alert | Formula | Safe |\n"
+                "| --- | --- | --- |\n"
+                "| =HYPERLINK(\"http://attacker.test\") | +SUM(1,2) | ordinary |\n"
+                "| @SUM(1,2) | -2+3 | unchanged |\n"
+            ),
+        )
+        # bank_aml_alerts is gated (review), so an approved sign-off is required
+        # before the gated table can be exported.
+        w.record_signoff(gid, "approved", decided_by="user:alice", note="ok")
+
+        r = client.get(f"/api/v1/goals/{gid}/deliverable.csv")
+
+        assert r.status_code == 200
+        rows = list(csv.reader(io.StringIO(r.text)))
+        assert rows[0] == ["Alert", "Formula", "Safe"]
+        assert rows[1] == [
+            "'=HYPERLINK(\"http://attacker.test\")",
+            "'+SUM(1,2)",
+            "ordinary",
+        ]
+        assert rows[2] == ["'@SUM(1,2)", "'-2+3", "unchanged"]
 
     def test_no_table_is_404(self, tmp_path, monkeypatch):
         w = _world(tmp_path, monkeypatch)
