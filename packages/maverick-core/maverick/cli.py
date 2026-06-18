@@ -822,6 +822,60 @@ def trust_verify_cmd(agent_id, tools, risk, direction) -> None:
     click.echo(f"{direction} {agent_id!r}: {verdict}  rule={d.rule}  {d.reason}")
 
 
+@main.group("backup")
+def backup_group() -> None:
+    """Back up / restore this client's data for DR + standby failover.
+
+    Snapshots the client-scoped data root (world DB via the SQLite online backup
+    API, signed audit chain + keys, memory, fleet, managed trust registry) into
+    a portable ``.tgz`` with an integrity manifest. Restore is fail-closed: it
+    refuses a backup whose client id differs from this deployment's."""
+
+
+@backup_group.command("create")
+@click.option("--out", default=None, help="Destination .tgz (default: under data root).")
+def backup_create_cmd(out) -> None:
+    """Create a consistent backup of this client's data."""
+    from .backup import BackupError, create_backup
+    try:
+        path = create_backup(out)
+    except BackupError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(click.style(f"backup written: {path}", fg="green"))
+
+
+@backup_group.command("restore")
+@click.argument("tarball")
+@click.option("--force", is_flag=True,
+              help="Restore even if the backup's client id differs (dangerous).")
+def backup_restore_cmd(tarball, force) -> None:
+    """Restore TARBALL into this client's data root (fail-closed on client id)."""
+    from .backup import BackupError, restore_backup
+    try:
+        root = restore_backup(tarball, force=force)
+    except BackupError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(click.style(f"restored into {root}", fg="green"))
+
+
+@backup_group.command("info")
+@click.argument("tarball")
+def backup_info_cmd(tarball) -> None:
+    """Show a backup's manifest (client id, time, file count, schema version)."""
+    from .backup import BackupError, read_manifest
+    try:
+        m = read_manifest(tarball)
+    except BackupError as e:
+        raise click.ClickException(str(e)) from e
+    import datetime
+    when = datetime.datetime.fromtimestamp(
+        m.get("created_at", 0), datetime.timezone.utc).isoformat()
+    click.echo(f"client_id:            {m.get('client_id')}")
+    click.echo(f"created_at:           {when}")
+    click.echo(f"world_schema_version: {m.get('world_schema_version')}")
+    click.echo(f"files:                {len(m.get('files') or {})}")
+
+
 @main.group("overrides")
 def overrides_group() -> None:
     """Export / load this workspace's agent customizations as a portable bundle.

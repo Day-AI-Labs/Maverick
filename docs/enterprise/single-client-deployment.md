@@ -65,12 +65,17 @@ Sequenced by leverage. Each phase is independently shippable.
   `not_before` available for zero-downtime overlap.
 - Mirror in the dashboard (read-only at minimum) — remaining follow-up.
 
-### Phase 3 — Backup / restore / failover (HA for single-node)
-- `maverick backup` / `maverick restore` covering the **world DB**, **signed
-  audit chain + anchors**, **keys**, and config — consistent snapshot (SQLite
-  `VACUUM INTO` / online backup API).
-- Documented warm-standby: ship backups to a standby host; promote on failure.
-- Retention + offsite/object-store target.
+### Phase 3 — Backup / restore / failover (HA for single-node) ✅
+- `maverick backup create` snapshots the **client-scoped data root** — world DB
+  (via the SQLite **online backup API**, consistent under WAL), signed **audit
+  chain + anchors + keys**, memory, fleet, and the managed trust registry — into
+  a portable `.tgz` with an integrity manifest (client id, time, schema, per-file
+  SHA-256). `maverick backup info` inspects it; `maverick backup restore`
+  applies it.
+- **Fail-closed restore**: refuses a backup whose client id differs from this
+  deployment's (`--force` to override); extraction is path-traversal safe.
+- **Warm standby**: cron `backup create`, ship the `.tgz` offsite + to a standby
+  host, `backup restore` + start on failover (see runbook §3.6).
 
 ### Phase 4 — Security hardening
 - **Mandatory shield**: `[safety] require_shield = true` (auto under enterprise)
@@ -204,6 +209,23 @@ If it shows `✗ client  (client binding ENFORCED but no client id set …)`, th
 deployment will refuse to serve — fix the binding before exposing it. The whole
 data tree must live under `…/tenants/acme-corp/`; nothing for this client should
 appear directly under `…/.maverick/`.
+
+### 3.6 Backup & warm-standby failover
+
+```bash
+# Nightly consistent backup, shipped offsite + to the standby host.
+sudo -u maverick MAVERICK_HOME=/var/lib/maverick/.maverick \
+  MAVERICK_CLIENT_ID=acme-corp maverick backup create --out /backups/acme.tgz
+aws s3 cp /backups/acme.tgz s3://acme-maverick-dr/   # or rsync to standby
+
+# On the STANDBY (same MAVERICK_CLIENT_ID), restore + start on failover:
+maverick backup info  /backups/acme.tgz              # confirm client_id = acme-corp
+maverick backup restore /backups/acme.tgz            # fail-closed if client mismatches
+systemctl start maverick-dashboard
+```
+
+The restore refuses a backup whose `client_id` differs from the standby's
+binding — a client's data can never be restored onto another client's node.
 
 ### 3.5 Cloud marketplace image
 
