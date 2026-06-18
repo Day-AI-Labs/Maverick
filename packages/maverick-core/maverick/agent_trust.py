@@ -360,13 +360,17 @@ _TOKEN_ATTRS = {"a2a": "a2a_token", "grpc": "grpc_token", "mcp": "mcp_token"}
 def agent_for_token(
     token: str, surface: str, *, registry: dict[str, TrustedAgent] | None = None,
 ) -> TrustedAgent | None:
-    """Resolve a presented per-caller bearer for ``surface`` (a2a/grpc/mcp) to
-    its registered agent, or ``None``.
+    """Resolve a valid presented per-caller bearer for ``surface`` (a2a/grpc/mcp)
+    to its registered agent, or ``None``.
 
     Constant-time compares against every entry's surface token (scanning all so
-    timing doesn't reveal which matched); an empty token never matches. This is
-    how a per-caller bearer maps to a specific :class:`TrustedAgent` so the
-    registry can govern individual callers on a single-shared-bearer surface."""
+    timing doesn't reveal which matched); an empty token never matches. A token
+    is an authentication credential, so it only resolves while the matching
+    trust entry is active and inbound-permitted -- revoked, expired,
+    not-yet-valid, or outbound-only entries therefore fail authentication for
+    management methods as well as task execution. This is how a per-caller
+    bearer maps to a specific :class:`TrustedAgent` so the registry can govern
+    individual callers on a single-shared-bearer surface."""
     import hmac
     attr = _TOKEN_ATTRS.get(surface)
     presented = (token or "").encode()
@@ -377,7 +381,9 @@ def agent_for_token(
     for agent in reg.values():
         configured = getattr(agent, attr, "")
         if configured and hmac.compare_digest(configured.encode(), presented):
-            matched = matched or agent
+            active, _ = agent.is_active()
+            if active and agent.permits_inbound():
+                matched = matched or agent
     return matched
 
 
