@@ -373,13 +373,18 @@ class TaskEngine:
                 return "bearer:" + hashlib.sha256(given.encode()).hexdigest()
         return "anon"
 
-    def _owned(self, task_id: str, principal: str) -> _Task:
+    def _owned(self, task_id: object, principal: str) -> _Task:
         """Look up a task and enforce principal ownership.
 
         Raises a 'task not found' error (not a distinct 'forbidden') for both a
         missing task and a cross-principal one, so a caller can't probe which
-        ids exist that belong to someone else."""
-        task = self._tasks.get(task_id or "")
+        ids exist that belong to someone else.
+
+        Task ids are opaque strings; a hostile client can send a non-string
+        ``id``/``taskId`` (a list/dict), which must resolve to 'not found'
+        rather than blow up the dict lookup with an unhashable-key TypeError."""
+        key = task_id if isinstance(task_id, str) else ""
+        task = self._tasks.get(key)
         if task is None or task.principal != principal:
             raise _RpcError(_TASK_NOT_FOUND, "task not found")
         return task

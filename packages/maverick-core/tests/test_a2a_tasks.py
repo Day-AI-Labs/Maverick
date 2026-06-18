@@ -84,6 +84,17 @@ def test_get_and_cancel():
         eng.get({"id": "nope"})
 
 
+def test_non_string_task_id_is_not_found_not_crash():
+    """A hostile client can send a non-string (unhashable) id/taskId. It must
+    resolve to a clean 'task not found' _RpcError, never a TypeError from the
+    dict lookup (which would escape to a 500)."""
+    eng = TaskEngine(runner=_fake_runner)
+    for bad in ([1, 2], {"a": 1}, [[{"x": 1}]], 42, None):
+        for method in (eng.get, eng.cancel, eng.get_push_config):
+            with pytest.raises(_RpcError):
+                method({"id": bad, "taskId": bad})
+
+
 def test_cancel_pending_task():
     eng = TaskEngine(runner=_fake_runner)
     t = eng._new_task(_msg("later"))  # created, not yet run
