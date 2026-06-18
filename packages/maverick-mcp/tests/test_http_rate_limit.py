@@ -7,7 +7,6 @@ and returns 429 over the per-minute cap; MAVERICK_MCP_RATE_LIMIT=0 disables it.
 from __future__ import annotations
 
 import pytest
-
 from maverick_mcp import http_transport as ht
 
 
