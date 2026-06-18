@@ -788,6 +788,7 @@ def status() -> dict[str, Any]:
                 "max_risk": a.max_risk,
                 "data_scopes": sorted(a.data_scopes),
                 "active": a.is_active()[0],
+                "expires_at": a.expires_at,
             }
             for a in reg.values()
         ],
