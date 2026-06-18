@@ -25,7 +25,7 @@ helm install maverick ./deploy/helm/maverick \
   --set worldModel.backend=postgres \
   --set worldModel.postgres.rls=true \
   --set replicaCount=3 \
-  --set-string secret.data.MAVERICK_PG_DSN=postgres://user:pass@host:5432/maverick \
+  --set-string secret.data.MAVERICK_PG_DSN=postgres://maverick:***@host:5432/maverick \
   --set-string secret.data.ANTHROPIC_API_KEY=sk-ant-...
 ```
 

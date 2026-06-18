@@ -1,0 +1,58 @@
+# Prometheus alerting rules for Maverick.
+#
+# Scrape the dashboard's /metrics endpoint (bearer-gated when
+# MAVERICK_DASHBOARD_TOKEN is set). Exposed series:
+#   maverick_goals_total{status="done|failed|blocked|active"}
+#   maverick_cost_dollars_total
+#   maverick_tokens_total{direction="input|output"}
+#   maverick_concurrent_goals
+#   maverick_max_concurrent_goals
+#
+# Apply as a PrometheusRule (Prometheus Operator) or inline under
+# rule_files: in a plain Prometheus config.
+groups:
+  - name: maverick.availability
+    rules:
+      - alert: MaverickDown
+        expr: up{job="maverick"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Maverick target {{ $labels.instance }} is down"
+          description: "Prometheus cannot scrape Maverick for 2m. Check the pod/health."
+
+      - alert: MaverickConcurrencySaturated
+        # In-flight goals pinned at the global cap -> new work is queued/blocked.
+        expr: maverick_concurrent_goals >= maverick_max_concurrent_goals
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Maverick at max concurrency for 10m"
+          description: "concurrent_goals has been at the cap; consider raising MAVERICK_MAX_CONCURRENT_GOALS or scaling out (requires Postgres)."
+
+  - name: maverick.cost
+    rules:
+      - alert: MaverickSpendSpike
+        # Sustained spend acceleration: >$20/hr over 15m. Tune to your budget.
+        expr: rate(maverick_cost_dollars_total[15m]) * 3600 > 20
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Maverick LLM spend > $20/hr"
+          description: "Sustained spend rate is high. Check budget caps and per-tenant quotas."
+
+  - name: maverick.reliability
+    rules:
+      - alert: MaverickGoalFailureRate
+        # >25% of completed goals failing/blocked over 30m.
+        expr: |
+          (
+            sum(increase(maverick_goals_total{status=~"failed|blocked"}[30m]))
+            /
+            clamp_min(sum(increase(maverick_goals_total{status=~"done|failed|blocked"}[30m])), 1)
+          ) > 0.25
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "Maverick goal failure rate > 25%"
+          description: "A quarter of recently-completed goals failed or were blocked. Check logs, provider health, and the shield."
