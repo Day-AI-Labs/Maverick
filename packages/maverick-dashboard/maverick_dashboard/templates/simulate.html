@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Simulate · Maverick{% endblock %}
+{% block content %}
+  <h1 class="page-title">Pre-action simulation</h1>
+  <p class="page-subtitle">Dry-run a proposed action to see its risk and whether it would be gated — before anything runs.</p>
+
+  <div class="panel">
+    <form method="get" action="/simulate" class="grid">
+      <label>Surface
+        <select name="surface">
+          <option value="browser" {{ 'selected' if surface == 'browser' else '' }}>browser</option>
+          <option value="computer" {{ 'selected' if surface == 'computer' else '' }}>computer</option>
+          <option value="tool" {{ 'selected' if surface == 'tool' else '' }}>tool</option>
+        </select>
+      </label>
+      <label>Action <input type="text" name="action" value="{{ action or '' }}" placeholder="click / type / key / left_click / a tool name"></label>
+      <label>Target <input type="text" name="target" value="{{ target or '' }}" placeholder="selector / url / typed text"></label>
+      <button class="btn btn--primary" type="submit">Simulate</button>
+    </form>
+  </div>
+
+  {% if result and result.decision %}
+  <div class="panel">
+    <h2>Decision:
+      <span class="badge {{ 'danger' if result.decision == 'DENY' else ('active' if ('allow' in result.decision or result.decision == 'exposed') else '') }}">{{ result.decision }}</span>
+    </h2>
+    <table>
+      <tbody>
+        <tr><td>Surface</td><td>{{ result.surface }}</td></tr>
+        <tr><td>Action</td><td>{{ result.action }}</td></tr>
+        <tr><td>Risk</td><td><span class="badge {{ 'danger' if result.risk == 'high' else '' }}">{{ result.risk }}</span></td></tr>
+        <tr><td>Consent mode</td><td>{{ result.consent_mode }}</td></tr>
+        <tr><td>Why</td><td>{{ result.why }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  {% elif result and result.error %}
+  <div class="panel"><p><span class="badge danger">{{ result.error }}</span></p></div>
+  {% endif %}
+{% endblock %}

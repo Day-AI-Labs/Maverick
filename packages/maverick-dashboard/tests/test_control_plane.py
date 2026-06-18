@@ -154,3 +154,74 @@ def test_trust_graph_layout(monkeypatch):
     # vega is inbound-only + medium-risk in the fixture
     assert node["inbound"] is True and node["outbound"] is False
     assert node["color"] == "#2563eb"
+
+
+# ---- discovery -------------------------------------------------------------
+
+def test_discovery_overview_shape():
+    from maverick_dashboard.control_plane import discovery_overview
+    ov = discovery_overview()
+    assert {"tools", "mcp_servers", "providers", "channels", "agents"} <= ov.keys()
+    assert {"entries", "by_tier", "count"} <= ov["tools"].keys()
+    assert isinstance(ov["mcp_servers"], list)
+    assert isinstance(ov["providers"], list)
+    assert "count" in ov["agents"]
+
+
+def test_discovery_page_and_api():
+    assert client.get("/discovery").status_code == 200
+    r = client.get("/api/v1/discovery")
+    assert r.status_code == 200 and "tools" in r.json()
+
+
+# ---- pre-action simulation -------------------------------------------------
+
+def test_simulate_browser_pay_is_high(monkeypatch):
+    monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+    from maverick_dashboard.control_plane import simulate_action
+    res = simulate_action("browser", "click", "text=Pay now")
+    assert res["risk"] == "high" and res["decision"]
+
+
+def test_simulate_ask_mode_requires_approval(monkeypatch):
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "ask")
+    from maverick_dashboard.control_plane import simulate_action
+    res = simulate_action("browser", "click", "text=Pay now")
+    assert "APPROVAL" in res["decision"].upper()
+
+
+def test_simulate_readonly_not_gated(monkeypatch):
+    monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+    from maverick_dashboard.control_plane import simulate_action
+    assert simulate_action("browser", "extract_text", "")["decision"] == "not gated"
+
+
+def test_simulate_unknown_surface_errors():
+    from maverick_dashboard.control_plane import simulate_action
+    assert "error" in simulate_action("rocket", "launch", "")
+
+
+def test_simulate_api_and_page():
+    r = client.get("/api/v1/simulate",
+                   params={"surface": "browser", "action": "click", "target": "text=Pay"})
+    assert r.status_code == 200 and r.json()["risk"] == "high"
+    p = client.get("/simulate",
+                   params={"surface": "browser", "action": "click", "target": "Pay now"})
+    assert p.status_code == 200 and "Decision" in p.text
+
+
+# ---- compliance packet -----------------------------------------------------
+
+def test_compliance_packet_shape():
+    from maverick_dashboard.control_plane import compliance_packet
+    pkt = compliance_packet()
+    assert pkt["artifact"] == "maverick.compliance_packet"
+    assert "soc2" in pkt and "controls" in pkt and "audit_chain" in pkt
+
+
+def test_compliance_packet_download():
+    r = client.get("/api/v1/compliance/packet")
+    assert r.status_code == 200
+    cd = r.headers.get("content-disposition", "")
+    assert "attachment" in cd and "maverick-compliance-packet.json" in cd
+    assert r.json()["artifact"] == "maverick.compliance_packet"
