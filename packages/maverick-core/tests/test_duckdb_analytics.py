@@ -1,4 +1,5 @@
 """DuckDB analytics over the world model: load, canned queries, read-only guard."""
+
 from __future__ import annotations
 
 import pytest
@@ -6,7 +7,7 @@ from click.testing import CliRunner
 from maverick.cli import main
 from maverick.world_model import WorldModel
 
-pytest.importorskip("duckdb")
+duckdb = pytest.importorskip("duckdb")
 from maverick.duckdb_analytics import WorldAnalytics  # noqa: E402
 
 
@@ -25,9 +26,10 @@ def _seed(path, goals):
 
 
 def test_cost_percentiles(tmp_path):
-    w = _seed(tmp_path / "w.db", [
-        (f"g{i}", "done", [(float(i) * 0.5, "success", 1.0)]) for i in range(1, 11)
-    ])
+    w = _seed(
+        tmp_path / "w.db",
+        [(f"g{i}", "done", [(float(i) * 0.5, "success", 1.0)]) for i in range(1, 11)],
+    )
     wa = WorldAnalytics(w)
     pct = wa.cost_percentiles()
     assert pct["n"] == 10
@@ -37,11 +39,14 @@ def test_cost_percentiles(tmp_path):
 
 
 def test_top_goals(tmp_path):
-    w = _seed(tmp_path / "w.db", [
-        ("cheap", "done", [(0.1, "success", 1.0)]),
-        ("whale", "done", [(5.0, "success", 1.0), (1.0, "success", 1.0)]),
-        ("free", "done", [(0.0, "success", 1.0)]),
-    ])
+    w = _seed(
+        tmp_path / "w.db",
+        [
+            ("cheap", "done", [(0.1, "success", 1.0)]),
+            ("whale", "done", [(5.0, "success", 1.0), (1.0, "success", 1.0)]),
+            ("free", "done", [(0.0, "success", 1.0)]),
+        ],
+    )
     wa = WorldAnalytics(w)
     rows = wa.top_goals(5)
     assert rows[0]["title"] == "whale" and rows[0]["total_cost"] == pytest.approx(6.0)
@@ -57,6 +62,7 @@ def test_daily_cost(tmp_path):
     # end_episode stamps ended_at = now, so there's one day bucket at today.
     assert len(days) == 1 and days[0]["spend"] == pytest.approx(1.0)
     import re
+
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", days[0]["bucket"])
     wa.close()
 
@@ -72,10 +78,42 @@ def test_adhoc_query(tmp_path):
 def test_query_rejects_writes(tmp_path):
     w = _seed(tmp_path / "w.db", [("a", "done", [(1.0, "success", 1.0)])])
     wa = WorldAnalytics(w)
-    for bad in ("DELETE FROM episodes", "DROP TABLE goals",
-                "UPDATE goals SET title='x'", "INSERT INTO goals VALUES (1,'x','y')"):
+    for bad in (
+        "DELETE FROM episodes",
+        "DROP TABLE goals",
+        "UPDATE goals SET title='x'",
+        "INSERT INTO goals VALUES (1,'x','y')",
+    ):
         with pytest.raises(ValueError, match="only SELECT"):
             wa.query(bad)
+    wa.close()
+
+
+def test_query_applies_row_limit(tmp_path):
+    w = _seed(tmp_path / "w.db", [(str(i), "done", [(1.0, "success", 1.0)]) for i in range(3)])
+    wa = WorldAnalytics(w, query_limit=2)
+    rows = wa.query("SELECT id FROM goals ORDER BY id")
+    assert len(rows) == 2
+    wa.close()
+
+
+def test_query_rejects_multiple_statements(tmp_path):
+    w = _seed(tmp_path / "w.db", [("a", "done", [(1.0, "success", 1.0)])])
+    wa = WorldAnalytics(w)
+    with pytest.raises(duckdb.ParserException):
+        wa.query("SELECT 1; SELECT * FROM goals")
+    wa.close()
+
+
+def test_query_disables_external_file_access(tmp_path):
+    w = _seed(tmp_path / "w.db", [("a", "done", [(1.0, "success", 1.0)])])
+    secret = tmp_path / "secret.csv"
+    secret.write_text("s\nleak\n")
+    wa = WorldAnalytics(w)
+    with pytest.raises(
+        duckdb.PermissionException, match="file system operations are disabled|Cannot access file"
+    ):
+        wa.query(f"SELECT * FROM read_csv('{secret}', header=true)")
     wa.close()
 
 
@@ -100,7 +138,9 @@ def test_cli_analytics_sql(tmp_path):
     db = tmp_path / "world.db"
     _seed(db, [("g", "done", [(1.0, "success", 1.0)])]).close()
     res = CliRunner().invoke(
-        main, ["--db", str(db), "analytics", "--sql", "SELECT count(*) n FROM goals"])
+        main, ["--db", str(db), "analytics", "--sql", "SELECT count(*) n FROM goals"]
+    )
     assert res.exit_code == 0
     import json
+
     assert json.loads(res.output) == [{"n": 1}]
