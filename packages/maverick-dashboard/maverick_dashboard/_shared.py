@@ -41,6 +41,15 @@ def _world():
     DB path so test fixtures that monkeypatch ``DEFAULT_DB`` to a fresh
     ``tmp_path`` still get an isolated WorldModel per test.
     """
+    # Client binding: when the deployment is bound to a client, the dashboard
+    # reads/writes that client's isolated world DB (under tenants/<client>/),
+    # never the shared root. Unbound (legacy / tests that monkeypatch
+    # DEFAULT_DB) keeps the prior DEFAULT_DB path exactly.
+    from maverick.paths import current_tenant_id
+    tid = current_tenant_id()
+    if tid:
+        from maverick.world_model import world_for_tenant
+        return world_for_tenant(tid)
     from maverick.world_model import DEFAULT_DB, WorldModel
     key = str(DEFAULT_DB)
     cached = _world_cache.get(key)

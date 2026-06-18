@@ -1002,6 +1002,9 @@ def serve(
             "federation is disabled. Opt in with MAVERICK_FEDERATION_ENABLED=1 "
             "or [federation] enabled = true in ~/.maverick/config.toml."
         )
+    # Fail closed: a client-bound deployment must not serve unbound.
+    from .client import require_client_binding
+    require_client_binding()
     grpc = _require_grpc()
     pb2, pb2_grpc = _load_stubs()
     if service is None:

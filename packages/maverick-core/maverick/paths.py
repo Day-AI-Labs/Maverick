@@ -66,7 +66,16 @@ def current_tenant_id() -> str | None:
     if t:
         return t
     env = os.environ.get("MAVERICK_TENANT", "").strip()
-    return env or None
+    if env:
+        return env
+    # Client binding: one deployment = one enterprise client. The configured
+    # client id is the tenant FLOOR, so client data never resolves to an
+    # un-scoped shared root. None when no client is bound (legacy single-root).
+    try:
+        from .client import client_id
+        return client_id()
+    except Exception:  # pragma: no cover - client resolution never blocks paths
+        return None
 
 
 def current_tenant() -> str | None:

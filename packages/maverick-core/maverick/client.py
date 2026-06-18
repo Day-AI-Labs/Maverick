@@ -1,0 +1,151 @@
+"""Client binding — one Maverick deployment, exactly one enterprise client.
+
+Maverick is deployed **one instance per enterprise client** (never a shared,
+hosted multi-tenant service). This module makes that binding explicit and
+**fail-closed** so client data can never land in an ambiguous, un-scoped
+location:
+
+* the deployment declares its client via ``[client] id`` or
+  ``MAVERICK_CLIENT_ID``;
+* that id becomes the tenant **floor** (consumed by
+  :func:`maverick.paths.current_tenant_id`), so every data path — world DB,
+  audit chain + keys, cross-session memory, fleet memory — resolves under
+  ``~/.maverick/tenants/<client>/...`` instead of a shared root. There is no
+  un-scoped global location for client data to accumulate in;
+* in **enforced** mode (``[client] enforce = true``, ``MAVERICK_CLIENT_ENFORCE``,
+  or enterprise mode) a missing/invalid client id REFUSES to start — there is no
+  silent fallback to the shared root.
+
+Off by default (no client id configured) => legacy single-root behaviour,
+byte-for-byte unchanged, so existing single-tenant installs are unaffected.
+
+The client id is immutable for a deployment's lifetime, so it is resolved once
+and cached; set ``MAVERICK_CLIENT_ID`` in the service unit / image so the hot
+path (every ``data_dir`` call resolves the tenant floor) never parses config.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import re
+
+log = logging.getLogger(__name__)
+
+# A client id becomes the tenant path segment, so it must satisfy the tenant
+# charset (paths._SAFE_TENANT_CHARS): letters/digits/._- only, no whitespace.
+_CLIENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_TRUE = {"1", "true", "yes", "on"}
+
+# Resolved once per process (the binding is immutable for a deployment). Tests
+# reset via reset_client_cache().
+_UNSET = object()
+_cached: object = _UNSET
+
+
+class ClientBindingError(RuntimeError):
+    """Raised when a client-bound deployment is started without a valid client id."""
+
+
+def reset_client_cache() -> None:
+    """Forget the cached client id (test hook; the id is immutable in prod)."""
+    global _cached
+    _cached = _UNSET
+
+
+def _resolve() -> str | None:
+    raw = (os.environ.get("MAVERICK_CLIENT_ID") or "").strip()
+    if not raw:
+        try:
+            from .config import load_config
+            raw = str(((load_config() or {}).get("client") or {}).get("id") or "").strip()
+        except Exception:  # pragma: no cover - config never blocks path resolution
+            raw = ""
+    if not raw:
+        return None
+    if not _CLIENT_RE.fullmatch(raw):
+        log.warning("[client] id %r is invalid (want %s); ignoring it",
+                    raw, _CLIENT_RE.pattern)
+        return None
+    return raw
+
+
+def client_id() -> str | None:
+    """The deployment's bound client id, or ``None`` (legacy shared root).
+
+    ``MAVERICK_CLIENT_ID`` wins over ``[client] id``. Cached for the process.
+    """
+    global _cached
+    if _cached is _UNSET:
+        _cached = _resolve()
+    return _cached  # type: ignore[return-value]
+
+
+def client_binding_enforced() -> bool:
+    """Is a client binding REQUIRED to operate?
+
+    On via ``MAVERICK_CLIENT_ENFORCE``, ``[client] enforce = true``, or
+    enterprise mode (a deployment handling a real client's sensitive data must
+    be provably bound to that client). Off by default."""
+    env = os.environ.get("MAVERICK_CLIENT_ENFORCE")
+    if env is not None and env.strip() != "":
+        return env.strip().lower() in _TRUE
+    try:
+        from .enterprise import enterprise_enabled
+        if enterprise_enabled():
+            return True
+    except Exception:  # pragma: no cover
+        pass
+    try:
+        from .config import load_config
+        return str(((load_config() or {}).get("client") or {}).get("enforce") or "").strip().lower() in _TRUE
+    except Exception:
+        return False
+
+
+def require_client_binding() -> str | None:
+    """Fail-closed startup guard. Returns the bound client id.
+
+    Raises :class:`ClientBindingError` when the binding is enforced but no valid
+    client id is configured — so a client-bound surface never serves from the
+    un-scoped shared root by accident. A no-op (returns ``None``) when binding
+    is not enforced.
+    """
+    cid = client_id()
+    if cid:
+        return cid
+    if client_binding_enforced():
+        raise ClientBindingError(
+            "client binding is enforced but no client id is configured. Set "
+            "MAVERICK_CLIENT_ID (recommended, in the service unit) or "
+            "[client] id in config. Refusing to start unbound so client data "
+            "cannot land in the shared root."
+        )
+    return None
+
+
+def data_root():
+    """The resolved data root for this deployment (for doctor/diagnostics)."""
+    from .paths import data_dir
+    return data_dir()
+
+
+def status() -> dict:
+    """Binding summary for ``maverick doctor`` / readiness."""
+    cid = client_id()
+    return {
+        "client_id": cid,
+        "enforced": client_binding_enforced(),
+        "bound": bool(cid),
+        "data_root": str(data_root()),
+    }
+
+
+__all__ = [
+    "ClientBindingError",
+    "client_id",
+    "client_binding_enforced",
+    "require_client_binding",
+    "reset_client_cache",
+    "data_root",
+    "status",
+]
