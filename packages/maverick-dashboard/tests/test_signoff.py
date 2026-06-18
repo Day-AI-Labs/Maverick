@@ -63,10 +63,33 @@ class TestSignoffApi:
         assert calls[0]["goal_id"] == gid
         assert calls[0]["domain"] == "finance_cash13w"
         assert calls[0]["table"]["headers"] == ["Week", "Net"]  # parsed deliverable rides along
+        assert calls[0]["result"] == ""  # no raw table text outside the reviewed artifact
 
         gid2 = _forecast_goal(w)
         client.post(f"/api/v1/goals/{gid2}/signoff", json={"decision": "rejected"})
         assert len(calls) == 1  # rejection does not hand off downstream
+
+    def test_handoff_omits_unreviewed_raw_text_for_table(self, tmp_path, monkeypatch):
+        import maverick.webhooks as webhooks
+        w = _world(tmp_path, monkeypatch)
+        calls = []
+        monkeypatch.setattr(webhooks, "fire_deliverable_handoff",
+                            lambda payload: calls.append(payload) or 1)
+
+        raw = "HIDDEN_PREFACE\n" + _TABLE + "\nHIDDEN_TRAILER"
+        gid = w.create_goal("Refresh the cash forecast", "", domain="finance_cash13w")
+        w.set_goal_status(gid, "done", result=raw)
+
+        r = client.post(f"/api/v1/goals/{gid}/signoff", json={"decision": "approved"})
+
+        assert r.status_code == 200
+        assert len(calls) == 1
+        assert calls[0]["table"] == {
+            "headers": ["Week", "Net"],
+            "rows": [["W1", "300"], ["W2", "100"]],
+        }
+        assert calls[0]["result"] == ""
+        assert "HIDDEN" not in str(calls[0])
 
 
 class TestDeliverableExport:
