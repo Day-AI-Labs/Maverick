@@ -477,9 +477,17 @@ async def record_outcome(request: Request, payload: OutcomeIn) -> None:
     in what actually happened. ``value`` is clamped to [0, 1] by the store.
     """
     require_permission(request, "operate")
+    goal_id = int(payload.goal_id)
+    episode_id = int(payload.episode_id)
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    if not any(ep.id == episode_id for ep in w.list_episodes(goal_id=goal_id, limit=100_000)):
+        raise HTTPException(status_code=404, detail="no such episode")
     from maverick.consequence import record_outcome as _rec
-    _rec(int(payload.goal_id), int(payload.episode_id), float(payload.value),
-         kind=(payload.kind or ""))
+    _rec(goal_id, episode_id, float(payload.value), kind=(payload.kind or ""))
 
 
 @router.get("/skills", response_model=list[SkillOut])
