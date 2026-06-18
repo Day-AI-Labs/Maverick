@@ -100,7 +100,7 @@ jobs:
           cp dist-all/${{ matrix.package }}-* dist/
           ls -la dist/
       - name: Publish ${{ matrix.package }} to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           packages-dir: dist/
           skip-existing: true
@@ -120,7 +120,7 @@ jobs:
         with:
           name: dist
           path: dist/
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Sign artifacts (keyless)
         run: |
           set -e
