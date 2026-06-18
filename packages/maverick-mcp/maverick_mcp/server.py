@@ -29,11 +29,19 @@ _STRUCTURED_OVERRIDE_CTX: contextvars.ContextVar[object] = contextvars.ContextVa
     "maverick_mcp_structured_override", default=_NO_OVERRIDE
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    stream=sys.stderr,
-    format="%(asctime)s [%(levelname)s] mcp: %(message)s",
-)
+# Use Maverick's shared logging config (honors MAVERICK_LOG_FORMAT=json, the
+# correlation-id context filter, and secret scrubbing) instead of a bespoke
+# basicConfig. It logs to STDERR — never stdout, which is the MCP stdio protocol
+# channel — and is idempotent.
+try:
+    from maverick.logging_config import configure_logging as _configure_logging
+    _configure_logging()
+except Exception:  # pragma: no cover - fall back to a stderr basicConfig
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stderr,
+        format="%(asctime)s [%(levelname)s] mcp: %(message)s",
+    )
 
 # Protocol version. MCP 2025-11-25 ships Tasks / Resources / Elicitation /
 # Sampling / MCP Apps; we negotiate down to the older spec when a client
