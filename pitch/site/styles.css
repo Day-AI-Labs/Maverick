@@ -4,7 +4,17 @@
    Warm-paper light base, ink text, one disciplined accent,
    dark sections for gravitas. No decoration for its own sake.
    ============================================================ */
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opt_sz,wght@0,18..72,400;0,18..72,500;0,18..72,600;1,18..72,400&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* self-hosted fonts — no third-party requests (latin subset) */
+@font-face{font-family:'Newsreader';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/ns-400.woff2) format('woff2')}
+@font-face{font-family:'Newsreader';font-style:normal;font-weight:500;font-display:swap;src:url(fonts/ns-500.woff2) format('woff2')}
+@font-face{font-family:'Newsreader';font-style:normal;font-weight:600;font-display:swap;src:url(fonts/ns-600.woff2) format('woff2')}
+@font-face{font-family:'Newsreader';font-style:italic;font-weight:400;font-display:swap;src:url(fonts/ns-400i.woff2) format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/inter-400.woff2) format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url(fonts/inter-500.woff2) format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url(fonts/inter-600.woff2) format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:700;font-display:swap;src:url(fonts/inter-700.woff2) format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/jbm-400.woff2) format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500;font-display:swap;src:url(fonts/jbm-500.woff2) format('woff2')}
 
 :root{
   --paper:#FAF8F3; --paper-2:#F3F0E8; --card:#FFFFFF;
@@ -209,4 +219,11 @@ p{margin:16px 0 0}
   .stats .s+.s,.gate .stage+.stage{border-left:0;border-top:1px solid var(--line)}
   .gate{flex-direction:column}
   .footer .top{gap:36px}
+}
+@media (max-width:560px){
+  .brand .by{display:none}
+  .nav-cta .btn{padding:10px 15px;font-size:15px}
+  .brand-mark img{height:20px}
+  .trust .wrap{gap:14px}
+  .trust .verticals{gap:18px 22px;font-size:18px}
 }
