@@ -377,7 +377,12 @@ def _resolve_signing_key(
     if not config.jwks_uri:
         raise OIDCError("OIDC jwks_uri is not configured")
     try:
-        client = jwt_mod.PyJWKClient(config.jwks_uri)
+        # timeout so an unreachable/slow IdP can't hang the auth request thread
+        # indefinitely (matches the discovery fetch's bounded timeout).
+        try:
+            client = jwt_mod.PyJWKClient(config.jwks_uri, timeout=5)
+        except TypeError:  # very old PyJWT without the timeout kwarg
+            client = jwt_mod.PyJWKClient(config.jwks_uri)
         return client.get_signing_key_from_jwt(token).key
     except Exception as e:  # network error, unknown kid, malformed JWKS
         raise OIDCError(f"could not fetch JWKS signing key: {e}") from e

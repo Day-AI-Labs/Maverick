@@ -106,6 +106,25 @@ def _positive_float(value: object) -> float | None:
     return f if f > 0 else None
 
 
+_INVALID = object()  # sentinel: a present-but-malformed security field
+
+
+def _lifecycle_bound(entry: dict, key: str) -> object:
+    """Parse a credential lifecycle bound (``not_before`` / ``expires_at``).
+
+    Returns the positive epoch float, ``None`` when the field is ABSENT (no
+    bound — legitimate), or the ``_INVALID`` sentinel when it is PRESENT but
+    malformed. The caller drops the whole entry on ``_INVALID``: unlike a
+    budget ceiling, a typo'd or zero/negative expiry must NOT silently coerce
+    to "never expires" / "always valid" — that would make a misconfigured
+    credential immortal (fail-open on a security field). Fail closed instead.
+    """
+    if key not in entry or entry.get(key) is None:
+        return None
+    parsed = _positive_float(entry.get(key))
+    return parsed if parsed is not None else _INVALID
+
+
 def _names(value: object) -> frozenset[str]:
     if isinstance(value, str):
         value = [value]
@@ -300,6 +319,14 @@ def _agent_from_entry(entry: dict) -> TrustedAgent | None:
         log.warning("[agent_trust] agent %r: bad direction %r; using 'both'",
                     agent_id, direction)
         direction = "both"
+    not_before = _lifecycle_bound(entry, "not_before")
+    expires_at = _lifecycle_bound(entry, "expires_at")
+    if not_before is _INVALID or expires_at is _INVALID:
+        # Fail closed: a present-but-malformed lifecycle bound drops the entry
+        # (the agent is simply untrusted) rather than minting an immortal cred.
+        log.warning("[agent_trust] agent %r: malformed not_before/expires_at; "
+                    "dropping entry (fail-closed)", agent_id)
+        return None
     return TrustedAgent(
         id=agent_id,
         pubkey=pubkey,
@@ -313,8 +340,8 @@ def _agent_from_entry(entry: dict) -> TrustedAgent | None:
         a2a_token=str(entry.get("a2a_token") or ""),
         grpc_token=str(entry.get("grpc_token") or ""),
         mcp_token=str(entry.get("mcp_token") or ""),
-        not_before=_positive_float(entry.get("not_before")),
-        expires_at=_positive_float(entry.get("expires_at")),
+        not_before=not_before,  # type: ignore[arg-type]  # float|None (not _INVALID)
+        expires_at=expires_at,  # type: ignore[arg-type]
         revoked=bool(entry.get("revoked")),
     )
 
