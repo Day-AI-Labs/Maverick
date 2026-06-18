@@ -195,6 +195,28 @@ RULES: list[Rule] = [
     Rule("base64_url_exfil", "high",
          _compile(r"https?:\/\/[^\s]+\?[^=]*=[A-Za-z0-9+\/]{40,}={0,2}"),
          "URL parameter with base64 payload"),
+    # base64_url_exfil only catches a base64-shaped value; a PLAINTEXT provider
+    # credential in a URL (query, fragment, OR path) slipped past it and every
+    # other rule. Match well-known secret token shapes anywhere in a URL --
+    # distinctive prefixes keep the false-positive rate near zero (a benign
+    # ``?key=`` / ``?token=`` is NOT enough to fire; the value must look like a
+    # real credential). Catches the ``#fragment`` / path-segment placements the
+    # markdown rule's ``?``-only check misses.
+    Rule("credential_in_url", "high",
+         _compile(
+             r"https?:\/\/\S*(?:"
+             r"sk-ant-[A-Za-z0-9_-]{12,}"        # Anthropic
+             r"|sk-[A-Za-z0-9]{20,}"             # OpenAI-style
+             r"|gh[posru]_[A-Za-z0-9]{20,}"      # GitHub PAT/OAuth/refresh/server/user
+             r"|github_pat_[A-Za-z0-9_]{20,}"    # GitHub fine-grained PAT
+             r"|sk_live_[A-Za-z0-9]{16,}"        # Stripe live secret
+             r"|AKIA[0-9A-Z]{16}"                # AWS access key id
+             r"|AIza[A-Za-z0-9_-]{20,}"          # Google API key
+             r"|xox[baprs]-[A-Za-z0-9-]{10,}"    # Slack token
+             r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"  # JWT
+             r")"
+         ),
+         "Recognizable credential token embedded in a URL (exfiltration)"),
 
     # Tool abuse markers (these trigger on tool-call args, not free text).
     # The `_shell_deobfuscate` candidate strips quotes/$IFS, so quoted and
