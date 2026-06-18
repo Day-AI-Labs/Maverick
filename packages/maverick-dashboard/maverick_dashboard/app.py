@@ -1298,6 +1298,42 @@ async def audit_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/replay", response_class=HTMLResponse)
+async def replay_page(request: Request) -> HTMLResponse:
+    """Flight recorder: reconstruct a run's action timeline from the signed
+    audit log, verify the tamper-evident chain, and offer an evidence export.
+
+    With no ``?goal=<id>`` it lists recent runs (owner-scoped) to pick from.
+    """
+    from maverick.world_model import open_world
+
+    from .control_plane import build_replay
+    raw = (request.query_params.get("goal") or "").strip()
+    goal_id = int(raw) if raw.isdigit() else None
+    w = open_world()
+    if goal_id is None:
+        goals = w.list_goals(limit=50, order="desc", owner=goal_owner_filter(request))
+        return templates.TemplateResponse(
+            request, "replay.html", {"goal": None, "goals": goals, "replay": None},
+        )
+    goal = w.get_goal(goal_id)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, goal)
+    replay = build_replay(goal_id, window=(goal.created_at, goal.updated_at))
+    return templates.TemplateResponse(
+        request, "replay.html", {"goal": goal, "goals": None, "replay": replay},
+    )
+
+
+@app.get("/trust", response_class=HTMLResponse)
+async def trust_page(request: Request) -> HTMLResponse:
+    """Agent Trust Plane: the cross-agent permission graph -- every external
+    agent allowed to interact, with its tool/risk/budget ceilings + lifecycle."""
+    from .control_plane import trust_overview
+    return templates.TemplateResponse(request, "trust.html", trust_overview())
+
+
 @app.get("/compartments", response_class=HTMLResponse)
 async def compartments_page(request: Request) -> HTMLResponse:
     """The agent factory's roster: each domain pack and the bulkhead it runs in.
