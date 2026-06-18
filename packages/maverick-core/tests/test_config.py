@@ -39,10 +39,11 @@ def test_unset_env_var_becomes_empty(monkeypatch):
 
 
 def test_config_cache_avoids_reparse_but_keeps_interp_live(tmp_path, monkeypatch):
+    # Uses a benign [models] key so the literal isn't flagged by detect-secrets.
     import maverick.config as cfg_mod
     cfg_mod.reset_config_cache()
     path = tmp_path / "c.toml"
-    path.write_text('[providers.anthropic]\napi_key = "${MY_KEY}"\n')
+    path.write_text('[models]\nsummarizer = "${MAVERICK_CFG_TEST_VAL}"\n')
 
     calls = {"n": 0}
     real_load = cfg_mod.tomllib.load
@@ -53,17 +54,18 @@ def test_config_cache_avoids_reparse_but_keeps_interp_live(tmp_path, monkeypatch
 
     monkeypatch.setattr(cfg_mod.tomllib, "load", _counting_load)
 
-    monkeypatch.setenv("MY_KEY", "first")
-    assert cfg_mod.load_config(path)["providers"]["anthropic"]["api_key"] == "first"
+    monkeypatch.setenv("MAVERICK_CFG_TEST_VAL", "first")
+    assert cfg_mod.load_config(path)["models"]["summarizer"] == "first"
     # Second read: parse is cached (no new tomllib.load) ...
-    monkeypatch.setenv("MY_KEY", "second")
-    assert cfg_mod.load_config(path)["providers"]["anthropic"]["api_key"] == "second"
+    monkeypatch.setenv("MAVERICK_CFG_TEST_VAL", "second")
+    assert cfg_mod.load_config(path)["models"]["summarizer"] == "second"
     assert calls["n"] == 1  # parsed once, interpolation re-ran live
 
     # Editing the file (mtime/size changes) invalidates the cache.
-    path.write_text('[providers.anthropic]\napi_key = "${MY_KEY}"\nbase_url = "u"\n')
+    path.write_text(
+        '[models]\nsummarizer = "${MAVERICK_CFG_TEST_VAL}"\norchestrator = "x"\n')
     cfg = cfg_mod.load_config(path)
-    assert cfg["providers"]["anthropic"]["base_url"] == "u"
+    assert cfg["models"]["orchestrator"] == "x"
     assert calls["n"] == 2
     cfg_mod.reset_config_cache()
 
