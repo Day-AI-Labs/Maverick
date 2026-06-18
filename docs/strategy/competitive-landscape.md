@@ -67,3 +67,32 @@ governance tangible* — a live view of what the fleet is doing, why, at what co
 and risk, with one-click intervention. That experience is both our UX gap and a
 competitive moat; see [`ux/oversight-experience.md`](../ux/oversight-experience.md).
 A great oversight console is the demo that wins the deal.
+
+## Objection handling — "why not just use X?"
+
+**"…a hyperscaler agent platform (Bedrock AgentCore, Vertex, Azure AI Foundry, OpenAI AgentKit) already governs agents."**
+They govern agents hosted *on their cloud, inside their walls*. They can't run entirely in the customer's VPC / on-prem / air-gap with governance baked in — exactly what the deepest regulated buyers screen on. Maverick is the self-hosted, integrated answer, and governs across *multiple* clouds.
+
+**"…a governance / AI-security point tool (Credo AI, Lakera, Prompt Security, Langfuse) covers this."**
+Sidecars — they observe or gate *someone else's* runtime. Maverick governs from inside the loop (every action flows through the control plane) and runs the agent, so it can enforce attenuating capabilities, per-action approval, and a signed replay of the *actual* execution — which a bolt-on cannot.
+
+**"…we'll build it in-house."**
+The primitives are individually buildable; the assembled, tested, self-hostable governed runtime *with a cryptographic flight recorder* is a multi-year effort — and it already ships (see below).
+
+**"…LangGraph / CrewAI / AutoGen is our agent stack."**
+Keep it. Maverick governs agents built on any framework; we compare against *governance platforms*, never the runtime SDK.
+
+**"…UiPath / Automation Anywhere already have governance + our install base."**
+Legacy RPA DNA, not an open, deep multi-agent kernel for non-deterministic agents. We are the agentic successor with governance native, not retrofitted.
+
+## Proof the wedge is real (shipping in `main` today)
+
+The wedge — *runtime + governance + self-host, integrated* — is code, not a roadmap (~9,300 tests):
+
+- Tamper-evident **Ed25519 hash-chained audit** + a **standalone external verifier** (`maverick-verify-audit`) an auditor runs with no trust in us.
+- **Signed run replay + one-click evidence packets**; high-risk actions bracketed with sealed before/after screenshots.
+- **Attenuating capabilities** (per-call tokens, subtree revocation) + a **per-action human-approval gate** on computer/browser actuations.
+- **Cross-agent trust plane + permission graph**, **discovery** (inventory by risk), and **pre-action simulation** ("why allowed/blocked" before it runs).
+- **Enterprise mode** (fail-closed egress lock + at-rest sealing) with an **enforceable preflight** that refuses to boot an under-hardened deployment; OIDC/RBAC/tenant isolation; container sandboxing; Helm self-host.
+
+This is the "self-hosted supervisor experience that makes governance tangible" the five camps structurally lack — and the demo that wins the deal.
