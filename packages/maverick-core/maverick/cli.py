@@ -6410,6 +6410,26 @@ def encryption_migrate_cmd(ctx, dry_run: bool) -> None:
     )
 
 
+@encryption_group.command("rotate")
+def encryption_rotate_cmd() -> None:
+    """Rotate the process-wide at-rest encryption key (additive, no re-encrypt).
+
+    Mints a new active key in the rotation keyring. New writes are sealed under
+    it immediately; all prior keys are retained so existing data stays readable
+    -- no flag-day re-encrypt, no data loss. Keep the previous key(s) available
+    until you have re-sealed old data (e.g. `maverick encryption migrate`).
+    Per-tenant envelope keys rotate via their own KMS, not this command.
+    """
+    from .crypto_at_rest import EncryptionUnavailable, rotate_at_rest_key
+    try:
+        key_id = rotate_at_rest_key()
+    except EncryptionUnavailable as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"rotated at-rest key; new active key-id = {key_id}")
+    click.echo("new writes seal under it; prior keys retained for reads. Keep "
+               "the old key material until old data is re-sealed.")
+
+
 @main.group("local-runtime")
 def local_runtime_group() -> None:
     """Plan the local model-server runtime (vLLM / TGI / llama.cpp)."""

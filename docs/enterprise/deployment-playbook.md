@@ -280,8 +280,10 @@ start the prior version.
 **Secret / key rotation:** API keys — edit `~/.maverick/.env` and reload (no
 downtime). **Audit signing key:** `maverick audit rotate-key` (additive — old
 public keys retained, chain stays verifiable; restart `maverick serve` to sign
-with the new key). **At-rest encryption key:** no graceful rotation yet (sealed
-blobs carry no key-id) — back up, then re-seal offline with both keys held (§10).
+with the new key). **At-rest encryption key:** `maverick encryption rotate` —
+mints a new active key in the keyring; new writes seal under it, prior keys keep
+decrypting old data (no flag-day re-encrypt). Keep old key material until you've
+re-sealed legacy data (`maverick encryption migrate`); then it can be retired.
 
 **Tenant offboarding (GDPR Art. 15/17/20):**
 ```bash
@@ -310,6 +312,7 @@ Honest, current state — what's now enforced in code vs. what genuinely remains
 | **gRPC TLS** | A **non-loopback plaintext bind is now refused** (`TlsConfigError`) unless TLS is configured or `MAVERICK_ALLOW_INSECURE_GRPC=1` is set. Set `[grpc] tls=true` + `tls_client_ca` for mTLS. |
 | **MCP rate limiting** | Per-caller sliding-window limiter (bearer/IP), `MAVERICK_MCP_RATE_LIMIT` (default 600/min; 0 disables) → 429 over cap. |
 | **gRPC rate limiting** | Per-caller sliding-window limiter at the auth chokepoint (agent id / hashed peer), `MAVERICK_GRPC_RATE_LIMIT` (default 600/min; 0 disables) → RESOURCE_EXHAUSTED. Complements `maximum_concurrent_rpcs`. |
+| **Key rotation** | `maverick audit rotate-key` (signing) and `maverick encryption rotate` (at-rest) — both **additive**: a keyring/per-row key-id means new writes use the new key while prior keys keep decrypting old data. No flag-day re-encrypt. |
 | **Plugins** | Correction: load-time **allowlist** (`[plugins] enabled` / `MAVERICK_PLUGINS_ALLOW`) **and permission-grant enforcement are real and default-deny** (`enforce_permissions=true`) — an ungranted permission *skips* the plugin. (Earlier draft mis-stated this as unenforced.) |
 
 ### Remaining (disclose to the customer / roadmap)
@@ -318,7 +321,6 @@ Honest, current state — what's now enforced in code vs. what genuinely remains
 | MCP | Shared bearer grants full tool access; per-tenant gating only via Agent Trust Plane (opt-in). | `[agent_trust] enforce=true` with per-agent tokens. |
 | Plugins | Granted plugins run **in-process** — no runtime syscall/network sandbox (load-time grants only). | Vet + code-review allowlisted plugins. |
 | Firecracker | Silently falls back to Docker if the VM layer is unavailable. | Monitor logs; alert on fallback. |
-| Keys | **Audit-signing key rotation** now ships (`maverick audit rotate-key` — additive, old pubs retained, chain stays verifiable). **At-rest** key rotation is still manual (sealed blobs carry no key-id, so it's a both-keys-held re-seal, not graceful). | Rotate audit key via the command; for at-rest, back up then re-seal offline. |
 | Billing | Metering + invoicing exist; **no payment integration** (Stripe). | Export usage; bill externally. |
 | Compliance | **DPA / sub-processor / SLA templates** now ship in `docs/enterprise/legal/`; **SOC 2 Type II + penetration test require external auditors** (not code). | Engage auditor/pen-test firm; complete the templates with counsel. |
 
