@@ -875,6 +875,67 @@ def trust_verify_cmd(agent_id, tools, risk, direction) -> None:
     click.echo(f"{direction} {agent_id!r}: {verdict}  rule={d.rule}  {d.reason}")
 
 
+@main.group("client")
+def client_group() -> None:
+    """Inspect / export / erase THIS deployment's bound client (one per Maverick).
+
+    Since one deployment serves exactly one client, the client's whole data set
+    lives under one root — so export and right-to-erasure are provably complete."""
+
+
+@client_group.command("status")
+def client_status_cmd() -> None:
+    """Show the client binding + data root."""
+    from .client import status as client_status
+    st = client_status()
+    if st["bound"]:
+        click.echo(click.style(f"bound to {st['client_id']!r}", fg="green")
+                   + f"  (enforced={st['enforced']})")
+        click.echo(f"data root: {st['data_root']}")
+    else:
+        msg = "NOT bound to a client (shared root)"
+        click.echo(click.style(msg, fg="red" if st["enforced"] else "yellow"))
+
+
+@client_group.command("export")
+@click.option("--out", default=None, help="Destination .tgz (default: under data root).")
+def client_export_cmd(out) -> None:
+    """Export all of this client's data (data portability / DSAR)."""
+    from .backup import BackupError, create_backup
+    try:
+        path = create_backup(out)
+    except BackupError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(click.style(f"client export written: {path}", fg="green"))
+
+
+@client_group.command("erase")
+@click.option("--confirm", is_flag=True, help="Required: actually erase the data.")
+@click.option("--keep-audit", is_flag=True,
+              help="Preserve the signed audit chain (legal retention).")
+def client_erase_cmd(confirm, keep_audit) -> None:
+    """Erase ALL of this client's data (offboarding / right-to-erasure).
+
+    Wipes the client's data root (world DB, memory, fleet, trust registry, and
+    — unless --keep-audit — the audit chain). Refuses unless a client is bound
+    so it can never target the shared root. Irreversible: export first."""
+    from .client import ClientBindingError, client_id, erase_client
+    cid = client_id()
+    if not cid:
+        raise click.ClickException("no client bound — refusing to erase the shared root")
+    if not confirm:
+        raise click.ClickException(
+            f"this ERASES all data for client {cid!r} and is irreversible. "
+            "Re-run with --confirm (and consider `maverick client export` first).")
+    try:
+        res = erase_client(keep_audit=keep_audit)
+    except ClientBindingError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(click.style(
+        f"erased client {res['client_id']!r}: {res['removed']} path(s) removed"
+        + (" (audit kept)" if res["kept_audit"] else ""), fg="yellow"))
+
+
 @main.group("backup")
 def backup_group() -> None:
     """Back up / restore this client's data for DR + standby failover.
