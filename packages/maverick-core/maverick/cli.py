@@ -481,6 +481,31 @@ def version() -> None:
 
 
 @main.command()
+@click.option("--output", "-o", "output", default=None,
+              help="Write the bundle to this file (chmod 600) instead of stdout.")
+def support(output: str | None) -> None:
+    """Print a redacted diagnostics bundle for a support ticket.
+
+    Versions, runtime, client binding, readiness checks, a SECRET-REDACTED
+    config, and a recent-failures summary — one JSON document to attach to a
+    ticket instead of hand-running version/doctor/diag and redacting by hand.
+    """
+    import json as _json
+
+    from .support_bundle import collect
+    text = _json.dumps(collect(), indent=2, sort_keys=True, default=str)
+    if output:
+        from pathlib import Path as _P
+        path = _P(output).expanduser()
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+        click.echo(f"support bundle written: {path}")
+    else:
+        click.echo(text)
+
+
+@main.command()
 @click.option("--name", default=None, help="Business name (otherwise prompted).")
 @click.option("--doc", "docs", multiple=True,
               help="Path to a document to ingest (repeatable).")
