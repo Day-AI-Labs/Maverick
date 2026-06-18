@@ -28,7 +28,7 @@ Isolated, reproducible, easy to nuke.
 ```bash
 docker run -it --rm \
   -v ~/maverick-workspace:/workspace \
-  -v ~/.maverick/config.toml:/root/.maverick/config.toml:ro \
+  -v ~/.maverick/config.toml:/home/maverick/.maverick/config.toml:ro \
   -e ANTHROPIC_API_KEY=... \
   ghcr.io/day-ai-labs/maverick:latest \
   start "..."

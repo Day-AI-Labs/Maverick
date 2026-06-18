@@ -132,6 +132,22 @@ def dashboard_overrides_path() -> Path:
     return config_path().parent / DASHBOARD_OVERRIDES_BASENAME
 
 
+def tenant_config_path() -> Path | None:
+    """Path to the active tenant's config overlay, or None in single-tenant mode.
+
+    Resolves to ``~/.maverick/tenants/<tenant>/config.toml`` when a tenant is
+    active (per-user tenancy, ``MAVERICK_TENANT``, or a bound client) and None
+    otherwise, so the legacy single-tenant load is left exactly as it was.
+    """
+    try:
+        from .paths import current_tenant_id, data_dir
+        if current_tenant_id() is None:
+            return None
+        return data_dir("config.toml")
+    except Exception:  # pragma: no cover -- config resolution never blocks a run
+        return None
+
+
 def load_config(path: Path | None = None) -> dict:
     if path is not None:
         return _load_config_file(path)
@@ -145,6 +161,13 @@ def load_config(path: Path | None = None) -> dict:
     overlay = os.environ.get(CONFIG_OVERLAY_ENV)
     if overlay:
         cfg = _deep_merge_config(cfg, _load_config_file(Path(overlay).expanduser()))
+    # Per-tenant overlay (highest precedence): when a tenant is active, its own
+    # config.toml wins, so each client supplies its own provider API keys, model
+    # choices and budget without sharing one global credential set. Skipped in
+    # single-tenant mode, so the legacy path is byte-for-byte unchanged.
+    tcfg = tenant_config_path()
+    if tcfg is not None and tcfg.exists():
+        cfg = _deep_merge_config(cfg, _load_config_file(tcfg))
     return cfg
 
 

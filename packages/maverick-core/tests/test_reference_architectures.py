@@ -15,7 +15,7 @@ except ModuleNotFoundError:  # Python 3.10
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _RA = _REPO_ROOT / "deploy" / "reference-architectures"
 _PORT = "8765"
-_STATE = "/root/.maverick"
+_STATE = "/home/maverick/.maverick"
 
 
 def test_readme_lists_all_four_platforms():

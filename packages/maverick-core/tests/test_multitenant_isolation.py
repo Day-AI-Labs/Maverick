@@ -89,6 +89,46 @@ def test_world_for_tenant_caches_same_instance():
     world_model._tenant_worlds.clear()
 
 
+# ---- per-tenant config / credential isolation ----
+
+def test_provider_keys_are_per_tenant(tmp_path, monkeypatch):
+    """Each tenant's own config.toml overlay supplies its own provider API key;
+    with no active tenant the global config is used unchanged."""
+    from maverick import config
+    home = tmp_path / "home"
+    monkeypatch.setenv("MAVERICK_HOME", str(home))
+    monkeypatch.setattr(config, "config_path", lambda: home / "config.toml")
+    # No env-var key in play for this test.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    # Global config (single-tenant / shared default).
+    (home).mkdir(parents=True, exist_ok=True)
+    (home / "config.toml").write_text(
+        '[providers.anthropic]\napi_key = "global-key"\n', encoding="utf-8"
+    )
+    # Tenant acme overrides with its own key.
+    acme_dir = data_dir(tenant="acme")
+    acme_dir.mkdir(parents=True, exist_ok=True)
+    (acme_dir / "config.toml").write_text(
+        '[providers.anthropic]\napi_key = "acme-key"\n', encoding="utf-8"
+    )
+
+    # No tenant -> global key.
+    assert config.get_provider_config("anthropic")["api_key"] == "global-key"
+    # Active tenant acme -> acme's key.
+    tok = set_tenant("acme")
+    try:
+        assert config.get_provider_config("anthropic")["api_key"] == "acme-key"
+    finally:
+        reset_tenant(tok)
+    # A tenant with no overlay falls back to the global key (not acme's).
+    tok = set_tenant("globex")
+    try:
+        assert config.get_provider_config("anthropic")["api_key"] == "global-key"
+    finally:
+        reset_tenant(tok)
+
+
 # ---- per-tenant calibration / learning-freeze isolation ----
 
 def test_calibration_samples_and_freeze_are_per_tenant(monkeypatch):
