@@ -150,7 +150,7 @@ p{margin:16px 0 0}
 .maptbl b{font-weight:600;color:var(--ink)}
 
 /* ---- industries ---- */
-.inds{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:48px}
+.inds{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:48px}
 .ind{border:1px solid var(--line);border-radius:14px;padding:24px;background:var(--card)}
 .ind .t{font-family:var(--serif);font-size:22px;font-weight:500}
 .ind .d{color:var(--muted);font-size:15px;margin-top:8px;line-height:1.5}
