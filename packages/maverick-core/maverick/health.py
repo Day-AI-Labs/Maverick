@@ -369,6 +369,28 @@ def _check_shield() -> None:
              fix="set [safety] profile = \"balanced\" in ~/.maverick/config.toml to re-enable")
 
 
+def _check_data_residency(cfg: dict) -> None:
+    """When the deployment DECLARES a data-residency requirement
+    (``[residency] region`` / ``MAVERICK_RESIDENCY_REGION``), warn about any
+    residency-sensitive feature still defaulting to a US region — silently
+    routing a sovereign client's data through us-east-1/us-central1 is a real
+    compliance hit. No declared requirement -> no-op (no noise)."""
+    region = (os.environ.get("MAVERICK_RESIDENCY_REGION")
+              or str((cfg.get("residency") or {}).get("region") or "")).strip()
+    if not region:
+        return
+    if not os.environ.get("AWS_REGION") and not (cfg.get("s3") or {}).get("region"):
+        _row(YELLOW, "residency",
+             f"residency={region!r} but AWS_REGION is unset — S3 attachments "
+             "default to us-east-1",
+             fix="set AWS_REGION to an in-region value")
+    if not os.environ.get("VERTEX_LOCATION") and not (cfg.get("vertex") or {}).get("location"):
+        _row(YELLOW, "residency",
+             f"residency={region!r} but VERTEX_LOCATION is unset — Vertex "
+             "defaults to us-central1",
+             fix="set VERTEX_LOCATION to an in-region value (if Vertex is used)")
+
+
 def _check_config_perms() -> None:
     """Config may hold tokens/secrets — warn if it's group/world-accessible."""
     try:
@@ -510,6 +532,7 @@ def diagnose() -> int:
     click.echo(click.style("Maverick health check\n", bold=True))
     cfg = _check_config()
     _check_config_perms()
+    _check_data_residency(cfg)
     _check_client_binding()
     _check_anthropic()
     _check_openai()
