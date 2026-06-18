@@ -134,7 +134,8 @@ def verify_deployment() -> list[GuaranteeCheck]:
     ))
 
     # 6. Sandbox isolation -- agent-generated code must not run unsandboxed on
-    # the host. The 'local' backend executes shell=True with no isolation.
+    # the host. The 'local' backend runs model-generated shell on the host with
+    # no container isolation; a container backend is required for a real boundary.
     backend = "local"
     try:
         from .config import load_config
