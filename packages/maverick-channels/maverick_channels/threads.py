@@ -47,7 +47,7 @@ import asyncio
 import logging
 import os
 
-from .base import Channel, Handler, IncomingMessage, is_allowed, normalize_allowlist
+from .base import Channel, Handler, IncomingMessage, backoff_delay, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -159,18 +159,22 @@ class ThreadsChannel(Channel):
     async def start(self) -> None:
         self._running = True
         log.info("Threads channel started (user_id=%s)", self.user_id)
+        errors = 0
         try:
             while not self._stop_event.is_set():
                 try:
                     replies = await self._poll_once()
+                    errors = 0
                 except Exception as e:
+                    errors += 1
                     log.warning("threads poll failed: %s", e)
                     replies = []
                 for reply in replies:
                     await self._dispatch(reply)
                 try:
                     await asyncio.wait_for(
-                        self._stop_event.wait(), timeout=self.poll_seconds,
+                        self._stop_event.wait(),
+                        timeout=backoff_delay(self.poll_seconds, errors),
                     )
                 except asyncio.TimeoutError:
                     pass
@@ -197,18 +201,26 @@ class ThreadsChannel(Channel):
             ) from e
         base = f"{THREADS_BASE}/{API_VERSION}/{self.user_id}"
         reply_to = user_id if str(user_id or "").isdigit() else None
-        for chunk in [text[i:i + TEXT_LIMIT] for i in range(0, max(len(text), 1), TEXT_LIMIT)]:
+        chunks = [text[i:i + TEXT_LIMIT] for i in range(0, max(len(text), 1), TEXT_LIMIT)]
+        for idx, chunk in enumerate(chunks):
+            # Bail on the first failed chunk: the publish edge is sequential and
+            # a half-sent multi-chunk reply can't be recovered. Log how many
+            # chunks went undelivered so a truncated reply is visible in the
+            # logs instead of vanishing silently.
+            dropped = len(chunks) - idx
             data = {"media_type": "TEXT", "text": chunk}
             if reply_to:
                 data["reply_to_id"] = reply_to
             async with httpx.AsyncClient(timeout=30.0) as client:
                 r = await client.post(f"{base}/threads", headers=self._headers(), data=data)
                 if r.status_code >= 400:
-                    log.warning("threads create failed (%s): %s", r.status_code, r.text[:200])
+                    log.warning("threads create failed (%s): %s [%d/%d chunk(s) undelivered]",
+                                r.status_code, r.text[:200], dropped, len(chunks))
                     return
                 creation_id = (r.json() or {}).get("id")
                 if not creation_id:
-                    log.warning("threads create returned no creation id")
+                    log.warning("threads create returned no creation id "
+                                "[%d/%d chunk(s) undelivered]", dropped, len(chunks))
                     return
                 r2 = await client.post(
                     f"{base}/threads_publish",
@@ -216,7 +228,8 @@ class ThreadsChannel(Channel):
                     data={"creation_id": creation_id},
                 )
                 if r2.status_code >= 400:
-                    log.warning("threads publish failed (%s): %s", r2.status_code, r2.text[:200])
+                    log.warning("threads publish failed (%s): %s [%d/%d chunk(s) undelivered]",
+                                r2.status_code, r2.text[:200], dropped, len(chunks))
                     return
 
     async def stop(self) -> None:

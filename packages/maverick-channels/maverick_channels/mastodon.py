@@ -16,7 +16,7 @@ import logging
 import os
 import re
 
-from .base import Channel, Handler, IncomingMessage, is_allowed
+from .base import Channel, Handler, IncomingMessage, backoff_delay, is_allowed
 
 log = logging.getLogger(__name__)
 
@@ -198,18 +198,22 @@ class MastodonChannel(Channel):
         self._running = True
         await self._seed_cursor()
         log.info("Mastodon channel started (instance=%s)", self.instance)
+        errors = 0
         try:
             while not self._stop_event.is_set():
                 try:
                     notifs = await self._poll_once()
+                    errors = 0
                 except Exception as e:
+                    errors += 1
                     log.warning("mastodon poll failed: %s", e)
                     notifs = []
                 for n in notifs:
                     await self._dispatch(n)
                 try:
                     await asyncio.wait_for(
-                        self._stop_event.wait(), timeout=self.poll_interval,
+                        self._stop_event.wait(),
+                        timeout=backoff_delay(self.poll_interval, errors),
                     )
                 except asyncio.TimeoutError:
                     pass

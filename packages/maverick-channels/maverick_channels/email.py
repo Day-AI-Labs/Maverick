@@ -29,7 +29,7 @@ import logging
 import smtplib
 from email.message import EmailMessage
 
-from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
+from .base import Channel, IncomingMessage, backoff_delay, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -73,18 +73,22 @@ class EmailChannel(Channel):
 
     async def start(self) -> None:
         log.info("Email channel polling %s every %ds", self.imap_host, self.poll_interval)
+        errors = 0
         while not self._stop:
             try:
                 messages = await asyncio.wait_for(
                     asyncio.to_thread(self._fetch_unseen),
                     timeout=IMAP_TIMEOUT * 2,
                 )
+                errors = 0
             except asyncio.TimeoutError:
                 log.warning("IMAP poll timed out; continuing")
                 messages = []
+                errors += 1
             except Exception:  # pragma: no cover
                 log.exception("email poll failed")
                 messages = []
+                errors += 1
             for from_addr, subject, body in messages:
                 if not is_allowed((from_addr or "").lower(), self.allowed_user_ids):
                     log.warning("unauthorized email access: from=%s", from_addr)
@@ -106,7 +110,7 @@ class EmailChannel(Channel):
                     await self.send(from_addr, reply, subject=reply_subject)
                 except Exception:
                     log.exception("email send failed for %s", from_addr)
-            await asyncio.sleep(self.poll_interval)
+            await asyncio.sleep(backoff_delay(self.poll_interval, errors))
 
     def _fetch_unseen(self) -> list[tuple[str, str, str]]:
         out: list[tuple[str, str, str]] = []
