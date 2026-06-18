@@ -34,6 +34,7 @@ __all__ = [
     "SSHBackend",
     "ExecResult",
     "build_sandbox",
+    "SandboxPolicyError",
     "SDK_VERSION",
     "SandboxV2",
 ]
@@ -122,6 +123,33 @@ def _resolve_image(full_cfg: dict) -> str:
 _LOCAL_WARNING_EMITTED = False
 
 
+class SandboxPolicyError(RuntimeError):
+    """Raised when the configured sandbox backend violates deployment policy
+    (e.g. the unsandboxed ``local`` backend under enterprise/require-container)."""
+
+
+def _config_truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _container_backend_required(full_cfg: dict | None = None) -> bool:
+    """Whether a container sandbox backend is mandatory (so ``local`` is refused).
+
+    True when ``MAVERICK_REQUIRE_CONTAINER_BACKEND`` is set, ``[sandbox]
+    require_container = true``, or enterprise mode is on. Off by default so
+    single-tenant/dev installs keep the (warned) local backend.
+    """
+    if _config_truthy_env("MAVERICK_REQUIRE_CONTAINER_BACKEND"):
+        return True
+    if full_cfg and _config_bool(full_cfg.get("require_container"), False):
+        return True
+    try:
+        from ..enterprise import enterprise_enabled
+        return bool(enterprise_enabled())
+    except Exception:  # pragma: no cover -- never block startup on a lookup error
+        return False
+
+
 def _warn_local_unsandboxed() -> None:
     """Warn (once per process) that the agent will run model-generated shell
     directly on the host with no container isolation.
@@ -186,6 +214,19 @@ def build_sandbox(
     # explicitly asked for it. Lowercase + strip so the configured backend
     # actually applies.
     chosen = str(backend or cfg.get("backend") or "local").strip().lower()
+    # Enterprise gate: the local backend runs ``shell=True`` on the host with NO
+    # isolation. Under enterprise mode -- or an explicit opt-in via
+    # ``MAVERICK_REQUIRE_CONTAINER_BACKEND=1`` / ``[sandbox] require_container =
+    # true`` -- refuse it fail-closed rather than silently executing untrusted
+    # agent code on the host. Off by default, so single-tenant dev is unchanged.
+    if chosen == "local" and _container_backend_required(full_cfg):
+        raise SandboxPolicyError(
+            "refusing the unsandboxed 'local' sandbox backend: enterprise / "
+            "require-container policy is active but [sandbox] backend = \"local\" "
+            "runs shell=True on the host with no isolation. Set [sandbox] backend "
+            "to a container backend (docker / podman / gvisor / kubernetes / "
+            "firecracker)."
+        )
     wd = Path(workdir or cfg.get("workdir", str(Path.cwd()))).expanduser()
     # Coerce defensively: [sandbox] timeout is hand-editable, and a non-numeric
     # ("fast") or non-positive value would otherwise raise here and crash the

@@ -133,6 +133,25 @@ def verify_deployment() -> list[GuaranteeCheck]:
         else "set [retention] audit_days / episodes_days / events_days",
     ))
 
+    # 6. Sandbox isolation -- agent-generated code must not run unsandboxed on
+    # the host. The 'local' backend executes shell=True with no isolation.
+    backend = "local"
+    try:
+        from .config import load_config
+        backend = str(
+            (load_config() or {}).get("sandbox", {}).get("backend") or "local"
+        ).strip().lower()
+    except Exception:
+        pass
+    sandboxed = backend not in ("", "local")
+    checks.append(GuaranteeCheck(
+        "Sandbox isolation",
+        sandboxed,
+        f"backend = {backend}" if sandboxed
+        else "set [sandbox] backend = \"docker\" (or podman/gvisor/kubernetes/"
+             "firecracker); 'local' runs agent code on the host unsandboxed",
+    ))
+
     return checks
 
 

@@ -1,0 +1,50 @@
+"""Sandbox backend enterprise gate.
+
+The 'local' backend runs shell=True on the host with no isolation. Under
+enterprise mode (or an explicit require-container opt-in) build_sandbox must
+refuse it fail-closed instead of silently running untrusted agent code on the
+host. Off by default, so single-tenant/dev keeps the (warned) local backend.
+"""
+from __future__ import annotations
+
+import pytest
+from maverick.sandbox import SandboxPolicyError, build_sandbox
+
+
+@pytest.fixture(autouse=True)
+def _isolate(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    for v in ("MAVERICK_ENTERPRISE", "MAVERICK_REQUIRE_CONTAINER_BACKEND",
+              "MAVERICK_SUPPRESS_SANDBOX_WARNING"):
+        monkeypatch.delenv(v, raising=False)
+
+
+def test_local_allowed_by_default():
+    # No policy active -> local backend is built (with a one-time warning).
+    sb = build_sandbox(backend="local")
+    assert sb is not None
+
+
+def test_local_refused_when_require_container_env(monkeypatch):
+    monkeypatch.setenv("MAVERICK_REQUIRE_CONTAINER_BACKEND", "1")
+    with pytest.raises(SandboxPolicyError):
+        build_sandbox(backend="local")
+
+
+def test_local_refused_under_enterprise_mode(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    with pytest.raises(SandboxPolicyError):
+        build_sandbox(backend="local")
+
+
+def test_container_backend_not_refused_by_policy(monkeypatch):
+    # The gate refuses ONLY 'local'. A container backend must not trip it; in an
+    # env without a Docker daemon build_sandbox may raise a different error
+    # (docker unavailable) -- that's fine, it just must not be SandboxPolicyError.
+    monkeypatch.setenv("MAVERICK_REQUIRE_CONTAINER_BACKEND", "1")
+    try:
+        build_sandbox(backend="docker")
+    except SandboxPolicyError:
+        pytest.fail("docker backend wrongly refused by the local-only policy gate")
+    except Exception:
+        pass  # e.g. Docker daemon not installed in this environment
