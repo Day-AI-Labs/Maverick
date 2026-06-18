@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Security &amp; deployment — Lightwork</title>
-<meta name="description" content="Every control your reviewers ask about maps to a mechanism in Lightwork — self-host or air-gap, egress lock, capability tokens, a policy engine, and a signed, hash-chained audit you can verify offline. Security overview and SOC 2 status available on request.">
+<title>Security &amp; deployment: Lightwork</title>
+<meta name="description" content="Every control your reviewers ask about maps to a mechanism in Lightwork: self-host or air-gap, egress lock, capability tokens, a policy engine, and a signed, hash-chained audit you can verify offline. Security overview and SOC 2 status available on request.">
 <link rel="stylesheet" href="styles.css">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="512x512" href="favicon-512.png">
 <link rel="apple-touch-icon" href="favicon-180.png">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Security &amp; deployment — Lightwork">
-<meta property="og:description" content="Every control your reviewers ask about maps to a mechanism in Lightwork — self-host or air-gap, egress lock, capability tokens, a policy engine, and a signed, hash-chained audit you can verify offline. Security overview and SOC 2 status available on request.">
+<meta property="og:title" content="Security &amp; deployment: Lightwork">
+<meta property="og:description" content="Every control your reviewers ask about maps to a mechanism in Lightwork: self-host or air-gap, egress lock, capability tokens, a policy engine, and a signed, hash-chained audit you can verify offline. Security overview and SOC 2 status available on request.">
 <meta property="og:image" content="https://daybreakailabs.com/og.png">
 <meta property="og:url" content="https://daybreakailabs.com/security">
 <meta name="twitter:card" content="summary_large_image">
@@ -42,7 +42,7 @@
     <div class="hero-text">
       <span class="eyebrow">Security &amp; deployment</span>
       <h1 style="margin-top:18px">Built to clear your security review.</h1>
-      <p class="lede">Every control your reviewers ask about maps to a mechanism in the platform — not a promise on a slide.</p>
+      <p class="lede">Every control your reviewers ask about maps to a mechanism in the platform, not a promise on a slide.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="mailto:info@daybreakailabs.com?subject=Lightwork%20security%20overview">Request the security overview</a>
         <a class="btn btn-ghost" href="product.html">How it works</a>
@@ -63,14 +63,14 @@
     <table class="maptbl">
       <thead><tr><th>What your reviewers require</th><th>The mechanism</th></tr></thead>
       <tbody>
-        <tr><td class="ctrl">Data never leaves your environment</td><td class="mech"><b>Self-host or air-gap</b> — your VPC or fully offline, on your data.</td></tr>
-        <tr><td class="ctrl">No data exfiltration</td><td class="mech"><b>Egress lock</b> — a successful prompt injection still can't move data out.</td></tr>
-        <tr><td class="ctrl">Least privilege, per action</td><td class="mech"><b>Capability tokens</b> (attenuate-only) — an agent narrows its rights, never widens.</td></tr>
+        <tr><td class="ctrl">Data never leaves your environment</td><td class="mech"><b>Self-host or air-gap</b>: your VPC or fully offline, on your data.</td></tr>
+        <tr><td class="ctrl">No data exfiltration</td><td class="mech"><b>Egress lock</b>: a successful prompt injection still can't move data out.</td></tr>
+        <tr><td class="ctrl">Least privilege, per action</td><td class="mech"><b>Capability tokens</b> (attenuate-only): an agent narrows its rights, never widens.</td></tr>
         <tr><td class="ctrl">Bounded blast radius</td><td class="mech"><b>Sandbox, network-off by default</b> &middot; hard budget caps on tokens, dollars, wall-clock, and tools.</td></tr>
-        <tr><td class="ctrl">A human stays in control</td><td class="mech"><b>Policy on every action</b> — allow, deny, or require a human.</td></tr>
-        <tr><td class="ctrl">A provable, immutable record</td><td class="mech"><b>Signed, hash-chained audit</b> (the Operating Record) — tamper-evident, verifiable offline.</td></tr>
-        <tr><td class="ctrl">Evidence on demand</td><td class="mech"><b>Proof Pack</b> — an Ed25519-signed bundle that verifies offline and refuses to fabricate.</td></tr>
-        <tr><td class="ctrl">Your data trains no one's model</td><td class="mech"><b>It runs on your infrastructure</b> — nothing leaves to be trained on.</td></tr>
+        <tr><td class="ctrl">A human stays in control</td><td class="mech"><b>Policy on every action</b>: allow, deny, or require a human.</td></tr>
+        <tr><td class="ctrl">A provable, immutable record</td><td class="mech"><b>Signed, hash-chained audit</b> (the Operating Record): tamper-evident, verifiable offline.</td></tr>
+        <tr><td class="ctrl">Evidence on demand</td><td class="mech"><b>Proof Pack</b>: an Ed25519-signed bundle that verifies offline and refuses to fabricate.</td></tr>
+        <tr><td class="ctrl">Your data trains no one's model</td><td class="mech"><b>It runs on your infrastructure</b>: nothing leaves to be trained on.</td></tr>
       </tbody>
     </table>
   </div>
@@ -87,12 +87,12 @@
       <div class="card">
         <div class="idx">01</div>
         <h3>Self-host</h3>
-        <p>Your VPC — your cloud account, your keys. Nothing routes through us.</p>
+        <p>Your VPC: your cloud account, your keys. Nothing routes through us.</p>
       </div>
       <div class="card">
         <div class="idx">02</div>
         <h3>Air-gapped</h3>
-        <p>Fully offline — no required egress at all. The platform never has to reach the network.</p>
+        <p>Fully offline: no required egress at all. The platform never has to reach the network.</p>
       </div>
       <div class="card">
         <div class="idx">03</div>
@@ -108,8 +108,8 @@
   <div class="wrap">
     <div class="sec-head">
       <span class="eyebrow">Audit &amp; evidence</span>
-      <h2>Proof a reviewer can verify — offline.</h2>
-      <p>The Operating Record is a signed, hash-chained log of every governed action. Each entry signs the one before it. Alter a single row after the fact and the chain breaks — so tampering is detected, not assumed away.</p>
+      <h2>Proof a reviewer can verify, offline.</h2>
+      <p>The Operating Record is a signed, hash-chained log of every governed action. Each entry signs the one before it. Alter a single row after the fact and the chain breaks, so tampering is detected, not assumed away.</p>
     </div>
     <div class="cols cols-2">
       <div class="term">
@@ -119,13 +119,13 @@
           <div class="row"><span>0xA2 &middot; deny $60k wire</span><span class="ok">&#10003; signed</span></div>
           <div class="row"><span>0xA3 &middot; require-human $6k</span><span class="ok">&#10003; signed</span></div>
           <div class="row"><span>0xA4 &middot; cap runaway loop</span><span class="ok">&#10003; signed</span></div>
-          <div class="row"><span class="c">&mdash; alter 0xA2 after the fact &mdash;</span><span class="deny">&#10007; CAUGHT</span></div>
+          <div class="row"><span class="c">· alter 0xA2 after the fact ·</span><span class="deny">&#10007; CAUGHT</span></div>
         </div>
       </div>
       <div class="term">
         <div class="bar"><span class="chip">maverick proof-pack</span><span style="font-size:12px;color:var(--mint)">&#9679; Ed25519 signed</span></div>
         <div class="body">
-          <div class="c"># PROOF.md &mdash; verifies offline</div>
+          <div class="c"># PROOF.md · verifies offline</div>
           <div class="row"><span>signature</span><span class="ok">&#10003; Ed25519</span></div>
           <div class="row"><span>chain</span><span class="ok">&#10003; intact</span></div>
           <div class="row"><span>fabricate a result</span><span class="deny">&#10007; REFUSED</span></div>
@@ -206,5 +206,6 @@
   </div>
 </footer>
 
+<script src="app.js"></script>
 </body>
 </html>

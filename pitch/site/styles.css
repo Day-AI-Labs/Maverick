@@ -215,6 +215,29 @@ p{margin:16px 0 0}
 .doc li{margin:7px 0}
 .doc .upd{font-size:14px;color:var(--muted);margin-top:6px}
 
+/* ---- demo modal ---- */
+html.modal-open{overflow:hidden}
+.modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:22px;
+  background:rgba(13,17,25,.55);backdrop-filter:blur(5px)}
+.modal.show{display:flex}
+.modal-card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:18px;
+  width:100%;max-width:460px;padding:34px 34px 30px;box-shadow:0 36px 90px -34px rgba(13,17,25,.55)}
+.modal-card h3{font-family:var(--serif);font-weight:500;font-size:26px;letter-spacing:-.01em}
+.modal-card .sub{color:var(--muted);font-size:15px;margin-top:8px;line-height:1.5}
+.modal-close{position:absolute;top:14px;right:16px;width:32px;height:32px;border:0;background:none;
+  font-size:24px;line-height:1;color:var(--muted);cursor:pointer;border-radius:8px}
+.modal-close:hover{background:rgba(0,0,0,.05);color:var(--ink)}
+.field{margin-top:15px}
+.field label{display:block;font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:6px}
+.field input,.field textarea{width:100%;font-family:var(--sans);font-size:15.5px;color:var(--ink);
+  background:var(--paper);border:1px solid var(--line-2);border-radius:9px;padding:11px 13px}
+.field input:focus,.field textarea:focus{outline:none;border-color:var(--accent);background:var(--card)}
+.field textarea{resize:vertical;min-height:84px}
+.modal .df-submit{width:100%;justify-content:center;margin-top:20px}
+.df-foot{font-size:13px;color:var(--muted);text-align:center;margin-top:12px}
+.modal .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.modal-done{text-align:center;padding:8px 0 4px}
+
 @media (max-width:900px){
   section{padding:72px 0}
   .nav-links{display:none}
