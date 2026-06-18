@@ -79,9 +79,10 @@ PROTOCOL = "maverick-federation/1"
 # impersonates a peer that has a pinned key.
 DELEGATE_SCHEMA = "maverick-federation-delegate/1"
 _SIGN_FRESHNESS_S = 300.0  # accept a signature within ±5 min of now (replay window)
-_REPLAY_CACHE_MAX = 4096
-# Module-level cache of verified signatures already seen, oldest-first, so a
-# captured valid delegation can't be replayed within the freshness window.
+# Module-level cache of verified signatures already seen (sig -> first-seen ts),
+# oldest-first, so a captured valid delegation can't be replayed within the
+# freshness window. Pruned by AGE (see _replay_seen), so a still-fresh nonce is
+# never evicted early.
 _seen_sigs: OrderedDict[str, float] = OrderedDict()
 
 _DEFAULT_ADDR = "127.0.0.1:50061"  # one port up from the goal API (50051)
@@ -274,15 +275,30 @@ def _fresh(created_at: float, *, now: float | None = None) -> bool:
     return abs(now - created_at) <= _SIGN_FRESHNESS_S
 
 
-def _replay_seen(sig: str) -> bool:
-    """Check-and-remember a verified signature; True if already seen (replay)."""
+def _replay_seen(sig: str, *, now: float | None = None) -> bool:
+    """Check-and-remember a verified signature; True if already seen (replay).
+
+    Prunes by AGE (the stored timestamp), not by a count cap. An entry older
+    than the freshness window can never be replayed successfully — the
+    envelope's ``created_at`` would fail :func:`_fresh` — so evicting it is
+    safe. The old count cap (4096) evicted STILL-FRESH nonces above ~13.6
+    verified delegations/sec over the 300s window, reopening the replay hole;
+    age-pruning never drops an in-window nonce. Only verified signatures from
+    configured peers reach here, so the live set is self-bounded by legitimate
+    peer throughput within the window.
+    """
     if not sig:
         return False
+    now = time.time() if now is None else now
+    cutoff = now - _SIGN_FRESHNESS_S
+    while _seen_sigs:
+        _oldest, ts = next(iter(_seen_sigs.items()))
+        if ts >= cutoff:
+            break
+        _seen_sigs.popitem(last=False)
     if sig in _seen_sigs:
         return True
-    _seen_sigs[sig] = time.time()
-    while len(_seen_sigs) > _REPLAY_CACHE_MAX:
-        _seen_sigs.popitem(last=False)
+    _seen_sigs[sig] = now
     return False
 
 
