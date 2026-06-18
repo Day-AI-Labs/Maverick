@@ -104,27 +104,29 @@ def test_provider_keys_are_per_tenant(tmp_path, monkeypatch):
     # Global config (single-tenant / shared default).
     (home).mkdir(parents=True, exist_ok=True)
     (home / "config.toml").write_text(
-        '[providers.anthropic]\napi_key = "global-key"\n', encoding="utf-8"
+        '[providers.anthropic]\napi_key = "global-key"\n',  # pragma: allowlist secret
+        encoding="utf-8",
     )
     # Tenant acme overrides with its own key.
     acme_dir = data_dir(tenant="acme")
     acme_dir.mkdir(parents=True, exist_ok=True)
     (acme_dir / "config.toml").write_text(
-        '[providers.anthropic]\napi_key = "acme-key"\n', encoding="utf-8"
+        '[providers.anthropic]\napi_key = "acme-key"\n',  # pragma: allowlist secret
+        encoding="utf-8",
     )
 
     # No tenant -> global key.
-    assert config.get_provider_config("anthropic")["api_key"] == "global-key"
+    assert config.get_provider_config("anthropic")["api_key"] == "global-key"  # pragma: allowlist secret
     # Active tenant acme -> acme's key.
     tok = set_tenant("acme")
     try:
-        assert config.get_provider_config("anthropic")["api_key"] == "acme-key"
+        assert config.get_provider_config("anthropic")["api_key"] == "acme-key"  # pragma: allowlist secret
     finally:
         reset_tenant(tok)
     # A tenant with no overlay falls back to the global key (not acme's).
     tok = set_tenant("globex")
     try:
-        assert config.get_provider_config("anthropic")["api_key"] == "global-key"
+        assert config.get_provider_config("anthropic")["api_key"] == "global-key"  # pragma: allowlist secret
     finally:
         reset_tenant(tok)
 
