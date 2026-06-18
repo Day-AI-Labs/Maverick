@@ -695,6 +695,17 @@ class WorldModel:
         # mutation so each commit() bounds exactly one logical write.
         self._write_lock = threading.RLock()
         self._write_depth = 0
+        # Per-thread READ connections: WAL gives each its own connection a
+        # consistent committed snapshot, so reads run concurrently with the one
+        # writer instead of serialising on the write lock (WAL's many-readers
+        # benefit exists only ACROSS connections). The writer thread's own reads
+        # must still go through the write connection to see its uncommitted data
+        # mid-transaction, tracked by _writer_ident.
+        self._is_memory = str(path) == ":memory:"
+        self._readers = threading.local()
+        self._reader_conns: list[sqlite3.Connection] = []
+        self._reader_conns_lock = threading.Lock()
+        self._writer_ident: int | None = None
         # Create the DB file 0o600 BEFORE sqlite opens it: connect() would
         # otherwise create it at the umask (often 0644) for a window before the
         # chmod below, briefly exposing all conversation content to co-tenants.
@@ -807,6 +818,8 @@ class WorldModel:
         """
         with self._write_lock:
             is_outermost = self._write_depth == 0
+            if is_outermost:
+                self._writer_ident = threading.get_ident()
             self._write_depth += 1
             try:
                 yield self.conn
@@ -818,30 +831,51 @@ class WorldModel:
                 raise
             finally:
                 self._write_depth -= 1
+                if self._write_depth == 0:
+                    self._writer_ident = None
+
+    def _reader(self) -> sqlite3.Connection | None:
+        """A per-thread read-only connection, or ``None`` when reads must use the
+        shared write connection: a ``:memory:`` DB (which is per-connection, so a
+        second connection would be an empty database), or a read issued by the
+        thread that currently holds an open write transaction (it must see its
+        own uncommitted rows). Otherwise a WAL reader connection that sees the
+        latest committed snapshot, lock-free and concurrent with the writer."""
+        if self._is_memory or self._writer_ident == threading.get_ident():
+            return None
+        conn = getattr(self._readers, "conn", None)
+        if conn is None:
+            # isolation_level=None (autocommit): each SELECT is its own
+            # transaction, so the reader always sees the newest commit and never
+            # pins a stale snapshot or holds back a WAL checkpoint. WAL mode is a
+            # persistent DB property, so a fresh connection is already in WAL.
+            conn = sqlite3.connect(self.path, check_same_thread=False,
+                                   timeout=10.0, isolation_level=None)
+            conn.row_factory = sqlite3.Row
+            conn.execute(f"PRAGMA busy_timeout = {DEFAULT_BUSY_TIMEOUT_MS}")
+            self._readers.conn = conn
+            with self._reader_conns_lock:
+                self._reader_conns.append(conn)
+        return conn
 
     def _read_all(self, sql: str, params: tuple[Any, ...] = ()) -> list:
-        """Run a read under the connection lock and eagerly fetch all rows.
-
-        The single sqlite3 connection is shared across threads
-        (``check_same_thread=False``), so under ``serve`` several goal
-        threads read it concurrently with the writer. Without holding the
-        same RLock ``_writing()`` uses, a read can run while another thread
-        is mid-transaction on that connection and observe half-applied (or
-        rolled-back) writes -- e.g. a goal could read a torn conversation
-        context. Fetch INSIDE the lock and return the rows so the caller
-        never touches the connection lock-free. The RLock is reentrant, so a
-        read nested inside a write (or another read) on the same thread does
-        not deadlock; WAL's concurrent-reader benefit is only across
-        separate connections, so on one connection access must be
-        serialised regardless.
-        """
-        with self._write_lock:
-            return self.conn.execute(sql, params).fetchall()
+        """Eagerly fetch all rows. Uses a per-thread WAL reader connection so
+        reads run concurrently with the writer; falls back to the shared
+        connection under the write lock for ``:memory:`` and writer-thread reads
+        (see :meth:`_reader`)."""
+        conn = self._reader()
+        if conn is None:
+            with self._write_lock:
+                return self.conn.execute(sql, params).fetchall()
+        return conn.execute(sql, params).fetchall()
 
     def _read_one(self, sql: str, params: tuple[Any, ...] = ()):
-        """Single-row counterpart to :meth:`_read_all` (see its note)."""
-        with self._write_lock:
-            return self.conn.execute(sql, params).fetchone()
+        """Single-row counterpart to :meth:`_read_all`."""
+        conn = self._reader()
+        if conn is None:
+            with self._write_lock:
+                return self.conn.execute(sql, params).fetchone()
+        return conn.execute(sql, params).fetchone()
 
     def close(self) -> None:
         """Close the underlying SQLite connection.
@@ -855,6 +889,13 @@ class WorldModel:
         next instance's open. Best-effort; close still runs even if
         checkpoint fails.
         """
+        with self._reader_conns_lock:
+            readers, self._reader_conns = self._reader_conns, []
+        for rconn in readers:
+            try:
+                rconn.close()
+            except Exception:  # pragma: no cover
+                pass
         try:
             try:
                 self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
