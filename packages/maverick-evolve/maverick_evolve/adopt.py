@@ -14,6 +14,7 @@ department's live persona.
 """
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -125,7 +126,13 @@ def adopt_best(
     dest_dir.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         shutil.copy2(dest, dest.with_suffix(dest.suffix + ".bak"))
-    dest.write_text(render_pack(adopted), encoding="utf-8")
+    # Atomic write (matching Archive.save): a crash or short write mid-replace
+    # must not leave a department's live pack half-written/corrupt. Render to a
+    # sibling temp file, then rename into place -- the dest is always either the
+    # old pack (recoverable from .bak) or the complete new one, never a partial.
+    tmp = dest.with_name(dest.name + ".tmp")
+    tmp.write_text(render_pack(adopted), encoding="utf-8")
+    os.replace(tmp, dest)
     return dest
 
 

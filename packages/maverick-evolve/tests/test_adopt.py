@@ -67,6 +67,18 @@ def test_adopt_writes_valid_toml_and_backs_up(tmp_path):
     assert dest.with_suffix(".toml.bak").exists()
 
 
+def test_adopt_writes_atomically_no_temp_left(tmp_path):
+    # The pack is written via a temp sibling + os.replace (matching
+    # Archive.save) so a crash can't leave a half-written pack. After a clean
+    # adoption no ``.tmp`` artifact should remain next to the destination.
+    apath, pack = _setup(tmp_path, {"persona": "New persona."})
+    out = tmp_path / "user-domains"
+    dest = adopt_best(apath, pack, out_dir=out)
+    assert dest is not None
+    assert not dest.with_name(dest.name + ".tmp").exists()
+    assert list(out.glob("*.tmp")) == []
+
+
 def test_render_pack_roundtrips_tables(tmp_path):
     text = render_pack({
         "name": "x", "persona": 'line "quoted"\nsecond',
