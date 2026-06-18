@@ -100,7 +100,7 @@ def test_summarize_pending_empty():
 def test_session_memory_remembers_then_expires():
     clk = _Clock(100.0)
     mem = SessionConsentMemory(ttl_s=50.0, clock=clk)
-    key = ("rm", "/a")
+    key = ("rm", "/a", "medium", "", ())
     assert mem.has_grant(key) is False
     mem.remember_grant(key)
     assert mem.has_grant(key) is True       # within TTL
@@ -113,18 +113,18 @@ def test_session_memory_remembers_then_expires():
 def test_expired_entry_is_dropped():
     clk = _Clock(0.0)
     mem = SessionConsentMemory(ttl_s=10.0, clock=clk, store={})
-    mem.remember_grant(("a", "b"))
+    mem.remember_grant(("a", "b", "medium", "", ()))
     clk.t = 20.0
-    assert mem.has_grant(("a", "b")) is False
+    assert mem.has_grant(("a", "b", "medium", "", ())) is False
     # lazily evicted so the store doesn't grow unbounded
-    assert ("a", "b") not in mem._store
+    assert ("a", "b", "medium", "", ()) not in mem._store
 
 
 def test_clear_forgets_everything():
     mem = SessionConsentMemory(ttl_s=1000.0, clock=_Clock(0.0))
-    mem.remember_grant(("a", "b"))
+    mem.remember_grant(("a", "b", "medium", "", ()))
     mem.clear()
-    assert mem.has_grant(("a", "b")) is False
+    assert mem.has_grant(("a", "b", "medium", "", ())) is False
 
 
 # ---- ask: composition with the consent primitive --------------------------
@@ -138,7 +138,7 @@ def test_ask_calls_consent_and_records_grant_in_session():
     assert res["results"][0]["source"] == "prompt"
     assert len(fn.calls) == 1
     # the grant is now remembered for the session
-    assert mem.has_grant(("rm", "/a")) is True
+    assert mem.has_grant(("rm", "/a", "medium", "", ())) is True
 
 
 def test_ask_replays_session_grant_without_reprompting():
@@ -153,13 +153,31 @@ def test_ask_replays_session_grant_without_reprompting():
     assert res["results"][0]["source"] == "session-memory"
 
 
+def test_session_grant_does_not_replay_for_higher_risk():
+    fn = _consent_always(True)
+    mem = SessionConsentMemory(ttl_s=1000.0, clock=_Clock(0.0))
+    ask([PendingConsent("rm", "/a", "low")], mem, consent_fn=fn)
+    ask([PendingConsent("rm", "/a", "critical")], mem, consent_fn=fn)
+    assert len(fn.calls) == 2
+    assert fn.calls[1] == ("rm", "/a", "critical")
+
+
+def test_session_grant_does_not_replay_for_stricter_policy_kwargs():
+    fn = _consent_always(True)
+    mem = SessionConsentMemory(ttl_s=1000.0, clock=_Clock(0.0))
+    p = PendingConsent("rm", "/a", "low")
+    ask([p], mem, consent_fn=fn)
+    ask([p], mem, consent_fn=fn, allow_auto_approve=False, consult_ledger=False)
+    assert len(fn.calls) == 2
+
+
 def test_ask_denial_is_not_remembered_and_reasks():
     fn = _consent_always(False)
     mem = SessionConsentMemory(ttl_s=1000.0, clock=_Clock(0.0))
     p = PendingConsent("rm", "/a", "medium")
     res1 = ask([p], mem, consent_fn=fn)
     assert res1["results"][0]["granted"] is False
-    assert mem.has_grant(("rm", "/a")) is False       # denial never cached
+    assert mem.has_grant(("rm", "/a", "medium", "", ())) is False       # denial never cached
     ask([p], mem, consent_fn=fn)
     assert len(fn.calls) == 2                          # asked again, not replayed
 
@@ -170,7 +188,8 @@ def test_ask_never_fabricates_a_grant():
     fn = _consent_always(False)
     mem = SessionConsentMemory(ttl_s=1000.0, clock=_Clock(0.0))
     res = ask([PendingConsent("force-push", "main", "high")], mem, consent_fn=fn)
-    assert res["granted"] == [] and res["denied"] == [("force-push", "main")]
+    assert res["granted"] == []
+    assert res["denied"] == [("force-push", "main", "high", "", ())]
 
 
 def test_ask_passes_action_scope_risk_through_to_consent():
@@ -194,7 +213,7 @@ def test_dry_run_does_not_call_consent():
 
 def test_dry_run_splits_remembered_from_would_ask():
     mem = SessionConsentMemory(ttl_s=1000.0, clock=_Clock(0.0))
-    mem.remember_grant(("rm", "/a"))
+    mem.remember_grant(("rm", "/a", "low", "", ()))
     pending = [PendingConsent("rm", "/a", "low"), PendingConsent("rm", "/b", "low")]
     preview = dry_run(pending, mem)
     assert preview["remembered_this_session"] == [{"action": "rm", "scope": "/a"}]
