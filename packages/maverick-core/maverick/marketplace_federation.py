@@ -60,6 +60,14 @@ log = logging.getLogger(__name__)
 
 SCHEMA = "maverick-marketplace-fed/1"
 MAX_LISTINGS_PER_ENVELOPE = 500
+# Reserved store key: {origin: last-applied envelope created_at, epoch seconds}.
+# Imports use re-sync semantics (each replaces the origin's previous set), so a
+# replayed OLDER envelope would roll the origin back — resurrecting a withdrawn
+# listing (e.g. one pulled because it was malicious) under a still-valid old
+# signature. We reject any envelope whose created_at isn't strictly newer than
+# the last one applied from that origin (this also blocks exact-replay of the
+# latest). Not a listing kind, so iterators skip it.
+_WATERMARK_KEY = "__watermarks__"
 
 # The identity/install fields a listing federates with. Self-asserted display
 # aggregates (rating, ratings_count, verified, install_count) are intentionally
@@ -71,6 +79,22 @@ _EXPORT_KEYS = ("name", "version", "kind", "summary", "source", "sha256",
 
 def _iso(now: float) -> str:
     return datetime.fromtimestamp(now, tz=timezone.utc).isoformat()
+
+
+def _parse_iso_epoch(value: object) -> float | None:
+    """Parse an ISO-8601 ``created_at`` to epoch seconds; None if unparseable.
+
+    A naive timestamp is treated as UTC (``export_listings`` always emits a
+    tz-aware UTC string, so this only matters for a malformed peer)."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
 
 
 def _listing_for_export(raw: object) -> dict | None:
@@ -214,6 +238,26 @@ def import_listings(
         )
         return report
 
+    # Rollback guard: the import replaces this origin's whole set, so an older
+    # envelope replayed here would resurrect withdrawn listings. created_at is
+    # inside the signed body (can't be altered without breaking the signature);
+    # require it strictly newer than the last applied import from this origin.
+    created = _parse_iso_epoch(envelope.get("created_at"))
+    if created is None:
+        report["reason"] = "missing or malformed created_at"
+        return report
+    path = _store_path(store_path)
+    store = _load_store(path)
+    watermarks = store.get(_WATERMARK_KEY)
+    if not isinstance(watermarks, dict):
+        watermarks = {}
+    prev = watermarks.get(origin)
+    if isinstance(prev, (int, float)) and created <= prev:
+        report["reason"] = (
+            "stale envelope: created_at is not newer than the last applied "
+            "import from this origin (replay/rollback?)")
+        return report
+
     ts = time.time() if now is None else now
     accepted: dict[str, dict[str, dict]] = {}
     for raw in listings:
@@ -245,16 +289,20 @@ def import_listings(
         accepted.setdefault(kind, {})[namespaced] = listing
         report["accepted"].append(namespaced)
 
-    path = _store_path(store_path)
-    store = _load_store(path)
     # Re-sync semantics: this import replaces the origin's previous set, so
-    # withdrawn/renamed listings disappear and the store stays bounded.
+    # withdrawn/renamed listings disappear and the store stays bounded. (store
+    # was loaded above for the rollback check; reuse it.)
     for kind, by_name in store.items():
+        if kind == _WATERMARK_KEY:
+            continue  # reserved metadata, not a listing kind
         if isinstance(by_name, dict):
             store[kind] = {n: v for n, v in by_name.items()
                            if not n.startswith(f"{origin}/")}
     for kind, by_name in accepted.items():
         store.setdefault(kind, {}).update(by_name)
+    # Advance this origin's rollback watermark only after a successful apply.
+    watermarks[origin] = created
+    store[_WATERMARK_KEY] = watermarks
     _save_store(path, store)
     report["ok"] = True
     report["reason"] = "ok"
@@ -272,6 +320,8 @@ def imported_listings(kind: str | None = None,
     store = _load_store(_store_path(store_path))
     out: list[dict] = []
     for k, by_name in sorted(store.items()):
+        if k == _WATERMARK_KEY:
+            continue  # reserved rollback metadata, not listings
         if kind is not None and k != kind:
             continue
         if isinstance(by_name, dict):

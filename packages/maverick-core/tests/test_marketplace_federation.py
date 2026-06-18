@@ -112,12 +112,67 @@ def test_import_round_trip_namespaces_and_persists(tmp_path):
 
 def test_reimport_replaces_origin_set(tmp_path):
     store = tmp_path / "imports.json"
-    env1 = _export(entries=[dict(LISTING), {**LISTING, "name": "old-skill"}])
+    env1 = _export(entries=[dict(LISTING), {**LISTING, "name": "old-skill"}],
+                   now=1_750_000_000.0)
     import_listings(env1, peers=_peers_for(env1), store_path=store)
-    env2 = _export(entries=[dict(LISTING)])  # old-skill withdrawn upstream
+    # A later re-export (newer created_at) withdraws old-skill upstream.
+    env2 = _export(entries=[dict(LISTING)], now=1_750_000_500.0)
     import_listings(env2, peers=_peers_for(env2), store_path=store)
     names = [r["name"] for r in imported_listings("skills", store_path=store)]
     assert names == ["peer-a/summarize-url"]
+
+
+def test_import_rejects_replayed_older_envelope_rollback(tmp_path):
+    """Re-sync replaces an origin's whole set, so replaying an OLDER signed
+    envelope would resurrect a withdrawn listing. The created_at watermark
+    refuses any envelope not strictly newer than the last one applied."""
+    store = tmp_path / "imports.json"
+    # v1 carries a now-withdrawn listing; v2 (newer) drops it.
+    env1 = _export(entries=[dict(LISTING), {**LISTING, "name": "pulled-malware"}],
+                   now=1_750_000_000.0)
+    env2 = _export(entries=[dict(LISTING)], now=1_750_000_500.0)
+    assert import_listings(env1, peers=_peers_for(env1), store_path=store)["ok"]
+    assert import_listings(env2, peers=_peers_for(env2), store_path=store)["ok"]
+    assert "peer-a/summarize-url" in [
+        r["name"] for r in imported_listings(store_path=store)]
+
+    # Attacker replays the genuine, still-validly-signed v1 to bring it back.
+    report = import_listings(env1, peers=_peers_for(env1), store_path=store)
+    assert not report["ok"]
+    assert "rollback" in report["reason"] or "newer" in report["reason"]
+    # The withdrawn listing did NOT come back.
+    names = [r["name"] for r in imported_listings(store_path=store)]
+    assert "peer-a/pulled-malware" not in names
+    assert names == ["peer-a/summarize-url"]
+
+
+def test_import_rejects_exact_replay_of_latest(tmp_path):
+    """created_at == watermark is also refused (exact replay, not just older)."""
+    store = tmp_path / "imports.json"
+    env = _export(now=1_750_000_000.0)
+    assert import_listings(env, peers=_peers_for(env), store_path=store)["ok"]
+    report = import_listings(env, peers=_peers_for(env), store_path=store)
+    assert not report["ok"]
+
+
+def test_import_rejects_missing_created_at(tmp_path):
+    payload = {"schema": SCHEMA, "origin": "peer-a", "listings": [dict(LISTING)]}
+    env = sign_envelope(payload)
+    report = import_listings(env, peers=_peers_for(env),
+                             store_path=tmp_path / "i.json")
+    assert not report["ok"] and "created_at" in report["reason"]
+
+
+def test_distinct_origins_have_independent_watermarks(tmp_path):
+    """One origin's watermark must not block a different origin's first import."""
+    store = tmp_path / "imports.json"
+    env_a = _export(origin="peer-a", now=1_750_000_900.0)
+    import_listings(env_a, peers=_peers_for(env_a, "peer-a"), store_path=store)
+    # peer-b's older-timestamped envelope is still its FIRST, so it's accepted.
+    env_b = _export(origin="peer-b", now=1_750_000_100.0)
+    report = import_listings(env_b, peers=_peers_for(env_b, "peer-b"),
+                             store_path=store)
+    assert report["ok"], report["reason"]
 
 
 # -------------------------------------------------- import (fail-closed) ----
