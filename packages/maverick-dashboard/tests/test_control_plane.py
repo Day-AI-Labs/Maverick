@@ -140,4 +140,17 @@ def test_trust_empty_state_does_not_error(monkeypatch):
     ov = trust_overview()
     assert ov["agents"] == []
     assert ov["enforced"] is False
+    assert ov["graph"]["nodes"] == []  # empty graph, no render, no error
     assert client.get("/trust").status_code == 200
+
+
+def test_trust_graph_layout(monkeypatch):
+    _fake_trust(monkeypatch)
+    g = trust_overview()["graph"]
+    assert g["width"] > 0 and g["height"] > 0
+    node = g["nodes"][0]
+    assert node["id"] == "vega"
+    assert {"x", "y", "color", "inbound", "outbound"} <= node.keys()
+    # vega is inbound-only + medium-risk in the fixture
+    assert node["inbound"] is True and node["outbound"] is False
+    assert node["color"] == "#2563eb"

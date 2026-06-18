@@ -19,6 +19,7 @@ empty/neutral view rather than an error, so the pages never 500 on a fresh box.
 from __future__ import annotations
 
 import datetime
+import math
 from typing import Any
 
 # ---- replay / flight recorder ----------------------------------------------
@@ -262,6 +263,39 @@ def evidence_packet(goal: Any, replay: dict[str, Any]) -> dict[str, Any]:
 
 # ---- agent trust plane / permission graph ----------------------------------
 
+def _trust_graph(
+    agents: list[dict[str, Any]], *, width: int = 760, height: int = 360,
+) -> dict[str, Any]:
+    """Radial layout for the permission graph: this deployment at the centre,
+    each external agent on a ring, edges directed by who may initiate.
+
+    Colour encodes posture: red = revoked/expired, amber = high tool-risk
+    ceiling, blue = active and bounded. Pure geometry so it is unit-testable.
+    """
+    cx, cy = width / 2, height / 2
+    radius = min(width, height) / 2 - 70
+    n = len(agents)
+    nodes: list[dict[str, Any]] = []
+    for i, a in enumerate(agents):
+        angle = (2 * math.pi * i / n - math.pi / 2) if n else 0.0
+        if a["revoked"] or not a["active"]:
+            color = "#dc2626"
+        elif a["max_risk"] == "high":
+            color = "#d97706"
+        else:
+            color = "#2563eb"
+        direction = a["direction"]
+        nodes.append({
+            "id": a["id"],
+            "x": round(cx + radius * math.cos(angle), 1),
+            "y": round(cy + radius * math.sin(angle), 1),
+            "color": color,
+            "inbound": direction in ("inbound", "both"),
+            "outbound": direction in ("outbound", "both"),
+        })
+    return {"width": width, "height": height, "cx": cx, "cy": cy, "nodes": nodes}
+
+
 def trust_overview() -> dict[str, Any]:
     """Enumerate configured external agents with their ceilings + lifecycle.
 
@@ -295,7 +329,12 @@ def trust_overview() -> dict[str, Any]:
             "expires_at": getattr(a, "expires_at", None),
             "revoked": bool(getattr(a, "revoked", False)),
         })
-    return {"enforced": bool(enforced), "agents": agents, "available": True}
+    return {
+        "enforced": bool(enforced),
+        "agents": agents,
+        "available": True,
+        "graph": _trust_graph(agents),
+    }
 
 
 __all__ = ["build_replay", "evidence_packet", "trust_overview"]
