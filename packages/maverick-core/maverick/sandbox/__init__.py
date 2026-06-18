@@ -185,6 +185,34 @@ def _warn_local_unsandboxed() -> None:
     log.warning("%s Silence with MAVERICK_SUPPRESS_SANDBOX_WARNING=1.", msg)
 
 
+def _degrade_to_local(chosen: str, full_cfg: dict, wd: Path, timeout: float):
+    """Build the unsandboxed LocalBackend for an unrecognized backend name --
+    or refuse it under the require-container policy.
+
+    The top-of-``build_sandbox`` gate catches an explicit ``backend="local"``;
+    this catches the *other* path to a host shell -- a typo'd / unsupported
+    backend that matched no known backend and would otherwise silently degrade.
+    Both must fail closed under enterprise / require-container, else a config
+    typo (``"dcoker"``) quietly runs untrusted agent code on the host.
+    """
+    if _container_backend_required(full_cfg):
+        raise SandboxPolicyError(
+            f"refusing to fall back to the unsandboxed 'local' sandbox "
+            f"backend: configured backend {chosen!r} matched no known backend "
+            f"and enterprise / require-container policy is active. Fix the "
+            f"[sandbox] backend value (known: docker, podman, gvisor, "
+            f"devcontainer, kubernetes, firecracker, ssh)."
+        )
+    log.warning(
+        "unrecognized sandbox backend %r; falling back to local with NO "
+        "container isolation. Known backends: docker, podman, "
+        "devcontainer, kubernetes, firecracker, ssh, local.",
+        chosen,
+    )
+    _warn_local_unsandboxed()
+    return LocalBackend(workdir=wd, timeout=timeout)
+
+
 def build_sandbox(
     workdir: str | Path | None = None,
     backend: str | None = None,
@@ -359,15 +387,8 @@ def build_sandbox(
             host_key_checking=full_cfg.get("host_key_checking", "accept-new"),
         )
     if chosen != "local":
-        # The user asked for something other than local, but it matched no
-        # known backend. Don't silently degrade to an unsandboxed host shell --
-        # name the unrecognized value so a typo / unsupported backend is
-        # visible instead of quietly losing container isolation.
-        log.warning(
-            "unrecognized sandbox backend %r; falling back to local with NO "
-            "container isolation. Known backends: docker, podman, "
-            "devcontainer, kubernetes, firecracker, ssh, local.",
-            chosen,
-        )
+        # Matched no known backend: route through the helper, which fail-closes
+        # under require-container instead of silently degrading to a host shell.
+        return _degrade_to_local(chosen, full_cfg, wd, timeout)
     _warn_local_unsandboxed()
     return LocalBackend(workdir=wd, timeout=timeout)
