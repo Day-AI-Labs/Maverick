@@ -41,7 +41,13 @@ import hmac
 import logging
 import os
 
-from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
+from .base import (
+    Channel,
+    IncomingMessage,
+    add_webhook_body_limit,
+    is_allowed,
+    normalize_allowlist,
+)
 
 log = logging.getLogger(__name__)
 
@@ -99,6 +105,7 @@ class WhatsAppCloudChannel(Channel):
         self.bind_host = bind_host or os.environ.get("WHATSAPP_CLOUD_BIND_HOST", "127.0.0.1")
         self.api_version = api_version
         self._app = FastAPI()
+        add_webhook_body_limit(self._app)
         self._app.get("/webhook/whatsapp-cloud")(self._handle_verify)
         self._app.post("/webhook/whatsapp-cloud")(self._handle_webhook)
         self._uvicorn_server = None
