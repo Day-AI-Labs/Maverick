@@ -3164,6 +3164,44 @@ def worker(idle_sleep: float, once: bool) -> None:
 
 
 @main.group()
+def queue() -> None:
+    """Inspect the background job queue (backlog + dead-letter)."""
+
+
+@queue.command("status")
+def queue_status() -> None:
+    """Show job counts by status (pending backlog, running, done, failed)."""
+    from .job_queue import JobQueue
+    counts = JobQueue().counts()
+    if not counts:
+        click.echo("queue is empty.")
+        return
+    for status in sorted(counts):
+        line = f"  {status:10s} {counts[status]}"
+        if status == "failed" and counts[status]:
+            line += "  <- dead-letter; inspect with `maverick queue failed`"
+        click.echo(line)
+
+
+@queue.command("failed")
+@click.option("--limit", default=20, help="Max dead-letter jobs to show.")
+def queue_failed(limit: int) -> None:
+    """List failed (dead-letter) jobs and their last error.
+
+    Crashed/exhausted jobs land in 'failed' and were otherwise invisible until
+    `purge` deleted them — so an operator never saw a worker dropping work."""
+    from .job_queue import JobQueue
+    jobs = JobQueue().list(status="failed", limit=limit)
+    if not jobs:
+        click.echo("no failed jobs.")
+        return
+    for j in jobs:
+        err = (getattr(j, "last_error", "") or "").strip().replace("\n", " ")[:160]
+        click.echo(f"  [{j.id}] kind={j.kind} attempts={getattr(j, 'attempts', '?')} "
+                   f"error={err!r}")
+
+
+@main.group()
 def schedule() -> None:
     """Schedule recurring jobs via cron (run them with `maverick worker`)."""
 

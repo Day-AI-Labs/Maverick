@@ -284,6 +284,16 @@ class JobQueue:
                 ).fetchall()
         return [self._row_to_job(r) for r in rows]
 
+    def counts(self) -> dict[str, int]:
+        """``{status: count}`` across the whole queue — backlog + dead-letter
+        visibility for metrics/ops (a growing ``pending`` is an alert; ``failed``
+        jobs are the dead-letter that ``purge`` would otherwise silently drop)."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT status, COUNT(*) AS n FROM jobs GROUP BY status"
+            ).fetchall()
+        return {str(r["status"]): int(r["n"]) for r in rows}
+
     def purge(self, *, older_than_days: float = 7.0) -> int:
         cutoff = time.time() - older_than_days * 86400
         with self._lock, self._conn() as c:

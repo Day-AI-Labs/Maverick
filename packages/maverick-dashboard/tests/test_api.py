@@ -449,3 +449,6 @@ class TestMetrics:
         assert "# TYPE maverick_concurrent_goals gauge" in text
         assert "maverick_concurrent_goals" in text
         assert "maverick_max_concurrent_goals" in text
+        # Job-queue backlog + dead-letter visibility.
+        assert "# HELP maverick_queue_jobs" in text
+        assert "# TYPE maverick_queue_jobs gauge" in text
