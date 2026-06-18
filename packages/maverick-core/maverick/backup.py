@@ -193,6 +193,21 @@ def restore_backup(tarball: str | Path, *, force: bool = False) -> Path:
             f"backup is for client {backup_cid!r} but this deployment is "
             f"{live_cid!r}; refusing (pass force=True to override)"
         )
+    # Schema-version guard (the HA-failover path). Restoring a backup taken on a
+    # NEWER binary (forward-migrated world.db) onto an OLDER binary would let the
+    # old code open a DB schema it doesn't understand — silent corruption. Refuse
+    # forward restores unless forced; older/equal schemas are fine (the world
+    # DB's own migration upgrades them on open).
+    from .world_model import SCHEMA_VERSION
+    backup_schema_v = manifest.get("world_schema_version")
+    if (not force and isinstance(backup_schema_v, int)
+            and backup_schema_v > SCHEMA_VERSION):
+        raise BackupError(
+            f"backup world schema v{backup_schema_v} is newer than this "
+            f"binary's v{SCHEMA_VERSION}; restoring it would corrupt the world "
+            f"DB. Upgrade Maverick first, or pass force=True to override."
+        )
+    expected = manifest.get("files") or {}
     root = _client_root()
     root.mkdir(parents=True, exist_ok=True)
     root_resolved = root.resolve()
@@ -215,16 +230,29 @@ def restore_backup(tarball: str | Path, *, force: bool = False) -> Path:
         staged = Path(td) / "data"
         if not staged.exists():
             raise BackupError("backup contains no data/ payload")
-        for src in sorted(staged.rglob("*")):
-            if not src.is_file():
-                continue
-            dst = root / src.relative_to(staged)
+        # Verify EVERYTHING in the staging area before touching the live root:
+        # integrity (recorded SHA-256 per file) + traversal. Only once the whole
+        # payload validates do we copy it in, so a corrupt/truncated backup never
+        # half-overwrites a live deployment (verify-then-write).
+        staged_files = [p for p in sorted(staged.rglob("*")) if p.is_file()]
+        for src in staged_files:
+            rel = src.relative_to(staged)
+            dst = root / rel
             if dst.resolve() != root_resolved and root_resolved not in dst.resolve().parents:
-                raise BackupError(f"unsafe restore path: {src.relative_to(staged)}")
+                raise BackupError(f"unsafe restore path: {rel}")
+            want = expected.get(str(rel))
+            if want is not None and _sha256(src) != want:
+                raise BackupError(
+                    f"backup integrity check failed for {rel} "
+                    f"(SHA-256 mismatch — backup is corrupt or truncated)"
+                )
+        for src in staged_files:
+            dst = root / src.relative_to(staged)
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(src.read_bytes())
             os.chmod(dst, 0o600)
-    log.info("restore complete into %s (from client=%s)", root, backup_cid)
+    log.info("restore complete into %s (from client=%s, %d files verified)",
+             root, backup_cid, len(staged_files))
     return root
 
 
