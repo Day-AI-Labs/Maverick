@@ -7,6 +7,8 @@ crash because of an audit-path bug.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import logging
 import os
@@ -20,6 +22,46 @@ from typing import Any
 from .events import AuditEvent, EventKind, is_valid_day
 
 log = logging.getLogger(__name__)
+
+
+# Goal-id binding for events logged deep in the stack. The agent kernel records
+# tool/shield events with an explicit goal_id, but events emitted further down --
+# notably the consent gate (safety/consent.py) and the per-action approval gate
+# -- don't carry one. The run loop binds this ContextVar for the duration of a
+# goal (see orchestrator.run_goal_sync), so a goal-less record() still attributes
+# to the run. A ContextVar (not a global) so concurrent async runs each keep
+# their own goal id; asyncio.run copies the current context into the root task,
+# so a binding set just before it propagates to every nested tool/consent call.
+_current_goal: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "maverick_audit_goal", default=None,
+)
+
+
+def set_goal_context(goal_id: int | None) -> contextvars.Token:
+    """Bind the goal id that goal-less :func:`record` calls attribute to.
+
+    Returns a token for :func:`reset_goal_context`. Prefer the
+    :func:`goal_context` context manager unless you need manual control.
+    """
+    return _current_goal.set(goal_id)
+
+
+def reset_goal_context(token: contextvars.Token) -> None:
+    """Undo a :func:`set_goal_context` binding (fail-soft on a stale token)."""
+    try:
+        _current_goal.reset(token)
+    except (ValueError, LookupError):  # token from another context -- ignore
+        pass
+
+
+@contextlib.contextmanager
+def goal_context(goal_id: int | None):
+    """Bind ``goal_id`` for goal-less audit records within the ``with`` block."""
+    token = set_goal_context(goal_id)
+    try:
+        yield
+    finally:
+        reset_goal_context(token)
 
 
 DEFAULT_AUDIT_DIR = Path.home() / ".maverick" / "audit"
@@ -450,7 +492,14 @@ def record(
     goal_id: int | None = None,
     **payload: Any,
 ) -> bool:
-    """Module-level shortcut for the default audit log."""
+    """Module-level shortcut for the default audit log.
+
+    When ``goal_id`` is not given, falls back to the goal bound by the run loop
+    (:func:`set_goal_context`) so consent/approval and other deep events still
+    attribute to the active run. An explicit ``goal_id`` always wins.
+    """
+    if goal_id is None:
+        goal_id = _current_goal.get()
     event = AuditEvent(
         ts=time.time(),
         kind=kind,
@@ -492,4 +541,7 @@ __all__ = [
     "record",
     "reanchor_after_erase",
     "EventKind",
+    "set_goal_context",
+    "reset_goal_context",
+    "goal_context",
 ]
