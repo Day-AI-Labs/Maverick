@@ -130,8 +130,8 @@ class Worker:
             goal_id = job.payload.get("goal_id")
             if not goal_id:
                 title = (job.payload.get("title") or text).strip()[:80]
-                from .world_model import DEFAULT_DB, open_world
-                world = open_world(DEFAULT_DB)
+                from .world_model import open_world
+                world = open_world()  # client/tenant-floored canonical world
                 try:
                     owner = str(job.payload.get("owner") or "")
                     goal_id = world.create_goal(title, text, owner=owner)

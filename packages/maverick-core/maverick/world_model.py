@@ -2168,7 +2168,7 @@ class PostgresAtRestUnsupported(RuntimeError):
     ``docs/encryption.md`` and ``FIXES.md`` (P1)."""
 
 
-def open_world(path: Path = DEFAULT_DB) -> Any:
+def open_world(path: Path | None = None) -> Any:
     """Open the configured world-model backend.
 
     Returns the SQLite ``WorldModel`` by default. When the user opts into
@@ -2176,6 +2176,17 @@ def open_world(path: Path = DEFAULT_DB) -> Any:
     ``MAVERICK_WORLD_BACKEND=postgres``), returns a ``PostgresWorldModel``
     whose public surface mirrors ``WorldModel``; the ``path`` argument is
     ignored in that case (Postgres uses a DSN, not a file).
+
+    **Client/tenant floor:** when called with no explicit ``path`` and the
+    deployment is bound to a client (or a tenant is active), the canonical
+    world resolves to that client's isolated ``tenants/<client>/world.db`` via
+    :func:`world_for_tenant`, NOT the un-scoped ``~/.maverick/world.db``. This
+    keeps the channel server (``serve``), the goal runner/worker, the gRPC goal
+    API and the dashboard all opening the SAME per-client world DB (one SQLite
+    file = one cached ``WorldModel``); without it a client-bound ``serve`` wrote
+    goals to the shared root while the dashboard read the floored path, silently
+    splitting the world. Passing an explicit ``path`` (tests, CLI ``--db``)
+    bypasses the floor and is unchanged.
 
     The Postgres backend (and its ``psycopg`` dependency) is imported only
     when selected, so the default SQLite path stays dependency-free and the
@@ -2206,6 +2217,14 @@ def open_world(path: Path = DEFAULT_DB) -> Any:
         from .world_model_backends import open_postgres_world
 
         return open_postgres_world()
+    if path is None:
+        # No explicit path: honor the client/tenant floor so every canonical
+        # world entry point opens the one per-client DB (see docstring).
+        from .paths import current_tenant_id
+        tid = current_tenant_id()
+        if tid:
+            return world_for_tenant(tid)
+        path = DEFAULT_DB
     return WorldModel(path)
 
 

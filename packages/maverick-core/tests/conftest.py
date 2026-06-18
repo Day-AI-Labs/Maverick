@@ -76,6 +76,35 @@ def _isolate_root_logging():
         lc._configured = saved_configured
 
 
+@pytest.fixture(autouse=True)
+def _reset_client_binding_cache():
+    """Reset the process-global client-id floor + per-tenant DEK cache per test.
+
+    ``client._cached`` floors ``current_tenant_id()`` for the WHOLE process, so
+    a test that sets ``MAVERICK_CLIENT_ID``/``[client] id`` and calls
+    ``client_id()`` leaves the cache populated: ``monkeypatch.setenv`` undoes the
+    env at teardown but NOT the cache, so the next test in the same worker would
+    silently re-home every ``data_dir()`` under ``tenants/<that-client>/``. Reset
+    before and after each test so binding never leaks across tests. The DEK cache
+    is keyed on the same (floored) tenant id, so clear it in lockstep.
+    """
+    def _reset():
+        try:
+            from maverick import client
+            client.reset_client_cache()
+        except Exception:
+            pass
+        try:
+            from maverick import tenant_kms
+            tenant_kms._clear_cache()
+        except Exception:
+            pass
+
+    _reset()
+    yield
+    _reset()
+
+
 @dataclass
 class FakeLLM:
     """Drop-in replacement for ``maverick.llm.LLM`` driven by a script."""
