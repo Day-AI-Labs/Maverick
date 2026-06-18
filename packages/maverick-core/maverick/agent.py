@@ -7,6 +7,7 @@ without patching the kernel.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -1850,6 +1851,45 @@ class Agent:
         except Exception as e:  # pragma: no cover -- observability never blocks
             log.debug("live-spend mirror skipped: %s", e)
 
+    # Poll interval (seconds) for the killswitch while an LLM generation is
+    # in flight — small enough to feel responsive, large enough to be free.
+    _HALT_POLL_SECONDS = 1.0
+
+    async def _complete_guarded(self, **kw):
+        """Await an LLM completion, but ABORT the in-flight call when the
+        wall-clock budget is exhausted or the killswitch trips — instead of
+        letting a multi-minute generation run to completion and blow the SLA or
+        ignore a HALT (the cap/halt were otherwise only checked at turn
+        boundaries). Raises :class:`BudgetExceeded` (wall) or
+        :class:`killswitch.Halted`, both already handled by the caller."""
+        budget = self.ctx.budget
+        remaining = budget.remaining_wall()
+        if remaining <= 0:
+            raise BudgetExceeded(
+                f"wall time {budget.elapsed():.0f}s > {budget.max_wall_seconds:.0f}s")
+        task = asyncio.ensure_future(self.ctx.llm.complete_async(**kw))
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + remaining
+        try:
+            while True:
+                slice_s = min(self._HALT_POLL_SECONDS, deadline - loop.time())
+                done, _ = await asyncio.wait({task}, timeout=max(0.0, slice_s))
+                if task in done:
+                    return task.result()  # re-raises any error from the call
+                if loop.time() >= deadline:
+                    raise BudgetExceeded(
+                        f"wall-clock cap {budget.max_wall_seconds:.0f}s reached "
+                        "mid-generation")
+                killswitch.check()  # raises killswitch.Halted if tripped
+        except BaseException:
+            # Wall cap, halt, or an upstream cancellation: cancel the in-flight
+            # generation (aborts the provider HTTP request) before propagating.
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(BaseException):
+                    await task
+            raise
+
     async def run(self) -> AgentResult:
         # OTel GenAI semconv: every agent execution is an ``invoke_agent``
         # span (gen_ai.agent.name/id), the third semconv leg alongside the
@@ -2058,7 +2098,7 @@ class Agent:
                 # Pass effort only when configured (None by default) so the call
                 # signature is unchanged when the feature is off.
                 _effort_kw = {"effort": self.effort} if self.effort else {}
-                resp = await self.ctx.llm.complete_async(
+                resp = await self._complete_guarded(
                     system=self.system,
                     messages=messages,
                     tools=self.tools.to_anthropic(),
@@ -2071,6 +2111,11 @@ class Agent:
             except BudgetExceeded as e:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
                 return AgentResult(error=f"budget exceeded: {e}", role=self.role, name=self.name)
+            except killswitch.Halted as e:
+                # The killswitch tripped MID-generation; the in-flight call was
+                # cancelled by _complete_guarded. Stop like a turn-boundary halt.
+                bb.post(self.name, "error", f"halted: {e}")
+                return AgentResult(error=f"halted: {e}", role=self.role, name=self.name)
 
             # May 26 smoke fix: when the response contains BOTH a FINAL:
             # marker AND tool_use blocks, the model is confused. If
