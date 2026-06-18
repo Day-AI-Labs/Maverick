@@ -118,6 +118,7 @@ p{margin:16px 0 0}
 .qcol p{color:var(--muted);margin-top:10px;font-size:16.5px}
 .fname{font-family:var(--serif);font-weight:500;font-size:27px;letter-spacing:-.01em;line-height:1.1}
 .role{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:7px}
+.avatar{width:104px;height:104px;border-radius:50%;object-fit:cover;border:1px solid var(--line-2)}
 
 /* ---- step / gate diagram ---- */
 .gate{margin-top:48px;border:1px solid var(--line);border-radius:16px;background:var(--card);
