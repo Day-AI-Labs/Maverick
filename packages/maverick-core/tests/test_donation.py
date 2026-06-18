@@ -96,6 +96,46 @@ class TestWriteRecord:
         assert "sk-ant-api01-secrettokenvaluexyz1234567890abc" not in payload["task_brief_text"]
         assert "[REDACTED:anthropic_key]" in payload["task_brief_text"]
 
+    def test_secret_scrubbing_runs_on_nested_sub_trajectories(self, tmp_path, monkeypatch):
+        """Nested trajectory metadata must be scrubbed before donation."""
+        secret = "sk-ant-api01-secrettokenvaluexyz1234567890abc"
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: False)
+        rec = TrajectoryRecord(
+            task_brief_hash="abc",
+            model_id=f"model {secret}",
+            action_sequence=[secret],
+            agent_credit={f"researcher-{secret}": 0.5},
+            sub_trajectories=[
+                {
+                    "role": f"researcher {secret}",
+                    "name": f"researcher-{secret}",
+                    "actions": [secret, f"web_search {secret}"],
+                    "credit": 0.5,
+                    "weight": 1.0,
+                },
+            ],
+            outcome="success",
+            verifier_confidence=0.9,
+            disagreement_entropy=0.7,
+        )
+
+        path = write_record(rec, outbox=tmp_path)
+
+        payload_text = path.read_text()
+        payload = json.loads(payload_text)
+        assert secret not in payload_text
+        assert payload["task_brief_text"] is None
+        assert payload["action_sequence"] == ["[REDACTED:anthropic_key]"]
+        sub = payload["sub_trajectories"][0]
+        assert sub["role"] == "researcher [REDACTED:anthropic_key]"
+        assert sub["name"] == "researcher-[REDACTED:anthropic_key]"
+        assert sub["actions"] == [
+            "[REDACTED:anthropic_key]",
+            "web_search [REDACTED:anthropic_key]",
+        ]
+        assert "researcher-[REDACTED:anthropic_key]" in payload["agent_credit"]
+
     def test_selection_gate_blocks_low_quality(self, tmp_path, monkeypatch):
         """Even with donation enabled, low-disagreement runs don't write."""
         monkeypatch.setattr(donation, "_donations_enabled", lambda: True)

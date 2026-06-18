@@ -107,6 +107,22 @@ def hash_brief(brief: str) -> str:
     return hashlib.sha256(brief.strip().encode("utf-8")).hexdigest()[:16]
 
 
+def _scrub_payload(value):
+    """Recursively scrub every string within a JSON-serializable payload."""
+    if isinstance(value, str):
+        return scrub(value)
+    if isinstance(value, list):
+        return [_scrub_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_scrub_payload(item) for item in value)
+    if isinstance(value, dict):
+        return {
+            (scrub(key) if isinstance(key, str) else key): _scrub_payload(item)
+            for key, item in value.items()
+        }
+    return value
+
+
 def should_donate(
     outcome: str,
     verifier_confidence: float,
@@ -169,15 +185,9 @@ def write_record(
     if not _text_donations_enabled():
         record.task_brief_text = None
 
-    # Scrub every text field that could carry secrets -- including list-of-str
-    # fields (tools_used / action_sequence), which the str-only loop skipped,
-    # breaking the module's "every text field is scrubbed" contract.
-    payload = asdict(record)
-    for k, v in list(payload.items()):
-        if isinstance(v, str):
-            payload[k] = scrub(v)
-        elif isinstance(v, list):
-            payload[k] = [scrub(x) if isinstance(x, str) else x for x in v]
+    # Scrub every text field that could carry secrets, including strings nested
+    # in dictionaries/lists such as sub_trajectories.
+    payload = _scrub_payload(asdict(record))
 
     try:
         out_dir = outbox or DEFAULT_OUTBOX
