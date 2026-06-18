@@ -144,18 +144,14 @@ def get_kms() -> KMS:
     except Exception:
         provider = "local"
     if provider not in ("", "local"):
-        # A cloud provider (aws/gcp/vault) is a drop-in implementing KMS, but none
-        # is wired in this build. REFUSE rather than silently fall back to the
-        # in-process LocalKMS: an operator who configured an HSM-backed provider
-        # must not unknowingly get in-process key material -- a silent downgrade
-        # of their at-rest threat model (user-testing finding). Consistent with
-        # crypto_at_rest's fail-closed contract; callers surface this (doctor's
-        # at-rest check, the audit-seal CLI) rather than writing plaintext.
-        raise EncryptionUnavailable(
-            f"[kms] provider={provider!r} is configured but not available in this "
-            'build. Set [kms] provider = "local" to use the in-process key, or '
-            "install the cloud KMS backend."
-        )
+        # Cloud KMS (aws/gcp/vault): the KEK stays in the customer's HSM (BYOK).
+        # An unknown provider, or a missing SDK, raises EncryptionUnavailable
+        # rather than silently falling back to in-process LocalKMS -- a configured
+        # HSM-backed provider must never be downgraded to in-process key material
+        # (fail-closed, consistent with crypto_at_rest). Callers surface this
+        # (doctor's at-rest check, the audit-seal CLI) rather than writing plaintext.
+        from .kms_backends import build_cloud_kms
+        return build_cloud_kms(provider)
     return LocalKMS()
 
 

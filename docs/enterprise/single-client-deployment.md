@@ -87,9 +87,12 @@ Sequenced by leverage. Each phase is independently shippable.
   no-token mode is refused; a token (or OIDC) is required.
 - **Secrets hygiene** ✅: `doctor` warns when `config.toml` is group/world-
   accessible; use `${ENV}` refs for tokens (the systemd unit injects them).
-- **BYOK** (follow-up): a real KMS backend (AWS/GCP/Vault) behind the existing
-  `tenant_kms.KMS` Protocol; today customer-managed keys arrive via env
-  injection (`MAVERICK_ENCRYPTION_KEY` / KEK).
+- **BYOK** ✅: real cloud-KMS backends (`maverick/kms_backends.py`) behind the
+  `tenant_kms.KMS` Protocol — AWS KMS, GCP KMS, and Vault transit. `[kms]
+  provider = aws|gcp|vault` keeps the KEK in the customer's HSM (the tenant
+  context binds as the KMS EncryptionContext / AAD); a missing SDK or unknown
+  provider fails closed (never downgrades to in-process keys). Env-injected
+  keys (`MAVERICK_ENCRYPTION_KEY` / `MAVERICK_KMS_KEK`) remain for self-managed.
 
 ### Phase 5 — Packaging & headless provisioning (VM + image) ✅
 - **Build-time gRPC stubs** ✅: `maverick gen-stubs` pre-generates every
@@ -159,6 +162,12 @@ mode = true               # egress lock + fail-closed consent + capabilities + (
 [encryption]
 at_rest = true
 per_tenant = true         # DEK bound to the client id
+
+# BYOK: keep the KEK in the customer's HSM (omit for the in-process/env key).
+[kms]
+provider = "aws"          # aws | gcp | vault | local
+key_id   = "arn:aws:kms:us-east-1:123:key/<uuid>"   # or GCP resource name / Vault key
+region   = "us-east-1"    # AWS; Vault uses address + VAULT_TOKEN
 
 [audit]
 sign = true               # tamper-evident, per-client signed chain
