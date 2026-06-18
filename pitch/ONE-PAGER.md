@@ -46,7 +46,7 @@ repriced to **reward defensible IP and punish thin AI wrappers.**
   deliverable** → a per-role **inbox** → a human **certifies** it → it routes
   into the system of record (Salesforce / ServiceNow), signed and audited.
 
-**The moat (three compounding layers, all audited):** (1) governance bound to
+**The moat (three reinforcing layers, all audited):** (1) governance bound to
 every action — attenuate-only capability tokens, policy engine, egress lock, a
 signed hash-chained audit log with offline verification; (2) a snapshot-/
 rollback-able **provable-learning loop** where every causal guardrail must

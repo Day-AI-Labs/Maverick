@@ -65,25 +65,30 @@ granted* — without ever seeing the data.
 
 ## Bet 2 — The Institutional Memory: a vendor-neutral plane that compounds and ports
 
-**Thesis.** Bet 1 proves the *past* was safe. Bet 2 owns the accumulating
+**Thesis.** Bet 1 proves the *past* was safe. Bet 2 compounds the accumulating
 *future*. The deepest enterprise moat isn't the model — models commoditize — it's
-the firm's accumulated operational judgment. Whoever owns the enterprise's
-agent memory owns the account, forever. Build the **neutral, governed,
-compounding system of record for everything every agent learns**, regardless of
-model vendor. This is data gravity: the longer it runs, the more irreplaceable it
-becomes, and switching cost approaches infinity. This is the literal answer to
-"hit the milestone and the ARR will come" — it is the stickiest possible asset.
+the firm's accumulated operational judgment. The firm that accumulates that
+judgment in a governed, portable memory can't be cheaply displaced — and the
+judgment is *theirs*: isolated to their boundary, owned, and exportable. Build the
+**neutral, governed, compounding system of record for everything the customer's
+own agents learn**, regardless of model vendor. The longer it runs, the more
+valuable and bespoke *their* instance becomes — never pooled with another
+customer's, never training ours, never leaving their walls. This is the literal
+answer to "hit the milestone and the ARR will come" — stickiness earned through
+customer-owned value, not data we harvest.
 
 **The one feature.** Make institutional memory **cross-vendor, compounding, and
-provably improving.** Every agent interaction — a Claude swarm, a Copilot agent,
+provably improving — inside a single customer's isolated boundary.** Within one
+customer's deployment, every agent interaction — a Claude swarm, a Copilot agent,
 an Agentforce flow — deposits and retrieves reusable, department-scoped,
-capability-bounded knowledge through ONE governed plane. We already have the
+capability-bounded knowledge through ONE governed plane; one customer's memory
+never reaches another's. We already have the
 substrate: `fleet_memory.py` (external Agentforce/Copilot/custom agents ingest +
 recall through a fail-closed governed surface), `operating_record.py` (signed
 portable capsule of the firm's decisions + learned state), `dreaming.py`
 (consolidation), `hindsight.py` (proof it's improving), `semantic_recall.py`,
 learned skills, reflexions. Today they're internal; productize them as **the
-memory API beneath all of an enterprise's agents.**
+memory API beneath all of an enterprise's own agents.**
 
 Three properties make it a moat, not a feature:
 1. **Cross-vendor.** A Copilot agent benefits from a lesson a Claude agent learned
@@ -96,21 +101,25 @@ Three properties make it a moat, not a feature:
    balance sheet.
 3. **Governed & private.** Department bulkheads (`compartment`), per-user notes
    never cross channel/user boundaries, scope tagging, shield-scan-on-ingest
-   (RAG-poisoning defense), per-tenant KMS. Memory that's safe to pool is the
-   hard part — and we already enforce it.
+   (RAG-poisoning defense), per-tenant KMS. Memory that's safe to **share across a
+   customer's own agents and vendors — without one tenant's data ever reaching
+   another's** is the hard part, and we already enforce it (learned stores resolve
+   under each tenant's data dir; one tenant's memory never feeds another's runs).
 
-**Why $50M pre-ARR.** Data gravity = the highest switching cost in software; a
-firm with two years of accumulated, department-scoped, provably-improving judgment
-in Maverick cannot leave. Vendor-neutral = the same Switzerland logic as Bet 1
-(buyers can't build it neutrally). It makes *their* models stickier inside the
-account, which is exactly why Microsoft/Anthropic/Google would pay to make their
-agent the front-end to *our* memory rather than cede the substrate to a rival.
+**Why $50M pre-ARR.** A firm with two years of accumulated, department-scoped,
+provably-improving judgment has something it can't quickly rebuild elsewhere — and
+it *owns* that judgment as a signed, vendor-neutral, portable capsule. That earned
+value — not lock-in over data we hold — is what makes the platform sticky.
+Vendor-neutral = the same Switzerland logic as Bet 1 (buyers can't build it
+neutrally). Microsoft/Anthropic/Google would pay to make their agent the front-end
+to the customer's *own* governed memory rather than cede the neutral substrate to a
+rival.
 
 **Per-buyer wow.** Microsoft: Copilot becomes the UI on top of an enterprise's
-real institutional memory — the thing Copilot conspicuously lacks. Anthropic:
-Claude agents that visibly compound per-customer (their agentic deployment story
-gets a flywheel). Google: the cross-vendor memory plane Vertex can't offer because
-it's a walled garden.
+*own* institutional memory — the thing Copilot conspicuously lacks. Anthropic:
+Claude agents that visibly compound inside each customer's own isolated instance
+(their agentic deployment story gets a flywheel). Google: the cross-vendor memory
+plane Vertex can't offer because it's a walled garden.
 
 **Build path (~1 quarter to demo).**
 1. Harden `fleet_memory.py` into a stable public **Memory API** (ingest/recall/
@@ -126,11 +135,13 @@ it's a walled garden.
    signed, vendor-neutral capsule it owns and can carry between platforms. Owning
    that format is owning the category.
 
-**Centerpiece demo.** Two agents from two different model vendors, one governed
-memory plane. Agent B solves in 30 seconds and $0.02 a task that cost Agent A ten
-minutes and $2 last week — because it inherited A's distilled skill. Then export
-the whole thing as a signed capsule the customer owns. "Your AI workforce gets
-smarter every day, across every vendor, and you can prove it and take it with you."
+**Centerpiece demo.** Within one customer's deployment, two agents from two
+different model vendors share one governed, isolated memory plane. Agent B solves
+in 30 seconds and $0.02 a task that cost Agent A ten minutes and $2 last week —
+because the customer's own fleet already taught it that lesson. Then export the
+whole thing as a signed capsule the customer owns. "Your AI workforce gets smarter
+every day on your data, across every vendor you run — and it never leaves your
+walls. You can prove it, and take it with you."
 
 ---
 
@@ -452,7 +463,7 @@ production" — it's the safe environment that makes the architecture trainable.
 | Bet | One-liner | Tense | Primary buyer pull |
 |---|---|---|---|
 | 1 — Trust Layer | prove the past was safe | past | regulated entry wedge; insurability |
-| 2 — Institutional Memory | own the accumulating future | future | data gravity; can't-leave lock-in |
+| 2 — Institutional Memory | compound the customer's own accumulating judgment | future | customer-owned, portable judgment; earned stickiness |
 | 3 — Safe Self-Improvement | the AI improves itself, safely | forward | alignment-frontier / Anthropic wow |
 | 4 — Agent Security Plane | defend agents in real time | present | security budget; widens acquirer pool |
 
