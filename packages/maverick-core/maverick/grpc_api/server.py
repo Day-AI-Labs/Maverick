@@ -300,9 +300,12 @@ def serve(
     pb2_grpc.add_MaverickServicer_to_server(
         _servicer(service, pb2, pb2_grpc, bearer_token=bearer_token), server
     )
-    server.add_insecure_port(address)
+    # TLS when configured; fail closed if required (client-bound/enterprise).
+    from ..grpc_tls import bind_port
+    secure = bind_port(server, address, "grpc")
     server.start()
-    log.info("Maverick gRPC API listening on %s", address)
+    log.info("Maverick gRPC API listening on %s (%s)", address,
+             "TLS" if secure else "plaintext")
     return server
 
 

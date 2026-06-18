@@ -41,13 +41,18 @@ Sequenced by leverage. Each phase is independently shippable.
   scoped to the client; fail-closed guards on the gRPC/federation servers;
   `doctor` binding check; wizard step.
 
-### Phase 1 — Transport encryption (TLS/mTLS) — **hard blocker, do next**
-- Add `ssl_server_credentials` / `ssl_channel_credentials` to the gRPC goal API
-  and federation servers (replace `add_insecure_port` / `insecure_channel`).
-- `[grpc] tls` / `[federation] tls` config: cert/key/CA paths, optional mTLS
-  (require + verify client cert).
-- Document TLS termination for the dashboard + MCP HTTP surfaces (reverse proxy
-  or native). Federation shared tokens must never cross plaintext.
+### Phase 1 — Transport encryption (TLS/mTLS) ✅
+- `maverick/grpc_tls.py` builds gRPC server + channel credentials from config;
+  the gRPC goal API and federation servers bind TLS via `bind_port()` and the
+  federation client dials `secure_channel`. `[grpc]`/`[federation]` `tls`,
+  `tls_cert`, `tls_key`, `tls_client_ca` (mTLS), and client-side `tls_ca` /
+  `tls_client_cert` / `tls_client_key`.
+- **Fail-closed**: when the deployment is client-bound/enterprise (or
+  `tls_required = true`), a server that can't build credentials refuses to
+  start and the federation client refuses to dial in the clear — sensitive data
+  never silently falls back to plaintext.
+- Still document TLS termination for the dashboard + MCP HTTP surfaces (reverse
+  proxy or native). The federation shared token never crosses plaintext now.
 
 ### Phase 2 — Trust-plane & key administration (`maverick trust` CLI)
 - `maverick trust list/show/add/rm/rotate/revoke` over `[agent_trust] agents`.
@@ -129,6 +134,23 @@ per_tenant = true         # DEK bound to the client id
 
 [audit]
 sign = true               # tamper-evident, per-client signed chain
+
+# Transport encryption (Phase 1). Required automatically under client binding /
+# enterprise mode — the gRPC + federation servers refuse to start in plaintext.
+[grpc]
+tls = true
+tls_cert = "/etc/maverick/tls/server.crt"
+tls_key  = "/etc/maverick/tls/server.key"
+tls_client_ca = "/etc/maverick/tls/clients-ca.crt"   # optional: enables mTLS
+
+[federation]
+tls = true
+tls_cert = "/etc/maverick/tls/server.crt"
+tls_key  = "/etc/maverick/tls/server.key"
+tls_client_ca = "/etc/maverick/tls/peers-ca.crt"     # mTLS: require peer certs
+tls_ca = "/etc/maverick/tls/peers-ca.crt"            # verify peers we dial
+tls_client_cert = "/etc/maverick/tls/client.crt"     # our cert when dialing
+tls_client_key  = "/etc/maverick/tls/client.key"
 ```
 
 ### 3.3 systemd unit
