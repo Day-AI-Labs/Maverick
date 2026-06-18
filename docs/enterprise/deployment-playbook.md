@@ -187,11 +187,12 @@ and capability enforcement.
   enable OIDC (`MAVERICK_OIDC_ENABLED=1` + issuer/audience/JWKS). RBAC roles
   (admin/operator/viewer) + per-tenant role memberships gate the admin APIs.
 - **gRPC API** (if exposed): set `[grpc] tls = true` with cert/key, and
-  `tls_client_ca` for **mTLS**. Set `MAVERICK_GRPC_BEARER_TOKEN`. TLS is *optional
-  by default* — make it mandatory (see §10).
+  `tls_client_ca` for **mTLS**. Set `MAVERICK_GRPC_BEARER_TOKEN`. A non-loopback
+  **plaintext bind is now refused** unless `MAVERICK_ALLOW_INSECURE_GRPC=1`.
 - **MCP server** (if exposed): set `MAVERICK_MCP_TOKEN`, restrict
   `MAVERICK_MCP_ALLOWED_ORIGINS` to your gateway, and prefer per-agent tokens via
-  the Agent Trust Plane (`[agent_trust] enforce = true`). No built-in rate limit (§10).
+  the Agent Trust Plane (`[agent_trust] enforce = true`). Per-caller rate limit
+  via `MAVERICK_MCP_RATE_LIMIT` (default 600/min).
 - **A2A / webhooks:** `MAVERICK_A2A_TOKEN`, `MAVERICK_WEBHOOK_SECRET`.
 
 ### 6.4 Supply chain
@@ -202,8 +203,10 @@ require_signed_catalog = true
 trusted_pubkeys = ["<your-org-ed25519-hex>"]
 ```
 Unsigned skills are installable by default — lock to your org's signing keys.
-For plugins, restrict to a vetted set; note manifest permission **declarations
-are not yet enforced at runtime** (§10) — review plugin code before enabling.
+For plugins, the **allowlist** (`[plugins] enabled` / `MAVERICK_PLUGINS_ALLOW`)
+and **permission grants** are enforced default-deny (an ungranted permission
+skips the plugin). The residual gap is in-process runtime isolation (§10), so
+still restrict to a **vetted, code-reviewed** set.
 
 ### 6.5 Data protection
 ```bash
@@ -293,22 +296,28 @@ maverick audit verify --all                                          # confirm c
 
 ---
 
-## 10. Known gaps to track
+## 10. Gap status
 
-These are real limitations to disclose to the customer / put on the roadmap —
-**not** things to pretend are configurable:
+Honest, current state — what's now enforced in code vs. what genuinely remains.
 
+### Closed in code
+| Area | What changed |
+|---|---|
+| **Sandbox** | `build_sandbox` now **refuses the unsandboxed `local` backend fail-closed** under enterprise mode / `MAVERICK_REQUIRE_CONTAINER_BACKEND=1` / `[sandbox] require_container=true` (`SandboxPolicyError`). `maverick enterprise verify` reports a "Sandbox isolation" guarantee. Still set `[sandbox] backend=docker` explicitly. |
+| **gRPC TLS** | A **non-loopback plaintext bind is now refused** (`TlsConfigError`) unless TLS is configured or `MAVERICK_ALLOW_INSECURE_GRPC=1` is set. Set `[grpc] tls=true` + `tls_client_ca` for mTLS. |
+| **MCP rate limiting** | Per-caller sliding-window limiter (bearer/IP), `MAVERICK_MCP_RATE_LIMIT` (default 600/min; 0 disables) → 429 over cap. |
+| **Plugins** | Correction: load-time **allowlist** (`[plugins] enabled` / `MAVERICK_PLUGINS_ALLOW`) **and permission-grant enforcement are real and default-deny** (`enforce_permissions=true`) — an ungranted permission *skips* the plugin. (Earlier draft mis-stated this as unenforced.) |
+
+### Remaining (disclose to the customer / roadmap)
 | Area | Gap | Interim mitigation |
 |---|---|---|
-| Sandbox | Code default backend is `local` (unsandboxed). No startup gate forcing a container backend. | Set `[sandbox] backend=docker` and **verify**; treat `local` as dev-only. |
-| gRPC | TLS is optional by default (only forced in client-bound mode). | Manually set `[grpc] tls=true` + `tls_client_ca`; front with mTLS gateway. |
-| MCP / gRPC | No built-in per-caller **rate limiting**. | Enforce at the gateway/WAF; cap with Agent Trust per-agent ceilings. |
-| MCP | Shared bearer grants full tool access; per-tenant gating only via Agent Trust Plane (opt-in). | Enable `[agent_trust] enforce=true` with per-agent tokens. |
-| Plugins | Manifest permissions (network/fs/subprocess) are **declared but not runtime-enforced**. | Allowlist + code review vetted plugins only. |
+| gRPC | Per-caller **rate limiting** not built in (only `max_concurrent_rpcs` + thread pool). | Enforce at the gateway; cap via Agent Trust per-agent ceilings. |
+| MCP | Shared bearer grants full tool access; per-tenant gating only via Agent Trust Plane (opt-in). | `[agent_trust] enforce=true` with per-agent tokens. |
+| Plugins | Granted plugins run **in-process** — no runtime syscall/network sandbox (load-time grants only). | Vet + code-review allowlisted plugins. |
 | Firecracker | Silently falls back to Docker if the VM layer is unavailable. | Monitor logs; alert on fallback. |
-| Keys | No automated rotation for audit-signing / at-rest keys. | Documented manual re-seal; schedule offline. |
+| Keys | No **automated rotation** for audit-signing / at-rest keys. | Manual re-seal (`maverick encryption migrate`); schedule offline. |
 | Billing | Metering + invoicing exist; **no payment integration** (Stripe). | Export usage; bill externally. |
-| Compliance | Code controls + scaffolds exist; **DPA, SOC 2 Type II, pen test are not code** and not yet completed. | Company process; ~months + budget. |
+| Compliance | **DPA / sub-processor / SLA templates** now ship in `docs/enterprise/legal/`; **SOC 2 Type II + penetration test require external auditors** (not code). | Engage auditor/pen-test firm; complete the templates with counsel. |
 
 ---
 
