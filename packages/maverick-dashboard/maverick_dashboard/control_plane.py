@@ -337,4 +337,165 @@ def trust_overview() -> dict[str, Any]:
     }
 
 
-__all__ = ["build_replay", "evidence_packet", "trust_overview"]
+# ---- discovery (what this deployment exposes) ------------------------------
+
+def _discover_tools() -> dict[str, Any]:
+    try:
+        from maverick.safety.tool_risk import risk_map
+        from maverick.tools import CORE_TOOL_NAMES
+        names = sorted(CORE_TOOL_NAMES)
+        risks = risk_map(names)
+        # key is "entries" not "items": dict.items is a method, and Jinja
+        # attribute access (discovery.tools.items) would resolve the method.
+        entries = [{"name": n, "risk": risks.get(n, "medium")} for n in names]
+        by_tier = {"high": 0, "medium": 0, "low": 0}
+        for it in entries:
+            by_tier[it["risk"]] = by_tier.get(it["risk"], 0) + 1
+        return {"entries": entries, "by_tier": by_tier, "count": len(entries)}
+    except Exception:
+        return {"entries": [], "by_tier": {}, "count": 0}
+
+
+def _discover_mcp() -> list[dict[str, Any]]:
+    try:
+        from maverick.mcp_registry import load_mcp_registry
+        out = []
+        for e in load_mcp_registry():
+            spec = getattr(e, "spec", None)
+            pin = (getattr(spec, "pin_sha256", None) if spec else None) or ""
+            out.append({
+                "name": getattr(e, "name", "?"),
+                "command": getattr(spec, "command", "") if spec else "",
+                "pin_sha256": pin,
+                "pinned": bool(pin),
+            })
+        return out
+    except Exception:
+        return []
+
+
+def _discover_providers() -> list[str]:
+    try:
+        from maverick.config import load_config
+        cfg = load_config() or {}
+        return sorted((cfg.get("providers") or {}).keys())
+    except Exception:
+        return []
+
+
+def _discover_channels() -> list[str]:
+    try:
+        from maverick.plugins import discover_channels
+        return sorted(name for name, _ in discover_channels())
+    except Exception:
+        return []
+
+
+def discovery_overview() -> dict[str, Any]:
+    """Inventory the governable surfaces this deployment exposes: tools (by
+    risk), MCP servers (with supply-chain pins), configured LLM providers (names
+    only, never keys), channels, and external agents. Fail-soft per section so a
+    missing optional registry yields an empty list, never a 500."""
+    agents = trust_overview()
+    return {
+        "tools": _discover_tools(),
+        "mcp_servers": _discover_mcp(),
+        "providers": _discover_providers(),
+        "channels": _discover_channels(),
+        "agents": {"enforced": agents["enforced"], "count": len(agents["agents"])},
+    }
+
+
+# ---- pre-action simulation (dry-run, no execution) -------------------------
+
+def _consent_mode() -> str:
+    try:
+        from maverick.safety.consent import _resolve_mode
+        return _resolve_mode()
+    except Exception:
+        return "auto-approve"
+
+
+def simulate_action(surface: str, action: str, target: str = "") -> dict[str, Any]:
+    """Classify a proposed action's risk and report whether it WOULD be gated,
+    without executing anything -- the 'why allowed / why blocked' preview."""
+    surface = (surface or "").strip().lower()
+    action = (action or "").strip()
+    mode = _consent_mode()
+
+    if surface == "computer":
+        from maverick.safety.action_gate import computer_action_risk
+        risk = computer_action_risk(action, {"text": target, "coordinate": [0, 0]})
+    elif surface == "browser":
+        from maverick.safety.action_gate import browser_action_risk
+        risk = browser_action_risk(action, {"selector": target, "url": target})
+    elif surface == "tool":
+        from maverick.safety.tool_risk import tool_risk
+        risk = tool_risk(action) if action else None
+    elif surface:
+        return {"error": f"unknown surface {surface!r}; use computer | browser | tool"}
+    else:
+        return {}
+
+    if surface in ("computer", "browser"):
+        if risk is None:
+            decision, why = "not gated", "read-only / non-mutating action runs freely"
+        elif mode == "auto-deny":
+            decision, why = "DENY", f"consent mode '{mode}': gated and denied"
+        elif mode in ("ask", "dashboard"):
+            decision, why = "REQUIRES APPROVAL", f"consent mode '{mode}': routed to a human ({risk} risk)"
+        else:
+            decision, why = "allow (logged)", f"consent mode '{mode}': gated but auto-granted ({risk} risk)"
+    else:  # tool
+        if risk is None:
+            decision, why = "unknown tool", "no built-in or configured risk classification"
+        else:
+            decision = "exposed"
+            why = f"tool risk '{risk}': dropped from the registry under a max_risk ceiling below it"
+    return {
+        "surface": surface, "action": action, "target": target,
+        "risk": risk or "n/a", "consent_mode": mode, "decision": decision, "why": why,
+    }
+
+
+# ---- deployment compliance packet ------------------------------------------
+
+def _recent_audit_chain(days_back: int = 7) -> dict[str, Any]:
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    days = [(today - datetime.timedelta(days=i)).isoformat() for i in range(days_back)]
+    return _verify_days(days)
+
+
+def compliance_packet() -> dict[str, Any]:
+    """One-click compliance evidence bundle: the SOC 2 control snapshot, the
+    GDPR / EU AI Act control report, and the audit-chain verdict over the recent
+    window -- assembled into a single downloadable JSON artifact. Fail-soft."""
+    packet: dict[str, Any] = {
+        "artifact": "maverick.compliance_packet",
+        "maverick_version": _version(),
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    try:
+        from maverick.soc2 import collect_soc2_evidence
+        packet["soc2"] = collect_soc2_evidence()
+    except Exception as e:  # noqa: BLE001 -- evidence is fail-soft
+        packet["soc2"] = {"error": str(e)}
+    try:
+        from dataclasses import asdict
+
+        from maverick.compliance import compliance_report
+        packet["controls"] = [asdict(c) for c in compliance_report()]
+    except Exception as e:  # noqa: BLE001
+        packet["controls"] = {"error": str(e)}
+    packet["audit_chain"] = _recent_audit_chain()
+    return packet
+
+
+__all__ = [
+    "build_replay",
+    "evidence_packet",
+    "trust_overview",
+    "discovery_overview",
+    "simulate_action",
+    "compliance_packet",
+]

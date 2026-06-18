@@ -1334,6 +1334,27 @@ async def trust_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "trust.html", trust_overview())
 
 
+@app.get("/discovery", response_class=HTMLResponse)
+async def discovery_page(request: Request) -> HTMLResponse:
+    """Inventory every governable surface the deployment exposes (tools, MCP
+    servers, providers, channels, external agents)."""
+    from .control_plane import discovery_overview
+    return templates.TemplateResponse(request, "discovery.html", {"discovery": discovery_overview()})
+
+
+@app.get("/simulate", response_class=HTMLResponse)
+async def simulate_page(request: Request) -> HTMLResponse:
+    """Dry-run a proposed action: its risk + whether it would be gated, no run."""
+    from .control_plane import simulate_action
+    surface = request.query_params.get("surface") or ""
+    action = request.query_params.get("action") or ""
+    target = request.query_params.get("target") or ""
+    result = simulate_action(surface, action, target) if surface else None
+    return templates.TemplateResponse(request, "simulate.html", {
+        "surface": surface, "action": action, "target": target, "result": result,
+    })
+
+
 @app.get("/compartments", response_class=HTMLResponse)
 async def compartments_page(request: Request) -> HTMLResponse:
     """The agent factory's roster: each domain pack and the bulkhead it runs in.

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Discovery · Maverick{% endblock %}
+{% block content %}
+  <h1 class="page-title">Discovery</h1>
+  <p class="page-subtitle">Everything this deployment exposes and can govern — tools, MCP servers, model providers, channels, and external agents. You can't govern what you can't see.</p>
+
+  <p><a class="btn btn--primary" href="/api/v1/compliance/packet">&#8595; Download compliance packet (JSON)</a></p>
+
+  <div class="panel">
+    <h2>Tools <span class="muted">({{ discovery.tools.count }})</span></h2>
+    <p>
+      <span class="badge danger">{{ discovery.tools.by_tier.high or 0 }} high</span>
+      <span class="badge">{{ discovery.tools.by_tier.medium or 0 }} medium</span>
+      <span class="badge active">{{ discovery.tools.by_tier.low or 0 }} low</span>
+    </p>
+    {% if discovery.tools.entries %}
+    <table>
+      <thead><tr><th>Tool</th><th>Risk</th></tr></thead>
+      <tbody>
+        {% for t in discovery.tools.entries %}
+        <tr><td>{{ t.name }}</td><td><span class="badge {{ 'danger' if t.risk == 'high' else '' }}">{{ t.risk }}</span></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>MCP servers <span class="muted">({{ discovery.mcp_servers | length }})</span></h2>
+    {% if discovery.mcp_servers %}
+    <table>
+      <thead><tr><th>Name</th><th>Command</th><th>Supply-chain pin</th></tr></thead>
+      <tbody>
+        {% for m in discovery.mcp_servers %}
+        <tr>
+          <td>{{ m.name }}</td>
+          <td><code>{{ m.command }}</code></td>
+          <td>
+            {% if m.pinned %}<span class="badge active">pinned</span> <code class="muted">{{ m.pin_sha256[:16] }}…</code>
+            {% else %}<span class="badge danger">unpinned</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">No MCP servers configured.</p>{% endif %}
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Model providers</h2>
+      {% if discovery.providers %}<p>{% for p in discovery.providers %}<span class="badge">{{ p }}</span> {% endfor %}</p>
+      {% else %}<p class="muted">None configured (names only; keys never shown).</p>{% endif %}
+    </div>
+    <div class="panel">
+      <h2>Channels</h2>
+      {% if discovery.channels %}<p>{% for c in discovery.channels %}<span class="badge">{{ c }}</span> {% endfor %}</p>
+      {% else %}<p class="muted">No channels installed.</p>{% endif %}
+    </div>
+    <div class="panel">
+      <h2>External agents</h2>
+      <p>
+        <strong>{{ discovery.agents.count }}</strong> registered ·
+        {% if discovery.agents.enforced %}<span class="badge active">enforced</span>{% else %}<span class="badge">advisory</span>{% endif %}
+        · <a href="/trust">view graph &#8594;</a>
+      </p>
+    </div>
+  </div>
+{% endblock %}

@@ -1873,6 +1873,37 @@ async def trust_agents(request: Request) -> dict:
     return trust_overview()
 
 
+@router.get("/discovery")
+async def discovery(request: Request) -> dict:
+    """Inventory of governable surfaces: tools (by risk), MCP servers (with
+    supply-chain pins), configured providers, channels, and external agents."""
+    from .control_plane import discovery_overview
+    return discovery_overview()
+
+
+@router.get("/simulate")
+async def simulate(request: Request, surface: str, action: str, target: str = "") -> dict:
+    """Dry-run a proposed action: classify its risk + report whether it would be
+    gated, without executing it. surface = computer | browser | tool."""
+    from .control_plane import simulate_action
+    return simulate_action(surface, action, target)
+
+
+@router.get("/compliance/packet")
+async def compliance_packet_download(request: Request) -> Response:
+    """Download a one-click compliance evidence bundle (SOC 2 control snapshot +
+    GDPR/EU-AI-Act control report + audit-chain verdict) as a JSON artifact."""
+    from .control_plane import compliance_packet
+    body = json.dumps(compliance_packet(), indent=2, ensure_ascii=False, default=str)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="maverick-compliance-packet.json"',
+        },
+    )
+
+
 @router.get("/permissions")
 async def permissions() -> dict:
     """Everything the agent is currently allowed to do (read-only)."""
