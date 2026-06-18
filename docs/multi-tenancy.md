@@ -42,7 +42,7 @@ the global config (highest precedence) only while that tenant is active:
 ```toml
 # ~/.maverick/tenants/acme/config.toml
 [providers.anthropic]
-api_key = "sk-ant-acme-..."
+api_key = "${ACME_ANTHROPIC_API_KEY}"   # ${VAR} interpolates from the env
 
 [models]
 orchestrator = "anthropic:claude-opus-4-8"
