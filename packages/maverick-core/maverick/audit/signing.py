@@ -20,7 +20,7 @@ Key management:
   - ``verify_chain()`` walks a file and confirms every signature +
     chain link. Returns a list of any breaks for human review.
 
-Optional [audit-signing] extra (cryptography>=42.0).
+Optional [audit-signing] extra (cryptography>=44.0.1).
 """
 
 from __future__ import annotations

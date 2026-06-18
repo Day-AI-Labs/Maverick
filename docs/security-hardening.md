@@ -358,7 +358,7 @@ so OIDC does not 401 inbound webhooks.
 
 - **Needs the optional extra.** OIDC verification requires PyJWT:
   `pip install 'maverick-agent[oidc]'` (equivalently `pip install
-  'pyjwt[crypto]>=2.8'`). The kernel imports fine without it; you'll only hit
+  'pyjwt[crypto]>=2.13.0'`). The kernel imports fine without it; you'll only hit
   the error when a token is actually verified.
 - **Asymmetric-only by design.** `algorithms` is filtered to asymmetric
   algorithms (`RS*`/`ES*`/`PS*`/`EdDSA`); `none` and every HMAC alg
