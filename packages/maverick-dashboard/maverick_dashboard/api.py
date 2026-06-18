@@ -2540,7 +2540,10 @@ async def draft_workflow_from_brief(request: Request, payload: WorkflowDraftIn) 
     if not brief:
         raise HTTPException(status_code=400, detail="describe the workflow you want")
     try:
-        return _drafter_for(payload.form)(brief)
+        # The drafter makes a synchronous LLM call; offload it so the single
+        # event loop isn't frozen for the multi-second round-trip (which would
+        # stall every other user's requests, SSE and health probes).
+        return await run_in_threadpool(_drafter_for(payload.form), brief)
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"workflow drafting failed: {e}") from e
 
@@ -2572,7 +2575,8 @@ async def draft_workflow_from_upload(
     if not text.strip():
         raise HTTPException(status_code=400, detail="the uploaded file was empty")
     try:
-        return _drafter_for(form)("", source_text=text)
+        drafter = _drafter_for(form)
+        return await run_in_threadpool(lambda: drafter("", source_text=text))
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"workflow drafting failed: {e}") from e
 
@@ -2589,7 +2593,7 @@ async def refine_workflow_draft(request: Request, payload: WorkflowRefineIn) -> 
     from .workflow_ai import refine_playbook, refine_workflow
     refiner = refine_playbook if payload.form == "playbook" else refine_workflow
     try:
-        return refiner(payload.current or {}, instruction)
+        return await run_in_threadpool(refiner, payload.current or {}, instruction)
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"refining the draft failed: {e}") from e
 
