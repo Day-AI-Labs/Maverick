@@ -49,10 +49,34 @@ orchestrator = "anthropic:claude-opus-4-8"
 
 [budget]
 max_dollars = 50
+
+# Per-tenant identity provider: in the one-instance-per-tenant model each
+# tenant authenticates against its own IdP. Resolved from this overlay while
+# the tenant is active, exactly like provider keys.
+[auth.oidc]
+issuer = "https://acme.example.com"
+audience = "maverick-acme"
 ```
 
 `maverick tenant create <id>` prints this path; the provisioning API returns it
-as `config_path`.
+as `config_path`. The same overlay drives a tenant's `[channels.*]` bot
+identities and `[auth.oidc]` provider — so credentials, models, budget, channel
+bots and IdP are all per-tenant in the one-instance-per-tenant model.
+
+## Plan tiers are enforced
+
+A tenant's plan (`free` / `pro` / `enterprise`, or operator-defined under
+`[billing.plans]`) gates real behaviour, not just labels:
+
+- **concurrency** — `max_concurrent_goals` caps a tenant's in-flight goals;
+- **channels** — a plan without the `channels` feature is refused at the
+  channel door;
+- **audit_export** — `maverick audit export --tenant <id>` requires the
+  `audit_export` feature.
+
+Enforcement is fail-open at the edges: single-tenant and unprovisioned per-user
+tenants are never gated — only a tenant an operator explicitly put on a limited
+plan is denied.
 
 ## Provisioning
 
