@@ -1,4 +1,4 @@
-# Maverick — Seed Deck
+# Lightwork — Seed Deck
 
 > **Audience:** pre-seed / seed investors (technical + enterprise-SaaS focused).
 > **Format:** ~14 slides. Each slide below = the on-slide copy (terse) + speaker
@@ -13,7 +13,7 @@
 ## Slide 1 — Title
 
 **On slide:**
-- **Maverick**
+- **Lightwork**
 - *The agent workforce a regulated enterprise can actually deploy.*
 - Christopher Day, Founder · `[FILL: contact]` · `[FILL: month 2026]`
 
@@ -40,7 +40,7 @@
 ## Slide 3 — The solution
 
 **On slide:**
-- **Maverick is a governed agent *runtime* — not a chatbot, not a framework.**
+- **Lightwork is a governed agent *runtime* — not a chatbot, not a framework.**
 - A recursive multi-agent swarm where **every single action passes one chokepoint**: capability check → governance policy (allow / deny / require-human) → safety shield → hard budget → tamper-evident audit.
 - **Self-host or air-gap.** Runs on the customer's data, in their environment. No required egress — an egress lock means even a successful prompt injection can't move data out.
 - **A workforce that *provably* improves** — a closed, audited learning loop, not a static model.
@@ -74,7 +74,7 @@ flowchart LR
 - **Adoption inflection:** enterprise agentic AI is moving from pilots to budget — but stalling on governance.
 - **Regulation is forcing the issue:** EU AI Act, sector rules (HIPAA, SOX, GLBA) make "ungoverned agent" a non-starter.
 - **The money is in governance:** Gartner sizes AI-governance platforms at ~$492M (2026) → $1B+ by 2030, with AI regulation reaching 75% of economies by then.
-- **The market just shifted to reward exactly us:** in 2026, *defensibility outweighs growth* — capital rewards IP-heavy companies and **punishes AI wrappers.** Maverick is the opposite of a wrapper.
+- **The market just shifted to reward exactly us:** in 2026, *defensibility outweighs growth* — capital rewards IP-heavy companies and **punishes AI wrappers.** Lightwork is the opposite of a wrapper.
 
 **Speaker notes:** "Two years ago the bet was 'who has the best agent.' In 2026 that's commoditizing — and investors have repriced accordingly, paying for defensible IP, not thin wrappers. Governance and provable safety are becoming a *requirement*, not a feature. We're early to the layer that becomes mandatory."
 
@@ -128,7 +128,7 @@ flowchart LR
 **On slide:**
 - **Self-host removes the #1 enterprise blocker** — their data never leaves; procurement and security review get to "yes" faster.
 - **Land via the wedge:** 2–3 design partners in BFSI → a paid pilot → expansion across suites.
-- **An overlay wedge that avoids a rip-and-replace fight:** *"bring your existing Agentforce / Copilot / LangChain agents under Maverick governance"* — we govern other people's agents (fleet memory + the audit/capability layer already do this). Easiest enterprise entry, and a natural acquisition story for a GRC/ServiceNow buyer.
+- **An overlay wedge that avoids a rip-and-replace fight:** *"bring your existing Agentforce / Copilot / LangChain agents under Lightwork governance"* — we govern other people's agents (fleet memory + the audit/capability layer already do this). Easiest enterprise entry, and a natural acquisition story for a GRC/ServiceNow buyer.
 - **Distribution surface already built:** 8 PyPI packages, Docker/K8s/VPS, an MCP server (drives from Claude Code / Cursor / any MCP client), GitHub Action.
 
 **Speaker notes:** "Two motions. Direct: land a regulated design partner and go deep. Overlay: we don't have to displace their agent platform — we wrap it in governance, which is a far easier sale and the wedge that makes us strategically valuable to an incumbent."
@@ -157,7 +157,7 @@ flowchart LR
 
 | | Governance + audit | Self-host / air-gap | Provable learning | Prebuilt regulated specialists |
 |---|:--:|:--:|:--:|:--:|
-| **Maverick** | ✅ signed, hash-chained | ✅ | ✅ | ✅ 1,118 |
+| **Lightwork** | ✅ signed, hash-chained | ✅ | ✅ | ✅ 1,118 |
 | Sierra ($15.8B, CX agents) | partial | ❌ hosted | ❌ | ❌ |
 | Cognition / Devin (coding) | ❌ | ❌ | ❌ | ❌ |
 | LangChain (framework) | ❌ DIY | ✅ but DIY | ❌ | ❌ |
@@ -167,7 +167,7 @@ flowchart LR
 
 **Speaker notes:** "Sierra is brilliant at hosted customer-experience agents — different buyer, can't air-gap. Cognition is coding. LangChain is ungoverned plumbing you secure yourself. The incumbents have policy but not an agent-native governed runtime. Nobody owns 'governed, self-hostable, provably-improving agent workforce for regulated work.' That's the lane."
 
-**Visual:** The table above, Maverick's row highlighted. Footer: "We govern the agents; we don't race to build a smarter one."
+**Visual:** The table above, Lightwork's row highlighted. Footer: "We govern the agents; we don't race to build a smarter one."
 
 ---
 
@@ -219,7 +219,7 @@ flowchart LR
 - A governed, self-improving agent workforce that does real operational work — and can *prove*, to a regulator, that it stayed in policy and got better.
 - Start: one regulated vertical. End: the governance + learning layer every enterprise agent runs through.
 
-**Speaker notes:** "Agents are going to do enterprise work — the only question in regulated industries is whose governance and proof layer they run through. We intend that to be Maverick."
+**Speaker notes:** "Agents are going to do enterprise work — the only question in regulated industries is whose governance and proof layer they run through. We intend that to be Lightwork."
 
 **Visual:** The hero diagram again, simplified, with the tagline. Contact / `[FILL: data room link]`.
 

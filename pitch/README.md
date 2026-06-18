@@ -1,6 +1,6 @@
-# Maverick — Pitch Package (Daybreak Labs)
+# Lightwork — Pitch Package (Daybreak Labs)
 
-Fundraise and go-to-market materials for **Maverick**, the governed AI agent
+Fundraise and go-to-market materials for **Lightwork**, the governed AI agent
 workforce — built by **Daybreak Labs** (Christopher Day, Founder).
 
 Everything here is **grounded in the real product**: every number is verifiable
