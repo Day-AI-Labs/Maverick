@@ -22,7 +22,7 @@
         }
       ],
       "mountPoints": [
-        {"sourceVolume": "maverick-state", "containerPath": "/root/.maverick"}
+        {"sourceVolume": "maverick-state", "containerPath": "/home/maverick/.maverick"}
       ],
       "healthCheck": {
         "command": ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8765/', timeout=3)\" || exit 1"],

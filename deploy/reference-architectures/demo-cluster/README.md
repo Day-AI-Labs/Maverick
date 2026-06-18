@@ -9,7 +9,7 @@ three-part shape).
  visitor ──► nginx :8080 ── /demo only ──► dashboard :8765 (token-protected)
              │             injects Authorization: ▲
              │             Bearer $MAVERICK_DASHBOARD_TOKEN
-             ├─ / → 302 /demo                   │ state volume /root/.maverick
+             ├─ / → 302 /demo                   │ state volume /home/maverick/.maverick
              ├─ /healthz → dashboard health     │
              └─ every other path → 404          │
                                         seed_demo.py (one-shot for owner=demo,

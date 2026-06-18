@@ -20,7 +20,7 @@ primary_region = "iad"
 
 [mounts]
   source = "maverick_state"
-  destination = "/root/.maverick"
+  destination = "/home/maverick/.maverick"
 
 [http_service]
   internal_port = 8765

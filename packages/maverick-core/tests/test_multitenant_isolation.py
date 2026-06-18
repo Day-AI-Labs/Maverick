@@ -89,6 +89,42 @@ def test_world_for_tenant_caches_same_instance():
     world_model._tenant_worlds.clear()
 
 
+# ---- per-tenant calibration / learning-freeze isolation ----
+
+def test_calibration_samples_and_freeze_are_per_tenant(monkeypatch):
+    """One tenant's calibration ledger and learning-freeze verdict must not
+    bleed into another's self-improvement loop."""
+    from maverick import calibration
+    # Enforcement on so learning_frozen() actually consults the verdict.
+    monkeypatch.setattr(
+        calibration, "_settings",
+        lambda: {"enforce": True, "min_samples": 20,
+                 "min_discrimination": 0.15, "collect_from_coding": False},
+    )
+
+    # Tenant A: feed a drifted verifier (confident on right AND wrong answers)
+    # and assess -> A's learning should freeze.
+    tok = set_tenant("acme")
+    try:
+        for _ in range(15):
+            calibration.record_sample(0.9, True)
+            calibration.record_sample(0.85, False)
+        calibration.run_assessment()
+        assert calibration.learning_frozen() is True
+        # A's ledger is under A's tenant dir.
+        assert "tenants/acme/" in str(data_dir("calibration.ndjson")).replace("\\", "/")
+    finally:
+        reset_tenant(tok)
+
+    # Tenant B never recorded anything: no verdict, so learning proceeds.
+    tok = set_tenant("globex")
+    try:
+        assert calibration.load_samples() == []
+        assert calibration.learning_frozen() is False
+    finally:
+        reset_tenant(tok)
+
+
 # ---- per-tenant KMS isolation ----
 
 def test_tenant_dek_distinct_and_non_transferable():
