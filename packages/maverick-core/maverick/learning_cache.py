@@ -131,8 +131,8 @@ class LearningCache:
             data = json.dumps({"version": 1, "entries": self._entries}, indent=0, sort_keys=True)
             try:
                 os.fchmod(fd, 0o600)
-            except OSError:  # pragma: no cover -- non-posix
-                pass
+            except (OSError, AttributeError):  # pragma: no cover -- non-posix
+                pass  # os.fchmod is absent on Windows (AttributeError)
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(data)
             os.replace(tmp, self.path)

@@ -81,7 +81,10 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
     """Replace ``path`` with ``data`` atomically and privately (0600)."""
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".seal-", suffix=".tmp")
     try:
-        os.fchmod(fd, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+        except (OSError, AttributeError):  # os.fchmod is absent on Windows
+            pass  # mkstemp already created the file owner-only
         with os.fdopen(fd, "wb") as f:
             f.write(data)
             f.flush()
