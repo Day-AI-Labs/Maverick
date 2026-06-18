@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import os
+import unicodedata
 from pathlib import Path
 
 _TENANT: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -43,6 +44,12 @@ class InvalidTenantError(ValueError):
 
 
 def _tenant_segment(tenant: str) -> str:
+    # Normalise to NFC first so the same name in different Unicode normal forms
+    # (e.g. NFC "josé" vs NFD "josé") maps to ONE on-disk namespace rather
+    # than fragmenting a single tenant's data across two directories. A no-op for
+    # ASCII ids (the common case), so existing lowercase-slug tenants are
+    # byte-for-byte unchanged.
+    tenant = unicodedata.normalize("NFC", tenant)
     if tenant in {".", ".."}:
         segment = "%2E" * len(tenant)
     else:

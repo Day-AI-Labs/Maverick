@@ -32,8 +32,12 @@ import re
 log = logging.getLogger(__name__)
 
 # A client id becomes the tenant path segment, so it must satisfy the tenant
-# charset (paths._SAFE_TENANT_CHARS): letters/digits/._- only, no whitespace.
-_CLIENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+# charset (paths._SAFE_TENANT_CHARS): digits/._- and LOWERCASE letters only.
+# Lowercase is required because the id is a directory name: on a case-insensitive
+# filesystem (macOS APFS, Windows NTFS) "Acme" and "acme" resolve to the SAME
+# directory, so allowing mixed case would let two distinct client ids collide
+# onto one data root — the one thing the per-client binding must prevent.
+_CLIENT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _TRUE = {"1", "true", "yes", "on"}
 
 # Resolved once per process (the binding is immutable for a deployment). Tests
@@ -52,7 +56,9 @@ def reset_client_cache() -> None:
     _cached = _UNSET
 
 
-def _resolve() -> str | None:
+def _raw_client_id() -> str:
+    """The configured client id, unvalidated. ``MAVERICK_CLIENT_ID`` wins over
+    ``[client] id``; empty string when neither is set."""
     raw = (os.environ.get("MAVERICK_CLIENT_ID") or "").strip()
     if not raw:
         try:
@@ -60,9 +66,18 @@ def _resolve() -> str | None:
             raw = str(((load_config() or {}).get("client") or {}).get("id") or "").strip()
         except Exception:  # pragma: no cover - config never blocks path resolution
             raw = ""
+    return raw
+
+
+def _resolve() -> str | None:
+    raw = _raw_client_id()
     if not raw:
         return None
     if not _CLIENT_RE.fullmatch(raw):
+        # Resilient on the hot path (every data_dir call): an invalid id resolves
+        # to None here so diagnostics/tests don't crash. Production fails closed
+        # at the startup guard require_client_binding(), which raises rather than
+        # let a misconfigured floor silently serve from the shared root.
         log.warning("[client] id %r is invalid (want %s); ignoring it",
                     raw, _CLIENT_RE.pattern)
         return None
@@ -110,6 +125,18 @@ def require_client_binding() -> str | None:
     un-scoped shared root by accident. A no-op (returns ``None``) when binding
     is not enforced.
     """
+    raw = _raw_client_id()
+    if raw and not _CLIENT_RE.fullmatch(raw):
+        # A configured-but-invalid id is an unambiguous misconfiguration of the
+        # immutable binding (e.g. uppercase letters that would collide on a
+        # case-insensitive filesystem). Fail closed at startup rather than
+        # silently fall back to the shared root — regardless of enforce.
+        raise ClientBindingError(
+            f"[client] id {raw!r} is invalid: must match {_CLIENT_RE.pattern} "
+            "(lowercase letters, digits, '.', '_', '-'; lowercase is required so "
+            "the data directory can't collide with a differently-cased id on a "
+            "case-insensitive filesystem). Refusing to start."
+        )
     cid = client_id()
     if cid:
         return cid
