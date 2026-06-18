@@ -32,6 +32,24 @@ DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
 
+# Valid PRAGMA synchronous levels (we don't expose OFF — corruption risk).
+_SYNC_MODES = {"NORMAL", "FULL", "EXTRA"}
+
+
+def _synchronous_mode() -> str:
+    """The PRAGMA synchronous level: ``MAVERICK_WORLD_SYNCHRONOUS`` /
+    ``[world_model] synchronous`` (NORMAL default). FULL/EXTRA make every commit
+    durable (no acked-row loss on OS crash) at a write-latency cost."""
+    raw = os.environ.get("MAVERICK_WORLD_SYNCHRONOUS")
+    if not raw:
+        try:
+            from .config import load_config
+            raw = ((load_config() or {}).get("world_model") or {}).get("synchronous")
+        except Exception:
+            raw = None
+    mode = str(raw or "NORMAL").strip().upper()
+    return mode if mode in _SYNC_MODES else "NORMAL"
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -725,8 +743,13 @@ class WorldModel:
                     os.chmod(path.parent / (path.name + _suffix), 0o600)
                 except OSError:
                     pass
-        # synchronous=NORMAL under WAL is safe + much faster than FULL.
-        self.conn.execute("PRAGMA synchronous = NORMAL")
+        # synchronous=NORMAL under WAL is safe (no corruption) + much faster
+        # than FULL, but a commit acked to the orchestrator can still be lost on
+        # an OS crash / power loss before the next checkpoint. A regulated
+        # deployment that treats the world DB as the billed Operating Record can
+        # opt into FULL (durable on every commit) via [world_model] synchronous
+        # / MAVERICK_WORLD_SYNCHRONOUS. Default NORMAL — behaviour unchanged.
+        self.conn.execute(f"PRAGMA synchronous = {_synchronous_mode()}")
         # May 26 council fix (long-tail audit #4): bound WAL file
         # growth. Default autocheckpoint=1000 pages is fine, but with
         # a dashboard reader holding a snapshot lock, autocheckpoint

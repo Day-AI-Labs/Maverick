@@ -275,3 +275,4 @@ system-specific shapes (e.g. `SERVICENOW_INSTANCE_URL`, `SNOWFLAKE_ACCOUNT`,
 | Env var | Default | Description |
 | --- | --- | --- |
 | `MAVERICK_DURABLE` | config `[durable] enabled` (off) | Enable durable execution (checkpoint/resume). |
+| `MAVERICK_WORLD_SYNCHRONOUS` | config `[world_model] synchronous` (NORMAL) | World-DB PRAGMA synchronous level. `FULL`/`EXTRA` make every commit durable on OS crash/power loss (no acked-row loss) at a write-latency cost — for deployments treating the world DB as the billed Operating Record. |
