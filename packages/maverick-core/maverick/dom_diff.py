@@ -44,8 +44,18 @@ class _DOMCollector(HTMLParser):
         if tag in _INVISIBLE and tag not in _VOID:
             self._skip_depth += 1
 
+    def handle_startendtag(self, tag, attrs):
+        # HTMLParser's default implementation calls handle_starttag() followed
+        # by handle_endtag().  That is wrong for self-closing void invisible
+        # tags (for example <meta/> inside <head>): the start tag intentionally
+        # does not open a skip region, so the synthetic end tag must not close
+        # the surrounding invisible parent.
+        self.handle_starttag(tag, attrs)
+        if tag not in _VOID:
+            self.handle_endtag(tag)
+
     def handle_endtag(self, tag):
-        if tag in _INVISIBLE and self._skip_depth > 0:
+        if tag in _INVISIBLE and tag not in _VOID and self._skip_depth > 0:
             self._skip_depth -= 1
 
     def handle_data(self, data):
