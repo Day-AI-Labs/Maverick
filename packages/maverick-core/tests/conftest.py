@@ -99,6 +99,11 @@ def _reset_client_binding_cache():
             tenant_kms._clear_cache()
         except Exception:
             pass
+        try:
+            from maverick import config
+            config.reset_config_cache()
+        except Exception:
+            pass
 
     _reset()
     yield
