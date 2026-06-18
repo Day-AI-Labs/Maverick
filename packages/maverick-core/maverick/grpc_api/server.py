@@ -287,6 +287,9 @@ def serve(
     non-blocking use the returned server's ``stop()``. The default service runs
     real goals; tests pass a service wired to fakes.
     """
+    # Fail closed: a client-bound deployment must not serve unbound.
+    from ..client import require_client_binding
+    require_client_binding()
     bearer_token = _resolve_bearer_token(bearer_token)
     grpc = _require_grpc()
     pb2, pb2_grpc = _load_stubs()

@@ -362,6 +362,30 @@ def _check_shield() -> None:
              fix="set [safety] profile = \"balanced\" in ~/.maverick/config.toml to re-enable")
 
 
+def _check_client_binding() -> None:
+    """One Maverick per enterprise client — surface the binding and fail loudly
+    when it's enforced but unset (the deployment would otherwise serve from the
+    shared root)."""
+    try:
+        from .client import status as client_status
+        st = client_status()
+    except Exception as e:  # pragma: no cover - never break doctor
+        _row(YELLOW, "client", f"binding status unavailable: {e}")
+        return
+    cid = st.get("client_id")
+    if cid:
+        _row(GREEN, "client", f"bound to {cid!r} — data root {st['data_root']}")
+    elif st.get("enforced"):
+        _row(RED, "client",
+             "client binding ENFORCED but no client id set — refusing to serve "
+             "unbound",
+             fix="set MAVERICK_CLIENT_ID (service unit) or [client] id in config")
+    else:
+        _row(YELLOW, "client",
+             "no client binding (shared root) — single-tenant/legacy mode",
+             fix="for an enterprise deployment set [client] id + enforce = true")
+
+
 def _check_agent_trust() -> None:
     """Surface the Agent Trust Plane state — especially the silent footgun
     where the plane is ENGAGED (e.g. via enterprise mode) but the registry is
@@ -398,6 +422,7 @@ def diagnose() -> int:
     _FAILURES.clear()
     click.echo(click.style("Maverick health check\n", bold=True))
     cfg = _check_config()
+    _check_client_binding()
     _check_anthropic()
     _check_openai()
     _check_sandbox(cfg)

@@ -1341,6 +1341,13 @@ def pick_advanced() -> dict[str, Any]:
             "is kept separate — recommended for multi-user servers.",
             default=False,
         ),
+        "client_id": _q_text(
+            "Client/tenant id for THIS deployment (one Maverick per enterprise "
+            "client). All data (world DB, audit, memory, fleet) is isolated under "
+            "this id — leave blank only for a personal/single-user install. "
+            "Letters/digits/._- e.g. \"acme-corp\".",
+            default="",
+        ),
         "enterprise": _q_confirm(
             "Enterprise mode (private/sensitive data)? Pin every LLM call to a "
             "local/self-hosted model so data never leaves your boundary, gate "
@@ -2713,6 +2720,14 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[tenancy]")
         lines.append("by_user = true")
+    _client_id = str(advanced.get("client_id") or "").strip()
+    if _client_id:
+        lines.append("")
+        lines.append("[client]")
+        lines.append(f'id = "{_client_id}"')
+        # Enforced: refuse to start unbound so this client's data can never land
+        # in the shared root. Also set MAVERICK_CLIENT_ID in the service unit.
+        lines.append("enforce = true")
     if advanced.get("enterprise"):
         lines.append("")
         lines.append("[enterprise]")

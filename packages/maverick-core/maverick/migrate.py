@@ -40,7 +40,7 @@ KNOWN_SECTIONS = frozenset({
     "approval_delegation", "attachments", "audit", "auth", "autonomy",
     "deployment",
     "benchmark", "billing", "budget", "cache", "calendar", "calibration",
-    "capabilities", "catalogs", "channels", "coding", "compaction",
+    "capabilities", "catalogs", "channels", "client", "coding", "compaction",
     "compliance", "computer_use", "consequence", "containment", "context",
     "credit", "data_engine",
     "dashboard", "director", "durable", "ebpf_monitor", "effort", "egress",
