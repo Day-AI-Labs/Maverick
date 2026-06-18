@@ -116,6 +116,8 @@ p{margin:16px 0 0}
 .card .idx{font-family:var(--mono);font-size:13px;color:var(--accent);font-weight:500}
 .qcol h3{font-family:var(--serif);font-weight:500;font-size:25px;letter-spacing:-.01em}
 .qcol p{color:var(--muted);margin-top:10px;font-size:16.5px}
+.fname{font-family:var(--serif);font-weight:500;font-size:27px;letter-spacing:-.01em;line-height:1.1}
+.role{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:7px}
 
 /* ---- step / gate diagram ---- */
 .gate{margin-top:48px;border:1px solid var(--line);border-radius:16px;background:var(--card);
