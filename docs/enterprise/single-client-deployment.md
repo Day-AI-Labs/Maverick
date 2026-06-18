@@ -101,14 +101,21 @@ Sequenced by leverage. Each phase is independently shippable.
 - Hardened `systemd` unit + install script and baked image: see the runbook (the
   image just runs `gen-stubs` + `init --from-file` at build).
 
-### Phase 6 — Compliance & data-subject operations
-- **Per-client export + erasure**: one command that exports/erases the client's
-  data across *every* store (world DB, audit per retention law, memory, fleet,
-  vector store, caches) with `erasure_verify` coverage proof.
-- Residual-plaintext: seal the live audit day-file (or require `[privacy]
-  anonymous = true`) so no PII sits unsealed.
-- Certification track: SOC 2 Type II, HIPAA BAA, third-party pen test (the
-  control machinery exists; the attestations are organizational).
+### Phase 6 — Compliance & data-subject operations ✅ (certs are organizational)
+- **Per-client export + erasure** ✅: `maverick client export` (full data
+  portability / DSAR — a consistent snapshot of the client's data root) and
+  `maverick client erase --confirm [--keep-audit]` (right-to-erasure /
+  offboarding). Because one deployment = one client = one data root, erase is
+  **provably complete** (no other on-node location) and **fail-closed** (refuses
+  unless a client is bound, so it can never wipe the shared root). External
+  stores (a remote Postgres/Qdrant/Redis a deployment may add) are erased via
+  their own admin path — documented caveat.
+- Residual-plaintext (`[privacy] anonymous = true`) and `[audit] retention`
+  remain config knobs as before.
+- **Certification track** (organizational, not code): SOC 2 Type II, HIPAA BAA,
+  third-party pen test — the control machinery (signed audit, compliance
+  profiles, egress lock, erasure) is in place; the attestations are a
+  process/audit-firm engagement.
 
 ---
 
@@ -237,6 +244,18 @@ systemctl start maverick-dashboard
 
 The restore refuses a backup whose `client_id` differs from the standby's
 binding — a client's data can never be restored onto another client's node.
+
+### 3.7 Offboard a client (right-to-erasure)
+
+```bash
+# Optional: hand the client their data first (portability / DSAR).
+maverick client export --out /secure/acme-final-export.tgz
+# Irreversible wipe of this client's entire data root (keep audit for retention):
+maverick client erase --confirm --keep-audit
+```
+
+Erase refuses unless a client is bound, so it can only ever target
+`tenants/<client>/` — never the shared root. Then decommission the VM/instance.
 
 ### 3.5 Cloud marketplace image
 

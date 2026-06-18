@@ -129,6 +129,54 @@ def data_root():
     return data_dir()
 
 
+def erase_client(*, keep_audit: bool = False) -> dict:
+    """Erase ALL of this client's data (offboarding / right-to-erasure).
+
+    Because one deployment serves exactly one client, the client's entire data
+    set lives under one root (``data_dir()`` = ``tenants/<client>/``): world DB,
+    cross-session memory, fleet memory, the managed trust registry, caches, and
+    (unless ``keep_audit``) the audit chain. Wiping that tree is therefore a
+    *provably complete* tenant erase — there is no other place the client's data
+    resides on this node.
+
+    Fail-closed: refuses unless a client is bound, so it can never target the
+    shared/legacy root. Returns a summary. ``keep_audit=True`` preserves the
+    signed audit chain for legal retention.
+
+    NOTE: external stores a deployment may add (a remote Postgres/Qdrant/Redis)
+    are out of scope here — erase those via their own admin path; this covers the
+    on-node client tree.
+    """
+    cid = client_id()
+    if not cid:
+        raise ClientBindingError(
+            "refusing to erase: no client is bound (this would target the shared "
+            "root). Set MAVERICK_CLIENT_ID / [client] id first."
+        )
+    from .paths import data_dir
+    root = data_dir()
+    removed = 0
+    if root.exists():
+        for p in sorted(root.rglob("*"), key=lambda x: len(x.parts), reverse=True):
+            rel = p.relative_to(root)
+            if keep_audit and rel.parts and rel.parts[0] == "audit":
+                continue
+            try:
+                if p.is_file() or p.is_symlink():
+                    p.unlink()
+                    removed += 1
+                elif p.is_dir():
+                    import contextlib
+                    with contextlib.suppress(OSError):
+                        p.rmdir()
+            except OSError as e:  # pragma: no cover
+                log.warning("erase: could not remove %s: %s", p, e)
+    log.warning("client erase: removed %d path(s) under %s (keep_audit=%s)",
+                removed, root, keep_audit)
+    return {"client_id": cid, "root": str(root), "removed": removed,
+            "kept_audit": keep_audit}
+
+
 def status() -> dict:
     """Binding summary for ``maverick doctor`` / readiness."""
     cid = client_id()
@@ -147,5 +195,6 @@ __all__ = [
     "require_client_binding",
     "reset_client_cache",
     "data_root",
+    "erase_client",
     "status",
 ]
