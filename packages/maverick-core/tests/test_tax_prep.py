@@ -710,9 +710,37 @@ class TestJsonOutput:
             "--filing-status", "single", "--format", "json"])
         assert res.exit_code == 0, res.output
         import json
-        data = json.loads(res.output)
+        data = json.loads(res.stdout)
         assert data["federal"]["total_income"] == 85000.0
         assert "constants" in data
+
+    def test_cli_json_format_keeps_out_status_off_stdout(self, tmp_path):
+        (tmp_path / "w2.txt").write_text(W2_TEXT, encoding="utf-8")
+        out = tmp_path / "review.json"
+        res = CliRunner().invoke(main, [
+            "--db", str(tmp_path / "x.db"), "tax", "prepare", str(tmp_path),
+            "--filing-status", "single", "--format", "json",
+            "--out", str(out)])
+        assert res.exit_code == 0, res.output
+        import json
+        data = json.loads(res.stdout)
+        assert data["federal"]["total_income"] == 85000.0
+        assert json.loads(out.read_text(encoding="utf-8"))["constants"]
+        assert "Wrote review package" in res.stderr
+
+    def test_cli_json_format_keeps_update_status_off_stdout(
+            self, tmp_path, monkeypatch):
+        (tmp_path / "w2.txt").write_text(W2_TEXT, encoding="utf-8")
+        from maverick import tax_constants
+        monkeypatch.setattr(tax_constants, "check_for_update",
+                            lambda: ("applied", "test constants updated"))
+        res = CliRunner().invoke(main, [
+            "--db", str(tmp_path / "x.db"), "tax", "prepare", str(tmp_path),
+            "--filing-status", "single", "--format", "json"])
+        assert res.exit_code == 0, res.output
+        import json
+        assert json.loads(res.stdout)["federal"]["total_income"] == 85000.0
+        assert "[tax] test constants updated" in res.stderr
 
 
 class TestTaxPrepareCli:
