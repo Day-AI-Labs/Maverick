@@ -772,6 +772,10 @@ class FederationService:
                 max_wall_seconds=(deadline_ms / 1000.0) if deadline_ms > 0 else None,
                 channel="federation",
                 user_id=f"federation:{peer.name}",
+                # Stamp the delegating peer as the owner so a later GoalStatus
+                # poll can be scoped to it — one peer must not read another
+                # peer's (or a locally created goal's) status/result.
+                owner=f"federation:{peer.name}",
                 capability=negotiation.granted,
             ))
         except ValueError as e:  # e.g. empty title
@@ -784,10 +788,17 @@ class FederationService:
         return {"accepted": True, "goal_id": goal_id, "reason": ""}
 
     def goal_status(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if self._authenticate(payload) is None:
+        peer = self._authenticate(payload)
+        if peer is None:
             raise FederationAuthError("federation: missing or invalid token")
         st = self._goals().status(_to_int(payload.get("goal_id")))
         if st is None:
+            return {"status": "unknown", "result": ""}
+        # Owner-scope the poll: a peer may only read the status/result of goals
+        # IT delegated. A goal owned by a different peer (or a locally created
+        # goal with no federation owner) is reported as "unknown" — identical to
+        # a non-existent id, so cross-peer probing can't even confirm existence.
+        if getattr(st, "owner", "") != f"federation:{peer.name}":
             return {"status": "unknown", "result": ""}
         return {"status": str(st.status), "result": str(st.result or "")}
 
