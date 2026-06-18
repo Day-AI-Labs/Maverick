@@ -6,12 +6,11 @@
 <title>Privacy &amp; cookies — Lightwork by Daybreak Labs</title>
 <meta name="description" content="How the Lightwork marketing site handles cookies and personal data. This site sets no tracking, advertising, or analytics cookies.">
 <meta name="robots" content="all">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="styles.css">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="512x512" href="favicon-512.png">
 <link rel="apple-touch-icon" href="favicon-180.png">
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "28d5584c57bd4c699bbc499ed4c37359"}'></script><!-- pragma: allowlist secret -->
 </head>
 <body>
 
@@ -50,15 +49,11 @@
       <h2>Cookies</h2>
       <p>This website sets <strong>no cookies</strong> — no tracking cookies, no advertising cookies, no analytics cookies. We verified this: the site returns no <span style="font-family:var(--mono);font-size:.9em">Set-Cookie</span> headers. Because nothing non-essential is stored on your device, there is nothing to consent to, which is why you won't find a cookie banner here. If we ever introduce a cookie that isn't strictly necessary, we will ask for your consent first and document it on this page.</p>
 
-      <h2>Analytics &amp; tracking</h2>
-      <p>None. We do not run Google Analytics or any other analytics or advertising tool, we do not fingerprint your browser, and we do not build a profile of your visit.</p>
+      <h2>Analytics</h2>
+      <p>We use <strong>Cloudflare Web Analytics</strong> to understand aggregate traffic — page views, referrers, and rough geography. It is privacy-first by design: it sets <strong>no cookies</strong>, does not fingerprint your browser, and does not track you across other sites. We do not run Google Analytics or any advertising tool, and we do not build a profile of your visit.</p>
 
       <h2>Third-party services</h2>
-      <p>Two services are involved in delivering this site. Neither sets cookies, but both necessarily process a connecting IP address to do their job:</p>
-      <ul>
-        <li><strong>Cloudflare</strong> — hosts and serves the site (Cloudflare Pages) and provides transport security. Cloudflare processes standard request metadata, including IP address, to deliver the page securely.</li>
-        <li><strong>Google Fonts</strong> — the site's typefaces currently load from Google Fonts, so your browser requests the font files from Google, which may log the requesting IP address. We are moving these fonts to first-party hosting to remove that transfer; once that ships, this line goes away.</li>
-      </ul>
+      <p>The site is delivered by <strong>Cloudflare</strong> — Cloudflare Pages for hosting and transport security, plus Cloudflare's cookieless Web Analytics. To serve a page and count a visit, Cloudflare necessarily processes a connecting IP address; it sets no cookies. Everything else — fonts, images, styles — is served first-party from this domain, so your browser makes no requests to Google or any other third party.</p>
 
       <h2>Information you give us</h2>
       <p>If you email us — for example, the <em>Book a demo</em> or <em>Request access</em> links, which open your own mail client — we receive whatever you send (your email address and message) and use it solely to respond to you. We don't sell it, rent it, or share it with anyone outside Daybreak Labs, and we keep it only as long as we need it to handle your request.</p>
