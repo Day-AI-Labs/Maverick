@@ -276,11 +276,29 @@ def _grpc_code():
     return grpc.StatusCode
 
 
+def _grpc_int_setting(env: str, key: str, default: int | None) -> int | None:
+    """An int gRPC server setting from ``env`` or ``[grpc] <key>`` (env wins)."""
+    raw = os.environ.get(env)
+    if raw is None:
+        try:
+            from ..config import load_config
+            val = ((load_config() or {}).get("grpc") or {}).get(key)
+            raw = None if val is None else str(val)
+        except Exception:
+            raw = None
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
+
 def serve(
     address: str = _DEFAULT_ADDR,
     *,
     service=None,
-    max_workers: int = 8,
+    max_workers: int | None = None,
     bearer_token: str | None = None,
 ):
     """Start a blocking gRPC server on ``address``. Returns the server handle.
@@ -288,6 +306,12 @@ def serve(
     With ``block=False`` semantics omitted for simplicity: callers that want
     non-blocking use the returned server's ``stop()``. The default service runs
     real goals; tests pass a service wired to fakes.
+
+    ``max_workers`` defaults to ``MAVERICK_GRPC_MAX_WORKERS`` / ``[grpc]
+    max_workers`` (then 8). ``MAVERICK_GRPC_MAX_CONCURRENT`` / ``[grpc]
+    max_concurrent_rpcs`` optionally caps in-flight RPCs (explicit
+    RESOURCE_EXHAUSTED backpressure instead of unbounded executor queueing);
+    unset preserves the prior unbounded behaviour.
     """
     # Fail closed: a client-bound deployment must not serve unbound.
     from ..client import require_client_binding
@@ -298,7 +322,14 @@ def serve(
     if service is None:
         from .service import GoalService
         service = GoalService()
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
+    if max_workers is None:
+        max_workers = _grpc_int_setting("MAVERICK_GRPC_MAX_WORKERS", "max_workers", 8)
+    max_concurrent = _grpc_int_setting(
+        "MAVERICK_GRPC_MAX_CONCURRENT", "max_concurrent_rpcs", None)
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=max_workers),
+        maximum_concurrent_rpcs=max_concurrent,
+    )
     pb2_grpc.add_MaverickServicer_to_server(
         _servicer(service, pb2, pb2_grpc, bearer_token=bearer_token), server
     )
@@ -317,7 +348,9 @@ def main(argv: list[str] | None = None) -> int:
 
     ap = argparse.ArgumentParser("maverick-grpc", description="Maverick gRPC API server")
     ap.add_argument("--address", default=_DEFAULT_ADDR, help="host:port to bind")
-    ap.add_argument("--max-workers", type=int, default=8)
+    ap.add_argument("--max-workers", type=int, default=None,
+                    help="thread pool size (default: MAVERICK_GRPC_MAX_WORKERS "
+                         "/ [grpc] max_workers, then 8)")
     ap.add_argument(
         "--bearer-token",
         default=None,

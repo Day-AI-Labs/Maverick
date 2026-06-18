@@ -36,6 +36,47 @@ log = logging.getLogger(__name__)
 
 _thread_lock = threading.Lock()
 _executor = None  # type: ignore[var-annotated]
+_inflight = None  # type: ignore[var-annotated]  # BoundedSemaphore: queue backpressure
+
+
+def _pool_size() -> int:
+    """Webhook dispatch worker count. ``[webhooks] workers`` /
+    ``MAVERICK_WEBHOOK_WORKERS`` (default 4)."""
+    env = os.environ.get("MAVERICK_WEBHOOK_WORKERS")
+    if env:
+        try:
+            return max(1, int(env))
+        except ValueError:
+            pass
+    try:
+        from .config import load_config
+        val = ((load_config() or {}).get("webhooks") or {}).get("workers")
+        if val is not None:
+            return max(1, int(val))
+    except Exception:
+        pass
+    return 4
+
+
+def _max_inflight() -> int:
+    """Cap on queued+running dispatches. ``[webhooks] max_inflight`` /
+    ``MAVERICK_WEBHOOK_MAX_INFLIGHT`` (default 16x the worker count). Bounds
+    memory: ThreadPoolExecutor's work queue is otherwise unbounded, so a slow
+    or hung receiver during a burst backs tasks up in RAM without limit."""
+    env = os.environ.get("MAVERICK_WEBHOOK_MAX_INFLIGHT")
+    if env:
+        try:
+            return max(1, int(env))
+        except ValueError:
+            pass
+    try:
+        from .config import load_config
+        val = ((load_config() or {}).get("webhooks") or {}).get("max_inflight")
+        if val is not None:
+            return max(1, int(val))
+    except Exception:
+        pass
+    return max(16, _pool_size() * 16)
 
 
 def _expand_env(val: object) -> str | None:
@@ -105,16 +146,39 @@ def _default_max_age() -> int:
 
 
 def _get_executor():
-    """Lazy-init the dispatch threadpool. Daemon threads so we don't
-    block process exit."""
-    global _executor
+    """Lazy-init the dispatch threadpool + its in-flight backpressure
+    semaphore. Daemon threads so we don't block process exit."""
+    global _executor, _inflight
     with _thread_lock:
         if _executor is None:
             from concurrent.futures import ThreadPoolExecutor
             _executor = ThreadPoolExecutor(
-                max_workers=4, thread_name_prefix="mvk-webhook",
+                max_workers=_pool_size(), thread_name_prefix="mvk-webhook",
             )
+            _inflight = threading.BoundedSemaphore(_max_inflight())
     return _executor
+
+
+def _submit(executor, fn, *args) -> bool:
+    """Submit ``fn(*args)`` to the pool unless the in-flight cap is reached.
+    Returns False (drop + caller logs) on overflow so a burst against a slow
+    receiver can't grow the work queue without bound."""
+    sem = _inflight  # capture: a reset must not make us release a different one
+    if not sem.acquire(blocking=False):
+        return False
+
+    def _runner():
+        try:
+            fn(*args)
+        finally:
+            sem.release()
+
+    try:
+        executor.submit(_runner)
+        return True
+    except Exception:
+        sem.release()
+        raise
 
 
 def _post(url: str, body: bytes, headers: dict[str, str], timeout: float) -> None:
@@ -200,9 +264,15 @@ def fire(
         headers["X-Maverick-Signature"] = _sign(body, secret, timestamp=ts)
 
     executor = _get_executor()
+    sent = 0
     for url in urls:
-        executor.submit(_post, url, body, dict(headers), timeout)
-    return len(urls)
+        if _submit(executor, _post, url, body, dict(headers), timeout):
+            sent += 1
+        else:
+            from .secrets import scrub
+            log.warning("webhooks: in-flight cap reached; dropping dispatch to %s",
+                        scrub(url))
+    return sent
 
 
 def _load_handoff_target() -> tuple[str | None, str | None]:

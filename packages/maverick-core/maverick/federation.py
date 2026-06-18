@@ -985,17 +985,39 @@ def _servicer(service: FederationService, pb2, pb2_grpc):
     return MaverickFederationServicer()
 
 
+def _fed_int_setting(env: str, key: str, default: int | None) -> int | None:
+    """An int federation-server setting from ``env`` or ``[federation] <key>``."""
+    raw = os.environ.get(env)
+    if raw is None:
+        try:
+            from .config import load_config
+            val = ((load_config() or {}).get("federation") or {}).get(key)
+            raw = None if val is None else str(val)
+        except Exception:
+            raw = None
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
+
 def serve(
     address: str = _DEFAULT_ADDR,
     *,
     service: FederationService | None = None,
-    max_workers: int = 8,
+    max_workers: int | None = None,
 ):
     """Start the federation gRPC server. Returns the server handle.
 
     Opt-in and fail-closed twice over: refuses to start unless
     :func:`federation_enabled`, and a service with no configured peers (or
     peers without tokens) refuses every call.
+
+    ``max_workers`` defaults to ``MAVERICK_FEDERATION_MAX_WORKERS`` /
+    ``[federation] max_workers`` (then 8); ``MAVERICK_FEDERATION_MAX_CONCURRENT``
+    / ``[federation] max_concurrent_rpcs`` optionally caps in-flight RPCs.
     """
     if not federation_enabled():
         raise RuntimeError(
@@ -1009,7 +1031,15 @@ def serve(
     pb2, pb2_grpc = _load_stubs()
     if service is None:
         service = FederationService()
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
+    if max_workers is None:
+        max_workers = _fed_int_setting(
+            "MAVERICK_FEDERATION_MAX_WORKERS", "max_workers", 8)
+    max_concurrent = _fed_int_setting(
+        "MAVERICK_FEDERATION_MAX_CONCURRENT", "max_concurrent_rpcs", None)
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=max_workers),
+        maximum_concurrent_rpcs=max_concurrent,
+    )
     pb2_grpc.add_MaverickFederationServicer_to_server(
         _servicer(service, pb2, pb2_grpc), server
     )
