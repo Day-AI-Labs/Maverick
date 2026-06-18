@@ -979,6 +979,16 @@ class WorldModel:
         if dest.exists():  # idempotent across the open-time lock-retry loop
             return
         try:
+            # Quiesce the source first. executescript(SCHEMA)/_init_schema_version()
+            # leave an uncommitted write transaction holding a lock on self.conn,
+            # and SQLite's online backup of a connection that is mid-write-
+            # transaction deadlocks (observed as a hung migration). Commit so the
+            # snapshot is a clean, lock-free read of the pre-migration state; the
+            # migration loop opens its own writes immediately after.
+            try:
+                self.conn.commit()
+            except sqlite3.Error:  # pragma: no cover -- best-effort quiesce
+                pass
             bdst = sqlite3.connect(str(dest))
             try:
                 self.conn.backup(bdst)
