@@ -188,6 +188,26 @@ def test_fuzz_a2a_task_engine():
              allowed=(_RpcError,))
 
 
+def test_fuzz_a2a_message_text():
+    """A hostile client controls message.parts (any JSON value); extracting the
+    text must never raise — it runs on the first step of every send/stream."""
+    from maverick.a2a_tasks import _message_text
+    _run("a2a._message_text",
+         lambda v: _message_text(v if isinstance(v, dict) else {"parts": v}))
+
+
+def test_fuzz_a2a_send_malformed_message():
+    """End-to-end: send() with a malformed message must resolve to a task
+    (rejected/failed), never raise out of the runner to a 500."""
+    import asyncio
+
+    from maverick.a2a_tasks import TaskEngine
+    te = TaskEngine(runner=lambda *a, **k: "ok")
+    for parts in ("not-a-list", 5, [1, 2], [{"kind": "text"}], None, {"x": 1}):
+        out = asyncio.run(te.send({"message": {"parts": parts}}, "anon"))
+        assert isinstance(out, dict) and out.get("kind") == "task"
+
+
 # ---- tokens + signatures -----------------------------------------------------
 
 def test_fuzz_web_session():

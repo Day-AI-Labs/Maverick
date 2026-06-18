@@ -89,9 +89,19 @@ def _text_parts(text: str) -> list[dict]:
 
 
 def _message_text(message: dict) -> str:
-    """Concatenate the text parts of an A2A Message."""
-    parts = message.get("parts") or []
-    chunks = [p.get("text", "") for p in parts if p.get("kind") == "text"]
+    """Concatenate the text parts of an A2A Message.
+
+    Defensive about a hostile client's shape: ``parts`` may be any JSON value
+    (a string/number, not a list) and its items may be non-objects, so this
+    must not assume a list of dicts — otherwise iterating a string or calling
+    ``.get`` on a non-dict raises out of the task runner (a 500 / DoS)."""
+    parts = message.get("parts")
+    if not isinstance(parts, list):
+        return ""
+    chunks = [
+        p.get("text", "") for p in parts
+        if isinstance(p, dict) and p.get("kind") == "text"
+    ]
     return "\n".join(c for c in chunks if c).strip()
 
 
