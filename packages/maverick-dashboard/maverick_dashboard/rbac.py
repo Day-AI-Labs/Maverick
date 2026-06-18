@@ -111,7 +111,88 @@ def remove_user(principal: str) -> None:
         _write(data)
 
 
+# --- Per-tenant role memberships ---------------------------------------------
+# A principal can hold a different role per tenant (e.g. admin of "acme",
+# viewer of "globex"). This OVERRIDES the global stored role for that tenant
+# only. The config-pinned bootstrap admin stays globally admin regardless, so
+# tenant memberships can never lock every admin out. Store is a separate global
+# control-plane file: ``{tenant: {principal: role}}``.
+
+
+def tenant_store_path() -> Path:
+    return Path.home() / ".maverick" / "dashboard-tenant-roles.json"
+
+
+def _load_tenant() -> dict[str, dict[str, str]]:
+    p = tenant_store_path()
+    if not p.exists():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for tenant, members in data.items():
+        if not (isinstance(tenant, str) and tenant.strip() and isinstance(members, dict)):
+            continue
+        out[tenant] = {
+            str(k): v for k, v in members.items()
+            if isinstance(k, str) and k.strip() and isinstance(v, str) and v in ROLES
+        }
+    return out
+
+
+def _write_tenant(data: dict[str, dict[str, str]]) -> None:
+    p = tenant_store_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".json.tmp")
+    fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+    os.replace(tmp, p)
+    try:
+        os.chmod(p, 0o600)
+    except OSError:
+        pass
+
+
+def get_tenant_role(tenant: str, principal: str) -> str | None:
+    """The principal's role within ``tenant``, or None if no membership."""
+    members = _load_tenant().get((tenant or "").strip(), {})
+    return members.get((principal or "").strip())
+
+
+def set_tenant_role(tenant: str, principal: str, role: str) -> None:
+    tenant = (tenant or "").strip()
+    principal = (principal or "").strip()
+    if not tenant or not principal:
+        raise ValueError("empty tenant or principal")
+    if role not in ROLES:
+        raise ValueError("unknown role")
+    data = _load_tenant()
+    data.setdefault(tenant, {})[principal] = role
+    _write_tenant(data)
+
+
+def remove_tenant_role(tenant: str, principal: str) -> None:
+    data = _load_tenant()
+    members = data.get((tenant or "").strip())
+    if members and members.pop((principal or "").strip(), None) is not None:
+        if not members:
+            data.pop((tenant or "").strip(), None)
+        _write_tenant(data)
+
+
+def list_tenant_roles(tenant: str) -> dict[str, str]:
+    """All {principal: role} memberships within ``tenant``."""
+    return dict(_load_tenant().get((tenant or "").strip(), {}))
+
+
 __all__ = [
     "ROLES", "store_path", "default_role", "permissions_for",
     "list_users", "get_stored_role", "set_role", "remove_user",
+    "tenant_store_path", "get_tenant_role", "set_tenant_role",
+    "remove_tenant_role", "list_tenant_roles",
 ]

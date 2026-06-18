@@ -63,6 +63,7 @@ from .api_schemas import (
     TenantOut,
     TenantPlanIn,
     TenantQuotaIn,
+    TenantRoleIn,
     TriggerIn,
     TriggerOut,
     WorkflowDraftIn,
@@ -210,6 +211,40 @@ async def delete_tenant(
     from maverick import tenant_registry
     _get_tenant_or_404(tenant_id)
     tenant_registry.delete_tenant(tenant_id, purge=purge)
+    return Response(status_code=204)
+
+
+# Per-tenant RBAC: a principal can hold a different role in each tenant. These
+# memberships override the global role for that tenant only (bootstrap admins
+# stay globally admin). Managed admin-only.
+
+@router.get("/admin/tenants/{tenant_id}/roles", response_model=dict[str, str])
+async def list_tenant_roles(request: Request, tenant_id: str) -> dict[str, str]:
+    require_permission(request, "admin")
+    from maverick_dashboard import rbac
+    _get_tenant_or_404(tenant_id)
+    return rbac.list_tenant_roles(tenant_id)
+
+
+@router.put("/admin/tenants/{tenant_id}/roles/{principal}", status_code=204)
+async def set_tenant_role(
+    request: Request, tenant_id: str, principal: str, body: TenantRoleIn,
+) -> Response:
+    require_permission(request, "admin")
+    from maverick_dashboard import rbac
+    _get_tenant_or_404(tenant_id)
+    rbac.set_tenant_role(tenant_id, principal, body.role)
+    return Response(status_code=204)
+
+
+@router.delete("/admin/tenants/{tenant_id}/roles/{principal}", status_code=204)
+async def remove_tenant_role(
+    request: Request, tenant_id: str, principal: str,
+) -> Response:
+    require_permission(request, "admin")
+    from maverick_dashboard import rbac
+    _get_tenant_or_404(tenant_id)
+    rbac.remove_tenant_role(tenant_id, principal)
     return Response(status_code=204)
 
 

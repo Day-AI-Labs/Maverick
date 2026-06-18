@@ -274,3 +274,8 @@ class TenantOut(BaseModel):
     created_at: float
     updated_at: float
     config_path: str
+
+
+class TenantRoleIn(BaseModel):
+    """Grant a principal a role within one tenant (per-tenant RBAC)."""
+    role: str = Field(..., pattern="^(admin|operator|viewer)$")
