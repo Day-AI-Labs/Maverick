@@ -1434,8 +1434,9 @@ def cost_retro(ctx, top: int, as_json: bool) -> None:
         click.echo(click.style("\nCostliest goals", bold=True))
         for r in rep["top_goals"]:
             flag = " [FAILED]" if r["failed"] else ""
+            title = _strip_terminal_control(r["title"])
             click.echo(f"  #{r['goal_id']} ${r['cost']:.2f} "
-                       f"({r['episodes']} ep){flag}  {r['title']}")
+                       f"({r['episodes']} ep){flag}  {title}")
     click.echo(click.style("\nObservations", bold=True))
     for o in rep["observations"]:
         click.echo(f"  • {o}")
