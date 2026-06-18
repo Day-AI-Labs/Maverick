@@ -45,6 +45,7 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 from maverick import a2a
 from maverick.oidc import VerifiedPrincipal
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ._shared import _any_provider_key_set, _world
@@ -2254,7 +2255,7 @@ async def run_events_firehose(
     except (TypeError, ValueError):
         since = 0
     w = _world()
-    g = w.get_goal(goal_id)
+    g = await run_in_threadpool(w.get_goal, goal_id)
     if g is None:
         await websocket.send_json({"error": "no such goal"})
         await websocket.close(code=4404)
@@ -2263,27 +2264,48 @@ async def run_events_firehose(
         await websocket.send_json({"error": "no such goal"})
         await websocket.close(code=4404)
         return
+    # Cap concurrent firehoses (shared with the SSE cap) so many open tabs can't
+    # exhaust FDs/tasks, and bound each stream's lifetime — mirrors the SSE
+    # route, which previously had both guards while this one had neither.
+    sem = _get_sse_semaphore()
+    if sem.locked():
+        await websocket.send_json({"error": "too many concurrent streams; retry shortly"})
+        await websocket.close(code=1013)  # "try again later"
+        return
+    await sem.acquire()
+    MAX_STREAM_SECONDS = 300
+    started = _asyncio.get_running_loop().time()
     terminal = {"done", "completed", "failed", "error", "cancelled"}
     try:
         last = since
         while True:
-            for e in w.goal_events(goal_id, since_id=last, limit=500):
+            # Offload the blocking, lock-held SQLite reads off the event loop.
+            for e in await run_in_threadpool(
+                    w.goal_events, goal_id, since_id=last, limit=500):
                 last = e.id
                 await websocket.send_json({
                     "id": e.id, "agent": e.agent, "kind": e.kind,
                     "content": e.content, "ts": e.ts,
                 })
-            g = w.get_goal(goal_id)
+            g = await run_in_threadpool(w.get_goal, goal_id)
             if g is None or g.status in terminal:
                 await websocket.send_json({
                     "id": last + 1, "agent": "system", "kind": "status",
                     "content": (g.status if g else "deleted"), "ts": time.time(),
                 })
                 break
+            if (_asyncio.get_running_loop().time() - started) >= MAX_STREAM_SECONDS:
+                await websocket.send_json({
+                    "id": last + 1, "agent": "system", "kind": "status",
+                    "content": "stream lifetime exceeded; reconnect to resume",
+                    "ts": time.time(),
+                })
+                break
             await _asyncio.sleep(0.5)
     except WebSocketDisconnect:
         return
     finally:
+        sem.release()
         try:
             await websocket.close()
         except Exception:
@@ -3942,7 +3964,7 @@ async def api_goal_events_stream(request: Request, goal_id: int, since: int = 0)
     import json as _json
 
     w = _world()
-    g = w.get_goal(goal_id)
+    g = await run_in_threadpool(w.get_goal, goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
@@ -3991,8 +4013,13 @@ async def api_goal_events_stream(request: Request, goal_id: int, since: int = 0)
                 if (_asyncio.get_running_loop().time() - started) >= MAX_STREAM_SECONDS:
                     yield "event: timeout\ndata: {\"detail\": \"stream lifetime exceeded\"}\n\n"
                     return
-                events = w.goal_events(goal_id, since_id=sid, limit=MAX_BATCH)
-                g = w.get_goal(goal_id)
+                # Offload the blocking, lock-held SQLite reads so this 0.5s
+                # poll loop doesn't run them on the event loop (which would
+                # stall every other request/stream while the query holds the
+                # world-DB lock).
+                events = await run_in_threadpool(
+                    w.goal_events, goal_id, since_id=sid, limit=MAX_BATCH)
+                g = await run_in_threadpool(w.get_goal, goal_id)
                 if g is None:
                     yield "event: error\ndata: {\"detail\": \"goal vanished\"}\n\n"
                     return
