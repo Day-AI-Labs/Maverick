@@ -1,6 +1,6 @@
-name: "Maverick swarm"
-description: "Run a Maverick agent swarm on a goal (or a goal template) inside a GitHub workflow, under a hard spend cap."
-author: "Maverick"
+name: "Lightwork swarm"
+description: "Run a Lightwork agent swarm on a goal (or a goal template) inside a GitHub workflow, under a hard spend cap."
+author: "Daybreak Labs"
 
 branding:
   icon: "cpu"
@@ -56,7 +56,7 @@ inputs:
     required: false
     default: "true"
   dry-run:
-    description: "Install Maverick and print the resolved command, but do NOT run the swarm (no LLM calls, no spend). Useful for wiring/smoke tests."
+    description: "Install Lightwork and print the resolved command, but do NOT run the swarm (no LLM calls, no spend). Useful for wiring/smoke tests."
     required: false
     default: "false"
 
@@ -76,7 +76,7 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    - name: Install Maverick
+    - name: Install Lightwork
       shell: bash
       env:
         IN_VERSION: ${{ inputs.version }}
@@ -179,7 +179,7 @@ runs:
 
         if [ "$IN_SUMMARY" = "true" ]; then
           {
-            echo "## Maverick run"
+            echo "## Lightwork run"
             echo ""
             echo '```'
             cat "$out_file"
