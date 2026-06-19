@@ -16,7 +16,7 @@ connect to, controls, customization), [`../enterprise/architecture.md`](../enter
 > workflow, incident response, vuln management, CMDB, backup/DR). Every roster
 > entry carries an explicit **Status**.
 
-The meta-point that makes this suite different from finance: **Maverick's own
+The meta-point that makes this suite different from finance: **Lightwork's own
 primitives *are* the GRC controls.** The capability model is access control; the
 signed audit chain is the record; the Shield is runtime threat detection;
 governance is the policy engine; quarantine is incident containment. So these
@@ -28,7 +28,7 @@ agents both **operate** those controls and **emit their evidence** — and Tower
 ## Contents
 
 1. [What's already shipped — the reuse map](#1-whats-already-shipped--the-reuse-map)
-2. [How an IT/GRC agent maps onto Maverick](#2-how-an-itgrc-agent-maps-onto-maverick)
+2. [How an IT/GRC agent maps onto Lightwork](#2-how-an-itgrc-agent-maps-onto-maverick)
 3. [The control model (cross-cutting)](#3-the-control-model-cross-cutting)
 4. [Per-client customization — the dials](#4-per-client-customization--the-dials)
 5. [The roster — ten towers](#5-the-roster--ten-towers)
@@ -100,7 +100,7 @@ evidences a human/org process rather than performing it (flagged per entry).
 
 ---
 
-## 2. How an IT/GRC agent maps onto Maverick
+## 2. How an IT/GRC agent maps onto Lightwork
 
 Identical to the finance suite: each agent is one
 [`DomainProfile`](../../packages/maverick-core/maverick/domain.py) pack

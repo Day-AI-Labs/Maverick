@@ -1,6 +1,6 @@
-# Maverick Conference v3 (in-person flagship) — delta kit
+# Lightwork Conference v3 (in-person flagship) — delta kit
 
-**Roadmap ref:** 2028-H2 "Maverick Conference v3 (in-person flagship)".
+**Roadmap ref:** 2028-H2 "Lightwork Conference v3 (in-person flagship)".
 Deltas over [summit-v2-hybrid.md](./summit-v2-hybrid.md) (which itself
 deltas v1) — the run-of-show, A/V, CoC, and metrics machinery all carry
 forward. Running it is a maintainer act; everything money- or date-shaped
@@ -22,7 +22,7 @@ is founder-set.
    ambassador bench.
 4. **The hallway is the product.** Unstructured time ≥ 35% of the clock;
    v2's online hallway threads run alongside.
-5. **State of Maverick keynote** anchored in artifacts, not adjectives:
+5. **State of Lightwork keynote** anchored in artifacts, not adjectives:
    the year's FEATURES delta, the benchmark trend from `/benchmarks`, the
    survey results, and the next-year roadmap — the same evidence rules as
    the press kit (no claims the catalogue can't back).

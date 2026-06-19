@@ -1,4 +1,4 @@
-# Maverick Roadmap (Q1 2026 → Q4 2028)
+# Lightwork Roadmap (Q1 2026 → Q4 2028)
 
 Produced by a 6-agent council pass across six concerns: **capabilities, UX,
 distribution, performance, safety, ecosystem**. Each line is sized for ~1-2
@@ -60,7 +60,7 @@ KMS + egress, operator console) have **shipped** — see
 
 | Item | Remaining work |
 |---|---|
-| Language-bindings decision (Q1 2027 gate) | A *measurement*, not code: the consent-gated MCP-client language analytics that feeds it has shipped; fund a native client only if >15% of active installs drive Maverick from non-Python MCP clients (see council decision below). |
+| Language-bindings decision (Q1 2027 gate) | A *measurement*, not code: the consent-gated MCP-client language analytics that feeds it has shipped; fund a native client only if >15% of active installs drive Lightwork from non-Python MCP clients (see council decision below). |
 | Live-service validation | The connectors + queue/KMS backends ship with their protocol/logic unit-tested; end-to-end validation against a live IRC server, a real G2 device, a langchain install, and a Redis broker is the remaining gate, not new code. |
 | Postgres tenancy hardening | App-layer tenant isolation, **database-native Row-Level Security** (`[world_model] rls`; FORCE-RLS policy keyed on a `maverick.tenant` session GUC, validated under a non-superuser role) and a **`psycopg_pool` connection pool** (`[world_model] pool_size`) for horizontal scale have all shipped — see [`FEATURES.md`](./FEATURES.md). Remaining is operator runbook guidance (connect as a non-superuser role; apply RLS as the table owner). |
 | Queue dispatch at scale (live-infra) | The `QueueDispatcher` (arq) is wired; remaining is running it against a real Redis broker + an out-of-process worker pool. |
@@ -103,7 +103,7 @@ single-run inflation) — run multi-seed.
 |---|---|
 | **Capabilities** | — (cleared) |
 | **UX** | — (cleared) |
-| **Distribution** | — (cleared: tutorial video season 2 — **episode scripts shipped** ([programs/tutorial-videos.md](./programs/tutorial-videos.md), every command verified; recording/publishing is a maintainer act); localized docs phases 2-3 (es/ja, de/fr/pt-BR): **shipped** — real human translations at [i18n/](./i18n/); university outreach, Maverick Summit v1, integration partnerships business half, GitHub Stars campaign, office hours: **program kits shipped**, see [programs/](./programs/) — running them is a maintainer act) |
+| **Distribution** | — (cleared: tutorial video season 2 — **episode scripts shipped** ([programs/tutorial-videos.md](./programs/tutorial-videos.md), every command verified; recording/publishing is a maintainer act); localized docs phases 2-3 (es/ja, de/fr/pt-BR): **shipped** — real human translations at [i18n/](./i18n/); university outreach, Lightwork Summit v1, integration partnerships business half, GitHub Stars campaign, office hours: **program kits shipped**, see [programs/](./programs/) — running them is a maintainer act) |
 | **Performance** | — (cleared) |
 | **Safety** | — (cleared) |
 | **Ecosystem** | — (cleared) |
@@ -129,7 +129,7 @@ single-run inflation) — run multi-seed.
 |---|---|
 | **Capabilities** | — (cleared) |
 | **UX** | — (cleared: AR plan-tree (visionOS) — the **scaffold shipped** (`apps/visionos-plan-tree/`, SwiftUI + RealityKit volume over `GET /api/v1/goal-tree`; building/tuning needs Xcode + Vision Pro hardware, stated in its README); embedded analytics web component, RTL language support, mobile offline cache (`offline_bundle.py` + `GET /api/v1/offline/bundle` → `apps/mobile-companion/`), conversational supervisor, voice-only mode, augmented terminal (`maverick charts`), voice macros: **all shipped** — see FEATURES) |
-| **Distribution** | — (resolved: **migration playbook shipped** ([migration-2.0.md](./migration-2.0.md), rehearsable today over the real `maverick migrate`/`schema-plan`/`config-lint`); 2.0 stable release — the **gate shipped** ([release-checklist-2.0.md](./release-checklist-2.0.md)); the bump/tag/publish through it is a maintainer act; **Maverick Summit v2 (hybrid) kit shipped** ([programs/summit-v2-hybrid.md](./programs/summit-v2-hybrid.md)); **skill + channel certification programs shipped** ([programs/certification.md](./programs/certification.md), mechanical bars over the real gates); localized docs phase 5: the **MT pipeline shipped** (`maverick.docs_i18n`, quality-gated) + the human es/ja/de/fr/pt-BR/ko/ru/it/hi set — the long tail rides the pipeline; foundation paperwork: the **decision kit shipped** ([programs/foundation-exploration.md](./programs/foundation-exploration.md)) — filing follows the founder's posture choice; press push + sponsor tier 2: the kits define both ([programs/press-and-case-studies.md](./programs/press-and-case-studies.md), [programs/sponsorship-tiers.md](./programs/sponsorship-tiers.md)) — executing them is a maintainer/founder act; **comparison benchmark v3 live dashboard shipped**: `/benchmarks` over the recorded `continuous_benchmark` history; **marketplace v3 donate-direct shipped**: `marketplace_donations.py`, allowlisted https links only) — (**editor expansion complete**: Zed at `apps/zed-extension/` joins the shipped JetBrains/Neovim/VS Code/Emacs set; **embeddable widget shipped**: `extensions/widget/maverick-widget.js`; **hosted demo cluster blueprint shipped**: `deploy/reference-architectures/demo-cluster/` with the read-only nginx deny-proxy — operating demo.maverick.dev is a maintainer act; **ARM/RISC-V builds shipped**: `deploy/multiarch/` buildx set with honest per-extra wheel availability; **iOS/Android skill execution shipped** as the `apps/mobile-skills/` Pyodide runner + Kivy shell scaffolds — store builds are maintainer acts) — ("Built with Maverick" badge program, university curriculum kit, community grants v1, regional meetup playbook: **program kits shipped**, see [programs/](./programs/)) |
+| **Distribution** | — (resolved: **migration playbook shipped** ([migration-2.0.md](./migration-2.0.md), rehearsable today over the real `maverick migrate`/`schema-plan`/`config-lint`); 2.0 stable release — the **gate shipped** ([release-checklist-2.0.md](./release-checklist-2.0.md)); the bump/tag/publish through it is a maintainer act; **Lightwork Summit v2 (hybrid) kit shipped** ([programs/summit-v2-hybrid.md](./programs/summit-v2-hybrid.md)); **skill + channel certification programs shipped** ([programs/certification.md](./programs/certification.md), mechanical bars over the real gates); localized docs phase 5: the **MT pipeline shipped** (`maverick.docs_i18n`, quality-gated) + the human es/ja/de/fr/pt-BR/ko/ru/it/hi set — the long tail rides the pipeline; foundation paperwork: the **decision kit shipped** ([programs/foundation-exploration.md](./programs/foundation-exploration.md)) — filing follows the founder's posture choice; press push + sponsor tier 2: the kits define both ([programs/press-and-case-studies.md](./programs/press-and-case-studies.md), [programs/sponsorship-tiers.md](./programs/sponsorship-tiers.md)) — executing them is a maintainer/founder act; **comparison benchmark v3 live dashboard shipped**: `/benchmarks` over the recorded `continuous_benchmark` history; **marketplace v3 donate-direct shipped**: `marketplace_donations.py`, allowlisted https links only) — (**editor expansion complete**: Zed at `apps/zed-extension/` joins the shipped JetBrains/Neovim/VS Code/Emacs set; **embeddable widget shipped**: `extensions/widget/maverick-widget.js`; **hosted demo cluster blueprint shipped**: `deploy/reference-architectures/demo-cluster/` with the read-only nginx deny-proxy — operating demo.maverick.dev is a maintainer act; **ARM/RISC-V builds shipped**: `deploy/multiarch/` buildx set with honest per-extra wheel availability; **iOS/Android skill execution shipped** as the `apps/mobile-skills/` Pyodide runner + Kivy shell scaffolds — store builds are maintainer acts) — ("Built with Lightwork" badge program, university curriculum kit, community grants v1, regional meetup playbook: **program kits shipped**, see [programs/](./programs/)) |
 | **Performance** | — (cleared: **compaction v6 hybrid shipped** (`compaction_hybrid.py`, ledger-learned strategy picker, fail-open) and the **sandbox pool shipped** (`sandbox/pool.py` cross-run pooling under a strict scrub contract + Firecracker e2b warm mode — engines that can't prove a clean handoff always build fresh)) |
 | **Safety** | — (cleared: the **Safety steering group charter shipped** ([`governance/safety-steering-group.md`](./governance/safety-steering-group.md) — remit, decision process, and the wiring to the shipped controls; staffing the seats is a company act). external SOC2 Type I: the repo-side readiness shipped ([`compliance/soc2-controls.md`](./compliance/soc2-controls.md) + `maverick.soc2` evidence collector); the attestation itself is an external audit. misuse leaderboard removal: verified absent — resolved) |
 | **Ecosystem** | — (cleared: voice channel v2 — the streaming ASR + barge-in **session layer shipped** (`maverick_channels.streaming_voice`): partial/final endpointing on an injected clock, immediate barge-in halt with the interrupted reply preserved; the real streaming-ASR + playback adapters plug into its seams) |
@@ -151,15 +151,15 @@ single-run inflation) — run multi-seed.
 
 ## Language Bindings — Council Decision (May 2026)
 
-Three-perspective council pass on whether to ship Maverick in Rust /
+Three-perspective council pass on whether to ship Lightwork in Rust /
 TypeScript / Go / other languages. Research covered LangChain.js,
 AutoGen .NET, CrewAI, Mastra, OpenAI/Anthropic SDKs.
 
 ### Conclusion
 
-**Thin API clients port well; opinionated frameworks don't.** Maverick is the
+**Thin API clients port well; opinionated frameworks don't.** Lightwork is the
 second kind. We do **not** port `maverick-core` to a second language. Instead
-we expose Maverick to other languages **over MCP** — the MCP surface and the
+we expose Lightwork to other languages **over MCP** — the MCP surface and the
 TypeScript / Go / Rust / C# / Java quickstarts are shipped (see
 [`FEATURES.md`](./FEATURES.md)). What remains is the measurement gate below.
 
@@ -179,7 +179,7 @@ TypeScript / Go / Rust / C# / Java quickstarts are shipped (see
 5. **Java / Kotlin** — JVM enterprise + Android; second-class today,
    but the ROI on a single thin client is high once #1 ships.
 
-(Python is not on this list because it *is* Maverick.)
+(Python is not on this list because it *is* Lightwork.)
 
 ### Gate: don't decide, measure
 
@@ -201,7 +201,7 @@ answer is the MCP surface, full stop.
 - Sandbox backends (firecracker, k8s, devcontainer, podman) stay Linux-process
   glue in Python; they are not part of the cross-language contract.
 - Multi-agent topology (orchestrator + proposer + verifier + revisor +
-  reflector) stays Python. Other languages drive Maverick; they do not
+  reflector) stays Python. Other languages drive Lightwork; they do not
   re-implement it.
 
 ---
@@ -210,7 +210,7 @@ answer is the MCP surface, full stop.
 
 OpenClaw (the Rust competitor we benchmark against) shipped a "bring-your-own-agent"
 bridge that drives **Even Realities G2** smart glasses. The ask here is *not* to
-integrate OpenClaw — it's to make **Maverick** drivable from the same glasses, as
+integrate OpenClaw — it's to make **Lightwork** drivable from the same glasses, as
 just another channel. The pattern is a near-perfect showcase of the long-horizon
 wedge, so it earns a roadmap slot.
 
@@ -230,7 +230,7 @@ wedge, so it earns a roadmap slot.
 - **Voice is handled on-device**: the G2 does its own speech-to-text and sends only
   text; replies render on the green-laser **HUD** (no TTS audio in the loop).
 
-### Why it fits Maverick (reuse, don't reinvent)
+### Why it fits Lightwork (reuse, don't reinvent)
 
 This is the **ack-then-run** pattern already on the roadmap (Q3 2026 mobile alpha),
 sitting on seams that already exist:

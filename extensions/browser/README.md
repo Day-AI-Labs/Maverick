@@ -1,6 +1,6 @@
-# Maverick browser extension
+# Lightwork browser extension
 
-A Manifest V3 WebExtension that puts a chat box to your **local** Maverick
+A Manifest V3 WebExtension that puts a chat box to your **local** Lightwork
 agent in the browser toolbar, plus a "Send this page" action that ships the
 current page's title, URL, text selection, **and a bounded, observe-only
 accessibility/DOM snapshot** to the agent as goal context.
@@ -29,7 +29,7 @@ progress back into the popup.
    (`extensions/browser/`).
    Firefox: open `about:debugging#/runtime/this-firefox`, click **Load
    Temporary Add-on…**, and pick `manifest.json`.
-4. Click the Maverick toolbar icon and paste `MAVERICK_DASHBOARD_TOKEN` under
+4. Click the Lightwork toolbar icon and paste `MAVERICK_DASHBOARD_TOKEN` under
    **Settings** in the popup.
 
 ## Use

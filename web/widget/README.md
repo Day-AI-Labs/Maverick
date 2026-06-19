@@ -1,13 +1,13 @@
 # Embeddable widget
 
 A dependency-free floating chat button that drops onto any page and talks to a
-Maverick dashboard's chat endpoint. Self-hostable: it posts to **your**
+Lightwork dashboard's chat endpoint. Self-hostable: it posts to **your**
 dashboard origin, not a hosted service.
 
 ```html
 <script src="/widget/maverick-widget.js"
         data-maverick-url="https://your-dashboard.example.com"
-        data-maverick-title="Ask Maverick"></script>
+        data-maverick-title="Ask Lightwork"></script>
 ```
 
 - `data-maverick-url` — base URL of your dashboard (where `/chat/send` lives).

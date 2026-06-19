@@ -23,7 +23,7 @@ where possible, and has a 90-second version and a 5-minute version.
 | **2. Pull the plug** | Governance: hard caps + killswitch + audit | A goal with a deliberately tight `--max-dollars` cap dies at the cap on cue; `maverick halt` kills a second run mid-flight; `maverick audit verify` then proves the tamper-evident chain on the booth's own log |
 | **3. The shield says no** | Safety chokepoints | A scripted prompt-injection / secret-exfil attempt blocked at input/tool/output; show the reason codes; for the security crowd, `python -m maverick_shield.redteam` running the labeled corpus gate live |
 | **4. Air-gapped laptop** | Self-host claim made physical | A laptop with **Wi-Fi off**: Ollama as the provider, a local sandbox, `maverick airgap check` passing on stage — the "your data never leaves" claim demonstrated, not asserted |
-| **5. Drive it from anything** (optional, staff permitting) | The interop surface | Maverick driven from an MCP client (`maverick mcp`) and a message round-trip on a chat channel via `maverick serve` |
+| **5. Drive it from anything** (optional, staff permitting) | The interop surface | Lightwork driven from an MCP client (`maverick mcp`) and a message round-trip on a chat channel via `maverick serve` |
 
 Station prep checklist (per laptop, before the show):
 

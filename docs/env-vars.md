@@ -1,6 +1,6 @@
 # Environment variables
 
-Maverick's primary configuration is `~/.maverick/config.toml` (see
+Lightwork's primary configuration is `~/.maverick/config.toml` (see
 [configuration.md](configuration.md)). The `MAVERICK_*` environment variables
 below are a complement: they override the equivalent config keys when set, and
 expose a handful of knobs that have no config equivalent. **Env vars win over

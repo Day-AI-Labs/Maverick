@@ -1,6 +1,6 @@
 # maverick-core
 
-The Maverick agent kernel. A recursive multi-agent swarm with persistent
+The Lightwork agent kernel. A recursive multi-agent swarm with persistent
 world model, shared blackboard, hard budget caps, and closed-loop skill
 learning.
 

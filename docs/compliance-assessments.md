@@ -1,10 +1,10 @@
 # Compliance assessments
 
-Maverick can **conduct** structured compliance assessments of a subject — a
+Lightwork can **conduct** structured compliance assessments of a subject — a
 processing activity, an AI system, or a vendor — running a questionnaire, scoring
 each answer, and producing a completed assessment with **findings** and an overall
 **risk rating**. This is distinct from [`maverick ropa` / `dpia` / `ai-act`](regulated-deployment.md#records-of-processing-art-30),
-which scaffold a document from Maverick's *own* deployment config — assessments
+which scaffold a document from Lightwork's *own* deployment config — assessments
 evaluate an arbitrary third-party subject.
 
 ## Built-in assessments
@@ -74,7 +74,7 @@ VN-1: Bind processors with a data-processing agreement (DPA)
 
 ## Conducted by the agent
 
-The same engine backs the **assessment agent**: Maverick can be told "run a vendor
+The same engine backs the **assessment agent**: Lightwork can be told "run a vendor
 risk assessment of Acme" and it drives the questionnaire itself — filling answers
 from the documents and context it's given, flagging what it can't verify, and
 producing the scored result for a human to review. The agent never signs off the

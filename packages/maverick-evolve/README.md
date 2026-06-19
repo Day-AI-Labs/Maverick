@@ -1,6 +1,6 @@
 # maverick-evolve
 
-Governed self-evolution for Maverick — the safe rungs of the ladder.
+Governed self-evolution for Lightwork — the safe rungs of the ladder.
 
 This package builds toward open-ended self-improvement **without** (yet) letting
 an agent rewrite its own kernel code. It provides the three foundations every

@@ -1,6 +1,6 @@
-# Run Maverick in GitHub Actions
+# Run Lightwork in GitHub Actions
 
-Drive a Maverick swarm from your own CI with the composite action in
+Drive a Lightwork swarm from your own CI with the composite action in
 [`deploy/github-action/`](../deploy/github-action/). Hand it a goal (or a
 [goal template](../benchmarks/example-templates/)) and a dollar cap; it
 installs `maverick-agent`, runs `maverick start`, and writes the answer to
@@ -9,7 +9,7 @@ the job summary.
 ## Quickstart
 
 ```yaml
-name: Ask Maverick
+name: Ask Lightwork
 on:
   workflow_dispatch:
     inputs:
@@ -53,6 +53,6 @@ command resolution, no LLM calls) is what's smoke-tested in
 
 - [`benchmarks/example-templates/`](../benchmarks/example-templates/) — the
   ready-made goal templates the action can run.
-- [Drive Maverick from another language](./clients/typescript-quickstart.md)
-  — the MCP client surface, for *calling* a local Maverick from your app
+- [Drive Lightwork from another language](./clients/typescript-quickstart.md)
+  — the MCP client surface, for *calling* a local Lightwork from your app
   (vs. *running* one in CI here).

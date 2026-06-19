@@ -53,7 +53,7 @@ def test_overview_goal_input_has_accessible_name(monkeypatch, tmp_path):
     from maverick_dashboard import app as dash_app
     dash_app._world_cache.clear()
     r = _client().get("/")
-    assert 'aria-label="Describe a goal for Maverick to run"' in r.text
+    assert 'aria-label="Describe a goal for Lightwork to run"' in r.text
 
 
 def test_skill_source_input_has_accessible_name(monkeypatch, tmp_path):

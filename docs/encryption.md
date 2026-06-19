@@ -1,6 +1,6 @@
 # Encryption at rest
 
-Maverick keeps its state under `~/.maverick`. By default that state is plaintext on
+Lightwork keeps its state under `~/.maverick`. By default that state is plaintext on
 disk — fine for a personal agent, but a GDPR Art. 32 / HIPAA exposure once the agent
 handles sensitive data. **At-rest encryption** seals the sensitive stores with
 AES-256-GCM.

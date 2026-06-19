@@ -1,7 +1,7 @@
-# Maverick — Financial Model & Fundraising: The Honest Business Case
+# Lightwork — Financial Model & Fundraising: The Honest Business Case
 
 > Teardown #10 (commercialization track). Date: 2026-06-06.
-> Premise under test: pivot Maverick from MIT-OSS to a **commercial AI-/agent-governance + regulated-compliance** business, positioned against OneTrust.
+> Premise under test: pivot Lightwork from MIT-OSS to a **commercial AI-/agent-governance + regulated-compliance** business, positioned against OneTrust.
 > Method: market sizing from primary/secondary sources + comparable-company raises, then an adversarial pass on the thesis. Load-bearing figures flagged **[verify]**; all cited inline.
 > Grounds in [`regulated-deployment-and-compliance-platform.md`](../regulated-deployment-and-compliance-platform.md) and [`agentic-os-and-enterprise-analysis.md`](../agentic-os-and-enterprise-analysis.md).
 
@@ -11,9 +11,9 @@ The wedge is real but **small and early**, the adjacent markets are **large but 
 
 ## Market sizing (TAM → SAM → SOM)
 
-I reject the "$50B GRC TAM → we'll take 1%" move. The relevant market is the *intersection* of four pools, and Maverick can only sell into the agent-native slice of each.
+I reject the "$50B GRC TAM → we'll take 1%" move. The relevant market is the *intersection* of four pools, and Lightwork can only sell into the agent-native slice of each.
 
-| Pool (2025) | Size | Source | Realistic for Maverick |
+| Pool (2025) | Size | Source | Realistic for Lightwork |
 |---|---|---|---|
 | Privacy management software | ~$5.1–7.4B, 23–42% CAGR | [GVR](https://www.grandviewresearch.com/industry-analysis/privacy-management-software-market-report), [Mordor](https://www.mordorintelligence.com/industry-reports/privacy-management-software-market) | Low — OneTrust/Securiti own it; not agent-shaped |
 | GRC / IRM software | ~$16–23B (eGRC up to ~$72B by scope) **[verify — definitions diverge 4×]** | [Mordor](https://www.mordorintelligence.com/industry-reports/governance-risk-and-compliance-software-market), [Precedence](https://www.grandviewresearch.com/industry-analysis/enterprise-governance-risk-compliance-egrc-market) | Low — incumbent-dense |
@@ -22,7 +22,7 @@ I reject the "$50B GRC TAM → we'll take 1%" move. The relevant market is the *
 
 **TAM (defensible framing):** the live, sellable market today is **AI TRiSM + agentic security ≈ $4.6B (2025)**, growing >20%. Privacy + GRC are *expansion* TAM, not entry TAM — quoting them as "our market" is the hand-waving to avoid.
 
-**SAM:** Maverick's serviceable slice is agent-governance + compliance-as-agentic-labor sold to **regulated mid-market + lower-enterprise that self-host** (HIPAA/PCI/EU-residency buyers who reject SaaS GRC and don't run Microsoft-native agents). Estimate **~$300-500M** — roughly 8-12% of the live TAM, the cohort the hyperscalers structurally under-serve. **[verify — bottom-up; no third-party SAM exists for "self-hosted agent governance"]**
+**SAM:** Lightwork's serviceable slice is agent-governance + compliance-as-agentic-labor sold to **regulated mid-market + lower-enterprise that self-host** (HIPAA/PCI/EU-residency buyers who reject SaaS GRC and don't run Microsoft-native agents). Estimate **~$300-500M** — roughly 8-12% of the live TAM, the cohort the hyperscalers structurally under-serve. **[verify — bottom-up; no third-party SAM exists for "self-hosted agent governance"]**
 
 **SOM (3-5 yr):** capturing **2-5% of that SAM = ~$6-25M ARR**. Anchor at **$10-15M ARR by year 4-5** as the realistic ceiling for a seed-stage solo-founder entrant. Anything north of that requires beating Microsoft/Okta on a primitive they already ship — not a base case.
 
@@ -45,7 +45,7 @@ Open-core (the report's recommended model A): OSS Governed Runtime is free; the 
 | **Credo AI** | $101M (Series B, Jul 2024); ~$41M raised | n/d (small) | — | [Crunchbase](https://www.crunchbase.com/organization/credo-ai), [Bloomberg](https://x.com/technology/status/1818302189128839377) |
 | **Holistic AI** (London, AI-GRC pure-play) | n/d; modest | n/d | — | [Crunchbase](https://www.crunchbase.com/organization/holistic-ai) |
 
-**Read-through:** the *infosec-evidence* automators (Vanta/Drata) command 20-40x because the category is proven and they have $100M ARR. The *AI-governance pure-plays* (Credo, Holistic) are stuck at ~$100M *valuations* and undisclosed (small) ARR — the cleanest evidence that **AI-governance budget has not yet arrived**. Maverick would be entering Credo's still-small market, not Vanta's proven one. The bull case is "be the Vanta of agent-governance"; the base case is "be another Credo waiting for budget."
+**Read-through:** the *infosec-evidence* automators (Vanta/Drata) command 20-40x because the category is proven and they have $100M ARR. The *AI-governance pure-plays* (Credo, Holistic) are stuck at ~$100M *valuations* and undisclosed (small) ARR — the cleanest evidence that **AI-governance budget has not yet arrived**. Lightwork would be entering Credo's still-small market, not Vanta's proven one. The bull case is "be the Vanta of agent-governance"; the base case is "be another Credo waiting for budget."
 
 ## Raise & use of funds
 
@@ -68,11 +68,11 @@ Runway: ~18-22 months at a ~5-person burn (~$150-180K/mo loaded). The seed must 
 
 ## Top risks that kill us
 
-1. **Incumbent crush — identity (HIGH).** **Microsoft Entra Agent ID** (every agent gets a sponsored identity + lifecycle governance) and **Okta for AI Agents** (GA 30 Apr 2026, now multi-IdP) are *already shipping the agent-registry/least-privilege primitive Maverick calls its wedge* ([Microsoft Learn](https://learn.microsoft.com/en-us/entra/id-governance/agent-id-governance-overview), [Okta](https://www.okta.com/blog/ai/okta-ai-agents-early-access-announcement/)). If agent identity bundles free into Entra/Okta seats, the wedge collapses to a feature.
-2. **Incumbent crush — buyer (HIGH).** OneTrust owns the privacy/GRC buyer and the budget line, with 14,000 customers and a new AI-governance pillar. Even weak, it wins by being already-deployed. Maverick must sell to a buyer OneTrust *can't* reach (self-host-mandated), or it's a rip-and-replace fight it loses.
+1. **Incumbent crush — identity (HIGH).** **Microsoft Entra Agent ID** (every agent gets a sponsored identity + lifecycle governance) and **Okta for AI Agents** (GA 30 Apr 2026, now multi-IdP) are *already shipping the agent-registry/least-privilege primitive Lightwork calls its wedge* ([Microsoft Learn](https://learn.microsoft.com/en-us/entra/id-governance/agent-id-governance-overview), [Okta](https://www.okta.com/blog/ai/okta-ai-agents-early-access-announcement/)). If agent identity bundles free into Entra/Okta seats, the wedge collapses to a feature.
+2. **Incumbent crush — buyer (HIGH).** OneTrust owns the privacy/GRC buyer and the budget line, with 14,000 customers and a new AI-governance pillar. Even weak, it wins by being already-deployed. Lightwork must sell to a buyer OneTrust *can't* reach (self-host-mandated), or it's a rip-and-replace fight it loses.
 3. **Category timing — 2026 vs 2028 (HIGH).** Is "agent governance" a real 2026 budget line or 2028 vapor? Credo/Holistic stalling at ~$100M valuations with tiny ARR says **budget is 12-30 months out**. A $3M seed can starve before the market funds it.
 4. **Regulatory whiplash (MEDIUM).** The thesis leans on EU AI Act driving spend, but **agentic-specific obligations remain preliminary** ([EC](https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai)); high-risk rules land Aug-2026 but enforcement/scope can slip, deflating the "compliance-forces-purchase" urgency.
-5. **Content moat is shallow & costly (MEDIUM-HIGH).** The 55-framework regulatory corpus is OneTrust's real moat, maintained by lawyers — expensive to build, easy for an incumbent to match, and *not* agent-shaped. Maverick's edge is runtime audit, not content; if buyers want content-first, Maverick is outgunned.
+5. **Content moat is shallow & costly (MEDIUM-HIGH).** The 55-framework regulatory corpus is OneTrust's real moat, maintained by lawyers — expensive to build, easy for an incumbent to match, and *not* agent-shaped. Lightwork's edge is runtime audit, not content; if buyers want content-first, Lightwork is outgunned.
 6. **Founder/brand (MEDIUM-HIGH).** Solo, non-domain founder + largely AI-written codebase selling **trust and compliance** software to risk-averse regulated buyers is a credibility mismatch. Enterprise security review and procurement will probe code provenance and vendor viability; one bad reference kills the pipeline.
 7. **Capital intensity of certs + sales (MEDIUM).** SOC 2 Type II + ISO 42001 + enterprise AEs is a $1M+/yr fixed cost *before* meaningful ARR — the classic compliance-startup trap of needing certs to sell and revenue to afford certs.
 

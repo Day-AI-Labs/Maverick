@@ -1,6 +1,6 @@
-# Maverick from Go
+# Lightwork from Go
 
-Drive a locally running Maverick swarm from Go over the
+Drive a locally running Lightwork swarm from Go over the
 [Model Context Protocol](https://modelcontextprotocol.io/). Same
 contract every IDE-side MCP client uses — you talk to `maverick mcp`
 over stdio JSON-RPC.
@@ -48,7 +48,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Maverick exposes %d tools\n", len(tools.Tools))
+	fmt.Printf("Lightwork exposes %d tools\n", len(tools.Tools))
 
 	// maverick_start runs the swarm and returns the final answer (long-running).
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{

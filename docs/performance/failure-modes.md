@@ -1,6 +1,6 @@
 # Failure-mode taxonomy
 
-Maverick agent runs fail in a manageable set of ways. This doc
+Lightwork agent runs fail in a manageable set of ways. This doc
 enumerates them so we can:
 
 1. Tag every failed run with a canonical class.

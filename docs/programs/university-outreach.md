@@ -3,11 +3,11 @@
 **Roadmap ref:** 2027-H1 Distribution — "university outreach (5 partnerships)".
 **Status:** kit complete; sending the emails and signing the agreements is the
 remaining operational work. **The license grant to each partner is a founder
-decision** (see the IP note at the bottom — Maverick is proprietary, so a
+decision** (see the IP note at the bottom — Lightwork is proprietary, so a
 partnership *requires* a written educational/evaluation license).
 
 Goal: 5 active partnerships where a course, lab, or capstone program does a
-semester of real work on or around Maverick. "Real work" means code, evals,
+semester of real work on or around Lightwork. "Real work" means code, evals,
 or formal analysis that survives contact with CI — not a logo exchange.
 
 ## Target-profile rubric
@@ -25,7 +25,7 @@ security lab, one SE/agents course, etc.) so the project menu gets coverage.
 | IP posture | University claims all student IP, no flexibility | Negotiable | Standard practice allows the CLA + license structure below |
 | Infrastructure | Students lack machines/keys | Partial | Lab can provision API keys or local models (Ollama is a supported provider — students don't need paid keys) |
 
-Disqualifiers regardless of score: a partner that requires Maverick be
+Disqualifiers regardless of score: a partner that requires Lightwork be
 relicensed open source, or that cannot accept the CLA structure for upstream
 contributions.
 
@@ -37,11 +37,11 @@ no-reply address. _Sender name/contact: founder._
 ### Initial email
 
 ```
-Subject: Semester projects on a production multi-agent runtime (Maverick)
+Subject: Semester projects on a production multi-agent runtime (Lightwork)
 
 Hi <name>,
 
-I maintain Maverick, a proprietary self-hosted multi-agent runtime
+I maintain Lightwork, a proprietary self-hosted multi-agent runtime
 (recursive agent swarm, hard budget caps, sandboxed execution, signed
 audit log — ~2,000 tests in CI, Python 3.10-3.12). Repo:
 https://github.com/Day-AI-Labs/maverick
@@ -53,7 +53,7 @@ work, or formal verification of the sandbox interface (we already ship a
 TLA+ spec they can extend). Each project is sized so a small team can land
 it in a semester, and accepted work ships in the product with credit.
 
-What we provide: a written educational license for course use (Maverick is
+What we provide: a written educational license for course use (Lightwork is
 commercially licensed, so this is part of the agreement), a curated project
 menu mapped to specific modules, code review on every PR, and an hour a
 week of maintainer office hours for the cohort.
@@ -64,13 +64,13 @@ contributions go through our standard CLA.
 Would a 30-minute call in the next two weeks work to see if there's a fit?
 
 <name>
-Maverick maintainer
+Lightwork maintainer
 ```
 
 ### Follow-up (7-10 days later, once, then stop)
 
 ```
-Subject: Re: Semester projects on a production multi-agent runtime (Maverick)
+Subject: Re: Semester projects on a production multi-agent runtime (Lightwork)
 
 Hi <name>,
 
@@ -136,7 +136,7 @@ this, shrink the menu, not the review depth.
 
 ## IP & licensing note (read before signing anything)
 
-Maverick is **proprietary, commercially licensed** software
+Lightwork is **proprietary, commercially licensed** software
 ([`LICENSE`](../../LICENSE)): no use, modification, or derivative work is
 permitted without written permission from the Licensor. A partnership must
 therefore include, in writing:
@@ -157,10 +157,10 @@ therefore include, in writing:
 3. **Student-owned work.** Projects built against public extension surfaces
    (a separate sandbox-backend package, a TS plugin, a SKILL.md, a study or
    TLA+ analysis) are the students' own work and they keep it; running it
-   *with* Maverick still requires the license in (1). Make this split
+   *with* Lightwork still requires the license in (1). Make this split
    explicit in the agreement so nobody is surprised.
-4. **Trademark.** Course materials may say "built on Maverick" (nominative
-   use); they may not name a course project "Maverick-anything" or imply
+4. **Trademark.** Course materials may say "built on Lightwork" (nominative
+   use); they may not name a course project "Lightwork-anything" or imply
    official status ([`TRADEMARK.md`](../../TRADEMARK.md)).
 5. **No open-source promise.** Do not promise a future open-source edition
    to close a deal — the "lite" edition is a stated possibility on the

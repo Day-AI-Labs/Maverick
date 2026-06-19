@@ -1,6 +1,6 @@
-# Maverick threat model (STRIDE)
+# Lightwork threat model (STRIDE)
 
-This is the working threat model for Maverick. It's living: when we add
+This is the working threat model for Lightwork. It's living: when we add
 a capability, we update this doc with the new threats and mitigations.
 PRs that add tools or providers SHOULD touch this file.
 
@@ -37,7 +37,7 @@ crossing those needs explicit consent or shield approval.
 
 ### Networked / multi-principal boundaries (enterprise + federated)
 
-The single-user picture above is the default. When Maverick is deployed
+The single-user picture above is the default. When Lightwork is deployed
 as a governed service it grows three more inbound trust boundaries, each
 fronted by its own authenticated, fail-closed surface:
 
@@ -49,7 +49,7 @@ fronted by its own authenticated, fail-closed surface:
    API / SDK / MCP   ---> | gRPC goal API + MCP server |  bearer / per-caller
    clients               |  - capability-attenuated    |  trust token; TLS
                          +----------------------------+
-   peer Maverick     ---> | federation + A2A + channel |  Ed25519 signed
+   peer Lightwork     ---> | federation + A2A + channel |  Ed25519 signed
    swarms / agents       |  + marketplace federation   |  envelopes; per-peer
                          |  - Agent Trust Plane gate    |  token; pinned keys
                          +----------------------------+
@@ -62,7 +62,7 @@ fronted by its own authenticated, fail-closed surface:
 ```
 
 **One client per deployment.** The product contract is one tenant per
-Maverick instance; client/tenant state is namespaced on disk under
+Lightwork instance; client/tenant state is namespaced on disk under
 `tenants/<client>/` and the dashboard owner-scopes every object. Cross-peer
 and cross-user data mingling is the threat this whole layer exists to prevent.
 

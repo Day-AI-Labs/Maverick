@@ -12,7 +12,7 @@
 
 ## Bottom line
 
-Maverick's governance *primitives* (signed audit, attenuating capabilities,
+Lightwork's governance *primitives* (signed audit, attenuating capabilities,
 consent ledger, PII/secret redaction) are genuinely strong and reusable. But the
 **runtime substrate underneath them was designed for exactly one trust domain:
 one user, one machine, one process, fail-open by default.** Three structural
@@ -135,7 +135,7 @@ exactly backwards: a config error must fail **closed**.
   audit query, quotas — stateless, horizontally scalable) and a **data plane**
   (goal execution workers behind a real queue — Celery/arq/Temporal — with
   per-tenant concurrency + spend quotas replacing the global semaphore). Workers
-  must run in **isolated sandboxes per run** (Maverick already has the sandbox
+  must run in **isolated sandboxes per run** (Lightwork already has the sandbox
   abstraction — `sandbox/`), never as threads sharing one host's filesystem/env.
 - **Identity + authz.** Replace the shared bearer with **SSO/OIDC + per-tenant
   RBAC**, mapping a federated principal onto `Capability.principal` and the

@@ -1,7 +1,7 @@
 # What we take from Palantir (and what we don't)
 
 Palantir's enterprise-AI credibility rests on *governed, traceable, operational*
-software. That instinct maps cleanly onto Maverick's wedge — **provable, governed,
+software. That instinct maps cleanly onto Lightwork's wedge — **provable, governed,
 self-improving agents** — so we borrow Palantir's *concepts* at agent scale, while
 deliberately **not** trying to become a data-integration company.
 
@@ -13,7 +13,7 @@ actions, lineage, simulate-before-commit), **not** the data-OS scope.
 
 ## What we borrowed — and where it now lives
 
-| Palantir concept | Maverick borrow | In the code |
+| Palantir concept | Lightwork borrow | In the code |
 |---|---|---|
 | Ontology **Actions** (typed, permissioned operations) | Typed `ActionSpec` registry — declared ops, not free-form calls | `maverick/governed_actions.py` |
 | **Simulate / branch** before commit | `simulate()` previews an effect with no side effects; commit gated on risk/approval | `governed_actions.py` (`Preview`) |
@@ -27,7 +27,7 @@ already existed — `RISK_LEVELS`/`risk_rank` (`safety/tool_risk.py`), the
 provenance-chain hash pattern, the signed audit chain, and the Operating Record.
 
 ### Why this is *more* defensible than imitating Palantir
-Palantir governs *data and the actions on it*. Maverick governs *the same — plus
+Palantir governs *data and the actions on it*. Lightwork governs *the same — plus
 the agent's learning*: a learned skill carries provenance, the learning is signed
 and revocable, and now every consequential **action** is typed, previewed, and
 lineage-traced. The pitch is **"Palantir-grade trust, for self-improving agents"**

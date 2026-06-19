@@ -24,10 +24,10 @@ participant touches below is shipped and verified.
 
 ## Licensing rule (read before announcing)
 
-Maverick is proprietary (LICENSE). Participants build **on top of** the
+Lightwork is proprietary (LICENSE). Participants build **on top of** the
 platform (skills, adapters, plugins they own) — the event grants no
 license to the platform source beyond what participants already have, and
-submissions must not vendor Maverick code. Put this in the event terms
+submissions must not vendor Lightwork code. Put this in the event terms
 verbatim; the university-outreach kit's educational-license language
 applies for student events.
 

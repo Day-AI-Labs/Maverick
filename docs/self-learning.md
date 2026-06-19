@@ -7,7 +7,7 @@
 > plane — is catalogued in [`FEATURES.md`](./FEATURES.md) under
 > *Dreaming*, *Hindsight engine*, and *Fleet memory*.
 
-When you ask Maverick to do something it doesn't yet have the capability
+When you ask Lightwork to do something it doesn't yet have the capability
 for, it can **acquire the capability itself** — install a skill, drive a
 REST API, or generate a brand-new tool — instead of giving up. It can also
 *propose* a curated MCP server, but only one from the hash-pinned catalog and
@@ -173,6 +173,6 @@ master switch. With it off, `op=add_mcp_server` returns the same informative
 "disabled" error as before.
 
 > Note: catalog `mcp` entries encode their launch command in the entry's
-> `source` field (e.g. `source = "npx -y @scope/server"`); Maverick splits it
+> `source` field (e.g. `source = "npx -y @scope/server"`); Lightwork splits it
 > into `command` + `args`. The entry's `sha256` becomes the server's
 > `pin_sha256`.

@@ -1,6 +1,6 @@
 # maverick-shield
 
-Agent Shield integration for Maverick. Provides three safety chokepoints
+Agent Shield integration for Lightwork. Provides three safety chokepoints
 the agent loop wraps around:
 
 - `Shield.scan_input(text)` — before user input enters the orchestrator

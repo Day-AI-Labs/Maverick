@@ -61,7 +61,7 @@ maverick remediate --apply   # apply the auto-fixable fixes (only if enabled)
 
 Fixes split two ways:
 
-- **Auto-fixable** — reversible, in-boundary flips of *Maverick's own* config
+- **Auto-fixable** — reversible, in-boundary flips of *Lightwork's own* config
   (enable audit signing, set retention). Applied by `--apply` **only** under
   enterprise mode **plus** an explicit opt-in (`[security] auto_fix = true` /
   `MAVERICK_SECURITY_AUTOFIX=1`), both off by default. The write is

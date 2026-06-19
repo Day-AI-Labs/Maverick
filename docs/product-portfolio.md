@@ -1,4 +1,4 @@
-# Maverick — Product Portfolio & Pricing (Working Draft)
+# Lightwork — Product Portfolio & Pricing (Working Draft)
 
 > **Purpose:** an internal working doc to (1) show the full scope of what's been
 > built, (2) pick product/tier/pack **names**, and (3) seed the website.
@@ -10,7 +10,7 @@
 
 ## The shape — 4 products
 
-1. **Maverick Platform** — the core. Sold good-better-best: **Basic / Gold / Platinum**.
+1. **Lightwork Platform** — the core. Sold good-better-best: **Basic / Gold / Platinum**.
 2. **Specialized Agent Packs** — turnkey departments of agents (Finance, Tax, …), priced as add-ons by group.
 3. **Fleet Governance & Memory** — govern + learn from agents you didn't build. Stands alone.
 4. **Custom Work** — bespoke agents, regime packs, regulated deployment, outcome-priced labor.
@@ -20,7 +20,7 @@ is plumbing *inside* Product 1, not a separate thing to sell.
 
 > **Data & learning principle (non-negotiable).** Each customer's usage improves
 > *their own* isolated workforce — on their own data, inside their own boundary.
-> Maverick never pools, aggregates, or learns across customers: no hivemind, no
+> Lightwork never pools, aggregates, or learns across customers: no hivemind, no
 > telemetry, and one tenant's learning never feeds another's runs. The compounding
 > benefit is the *customer's* (a bespoke, portable, sticky instance they own); our
 > defensibility is the specialist packs, the governance/compliance control plane,
@@ -30,7 +30,7 @@ is plumbing *inside* Product 1, not a separate thing to sell.
 
 ---
 
-## Product 1 — Maverick Platform
+## Product 1 — Lightwork Platform
 
 The governed agent platform itself. Each tier is a **superset** of the one below.
 Basic makes agents *work and stay safe*; Gold makes them *pass a security/compliance
@@ -60,7 +60,7 @@ environments*.
 | Framework packs + regulatory content | Pre-built control mappings for HIPAA, ISO 42001, model-risk (SR 11-7), and a FedRAMP path. | — | — | ✓ |
 | KMS / BYOK encryption-at-rest | Your data encrypted with your own keys; one tenant's key can never open another's. | — | — | ✓ |
 | Air-gap / confidential-compute | Runs fully disconnected for classified/regulated environments, with a one-command readiness check. | — | — | ✓ |
-| Federation / A2A | Link multiple Maverick deployments (or other vendors' agents) into one coordinated, governed fleet. | — | — | ✓ |
+| Federation / A2A | Link multiple Lightwork deployments (or other vendors' agents) into one coordinated, governed fleet. | — | — | ✓ |
 | High-isolation sandboxes | Stronger isolation (microVMs, gVisor, Kubernetes) for untrusted or sensitive workloads. | — | — | ✓ |
 | Support | — | Community | Standard SLA | Dedicated CSM + premium SLA |
 
@@ -212,7 +212,7 @@ A governed memory + oversight plane for agents you *didn't* build — Agentforce
 Copilot, custom in-house agents, open-source runtimes. They deposit their experience
 into one roster-gated, Shield-scanned, tenant-isolated memory and recall lessons
 from it; every read is audited, and value is broken out **per vendor**. It sells even
-to organizations that never run Maverick's own runtime, which is what makes it a
+to organizations that never run Lightwork's own runtime, which is what makes it a
 standalone product and not just a platform feature.
 
 **Pricing — starting point:** **$75K / yr** standalone, or **included at Platinum**.
@@ -221,7 +221,7 @@ standalone product and not just a platform feature.
 
 ## Product 4 — Custom Work (Professional Services)
 
-Bespoke labor powered by the **Agent Factory** (a business describes itself → Maverick
+Bespoke labor powered by the **Agent Factory** (a business describes itself → Lightwork
 synthesizes a validated, fail-closed custom department pack):
 
 - Custom agent / department authoring for a specific business.
@@ -264,7 +264,7 @@ placeholders.)
 | Thing | Current placeholder | Proposed name |
 |---|---|---|
 | The company | Daybreak Labs | |
-| The platform | Maverick Platform | |
+| The platform | Lightwork Platform | |
 | Tier 1 | Basic | |
 | Tier 2 | Gold | |
 | Tier 3 | Platinum | |

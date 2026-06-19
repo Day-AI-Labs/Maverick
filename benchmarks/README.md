@@ -1,4 +1,4 @@
-# Maverick benchmarks
+# Lightwork benchmarks
 
 The wedge claim is **long-horizon work + true multi-agent coordination**.
 These benchmarks make that measurable.
@@ -41,7 +41,7 @@ verify + skill distill enabled.
 
 ## Does the learning actually help? (the moat)
 
-The differentiator vs. stateless assistants is that Maverick *retains and
+The differentiator vs. stateless assistants is that Lightwork *retains and
 recalls* what it learns. These benchmarks make that claim falsifiable
 instead of marketing:
 

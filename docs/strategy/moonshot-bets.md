@@ -150,7 +150,7 @@ walls. You can prove it, and take it with you."
 **Thesis.** The most important — and most feared — capability in AI is an agent
 that improves *itself*. Every frontier lab wants it and is terrified to ship it
 ungoverned, because ungoverned self-improvement reward-hacks, escapes its
-envelope, and can't be rolled back. Maverick is the only platform that already
+envelope, and can't be rolled back. Lightwork is the only platform that already
 ships a *bounded, auditable, reversible* self-improvement loop. Productize that
 into the credentialed path to recursive self-improvement: **agents that
 provably get better without ever escaping their capability envelope.** This is
@@ -216,7 +216,7 @@ sleep next to."
 **Thesis.** Bet 1 *proves* compliance after the fact; Bet 4 *actively defends* in
 real time. The number-one reason enterprises won't deploy autonomous agents is
 fear of compromise: prompt injection, tool abuse, data exfiltration, poisoned
-RAG, malicious MCP servers and plugins, runaway swarms. Maverick already contains
+RAG, malicious MCP servers and plugins, runaway swarms. Lightwork already contains
 the most complete agent-runtime defense stack in existence — but it's buried as
 internal plumbing. Surface it as a standalone, vendor-neutral **runtime security
 product** for agent fleets: detection, containment, and continuous adversarial
@@ -242,7 +242,7 @@ calibration runner + `capability_leak_fuzzer`. Productize as:
    forensic record insurers and IR teams need; ties to Bet 1).
 
 **Bleeding edge.** Make it the neutral "agent-EDR telemetry standard" — any
-vendor's agent emits Maverick-format security telemetry over MCP, and the plane
+vendor's agent emits Lightwork-format security telemetry over MCP, and the plane
 scores/contains across all of them. Own the format, own the category.
 
 **Why $50M pre-ARR.** Security is the highest-willingness-to-pay budget in the
@@ -382,7 +382,7 @@ to take irreversible action** (move money, change prod, file, send). Everyone
 ships agents that draft/suggest; almost no one ships agents that *act*, because
 the downside is catastrophic and unprovable. Bet 5 is the layer that makes
 autonomous high-stakes action safe — and it's the synthesis of everything
-Maverick already has (sandbox, connectors' single egress chokepoint, verifier,
+Lightwork already has (sandbox, connectors' single egress chokepoint, verifier,
 governance, audit chain, autonomy slider, the self-improvement controller), not
 a fifth silo.
 
@@ -438,7 +438,7 @@ and let it earn more trust over time" is a painkiller. Anthropic: a verifiable
 safety story for autonomous action.
 
 **Defensibility.** Requires governance + connectors + sandbox + verifier + audit +
-the self-improvement loop + the autonomy slider — Maverick has all of them; a
+the self-improvement loop + the autonomy slider — Lightwork has all of them; a
 competitor must build the entire stack. The earned-autonomy ledger + the
 per-customer consequence-predictor are non-portable. Multi-year moat.
 

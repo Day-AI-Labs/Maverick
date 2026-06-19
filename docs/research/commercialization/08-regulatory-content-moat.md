@@ -82,7 +82,7 @@ co-marketing, low cash. Downside: slow, and firms guard their methodology as the
 own product. **Use partners for the credibility wrapper on the regulated-AI niche,
 not as the content pipe for the whole 55-framework surface.**
 
-### Option 3 — Agent-generate + continuously maintain the library with Maverick
+### Option 3 — Agent-generate + continuously maintain the library with Lightwork
 
 Split this into two very different claims:
 
@@ -118,7 +118,7 @@ when, under what information, and what decision they made"*
 Three mitigations, in order of necessity:
 
 1. **Human-in-the-loop attestation, non-optional.** Every AI-proposed mapping/control
-   is *advisory* until a named qualified person ratifies it. Maverick already has the
+   is *advisory* until a named qualified person ratifies it. Lightwork already has the
    substrate — the signed consent/HITL ledger (`safety/consent.py`) + tamper-evident
    audit (`audit/signing.py`) — to produce *exactly* the attestation corpus auditors
    ask for. **This turns our weakness into the moat: we don't ship AI content, we
@@ -143,7 +143,7 @@ The whole game is which definition we ship.
 - **Feeding SCF to the generator.** A direct CC BY-ND license breach (explicit
   anti-AI clause) — a lawsuit and a credibility own-goal for a *compliance* vendor.
 - **Shipping AI-authored mappings as authoritative with no human attestation.** One
-  publicized "Maverick's AI mapping caused a failed SOC 2" story ends the enterprise
+  publicized "Lightwork's AI mapping caused a failed SOC 2" story ends the enterprise
   motion permanently. CISOs buy defensibility; an unattested AI claim is the opposite.
 - **Owning content liability we can't insure or contractually cap.** If we become the
   maintainer of record without UCF-style upstream and without E&O, a single audit

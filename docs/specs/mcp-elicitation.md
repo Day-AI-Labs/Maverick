@@ -1,6 +1,6 @@
 # Design Spec: MCP Elicitation → Shield/Consent
 
-**Status:** Phases 1–3 shipped — client inbound handler + server outbound form mode + **URL mode** (`server._elicit_url` / `elicit_url_action`: https-only, shield-screened prompt, action-only response so secrets never transit the model) · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1) ([#396](https://github.com/Day-AI-Labs/Maverick/issues/396)) · **Date:** May 2026
+**Status:** Phases 1–3 shipped — client inbound handler + server outbound form mode + **URL mode** (`server._elicit_url` / `elicit_url_action`: https-only, shield-screened prompt, action-only response so secrets never transit the model) · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1) ([#396](https://github.com/Day-AI-Labs/Lightwork/issues/396)) · **Date:** May 2026
 
 > Proposal for discussion. Stops at interface + integration points; module
 > names/handlers should be confirmed against current code at implementation time.
@@ -8,7 +8,7 @@
 ## 1. Problem
 
 MCP **elicitation** lets an MCP **server** request structured input from the
-user *mid-request*, routed through the client. Maverick's MCP server
+user *mid-request*, routed through the client. Lightwork's MCP server
 (`packages/maverick-mcp/maverick_mcp/server.py`) deliberately **does not advertise
 the elicitation capability** today — the `handle_initialize` capabilities block
 omits it on purpose, with a comment that advertising it without a handler would
@@ -16,15 +16,15 @@ make 2025-11-25 clients hang waiting on a request that never comes. Instead, the
 server relies on the `ask_user` tool for human-in-the-loop.
 
 Two gaps result:
-1. **As a server**, Maverick can't use the protocol-native input channel; clients
+1. **As a server**, Lightwork can't use the protocol-native input channel; clients
    (Claude Desktop, Cursor) that support elicitation render a poorer experience
    (a tool round-trip instead of a typed form).
-2. **As a client** consuming *external* MCP servers (`mcp_client.py`), Maverick
+2. **As a client** consuming *external* MCP servers (`mcp_client.py`), Lightwork
    does **not** handle incoming `elicitation/create` requests at all — a server
    that elicits gets no response, stalling the call.
 
 The high-value framing: elicitation is the protocol-native **human-in-the-loop /
-consent** channel, and Maverick already has a consent substrate
+consent** channel, and Lightwork already has a consent substrate
 (`safety/consent.py`, the `approvals` table + dashboard `/approvals`, the
 `ask_user` → `questions` flow). Wiring elicitation through that substrate — with
 the **shield** screening elicited content — is the right design.
@@ -51,7 +51,7 @@ the **shield** screening elicited content — is the right design.
 
 ## 3. The two directions
 
-### 3a. Maverick as MCP **server** (outbound elicitation)
+### 3a. Lightwork as MCP **server** (outbound elicitation)
 When a tool/flow needs user input and the connected client advertised
 `elicitation` at initialize:
 1. Emit `elicitation/create` with a JSON-Schema-typed `requestedSchema` (form
@@ -68,7 +68,7 @@ When a tool/flow needs user input and the connected client advertised
    it; otherwise fall back to the `ask_user` tool exactly as today. (This closes
    the "clients hang" hazard the current code comment calls out.)
 
-### 3b. Maverick as MCP **client** (inbound elicitation)
+### 3b. Lightwork as MCP **client** (inbound elicitation)
 `mcp_client.py` must handle `elicitation/create` from external servers:
 1. Validate the request; enforce **URL-mode rules** — MUST show the full URL,
    MUST NOT pre-fetch it, MUST NOT auto-open it.

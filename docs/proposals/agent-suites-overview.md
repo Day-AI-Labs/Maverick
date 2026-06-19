@@ -149,7 +149,7 @@ replace the people or the systems of record.
 
 ### The throughline
 
-**Maverick's own primitives are the GRC controls, so the fleet governs itself** —
+**Lightwork's own primitives are the GRC controls, so the fleet governs itself** —
 Tower 1 oversees the very agents it runs among, which is exactly why the
 un-lowerable hard floors live in the profile compiler, not per-tenant config. The
 strongest already-built story is the **GRC Supervisor (Layer A)**: governance +
@@ -238,7 +238,7 @@ SoD: HR decides people, finance owns payroll, IT owns provisioning.
 
 ## Product & Engineering suite — at a glance
 
-The inverse of the others: **Maverick is itself a coding agent**, so the engineering core
+The inverse of the others: **Lightwork is itself a coding agent**, so the engineering core
 and the connector layer are the most mature in the platform. *"The tools are nearly all
 there; the role personas aren't."*
 
@@ -263,7 +263,7 @@ Gaps are the **role personas** (PM/designer/data-eng as packs), DORA metrics, ML
 QA test-mgmt. Cardinal control: agents write/test/review in the **sandbox**, but code ships
 only through the **verifier + review** gates, **humans approve every merge/release/deploy**,
 and — uniquely — **an agent never modifies its own runtime/safety without human
-authorization** (`self_edit` ships off by default; *Maverick builds Maverick*).
+authorization** (`self_edit` ships off by default; *Lightwork builds Lightwork*).
 
 ---
 

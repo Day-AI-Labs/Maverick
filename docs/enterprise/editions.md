@@ -1,7 +1,7 @@
 # Editions
 
-Maverick is **proprietary, commercially licensed** software ([`../../LICENSE`](../../LICENSE)).
-Production use requires a license — [contact us](https://github.com/Day-AI-Labs/Maverick).
+Lightwork is **proprietary, commercially licensed** software ([`../../LICENSE`](../../LICENSE)).
+Production use requires a license — [contact us](https://github.com/Day-AI-Labs/Lightwork).
 
 | | **Community ("lite")** *(planned)* | **Enterprise** |
 |---|---|---|

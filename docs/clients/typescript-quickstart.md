@@ -1,6 +1,6 @@
-# Maverick from TypeScript / JavaScript
+# Lightwork from TypeScript / JavaScript
 
-Drive a locally running Maverick swarm from a TS / Node app over the
+Drive a locally running Lightwork swarm from a TS / Node app over the
 [Model Context Protocol](https://modelcontextprotocol.io/). Same
 contract every IDE-side MCP client uses — you talk to `maverick mcp`
 over stdio JSON-RPC.
@@ -37,7 +37,7 @@ const client = new Client({ name: "ts-quickstart", version: "0.1.0" }, {
 await client.connect(transport);
 
 const tools = await client.listTools();
-console.log("Maverick exposes", tools.tools.length, "tools");
+console.log("Lightwork exposes", tools.tools.length, "tools");
 
 // Start a goal. maverick_start runs the swarm and returns the final
 // answer (it's long-running — give it a real budget/timeout).
@@ -122,13 +122,13 @@ of the text block.
 
 - **Multi-agent orchestration stays in Python.** Don't try to
   reimplement the orchestrator-proposer-verifier topology in TS;
-  spawn goals and let Maverick run the swarm. The TS process is the
+  spawn goals and let Lightwork run the swarm. The TS process is the
   *client*, not a worker.
 - **Sandbox / kernel features are Python-side.** Backends
   (firecracker, k8s, devcontainer) live in `maverick-core` and are
   not part of the wire protocol.
 - **The MCP server is for cross-language clients, not for tunneling
-  Maverick over the public internet.** Pair with your own auth +
+  Lightwork over the public internet.** Pair with your own auth +
   TLS layer if you go remote (see `packages/maverick-mcp/http_transport.py`).
 
 ## Why no `npm install @maverick/core`?

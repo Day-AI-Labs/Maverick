@@ -27,7 +27,7 @@ These are the gaps to file as individual issues; each is sized for
 
 2. **on_delta hook for the OpenAI-compatible family**: once #1 lands, wire `on_delta(text)` for openai / openrouter / ollama / moonshot / deepseek / xai / gemini. Anthropic adapter already does this — match its signature.
 
-3. **DeepSeek context-caching usage fields**: pass through `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens` from `Usage` into Maverick's `Budget.record_tokens(cache_read_tok=..., cache_write_tok=...)`.
+3. **DeepSeek context-caching usage fields**: pass through `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens` from `Usage` into Lightwork's `Budget.record_tokens(cache_read_tok=..., cache_write_tok=...)`.
 
 4. **Gemini implicit-cache prefix ordering**: reorder messages so the system prompt + tools schema lands before any user content (Gemini 2.5 implicit-cache requires the prefix to be stable across requests).
 

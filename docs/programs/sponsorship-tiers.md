@@ -8,7 +8,7 @@ work. **All dollar amounts are maintainer-set** — this kit fixes the
 
 ## What sponsorship is here — and isn't
 
-Maverick is proprietary software, so this is **not** OSS sustainability
+Lightwork is proprietary software, so this is **not** OSS sustainability
 funding. Sponsorship funds the *public goods around the product*: the free
 docs, the example skills and benchmarks, community programs (office hours,
 meetups, the summit), and the published safety artifacts (red-team corpus
@@ -71,10 +71,10 @@ co-presence); don't promise those now.
 
 ## Prospect profile
 
-Natural fits: LLM providers and inference platforms Maverick already routes
+Natural fits: LLM providers and inference platforms Lightwork already routes
 to, observability vendors with shipped self-serve integrations, sandbox/
 infra vendors (container, microVM, cloud-sandbox), and enterprises that
-deploy Maverick and want the ecosystem healthy. The pitch is one page:
+deploy Lightwork and want the ecosystem healthy. The pitch is one page:
 what the money funds (the public-goods list above), the boundaries (the
 no-influence list above), the tier table, last year's program stats.
 

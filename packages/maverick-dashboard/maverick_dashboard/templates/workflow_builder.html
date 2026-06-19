@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}workflow builder · Maverick{% endblock %}
+{% block title %}workflow builder · Lightwork{% endblock %}
 {% block content %}
 <style>
   .wf { max-width: 860px; margin-inline: auto; }
@@ -142,7 +142,7 @@
 </style>
 
   <h1 class="page-title">Workflow builder</h1>
-  <p class="page-subtitle">Describe what you want — or drop in a document — and Maverick drafts it for you to refine, save, and run. Prefer to build by hand? Use the <a href="/goal-builder">manual builder</a>.</p>
+  <p class="page-subtitle">Describe what you want — or drop in a document — and Lightwork drafts it for you to refine, save, and run. Prefer to build by hand? Use the <a href="/goal-builder">manual builder</a>.</p>
 
   <div class="wf">
     <div class="seg" role="group" aria-label="What to build">
@@ -320,7 +320,7 @@
       {% if scheduling_enabled %}
       <details class="wf__sched" id="wf-sched" hidden>
         <summary class="wf__sched-title"><span role="heading" aria-level="3">Run it on a schedule</span></summary>
-        <p class="wf__hint">Maverick starts this workflow automatically. Schedules run while <code>maverick worker</code> is active.</p>
+        <p class="wf__hint">Lightwork starts this workflow automatically. Schedules run while <code>maverick worker</code> is active.</p>
         <div class="wf-grid">
           <div class="wf__field">
             <label for="sched-cadence">Cadence</label>

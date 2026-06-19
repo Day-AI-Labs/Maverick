@@ -1,6 +1,6 @@
 # Plugin SDK
 
-External Python packages can extend Maverick by declaring entry points
+External Python packages can extend Lightwork by declaring entry points
 in their `pyproject.toml`. Plugins are discovered at run-time and a
 broken plugin can never take the swarm down — each load is wrapped in a
 forgiving handler that logs and continues.

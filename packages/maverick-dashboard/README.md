@@ -1,6 +1,6 @@
 # maverick-dashboard
 
-Local web dashboard for Maverick. Reads `~/.maverick/world.db` and
+Local web dashboard for Lightwork. Reads `~/.maverick/world.db` and
 `~/.maverick/skills/` and surfaces:
 
 - Goals: status, plan tree, trajectory replay, cancel, answer pending

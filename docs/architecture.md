@@ -1,6 +1,6 @@
 # Architecture: the governed agent runtime
 
-Maverick is a **governed agent runtime** — a recursive multi-agent swarm
+Lightwork is a **governed agent runtime** — a recursive multi-agent swarm
 wrapped in the runtime primitives most agent frameworks skip: hard budgets,
 sandboxed execution, signed tamper-evident audit, attenuating capabilities,
 and a content shield. The agent loop is the easy part; the governance around it
@@ -8,22 +8,22 @@ is the differentiator.
 
 A useful lens for this architecture is the operating system. An OS multiplexes
 processes onto hardware under scheduling, isolation, permissions, and resource
-limits; Maverick multiplexes *agents* onto LLMs and tools under the same kinds
+limits; Lightwork multiplexes *agents* onto LLMs and tools under the same kinds
 of controls. The mapping below makes that lens concrete.
 
 This is a **lens, not a brand.** "Agentic OS" / "Agent OS" became a saturated,
-backlash-tainted marketing term across 2026, so Maverick is *not* branded an
+backlash-tainted marketing term across 2026, so Lightwork is *not* branded an
 agentic operating system and does not claim to be one. The analogy is an
 internal architectural North Star — a way to reason about which primitives the
 runtime owns — and nothing more.
 
-## OS primitives → Maverick
+## OS primitives → Lightwork
 
-Each row pairs a classic OS primitive with its agent analog and the Maverick
+Each row pairs a classic OS primitive with its agent analog and the Lightwork
 module(s) that implement it. "In-process" / "opt-in" notes are deliberate; see
 the next section for scope.
 
-| OS primitive | Agent analog | Maverick today (file) |
+| OS primitive | Agent analog | Lightwork today (file) |
 |---|---|---|
 | Kernel / scheduler | dispatch and schedule agents | recursive swarm with shared context, per-call fan-out cap (`MAVERICK_MAX_SWARM_FANOUT`, default 8) and a total-spawn cap (`MAVERICK_MAX_TOTAL_SPAWNS`, default 64), parallel tool execution, plus a cron-style scheduler over a durable job queue (`swarm.py`, `tools/spawn.py`, `scheduler.py`, `job_queue.py`, `worker.py`) |
 | Processes / isolation | agents + execution sandboxing | 7 sandbox backends behind one `build_sandbox()` factory and a uniform `.exec()` interface — local subprocess, Docker, Podman, devcontainer, Kubernetes, Firecracker, SSH (`sandbox/`) |
@@ -45,7 +45,7 @@ identity is a *reuse* of existing crypto rather than a from-scratch build.
 ## What's strong, what's deliberately scoped
 
 **Strong.** The primitives a canonical academic agent kernel leaves unowned are
-exactly where Maverick is built out: a hard per-run budget the loop refuses to
+exactly where Lightwork is built out: a hard per-run budget the loop refuses to
 exceed (`budget.py`), seven real execution sandboxes (`sandbox/`), tamper-evident
 signed audit (`audit/signing.py`), and least-privilege attenuating capabilities
 (`capability.py`). Tenancy is namespaced on disk by a context-scoped `tenant_id`
@@ -60,7 +60,7 @@ signed audit (`audit/signing.py`), and least-privilege attenuating capabilities
   inter-agent message fabric.
 - **Cross-process service supervision is a future increment.** The durable job
   queue and worker (`job_queue.py`, `worker.py`) run scheduled and background
-  goals across process restarts, but Maverick is not yet a long-lived
+  goals across process restarts, but Lightwork is not yet a long-lived
   supervisor of independent agent *services* (no per-agent process lifecycle,
   health-checked restart, or placement). The kernel runs a swarm per goal.
 - **Durable checkpointing is single-agent (Phase 1).** Crash-resume covers a
@@ -74,7 +74,7 @@ signed audit (`audit/signing.py`), and least-privilege attenuating capabilities
   configured, so a single-user install behaves exactly as before. Enterprise
   mode flips the relevant defaults to fail-closed (see [safety.md](safety.md)).
 
-The honest summary: Maverick already implements more of the runtime primitive
+The honest summary: Lightwork already implements more of the runtime primitive
 set than a typical agent framework — strongest on budgets, sandboxing, signed
 audit, and capabilities — while inter-agent IPC stays in-process and
 cross-process service supervision remains ahead on the roadmap.

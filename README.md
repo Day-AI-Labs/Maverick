@@ -2,9 +2,9 @@
   <img src="Daybreak%20Labs%20Logo.jpg" alt="Daybreak Labs" width="360">
 </p>
 
-# Maverick
+# Lightwork
 
-> Maverick — by **Daybreak Labs**.
+> Lightwork — by **Daybreak Labs**.
 
 [![CI](https://github.com/Day-AI-Labs/maverick/actions/workflows/ci.yml/badge.svg)](https://github.com/Day-AI-Labs/maverick/actions/workflows/ci.yml)
 [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)](./LICENSE)
@@ -12,7 +12,7 @@
 
 **The governed, auditable AI agent runtime for regulated enterprises — a long-horizon multi-agent swarm that runs on your data, in your environment, under a hard budget.**
 
-Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agents — researcher, coder, writer, verifier — that work in parallel, checks their output, and returns a result. Every step runs under a hard spending cap and through a safety layer, on the models *you* choose.
+Hand Lightwork a goal. Its orchestrator decomposes it, spawns specialist sub-agents — researcher, coder, writer, verifier — that work in parallel, checks their output, and returns a result. Every step runs under a hard spending cap and through a safety layer, on the models *you* choose.
 
 - 🛡️ **Governed & contained by default.** RBAC, capability tokens, per-tool ACLs, consent gates, and a kill switch bound every agent action — and in Enterprise mode an **egress lock** means even a successful prompt-injection can't move data out of your boundary. Agent Shield also screens every prompt, tool call, and output; detector strength depends on the configured backend (see [`docs/safety.md`](./docs/safety.md)).
 - 🧾 **Tamper-evident & audit-ready.** A signed, hash-chained, append-only audit log (`maverick audit verify`) with SIEM export, encryption-at-rest, DSAR, and SOC2-aligned evidence — built to survive a security review.
@@ -22,7 +22,7 @@ Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agen
 - 🏢 **1,118 prebuilt specialists across 26 business suites.** Customer support, finance, legal, HR, ops, GTM, marketing, procurement, data, security ops, tax preparation for CPA firms, and 10 industry verticals (healthcare, insurance, banking, gov contracting, …) — every pack a real agent with a least-privilege tool envelope and risk ceiling. Run `maverick domains-lint` and check for yourself: 0 errors, 0 warnings.
 - 🧠 **Long-horizon multi-agent depth.** A recursive orchestrator spawns specialist sub-agents that work for hours under hard dollar / wall-clock / tool-call caps — frontier-agent depth, on the models *you* choose, with the governance and learning layers no coding-agent runtime ships.
 
-> **Proprietary software — not open source.** Maverick is enterprise software; use, redistribution, and derivative works require a license. [Contact us](https://github.com/Day-AI-Labs/Maverick) for evaluation or commercial access. See [`LICENSE`](./LICENSE) and [`TRADEMARK.md`](./TRADEMARK.md).
+> **Proprietary software — not open source.** Lightwork is enterprise software; use, redistribution, and derivative works require a license. [Contact us](https://github.com/Day-AI-Labs/Lightwork) for evaluation or commercial access. See [`LICENSE`](./LICENSE) and [`TRADEMARK.md`](./TRADEMARK.md).
 
 ```bash
 pipx install 'maverick-agent[installer]'
@@ -55,15 +55,15 @@ Alpha, but **installable today**: all eight packages are on [PyPI](https://pypi.
 
 ### Download the app — no terminal needed (easiest)
 
-Grab the installer for your OS from the **[latest release ›](https://github.com/Day-AI-Labs/Maverick/releases/latest)**, double-click it, then press **Install Maverick**:
+Grab the installer for your OS from the **[latest release ›](https://github.com/Day-AI-Labs/Lightwork/releases/latest)**, double-click it, then press **Install Lightwork**:
 
 | OS | File on the release |
 |---|---|
-| **Windows** | `Maverick_*_x64-setup.exe` |
-| **macOS** | `Maverick_*_aarch64.dmg` |
-| **Linux** | `Maverick_*_amd64.AppImage` |
+| **Windows** | `Lightwork_*_x64-setup.exe` |
+| **macOS** | `Lightwork_*_aarch64.dmg` |
+| **Linux** | `Lightwork_*_amd64.AppImage` |
 
-It's unsigned for now, so the first launch shows an "unknown developer" prompt — on Windows click **More info → Run anyway**; on macOS right-click the app → **Open**. The app installs Python and Maverick for you, then you're set.
+It's unsigned for now, so the first launch shows an "unknown developer" prompt — on Windows click **More info → Run anyway**; on macOS right-click the app → **Open**. The app installs Python and Lightwork for you, then you're set.
 
 ### Terminal install with pipx
 
@@ -147,7 +147,7 @@ packages/
                        iMessage (WhatsApp/SMS need Twilio; iMessage is macOS-only)
   maverick-dashboard/  Local FastAPI web UI + REST API at /api/v1 + OpenAPI
                        docs at /docs. Live progress streaming via short-poll.
-  maverick-mcp/        MCP server (stdio JSON-RPC) -- exposes Maverick to Claude
+  maverick-mcp/        MCP server (stdio JSON-RPC) -- exposes Lightwork to Claude
                        Code, Cursor, Claude Desktop as a tool. The agent kernel
                        can also CONSUME external MCP servers as its own tools.
 apps/
@@ -169,9 +169,9 @@ benchmarks/
   example-templates/     Reusable goal-template files
 ```
 
-## Drive Maverick from another language
+## Drive Lightwork from another language
 
-Maverick's kernel is Python, but its **wire surface** is the
+Lightwork's kernel is Python, but its **wire surface** is the
 [Model Context Protocol](https://modelcontextprotocol.io/). Any
 MCP-speaking language can drive the swarm from outside Python:
 
@@ -185,7 +185,7 @@ Each is a 20-line program: spawn `maverick mcp`, list tools, call one.
 Why this and not a separate `@maverick/core` port?
 [Language Bindings — Council Decision](./docs/ROADMAP.md#language-bindings--council-decision-may-2026).
 
-## Run Maverick in CI
+## Run Lightwork in CI
 
 Run the swarm inside any repo's GitHub Actions — on a PR, a schedule, or on
 demand — under a hard spend cap:
@@ -202,7 +202,7 @@ See [docs/github-action.md](./docs/github-action.md).
 
 ## Vision
 
-| Axis | Maverick |
+| Axis | Lightwork |
 |---|---|
 | **Target user** | Enterprise & technical teams -- self-hosted, governed, auditable |
 | **Wedge** | Long-horizon depth + true multi-agent coordination |
@@ -215,4 +215,4 @@ See [docs/github-action.md](./docs/github-action.md).
 
 Proprietary — commercially licensed. Use, redistribution, and derivative works
 require a license. See [`LICENSE`](./LICENSE) and [`TRADEMARK.md`](./TRADEMARK.md);
-[contact us](https://github.com/Day-AI-Labs/Maverick) for access.
+[contact us](https://github.com/Day-AI-Labs/Lightwork) for access.
