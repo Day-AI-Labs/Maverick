@@ -1,6 +1,6 @@
-# Maverick Helm chart
+# Lightwork Helm chart
 
-Production-oriented chart for the Maverick dashboard (web UI + API + webhooks).
+Production-oriented chart for the Lightwork dashboard (web UI + API + webhooks).
 
 ```bash
 # Minimal install (SQLite, single replica). Provide a provider key + token.

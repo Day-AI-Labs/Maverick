@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}permissions · Maverick{% endblock %}
+{% block title %}permissions · Lightwork{% endblock %}
 {% block content %}
   <h1 class="page-title">Permissions</h1>
-  <p class="page-subtitle">What Maverick can do — tools, capabilities, channels, and where your data goes.</p>
+  <p class="page-subtitle">What Lightwork can do — tools, capabilities, channels, and where your data goes.</p>
 
   {% if perm.error %}
     <div class="panel"><p style="color: var(--danger);">{{ perm.error }}</p></div>
@@ -84,7 +84,7 @@
       Nothing else.
     </p>
     <ul class="muted">
-      <li>No telemetry. Maverick collects no usage analytics.</li>
+      <li>No telemetry. Lightwork collects no usage analytics.</li>
       <li>Local logs at <code>~/.maverick/audit/</code>, retained
         {{ perm.retention.audit_days if perm.retention.audit_days is defined else 'until you delete them' }} day(s).</li>
       <li>World model at <code>~/.maverick/world.db</code>. Erase a

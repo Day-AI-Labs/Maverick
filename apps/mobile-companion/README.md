@@ -1,6 +1,6 @@
-# Maverick mobile companion (read-only)
+# Lightwork mobile companion (read-only)
 
-Watch your Maverick swarm from a phone: runs list, run detail with a live
+Watch your Lightwork swarm from a phone: runs list, run detail with a live
 event timeline, and an at-a-glance fleet summary — with an offline cache so
 losing the network shows "as of 12 min ago" instead of a blank screen.
 

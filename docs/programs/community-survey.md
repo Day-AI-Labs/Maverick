@@ -26,7 +26,7 @@ trends are real. Scales are 1-5 unless noted.
 
 ### Core block (repeat verbatim annually)
 
-1. How do you run Maverick? (desktop / Docker / VPS / Kubernetes /
+1. How do you run Lightwork? (desktop / Docker / VPS / Kubernetes /
    air-gapped / not currently running it)
 2. Which surfaces do you use? (multi-select: CLI / dashboard / channels /
    MCP server / gRPC / GitHub Action / scheduled goals)

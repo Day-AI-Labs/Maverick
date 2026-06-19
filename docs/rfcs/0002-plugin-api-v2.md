@@ -13,7 +13,7 @@ lockfile, and opt-in telemetry.
 
 ## Problems v2 solves
 
-1. **No declared compatibility** — a plugin can't say which Maverick versions
+1. **No declared compatibility** — a plugin can't say which Lightwork versions
    it supports; breakage is discovered at import time.
 2. **Capability opacity** — manifests declare *permissions*, but not the
    tools/channels they provide, so `maverick plugin list` must import code to

@@ -11,7 +11,7 @@ repo; **in progress** items are named, not implied.
 
 ## Posture in one paragraph
 
-Maverick is a governed, self-hostable AI agent runtime designed to run on
+Lightwork is a governed, self-hostable AI agent runtime designed to run on
 private/regulated data without that data leaving the customer boundary
 (Enterprise mode: egress lock, fail-closed consent, capability scoping,
 encryption at rest — see [security-overview.md](security-overview.md)). Safety

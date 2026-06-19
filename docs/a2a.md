@@ -1,6 +1,6 @@
 # A2A (Agent2Agent)
 
-Maverick speaks [A2A](https://a2a-protocol.org) v1.0, so other agents can
+Lightwork speaks [A2A](https://a2a-protocol.org) v1.0, so other agents can
 **discover** this instance and **delegate** long-horizon goals to it. Two
 halves:
 
@@ -140,7 +140,7 @@ force-killed mid-step.
 
 ### Push notifications
 
-Register a webhook and Maverick `POST`s the Task to it when the task
+Register a webhook and Lightwork `POST`s the Task to it when the task
 reaches a terminal state:
 
 ```json

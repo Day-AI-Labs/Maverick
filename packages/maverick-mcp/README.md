@@ -1,14 +1,14 @@
 # maverick-mcp-server
 
-A Model Context Protocol (MCP) server that exposes Maverick's agent
+A Model Context Protocol (MCP) server that exposes Lightwork's agent
 loop as a set of MCP tools. Any MCP-compatible client (Claude Code,
-Claude Desktop, Cursor, etc.) can drive Maverick over stdio JSON-RPC.
+Claude Desktop, Cursor, etc.) can drive Lightwork over stdio JSON-RPC.
 
 ## Why
 
-Maverick is a swarm of agents with persistent memory, budget caps,
+Lightwork is a swarm of agents with persistent memory, budget caps,
 and verifier loops. Most MCP clients are single-turn. By plugging
-Maverick in via MCP, you get:
+Lightwork in via MCP, you get:
 
 - A "think hard for an hour" tool from inside Claude Code
 - Persistent goals that survive editor restarts
@@ -37,7 +37,7 @@ Add to your Claude Code MCP config (typically
 }
 ```
 
-Then restart Claude Code. The Maverick tools should appear under the
+Then restart Claude Code. The Lightwork tools should appear under the
 MCP servers menu.
 
 ## Tools exposed

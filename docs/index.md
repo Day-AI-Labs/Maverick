@@ -1,13 +1,13 @@
-# Maverick
+# Lightwork
 
 > Enterprise recursive multi-agent swarm. One kernel, every model.
 
-Maverick is an **agentic enterprise platform**: a governed AI workforce of
+Lightwork is an **agentic enterprise platform**: a governed AI workforce of
 1,118 prebuilt specialists across 26 business suites that provably improves
 with use — deployed in your own environment. It drives any
 LLM (Claude, GPT, Kimi, Grok, Gemini, DeepSeek, Ollama, OpenRouter), and
 ships a governed, auditable safety surface built for regulated teams.
-Maverick is proprietary, commercially licensed software (see
+Lightwork is proprietary, commercially licensed software (see
 [`LICENSE`](LICENSE)).
 
 ## What you can do with it
@@ -17,7 +17,7 @@ Maverick is proprietary, commercially licensed software (see
 - **Use your existing chat subscriptions**: ChatGPT Plus, Claude Pro,
   Kimi, X Premium, Gemini Advanced — drive them from the agent via
   captured browser sessions, no extra API spend. Note: session providers
-  have no native function-calling, so Maverick gives them tools through a
+  have no native function-calling, so Lightwork gives them tools through a
   **simulated** markdown tool-call protocol — it works for tool-using
   roles, but reliability is model-dependent and weaker than an API-key
   provider's native tool use.
@@ -51,10 +51,10 @@ maverick cost                # spend summary
 
 ## Licensing & access
 
-Maverick is **proprietary, commercially licensed** software (see
+Lightwork is **proprietary, commercially licensed** software (see
 [`LICENSE`](LICENSE)). It is self-hostable — the runtime executes entirely
 in your own environment — and use requires a license. Pricing is handled
-per engagement; [contact us](https://github.com/Day-AI-Labs/Maverick) for
+per engagement; [contact us](https://github.com/Day-AI-Labs/Lightwork) for
 evaluation or enterprise access.
 
 A deliberately stripped-down **open-source "lite" edition** may be released
@@ -74,6 +74,6 @@ platform remain proprietary.
 - [Plugins](plugins.md) — extending the tool / channel / skill surface
 - [Self-learning](self-learning.md) — acquire skills, tools, MCP servers, and APIs on demand
 - [Features → Dreaming / Hindsight / Fleet memory](FEATURES.md) — the full learning lifecycle: consolidation, regression detection, value proof, and the cross-vendor memory plane
-- [Features](FEATURES.md) — everything Maverick does today (shipped capabilities + tools)
+- [Features](FEATURES.md) — everything Lightwork does today (shipped capabilities + tools)
 - [Roadmap](ROADMAP.md) — the forward backlog (what isn't built yet)
 - [Contributing](CONTRIBUTING.md) — how to send PRs

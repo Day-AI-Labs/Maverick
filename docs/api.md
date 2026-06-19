@@ -1,6 +1,6 @@
 # REST API
 
-Maverick ships a JSON REST API at `/api/v1` on the dashboard server.
+Lightwork ships a JSON REST API at `/api/v1` on the dashboard server.
 Any HTTP client can drive the agent: create + run goals, poll for
 results, stream live progress, manage facts and skills, view spend.
 
@@ -171,7 +171,7 @@ Designed for non-channel frontends:
 - React Native / SwiftUI iOS app -> bearer token + this API, agent on a VPS
 - Zapier / IFTTT -> create-goal webhook on schedule
 - Cron jobs -> a 6am goal to summarize overnight email + slack
-- GitHub Actions -> kick off a Maverick goal on PR open
+- GitHub Actions -> kick off a Lightwork goal on PR open
 
 Always set explicit `max_dollars` and `max_wall_seconds` from external
 callers -- defaults are conservative ($2, 30min) but every API has

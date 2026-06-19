@@ -1,6 +1,6 @@
 # maverick.nvim
 
-Drive the [Maverick](https://github.com/Day-AI-Labs/maverick) agent runtime
+Drive the [Lightwork](https://github.com/Day-AI-Labs/maverick) agent runtime
 from Neovim — a thin front end over the locally installed `maverick` CLI.
 
 ## Install
@@ -9,7 +9,7 @@ lazy.nvim:
 
 ```lua
 {
-  dir = "/path/to/Maverick/apps/nvim",  -- or your fork/checkout
+  dir = "/path/to/Lightwork/apps/nvim",  -- or your fork/checkout
   config = function()
     require("maverick").setup({
       cli = "maverick",   -- path to the CLI
@@ -23,12 +23,12 @@ lazy.nvim:
 
 | Command | What it does |
 |---|---|
-| `:MaverickStart {goal}` | start a goal (prompts when no arg) |
-| `:MaverickStatus` | runtime status + cost |
-| `:MaverickMonitor` | live plan-tree TUI in a terminal split |
-| `:MaverickLogs` | recent run logs |
-| `:MaverickHalt` | arm the killswitch (confirms first) |
-| `:MaverickUnhalt` | clear the killswitch |
+| `:LightworkStart {goal}` | start a goal (prompts when no arg) |
+| `:LightworkStatus` | runtime status + cost |
+| `:LightworkMonitor` | live plan-tree TUI in a terminal split |
+| `:LightworkLogs` | recent run logs |
+| `:LightworkHalt` | arm the killswitch (confirms first) |
+| `:LightworkUnhalt` | clear the killswitch |
 
 Classic Vim (non-Neovim) users: the CLI works in any `:terminal` —
 `maverick monitor` is the same TUI.

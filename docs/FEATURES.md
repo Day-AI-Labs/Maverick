@@ -1,6 +1,6 @@
-# Maverick — Shipped Features
+# Lightwork — Shipped Features
 
-What Maverick **does today**, grounded in the code on `main`. This is the
+What Lightwork **does today**, grounded in the code on `main`. This is the
 catalogue of built features and tools; the forward backlog (what's *not* done
 yet) lives in [`ROADMAP.md`](./ROADMAP.md). When a roadmap item ships, it moves
 here.
@@ -285,7 +285,7 @@ here.
   opt-in `[fleet_memory] enable`; MCP tools `maverick_fleet_ingest` /
   `maverick_fleet_recall`; CLI `maverick fleet-memory`) — ANY external agent
   (Agentforce, Copilot, custom, OSS runtimes) deposits experience into and
-  recalls from Maverick's governed memory: roster-gated (fail-closed),
+  recalls from Lightwork's governed memory: roster-gated (fail-closed),
   Shield-scanned, provenance-tagged (`vendor:agent_id`), tenant-isolated,
   every read audited. Successes/failures consolidate through the dream
   cycle; `maverick proof --fleet` breaks value out per vendor.
@@ -393,7 +393,7 @@ here.
   (atomic multi-file), `repo_map`, `dep_graph`, `test_impact` (coverage-guided),
   `reviewer` (diff review), `file_watcher`, `notebook_exec` (run a .ipynb's code
   cells in the sandbox), `self_edit` (human-gated, path-confined edits to
-  Maverick's own code/config), `html_to_app` (scaffold a starter app from an HTML
+  Lightwork's own code/config), `html_to_app` (scaffold a starter app from an HTML
   mockup).
 - **Data** — `sql_query` (read-only by default), `pandas_query`, `spreadsheet`
   (CSV/XLSX, write-capable), `compute` (SymPy), `embeddings`.
@@ -712,7 +712,7 @@ carry their platform `message_id` and adapters expose `send_threaded`
 `reply_to_message_id`; base falls back to a plain send) so long-running
 answers land under the message that asked. **Email v2** adds IMAP IDLE (push
 instead of poll) + conversation threading from Message-ID/In-Reply-To/References
-(`email_v2.py`). **Discord Stages voice v2** (`discord_stages.py`): drive Maverick from a
+(`email_v2.py`). **Discord Stages voice v2** (`discord_stages.py`): drive Lightwork from a
 Stage channel — per-speaker utterance assembly over an injected transcriber,
 the same `DISCORD_ALLOWED_USER_IDS` speaker allowlist as Discord text,
 optional wake-word gating, replies spoken when the bot holds a speaker slot
@@ -905,13 +905,13 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   to the community one (`catalog.py`, pinned by test).
 - **IDE protocol unification** — one MCP server (stdio + Streamable HTTP) is
   the editor protocol: any MCP-speaking editor (VS Code, JetBrains, Zed,
-  Cursor) drives Maverick through it; the editor-specific packages
+  Cursor) drives Lightwork through it; the editor-specific packages
   (`apps/vscode-extension`, `apps/emacs`, `apps/nvim`) are thin CLI fronts,
   not parallel protocols.
 - **A2A** (`a2a.py`, `a2a_tasks.py`) — Agent Card discovery + delegation, with
   the **interop consuming half** (`validate_agent_card` spec-shape lint,
   `parse_remote_card` normalization that refuses a non-conformant card before
-  anything delegates against it) proven both ways by interop tests: Maverick's
+  anything delegates against it) proven both ways by interop tests: Lightwork's
   own card passes its own validator, and third-party-shaped fixture cards
   (rich + minimal) parse correctly.
 - **Swarm federation** (`federation.py` + `grpc_api/federation.proto`,
@@ -979,7 +979,7 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   the gate — a breaking change requires a `maverick.v2` package. The gate is a
   dependency-free proto parser, so it runs in CI without grpcio.
 - **gRPC dispatch** (`grpc_dispatcher.py`, opt-in `[grpc_dispatch] target`)
-  — execute goals on a remote Maverick worker over gRPC: a `RunGoal` RPC runs
+  — execute goals on a remote Lightwork worker over gRPC: a `RunGoal` RPC runs
   an existing goal row to completion (API and worker share the Postgres world
   DB, same contract as the arq queue), and `GrpcDispatcher` plugs into the
   runner's Dispatcher seam with no caller changes; queue backend wins when
@@ -992,12 +992,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `maverick.proto`. Behind the `[grpc]` extra; run via `python -m maverick.grpc_api`.
 - **Cross-language quickstarts** — TypeScript, Go, Rust, C#, Java (`docs/clients/`).
 - **LangChain / LangGraph interop** (`langchain_adapter.py`, `[langchain]` extra)
-  — expose the Maverick swarm as a LangChain `StructuredTool`, and wrap any
-  LangChain `BaseTool` as a Maverick tool. **AutoGen + CrewAI adapters**
+  — expose the Lightwork swarm as a LangChain `StructuredTool`, and wrap any
+  LangChain `BaseTool` as a Lightwork tool. **AutoGen + CrewAI adapters**
   (`agent_framework_adapters.py`): the same two directions for both frameworks
-  — Maverick as an AutoGen `FunctionTool` (or a dependency-free typed
+  — Lightwork as an AutoGen `FunctionTool` (or a dependency-free typed
   callable) and as a CrewAI `BaseTool`; `wrap_autogen_tool` /
-  `wrap_crewai_tool` adapt their tools into Maverick `Tool`s (duck-typed,
+  `wrap_crewai_tool` adapt their tools into Lightwork `Tool`s (duck-typed,
   lazy imports, actionable install hints).
 - **MCP-client language analytics** (`mcp_analytics.py`) — opt-in, consent-gated
   tally of client language (from the User-Agent) that feeds the language-bindings
@@ -1031,7 +1031,7 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   deployment can verify (and gate on) hardware memory encryption; exits non-zero
   when not confidential.
 - **Air-gap preflight** (`air_gap.py`, `maverick airgap check`) — verifies a
-  deployment has no outbound path in *Maverick's own config*: a remote model
+  deployment has no outbound path in *Lightwork's own config*: a remote model
   provider, a non-deny-all egress policy, or a sandbox with network access — and
   exits non-zero on any finding so it can gate a deployment. (OS-level air-gap
   is the operator's job; this catches the application-layer leaks.)
@@ -1287,9 +1287,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   re-keyed by hand. The goal page grows a sign-off panel (Approve / Reject + note,
   then the decision + hand-off download); a signed-off deliverable drops out of
   the persona inbox's "awaiting sign-off" queue. Agents draft; humans certify.
-- **System-of-record routing** — when a deliverable is approved, Maverick POSTs
+- **System-of-record routing** — when a deliverable is approved, Lightwork POSTs
   it to a configured downstream endpoint (treasury / GL / Jira), so "approved in
-  Maverick" lands in the system of record automatically instead of being
+  Lightwork" lands in the system of record automatically instead of being
   re-keyed. Opt-in via `[deliverables] handoff_webhook` (a wizard step;
   env-referenceable URL), signed with the existing `[webhooks]` HMAC secret and
   delivered over the SSRF-safe webhook path. Best-effort and never blocks the
@@ -1360,7 +1360,7 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 
 ## Hosted control plane & multi-tenancy
 
-The backend for running Maverick as a governed, multi-tenant platform (each piece
+The backend for running Lightwork as a governed, multi-tenant platform (each piece
 opt-in; single-tenant/self-hosted deployments are unaffected):
 
 - **Tenant lifecycle / provisioning** — `tenant_registry.py` + `maverick tenant
@@ -2053,7 +2053,7 @@ tested without spawning py-spy.
 - **IDE / CI** — VS Code extension (`apps/vscode-extension/`), **Emacs
   package** (`apps/emacs/maverick.el`: M-x maverick-start/status/monitor/
   logs/halt/unhalt over the CLI, deps-free, Emacs 27.1+), **Neovim plugin**
-  (`apps/nvim/`: :MaverickStart/Status/Monitor/Logs/Halt/Unhalt, lazy.nvim-
+  (`apps/nvim/`: :LightworkStart/Status/Monitor/Logs/Halt/Unhalt, lazy.nvim-
   ready, terminal-split UX), **Zed extension** (`apps/zed-extension/`:
   registers `maverick mcp` as a context server — Zed extensions run in a
   WASI sandbox and cannot exec, so CLI verbs ship as Zed tasks; compiling
@@ -2088,7 +2088,7 @@ tested without spawning py-spy.
   mobile browser, and a Kivy shell + buildozer.spec for Android — store
   builds are maintainer acts; the hard limits (no sandbox/subprocess on
   mobile, relay for network) are documented, not papered over.
-- **RFCs** — [RFC 0001: Maverick 2.0](./rfcs/0001-maverick-2.0.md) (config
+- **RFCs** — [RFC 0001: Lightwork 2.0](./rfcs/0001-maverick-2.0.md) (config
   schema v2 + async-only channel SDK + connector re-homing, migration story
   riding `maverick migrate`) and [RFC 0002: Plugin API v2](./rfcs/0002-plugin-api-v2.md)
   (static manifests discovered without importing plugin code, lifecycle hooks,
@@ -2109,9 +2109,9 @@ tested without spawning py-spy.
 - **Docs** — MkDocs site, [getting started](./getting-started.md), 30-recipe
   [cookbook](./cookbook/), [architecture](./architecture.md),
   [embedding guide](./embedding.md), [security hardening](./security-hardening.md),
-  [comparison page](./comparison.md) (Maverick vs the field, claims grounded in
+  [comparison page](./comparison.md) (Lightwork vs the field, claims grounded in
   this catalogue), [press kit](./press-kit.md), [showcase wall](./showcase.md)
-  (built-with-Maverick submissions by PR), and a self-serve
+  (built-with-Lightwork submissions by PR), and a self-serve
   [observability integrations guide](./integrations/observability-partners.md)
   (OpenRouter provider, OTLP-generic tracing incl. LangSmith, Helicone via
   base_url override).

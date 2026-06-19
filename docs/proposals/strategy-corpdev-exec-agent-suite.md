@@ -15,7 +15,7 @@ across seven towers.
 > ethics overlap **finance/GRC**. What is *unique* here is the **material** of the work —
 > M&A, strategy, board matters, earnings — which is the company's most sensitive **material
 > non-public information (MNPI)**. So the distinctive control is the **information barrier
-> (ethical wall)**, and Maverick already owns the exact primitive: the **Rung-2 compartment
+> (ethical wall)**, and Lightwork already owns the exact primitive: the **Rung-2 compartment
 > seal** (`quarantine.py`). A deal team and the board sit in sealed compartments; MNPI
 > cannot cross to the rest of the fleet.
 
@@ -31,7 +31,7 @@ The cardinal rule for every agent below:
 ## Contents
 
 1. [What's already shipped — the reuse map](#1-whats-already-shipped--the-reuse-map)
-2. [How a strategy/exec agent maps onto Maverick](#2-how-a-strategyexec-agent-maps-onto-maverick)
+2. [How a strategy/exec agent maps onto Lightwork](#2-how-a-strategyexec-agent-maps-onto-maverick)
 3. [The control model (cross-cutting)](#3-the-control-model-cross-cutting)
 4. [Per-client customization — the dials](#4-per-client-customization--the-dials)
 5. [The roster — seven towers](#5-the-roster--seven-towers)
@@ -74,7 +74,7 @@ walls, the decision gate, the audit trail) are shipped.
 
 ---
 
-## 2. How a strategy/exec agent maps onto Maverick
+## 2. How a strategy/exec agent maps onto Lightwork
 
 Each agent is a [`DomainProfile`](../../packages/maverick-core/maverick/domain.py) pack —
 but here the **compartment seal is the point**, not an afterthought. A deal or board agent

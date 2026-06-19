@@ -96,7 +96,7 @@ into one decisive signal (teardown 10).
 **Track A — No-regret moves (run in parallel; valuable whatever Gate 0 says).**
 Stand up the commercial entity; **start the SOC 2 Type II clock** (it's calendar-bound,
 so every week of delay is a week deal #1 slips); publish a trust portal + DPA; **file
-the "Maverick" trademark** and fix the `CONTRIBUTING.md` inbound=outbound-MIT trap +
+the "Lightwork" trademark** and fix the `CONTRIBUTING.md` inbound=outbound-MIT trap +
 the "no paid tier / no telemetry" positioning; lock the **OSCAL + UCF** content spine;
 make **human attestation a hard product invariant** (it's both the content-liability
 fix and the differentiator). None of these require the relicense or the re-architecture.

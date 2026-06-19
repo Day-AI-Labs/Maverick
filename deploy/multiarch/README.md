@@ -1,6 +1,6 @@
 # multiarch — ARM and RISC-V image builds
 
-Multi-architecture container builds for the Maverick runtime:
+Multi-architecture container builds for the Lightwork runtime:
 `Dockerfile.multiarch` + `build.sh` (docker buildx) targeting
 **linux/amd64**, **linux/arm64**, and — gated, see below — **linux/riscv64**.
 

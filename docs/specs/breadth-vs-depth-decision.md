@@ -22,7 +22,7 @@ consumer build using the inventory's risk tiers.
 
 ## Why
 
-1. **The differentiation is depth, not connectors.** Maverick's edge is the
+1. **The differentiation is depth, not connectors.** Lightwork's edge is the
    long-horizon recursive swarm + the governed/provable runtime — not having a
    Salesforce tool nobody else has. The 47 connectors are table-stakes; carrying
    them in-core spends the scarcest resource (maintenance + security review) on

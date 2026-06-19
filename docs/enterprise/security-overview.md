@@ -1,6 +1,6 @@
-# Maverick — Security & Compliance Overview
+# Lightwork — Security & Compliance Overview
 
-Maverick is a **governed, self-hostable AI agent runtime** built to run on
+Lightwork is a **governed, self-hostable AI agent runtime** built to run on
 private and regulated data (PHI / PCI / PII / EU / classified) without that data
 leaving your boundary. This page summarizes the security architecture for
 technical and security reviewers. It describes the product as built; capabilities
@@ -86,7 +86,7 @@ the host — so a pass means the boundary holds, not merely that a config flag r
 ```
 
 Deployable on a laptop, a VPC, Kubernetes, or a disconnected/air-gapped network.
-No hyperscaler dependency; Maverick emits no telemetry of its own.
+No hyperscaler dependency; Lightwork emits no telemetry of its own.
 
 ## Roadmap (not yet built)
 
@@ -94,5 +94,5 @@ SCIM / SAML provisioning (OIDC ships today), hosted multi-tenant SaaS with
 data-plane RLS (self-host per-tenant ships today), and external SOC 2 Type II /
 penetration-test attestations.
 
-> Licensing: Maverick is proprietary, commercially licensed software
+> Licensing: Lightwork is proprietary, commercially licensed software
 > ([`../../LICENSE`](../../LICENSE)). Contact us for evaluation or enterprise access.

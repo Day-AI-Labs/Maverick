@@ -1,6 +1,6 @@
 # State-of-the-art review — May 2026
 
-A frontier-readiness audit of the Maverick agent kernel, with a prioritized,
+A frontier-readiness audit of the Lightwork agent kernel, with a prioritized,
 acquisition-oriented backlog. The goal is honesty: what is already
 world-class, what is genuinely behind the 2026 frontier, and where the
 highest-leverage moves are.
@@ -10,7 +10,7 @@ This doc is a strategic frame, not a contract. The first two items in
 
 ## Verdict
 
-Maverick is a **near-frontier** long-horizon agent kernel. It is not a
+Lightwork is a **near-frontier** long-horizon agent kernel. It is not a
 prototype: ~95k LOC across six packages, ~1,900 passing tests, a 36-month
 roadmap, and a "council" review discipline visible throughout the git
 history. Several subsystems are genuinely ahead of most shipping agent

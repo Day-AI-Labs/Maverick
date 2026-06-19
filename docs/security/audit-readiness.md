@@ -1,7 +1,7 @@
 # External security audit — readiness & scope
 
 This document is the entry point for an **independent penetration test or
-security review** of Maverick. It defines what to attack, what the existing
+security review** of Lightwork. It defines what to attack, what the existing
 controls are and how to verify them, what we already test, and where the
 known residual risks are. It is the operational companion to two existing
 docs — read those first:

@@ -1,6 +1,6 @@
-# Maverick GitLab CI template
+# Lightwork GitLab CI template
 
-Run a Maverick agent goal inside a GitLab pipeline — on a merge request, on
+Run a Lightwork agent goal inside a GitLab pipeline — on a merge request, on
 a schedule, or on demand — under a **hard spend cap** and with
 non-interactive safety defaults. The reusable
 [`maverick.gitlab-ci.yml`](./maverick.gitlab-ci.yml) template installs

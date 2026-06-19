@@ -1,4 +1,4 @@
-# Maverick for Enterprise — the governed agent control plane
+# Lightwork for Enterprise — the governed agent control plane
 
 > Status: architecture + roadmap (the blueprint for the enterprise pivot). This
 > is the master plan the layered build follows; it doubles as the technical
@@ -15,7 +15,7 @@ Enterprises want **fleets of agents doing real work** — every employee backed 
    the EU AI Act *and* the US patchwork (NIST AI RMF, Colorado, NYC LL144,
    sectoral HIPAA/GLBA/FCRA), across jurisdictions, simultaneously.
 
-Maverick's wedge is the **control plane** that makes agent fleets *governable and
+Lightwork's wedge is the **control plane** that makes agent fleets *governable and
 audit-ready by construction*. We already own the hardest primitives — a signed,
 tamper-evident audit chain, attenuating capabilities, sandboxed execution,
 human-in-the-loop consent, tenancy, and egress control. The pivot turns those
@@ -24,7 +24,7 @@ from features into the product.
 The recurring failure mode in 2026 enterprise AI (per practitioner guidance):
 teams implement logging, access control, and human oversight **separately for
 each framework**, producing redundant controls and *gaps at the intersections*.
-Maverick's answer is a **single control plane** every agent action flows through,
+Lightwork's answer is a **single control plane** every agent action flows through,
 with each legal regime expressed as a **pluggable policy pack** mapped onto one
 set of enforceable primitives.
 
@@ -89,10 +89,10 @@ role's capability.
 
 ## 4. Compliance mapping — frameworks → primitives we already own
 
-Each obligation below maps to a Maverick control. **Bold** = already shipped and,
+Each obligation below maps to a Lightwork control. **Bold** = already shipped and,
 in several cases, exceeding the baseline; *italic* = the gap this roadmap closes.
 
-| Regime | Key obligation | Maverick control |
+| Regime | Key obligation | Lightwork control |
 |---|---|---|
 | **EU AI Act Art 12** (record-keeping) | append-only logs, hash-chained, ≥6-month retention | **Ed25519 *Merkle*-chained audit (`audit/signing.py`) — exceeds the SHA-256 append-only baseline**; *+ retention policy enforcement* |
 | **EU AI Act Art 14** (human oversight) | monitor / intervene / override; explicit automation boundary | **consent/HITL + capability risk-ceilings**; *+ control-plane `require-human` gate + operator console* |
@@ -146,7 +146,7 @@ model on top.
 
 - **"Compliant" = "provides the technical controls and evidence that compliance
   requires" — not legal certification.** The mapping of *your* obligations to
-  *your* risk tier needs counsel; Maverick supplies the enforceable controls and
+  *your* risk tier needs counsel; Lightwork supplies the enforceable controls and
   the audit evidence, and makes the posture auditable.
 - **The US federal picture is volatile.** The pluggable-pack design is the hedge:
   enable the regimes a deployment is actually subject to; the strictest-wins

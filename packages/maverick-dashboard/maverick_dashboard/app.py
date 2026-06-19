@@ -216,7 +216,7 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Maverick Dashboard + REST API",
+    title="Lightwork Dashboard + REST API",
     description="Local browser UI plus REST API for programmatic access.",
     version="0.1.0",
     # OIDC bearer-auth gate, applied to every route. Default-OFF: when OIDC is
@@ -902,7 +902,7 @@ async def public_demo(request: Request) -> HTMLResponse:
         "<!doctype html>"
         "<html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>Maverick public demo</title>"
+        "<title>Lightwork public demo</title>"
         "<style>"
         ":root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;"
         "background:#0d1117;color:#e6edf3}"
@@ -915,7 +915,7 @@ async def public_demo(request: Request) -> HTMLResponse:
         "a{color:#58a6ff}"
         "</style></head><body>"
         "<header><p class='eyebrow'>read-only public snapshot</p>"
-        "<h1>Maverick demo</h1>"
+        "<h1>Lightwork demo</h1>"
         "<p>This page intentionally shows only seeded demo-owned finished runs. "
         "Operator state, audit logs, spend, facts, plugins, permissions, and "
         "the rest of the authenticated dashboard are not proxied publicly.</p>"
@@ -1978,7 +1978,7 @@ def _permissions_snapshot() -> dict:
 
 @app.get("/permissions", response_class=HTMLResponse)
 async def permissions_page(request: Request) -> HTMLResponse:
-    """What Maverick can do — tools, capabilities, channels, data flow."""
+    """What Lightwork can do — tools, capabilities, channels, data flow."""
     return templates.TemplateResponse(
         request, "permissions.html", {"perm": _permissions_snapshot()},
     )
@@ -4685,7 +4685,7 @@ def _is_loopback_host(host: str) -> bool:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Maverick dashboard")
+    parser = argparse.ArgumentParser(description="Lightwork dashboard")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()

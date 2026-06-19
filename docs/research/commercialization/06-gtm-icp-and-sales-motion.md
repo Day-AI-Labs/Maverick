@@ -1,7 +1,7 @@
-# GTM — ICP, Wedge Buyer, and Sales Motion for Maverick's Governance Pivot
+# GTM — ICP, Wedge Buyer, and Sales Motion for Lightwork's Governance Pivot
 
 > Teardown #6 of 10 for the commercial pivot. Date: 2026-06-06.
-> Premise: Maverick stops being an MIT consumer/dev agent and becomes a
+> Premise: Lightwork stops being an MIT consumer/dev agent and becomes a
 > commercial **AI-&-agent-governance + regulated-compliance** platform vs OneTrust.
 > Scope: who we sell to, what we land, how we sell, who the first design partners
 > are, and why the current repo positioning actively harms this business.
@@ -73,7 +73,7 @@ defining security challenge of 2026, and 48% of practitioners name agentic/auton
 systems the single most dangerous attack vector. ([Aona](https://aona.ai/blog/agentic-ai-security-risks-ciso-guide-2026/),
 [Bessemer](https://www.bvp.com/atlas/securing-ai-agents-the-defining-cybersecurity-challenge-of-2026))
 
-Maverick already has the substrate the prior docs verified: per-agent attenuating
+Lightwork already has the substrate the prior docs verified: per-agent attenuating
 capabilities, an Ed25519 Merkle-chained tamper-evident audit, a kill-switch, and a
 default on-prem/air-gapped runtime. The land product is a **projection of data we
 already emit**: a registry surface ("here are your agents, their owners, capabilities,

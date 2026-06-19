@@ -1,6 +1,6 @@
 # Security hardening (operator guide)
 
-Maverick ships **defense in depth**, but almost every *enterprise/security*
+Lightwork ships **defense in depth**, but almost every *enterprise/security*
 control is **opt-in and off by default** so a personal install behaves exactly
 as before. That makes the controls easy to miss: turning them on currently
 means knowing the config key. This guide is the single place that lists every
@@ -213,7 +213,7 @@ audit log for `capability_denied` to see a role's restrictions bite.
 
 ## Multi-tenancy (per-user isolation)
 
-**What it does.** Namespaces Maverick's on-disk state per *tenant* so one
+**What it does.** Namespaces Lightwork's on-disk state per *tenant* so one
 tenant's data cannot leak to another. When enabled, each channel user is
 isolated into their own tenant. Tenant `t`'s data lives under
 `~/.maverick/tenants/<t>/...` instead of the legacy `~/.maverick/...` root.
@@ -390,7 +390,7 @@ that, the browser is authenticated by the cookie — no bearer header needed.
 
 > **Prefer the proxy.** The [reverse-proxy SSO](#reverse-proxy-sso) path below is
 > the simpler, lower-surface option: it keeps the OAuth client secret and the
-> login flow out of Maverick entirely. Reach for this built-in flow only when
+> login flow out of Lightwork entirely. Reach for this built-in flow only when
 > running a proxy isn't practical.
 
 **Off by default, fail-closed.** The `/auth/login`, `/auth/callback`, and
@@ -486,9 +486,9 @@ bearer. Invalid/absent → falls through to the bearer path unchanged.
 **What it does.** Lets a standard auth proxy in front of the dashboard
 (oauth2-proxy, your IdP's proxy, an ALB OAuth listener, ...) own the browser
 login, then forward the authenticated user's identity in a request header.
-Maverick maps that header to a `user:<id>` principal that flows into the
+Lightwork maps that header to a `user:<id>` principal that flows into the
 [capability](#capability-enforcement) and tenant model — browser SSO without
-Maverick hand-rolling an OAuth flow. The [OIDC](#oidc-sso-authentication) bearer
+Lightwork hand-rolling an OAuth flow. The [OIDC](#oidc-sso-authentication) bearer
 gate still serves API clients; this adds the browser path.
 
 **config.toml**
@@ -508,7 +508,7 @@ export MAVERICK_PROXY_AUTH_HEADER="X-Forwarded-User"
 ```
 
 **Security — read this.** A forwarded header is trivially spoofable by a direct
-client, so Maverick honors it **only when the request's network peer is a
+client, so Lightwork honors it **only when the request's network peer is a
 trusted upstream** (`trusted_proxies`; default loopback, since the proxy usually
 runs on the same host). For this to be safe you **must**:
 
@@ -538,7 +538,7 @@ see a role biting). Direct (non-proxy) requests must not carry a honored header.
 
 ## Encryption at rest
 
-**What it does.** AES-256-GCM authenticated encryption for Maverick's sensitive
+**What it does.** AES-256-GCM authenticated encryption for Lightwork's sensitive
 local stores. By default the kernel keeps state in plaintext on disk; this seals
 it so anyone who can read `~/.maverick` can't read its contents. This increment
 wires it into the **cross-session memory** store (the most leak-sensitive
@@ -665,8 +665,8 @@ export MAVERICK_AUDIT_SIGN=1
 | --- | --- |
 | `maverick soc2` | Print a SOC 2 technical-posture snapshot as JSON (which controls are ON + whether the audit log verifies). Add `--json` for compact single-line output. Fail-soft: always emits JSON, exits 0. |
 | `maverick audit verify` | Verify the Ed25519 hash-chain (+ cross-file tip-ledger) of a signed audit log. Exits non-zero if the chain is not intact, so it can gate CI/cron. |
-| `maverick dsar export --user <id>` | GDPR Art. 15/20 (access / portability): export everything Maverick holds for a subject as a JSON bundle. |
-| `maverick erase --channel <c> --user <id>` | GDPR Art. 17 (right to erasure): erase everything Maverick knows about a `(channel, user_id)` pair. |
+| `maverick dsar export --user <id>` | GDPR Art. 15/20 (access / portability): export everything Lightwork holds for a subject as a JSON bundle. |
+| `maverick erase --channel <c> --user <id>` | GDPR Art. 17 (right to erasure): erase everything Lightwork knows about a `(channel, user_id)` pair. |
 
 **`maverick audit verify` flags:**
 

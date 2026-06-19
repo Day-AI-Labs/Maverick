@@ -4,7 +4,7 @@
 **Status:** kit complete; an instructor adopting it is the remaining
 operational work. Pairs with [`university-outreach.md`](./university-outreach.md)
 — **the educational license grant in that kit's IP note is a prerequisite**
-for running this course (Maverick is proprietary; coursework needs the
+for running this course (Lightwork is proprietary; coursework needs the
 written grant).
 
 A semester course — *Building and Governing Autonomous Agent Systems* — for

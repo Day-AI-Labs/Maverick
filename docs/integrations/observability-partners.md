@@ -1,6 +1,6 @@
 # Observability and provider integrations
 
-How to wire Maverick into OpenRouter, LangSmith, and Helicone using the
+How to wire Lightwork into OpenRouter, LangSmith, and Helicone using the
 surfaces that already ship: the OpenRouter provider in the 12-provider router
 (`llm.py`), the opt-in OpenTelemetry / Prometheus / Sentry observability layer
 (`observability.py`), and the `base_url` mechanism on OpenAI-compatible
@@ -20,7 +20,7 @@ Substrate, per [`FEATURES.md`](../FEATURES.md):
 ## OpenRouter as a provider
 
 OpenRouter is OpenAI-compatible at `https://openrouter.ai/api/v1` and
-aggregates models from many vendors. Maverick ships a first-class provider for
+aggregates models from many vendors. Lightwork ships a first-class provider for
 it — configure a key, then route any role to it.
 
 ```toml
@@ -61,7 +61,7 @@ pre-flight estimate without spending, use `maverick start ... --dry-cost`.
 
 ## Tracing into LangSmith
 
-Maverick has **no bespoke LangSmith integration**. What it has is an opt-in
+Lightwork has **no bespoke LangSmith integration**. What it has is an opt-in
 OpenTelemetry exporter that speaks standard OTLP/HTTP, emitting spans that
 follow the OTel GenAI semantic conventions (span name `<operation> <model>`;
 provider, model, token, and cost attributes) — one span per LLM call, per tool
@@ -106,8 +106,8 @@ curl -s http://127.0.0.1:9100/metrics | grep maverick_llm
 
 ## Helicone as a gateway
 
-Maverick has **no bespoke Helicone integration** either. LLM gateways like
-Helicone proxy the OpenAI chat-completions protocol, and Maverick already
+Lightwork has **no bespoke Helicone integration** either. LLM gateways like
+Helicone proxy the OpenAI chat-completions protocol, and Lightwork already
 supports arbitrary OpenAI-compatible endpoints through the `base_url`
 mechanism — the same one behind the TGI, vLLM, and Ollama providers. The
 generic form is the `openai_compatible` provider:
@@ -125,7 +125,7 @@ summarizer = "openai_compatible:<model-id-the-gateway-expects>"
 
 Two honest constraints:
 
-- Maverick sends the key as a standard OpenAI-style bearer `Authorization`
+- Lightwork sends the key as a standard OpenAI-style bearer `Authorization`
   header. Gateways that authenticate that way (or encode routing into the key
   or URL) work; a gateway mode that requires **extra custom headers on every
   LLM request** has no config knob today.

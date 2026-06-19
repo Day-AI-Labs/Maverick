@@ -1,12 +1,12 @@
-# How Maverick compares
+# How Lightwork compares
 
-Where Maverick sits among agent frameworks and coding agents. This page
-describes **Maverick's** capabilities precisely (each row links to the shipped
+Where Lightwork sits among agent frameworks and coding agents. This page
+describes **Lightwork's** capabilities precisely (each row links to the shipped
 implementation in [`FEATURES.md`](./FEATURES.md)); for other tools it states
 only their well-known positioning. Vendors move fast — **verify any competitor
 specifics against their own current docs** before relying on them.
 
-## What Maverick is
+## What Lightwork is
 
 A **proprietary, self-hostable, governed agent platform**: a recursive
 multi-agent kernel wrapped in an oversight/compliance/fleet control plane, on a
@@ -19,10 +19,10 @@ the deepest agent framework available.
 > Category note: coding-agent runtimes (Hermes / OpenClaw / Cline / Aider)
 > are a different layer — free or commodity agent loops. They appear here
 > for orientation, not because they compete with an agentic enterprise
-> platform; Maverick's competitive set is Agentforce, Copilot agents,
+> platform; Lightwork's competitive set is Agentforce, Copilot agents,
 > Gemini Enterprise, and ServiceNow AI Agents.
 
-| | Maverick | Devin | Hermes / OpenClaw | Cline / Aider |
+| | Lightwork | Devin | Hermes / OpenClaw | Cline / Aider |
 |---|---|---|---|---|
 | Primary form | Self-hosted platform + CLI | Hosted product | Coding agents | IDE / CLI coding agents |
 | Prebuilt business specialists | **1,118 across 26 suites** (lint-audited envelopes) | No | No | No |
@@ -36,10 +36,10 @@ the deepest agent framework available.
 | Safety chokepoint (shield) | **Input/tool/output** | Internal | Varies | No |
 | License | Proprietary (lite edition TBD) | Proprietary | Mixed | Open source |
 
-The cells under "Maverick" are grounded in shipped code; the other columns are
+The cells under "Lightwork" are grounded in shipped code; the other columns are
 deliberately coarse to avoid asserting details that may be stale.
 
-## Where Maverick is strongest
+## Where Lightwork is strongest
 
 - **Governance you can prove.** Signed append-only audit log, compliance-regime
   packs (SOX/GAAP/PCI/GLBA/…), DSAR, SOC2 readiness, per-principal quotas, and
@@ -61,7 +61,7 @@ deliberately coarse to avoid asserting details that may be stale.
 
 ## Migrating in
 
-Maverick consumes the wider ecosystem rather than replacing your tools: it
+Lightwork consumes the wider ecosystem rather than replacing your tools: it
 speaks **MCP** (as server and client), **A2A** (Agent Card), and ships
 **LangChain/LangGraph** interop and **AutoGen/CrewAI** adapters, so existing
 tools and agents plug in. Start with [`getting-started.md`](./getting-started.md).

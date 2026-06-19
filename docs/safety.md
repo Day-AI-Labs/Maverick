@@ -1,6 +1,6 @@
 # Safety
 
-Maverick wraps its agent loop in [Agent Shield](https://github.com/cdayAI/agent-shield) at three chokepoints:
+Lightwork wraps its agent loop in [Agent Shield](https://github.com/cdayAI/agent-shield) at three chokepoints:
 
 1. **Input scan** — every user message goes through `shield.scan_input()` before the orchestrator sees it.
 2. **Tool-call scan** — every `tool_use` request goes through `shield.scan_tool_call(name, args)` before the sandbox executes it.
@@ -25,7 +25,7 @@ block_threshold = "high"
 
 ## What gets caught
 
-The **full Agent Shield SDK** (`pip install agent-shield`, ~115 patterns, F1 0.988 on real-world benchmarks) covers the categories below. Without it, Maverick falls back to a **built-in ~20-pattern** subset — the F1 number does NOT apply to the fallback. The categories below describe the full SDK:
+The **full Agent Shield SDK** (`pip install agent-shield`, ~115 patterns, F1 0.988 on real-world benchmarks) covers the categories below. Without it, Lightwork falls back to a **built-in ~20-pattern** subset — the F1 number does NOT apply to the fallback. The categories below describe the full SDK:
 
 - **Prompt injection** — system prompt overrides, ChatML/LLaMA delimiters, instruction hijacking
 - **Role hijacking** — DAN mode, developer mode, persona attacks, jailbreaks

@@ -1,6 +1,6 @@
 # Connectors
 
-Maverick ships connectors to the systems enterprises actually run on. Every
+Lightwork ships connectors to the systems enterprises actually run on. Every
 connector follows the same house rules:
 
 - **Explicit-env auth.** Each connector reads its credentials from named

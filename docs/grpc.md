@@ -1,6 +1,6 @@
 # gRPC API
 
-Maverick exposes a small gRPC surface for driving the agent runtime from any
+Lightwork exposes a small gRPC surface for driving the agent runtime from any
 language: start a goal, stream its episode events, cancel it, and read status.
 It is the cross-language complement to the [MCP server](./api.md) — pick gRPC
 when you want a typed, streaming RPC contract and your own client codegen.
@@ -22,7 +22,7 @@ proto to generate a client in Go, Rust, TypeScript, C#, Java, etc.
 ## Service
 
 ```proto
-service Maverick {
+service Lightwork {
   rpc StartGoal(StartGoalRequest) returns (StartGoalResponse);
   rpc StreamEpisode(StreamEpisodeRequest) returns (stream Event);
   rpc Cancel(CancelRequest) returns (CancelResponse);

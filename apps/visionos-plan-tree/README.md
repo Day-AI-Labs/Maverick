@@ -1,6 +1,6 @@
-# Maverick AR plan tree (visionOS scaffold)
+# Lightwork AR plan tree (visionOS scaffold)
 
-A minimal SwiftUI + RealityKit visionOS app rendering a Maverick goal
+A minimal SwiftUI + RealityKit visionOS app rendering a Lightwork goal
 forest as a 3D plan tree in a volumetric window: each goal is a small
 sphere colored by status, parent links are thin connecting bars, and
 gazing at a node + pinching shows its title/status card.
@@ -19,7 +19,7 @@ sit in front of one another.
 
 **Build requirements (not possible in this repo's CI):** Xcode 16+ on
 macOS with the visionOS SDK; an Apple Vision Pro or the visionOS
-simulator. Create a visionOS App target named `MaverickPlanTree`, choose
+simulator. Create a visionOS App target named `LightworkPlanTree`, choose
 the *Volume* window style, and add the two Swift files. Set
 `MAVERICK_DASHBOARD_URL` (and `MAVERICK_DASHBOARD_TOKEN` if the dashboard
 sets one) in the scheme's environment or the in-app settings.

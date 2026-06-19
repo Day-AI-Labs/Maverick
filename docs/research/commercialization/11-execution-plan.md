@@ -41,7 +41,7 @@ These pay off whether or not you pivot, so they don't wait on the gate:
    every idle week is a week deal #1 slips (teardown 07). ~$35–60K boutique [verify].
 3. **Trust surface:** a public trust page, a DPA + SCC + sub-processor draft, and a
    pre-filled SIG-Lite/CAIQ. Lead the sale with self-host to shrink the questionnaire (07).
-4. **Trademark clearance** on "Maverick" (the real enforcement lever; currently unguarded) —
+4. **Trademark clearance** on "Lightwork" (the real enforcement lever; currently unguarded) —
    *clearance now, public filing gated to Gate 0* (teardown 01, [`14`](./14-licensing-and-positioning-execution.md)).
 5. **Fix the cross-tenant leak as a security patch** — `server.py:81-88` writes the world
    model/audit outside `tenant_scope`. This is a correctness/safety fix independent of the

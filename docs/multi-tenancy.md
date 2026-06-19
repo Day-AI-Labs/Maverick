@@ -1,12 +1,12 @@
 # Multi-tenancy
 
-Maverick can isolate many tenants (organizations / workspaces / end-users) on
+Lightwork can isolate many tenants (organizations / workspaces / end-users) on
 shared infrastructure, or run one instance per tenant. This page is the map of
 what is isolated, how to provision, and where the boundaries are.
 
 ## Turning it on
 
-Tenancy is **opt-in and fail-open**: with nothing configured, Maverick is a
+Tenancy is **opt-in and fail-open**: with nothing configured, Lightwork is a
 single-tenant install and behaves exactly as before.
 
 - `MAVERICK_TENANT_BY_USER=1` (or `[tenancy] by_user = true`) — each channel
@@ -106,7 +106,7 @@ back to the originating channel — there is **no cross-tenant reply leak** — 
 all tenants behind one process share that one bot identity and its allow-lists.
 
 When tenants need **distinct bot identities** (their own Slack workspace bot,
-their own inbound email address/webhook), run **one Maverick instance per
+their own inbound email address/webhook), run **one Lightwork instance per
 tenant**. The Helm chart (`deploy/helm`) plus the per-tenant config overlay make
 this cheap: one release per tenant, each with its own `[channels.*]` and
 credentials. `maverick serve` logs an advisory when it detects a multi-tenant

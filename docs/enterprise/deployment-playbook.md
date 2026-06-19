@@ -1,6 +1,6 @@
 # Enterprise Deployment Playbook
 
-A step-by-step runbook for standing up Maverick for an enterprise customer:
+A step-by-step runbook for standing up Lightwork for an enterprise customer:
 what to **collect from them**, what to **provision**, how to **install**, how to
 **harden**, how to **verify**, and how to **operate** day-2. Every command and
 config key below is real; anything not yet implemented is called out explicitly
@@ -63,7 +63,7 @@ From their IdP (Okta/Entra/Auth0/Google):
 ### 2.4 Network / TLS
 - ☐ A **DNS hostname** for the dashboard (e.g. `maverick.customer.com`).
 - ☐ **TLS certificate** (their cert, or cert-manager/Let's Encrypt). TLS is
-  terminated at their ingress/reverse proxy — Maverick assumes HTTPS in front.
+  terminated at their ingress/reverse proxy — Lightwork assumes HTTPS in front.
 
 ### 2.5 Secrets you will generate (give them visibility, store in their secret store)
 - ☐ `MAVERICK_DASHBOARD_TOKEN` — random 32+ bytes (API/remote auth).
@@ -123,7 +123,7 @@ hardened: runAsNonRoot, drop ALL caps, fsGroup, seccomp RuntimeDefault).
 
 ### 4.2 VPS / single Linux host
 ```bash
-curl -sSL https://raw.githubusercontent.com/Day-AI-Labs/Maverick/main/deploy/vps/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Day-AI-Labs/Lightwork/main/deploy/vps/install.sh | sudo bash
 ```
 Creates a dedicated `maverick` user, pipx install, a hardened systemd unit
 (NoNewPrivileges, ProtectSystem=strict, memory cgroups, crash-loop limit), and a
@@ -258,7 +258,7 @@ HTTP probes (auth-exempt; payload redacts when a token is set):
   `maverick_concurrent_goals`); bearer-gated when a token is set.
 
 Wire monitoring from `deploy/observability/`: `prometheus-rules.yaml`
-(MaverickDown, ConcurrencySaturated, SpendSpike, GoalFailureRate),
+(LightworkDown, ConcurrencySaturated, SpendSpike, GoalFailureRate),
 `grafana-dashboard.json`, and `runbook.md`.
 
 ---

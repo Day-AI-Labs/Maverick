@@ -1,6 +1,6 @@
 # Reference architectures
 
-Self-hosted deployment blueprints for the Maverick runtime, one per platform.
+Self-hosted deployment blueprints for the Lightwork runtime, one per platform.
 Each directory is a minimal, working starting point — copy it, fill in the
 placeholders (image registry, secrets), and grow it to your environment.
 
@@ -23,5 +23,5 @@ Shared assumptions:
 - **Surface**: the long-running process is `maverick dashboard --host 0.0.0.0
   --port 8765` (web UI + API + webhooks). One-shot goals run as jobs/exec:
   `maverick start "..."`.
-- **Self-host first** (house rule): none of these require a hosted Maverick
+- **Self-host first** (house rule): none of these require a hosted Lightwork
   service; they run entirely in your account.

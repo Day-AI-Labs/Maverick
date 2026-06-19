@@ -7,7 +7,7 @@ operational work. **Cohort size and any stipend are founder decisions.**
 Ambassadors are practitioners who already do the work — answer questions,
 run meetups, write honest material — and get recognized and equipped for it.
 The title follows the behavior; it is never a growth-hacking job posting.
-Because Maverick is proprietary, ambassadors are *community* voices, not a
+Because Lightwork is proprietary, ambassadors are *community* voices, not a
 sales channel: they are never asked to pitch licenses.
 
 ## Criteria (all required)
@@ -40,14 +40,14 @@ months, renewable on the same criteria.
 | Access | A private channel with the maintainer; pre-release notes at tag time (no embargoed secrets — the repo is the source of truth) |
 | Event support | Meetup kit + costs per [`meetups.md`](./meetups.md); summit speaking-slot priority (content still vets on merit) |
 | Swag | Contributor-grade gift per [`swag.md`](./swag.md) |
-| License for demos | A written demo/evaluation license grant from the Licensor covering their ambassador activities — required because Maverick is proprietary; scope is a **founder decision** |
+| License for demos | A written demo/evaluation license grant from the Licensor covering their ambassador activities — required because Lightwork is proprietary; scope is a **founder decision** |
 | Stipend | _Founder decision; default none — this is recognition, not employment_ |
 
 ## Obligations (kept light)
 
 - Stay active: roughly one community act per quarter (a meetup, a talk, a
   tutorial, sustained triage). No quotas beyond that.
-- **Disclose the affiliation** whenever speaking about Maverick.
+- **Disclose the affiliation** whenever speaking about Lightwork.
 - Follow the claims policy (capabilities from `FEATURES.md`, forward-looking
   statements labeled as roadmap, no open-source promises — the lite edition
   is a stated possibility, not a commitment) and

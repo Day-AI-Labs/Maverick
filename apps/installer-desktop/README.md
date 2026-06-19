@@ -3,7 +3,7 @@
 Native Tauri GUI installer for users who never open a terminal. A
 double-click app with one button: it runs the same bootstrap the CLI
 one-liners use (`deploy/desktop/install.{ps1,sh}`) behind a live
-progress screen, so the user gets Maverick installed without touching a
+progress screen, so the user gets Lightwork installed without touching a
 shell.
 
 ## How it works
@@ -19,7 +19,7 @@ shell.
                                           deploy/desktop/install.{ps1,sh}
                                           (MAVERICK_NO_WIZARD=1):
                                           installs Python + git if needed,
-                                          then pipx-installs Maverick
+                                          then pipx-installs Lightwork
 ```
 
 The Rust shell owns the window and runs the bootstrap as a subprocess,
@@ -56,7 +56,7 @@ pnpm tauri dev
 
 Hot-reloads the Svelte frontend. Clicking **Install** runs the bundled
 bootstrap, so test in a throwaway VM/container unless you actually want
-Maverick installed on your dev box. The desktop app pins the installed
+Lightwork installed on your dev box. The desktop app pins the installed
 source to the git commit captured at build time; set
 `MAVERICK_INSTALL_REF=<commit-or-tag>` while building only when you need
 to override that ref intentionally.
@@ -85,5 +85,5 @@ Outputs per platform:
 | Native webview | system (WebKit / WebView2 / WebKitGTK) | bundled Chromium |
 | Rust shell | yes (security, smaller attack surface) | no |
 
-Maverick already needs Rust in the toolchain for the agent-shield
+Lightwork already needs Rust in the toolchain for the agent-shield
 performance core, so adding Tauri is essentially free.

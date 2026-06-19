@@ -29,7 +29,7 @@ The cardinal rule, generalized verbatim from `legal.toml` and applied to every a
 ## Contents
 
 1. [What's already shipped — the reuse map](#1-whats-already-shipped--the-reuse-map)
-2. [How a legal agent maps onto Maverick](#2-how-a-legal-agent-maps-onto-maverick)
+2. [How a legal agent maps onto Lightwork](#2-how-a-legal-agent-maps-onto-maverick)
 3. [The control model (cross-cutting)](#3-the-control-model-cross-cutting)
 4. [Per-client customization — the dials](#4-per-client-customization--the-dials)
 5. [The roster — eight towers](#5-the-roster--eight-towers)
@@ -78,7 +78,7 @@ is wired; "verify *every* cite or mark it unverified" is the enforcement to buil
 
 ---
 
-## 2. How a legal agent maps onto Maverick
+## 2. How a legal agent maps onto Lightwork
 
 Each agent is a [`DomainProfile`](../../packages/maverick-core/maverick/domain.py) pack
 that **inherits the `legal.toml` spine** (cite precisely, not legal advice, human-confirm)

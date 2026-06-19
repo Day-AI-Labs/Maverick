@@ -97,7 +97,7 @@ def test_permissions_page_renders(monkeypatch, tmp_path):
     r = client.get("/permissions")
     assert r.status_code == 200
     text = r.text
-    assert "what maverick can do" in text.lower()
+    assert "what lightwork can do" in text.lower()
     assert "your data" in text.lower()
     assert "No telemetry" in text
     # Nav link present.

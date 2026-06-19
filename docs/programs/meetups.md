@@ -14,7 +14,7 @@ can run one under this playbook.
 | Minutes | Block |
 |---|---|
 | 0-20 | Doors + setup; the demo loop running on a screen |
-| 20-30 | Welcome: what Maverick is in 5 minutes (handbook one-pager), what shipped lately (`CHANGELOG.md`) |
+| 20-30 | Welcome: what Lightwork is in 5 minutes (handbook one-pager), what shipped lately (`CHANGELOG.md`) |
 | 30-60 | One prepared talk: a real deployment, a built skill/plugin, or a module deep-dive — showcase-wall evidence standard preferred ([`showcase.md`](../showcase.md)) |
 | 60-90 | Live workshop block: attendees install (`pipx install 'maverick-agent[installer]'`, `maverick init --fast`) and run a first goal with `maverick monitor` open; organizers float |
 | 90-115 | Open discussion / show-and-tell |
@@ -32,7 +32,7 @@ demo machine cover it), and remind people the runtime spends real API money —
 - [ ] Listing: any events platform or a repo discussion thread; the listing
       states it's a community event, [CoC](../../CODE_OF_CONDUCT.md)
       linked and enforced (organizer is the contact).
-- [ ] Naming/trademark: "Maverick Meetup <City>" is permitted nominative
+- [ ] Naming/trademark: "Lightwork Meetup <City>" is permitted nominative
       use **with written permission per [`TRADEMARK.md`](../../TRADEMARK.md)**
       — request it once when registering the meetup (below); no logo
       remixes, no implying official-company status.

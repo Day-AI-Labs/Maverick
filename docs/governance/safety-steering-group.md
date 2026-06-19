@@ -13,7 +13,7 @@
 
 ## Purpose
 
-The Safety Steering Group (SSG) is the body that owns Maverick's safety
+The Safety Steering Group (SSG) is the body that owns Lightwork's safety
 posture across releases: it decides what capabilities ship, under what
 guardrails, and what gets declined — and it is the named escalation point
 when a safety question can't be resolved inside a normal PR review. It exists
@@ -53,7 +53,7 @@ group, with a written record — not implicitly, one merge at a time.
 
 - **Routine code review** — owned by maintainers. The SSG is the escalation
   target, not a second reviewer on every PR.
-- **Operator configuration choices** — Maverick is operator-controlled by
+- **Operator configuration choices** — Lightwork is operator-controlled by
   design; the SSG sets *defaults* and *what ships*, not what a given operator
   does in their own deployment.
 - **Company HR/legal/process governance** — those belong to company

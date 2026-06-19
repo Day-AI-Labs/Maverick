@@ -1,10 +1,10 @@
 # maverick-channels
 
-Channel adapters for Maverick. A channel normalizes incoming messages
+Channel adapters for Lightwork. A channel normalizes incoming messages
 from any platform into a shared `{user_id, text, attachments}` shape,
 hands it to the orchestrator, and routes the response back.
 
-This is how phone-companion mode works: Maverick itself runs on your
+This is how phone-companion mode works: Lightwork itself runs on your
 Desktop or VPS (`maverick serve`), and any of these channels gives your
 phone (or any other client) a frontend.
 

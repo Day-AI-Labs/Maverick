@@ -2,7 +2,7 @@
 
 **Status:** living plan. The compartment safety substrate (Rungs 0–1) is merged
 / in review; this doc tracks the rest: domain packs, intake, knowledge upload,
-multi-tenancy, and the UX that turns Maverick into a factory that *spits out*
+multi-tenancy, and the UX that turns Lightwork into a factory that *spits out*
 tailored, sealed domain agents.
 
 ## The product

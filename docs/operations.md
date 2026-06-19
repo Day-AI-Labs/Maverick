@@ -145,7 +145,7 @@ Scheduled (systemd timer, recommended on VPS):
 ```ini
 # /etc/systemd/system/maverick-gc.timer
 [Unit]
-Description=Maverick weekly garbage collection
+Description=Lightwork weekly garbage collection
 
 [Timer]
 OnCalendar=weekly
@@ -158,7 +158,7 @@ WantedBy=timers.target
 ```ini
 # /etc/systemd/system/maverick-gc.service
 [Unit]
-Description=Maverick GC
+Description=Lightwork GC
 After=maverick.service
 
 [Service]
