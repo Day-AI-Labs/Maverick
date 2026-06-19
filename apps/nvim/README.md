@@ -23,12 +23,12 @@ lazy.nvim:
 
 | Command | What it does |
 |---|---|
-| `:LightworkStart {goal}` | start a goal (prompts when no arg) |
-| `:LightworkStatus` | runtime status + cost |
-| `:LightworkMonitor` | live plan-tree TUI in a terminal split |
-| `:LightworkLogs` | recent run logs |
-| `:LightworkHalt` | arm the killswitch (confirms first) |
-| `:LightworkUnhalt` | clear the killswitch |
+| `:MaverickStart {goal}` | start a goal (prompts when no arg) |
+| `:MaverickStatus` | runtime status + cost |
+| `:MaverickMonitor` | live plan-tree TUI in a terminal split |
+| `:MaverickLogs` | recent run logs |
+| `:MaverickHalt` | arm the killswitch (confirms first) |
+| `:MaverickUnhalt` | clear the killswitch |
 
 Classic Vim (non-Neovim) users: the CLI works in any `:terminal` —
 `maverick monitor` is the same TUI.

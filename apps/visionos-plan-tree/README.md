@@ -19,7 +19,7 @@ sit in front of one another.
 
 **Build requirements (not possible in this repo's CI):** Xcode 16+ on
 macOS with the visionOS SDK; an Apple Vision Pro or the visionOS
-simulator. Create a visionOS App target named `LightworkPlanTree`, choose
+simulator. Create a visionOS App target named `MaverickPlanTree`, choose
 the *Volume* window style, and add the two Swift files. Set
 `MAVERICK_DASHBOARD_URL` (and `MAVERICK_DASHBOARD_TOKEN` if the dashboard
 sets one) in the scheme's environment or the in-app settings.

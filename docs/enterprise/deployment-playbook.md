@@ -258,7 +258,7 @@ HTTP probes (auth-exempt; payload redacts when a token is set):
   `maverick_concurrent_goals`); bearer-gated when a token is set.
 
 Wire monitoring from `deploy/observability/`: `prometheus-rules.yaml`
-(LightworkDown, ConcurrencySaturated, SpendSpike, GoalFailureRate),
+(MaverickDown, ConcurrencySaturated, SpendSpike, GoalFailureRate),
 `grafana-dashboard.json`, and `runbook.md`.
 
 ---

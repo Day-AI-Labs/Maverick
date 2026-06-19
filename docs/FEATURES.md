@@ -2053,7 +2053,7 @@ tested without spawning py-spy.
 - **IDE / CI** — VS Code extension (`apps/vscode-extension/`), **Emacs
   package** (`apps/emacs/maverick.el`: M-x maverick-start/status/monitor/
   logs/halt/unhalt over the CLI, deps-free, Emacs 27.1+), **Neovim plugin**
-  (`apps/nvim/`: :LightworkStart/Status/Monitor/Logs/Halt/Unhalt, lazy.nvim-
+  (`apps/nvim/`: :MaverickStart/Status/Monitor/Logs/Halt/Unhalt, lazy.nvim-
   ready, terminal-split UX), **Zed extension** (`apps/zed-extension/`:
   registers `maverick mcp` as a context server — Zed extensions run in a
   WASI sandbox and cannot exec, so CLI verbs ship as Zed tasks; compiling
