@@ -57,6 +57,13 @@ async def _handle_discord_message(message, *, bot_user, allowed_user_ids, dispat
         # Don't leak internals (exception text / class names) to the chat.
         log.exception("discord handler error")
         reply = "⚠ error handling your message"
+    # An empty reply (action-only goal, or a Reply whose text dispatch dropped)
+    # must not be sent: split_for_discord("") returns [""], and channel.send("")
+    # is rejected by Discord with a 400 "Cannot send an empty message", which
+    # propagates out of on_message as an unhandled task error. Guard with
+    # `if reply:` like the other channels.
+    if not reply:
+        return
     from .formatting import split_for_discord
     for chunk in split_for_discord(reply):
         await message.channel.send(chunk)

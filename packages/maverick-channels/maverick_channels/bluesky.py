@@ -17,6 +17,7 @@ import asyncio
 import datetime as _dt
 import logging
 import os
+import re
 from collections import deque
 
 from .base import (
@@ -42,6 +43,34 @@ _POLL_INTERVAL_SEC = 30.0
 # Bound on the recently-seen notification-uri dedup set (FIFO eviction). The
 # poll window is the 50 newest notifications, so this is generous headroom.
 _MAX_SEEN_URIS = 1000
+
+_FRAC_RE = re.compile(r"\.(\d+)")
+
+
+def _parse_indexed_at(ts: str) -> _dt.datetime | None:
+    """Parse an AT-proto ``indexedAt`` into an aware UTC datetime.
+
+    Tolerant of the varying fractional precision AT-proto emits (``...:00Z``,
+    ``...:00.123Z``, ``...:00.123456789Z``) and of the trailing ``Z`` that
+    ``datetime.fromisoformat`` rejects before Python 3.11. Returns None if the
+    value is empty/unparseable so the caller can fall back to a string compare.
+
+    Why: the startup floor is seeded with 6-digit microseconds, but a raw
+    string ``<=`` compares ``"…:00Z"`` as GREATER than ``"…:00.000000Z"``
+    (``'Z'`` > ``'.'``), so a boundary-second notification with no/short
+    fractional part slips past the "don't backfill history" floor.
+    """
+    s = (ts or "").strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    # Clamp fractional seconds to microseconds; fromisoformat rejects >6 digits.
+    s = _FRAC_RE.sub(lambda m: "." + m.group(1)[:6].ljust(6, "0"), s, count=1)
+    try:
+        return _dt.datetime.fromisoformat(s)
+    except ValueError:
+        return None
 
 
 class BlueskyChannel(Channel):
@@ -139,8 +168,15 @@ class BlueskyChannel(Channel):
             if reason not in ("mention", "reply"):
                 continue
             ts = n.get("indexedAt", "")
-            if self._last_seen_indexed_at and ts and ts <= self._last_seen_indexed_at:
-                continue  # at/before startup -> pre-history, skip
+            floor = self._last_seen_indexed_at
+            if floor and ts:
+                ts_dt = _parse_indexed_at(ts)
+                floor_dt = _parse_indexed_at(floor)
+                if ts_dt is not None and floor_dt is not None:
+                    if ts_dt <= floor_dt:
+                        continue  # at/before startup -> pre-history, skip
+                elif ts <= floor:
+                    continue  # unparseable: conservative lexicographic fallback
             uri = n.get("uri") or ""
             if uri and uri in self._seen_uris:
                 continue  # already delivered this exact notification

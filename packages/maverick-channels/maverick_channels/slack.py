@@ -104,10 +104,14 @@ class SlackChannel(Channel):
                     except Exception:  # pragma: no cover
                         log.exception("handler error")
                         reply = "⚠ An internal error occurred."
-                    if self.thread_replies and event.get("ts"):
+                    # An empty reply (action-only goal, or a Reply whose text
+                    # dispatch dropped) must not be sent: chat_postMessage(text="")
+                    # is rejected by Slack with `no_text`, raising out of the
+                    # handler. Guard with `if reply:` like the other channels.
+                    if reply and self.thread_replies and event.get("ts"):
                         await self.send_threaded(
                             event["channel"], reply, reply_to=event["ts"])
-                    else:
+                    elif reply:
                         # Route through send() so the reply gets to_slack_mrkdwn
                         # + mrkdwn=True like every other outbound path; the raw
                         # chat_postMessage here left markdown unrendered whenever

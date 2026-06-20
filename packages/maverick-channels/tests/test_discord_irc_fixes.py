@@ -60,6 +60,22 @@ def test_discord_gates_unauthorized_author():
     assert called == [] and chan.sent == []
 
 
+def test_discord_empty_reply_is_not_sent():
+    # An empty reply (action-only goal, or a Reply whose text dispatch dropped)
+    # must not be sent: split_for_discord("") -> [""] and channel.send("") is a
+    # Discord 400 "Cannot send an empty message" that escapes on_message.
+    chan = _Chan()
+
+    async def empty(m):
+        return ""
+
+    asyncio.run(dmod._handle_discord_message(
+        _Msg("123", "hi", chan), bot_user=object(),
+        allowed_user_ids={"123"}, dispatch_text=empty))
+
+    assert chan.sent == []  # nothing sent, no empty-message API error
+
+
 def test_discord_handler_error_does_not_leak_internals():
     chan = _Chan()
 
