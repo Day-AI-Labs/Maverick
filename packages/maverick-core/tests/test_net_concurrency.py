@@ -27,6 +27,23 @@ def _reset_semaphores():
     nc._reset_for_tests()
 
 
+def test_get_semaphore_picks_up_cap_change():
+    """MAVERICK_NET_HOST_CONCURRENCY is a live tunable: a changed cap must
+    rebuild the per-host semaphore rather than keep the first one seen for the
+    loop's lifetime."""
+    async def go():
+        nc._reset_for_tests()
+        s4 = nc._get_semaphore("http:example.com", 4)
+        assert s4._mvk_cap == 4
+        # Same cap -> same cached object.
+        assert nc._get_semaphore("http:example.com", 4) is s4
+        # Changed cap -> a fresh semaphore carrying the new limit.
+        s8 = nc._get_semaphore("http:example.com", 8)
+        assert s8 is not s4 and s8._mvk_cap == 8
+
+    asyncio.run(go())
+
+
 @pytest.fixture
 def ctx(tmp_path: Path, fake_llm):
     world = WorldModel(tmp_path / "world.db")
