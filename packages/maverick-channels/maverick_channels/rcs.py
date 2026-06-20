@@ -259,14 +259,16 @@ class RcsChannel(Channel):
         )
         try:
             reply = await self.dispatch_text(incoming)
-        except Exception as e:
+        except Exception:
             log.exception("handler error")
             if wm is not None and msg_id:
                 try:
                     wm.release_processed_message("rcs", msg_id)
                 except Exception:  # pragma: no cover
                     log.warning("rcs dedup release failed")
-            reply = f"⚠ error: {e}"
+            # Generic user-facing text; raw exception detail (which can embed a
+            # secret) stays in the log only.
+            reply = "⚠ An internal error occurred."
         if reply:
             await self.send(sender, reply)
         return {"status": "ok"}

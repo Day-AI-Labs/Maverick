@@ -99,9 +99,12 @@ class TelegramChannel(Channel):
         )
         try:
             reply = await self.dispatch_text(msg)
-        except Exception as e:  # pragma: no cover
+        except Exception:  # pragma: no cover
+            # Don't reflect the raw exception text to the remote user -- it can
+            # carry a credential/internal path. The detail is logged above;
+            # the user gets a generic message (matches slack/signal).
             log.exception("handler error")
-            reply = f"⚠ error: {e}"
+            reply = "⚠ An internal error occurred."
         await update.message.reply_text(reply)
 
     async def start(self) -> None:

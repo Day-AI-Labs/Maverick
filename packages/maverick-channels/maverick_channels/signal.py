@@ -109,7 +109,14 @@ class SignalChannel(Channel):
             except Exception:  # pragma: no cover
                 log.exception("handler error")
                 reply = "⚠ An internal error occurred."
-            await self.send(source, reply)
+            try:
+                await self.send(source, reply)
+            except Exception:  # pragma: no cover
+                # signal-cli's stdin can break mid-send (daemon died/restarting,
+                # exactly when sends fail); an unguarded send here propagated out
+                # of start() and killed the whole receive loop. Other channels
+                # (email/sms/whatsapp) already guard their outbound send.
+                log.exception("signal reply send failed")
 
     async def send(self, user_id: str, text: str) -> None:
         await self._send_rpc("send", {"recipient": [user_id], "message": text})

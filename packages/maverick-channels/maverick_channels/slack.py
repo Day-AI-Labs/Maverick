@@ -108,8 +108,11 @@ class SlackChannel(Channel):
                         await self.send_threaded(
                             event["channel"], reply, reply_to=event["ts"])
                     else:
-                        await self._web.chat_postMessage(
-                            channel=event["channel"], text=reply)
+                        # Route through send() so the reply gets to_slack_mrkdwn
+                        # + mrkdwn=True like every other outbound path; the raw
+                        # chat_postMessage here left markdown unrendered whenever
+                        # thread_replies was off.
+                        await self.send(event["channel"], reply)
 
     async def start(self) -> None:
         await self._sm.connect()
