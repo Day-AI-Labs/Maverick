@@ -56,7 +56,7 @@ def test_quoted_secret_value_fully_redacted():
 
 
 def test_single_quoted_and_unquoted_values():
-    assert "secret" not in sec.redact("PASSWORD='hunter two'")[0]
+    assert "secret" not in sec.redact("PASSWORD='hunter two'")[0]  # pragma: allowlist secret
     # Unquoted value behaviour unchanged: token up to first whitespace.
     red, matches = sec.redact("DB_PASSWORD=hunter2 and more")
     assert any(m.name == "env_secret" for m in matches)
