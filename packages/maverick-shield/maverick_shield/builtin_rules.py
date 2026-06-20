@@ -19,9 +19,33 @@ users via the "agent-shield not installed" warning.
 from __future__ import annotations
 
 import base64
+import os
 import re
 import unicodedata
 from dataclasses import dataclass
+
+
+def _max_scan_chars() -> int:
+    """Upper bound on the input length scan() de-obfuscates + regex-matches.
+
+    scan() builds ~6 full-size de-obfuscated variants of the input (NFKC,
+    invisible-strip/space-sub, casefold, homoglyph-fold, shell-deobfuscate) and
+    runs ~40 regexes over each, so cost is linear in input length. The MCP HTTP
+    transport accepts a 2 MB body and feeds it straight in: ~2.7s of CPU per
+    scan, a linear-amplification DoS at the default 600 req/min. Cap the scanned
+    prefix so worst-case cost is bounded. Default 256 KB is far above any real
+    prompt/command/tool-output and above the latency gate's 200 KB probe, so
+    detection on realistic payloads is unchanged; operators can override.
+    """
+    raw = os.environ.get("MAVERICK_SHIELD_MAX_SCAN_CHARS")
+    if raw:
+        try:
+            parsed = int(raw)
+            if parsed > 0:
+                return parsed
+        except ValueError:
+            pass
+    return 262_144
 
 
 @dataclass
@@ -403,6 +427,13 @@ def scan(
     Blocked = True iff any rule fired at or above the configured threshold.
     """
     threshold_idx = _threshold_to_min_severity(block_threshold)
+    # Bound the scanned length first: candidate generation + ~40 regexes are
+    # linear in input size, so an oversized body (the MCP transport allows 2 MB)
+    # is a linear-amplification CPU DoS. Truncate to a generous, operator-tunable
+    # ceiling before the expensive de-obfuscation.
+    max_chars = _max_scan_chars()
+    if len(text) > max_chars:
+        text = text[:max_chars]
     # Scan the original text AND its de-obfuscated / base64-decoded variants,
     # so an encoded or quoted payload still trips the rule it was hiding from.
     candidates = _candidates(text)
