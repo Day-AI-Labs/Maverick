@@ -170,7 +170,7 @@ def test_calibration_samples_and_freeze_are_per_tenant(monkeypatch):
 # ---- per-tenant KMS isolation ----
 
 def test_tenant_dek_distinct_and_non_transferable():
-    from maverick.tenant_kms import tenant_dek
+    from maverick.tenant.kms import tenant_dek
     dek_a = tenant_dek("acme")
     dek_b = tenant_dek("globex")
     assert dek_a != dek_b
@@ -182,7 +182,7 @@ def test_tenant_dek_distinct_and_non_transferable():
 
 def test_wrapped_dek_does_not_unwrap_cross_tenant():
     from maverick.crypto_at_rest import EncryptionUnavailable
-    from maverick.tenant_kms import LocalKMS, tenant_dek
+    from maverick.tenant.kms import LocalKMS, tenant_dek
     kms = LocalKMS()
     dek = tenant_dek("acme")
     wrapped = kms.wrap(dek, context=b"tenant:acme")

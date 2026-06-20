@@ -23,7 +23,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from .replay_export import _iter_events_for_goal, _sanitize
+from .export import _iter_events_for_goal, _sanitize
 
 log = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ def render(goal_id: int, out_path: Path, *, sandbox=None,
                             "(pip install 'maverick-agent[computer-use]')")
 
     try:
-        from .tools import sandbox_run
+        from ..tools import sandbox_run
         code, _out, err = sandbox_run(sandbox, command, timeout=300)
         if code == 0 and out_path.exists():
             return RenderResult(len(frames), frame_dir, concat_path, command, True,

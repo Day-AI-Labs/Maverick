@@ -106,7 +106,7 @@ def test_queue_install_noop_without_backend(monkeypatch):
 
 def test_replay_trace_wired_into_blackboard(tmp_path):
     from maverick.blackboard import Blackboard
-    from maverick.replay_trace import TraceWriter, read_trace
+    from maverick.replay.trace import TraceWriter, read_trace
     bb = Blackboard()
     # Default: no trace writer -> posts don't crash and nothing is written.
     bb.post("a", "plan", "x")

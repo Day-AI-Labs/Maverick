@@ -104,7 +104,7 @@ def _price_for(model: str) -> tuple[float, float]:
     the cost router's table, then the documented Sonnet-list-rate fallback.
     One pricing source of truth — no rates are invented here.
     """
-    from .budget import _lookup_price
+    from ..budget import _lookup_price
     return _lookup_price(model)
 
 
@@ -125,7 +125,7 @@ def estimate_step(
     config > routers > defaults), so the projection prices the same model the
     run would use.
     """
-    from .llm import model_for_role
+    from ..llm import model_for_role
     role = (role or DEFAULT_STEP_ROLE).strip() or DEFAULT_STEP_ROLE
     overhead = STEP_OVERHEAD_TOKENS if overhead_tokens is None else max(0, int(overhead_tokens))
     in_tokens = len(text or "") // CHARS_PER_TOKEN + overhead

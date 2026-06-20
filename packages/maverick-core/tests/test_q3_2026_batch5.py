@@ -256,7 +256,7 @@ def test_replay_export_html(tmp_path, monkeypatch):
         # An event from a different goal should be excluded.
         {"kind": "goal_start", "ts": 1700000030, "goal_id": 99, "title": "other"},
     ])
-    import maverick.replay_export as rex
+    import maverick.replay.export as rex
     monkeypatch.setattr(rex, "_AUDIT_DIR", audit)
     out_file = tmp_path / "replay.html"
     n = rex.export_html(42, out_file)
@@ -274,7 +274,7 @@ def test_replay_export_json(tmp_path, monkeypatch):
         {"kind": "goal_start", "ts": 0},
         {"kind": "tool_call", "ts": 1, "tool": "shell"},
     ])
-    import maverick.replay_export as rex
+    import maverick.replay.export as rex
     monkeypatch.setattr(rex, "_AUDIT_DIR", audit)
     out_file = tmp_path / "replay.json"
     n = rex.export_json(7, out_file)
@@ -287,7 +287,7 @@ def test_replay_export_json(tmp_path, monkeypatch):
 def test_replay_export_empty_goal(tmp_path, monkeypatch):
     audit = tmp_path / "audit"
     audit.mkdir()
-    import maverick.replay_export as rex
+    import maverick.replay.export as rex
     monkeypatch.setattr(rex, "_AUDIT_DIR", audit)
     out_file = tmp_path / "replay.html"
     n = rex.export_html(123, out_file)

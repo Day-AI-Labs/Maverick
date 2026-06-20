@@ -26,7 +26,7 @@ _VALID_KINDS = ("templates", "skills", "personas", "mcp")
 class RatingsLedger:
     def __init__(self, path: Path | None = None):
         if path is None:
-            from .paths import data_dir
+            from ..paths import data_dir
             path = data_dir() / "marketplace_ratings.json"
         self.path = Path(path)
         self._lock = threading.Lock()

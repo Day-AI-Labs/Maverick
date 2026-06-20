@@ -1,8 +1,8 @@
 """Cloud KMS backends (BYOK) — the KEK lives in the customer's HSM/KMS.
 
-The default :class:`maverick.tenant_kms.LocalKMS` derives the KEK in-process. A
+The default :class:`maverick.tenant.kms.LocalKMS` derives the KEK in-process. A
 regulated client that mandates **customer-managed keys** wants the KEK to never
-leave their KMS/HSM; these backends implement the :class:`~maverick.tenant_kms.KMS`
+leave their KMS/HSM; these backends implement the :class:`~maverick.tenant.kms.KMS`
 ``wrap``/``unwrap`` Protocol by delegating to the cloud KMS Encrypt/Decrypt API,
 binding the tenant ``context`` as the KMS encryption context / AAD so a wrapped
 DEK can't be unwrapped under the wrong tenant/purpose.

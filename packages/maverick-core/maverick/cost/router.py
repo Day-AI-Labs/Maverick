@@ -79,7 +79,7 @@ def _rate_for(model_id: str) -> tuple[float, float] | None:
     llm.MODEL_PRICES catalog, or None if absent (so a stale tier entry is
     dropped from routing rather than scored against an invented rate)."""
     try:
-        from .llm import MODEL_PRICES
+        from ..llm import MODEL_PRICES
     except ImportError:
         return None
     return MODEL_PRICES.get(model_id)
@@ -175,7 +175,7 @@ class RolePolicy:
 def role_policy(role: str) -> RolePolicy:
     """The configured per-role policy (empty policy when unset)."""
     try:
-        from .config import load_config
+        from ..config import load_config
         roles = (((load_config() or {}).get("routing") or {}).get("roles") or {})
         raw = roles.get(role)
     except Exception:
@@ -207,7 +207,7 @@ def _enabled() -> bool:
     }:
         return True
     try:
-        from .config import load_config
+        from ..config import load_config
         cfg = (load_config() or {}).get("routing") or {}
         return bool(cfg.get("cost_aware"))
     except Exception:
@@ -223,7 +223,7 @@ def _allowed_providers() -> set[str] | None:
     the historical unrestricted behavior.
     """
     try:
-        from .config import load_config
+        from ..config import load_config
         routing = (load_config() or {}).get("routing") or {}
     except Exception:
         return None
@@ -257,7 +257,7 @@ def _provider_available(provider: str) -> bool:
             return True
     # Also accept "configured via maverick config" — cheap check.
     try:
-        from .config import load_config
+        from ..config import load_config
         cfg = (load_config() or {}).get("providers") or {}
         key = (cfg.get(provider) or {}).get("api_key")
         return bool(key.strip()) if isinstance(key, str) else bool(key)
@@ -287,7 +287,7 @@ def _max_error_rate() -> float:
     raw = os.environ.get("MAVERICK_ROUTING_MAX_ERROR_RATE")
     if raw is None:
         try:
-            from .config import load_config
+            from ..config import load_config
             routing = (load_config() or {}).get("routing") or {}
             raw = routing.get("max_error_rate")
         except Exception:
@@ -345,7 +345,7 @@ def pick(signal: CostSignal) -> str | None:
         return None
 
     try:
-        from .provider_health import get as _health
+        from ..provider_health import get as _health
         snap = {(r["provider"], r["model"]): r for r in _health().snapshot()}
     except Exception:
         snap = {}

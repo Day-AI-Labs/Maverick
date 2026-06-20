@@ -20,7 +20,7 @@ import os
 import time
 from dataclasses import dataclass, replace
 
-from .paths import _tenant_segment, maverick_home
+from ..paths import _tenant_segment, maverick_home
 
 ACTIVE = "active"
 SUSPENDED = "suspended"
@@ -146,7 +146,7 @@ def create_tenant(
     records[tid] = rec
     _save(records)
     # Materialize the workspace home so the tenant's data dir exists.
-    from .workspace import Workspace
+    from ..workspace import Workspace
     Workspace(tid).root.mkdir(parents=True, exist_ok=True)
     return rec
 
@@ -191,7 +191,7 @@ def delete_tenant(tenant_id: str, *, purge: bool = False) -> bool:
     if purge:
         import shutil
 
-        from .workspace import Workspace
+        from ..workspace import Workspace
         root = Workspace(tid).root
         # Only purge under the tenants/ tree, never the shared root.
         if "tenants" in root.parts:
@@ -233,8 +233,8 @@ def tenant_spend_today(tenant_id: str) -> float:
     run is tenant-pinned) and sums every principal's bucket for the current
     UTC day. Fail-soft: an unreadable ledger counts as zero spend.
     """
-    from .paths import data_dir
-    from .quotas import UsageLedger, _today
+    from ..paths import data_dir
+    from ..quotas import UsageLedger, _today
     try:
         ledger = UsageLedger(data_dir("usage", "ledger.json", tenant=tenant_id))
         data = ledger._load()

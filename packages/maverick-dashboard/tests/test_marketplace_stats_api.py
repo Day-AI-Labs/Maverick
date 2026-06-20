@@ -23,7 +23,7 @@ def test_stats_empty():
 
 
 def test_stats_reflects_ledger():
-    from maverick.marketplace_ratings import RatingsLedger
+    from maverick.marketplace.ratings import RatingsLedger
     led = RatingsLedger()
     led.rate("skills", "alpha", 5)
     led.rate("templates", "beta", 3)

@@ -7,7 +7,7 @@ Fail-open: no tenant, or an unlimited plan, enforces nothing.
 from __future__ import annotations
 
 import pytest
-from maverick import tenant_concurrency as tc
+from maverick.tenant import concurrency as tc
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +58,7 @@ def test_tenants_have_independent_ceilings(monkeypatch):
 def test_limit_derives_from_plan_entitlement(monkeypatch):
     # free plan default is 1 concurrent goal; unknown tenant -> free.
     monkeypatch.setattr(
-        "maverick.tenant_registry.get_tenant", lambda t: None
+        "maverick.tenant.registry.get_tenant", lambda t: None
     )
     assert tc._limit_for("whoever") == 1
 
@@ -66,7 +66,7 @@ def test_limit_derives_from_plan_entitlement(monkeypatch):
 def test_lookup_error_fails_open(monkeypatch):
     def boom(_t):
         raise RuntimeError("registry down")
-    monkeypatch.setattr("maverick.tenant_registry.get_tenant", boom)
+    monkeypatch.setattr("maverick.tenant.registry.get_tenant", boom)
     # A resolution error must never block a run -> treated as unlimited.
     assert tc._limit_for("acme") == 0
     assert tc.acquire("acme") is True

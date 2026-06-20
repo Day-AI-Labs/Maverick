@@ -16,7 +16,7 @@ from maverick.federation_envelope import (
     sign_envelope,
     verify_envelope,
 )
-from maverick.marketplace_federation import (
+from maverick.marketplace.federation import (
     MAX_LISTINGS_PER_ENVELOPE,
     SCHEMA,
     export_listings,
@@ -301,5 +301,5 @@ def test_peer_allowlist_parses_tables_and_strings():
 
 
 def test_module_states_ratings_do_not_federate():
-    import maverick.marketplace_federation as mod
+    import maverick.marketplace.federation as mod
     assert "Ratings do NOT federate" in (mod.__doc__ or "")

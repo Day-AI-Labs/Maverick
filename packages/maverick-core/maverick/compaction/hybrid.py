@@ -10,7 +10,7 @@ each conversation *shape*, from this instance's own outcomes:
     age span — no content leaves the process);
   - a per-(feature-bucket, strategy) outcome ledger with epsilon-greedy
     selection over an injected PRNG — reusing
-    :class:`maverick.cost_router_v3.ContextualBandit` (the existing atomic
+    :class:`maverick.cost.router_v3.ContextualBandit` (the existing atomic
     0600 JSON ledger + bandit helper) rather than duplicating it;
   - cold start (no outcomes for a bucket) falls back to the existing rule
     ladder, and **every** failure path falls open to the ladder/structural
@@ -42,7 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from random import Random
 
-from ..cost_router_v3 import ContextualBandit
+from ..cost.router_v3 import ContextualBandit
 
 log = logging.getLogger(__name__)
 

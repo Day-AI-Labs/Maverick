@@ -1,7 +1,7 @@
 """Cross-run spend rollup for `maverick costs`."""
 from __future__ import annotations
 
-from maverick.cost_report import SpendRow, aggregate, daily_series, format_report
+from maverick.cost.report import SpendRow, aggregate, daily_series, format_report
 
 _ROWS = [
     {"dollars": 1.0, "day": "2026-06-01", "tag": "acme", "model": "opus"},

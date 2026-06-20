@@ -296,7 +296,7 @@ def _per_tenant_env(monkeypatch, tmp_path, tenant="acme"):
         monkeypatch.setenv("MAVERICK_TENANT", tenant)
     else:
         monkeypatch.delenv("MAVERICK_TENANT", raising=False)
-    from maverick import tenant_kms
+    from maverick.tenant import kms as tenant_kms
     tenant_kms._clear_cache()
 
 
@@ -321,7 +321,7 @@ def test_per_tenant_enabled_by_config(monkeypatch):
 
 def test_tenant_magic_matches_tenant_kms():
     # The duplicated header constant must stay in lock-step with tenant_kms.
-    from maverick import tenant_kms
+    from maverick.tenant import kms as tenant_kms
     assert car._TENANT_MAGIC == tenant_kms._SEAL_MAGIC
 
 
@@ -357,7 +357,7 @@ def test_global_sealed_data_still_opens_after_per_tenant_on(monkeypatch, tmp_pat
     monkeypatch.setenv("MAVERICK_KMS_KEK", "ab" * 32)
     monkeypatch.setenv("MAVERICK_ENCRYPT_PER_TENANT", "1")
     monkeypatch.setenv("MAVERICK_TENANT", "acme")
-    from maverick import tenant_kms
+    from maverick.tenant import kms as tenant_kms
     tenant_kms._clear_cache()
     assert car.unseal(legacy) == b"sealed before the switch"
 
@@ -366,7 +366,7 @@ def test_global_sealed_data_still_opens_after_per_tenant_on(monkeypatch, tmp_pat
 def test_one_tenant_cannot_open_anothers_data(monkeypatch, tmp_path):
     _per_tenant_env(monkeypatch, tmp_path, tenant="acme")
     blob = car.seal(b"acme only")
-    from maverick import tenant_kms
+    from maverick.tenant import kms as tenant_kms
     # Re-pin to a different tenant; the GCM context no longer matches.
     monkeypatch.setenv("MAVERICK_TENANT", "beta")
     tenant_kms._clear_cache()

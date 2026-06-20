@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from random import Random
 
-from .config import env_flag
+from ..config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def enabled() -> bool:
     if env_flag("MAVERICK_ROUTING_BANDIT"):
         return True
     try:
-        from .config import load_config
+        from ..config import load_config
         return bool(((load_config() or {}).get("routing") or {}).get("bandit", False))
     except Exception:  # pragma: no cover -- config never blocks routing
         return False
@@ -162,7 +162,7 @@ def shared() -> ContextualBandit:
     global _shared
     with _shared_lock:
         if _shared is None:
-            from .paths import data_dir
+            from ..paths import data_dir
             _shared = ContextualBandit(path=data_dir("router_bandit.json"))
         return _shared
 

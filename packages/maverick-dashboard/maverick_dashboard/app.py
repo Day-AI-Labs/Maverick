@@ -1154,7 +1154,7 @@ async def tenants_page(request: Request) -> HTMLResponse:
     tenants = []
     if is_admin:
         try:
-            from maverick.tenant_registry import list_tenants
+            from maverick.tenant.registry import list_tenants
             tenants = list_tenants()
         except Exception:  # pragma: no cover -- never 500 the console
             tenants = []
@@ -1171,7 +1171,7 @@ def _tenant_overview_rows() -> list[dict]:
     counts/spend, never a 500. A tenant whose world.db doesn't exist yet (no
     runs) reports empty counts rather than materializing the DB.
     """
-    from maverick.tenant_registry import list_tenants, tenant_spend_today
+    from maverick.tenant.registry import list_tenants, tenant_spend_today
     rows: list[dict] = []
     for t in list_tenants():
         counts: dict[str, int] = {}
@@ -2192,7 +2192,7 @@ def template_market_entries() -> list[dict]:
     a template that no longer parses is skipped; a missing ratings ledger
     means everything shows unrated.
     """
-    from maverick.marketplace_ratings import RatingsLedger, stars_bar
+    from maverick.marketplace.ratings import RatingsLedger, stars_bar
     from maverick.templates import list_templates, load_template
     try:
         ratings = RatingsLedger().all_ratings("templates")
@@ -2403,7 +2403,7 @@ async def goal_cost_preview(request: Request, goal_id: int, iterations: int = 1)
     """Inline cost preview: project a pending goal's cost before running it.
 
     Treats the goal description as one step per non-empty line (or the whole
-    text as one step), projects tokens/dollars via maverick.cost_projection,
+    text as one step), projects tokens/dollars via maverick.cost.projection,
     and reports the OK/TIGHT/OVER verdict against the configured default
     budget."""
     w = _world()
@@ -2412,7 +2412,7 @@ async def goal_cost_preview(request: Request, goal_id: int, iterations: int = 1)
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
     from maverick.budget import Budget
-    from maverick.cost_projection import compare_against_budget, project_plan
+    from maverick.cost.projection import compare_against_budget, project_plan
     text = (g.description or g.title or "").strip()
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     steps = [{"text": ln} for ln in (lines or [text])]
@@ -2713,7 +2713,7 @@ async def goal_replay_storyboard(request: Request, goal_id: int) -> JSONResponse
     assert_goal_access(request, g)
     from pathlib import Path as _Path
 
-    from maverick.replay_video import ffmpeg_command, storyboard
+    from maverick.replay.video import ffmpeg_command, storyboard
     # Feed the world's goal events (the live trail) rather than the audit-log
     # files replay_video reads by default, so the storyboard reflects this run.
     events = [{"kind": e.kind, "ts": e.ts, "agent": e.agent, "content": e.content}
@@ -2780,10 +2780,10 @@ async def cost_by_tag_api(
     """Cost-attribution API: spend split by tag (team / project / cost-center).
 
     Buckets the priced episodes by their tag (episode field, else the goal's
-    metadata/tags) via ``maverick.cost_by_tag`` and returns
+    metadata/tags) via ``maverick.cost.by_tag`` and returns
     ``{buckets: [{tag, cost, in_tok, out_tok, runs}, ...]}`` sorted by spend. The JSON face of ``maverick status --cost``'s tag split,
     for chargeback exports and BI pulls. Behind the dashboard's normal auth."""
-    from maverick.cost_by_tag import gather, split_by_tag
+    from maverick.cost.by_tag import gather, split_by_tag
 
     limit = max(1, min(int(limit), 10_000))
     w = _world()

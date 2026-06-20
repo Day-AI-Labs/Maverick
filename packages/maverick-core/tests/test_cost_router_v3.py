@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from random import Random
 
-from maverick.cost_router_v3 import ContextualBandit, context_key, pick
+from maverick.cost.router_v3 import ContextualBandit, context_key, pick
 
 
 def _bandit(seed=0, epsilon=0.0, path=None):

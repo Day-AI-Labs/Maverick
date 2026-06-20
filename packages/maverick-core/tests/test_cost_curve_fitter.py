@@ -1,7 +1,7 @@
 """Provider cost-curve fitter (ROADMAP 2028 H2)."""
 from __future__ import annotations
 
-from maverick.cost_curve_fitter import fit_all, fit_curve, gather
+from maverick.cost.curve_fitter import fit_all, fit_curve, gather
 
 
 def test_recovers_linear_rates():

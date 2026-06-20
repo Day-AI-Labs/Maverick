@@ -248,7 +248,7 @@ def test_cost_router_tolerates_snapshot_without_error_rate(monkeypatch):
         lambda: type("H", (), {"snapshot": staticmethod(
             lambda: [{"provider": "deepseek", "model": "deepseek-chat"}])})(),
     )
-    from maverick.cost_router import CostSignal, pick
+    from maverick.cost.router import CostSignal, pick
     spec = pick(CostSignal())
     assert spec is None or ":" in spec  # no KeyError
 
@@ -520,7 +520,7 @@ def test_compute_fallback_blocks_power_tower(monkeypatch):
 def test_replay_export_skips_bad_goal_id(tmp_path, monkeypatch):
     import json as _json
 
-    import maverick.replay_export as rex
+    import maverick.replay.export as rex
     audit = tmp_path / "audit"
     audit.mkdir()
     f = audit / "2026-05-28.ndjson"

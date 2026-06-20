@@ -15,7 +15,7 @@ _GIST_API = "https://api.github.com/gists"
 
 def build_gist_payload(goal_id: int) -> dict:
     """Assemble the gist API payload from a sanitized run export."""
-    from . import replay_export
+    from .replay import export as replay_export
     with tempfile.TemporaryDirectory() as d:
         out = Path(d) / f"maverick-run-{goal_id}.json"
         replay_export.export_json(goal_id, out)

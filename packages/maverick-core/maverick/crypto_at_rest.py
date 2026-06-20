@@ -114,7 +114,7 @@ def per_tenant_at_rest() -> bool:
     """Opt-in per-tenant envelope encryption (default off).
 
     When on **and** at-rest is enabled, new seals use the *current tenant's* own
-    data key (:mod:`maverick.tenant_kms`) instead of the single process-wide key,
+    data key (:mod:`maverick.tenant.kms`) instead of the single process-wide key,
     so one tenant's key never opens another tenant's data — the posture a hosted
     multi-tenant store needs. Reads auto-detect by magic header, so data already
     sealed with the global key stays readable (transparent migration, no flag-day
@@ -366,7 +366,7 @@ def seal(plaintext: bytes) -> bytes:
     # globally-sealed data written before the switch still opens.
     if per_tenant_at_rest():
         from .paths import current_tenant
-        from .tenant_kms import seal_for_tenant
+        from .tenant.kms import seal_for_tenant
         return seal_for_tenant(current_tenant(), plaintext)
     if not _have_crypto():
         raise EncryptionUnavailable(
@@ -400,7 +400,7 @@ def unseal(blob: bytes) -> bytes:
     # — GCM authentication fails otherwise, which is the cross-tenant guarantee.
     if blob[: len(_TENANT_MAGIC)] == _TENANT_MAGIC:
         from .paths import current_tenant
-        from .tenant_kms import unseal_for_tenant
+        from .tenant.kms import unseal_for_tenant
         return unseal_for_tenant(current_tenant(), blob)
     if not is_sealed(blob):
         return blob

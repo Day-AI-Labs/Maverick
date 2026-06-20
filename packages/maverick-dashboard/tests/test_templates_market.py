@@ -43,7 +43,7 @@ def catalog(_isolated):
 
 
 def test_templates_page_lists_catalog_with_ratings(catalog):
-    from maverick.marketplace_ratings import RatingsLedger
+    from maverick.marketplace.ratings import RatingsLedger
     RatingsLedger().rate("templates", "trip-plan", 4)
     r = client.get("/templates")
     assert r.status_code == 200
@@ -70,7 +70,7 @@ def test_templates_page_empty_state(_isolated):
 
 
 def test_templates_api(catalog):
-    from maverick.marketplace_ratings import RatingsLedger
+    from maverick.marketplace.ratings import RatingsLedger
     RatingsLedger().rate("templates", "research-report", 5)
     body = client.get("/api/v1/templates").json()
     by_name = {e["name"]: e for e in body["templates"]}
