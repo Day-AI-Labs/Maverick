@@ -1779,8 +1779,14 @@ async def list_channels() -> dict:
 
 
 @router.get("/audit/tail")
-async def audit_tail(n: int = 100, day: str | None = None) -> dict:
-    """Tail the audit log (NDJSON at ~/.maverick/audit/YYYY-MM-DD.ndjson)."""
+async def audit_tail(request: Request, n: int = 100, day: str | None = None) -> dict:
+    """Tail the audit log (NDJSON at ~/.maverick/audit/YYYY-MM-DD.ndjson).
+
+    Admin-gated: the audit trail is the who-did-what-when record (it can name
+    principals, tool inputs, costs), so reading it requires the admin role -- it
+    is not an unauthenticated/operator surface. (An auditor-only read role is a
+    future refinement; admin is the immediate least-leaky gate.)"""
+    require_permission(request, "admin")
     from maverick.audit import default_audit_log
 
     from maverick_dashboard.app import safe_audit_day
@@ -1789,14 +1795,16 @@ async def audit_tail(n: int = 100, day: str | None = None) -> dict:
 
 
 @router.get("/audit/grep")
-async def audit_grep(pattern: str, day: str | None = None) -> dict:
+async def audit_grep(request: Request, pattern: str, day: str | None = None) -> dict:
     """Search recent audit events for the given literal pattern.
 
-    Intentionally uses bounded, literal (case-insensitive) matching rather
-    than a user-supplied regex: a regex over the HTTP surface invites
-    catastrophic-backtracking ReDoS that blocks the dashboard event loop.
-    Bounds the scan to the most recent 1000 events and caps results at 200.
+    Admin-gated (see :func:`audit_tail`). Intentionally uses bounded, literal
+    (case-insensitive) matching rather than a user-supplied regex: a regex over
+    the HTTP surface invites catastrophic-backtracking ReDoS that blocks the
+    dashboard event loop. Bounds the scan to the most recent 1000 events and
+    caps results at 200.
     """
+    require_permission(request, "admin")
     if not pattern:
         raise HTTPException(status_code=400, detail="pattern is required")
     if len(pattern) > 200:
