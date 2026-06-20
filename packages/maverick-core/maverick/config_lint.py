@@ -331,3 +331,46 @@ def format_findings(findings: list[Finding]) -> str:
         loc = f.section if f.key is None else f"{f.section}.{f.key}"
         lines.append(f"  [{f.severity}] {loc}: {f.message}")
     return "\n".join(lines)
+
+
+def warn_config_at_startup(*, strict: bool | None = None) -> list[Finding]:
+    """Lint the active config and emit findings to the log at server startup.
+
+    Surfaces typo'd sections/keys -- which silently fall back to defaults, so a
+    ``[budget] max_dollarss`` runs UNCAPPED -- at the moment a long-running
+    server starts, rather than only when an operator happens to run
+    ``maverick config-lint``. Warn-only by default (operators may legitimately
+    use keys newer than this build). With ``strict`` (or
+    ``MAVERICK_CONFIG_STRICT=1``) an error-level finding raises ``SystemExit`` so
+    a regulated deployment fails fast instead of running with a mis-typed
+    control. Never raises on its own bugs -- config linting must not block a
+    start except via the explicit strict gate."""
+    import logging
+    import os
+
+    _log = logging.getLogger("maverick.config")
+    try:
+        from .config import config_path, load_config
+        if not config_path().exists():
+            return []
+        cfg = load_config() or {}
+        findings = lint_config(cfg)
+    except Exception:  # pragma: no cover -- linting never blocks startup
+        return []
+    for f in findings:
+        loc = f.section if f.key is None else f"{f.section}.{f.key}"
+        _log.warning("config: [%s] %s: %s", f.severity, loc, f.message)
+    if strict is None:
+        strict = os.environ.get("MAVERICK_CONFIG_STRICT", "").strip().lower() in {
+            "1", "true", "yes", "on",
+        }
+    # Strict mode fails on ANY finding, not just error-level ones: an unknown
+    # key (a typo that silently uses a default -- the dangerous case M5 is
+    # about) is reported as a *warning*, so an error-only gate would miss it. A
+    # regulated/strict deployment wants a clean config or no start.
+    if strict and findings:
+        raise SystemExit(
+            "config has problems (logged above) and MAVERICK_CONFIG_STRICT is "
+            "set; refusing to start. Run `maverick config-lint` and fix them."
+        )
+    return findings

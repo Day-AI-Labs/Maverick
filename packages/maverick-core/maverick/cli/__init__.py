@@ -3350,6 +3350,16 @@ def serve(max_depth: int, verbose: bool) -> None:
     # is a long-running server that wants its INFO/DEBUG logs. basicConfig is
     # a no-op once a handler exists, so set the level explicitly here.
     logging.getLogger().setLevel(logging.DEBUG if verbose else logging.INFO)
+    # Validate config at startup: a typo'd section/key silently uses a default
+    # (e.g. an uncapped budget), so surface it now. Warn-only unless
+    # MAVERICK_CONFIG_STRICT=1.
+    try:
+        from ..config_lint import warn_config_at_startup
+        warn_config_at_startup()
+    except SystemExit:
+        raise
+    except Exception:  # pragma: no cover - linting never blocks a non-strict start
+        pass
     # Enterprise hard-gate: when the operator demands the data-boundary
     # guarantees (MAVERICK_REQUIRE_ENTERPRISE=1 / [enterprise] require=true),
     # refuse to start the channel server unless they hold -- the same preflight

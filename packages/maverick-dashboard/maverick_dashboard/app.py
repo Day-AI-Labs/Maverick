@@ -4786,6 +4786,17 @@ def main() -> None:
     except Exception:  # pragma: no cover - logging setup never blocks startup
         pass
 
+    # Validate config at startup: a typo'd section/key silently falls back to a
+    # default (e.g. an uncapped budget), so surface it now instead of only via
+    # `maverick config-lint`. Warn-only unless MAVERICK_CONFIG_STRICT=1.
+    try:
+        from maverick.config_lint import warn_config_at_startup
+        warn_config_at_startup()
+    except SystemExit:
+        raise
+    except Exception:  # pragma: no cover - linting never blocks a non-strict start
+        pass
+
     import uvicorn
     # JSON logging consistency: uvicorn installs its OWN plaintext access/error
     # formatters by default, so even after configure_logging() switches the root
