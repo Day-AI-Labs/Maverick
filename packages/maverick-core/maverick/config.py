@@ -469,6 +469,24 @@ def get_knowledge() -> dict:
     }
 
 
+def get_automation_import() -> dict:
+    """Return the ``[automation_import]`` section with defaults filled in.
+
+    Importing clients' existing automations (n8n/Make/Workato/Power Automate/
+    UiPath definitions, plus connect-and-trigger for Zapier/Notion) is OFF by
+    default: it reaches out to third-party platforms and writes user templates,
+    so the operator opts in. ``create_schedules`` lets a recovered cron trigger
+    auto-create a Lightwork schedule; off by default so an import never starts
+    spending on a recurring run without an explicit second step.
+    Env override: ``MAVERICK_AUTOMATION_IMPORT``.
+    """
+    cfg = load_config().get("automation_import", {})
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "create_schedules": bool(cfg.get("create_schedules", False)),
+    }
+
+
 def get_self_learning() -> dict:
     """Return the ``[self_learning]`` section with defaults filled in.
 
