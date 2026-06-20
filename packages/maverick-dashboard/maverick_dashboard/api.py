@@ -78,6 +78,7 @@ from .api_schemas import (
 from .auth import (
     assert_goal_access,
     caller_principal,
+    can_access_goal,
     execution_user_id_from_request,
     goal_owner_filter,
     is_dashboard_admin,
@@ -1610,7 +1611,7 @@ async def delete_trigger_endpoint(request: Request, name: str) -> dict:
 
 
 @router.get("/automation-runs")
-async def automation_runs(kind: str, ref: str, limit: int = 8) -> dict:
+async def automation_runs(request: Request, kind: str, ref: str, limit: int = 8) -> dict:
     """Recent goals an automation spawned + a status summary. ``kind`` is
     'schedule' or 'trigger'; ``ref`` is the schedule_id or trigger name."""
     if kind not in ("schedule", "trigger"):
@@ -1619,13 +1620,29 @@ async def automation_runs(kind: str, ref: str, limit: int = 8) -> dict:
     if not ref:
         return {"runs": [], "summary": {}}
     w = _world()
-    goals = w.goals_for_origin(kind, ref, limit=max(1, min(int(limit), 50)))
+    capped = max(1, min(int(limit), 50))
+    # Owner-scope: a trigger name (enumerable via GET /triggers) is shared across
+    # tenants, so an authenticated non-admin must not read another owner's goal
+    # titles/history -- nor the cross-owner aggregate from origin_status_counts.
+    # Auth-off / admin keep the original (unscoped) behaviour exactly.
+    if goal_owner_filter(request) is None:
+        goals = w.goals_for_origin(kind, ref, limit=capped)
+        summary = w.origin_status_counts(kind, ref)
+    else:
+        accessible = [
+            g for g in w.goals_for_origin(kind, ref, limit=10_000)
+            if can_access_goal(request, g)
+        ]
+        summary = {}
+        for g in accessible:
+            summary[g.status] = summary.get(g.status, 0) + 1
+        goals = accessible[:capped]
     runs = [
         {"goal_id": g.id, "title": g.title, "status": g.status,
          "created_at": g.created_at}
         for g in goals
     ]
-    return {"runs": runs, "summary": w.origin_status_counts(kind, ref)}
+    return {"runs": runs, "summary": summary}
 
 
 # ---- agents (domain packs): per-client view + override editor ---------------
@@ -1995,6 +2012,10 @@ async def claim_approval(request: Request, approval_id: int) -> dict:
 
     Marks "I'm handling this" so two supervisors don't double-work the same
     review. 409 when another supervisor already holds the claim."""
+    # Same governance gate as approve/deny: claiming/releasing mutates the
+    # human-oversight queue, so a read-only `viewer` must not be able to lock
+    # pending approvals (or learn the claiming supervisor's identity via the 409).
+    require_permission(request, "operate")
     who = _supervisor(request)
     if _world().claim_approval(approval_id, who):
         return {"claimed_by": who}
@@ -2008,6 +2029,7 @@ async def claim_approval(request: Request, approval_id: int) -> dict:
 @router.post("/approvals/{approval_id}/release")
 async def release_approval(request: Request, approval_id: int) -> dict:
     """Release a claim you hold. 409 when you don't hold it."""
+    require_permission(request, "operate")
     who = _supervisor(request)
     if _world().release_approval(approval_id, who):
         return {"released": True}

@@ -2461,20 +2461,32 @@ async def goal_cost_breakdown(request: Request, goal_id: int) -> JSONResponse:
 
 
 @app.get("/api/v1/cost/anomalies")
-async def cost_anomalies(threshold_sigma: float = 3.0, limit: int = 500) -> JSONResponse:
+async def cost_anomalies(
+    request: Request, threshold_sigma: float = 3.0, limit: int = 500,
+) -> JSONResponse:
     """Cost anomaly alerts: goals whose spend is a statistical outlier.
 
     Computes per-goal spend over the recent episode window and flags goals
     above mean + threshold_sigma * stdev (min 3 goals before anything can
-    flag). The data behind a dashboard alert badge."""
+    flag). The data behind a dashboard alert badge.
+
+    Owner-scoped: an authenticated non-admin sees anomalies only among their own
+    goals (auth-off / admin see all), so other tenants' goal ids and exact spend
+    don't leak -- the same scoping ``/api/v1/cost/by-tag`` applies."""
     import statistics
 
     w = _world()
     limit = max(1, min(int(limit), 10_000))
+    owner = goal_owner_filter(request)
+    owned: set[int] | None = None
+    if owner is not None:
+        owned = {g.id for g in w.list_goals(owner=owner, limit=10_000, order="desc")}
     by_goal: dict[int, float] = {}
     for ep in w.list_episodes(limit=limit):
         gid = getattr(ep, "goal_id", None)
         if gid is None:
+            continue
+        if owned is not None and gid not in owned:
             continue
         by_goal[gid] = by_goal.get(gid, 0.0) + float(getattr(ep, "cost_dollars", 0) or 0)
     spends = [s for s in by_goal.values() if s > 0]
@@ -2756,7 +2768,10 @@ async def runs_compare(request: Request, ids: str) -> JSONResponse:
     for gid in goal_ids:
         g = w.get_goal(gid)
         if g is None:
-            raise HTTPException(status_code=404, detail=f"no such goal: {gid}")
+            # Opaque detail (no id) so "does not exist" is indistinguishable from
+            # assert_goal_access's "exists but forbidden" -- otherwise the two
+            # different messages re-introduce a cross-tenant existence oracle.
+            raise HTTPException(status_code=404, detail="no such goal")
         assert_goal_access(request, g)
         events = w.goal_events(gid, limit=10_000)
         errors = sum(1 for e in events if e.kind == "error")
@@ -3836,7 +3851,7 @@ async def errors_page(request: Request, goal_id: int) -> HTMLResponse:
 
 
 @app.get("/api/v1/cost.csv")
-async def cost_csv(month: str | None = None) -> StreamingResponse:
+async def cost_csv(request: Request, month: str | None = None) -> StreamingResponse:
     """CSV rollup of episode spend, streamed.
 
     Council perf finding: prior version fetched up to 100k episodes
@@ -3853,6 +3868,11 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
     import io as _io
 
     w = _world()
+    # Owner-scope the export: an authenticated non-admin gets only their own
+    # episodes (auth-off / admin get everything, the historical behaviour), so
+    # this chargeback CSV can't leak every tenant's spend ledger. Mirrors the
+    # owner scoping on /api/v1/cost/by-tag.
+    owner = goal_owner_filter(request)
     start_ts: float | None = None
     end_ts: float | None = None
     if month:
@@ -3887,16 +3907,25 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
         buf.seek(0)
         buf.truncate(0)
 
-        params: tuple = ()
         sql = (
             "SELECT id, goal_id, started_at, ended_at, outcome, "
             "cost_dollars, input_tokens, output_tokens, tool_calls "
             "FROM episodes"
         )
+        conds: list[str] = []
+        plist: list = []
         if start_ts is not None:
-            sql += " WHERE started_at >= ? AND started_at < ?"
-            params = (start_ts, end_ts)
+            conds.append("started_at >= ? AND started_at < ?")
+            plist += [start_ts, end_ts]
+        if owner is not None:
+            # Subquery (not a 10k-element IN list) avoids SQLite's bound-variable
+            # limit and scopes the stream to the caller's goals.
+            conds.append("goal_id IN (SELECT id FROM goals WHERE owner = ?)")
+            plist.append(owner)
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
         sql += " ORDER BY id"
+        params = tuple(plist)
 
         # outcome is a sealed column when at-rest encryption is on; this CSV reads
         # it via raw SQL, so decrypt it like the WorldModel accessors do.
