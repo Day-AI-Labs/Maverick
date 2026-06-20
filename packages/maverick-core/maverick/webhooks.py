@@ -263,9 +263,18 @@ def fire(
         headers["X-Maverick-Timestamp"] = ts
         headers["X-Maverick-Signature"] = _sign(body, secret, timestamp=ts)
 
+    # Enterprise egress lock: outbound webhooks are off-box data egress just like
+    # a tool fetch, so hold them to the SAME boundary (default-deny unless the
+    # host is in [enterprise] allowed_hosts). No-op when enterprise mode is off
+    # (egress_permitted returns True), so existing webhook setups are unchanged.
+    from .enterprise import enterprise_egress_denial
     executor = _get_executor()
     sent = 0
     for url in urls:
+        deny = enterprise_egress_denial(url, tool="webhook")
+        if deny is not None:
+            log.warning("webhooks: %s", deny)  # host-only message; audits egress_blocked
+            continue
         if _submit(executor, _post, url, body, dict(headers), timeout):
             sent += 1
         else:
