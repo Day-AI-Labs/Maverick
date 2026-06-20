@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def purge_audit_files(
         return {"removed": [], "kept": 0, "reason": "no audit dir"}
 
     cutoff_ts = _cutoff_for_days(days, now=now)
-    cutoff_day = datetime.utcfromtimestamp(cutoff_ts).date()
+    cutoff_day = datetime.fromtimestamp(cutoff_ts, tz=timezone.utc).date()
     removed: list[str] = []
     kept = 0
     for path in sorted(audit_dir.glob("*.ndjson")):
