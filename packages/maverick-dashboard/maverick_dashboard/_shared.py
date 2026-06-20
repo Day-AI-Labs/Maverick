@@ -56,6 +56,24 @@ def _any_provider_key_set() -> bool:
         return False
 
 
+def require_provider_or_400() -> None:
+    """Raise HTTP 400 if no LLM provider is configured, with the canonical
+    setup message. The goal/chat/webhook routes each used to inline this block;
+    the copies had already drifted (some omitted GEMINI_API_KEY)."""
+    if _any_provider_key_set():
+        return
+    from fastapi import HTTPException
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "No LLM provider key or endpoint configured. Run 'maverick init', "
+            "export ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY, or add "
+            "a [providers.<name>] api_key/base_url to ~/.maverick/config.toml "
+            "before starting the dashboard."
+        ),
+    )
+
+
 def _world():
     """Return a per-DB-path cached WorldModel (council perf fix).
 

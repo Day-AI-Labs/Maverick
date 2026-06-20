@@ -47,7 +47,12 @@ from maverick.oidc import VerifiedPrincipal
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ._shared import _any_provider_key_set, _get_sse_semaphore, _world
+from ._shared import (
+    _any_provider_key_set,
+    _get_sse_semaphore,
+    _world,
+    require_provider_or_400,
+)
 from ._shared import _world_cache as _world_cache  # re-export: tests clear app._world_cache
 from .api import router as api_router
 from .auth import (
@@ -2822,16 +2827,7 @@ async def chat_send(
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
     require_permission(request, "operate")
-    if not _any_provider_key_set():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No LLM provider key or endpoint configured. Run 'maverick "
-                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
-                "[providers.<name>] api_key/base_url to "
-                "~/.maverick/config.toml before starting the dashboard."
-            ),
-        )
+    require_provider_or_400()
     check_goal_rate_limit(request)
     title = (title or "").strip()
     if not title:
@@ -3209,16 +3205,7 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
     if not verify_signature(body, signature, secret, timestamp=timestamp):
         raise HTTPException(status_code=403, detail="bad webhook signature")
 
-    if not _any_provider_key_set():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No LLM provider key or endpoint configured. Run 'maverick "
-                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
-                "[providers.<name>] api_key/base_url to "
-                "~/.maverick/config.toml before starting the dashboard."
-            ),
-        )
+    require_provider_or_400()
     try:
         payload = json.loads(body or b"{}")
     except (ValueError, UnicodeDecodeError) as exc:
@@ -3296,16 +3283,7 @@ async def webhook_run(request: Request, bg: BackgroundTasks) -> JSONResponse:
     if not verify_signature(body, signature, secret, timestamp=timestamp):
         raise HTTPException(status_code=403, detail="bad webhook signature")
 
-    if not _any_provider_key_set():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No LLM provider key or endpoint configured. Run 'maverick "
-                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
-                "[providers.<name>] api_key/base_url to "
-                "~/.maverick/config.toml before starting the dashboard."
-            ),
-        )
+    require_provider_or_400()
     try:
         payload = json.loads(body or b"{}")
     except (ValueError, UnicodeDecodeError) as exc:
