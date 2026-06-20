@@ -11,8 +11,11 @@
 # (without it the non-loopback bind is refused / only loopback peers are trusted):
 #
 #   kubectl create secret generic maverick-secrets \
-#     --from-literal=ANTHROPIC_API_KEY=sk-ant-... \
-#     --from-literal=MAVERICK_DASHBOARD_TOKEN="$(openssl rand -hex 32)"
+#     --from-literal=ANTHROPIC_API_KEY=sk-ant-...
+#
+#   # ...and add a dashboard bearer token (required for the 0.0.0.0 bind):
+#   kubectl create secret generic maverick-secrets --dry-run=client -o yaml \
+#     --from-literal=MAVERICK_DASHBOARD_TOKEN="$(openssl rand -hex 32)" | kubectl apply -f -  # pragma: allowlist secret
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
