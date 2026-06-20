@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 
 from ..budget import Budget
 from ..llm import LLMResponse
@@ -217,7 +216,14 @@ class KimiSessionClient:
             if create_resp.status_code == 401:
                 raise RuntimeError("Kimi session rejected (401).")
             create_resp.raise_for_status()
-            chat_id = create_resp.json().get("id") or str(uuid.uuid4())
+            chat_id = create_resp.json().get("id")
+            if not chat_id:
+                # Same as the sync path: don't fabricate a UUID and POST to a
+                # nonexistent conversation; fail loudly at the source.
+                raise RuntimeError(
+                    "Kimi /api/chat returned no chat id; the endpoint schema may "
+                    "have changed (re-capture the session if this persists)."
+                )
 
             resp = await client.post(
                 _BASE_URL + _COMPLETION_TEMPLATE.format(chat_id=chat_id),
