@@ -89,10 +89,43 @@ resources:
     cpu: "2"
     memory: 2Gi
 
-# Liveness/readiness hit the dashboard root. The dashboard has its own auth;
-# do not expose it without TLS — front with your Ingress/Gateway.
+# Liveness/readiness hit the deep health endpoints (/livez, /readyz) which
+# verify DB writability and provider config — not the HTML root, which returns
+# 200 even when the instance is degraded. The dashboard has its own auth; do not
+# expose it without TLS — front with your Ingress/Gateway.
 probes:
   enabled: true
+
+# Grace period for in-flight goals to finish on SIGTERM (rolling upgrade, node
+# drain). Paired with a preStop sleep so the LB deregisters first.
+terminationGracePeriodSeconds: 30
+
+# PodDisruptionBudget. Gates voluntary disruptions (node drains, upgrades). With
+# the default single replica + Recreate strategy a PDB cannot prevent downtime,
+# so it is off by default; enable it once you run multiple replicas on Postgres.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# NetworkPolicy. Default-deny ingress except to the dashboard port, and (when
+# restrictEgress=true) deny egress to RFC1918/link-local ranges to blunt SSRF to
+# cloud metadata while still allowing DNS + public LLM/provider egress.
+networkPolicy:
+  enabled: false
+  restrictEgress: false
+
+# Prometheus Operator ServiceMonitor for /metrics. /metrics is bearer-gated when
+# a dashboard token is set, so the scrape must authenticate — this wires the
+# bearer from a secret. Requires the Prometheus Operator CRDs to be installed.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  # Secret + key holding the dashboard bearer token used to scrape /metrics.
+  # Leave name empty to use the chart's own secret.
+  bearerTokenSecret:
+    name: ""
+    key: MAVERICK_DASHBOARD_TOKEN
 
 ingress:
   enabled: false

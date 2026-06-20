@@ -10,12 +10,14 @@ composes them at the configured severity threshold.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 
 from .builtin_rules import SEVERITY_ORDER
 
 _DEFAULT_SEVERITY = "high"
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -34,16 +36,29 @@ def parse_rules(raw: list[dict]) -> list[ConstitutionalRule]:
     out: list[ConstitutionalRule] = []
     for r in raw or []:
         if not isinstance(r, dict):
+            _log.warning("constitutional: skipping non-dict policy rule: %r", r)
             continue
         pattern = str(r.get("pattern") or "").strip()
         if not pattern:
+            _log.warning(
+                "constitutional: skipping rule %r with empty pattern",
+                r.get("name"),
+            )
             continue
         severity = str(r.get("severity") or _DEFAULT_SEVERITY).strip().lower()
         if severity not in SEVERITY_ORDER:
+            _log.warning(
+                "constitutional: skipping rule %r with unknown severity %r "
+                "(known: %s)", r.get("name"), severity, sorted(SEVERITY_ORDER),
+            )
             continue
         try:
             compiled = re.compile(pattern, re.IGNORECASE)
-        except re.error:
+        except re.error as e:
+            _log.warning(
+                "constitutional: skipping rule %r with invalid regex %r: %s",
+                r.get("name"), pattern, e,
+            )
             continue
         name = str(r.get("name") or pattern[:24]).strip() or "constitutional_rule"
         out.append(ConstitutionalRule(name=name, pattern=compiled, severity=severity))
