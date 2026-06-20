@@ -191,6 +191,9 @@ class LLMCache:
                 (key, provider, model, text, thinking, stop_reason, now),
             )
             if self.max_rows:
+                # Same TTL+LRU-count-cap policy as cache.eviction (shared with
+                # the learning cache), expressed in SQL here because this store
+                # is SQLite rows rather than an in-memory dict.
                 # Evict beyond the cap by recency (true LRU). The previous
                 # `ORDER BY hit_count DESC` evicted the row we JUST inserted
                 # (hit_count=0) whenever the cache was full of hit rows, so

@@ -148,9 +148,10 @@ class LearningCache:
             log.warning("learning cache: could not persist %s (%s)", self.path, exc)
 
     def _evict_locked(self) -> None:
-        while len(self._entries) > self.max_entries:
-            oldest = min(self._entries, key=lambda k: self._entries[k].get("last_used", 0.0))
-            del self._entries[oldest]
+        from .eviction import lru_keys_to_evict
+        last_used = {k: e.get("last_used", 0.0) for k, e in self._entries.items()}
+        for key in lru_keys_to_evict(last_used, self.max_entries):
+            del self._entries[key]
 
     # -- API ----------------------------------------------------------------
 
@@ -215,7 +216,8 @@ class LearningCache:
             if entry is None:
                 self._misses += 1
                 return None
-            if now >= float(entry.get("expires_at", 0.0)):
+            from .eviction import is_expired
+            if is_expired(now, entry.get("expires_at", 0.0)):
                 del self._entries[key]
                 self._save_locked()
                 self._misses += 1
@@ -238,10 +240,11 @@ class LearningCache:
         """Drop expired entries and enforce the LRU cap; returns entries removed."""
         now = float(self._clock())
         with self._lock:
+            from .eviction import is_expired
             before = len(self._entries)
             self._entries = {
                 k: e for k, e in self._entries.items()
-                if now < float(e.get("expires_at", 0.0))
+                if not is_expired(now, e.get("expires_at", 0.0))
             }
             self._evict_locked()
             removed = before - len(self._entries)
