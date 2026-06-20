@@ -184,5 +184,8 @@ def relevant_skills_embed(
         score = _cosine(goal_vec, entry.vector)
         if score >= threshold:
             scored.append((score * weights.get(name, 1.0), by_name[name]))
-    scored.sort(key=lambda x: -x[0])
+    # Deterministic tie-break by name, like the BM25 path (skill_search.py): a
+    # bare score sort leaves equal-scored skills in cache-insertion order, which
+    # shifts across cache rebuilds and can flip which skills land inside max_n.
+    scored.sort(key=lambda x: (-x[0], x[1].name))
     return [s for _, s in scored[:max_n]]
