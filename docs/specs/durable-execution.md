@@ -8,7 +8,7 @@
 ## 1. Problem
 
 Lightwork's headline promise is *"runs for hours, pause overnight, resume."* The
-**world model** (`world_model.py`, SQLite/Postgres schema v16) durably persists goals,
+**world model** (`world_model.py`, SQLite/Postgres schema v20) durably persists goals,
 episodes, facts, questions, messages, and `goal_events`. But the **in-memory
 agent-loop state is never serialized**:
 

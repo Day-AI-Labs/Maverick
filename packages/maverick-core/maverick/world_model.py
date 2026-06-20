@@ -1634,6 +1634,15 @@ class WorldModel:
         rows = self._read_all(sql, tuple(params))
         return [_episode_spend_from_row(r) for r in rows]
 
+    def episode_exists(self, goal_id: int, episode_id: int) -> bool:
+        """True if ``episode_id`` belongs to ``goal_id``. A single indexed
+        lookup -- callers must not scan list_episodes to check existence."""
+        row = self._read_one(
+            "SELECT 1 FROM episodes WHERE id = ? AND goal_id = ? LIMIT 1",
+            (episode_id, goal_id),
+        )
+        return row is not None
+
     def total_spend(self, owner: str | None = None) -> dict[str, float]:
         """Aggregate spend. ``owner`` scopes to one principal's runs (join to
         the owning goal); ``None`` is the deployment-wide admin / auth-off view.

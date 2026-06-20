@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import os
 
-from .base import Channel, IncomingMessage
+from .base import Channel, IncomingMessage, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -46,25 +46,16 @@ class TelegramChannel(Channel):
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN not set")
         self._app: Application | None = None
-        self.allowed_user_ids = self._normalize_allowlist(
-            allowed_user_ids,
-            env_name="TELEGRAM_ALLOWED_USER_IDS",
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "TELEGRAM_ALLOWED_USER_IDS",
         )
-        self.allowed_chat_ids = self._normalize_allowlist(
-            allowed_chat_ids,
-            env_name="TELEGRAM_ALLOWED_CHAT_IDS",
+        self.allowed_chat_ids = normalize_allowlist(
+            allowed_chat_ids, "TELEGRAM_ALLOWED_CHAT_IDS",
         )
         if not self.allowed_user_ids and not self.allowed_chat_ids:
             raise ValueError(
                 "Set TELEGRAM_ALLOWED_USER_IDS or TELEGRAM_ALLOWED_CHAT_IDS to restrict access"
             )
-
-    @staticmethod
-    def _normalize_allowlist(values: set[str] | None, env_name: str) -> set[str]:
-        if values is not None:
-            return {str(v).strip() for v in values if str(v).strip()}
-        raw = os.environ.get(env_name, "")
-        return {item.strip() for item in raw.split(",") if item.strip()}
 
     def _is_authorized(self, update: Update) -> bool:
         user_id = str(update.effective_user.id) if update.effective_user else ""

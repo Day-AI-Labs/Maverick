@@ -686,6 +686,24 @@ class MCPServer:
             }],
         }
 
+    def _shield_block_or_none(self, payload: str) -> dict | None:
+        """Scan tool output through the Shield. Returns an isError response dict
+        if blocked, else None. Fails open (kernel rule 1) when the Shield raises
+        or is absent."""
+        if self._shield is None:
+            return None
+        try:
+            verdict = self._shield.scan_output(payload)
+        except Exception:  # pragma: no cover -- fail open (kernel rule 1)
+            return None
+        if getattr(verdict, "allowed", True):
+            return None
+        reasons = "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
+        return {
+            "isError": True,
+            "content": [{"type": "text", "text": f"⚠ Output blocked: {reasons}"}],
+        }
+
     def handle_tools_call(self, params: dict, *, task_owner: str | None = None) -> dict:
         name = params.get("name")
         if name not in _TOOL_NAMES:
@@ -746,17 +764,9 @@ class MCPServer:
             elicited = self._maybe_elicit_open_questions(arguments)
             if elicited is not None:
                 result = elicited
-        if self._shield is not None:
-            try:
-                verdict = self._shield.scan_output(result)
-                if not getattr(verdict, "allowed", True):
-                    reasons = "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
-                    return {
-                        "isError": True,
-                        "content": [{"type": "text", "text": f"⚠ Output blocked: {reasons}"}],
-                    }
-            except Exception:  # pragma: no cover -- fail open (kernel rule 1)
-                pass
+        blocked = self._shield_block_or_none(result)
+        if blocked is not None:
+            return blocked
         response: dict[str, Any] = {
             "isError": False,
             "content": [{"type": "text", "text": result}],
@@ -780,19 +790,11 @@ class MCPServer:
             except Exception:  # pragma: no cover -- structured form is best-effort
                 structured = None
             if structured is not None:
-                if self._shield is not None:
-                    try:
-                        verdict = self._shield.scan_output(
-                            json.dumps(structured, default=str, sort_keys=True)
-                        )
-                        if not getattr(verdict, "allowed", True):
-                            reasons = "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
-                            return {
-                                "isError": True,
-                                "content": [{"type": "text", "text": f"⚠ Output blocked: {reasons}"}],
-                            }
-                    except Exception:  # pragma: no cover -- fail open (kernel rule 1)
-                        pass
+                blocked = self._shield_block_or_none(
+                    json.dumps(structured, default=str, sort_keys=True)
+                )
+                if blocked is not None:
+                    return blocked
                 response["structuredContent"] = structured
         # A successful mutating tool dirties a resource; queue the update to
         # flush after the result is sent (run() calls _flush_resource_updates).
@@ -800,27 +802,24 @@ class MCPServer:
         return response
 
     def _dispatch_tool(self, name: str, args: dict) -> str:
-        if name == "maverick_start":
-            return self._tool_start(args)
-        if name == "maverick_status":
-            return self._tool_status()
-        if name == "maverick_resume":
-            return self._tool_resume(args)
-        if name == "maverick_answer":
-            return self._tool_answer(args)
-        if name == "maverick_skill_install":
-            return self._tool_skill_install(args)
-        if name == "maverick_skills_list":
-            return self._tool_skills_list()
-        if name == "maverick_fact_set":
-            return self._tool_fact_set(args)
-        if name == "maverick_facts_get":
-            return self._tool_facts_get()
-        if name == "maverick_fleet_ingest":
-            return self._tool_fleet_ingest(args)
-        if name == "maverick_fleet_recall":
-            return self._tool_fleet_recall(args)
-        raise _ProtocolError(-32602, f"unknown tool {name!r}")
+        # Single dispatch table (the no-arg query tools ignore `args`). Keeping
+        # one mapping prevents drift between this and _structured_result.
+        handlers = {
+            "maverick_start": lambda a: self._tool_start(a),
+            "maverick_status": lambda a: self._tool_status(),
+            "maverick_resume": lambda a: self._tool_resume(a),
+            "maverick_answer": lambda a: self._tool_answer(a),
+            "maverick_skill_install": lambda a: self._tool_skill_install(a),
+            "maverick_skills_list": lambda a: self._tool_skills_list(),
+            "maverick_fact_set": lambda a: self._tool_fact_set(a),
+            "maverick_facts_get": lambda a: self._tool_facts_get(),
+            "maverick_fleet_ingest": lambda a: self._tool_fleet_ingest(a),
+            "maverick_fleet_recall": lambda a: self._tool_fleet_recall(a),
+        }
+        handler = handlers.get(name)
+        if handler is None:
+            raise _ProtocolError(-32602, f"unknown tool {name!r}")
+        return handler(args)
 
     def _tool_fleet_ingest(self, args: dict) -> str:
         from maverick import fleet_memory

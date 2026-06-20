@@ -17,7 +17,14 @@ import asyncio
 import logging
 import os
 
-from .base import Channel, Handler, IncomingMessage, backoff_delay, is_allowed
+from .base import (
+    Channel,
+    Handler,
+    IncomingMessage,
+    backoff_delay,
+    is_allowed,
+    normalize_allowlist,
+)
 
 log = logging.getLogger(__name__)
 
@@ -49,9 +56,8 @@ class BlueskyChannel(Channel):
         super().__init__(handler)
         self.handle = handle or os.environ.get("BLUESKY_HANDLE", "")
         self.password = password or os.environ.get("BLUESKY_PASSWORD", "")
-        self.allowed_user_ids = self._normalize_allowlist(
-            allowed_user_ids,
-            env_name="BLUESKY_ALLOWED_USER_IDS",
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "BLUESKY_ALLOWED_USER_IDS",
         )
         if not self.allowed_user_ids:
             raise ValueError(
@@ -62,13 +68,6 @@ class BlueskyChannel(Channel):
         self._last_seen_indexed_at: str | None = None
         self._running = False
         self._stop_event = asyncio.Event()
-
-    @staticmethod
-    def _normalize_allowlist(values: set[str] | None, env_name: str) -> set[str]:
-        if values is not None:
-            return {str(v).strip() for v in values if str(v).strip()}
-        raw = os.environ.get(env_name, "")
-        return {item.strip() for item in raw.split(",") if item.strip()}
 
     async def _ensure_session(self) -> dict:
         if self._session.get("accessJwt"):
@@ -154,6 +153,7 @@ class BlueskyChannel(Channel):
         try:
             import httpx
         except ImportError:
+            log.warning("bluesky: httpx not installed; dropping reply")
             return
         record = parent_notif.get("record") or {}
         reply_root = record.get("reply", {}).get("root") or {
@@ -229,6 +229,7 @@ class BlueskyChannel(Channel):
         try:
             import httpx
         except ImportError:
+            log.warning("bluesky: httpx not installed; dropping message")
             return
         body = {
             "repo": sess.get("did"),

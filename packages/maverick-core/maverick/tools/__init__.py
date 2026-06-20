@@ -1386,6 +1386,16 @@ def _apply_generated_tools(reg: ToolRegistry) -> None:
         from .. import self_learning
         if self_learning.enabled():
             for t in self_learning.load_generated_tools():
+                # Same no-shadowing rule as the plugin/MCP loaders: a generated
+                # tool named e.g. "shell"/"read_file" must never silently replace
+                # a built-in (generated tools execute in-process).
+                if t.name in reg._tools:
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "generated tool %r conflicts with an existing tool; skipping",
+                        t.name,
+                    )
+                    continue
                 reg.register(t)
     except Exception as e:  # pragma: no cover -- never block the registry
         import logging as _logging

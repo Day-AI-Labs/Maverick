@@ -135,7 +135,12 @@ def _candidates(text: str) -> list[str]:
     cands = {text, norm, _shell_deobfuscate(norm)}
     for decoded in _decode_b64_blobs(text):
         cands.add(decoded)
-        cands.add(unicodedata.normalize("NFKC", decoded))
+        decoded_norm = unicodedata.normalize("NFKC", decoded)
+        cands.add(decoded_norm)
+        # A base64-wrapped command can still hide behind shell quoting/concat
+        # (e.g. rm -rf "$HOME"/). Apply the same deobfuscation to decoded blobs
+        # so rules like rm_rf_root fire on the unwrapped form.
+        cands.add(_shell_deobfuscate(decoded_norm))
     return [c for c in cands if c]
 
 
@@ -222,8 +227,17 @@ RULES: list[Rule] = [
     # The `_shell_deobfuscate` candidate strips quotes/$IFS, so quoted and
     # $IFS-split variants canonicalise into these patterns.
     Rule("rm_rf_root", "critical",
-         _compile(r"\brm\s+-[a-z]*(?:rf|fr)[a-z]*\s+(\/|~|\$HOME)(\*|\/|\s|$)"),
+         _compile(r"\brm\s+-[a-z]*(?:rf|fr)[a-z]*\s+(\/|~|\$HOME)(\*|\/|[\s;&|]|$)"),
          "rm -rf/-fr against /, ~, or $HOME"),
+    Rule("disk_overwrite", "critical",
+         _compile(r"\b(dd\s+[^\n]*\bof=\/dev\/(sd[a-z]|nvme\d|disk\d|hd[a-z])|mkfs(\.[a-z0-9]+)?\s+[^\n]*\/dev\/)"),
+         "Raw disk overwrite via dd/mkfs against a block device"),
+    Rule("recursive_chmod_chown_root", "critical",
+         _compile(r"\bch(mod|own)\s+-[a-z]*R[a-z]*\s+[^\n]*\s(\/|~|\$HOME)(\s|;|&|\||$)"),
+         "Recursive chmod/chown against /, ~, or $HOME"),
+    Rule("fork_bomb", "critical",
+         _compile(r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:"),
+         "Classic shell fork bomb :(){ :|:& };:"),
     Rule("sensitive_file_read", "high",
          _compile(r"(\/etc\/+(passwd|shadow|ssh|sudoers)|\bNOPASSWD\b|~?\/\.ssh\/|~?\/\.aws\/credentials|\.env\b)"),
          "Read of /etc/passwd, ssh keys, sudoers, AWS creds, or .env"),
