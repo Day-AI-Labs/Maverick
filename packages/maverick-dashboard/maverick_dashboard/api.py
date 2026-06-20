@@ -2198,6 +2198,12 @@ async def run_fleet_agent(
     only the fleet's owner -- or an admin / auth-off caller -- may dispatch; a
     cross-owner (or missing) fleet 404s, never revealing existence.
     """
+    # Dispatching a fleet agent queues a governed goal that spends provider
+    # money and runs tools -- an "operate" action, exactly like compose/resume
+    # and POST /goals. Gate on role BEFORE any provider/rate/owner check so a
+    # read-only viewer is 403'd up front (owner-scoping alone is not authz: a
+    # viewer can own a fleet yet must never run one).
+    require_permission(request, "operate")
     if not _any_provider_key_set():
         raise HTTPException(
             status_code=400,
@@ -2279,6 +2285,10 @@ async def create_fleet(request: Request, payload: FleetCreateIn) -> dict:
     reveals it). Blank agent rows are dropped; each agent needs a valid name
     and a configured RBAC role when roles are configured.
     """
+    # Mutating fleet config is an "operate" action; owner-scoping decides WHOSE
+    # fleet, not WHETHER the role may write one. A read-only viewer must be 403'd
+    # (otherwise it could self-own a fleet here and then run it).
+    require_permission(request, "operate")
     from maverick.capability import configured_roles
     from maverick.fleet import Fleet, FleetAgent, load_fleet, save_fleet, valid_name
 
@@ -2318,6 +2328,8 @@ async def create_fleet(request: Request, payload: FleetCreateIn) -> dict:
 @router.delete("/fleets/{fleet_name}", status_code=204)
 async def delete_fleet(request: Request, fleet_name: str) -> None:
     """Remove a fleet. Owner-scoped: a cross-owner or missing fleet 404s."""
+    # Deleting a fleet is an "operate" action; gate on role before owner-scoping.
+    require_permission(request, "operate")
     from maverick.fleet import load_fleet, remove_fleet
 
     fleet = load_fleet(fleet_name)

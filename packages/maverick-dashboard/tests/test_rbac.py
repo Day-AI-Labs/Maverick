@@ -111,6 +111,23 @@ def test_viewer_cannot_run_goals_via_compose_or_resume(monkeypatch, tmp_path):
     assert c.post("/api/v1/goals/1/resume").status_code == 403
 
 
+def test_viewer_cannot_run_create_or_delete_fleets(monkeypatch, tmp_path):
+    # The fleet routes (run/create/delete) dispatch governed goals and mutate
+    # fleet config -- "operate" actions. They are owner-scoped, but owner-scoping
+    # is not authz: a viewer could self-own a created fleet and then run it. A
+    # read-only viewer must be 403'd before any provider-key / owner check, just
+    # like compose/resume. Regression for the missing require_permission gate.
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import rbac
+    rbac.set_role("user:vf", "viewer")
+    _as(monkeypatch, "user:vf")
+    assert c.post("/api/v1/fleets/myfleet/run",
+                  json={"agent": "a", "prompt": "spend money"}).status_code == 403
+    assert c.post("/api/v1/fleets",
+                  json={"name": "myfleet", "agents": []}).status_code == 403
+    assert c.delete("/api/v1/fleets/myfleet").status_code == 403
+
+
 def test_operator_can_operate_but_not_admin(monkeypatch, tmp_path):
     monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "")
     c = _client(monkeypatch, tmp_path)
