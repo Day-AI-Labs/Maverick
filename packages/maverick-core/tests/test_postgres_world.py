@@ -692,3 +692,13 @@ def test_at_rest_encryption_seals_columns_and_round_trips(world, monkeypatch, tm
     assert title.startswith("MVKAR1:") and "SENSITIVE-TITLE-xyz" not in title
     assert result.startswith("MVKAR1:") and "SENSITIVE-RESULT-xyz" not in result
     assert val.startswith("MVKAR1:") and "SENSITIVE-FACT-xyz" not in val
+
+
+def test_goal_status_counts_and_ping(world):
+    # Backend-agnostic /metrics + /healthz helpers: status histogram + liveness.
+    before = world.goal_status_counts()
+    gid = world.create_goal("count me")
+    world.set_goal_status(gid, "running")
+    after = world.goal_status_counts()
+    assert after.get("running", 0) == before.get("running", 0) + 1
+    assert world.ping() is True

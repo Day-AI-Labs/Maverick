@@ -4498,9 +4498,10 @@ async def healthz() -> JSONResponse:
     overall_ok = True
 
     try:
-        from maverick.world_model import DEFAULT_DB, WorldModel
-        wm = WorldModel(DEFAULT_DB)
-        wm.conn.execute("SELECT 1").fetchone()
+        # Probe the CONFIGURED backend (SQLite or Postgres), not a hard-coded
+        # local world.db -- a Postgres-backed deployment used to report a stale
+        # local file healthy/unhealthy instead of the DB it actually uses.
+        _world().ping()
         checks["db"] = "ok"
     except Exception as e:
         # Council security finding: /healthz is auth-exempt so an
@@ -4571,21 +4572,20 @@ async def metrics() -> PlainTextResponse:
     """Prometheus text format. Gated by the same bearer as /api/v1."""
     from maverick.runner import MAX_CONCURRENT_GOALS, _run_semaphore
     try:
-        from maverick.world_model import DEFAULT_DB, WorldModel
-        wm = WorldModel(DEFAULT_DB)
-        rows = wm.conn.execute(
-            "SELECT status, COUNT(*) FROM goals GROUP BY status"
-        ).fetchall()
+        # Honor the configured backend (SQLite or Postgres): the inlined
+        # WorldModel(DEFAULT_DB) reported a stale local file on a Postgres deploy.
+        wm = _world()
+        status_counts = wm.goal_status_counts()
         spend = wm.total_spend()
     except Exception:
-        rows = []
+        status_counts = {}
         spend = {"dollars": 0, "input_tokens": 0, "output_tokens": 0, "runs": 0}
 
     lines = [
         "# HELP maverick_goals_total Total goals by status",
         "# TYPE maverick_goals_total counter",
     ]
-    for status, count in rows:
+    for status, count in status_counts.items():
         lines.append(f'maverick_goals_total{{status="{status}"}} {count}')
     lines += [
         "# HELP maverick_cost_dollars_total Total LLM spend",
@@ -4643,13 +4643,20 @@ async def metrics() -> PlainTextResponse:
         import shutil
 
         from maverick.world_model import DEFAULT_DB
-        db_bytes = DEFAULT_DB.stat().st_size if DEFAULT_DB.exists() else 0
+        from maverick.world_model_backends import is_postgres_configured
         probe = DEFAULT_DB.parent if DEFAULT_DB.parent.exists() else None
         usage = shutil.disk_usage(str(probe) if probe else ".")
+        # The world-DB-bytes gauge is a SQLite-file metric; on Postgres the size
+        # lives in the DB server, not a local file, so emit it only for SQLite
+        # rather than report a misleading 0. Disk-free stays useful on both.
+        if not is_postgres_configured():
+            db_bytes = DEFAULT_DB.stat().st_size if DEFAULT_DB.exists() else 0
+            lines += [
+                "# HELP maverick_world_db_bytes Size of the world.db file on disk",
+                "# TYPE maverick_world_db_bytes gauge",
+                f"maverick_world_db_bytes {db_bytes}",
+            ]
         lines += [
-            "# HELP maverick_world_db_bytes Size of the world.db file on disk",
-            "# TYPE maverick_world_db_bytes gauge",
-            f"maverick_world_db_bytes {db_bytes}",
             "# HELP maverick_data_disk_free_bytes Free space on the data volume",
             "# TYPE maverick_data_disk_free_bytes gauge",
             f"maverick_data_disk_free_bytes {usage.free}",
