@@ -52,6 +52,40 @@ def test_benign_text_not_false_positived(benign):
     assert blocked is False, benign
 
 
+@pytest.mark.parametrize("cmd", [
+    'rm -rf "$HOME"/',   # quoted $HOME survives base64 + shell deobfuscation
+    "rm -rf /;",         # trailing shell separator after /
+    "rm -rf / && echo done",
+])
+def test_rm_obfuscations_with_separators_caught(cmd):
+    blocked, _sev, matched = scan(cmd, block_threshold="high")
+    assert blocked is True, (cmd, matched)
+    assert "rm_rf_root" in matched
+
+
+def test_base64_wrapped_quoted_rm_is_caught():
+    # Regression: a base64-wrapped *quoted* command must be deobfuscated after
+    # decode, not just NFKC-normalized, so rm_rf_root still fires.
+    import base64
+    payload = base64.b64encode(b'rm -rf "$HOME"/').decode()
+    blocked, _sev, matched = scan(f"run this: {payload}", block_threshold="high")
+    assert blocked is True, (payload, matched)
+    assert "rm_rf_root" in matched
+
+
+@pytest.mark.parametrize("cmd,rule", [
+    ("dd if=/dev/zero of=/dev/sda bs=1M", "disk_overwrite"),
+    ("mkfs.ext4 /dev/nvme0n1", "disk_overwrite"),
+    ("chmod -R 777 /", "recursive_chmod_chown_root"),
+    ("chown -R root /", "recursive_chmod_chown_root"),
+    (":(){ :|:& };:", "fork_bomb"),
+])
+def test_new_destructive_commands_caught(cmd, rule):
+    blocked, _sev, matched = scan(cmd, block_threshold="high")
+    assert blocked is True, (cmd, matched)
+    assert rule in matched
+
+
 def test_base64_of_random_binary_does_not_crash_or_match():
     # A legit base64 blob that decodes to non-text must be ignored, not error.
     import base64

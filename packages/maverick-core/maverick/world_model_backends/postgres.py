@@ -297,7 +297,6 @@ def _strict_tenant_isolation() -> bool:
     own rows -- legacy ``NULL`` rows are no longer visible. Enable only after the
     legacy rows have been backfilled with a tenant_id. ``MAVERICK_STRICT_TENANT_
     ISOLATION`` env wins over ``[world_model] strict_tenant_isolation``."""
-    import os
     env = os.environ.get("MAVERICK_STRICT_TENANT_ISOLATION")
     if env is not None and env.strip() != "":
         return env.strip().lower() in {"1", "true", "yes", "on"}
@@ -945,13 +944,21 @@ class PostgresWorldModel:
 
     def recent_goal_events(self, goal_id: int, limit: int = 200) -> list:
         from ..world_model import GoalEvent
+        frag, fparams = _tenant_scope("g.tenant_id")
+        table = "goal_events ge"
+        scope = ""
+        if frag:
+            table += " JOIN goals g ON g.id = ge.goal_id"
+            scope = " AND " + frag
+        params: list = [goal_id, *fparams, limit]
         with self._tx() as cur:
             cur.execute(
                 "SELECT id, goal_id, agent, kind, content, ts FROM ("
-                "SELECT id, goal_id, agent, kind, content, ts FROM goal_events "
-                "WHERE goal_id=%s ORDER BY id DESC LIMIT %s"
+                "SELECT ge.id, ge.goal_id, ge.agent, ge.kind, ge.content, ge.ts "
+                f"FROM {table} WHERE ge.goal_id=%s{scope} "
+                "ORDER BY ge.id DESC LIMIT %s"
                 ") recent ORDER BY id ASC",
-                (goal_id, limit),
+                tuple(params),
             )
             rows = cur.fetchall()
         return [GoalEvent(*r) for r in rows]
@@ -1116,28 +1123,39 @@ class PostgresWorldModel:
 
     def open_questions(self, goal_id: int | None = None) -> list:
         from ..world_model import Question
-        cols = "id, goal_id, question, asked_at, answer, answered_at"
+        cols = "q.id, q.goal_id, q.question, q.asked_at, q.answer, q.answered_at"
+        frag, fparams = _tenant_scope("g.tenant_id")
+        table = "questions q"
+        scope = ""
+        if frag:
+            table += " JOIN goals g ON g.id = q.goal_id"
+            scope = " AND " + frag
+        conds = "q.answer IS NULL"
+        params: list = []
+        if goal_id is not None:
+            conds += " AND q.goal_id = %s"
+            params.append(goal_id)
         with self._tx() as cur:
-            if goal_id is not None:
-                cur.execute(
-                    f"SELECT {cols} FROM questions "
-                    "WHERE answer IS NULL AND goal_id = %s ORDER BY id",
-                    (goal_id,),
-                )
-            else:
-                cur.execute(
-                    f"SELECT {cols} FROM questions WHERE answer IS NULL ORDER BY id"
-                )
+            cur.execute(
+                f"SELECT {cols} FROM {table} WHERE {conds}{scope} ORDER BY q.id",
+                tuple([*params, *fparams]),
+            )
             rows = cur.fetchall()
         return [Question(*r) for r in rows]
 
     def all_questions(self, goal_id: int) -> list:
         from ..world_model import Question
+        frag, fparams = _tenant_scope("g.tenant_id")
+        table = "questions q"
+        scope = ""
+        if frag:
+            table += " JOIN goals g ON g.id = q.goal_id"
+            scope = " AND " + frag
         with self._tx() as cur:
             cur.execute(
-                "SELECT id, goal_id, question, asked_at, answer, answered_at "
-                "FROM questions WHERE goal_id = %s ORDER BY id",
-                (goal_id,),
+                "SELECT q.id, q.goal_id, q.question, q.asked_at, q.answer, q.answered_at "
+                f"FROM {table} WHERE q.goal_id = %s{scope} ORDER BY q.id",
+                tuple([goal_id, *fparams]),
             )
             rows = cur.fetchall()
         return [Question(*r) for r in rows]
@@ -1313,11 +1331,19 @@ class PostgresWorldModel:
         """Most recent N turns in chronological (ascending) order, ready to feed
         into a chat-format prompt. Mirrors SQLite."""
         from ..world_model import Turn
+        frag, fparams = _tenant_scope("c.tenant_id")
+        table = "turns t"
+        scope = ""
+        if frag:
+            table += " JOIN conversations c ON c.id = t.conversation_id"
+            scope = " AND " + frag
+        params: list = [conversation_id, *fparams, limit]
         with self._tx() as cur:
             cur.execute(
-                "SELECT id, conversation_id, goal_id, role, content, ts FROM turns "
-                "WHERE conversation_id = %s ORDER BY id DESC LIMIT %s",
-                (conversation_id, limit),
+                "SELECT t.id, t.conversation_id, t.goal_id, t.role, t.content, t.ts "
+                f"FROM {table} "
+                f"WHERE t.conversation_id = %s{scope} ORDER BY t.id DESC LIMIT %s",
+                tuple(params),
             )
             rows = cur.fetchall()
         return list(reversed([Turn(*r) for r in rows]))
@@ -1346,13 +1372,18 @@ class PostgresWorldModel:
         """Delete conversations idle for N seconds and their turns. Turns first
         (no ON DELETE CASCADE). Returns conversations removed. Mirrors SQLite."""
         cutoff = time.time() - idle_for_seconds
+        frag, fparams = _tenant_scope()
+        scope = (" AND " + frag) if frag else ""
         with self._tx() as cur:
             cur.execute(
                 "DELETE FROM turns WHERE conversation_id IN "
-                "(SELECT id FROM conversations WHERE last_seen < %s)",
-                (cutoff,),
+                f"(SELECT id FROM conversations WHERE last_seen < %s{scope})",
+                tuple([cutoff, *fparams]),
             )
-            cur.execute("DELETE FROM conversations WHERE last_seen < %s", (cutoff,))
+            cur.execute(
+                f"DELETE FROM conversations WHERE last_seen < %s{scope}",
+                tuple([cutoff, *fparams]),
+            )
             return cur.rowcount
 
     def erase_conversations(self, conversation_ids: list[int]) -> tuple[set[int], list[str], int]:
@@ -1569,21 +1600,36 @@ class PostgresWorldModel:
 
     def prune_goal_events(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
         cutoff = time.time() - older_than_seconds
+        # goal_events has no tenant_id column; scope via the parent goal so one
+        # tenant's prune never deletes another tenant's rows (SQLite parity: each
+        # tenant has its own DB file).
+        frag, fparams = _tenant_scope("tenant_id")
+        sql = "DELETE FROM goal_events WHERE ts < %s"
+        params: list = [cutoff]
+        if frag:
+            sql += " AND goal_id IN (SELECT id FROM goals WHERE " + frag + ")"
+            params += fparams
         with self._tx() as cur:
-            cur.execute("DELETE FROM goal_events WHERE ts < %s", (cutoff,))
+            cur.execute(sql, tuple(params))
             return cur.rowcount
 
     def prune_processed_messages(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
         cutoff = time.time() - older_than_seconds
+        frag, fparams = _tenant_scope()
+        sql = "DELETE FROM processed_messages WHERE seen_at < %s"
+        params: list = [cutoff]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
         with self._tx() as cur:
-            cur.execute("DELETE FROM processed_messages WHERE seen_at < %s", (cutoff,))
+            cur.execute(sql, tuple(params))
             return cur.rowcount
 
     @property
     def schema_version(self) -> int:
         """Schema version, for parity with SQLite WorldModel.schema_version
-        (read as a property by health.py + audit events). Constant because the
-        PG schema is applied idempotently rather than version-stepped."""
+        (read as a property by health.py + audit events). Derived from the
+        MIGRATIONS ladder (``_PG_SCHEMA_VERSION = MIGRATIONS[-1][0]``)."""
         return _PG_SCHEMA_VERSION
 
     # ----- close -----

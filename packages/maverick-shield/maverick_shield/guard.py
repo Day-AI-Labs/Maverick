@@ -184,8 +184,8 @@ class Shield:
         if safety.get("profile") == "off":
             return cls(profile="off", backend="none", warn_if_missing=False)
         return cls(
-            profile=safety["profile"],
-            block_threshold=safety["block_threshold"],
+            profile=safety.get("profile", "balanced"),
+            block_threshold=safety.get("block_threshold", "high"),
             scan_input=safety.get("scan_input", True),
             scan_tool_calls=safety.get("scan_tool_calls", True),
             scan_output=safety.get("scan_output", True),
