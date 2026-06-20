@@ -412,6 +412,40 @@ def test_erase_conversations_deletes_pg_rows(world):
     assert world.is_processed_message("gdpr-pg", "external-1") is False
 
 
+def test_erase_conversations_fact_scrub_is_tenant_scoped(world):
+    """The GDPR erase scrubs the subject's ``user:<channel>:<user>:`` facts by key
+    prefix. Facts are UNIQUE per (tenant, key), so the scrub must be tenant-scoped:
+    erasing acme's "alice on sms" must NOT delete globex's identically-keyed fact.
+    Regression for the cross-tenant over-deletion in erase_conversations (the same
+    class delete_facts_matching guards, in a sibling path that missed it)."""
+    from maverick.paths import reset_tenant, set_tenant
+
+    key = "user:sms:alice:preference"
+    # globex holds the same-key fact for ITS own alice.
+    tok = set_tenant("globex")
+    try:
+        world.upsert_fact(key, "globex-alice-pref")
+    finally:
+        reset_tenant(tok)
+
+    # acme erases its alice's conversation (subject = sms/alice), scrubbing its fact.
+    tok = set_tenant("acme")
+    try:
+        conv = world.get_or_create_conversation("sms", "alice")
+        world.upsert_fact(key, "acme-alice-pref")
+        world.erase_conversations([conv.id])
+        assert world.get_fact(key) is None
+    finally:
+        reset_tenant(tok)
+
+    # globex's identically-keyed fact is untouched.
+    tok = set_tenant("globex")
+    try:
+        assert world.get_fact(key) == "globex-alice-pref"
+    finally:
+        reset_tenant(tok)
+
+
 # ----- connection pooling (opt-in) -----
 
 def test_pooled_backend_crud_and_pool_object(monkeypatch):
