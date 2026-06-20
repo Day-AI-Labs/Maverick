@@ -298,14 +298,29 @@ def read_cold(cold_dir: str | Path, table: str) -> Iterator[dict]:
     fine.
     """
     cold = Path(cold_dir).expanduser()
+    # De-dup by row id so cold reads are IDEMPOTENT. archive() durably renames a
+    # cold file BEFORE its DELETE commits (the no-data-loss direction), so a
+    # crash in between leaves the rows in SQLite *and* the cold file; the next
+    # archive() then re-writes them to a second file (`-2`). Without this dedup,
+    # read_cold would yield those rows twice and double-count archived analytics.
+    seen_ids: set = set()
     for path in sorted(cold.glob(f"{table}-*")):
         if path.name.endswith(".jsonl.gz"):
-            yield from _read_jsonl_gz(path)
+            reader = _read_jsonl_gz(path)
         elif path.name.endswith(".jsonl.zst"):
-            yield from _read_jsonl_zst(path)
+            reader = _read_jsonl_zst(path)
         elif path.name.endswith(".parquet"):
-            yield from _read_parquet(path)
-        # anything else (e.g. an orphaned .tmp) is not cold data: skip it
+            reader = _read_parquet(path)
+        else:
+            # anything else (e.g. an orphaned .tmp) is not cold data: skip it
+            continue
+        for row in reader:
+            rid = row.get("id")
+            if rid is not None:
+                if rid in seen_ids:
+                    continue
+                seen_ids.add(rid)
+            yield row
 
 
 def _world_cfg() -> dict:

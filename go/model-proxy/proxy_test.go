@@ -222,3 +222,45 @@ func TestConcurrentForwards(t *testing.T) {
 		t.Fatalf("upstream calls = %d, want %d", got, n)
 	}
 }
+
+// Regression: a multi-valued header collapses to its LAST value (Python's
+// dict(headers)), not a comma-join. A client sending two Authorization headers
+// must be compared against the last one, matching model_proxy.py.
+func TestLastHeaderValue(t *testing.T) {
+	cases := []struct {
+		in   []string
+		want string
+	}{
+		{nil, ""},
+		{[]string{}, ""},
+		{[]string{"only"}, "only"},
+		{[]string{"first", "second"}, "second"},
+		{[]string{"a", "b", "c"}, "c"},
+	}
+	for _, c := range cases {
+		if got := lastHeaderValue(c.in); got != c.want {
+			t.Errorf("lastHeaderValue(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestServeHTTPDuplicateAuthUsesLast(t *testing.T) {
+	up := &fakeUpstream{status: 200, respBody: []byte("ok")}
+	srv := &Server{Config: authedConfig(), Upstream: up}
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Two Authorization headers: the last must be the one auth sees. Send the
+	// wrong one first, the correct token last -> request is authorized.
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/messages", strings.NewReader("{}"))
+	req.Header.Add("Authorization", "Bearer WRONG")
+	req.Header.Add("Authorization", "Bearer CLIENT")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200 (last Authorization value should authorize)", resp.StatusCode)
+	}
+}
