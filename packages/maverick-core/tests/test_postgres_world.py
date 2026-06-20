@@ -940,3 +940,49 @@ def test_concurrent_upsert_fact_single_open_window(world, monkeypatch):
         )
         open_windows = cur.fetchone()[0]
     assert open_windows == 1, f"expected exactly one open window, got {open_windows}"
+
+
+def test_answer_cannot_cross_tenant(world, monkeypatch):
+    # A tenant must not answer (overwrite) another tenant's question by id.
+    # RLS defaults off, so app-level _tenant_scope is the only guard.
+    from maverick.world_model_backends import postgres as pg
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "tA")
+    gid_a = world.create_goal("a-goal")
+    qid_a = world.ask("secret question?", gid_a)
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "tB")
+    assert world.answer(qid_a, "tB was here") is False  # no row under tB's scope
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "tA")
+    qa = [q for q in world.all_questions(gid_a) if q.id == qid_a]
+    assert qa and qa[0].answer is None  # still unanswered; not overwritten
+
+
+def test_recent_event_contents_is_tenant_scoped(world, monkeypatch):
+    from maverick.world_model_backends import postgres as pg
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "evA")
+    ga = world.create_goal("evt-a")
+    world.append_event(ga, "agent", "note", "TENANT_A_ONLY_SECRET")
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "evB")
+    gb = world.create_goal("evt-b")
+    world.append_event(gb, "agent", "note", "tenant_b_event")
+    contents = world.recent_event_contents(limit=1000)
+    assert "TENANT_A_ONLY_SECRET" not in contents  # no cross-tenant read
+    assert "tenant_b_event" in contents
+
+
+def test_erase_conversations_cannot_cross_tenant(world, monkeypatch):
+    from maverick.world_model_backends import postgres as pg
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "erA")
+    conv_a = world.get_or_create_conversation("chan", "userA").id
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "erB")
+    goals, paths, turns = world.erase_conversations([conv_a])
+    assert goals == set() and paths == [] and turns == 0  # nothing erased
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "erA")
+    assert any(c.id == conv_a for c in world.list_conversations())  # survived
