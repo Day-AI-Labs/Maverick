@@ -14,7 +14,7 @@ path = "src/main.rs"
 # small-order signatures the RFC-8032 verify equation would otherwise accept,
 # matching `cryptography`'s strict PublicKey.verify (which also rejects them).
 ed25519-dalek = "2"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 # arbitrary_precision: KEEP the original number literal from each row verbatim
 # so re-serialization reproduces CPython's float/int repr byte-for-byte (the
