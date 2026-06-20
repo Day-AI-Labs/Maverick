@@ -21,6 +21,28 @@ log = logging.getLogger(__name__)
 CACHE_PATH = data_dir("skill_embeddings.json")
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
+
+def _cache_path():
+    """Resolve the cache path at CALL time so it follows the ACTIVE tenant.
+
+    ``CACHE_PATH`` is computed once at import and snapshots whichever tenant was
+    active then; in a long-lived multi-tenant process (the dashboard) every
+    later load/save would hit that frozen path, so tenant B reads/writes tenant
+    A's vector cache -- and since the cache is keyed by skill *name* and learned
+    skills are tenant-scoped, a same-named skill could be served another
+    tenant's vector. The sibling ``stats._resolve`` already re-reads the tenant
+    per call for exactly this reason; mirror it. The module-attr stays the
+    fallback so the single-tenant layout and tests monkeypatching ``CACHE_PATH``
+    keep working.
+    """
+    try:
+        from ..paths import current_tenant
+        if current_tenant():
+            return data_dir("skill_embeddings.json")
+    except Exception:  # pragma: no cover -- isolation never blocks resolution
+        pass
+    return CACHE_PATH
+
 _model = None  # lazy singleton
 _model_lock = threading.Lock()  # guard the (expensive) lazy ONNX model load
 
@@ -75,10 +97,11 @@ class CachedEmbedding:
 
 
 def _load_cache() -> dict[str, CachedEmbedding]:
-    if not CACHE_PATH.exists():
+    path = _cache_path()
+    if not path.exists():
         return {}
     try:
-        raw = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
     out: dict[str, CachedEmbedding] = {}
@@ -97,12 +120,13 @@ def _load_cache() -> dict[str, CachedEmbedding]:
 
 
 def _save_cache(cache: dict[str, CachedEmbedding]) -> None:
-    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    path = _cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
     raw = {
         name: {"text": e.text, "mtime": e.mtime, "vector": e.vector}
         for name, e in cache.items()
     }
-    CACHE_PATH.write_text(json.dumps(raw), encoding="utf-8")
+    path.write_text(json.dumps(raw), encoding="utf-8")
 
 
 def _skill_to_embed_text(skill) -> str:
