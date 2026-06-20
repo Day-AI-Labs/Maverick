@@ -2344,12 +2344,22 @@ class PostgresWorldModel:
             # the SQLite erase path. The previous source_episode_id-based delete
             # both missed these prefixed keys AND deleted unrelated global facts
             # that merely happened to reference a deleted episode.
+            # Scope the fact scrub to the active tenant. Facts are UNIQUE per
+            # (tenant, key): another tenant can hold the same user:<token>: key,
+            # so a DELETE keyed only on the prefix would erase that tenant's row
+            # too -- the same cross-tenant GDPR over-deletion delete_facts_matching
+            # guards against. The conv/goal rows above are already tenant-isolated
+            # by id; this LIKE-by-prefix path is the one that needs the predicate.
+            frag, fparams = _tenant_scope()
             for channel, user_id in subjects:
                 token = f"{quote(channel, safe='')}:{quote(user_id, safe='')}"
                 like = self._like_escape(f"user:{token}:") + "%"
-                cur.execute(
-                    "DELETE FROM facts WHERE key LIKE %s ESCAPE '\\'", (like,),
-                )
+                sql = "DELETE FROM facts WHERE key LIKE %s ESCAPE '\\'"
+                params = [like]
+                if frag:
+                    sql += " AND " + frag
+                    params += fparams
+                cur.execute(sql, tuple(params))
 
             cur.execute("DELETE FROM conversations WHERE id = ANY(%s)", (conv_ids,))
 
