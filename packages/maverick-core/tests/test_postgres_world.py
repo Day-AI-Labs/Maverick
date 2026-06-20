@@ -7,6 +7,7 @@ method-parity work can extend (so parity is testable, not shipped blind).
 """
 from __future__ import annotations
 
+import importlib.util
 import os
 
 import pytest
@@ -654,6 +655,10 @@ def test_goal_origins(world):
     assert world.origin_status_counts("schedule", ref) == {"pending": 1, "done": 1}
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("cryptography") is None,
+    reason="cryptography extra not installed (at-rest sealing needs AES-256-GCM)",
+)
 def test_at_rest_encryption_seals_columns_and_round_trips(world, monkeypatch, tmp_path):
     """With encryption on, sensitive columns are AES-256-GCM ciphertext on disk
     yet read back as plaintext (audit C4: Postgres at-rest sealing)."""
