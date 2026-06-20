@@ -489,6 +489,7 @@ async def answer_question(request: Request, goal_id: int, payload: AnswerIn) -> 
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
+    require_permission(request, "operate")
     answer = (payload.answer or "").strip()
     if not answer:
         raise HTTPException(status_code=400, detail="answer is required")
@@ -1712,8 +1713,13 @@ async def get_agent_endpoint(name: str) -> dict:
 
 
 @router.post("/agents/{name}/validate")
-async def validate_agent_override(name: str, payload: AgentOverrideIn) -> dict:
+async def validate_agent_override(
+    request: Request, name: str, payload: AgentOverrideIn
+) -> dict:
     """Lint the merged result of a proposed override without persisting it."""
+    # Same gate as save/delete override: pack editing is admin-only, so the
+    # lint helper that previews a pack edit must not be reachable unauthenticated.
+    _require_pack_editing(request)
     from maverick.domain_edit import validate_override
     errors, warnings = validate_override(name, payload.model_dump(exclude_unset=True))
     return {"ok": not errors, "errors": errors, "warnings": warnings}
@@ -2413,7 +2419,7 @@ async def compliance_report_csv(framework: str = "all") -> Response:
 
 
 @router.post("/redact/preview")
-async def redact_preview(payload: RedactIn) -> dict:
+async def redact_preview(request: Request, payload: RedactIn) -> dict:
     """Granular redaction preview: per-finding spans + kinds, nothing stored.
 
     ``kinds`` filters which detector classes to act on (e.g. only
@@ -2421,6 +2427,9 @@ async def redact_preview(payload: RedactIn) -> dict:
     The response carries each finding (kind + a safe preview of WHERE, never
     the raw value) and the fully-redacted text for the selected kinds.
     """
+    # Gate behind auth: this runs the detector pipeline on caller-supplied text,
+    # so it must not be an unauthenticated compute/probe surface.
+    require_permission(request, "operate")
     from maverick.provable_redaction import redact_proven, verify_redacted
     from maverick.safety import pii_detector, secret_detector
 
@@ -2643,6 +2652,7 @@ async def retitle_goal(request: Request, goal_id: int, payload: RetitleIn) -> No
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
+    require_permission(request, "operate")
     title = (payload.title or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
@@ -2668,6 +2678,7 @@ async def reparent_goal(request: Request, goal_id: int, payload: ReparentIn) -> 
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
+    require_permission(request, "operate")
     new_parent = payload.parent_id
     if new_parent is not None:
         if new_parent == goal_id:

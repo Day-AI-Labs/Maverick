@@ -199,3 +199,41 @@ def test_auditor_reads_audit_but_nothing_operational(monkeypatch, tmp_path):
     assert c.post("/chat/send", data={"title": "hi"}).status_code == 403
     assert c.post("/api/v1/goals/compose",
                   json={"title": "spend money"}).status_code == 403
+
+
+def test_viewer_cannot_mutate_owned_goal(monkeypatch, tmp_path):
+    # answer/retitle/reparent are "operate" actions. A viewer who OWNS a goal
+    # (so the access check passes) must still be 403'd by the role gate -- owner
+    # access is not authz. Regression for the missing require_permission gate.
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import rbac
+    rbac.set_role("user:vm", "viewer")
+    from maverick.world_model import WorldModel
+    gid = WorldModel(tmp_path / "world.db").create_goal("owned", owner="user:vm")
+    _as(monkeypatch, "user:vm")
+    assert c.post(f"/api/v1/goals/{gid}/answer",
+                  json={"question_id": 1, "answer": "x"}).status_code == 403
+    assert c.post(f"/api/v1/goals/{gid}/retitle",
+                  json={"title": "new"}).status_code == 403
+    assert c.post(f"/api/v1/goals/{gid}/reparent",
+                  json={"parent_id": None}).status_code == 403
+
+
+def test_redact_preview_requires_operate(monkeypatch, tmp_path):
+    # /redact/preview ran the detector pipeline on caller text unauthenticated;
+    # it now requires "operate" (a viewer is 403'd).
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import rbac
+    rbac.set_role("user:vp", "viewer")
+    _as(monkeypatch, "user:vp")
+    assert c.post("/api/v1/redact/preview", json={"text": "hi"}).status_code == 403
+
+
+def test_validate_agent_override_requires_pack_admin(monkeypatch, tmp_path):
+    # /agents/{name}/validate (pack-edit lint) was unauthenticated; it now uses
+    # the same pack-admin gate as save/delete override.
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import api
+    monkeypatch.setattr(api, "caller_principal", lambda request: "user:alice")
+    monkeypatch.setattr(api, "is_dashboard_admin", lambda principal: False)
+    assert c.post("/api/v1/agents/orchestrator/validate", json={}).status_code == 403
