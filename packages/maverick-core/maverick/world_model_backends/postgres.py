@@ -24,8 +24,10 @@ hot-path methods.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import secrets
 import threading
 import time
 from collections.abc import Iterator
@@ -308,6 +310,46 @@ _ARTIFACTS_MIGRATION: list[str] = [
 ]
 
 
+# --- Share links / sign-offs / goal origins (migration v17) ------------------
+# Parity with the SQLite tables: a revocable expiring read-only share link to a
+# goal (only the token's SHA-256 is stored); a human's certify/reject sign-off on
+# a deliverable (one row per goal); and which automation spawned a goal. All are
+# child tables keyed by goal_id, scoped through the goal's tenant. note is
+# plaintext under PG (SQLite encrypts at rest).
+_SHARE_SIGNOFF_ORIGIN_MIGRATION: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS share_links (
+      id           SERIAL PRIMARY KEY,
+      goal_id      INTEGER NOT NULL REFERENCES goals(id),
+      token_sha256 TEXT NOT NULL UNIQUE,
+      created_by   TEXT NOT NULL DEFAULT '',
+      created_at   DOUBLE PRECISION NOT NULL,
+      expires_at   DOUBLE PRECISION,
+      revoked      INTEGER NOT NULL DEFAULT 0
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_share_links_goal ON share_links(goal_id);",
+    """
+    CREATE TABLE IF NOT EXISTS signoffs (
+      goal_id    INTEGER PRIMARY KEY REFERENCES goals(id),
+      decision   TEXT NOT NULL,
+      decided_by TEXT NOT NULL DEFAULT '',
+      note       TEXT,
+      created_at DOUBLE PRECISION NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS goal_origins (
+      goal_id    INTEGER PRIMARY KEY REFERENCES goals(id),
+      kind       TEXT NOT NULL,
+      ref        TEXT NOT NULL,
+      created_at DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_goal_origins_ref ON goal_origins(kind, ref);",
+]
+
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
@@ -316,6 +358,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (14, _GOAL_DOMAIN_MIGRATION),
     (15, _PROJECTS_MIGRATION),
     (16, _ARTIFACTS_MIGRATION),
+    (17, _SHARE_SIGNOFF_ORIGIN_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -939,6 +982,163 @@ class PostgresWorldModel:
             by_title[a["title"]] = a
             counts[a["title"]] = counts.get(a["title"], 0) + 1
         return [{**a, "versions": counts[t]} for t, a in by_title.items()]
+
+    # ---- Share links (migration v17) ----------------------------------------
+
+    def create_share_link(
+        self, goal_id: int, *, created_by: str = "", ttl_seconds: float | None = None,
+    ) -> tuple[int, str]:
+        """Mint a read-only share link; returns ``(id, clear_token)``. Only the
+        token's SHA-256 is persisted, so the clear token is shown exactly once."""
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        now = time.time()
+        exp = now + float(ttl_seconds) if ttl_seconds else None
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO share_links(goal_id, token_sha256, created_by, "
+                "created_at, expires_at) VALUES(%s, %s, %s, %s, %s) RETURNING id",
+                (int(goal_id), token_hash, created_by or "", now, exp),
+            )
+            return int(cur.fetchone()[0]), token
+
+    def resolve_share_link(self, token: str) -> int | None:
+        """The goal_id a token grants read access to, or None if unknown/revoked/
+        expired. Lookup is by hash -- the clear token is never stored."""
+        if not token:
+            return None
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT goal_id, expires_at, revoked FROM share_links "
+                "WHERE token_sha256=%s",
+                (token_hash,),
+            )
+            row = cur.fetchone()
+        if not row or row[2]:
+            return None
+        if row[1] is not None and float(row[1]) < time.time():
+            return None
+        return int(row[0])
+
+    def share_links_for_goal(self, goal_id: int) -> list[dict]:
+        """Share links for a goal (manage UI), newest first. Tokens are NOT
+        returned (only the hash exists); each row carries its lifecycle state."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, created_by, created_at, expires_at, revoked "
+                "FROM share_links WHERE goal_id=%s ORDER BY id DESC",
+                (int(goal_id),),
+            )
+            rows = cur.fetchall()
+        now = time.time()
+        out = []
+        for r in rows:
+            expired = r[3] is not None and float(r[3]) < now
+            revoked = bool(r[4])
+            out.append({
+                "id": r[0], "created_by": r[1], "created_at": r[2],
+                "expires_at": r[3], "revoked": revoked, "expired": expired,
+                "active": not revoked and not expired,
+            })
+        return out
+
+    def revoke_share_link(self, link_id: int, *, goal_id: int | None = None) -> bool:
+        """Revoke a share link (optionally only if it belongs to ``goal_id``).
+        Returns whether a row was changed."""
+        with self._tx() as cur:
+            if goal_id is None:
+                cur.execute(
+                    "UPDATE share_links SET revoked=1 WHERE id=%s", (int(link_id),))
+            else:
+                cur.execute(
+                    "UPDATE share_links SET revoked=1 WHERE id=%s AND goal_id=%s",
+                    (int(link_id), int(goal_id)))
+            return cur.rowcount > 0
+
+    # ---- Sign-offs (migration v17) ------------------------------------------
+
+    def record_signoff(
+        self, goal_id: int, decision: str, *, decided_by: str = "",
+        note: str | None = None,
+    ) -> None:
+        """Record a human's certify/reject decision on a deliverable. One row per
+        goal (a later decision replaces an earlier one)."""
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO signoffs(goal_id, decision, decided_by, note, "
+                "created_at) VALUES(%s, %s, %s, %s, %s) "
+                "ON CONFLICT (goal_id) DO UPDATE SET decision=EXCLUDED.decision, "
+                "decided_by=EXCLUDED.decided_by, note=EXCLUDED.note, "
+                "created_at=EXCLUDED.created_at",
+                (int(goal_id), str(decision), str(decided_by or ""), note, time.time()),
+            )
+
+    def signoff_for(self, goal_id: int) -> dict | None:
+        """The current sign-off on a goal's deliverable, or None if unreviewed."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT goal_id, decision, decided_by, note, created_at "
+                "FROM signoffs WHERE goal_id=%s",
+                (int(goal_id),),
+            )
+            r = cur.fetchone()
+        if not r:
+            return None
+        return {"goal_id": r[0], "decision": r[1], "decided_by": r[2],
+                "note": r[3], "created_at": r[4]}
+
+    def signoffs_for_goals(self, goal_ids) -> dict[int, str]:
+        """Map ``goal_id -> decision`` for a batch of goals (goals with no
+        sign-off are absent)."""
+        ids = [int(g) for g in goal_ids]
+        if not ids:
+            return {}
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT goal_id, decision FROM signoffs WHERE goal_id = ANY(%s)",
+                (ids,),
+            )
+            rows = cur.fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    # ---- Goal origins (migration v17) ---------------------------------------
+
+    def record_goal_origin(self, goal_id: int, kind: str, ref: str) -> None:
+        """Record which automation spawned a goal (one row per goal)."""
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO goal_origins(goal_id, kind, ref, created_at) "
+                "VALUES(%s, %s, %s, %s) "
+                "ON CONFLICT (goal_id) DO UPDATE SET kind=EXCLUDED.kind, "
+                "ref=EXCLUDED.ref, created_at=EXCLUDED.created_at",
+                (int(goal_id), str(kind), str(ref), time.time()),
+            )
+
+    def goals_for_origin(self, kind: str, ref: str, *, limit: int = 20) -> list[PGGoal]:
+        """Goals an automation spawned, most-recent first."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT g.id, g.parent_id, g.title, g.description, g.status, "
+                "g.created_at, g.updated_at, g.deadline, g.result FROM goals g "
+                "JOIN goal_origins o ON o.goal_id = g.id "
+                "WHERE o.kind=%s AND o.ref=%s ORDER BY g.id DESC LIMIT %s",
+                (str(kind), str(ref), max(1, int(limit))),
+            )
+            rows = cur.fetchall()
+        return [PGGoal(*r) for r in rows]
+
+    def origin_status_counts(self, kind: str, ref: str) -> dict[str, int]:
+        """An automation's spawned-goal counts keyed by status (run summary)."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT g.status, COUNT(*) FROM goals g "
+                "JOIN goal_origins o ON o.goal_id = g.id "
+                "WHERE o.kind=%s AND o.ref=%s GROUP BY g.status",
+                (str(kind), str(ref)),
+            )
+            rows = cur.fetchall()
+        return {r[0]: int(r[1]) for r in rows}
 
     def list_active_goals(self, limit: int = 50) -> list[PGGoal]:
         frag, params = _tenant_scope()

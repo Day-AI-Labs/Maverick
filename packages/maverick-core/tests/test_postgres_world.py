@@ -607,3 +607,48 @@ def test_artifacts_versioning_and_latest(world):
     assert latest["Report"]["content"] == "v2 body"
     assert latest["Report"]["versions"] == 2
     assert latest["script.py"]["versions"] == 1
+
+
+def test_share_links_lifecycle(world):
+    gid = world.create_goal("shared goal")
+    lid, token = world.create_share_link(gid, created_by="al")
+    assert isinstance(lid, int) and token
+    assert world.resolve_share_link(token) == gid
+    assert world.resolve_share_link("bogus") is None
+    links = world.share_links_for_goal(gid)
+    assert links[0]["id"] == lid and links[0]["active"] is True
+    # revoke -> no longer resolves, marked revoked/inactive
+    assert world.revoke_share_link(lid, goal_id=gid) is True
+    assert world.resolve_share_link(token) is None
+    assert world.share_links_for_goal(gid)[0]["active"] is False
+    # expired link does not resolve
+    _, t2 = world.create_share_link(gid, ttl_seconds=-1)
+    assert world.resolve_share_link(t2) is None
+
+
+def test_signoffs_round_trip_and_batch(world):
+    g1 = world.create_goal("deliverable 1")
+    g2 = world.create_goal("deliverable 2")
+    assert world.signoff_for(g1) is None
+    world.record_signoff(g1, "approved", decided_by="al", note="ok")
+    s = world.signoff_for(g1)
+    assert s["decision"] == "approved" and s["decided_by"] == "al" and s["note"] == "ok"
+    # a later decision replaces the earlier one (one row per goal)
+    world.record_signoff(g1, "rejected", decided_by="bo")
+    assert world.signoff_for(g1)["decision"] == "rejected"
+    world.record_signoff(g2, "approved")
+    assert world.signoffs_for_goals([g1, g2, 999]) == {g1: "rejected", g2: "approved"}
+    assert world.signoffs_for_goals([]) == {}
+
+
+def test_goal_origins(world):
+    import uuid
+    ref = f"sched-{uuid.uuid4().hex[:8]}"
+    g1 = world.create_goal("auto 1")
+    world.record_goal_origin(g1, "schedule", ref)
+    g2 = world.create_goal("auto 2")
+    world.record_goal_origin(g2, "schedule", ref)
+    world.set_goal_status(g2, "done")
+    ids = [g.id for g in world.goals_for_origin("schedule", ref)]
+    assert g1 in ids and g2 in ids and ids == sorted(ids, reverse=True)
+    assert world.origin_status_counts("schedule", ref) == {"pending": 1, "done": 1}
