@@ -21,7 +21,7 @@ jobs:
   dry-run:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The published action installs `maverick-agent` from PyPI, but the
       # proprietary package isn't on the public index — so this self-smoke-test
@@ -29,7 +29,7 @@ jobs:
       # `pip install maverick-agent` then resolves as already-satisfied and
       # never reaches PyPI. Same 3.12 the action defaults to, so the editable
       # install lives in the interpreter the action reuses.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install the in-repo package (local checkout, not PyPI)
