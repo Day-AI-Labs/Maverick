@@ -114,6 +114,19 @@ networkPolicy:
   enabled: false
   restrictEgress: false
 
+# Prometheus Operator ServiceMonitor for /metrics. /metrics is bearer-gated when
+# a dashboard token is set, so the scrape must authenticate — this wires the
+# bearer from a secret. Requires the Prometheus Operator CRDs to be installed.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  # Secret + key holding the dashboard bearer token used to scrape /metrics.
+  # Leave name empty to use the chart's own secret.
+  bearerTokenSecret:
+    name: ""
+    key: MAVERICK_DASHBOARD_TOKEN
+
 ingress:
   enabled: false
   className: ""
