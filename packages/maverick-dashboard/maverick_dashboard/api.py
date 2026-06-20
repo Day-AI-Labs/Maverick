@@ -683,7 +683,7 @@ def _require_skill_install_opt_in() -> None:
 
 
 @router.post("/skills", response_model=SkillOut, status_code=201)
-async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
+async def install_skill_endpoint(request: Request, payload: SkillInstallIn) -> SkillOut:
     """Install a skill from a URL or ``gh:org/repo[:path]``.
 
     Skill install runs untrusted code at the next agent invocation. The
@@ -692,7 +692,13 @@ async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
     operator opting in is taking explicit ownership of the supply
     chain. CLI ``maverick skill install`` remains available without
     the flag because it requires shell access on the host.
+
+    RBAC: this is a control-plane change to the code the agent loads, so it
+    requires ``admin`` -- matching ``/plugins/install``. The opt-in flag is
+    process-wide, not per-user, so it can't stand in for a role check (a
+    view-only principal must not install/replace agent code).
     """
+    require_permission(request, "admin")
     _require_skill_install_opt_in()
     from maverick.skills import install_skill
     try:
@@ -703,14 +709,16 @@ async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
 
 
 @router.post("/skills/create", response_model=SkillOut, status_code=201)
-async def create_skill_endpoint(payload: SkillCreateIn) -> SkillOut:
+async def create_skill_endpoint(request: Request, payload: SkillCreateIn) -> SkillOut:
     """Author a skill from the dashboard form (name / triggers / tools /
     instructions) and install it.
 
     Lower risk than installing a remote source -- the content is the body the
     author typed, not fetched code -- but it still lands in agent prompts and is
     secret/shield-scanned, so it shares the same ``MAVERICK_ALLOW_SKILL_INSTALL``
-    opt-in as install. 422 on invalid input (no trigger, empty body, ...)."""
+    opt-in as install. 422 on invalid input (no trigger, empty body, ...).
+    Requires ``admin`` (installs agent-loaded code), like install."""
+    require_permission(request, "admin")
     _require_skill_install_opt_in()
     from maverick.skills import create_skill
     try:
@@ -842,13 +850,14 @@ async def catalog_list(kind: str) -> dict:
 
 
 @router.post("/catalog/skills/install", response_model=SkillOut, status_code=201)
-async def catalog_install_skill(payload: CatalogInstallIn) -> SkillOut:
+async def catalog_install_skill(request: Request, payload: CatalogInstallIn) -> SkillOut:
     """Install a catalog skill by name.
 
     Catalog metadata (source + hash) can come from remote indexes, so
     this endpoint keeps the same operator opt-in gate as free-text skill
-    installs.
+    installs. Requires ``admin`` (installs agent-loaded code), like install.
     """
+    require_permission(request, "admin")
     _require_skill_install_opt_in()
     from maverick.skills import install_from_catalog
     try:
@@ -859,7 +868,10 @@ async def catalog_install_skill(payload: CatalogInstallIn) -> SkillOut:
 
 
 @router.delete("/skills/{name}", status_code=204)
-async def remove_skill_endpoint(name: str) -> None:
+async def remove_skill_endpoint(request: Request, name: str) -> None:
+    # Removing an installed skill is a control-plane mutation of agent-loaded
+    # code; require admin (a view-only principal must not pull skills).
+    require_permission(request, "admin")
     from maverick.skills import remove_skill
     if not remove_skill(name):
         raise HTTPException(status_code=404, detail="no such skill")
@@ -930,7 +942,7 @@ async def learned_api() -> dict:
 
 
 @router.delete("/generated-tools/{name}", status_code=204)
-async def remove_generated_tool(name: str) -> None:
+async def remove_generated_tool(request: Request, name: str) -> None:
     """Delete a persisted generated tool so a bad one can be pulled.
 
     The valuable mutation of #427: removes ~/.maverick/generated_tools/<name>
@@ -938,8 +950,10 @@ async def remove_generated_tool(name: str) -> None:
     generated-tools dir (see ``_resolve_generated_tool``) so traversal /
     absolute / out-of-dir names are refused. Auth/same-origin is enforced
     centrally by the dashboard's bearer_auth middleware (DELETE is a
-    mutating method, so the same-origin check applies).
+    mutating method, so the same-origin check applies), and RBAC requires
+    ``admin`` -- deleting agent-loaded code is not a view-only action.
     """
+    require_permission(request, "admin")
     target = _resolve_generated_tool(name)
     if not target.is_file():
         raise HTTPException(status_code=404, detail="no such generated tool")
