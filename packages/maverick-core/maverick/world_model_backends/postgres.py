@@ -350,6 +350,34 @@ _SHARE_SIGNOFF_ORIGIN_MIGRATION: list[str] = [
 ]
 
 
+# --- Temporal fact history (migration v18) -----------------------------------
+# Parity with the SQLite bitemporal fact_history: `facts` keeps the single
+# CURRENT value (UNIQUE key); this records each value's validity window so "what
+# did we believe on date X, and why" is answerable -- non-destructive evolution
+# instead of overwrite. Only written when [memory] temporal is enabled. `value`
+# is sealed at rest like facts.value (reusing the shared field codec); the
+# window/provenance columns stay plaintext so they remain queryable under
+# encryption. tenant_id scopes it like every other table.
+_FACT_HISTORY_MIGRATION: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS fact_history (
+      id                SERIAL PRIMARY KEY,
+      key               TEXT NOT NULL,
+      value             TEXT NOT NULL,
+      source_episode_id INTEGER,
+      valid_from        DOUBLE PRECISION NOT NULL,
+      valid_to          DOUBLE PRECISION,
+      source            TEXT NOT NULL DEFAULT '',
+      trust_tier        INTEGER NOT NULL DEFAULT 3,
+      sensitivity       TEXT NOT NULL DEFAULT 'internal',
+      tenant_id         TEXT
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_fact_history_key "
+    "ON fact_history (COALESCE(tenant_id, ''), key, valid_from);",
+]
+
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
@@ -359,6 +387,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (15, _PROJECTS_MIGRATION),
     (16, _ARTIFACTS_MIGRATION),
     (17, _SHARE_SIGNOFF_ORIGIN_MIGRATION),
+    (18, _FACT_HISTORY_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -1564,13 +1593,54 @@ class PostgresWorldModel:
         self, key: str, value: str, episode_id: int | None = None,
         *, source: str = "", trust_tier: int = 3, sensitivity: str = "internal",
     ) -> None:
-        # Memory Guard provenance + temporal fact_history are sqlite-first (like
-        # at-rest encryption). The signature accepts the provenance kwargs so the
-        # backend-agnostic callers (kv_memory, orchestrator) don't break under
-        # Postgres; they are not persisted here yet. The write-time screen in
-        # kv_memory -- the primary ASI06 control -- runs regardless of backend.
-        del source, trust_tier, sensitivity
+        """Write the current value of ``key``.
+
+        When ``[memory] temporal`` is on, a *changed* value (or a changed trust
+        tier) also appends a version to ``fact_history`` and closes the prior
+        open window -- non-destructive evolution, mirroring the SQLite backend.
+        The Memory Guard provenance kwargs are persisted on the history row; the
+        live ``facts`` row keeps its existing columns (the write-time screen in
+        kv_memory, the primary ASI06 control, runs regardless of backend).
+        """
+        from ..world_model import _temporal_memory_enabled
+        now = time.time()
+        tenant = _active_tenant()
         with self._tx() as cur:
+            if _temporal_memory_enabled():
+                frag, params = _tenant_scope()
+                sql = (
+                    "SELECT value, trust_tier FROM fact_history "
+                    "WHERE key = %s AND valid_to IS NULL"
+                )
+                p: list = [key]
+                if frag:
+                    sql += " AND " + frag
+                    p += params
+                sql += " ORDER BY valid_from DESC LIMIT 1"
+                cur.execute(sql, tuple(p))
+                open_row = cur.fetchone()
+                # A new version is recorded when the open window's value or trust
+                # tier differs (or there is no open window yet) -- the same
+                # "distinct belief" rule the SQLite backend applies.
+                changed = (
+                    open_row is None
+                    or _unseal(open_row[0]) != value
+                    or int(open_row[1]) != int(trust_tier)
+                )
+                if changed:
+                    close = "UPDATE fact_history SET valid_to = %s WHERE key = %s AND valid_to IS NULL"
+                    cp: list = [now, key]
+                    if frag:
+                        close += " AND " + frag
+                        cp += params
+                    cur.execute(close, tuple(cp))
+                    cur.execute(
+                        "INSERT INTO fact_history(key, value, source_episode_id, "
+                        "valid_from, valid_to, source, trust_tier, sensitivity, tenant_id) "
+                        "VALUES(%s, %s, %s, %s, NULL, %s, %s, %s, %s)",
+                        (key, _seal(value), episode_id, now, source,
+                         int(trust_tier), sensitivity, tenant),
+                    )
             cur.execute(
                 "INSERT INTO facts(key, value, source_episode_id, updated_at, tenant_id) "
                 "VALUES(%s, %s, %s, %s, %s) "
@@ -1578,7 +1648,7 @@ class PostgresWorldModel:
                 "value = EXCLUDED.value, "
                 "source_episode_id = EXCLUDED.source_episode_id, "
                 "updated_at = EXCLUDED.updated_at",
-                (key, _seal(value), episode_id, time.time(), _active_tenant()),
+                (key, _seal(value), episode_id, now, tenant),
             )
 
     def get_facts(self) -> dict[str, str]:
@@ -1613,30 +1683,77 @@ class PostgresWorldModel:
     def delete_facts_matching(self, token: str) -> list[str]:
         """Delete user-scoped facts (see :meth:`facts_matching`); return the keys."""
         keys = sorted(self.facts_matching(token).keys())
-        if keys:
-            ph = ",".join(["%s"] * len(keys))
-            with self._tx() as cur:
+        prefix = f"user:{token}:" if token else ""
+        with self._tx() as cur:
+            if keys:
+                ph = ",".join(["%s"] * len(keys))
                 cur.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
+            # GDPR Art.17: hard-purge the bitemporal history for the WHOLE subject
+            # prefix (not just live keys) so a value individually deleted earlier
+            # -- window closed, row retained -- is erased too and can't be
+            # recovered via get_fact(as_of=...). No-op when temporal never wrote.
+            if prefix:
+                cur.execute("DELETE FROM fact_history WHERE key LIKE %s ESCAPE '\\'",
+                            (self._like_escape(prefix) + "%",))
         return keys
 
     def fact_history_matching(self, token: str) -> dict[str, list]:
-        # Temporal fact_history is sqlite-first; Postgres retains no history, so
-        # the subject's Art.15 export has no historical fact values to add.
-        del token
-        return {}
+        """All recorded fact versions under ``user:<token>:`` (incl. keys removed
+        from the live table) for the GDPR Art.15 export. Empty unless ``[memory]
+        temporal`` retained history. Mirrors the SQLite backend."""
+        if not token:
+            return {}
+        from ..world_model import FactVersion
+        prefix = f"user:{token}:"
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT key, value, valid_from, valid_to, source, trust_tier, sensitivity "
+            "FROM fact_history WHERE key LIKE %s ESCAPE '\\'"
+        )
+        p: list = [self._like_escape(prefix) + "%"]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        sql += " ORDER BY key, valid_from"
+        with self._tx() as cur:
+            cur.execute(sql, tuple(p))
+            rows = cur.fetchall()
+        out: dict[str, list] = {}
+        for r in rows:
+            out.setdefault(r[0], []).append(FactVersion(
+                value=_unseal(r[1]), valid_from=r[2], valid_to=r[3],
+                source=r[4] or "", trust_tier=int(r[5]),
+                sensitivity=r[6] or "internal",
+            ))
+        return out
 
     @staticmethod
     def _like_escape(s: str) -> str:
         return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     def get_fact(self, key: str, *, as_of: float | None = None) -> str | None:
-        # Temporal history is sqlite-first; an ``as_of`` read has no backing
-        # store here, so it returns None rather than a misleading current value.
-        if as_of is not None:
-            return None
+        """Single fact value by exact key, or None.
+
+        With ``as_of`` (a unix timestamp) the value is read from
+        ``fact_history`` as it stood at that instant (requires ``[memory]
+        temporal``); returns None when no recorded version covered that time."""
         frag, params = _tenant_scope()
+        if as_of is not None:
+            sql = (
+                "SELECT value FROM fact_history WHERE key = %s AND valid_from <= %s "
+                "AND (valid_to IS NULL OR valid_to > %s)"
+            )
+            p: list = [key, as_of, as_of]
+            if frag:
+                sql += " AND " + frag
+                p += params
+            sql += " ORDER BY valid_from DESC LIMIT 1"
+            with self._tx() as cur:
+                cur.execute(sql, tuple(p))
+                row = cur.fetchone()
+            return _unseal(row[0]) if row else None
         sql = "SELECT value FROM facts WHERE key = %s"
-        p: list = [key]
+        p = [key]
         if frag:
             sql += " AND " + frag
             p += params
@@ -1646,14 +1763,54 @@ class PostgresWorldModel:
             row = cur.fetchone()
         return _unseal(row[0]) if row else None
 
-    def delete_fact(self, key: str) -> int:
+    def fact_history(self, key: str, *, limit: int = 50) -> list:
+        """Every recorded version of ``key``, newest first (requires ``[memory]
+        temporal``). The row whose ``valid_to is None`` is the current value."""
+        from ..world_model import FactVersion
         frag, params = _tenant_scope()
-        sql = "DELETE FROM facts WHERE key = %s"
+        sql = (
+            "SELECT value, valid_from, valid_to, source, trust_tier, sensitivity "
+            "FROM fact_history WHERE key = %s"
+        )
         p: list = [key]
         if frag:
             sql += " AND " + frag
             p += params
+        sql += " ORDER BY valid_from DESC LIMIT %s"
+        p.append(max(1, int(limit)))
         with self._tx() as cur:
+            cur.execute(sql, tuple(p))
+            rows = cur.fetchall()
+        return [
+            FactVersion(
+                value=_unseal(r[0]), valid_from=r[1], valid_to=r[2],
+                source=r[3] or "", trust_tier=int(r[4]),
+                sensitivity=r[5] or "internal",
+            )
+            for r in rows
+        ]
+
+    def delete_fact(self, key: str) -> int:
+        """Delete one fact by exact key; return rows removed (0 or 1).
+
+        When ``[memory] temporal`` is on, the open ``fact_history`` window is
+        closed (valid_to = now) rather than erased, so the record that the fact
+        existed until this moment survives the delete."""
+        from ..world_model import _temporal_memory_enabled
+        frag, params = _tenant_scope()
+        with self._tx() as cur:
+            if _temporal_memory_enabled():
+                close = "UPDATE fact_history SET valid_to = %s WHERE key = %s AND valid_to IS NULL"
+                cp: list = [time.time(), key]
+                if frag:
+                    close += " AND " + frag
+                    cp += params
+                cur.execute(close, tuple(cp))
+            sql = "DELETE FROM facts WHERE key = %s"
+            p: list = [key]
+            if frag:
+                sql += " AND " + frag
+                p += params
             cur.execute(sql, tuple(p))
             return cur.rowcount
 

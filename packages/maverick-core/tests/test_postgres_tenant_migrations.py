@@ -22,21 +22,23 @@ def test_pending_skips_already_applied():
     assert pg.pending_migrations(pg._PG_SCHEMA_VERSION) == []
     # A DB at v1 still needs the tenant migrations (v10 columns, v11 uniques),
     # approval-claims (v13), goal-domain (v14), projects (v15), artifacts (v16),
-    # and share/signoff/origin (v17).
+    # share/signoff/origin (v17), and temporal fact_history (v18).
     pending = pg.pending_migrations(1)
-    assert [v for v, _ in pending] == [10, 11, 13, 14, 15, 16, 17]
+    assert [v for v, _ in pending] == [10, 11, 13, 14, 15, 16, 17, 18]
     # A DB at v10 still needs the remaining upgrades.
-    assert [v for v, _ in pg.pending_migrations(10)] == [11, 13, 14, 15, 16, 17]
+    assert [v for v, _ in pg.pending_migrations(10)] == [11, 13, 14, 15, 16, 17, 18]
     # A DB at v11 still needs the rest of the ladder.
-    assert [v for v, _ in pg.pending_migrations(11)] == [13, 14, 15, 16, 17]
+    assert [v for v, _ in pg.pending_migrations(11)] == [13, 14, 15, 16, 17, 18]
     # A DB at v13 still needs goal-domain + projects + artifacts + share/etc.
-    assert [v for v, _ in pg.pending_migrations(13)] == [14, 15, 16, 17]
+    assert [v for v, _ in pg.pending_migrations(13)] == [14, 15, 16, 17, 18]
     # A DB at v14 still needs projects + artifacts + share/signoff/origin.
-    assert [v for v, _ in pg.pending_migrations(14)] == [15, 16, 17]
-    # A DB at v15 still needs artifacts + share/signoff/origin.
-    assert [v for v, _ in pg.pending_migrations(15)] == [16, 17]
-    # A DB at v16 still needs the share/signoff/origin migration.
-    assert [v for v, _ in pg.pending_migrations(16)] == [17]
+    assert [v for v, _ in pg.pending_migrations(14)] == [15, 16, 17, 18]
+    # A DB at v15 still needs artifacts + share/signoff/origin + fact_history.
+    assert [v for v, _ in pg.pending_migrations(15)] == [16, 17, 18]
+    # A DB at v16 still needs the share/signoff/origin + fact_history migrations.
+    assert [v for v, _ in pg.pending_migrations(16)] == [17, 18]
+    # A DB at v17 still needs the temporal fact_history migration.
+    assert [v for v, _ in pg.pending_migrations(17)] == [18]
 
 
 def test_pending_is_ordered_with_custom_ladder():
@@ -74,7 +76,7 @@ def test_approval_claims_migration_adds_collaboration_columns():
 
 
 def test_schema_version_is_latest_migration():
-    assert pg._PG_SCHEMA_VERSION == 17
+    assert pg._PG_SCHEMA_VERSION == 18
     assert max(v for v, _ in pg.MIGRATIONS) == pg._PG_SCHEMA_VERSION
 
 
