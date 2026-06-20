@@ -45,7 +45,8 @@ def _canonical(name: str) -> str:
 
 
 def get_provider_client(
-    name: str, api_key: str | None = None, base_url: str | None = None
+    name: str, api_key: str | None = None, base_url: str | None = None,
+    default_headers: dict | None = None,
 ) -> Any:
     """Lazy-import and instantiate the named provider client.
 
@@ -56,14 +57,21 @@ def get_provider_client(
     and the client silently fell back to its env var / localhost default.
     Providers with fixed or scheme-specific endpoints (azure, bedrock, ...)
     ignore it.
+
+    ``default_headers`` (from ``[providers.<name>] default_headers``) is a
+    data-residency / ZDR control: extra HTTP headers attached to every request
+    so a compliance gateway can enforce region pinning / no-retention. Threaded
+    to the two primary cloud clients (anthropic, openai) today.
     """
     canon = _canonical(name)
     if canon == "anthropic":
         from .anthropic_provider import AnthropicClient
-        return AnthropicClient(api_key=api_key, base_url=base_url)
+        return AnthropicClient(api_key=api_key, base_url=base_url,
+                               default_headers=default_headers)
     if canon == "openai":
         from .openai_provider import OpenAIClient
-        return OpenAIClient(api_key=api_key, base_url=base_url)
+        return OpenAIClient(api_key=api_key, base_url=base_url,
+                            default_headers=default_headers)
     if canon == "openrouter":
         from .openrouter_provider import OpenRouterClient
         return OpenRouterClient(api_key=api_key)

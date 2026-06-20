@@ -122,6 +122,34 @@ Lightwork. For untrusted skills, avoid mounting secret-bearing paths into
 that runtime and prefer sandbox isolation that does not expose host
 state.
 
+## Data residency & zero-data-retention (cloud providers)
+
+When a role is routed to a cloud provider, two `[providers.<name>]` knobs
+control where the request goes and what data-handling it asserts:
+
+- **`base_url`** — pin the endpoint. Point it at a regional/EU endpoint or at a
+  compliance gateway/proxy you operate, so prompts never leave the chosen
+  region. Honored by `anthropic`, `openai`, and the self-hosted/OpenAI-compatible
+  clients.
+- **`default_headers`** — a `key = value` table of HTTP headers attached to every
+  request to that provider, so a gateway can enforce **region pinning** or
+  **zero-data-retention** at the edge. Threaded into the two primary cloud
+  clients (`anthropic`, `openai`) today. Empty by default.
+
+```toml
+[providers.anthropic]
+api_key = "${ANTHROPIC_API_KEY}"
+base_url = "https://anthropic-eu.gateway.internal"   # region-pinned gateway
+[providers.anthropic.default_headers]
+anthropic-region = "eu"
+x-no-retention = "1"
+```
+
+For a hard guarantee that *no* prompt leaves your boundary, prefer the
+enterprise egress lock (`[enterprise] mode = true`), which pins every role to a
+self-hosted provider — see `docs/security-hardening.md`. Outbound PII can also be
+stripped before any cloud call with `[privacy] redact_egress = true`.
+
 ## Learning & workforce sections
 
 ```toml

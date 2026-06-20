@@ -69,7 +69,7 @@ def test_llm_facade_passes_config_base_url(clean_provider_env, monkeypatch):
     import maverick.llm as llm_mod
     captured = {}
 
-    def fake_get_provider_client(name, api_key=None, base_url=None):
+    def fake_get_provider_client(name, api_key=None, base_url=None, default_headers=None):
         captured["call"] = (name, api_key, base_url)
         return object()
 

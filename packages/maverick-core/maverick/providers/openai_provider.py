@@ -133,6 +133,7 @@ class OpenAIClient:
         api_key: str | None = None,
         base_url: str | None = None,
         allow_openai_env_fallback: bool = True,
+        default_headers: dict | None = None,
     ):
         try:
             from openai import AsyncOpenAI, OpenAI
@@ -154,6 +155,11 @@ class OpenAIClient:
             )
         from .base import llm_http_timeout
         kw: dict = {"api_key": key, "base_url": base_url}
+        # Data-residency / ZDR control: operator-set `[providers.<name>]
+        # default_headers` are attached to every request so a compliance gateway
+        # can enforce region pinning / no-retention headers. Empty -> none.
+        if default_headers:
+            kw["default_headers"] = dict(default_headers)
         timeout = llm_http_timeout()
         if timeout is not None:
             kw["timeout"] = timeout
