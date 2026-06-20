@@ -85,7 +85,7 @@ def test_export_contains_subject_world_and_audit():
     assert bundle["tenant"] is None
     assert isinstance(bundle["generated_at"], str)
     assert set(bundle["counts"]) == {
-        "conversations", "turns", "goals", "episodes", "audit_events",
+        "conversations", "turns", "goals", "episodes", "facts", "audit_events",
     }
 
     # World: the conversation + both turns + the goal + its episode.
@@ -191,7 +191,7 @@ def test_export_with_blank_channel_fails_closed_for_same_user_id_collision():
     blob = json.dumps(bundle)
 
     assert bundle["subject"] == {"user_id": "alice", "channel": None}
-    assert bundle["world"] == {"conversations": [], "goals": []}
+    assert bundle["world"] == {"conversations": [], "goals": [], "facts": {}, "fact_history": {}}
     assert bundle["audit"] == []
     assert "telegram alice secret" not in blob
     assert "discord alice secret" not in blob
@@ -215,7 +215,7 @@ def test_export_without_channel_fails_closed_when_user_id_is_ambiguous():
     blob = json.dumps(bundle)
 
     assert bundle["subject"] == {"user_id": "alice", "channel": None}
-    assert bundle["world"] == {"conversations": [], "goals": []}
+    assert bundle["world"] == {"conversations": [], "goals": [], "facts": {}, "fact_history": {}}
     assert bundle["audit"] == []
     assert "telegram alice secret" not in blob
     assert "discord alice secret" not in blob
@@ -237,7 +237,7 @@ def test_unknown_user_returns_empty_structured_bundle():
     assert bundle["audit"] == []
     assert bundle["counts"] == {
         "conversations": 0, "turns": 0, "goals": 0,
-        "episodes": 0, "audit_events": 0,
+        "episodes": 0, "facts": 0, "audit_events": 0,
     }
     # Still serializable.
     json.dumps(bundle)
@@ -246,7 +246,7 @@ def test_unknown_user_returns_empty_structured_bundle():
 def test_export_on_empty_install_is_fail_soft():
     # No world DB written yet, no audit dir: every section is empty, no raise.
     bundle = export_subject_data("alice")
-    assert bundle["world"] == {"conversations": [], "goals": []}
+    assert bundle["world"] == {"conversations": [], "goals": [], "facts": {}, "fact_history": {}}
     assert bundle["audit"] == []
     assert bundle["counts"]["conversations"] == 0
     json.dumps(bundle)
