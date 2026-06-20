@@ -45,6 +45,23 @@ def _world():
     # reads/writes that client's isolated world DB (under tenants/<client>/),
     # never the shared root. Unbound (legacy / tests that monkeypatch
     # DEFAULT_DB) keeps the prior DEFAULT_DB path exactly.
+    #
+    # Backend selection (split-brain fix): when the deployment opts into Postgres
+    # ([world_model] backend = "postgres" / MAVERICK_WORLD_BACKEND=postgres), the
+    # dashboard must read/write the SAME Postgres the runner, channel server and
+    # gRPC API use. Previously this always opened SQLite, so a Postgres
+    # deployment had the dashboard reading a stale local world.db. Checked before
+    # the tenant floor because Postgres isolates by tenant_id at query time, not
+    # by a per-tenant file. open_postgres_world() builds a fresh connection per
+    # call, so cache the one backend for the process under a fixed key.
+    from maverick.world_model_backends import is_postgres_configured
+    if is_postgres_configured():
+        cached = _world_cache.get("__postgres__")
+        if cached is None:
+            from maverick.world_model import open_world
+            cached = open_world()  # also enforces the at-rest fail-closed guard
+            _world_cache["__postgres__"] = cached
+        return cached
     from maverick.paths import current_tenant_id
     tid = current_tenant_id()
     if tid:

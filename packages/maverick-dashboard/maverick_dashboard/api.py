@@ -1433,8 +1433,7 @@ async def list_tools() -> dict:
     try:
         from maverick.sandbox import build_sandbox
         from maverick.tools import base_registry
-        from maverick.world_model import DEFAULT_DB, WorldModel
-        wm = WorldModel(DEFAULT_DB)
+        wm = _world()  # honor the configured backend (SQLite or Postgres)
         sb = build_sandbox()
         reg = base_registry(world=wm, sandbox=sb)
     except Exception as e:
