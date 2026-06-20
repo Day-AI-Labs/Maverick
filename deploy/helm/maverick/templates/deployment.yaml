@@ -6,7 +6,9 @@ metadata:
   labels:
     {{- include "maverick.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   strategy:
     {{- if .Values.persistence.enabled }}
     type: Recreate          # RWO volume: tear down before re-attach
