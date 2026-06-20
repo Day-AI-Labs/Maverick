@@ -307,6 +307,27 @@ def model_for_role(role: str) -> str:
     return final
 
 
+def _allowlist_filter_fallbacks(models: list[str]) -> list[str]:
+    """Drop failover fallbacks outside the admin allow-list (no-op when none set).
+
+    ``model_for_role`` enforces the ``[access] allowed_models`` cap on role
+    resolution, but provider-failover chains are dispatched straight from config
+    without passing back through it -- so a transient error on the primary could
+    fail over to a model the operator's "hard cap" forbids (a governance bypass).
+    Failover must not introduce a disallowed model the base call wouldn't run, so
+    we filter the *fallbacks*; the primary is left untouched (it is what the
+    non-failover path runs anyway).
+    """
+    try:
+        from .runtime_overrides import allowed_models
+        allow = allowed_models()
+    except Exception:  # pragma: no cover -- allow-list never blocks a call
+        return models
+    if not allow:
+        return models
+    return [m for m in models if m in allow]
+
+
 def _record_provider_call(provider: str) -> None:
     """Feed the proactive rate-limit predictor one call timestamp. Cheap
     in-memory ring buffer; powers ``maverick diag ratelimits`` and lets the
@@ -620,7 +641,7 @@ class LLM:
         if not _no_failover:
             from .failover_policy import order_chain, policy_should_retry
             from .provider_failover import failover, fallback_models
-            _chain = fallback_models(model or self.model)
+            _chain = _allowlist_filter_fallbacks(fallback_models(model or self.model))
             if _chain:
                 # The policy engine narrows WHICH errors fail over and skips
                 # cooling-down models; with no [provider_failover.policy] both
@@ -752,7 +773,7 @@ class LLM:
         if not _no_failover:
             from .failover_policy import order_chain, policy_should_retry
             from .provider_failover import afailover, fallback_models
-            _chain = fallback_models(model or self.model)
+            _chain = _allowlist_filter_fallbacks(fallback_models(model or self.model))
             if _chain:
                 return await afailover([
                     (m, (lambda m=m: self.complete_async(
