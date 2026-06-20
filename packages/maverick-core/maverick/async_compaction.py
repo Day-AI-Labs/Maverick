@@ -117,6 +117,12 @@ class BackgroundCompactor:
             return
         with self._lock:
             self._pending[key] = (list(prefix), target_tokens)
+            # Bound the queue like the result cache: a burst of distinct
+            # conversation keys must not grow it without limit (each entry holds
+            # a prefix copy). Precompute is best-effort, so dropping the oldest
+            # pending entry just defers that compaction to the on-demand path.
+            while len(self._pending) > _MAX_KEYS:
+                self._pending.pop(next(iter(self._pending)))
         if self._executor is not None:
             # Test seam: run synchronously through the injected executor.
             with self._lock:
