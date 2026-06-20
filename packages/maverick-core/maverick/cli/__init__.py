@@ -20,7 +20,7 @@ import click
 # actually need them. `world_model` stays at module top — its imports
 # are stdlib (sqlite3, dataclasses, pathlib) and `open_world` is used
 # by nearly every command below.
-from .world_model import open_world  # noqa: E402  -- cheap stdlib chain
+from ..world_model import open_world  # noqa: E402  -- cheap stdlib chain
 
 _TERMINAL_CONTROL_RE = re.compile(
     r"(?:\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$))"
@@ -38,7 +38,7 @@ def _strip_terminal_control(text: str) -> str:
 def _default_model() -> str:
     """Lazy resolver so the click default callback doesn't pull `.llm`
     (and the anthropic SDK) at module import time."""
-    from .llm import DEFAULT_MODEL
+    from ..llm import DEFAULT_MODEL
     return DEFAULT_MODEL
 
 
@@ -66,7 +66,7 @@ def _has_configured_provider() -> bool:
     and a keyless self-hosted setup passed one gate and failed the next.
     """
     try:
-        from .config import any_provider_configured
+        from ..config import any_provider_configured
         return any_provider_configured()
     except Exception:  # pragma: no cover -- never block on a config read
         return False
@@ -187,11 +187,11 @@ def _kernel():
     """
     import types
 
-    from .budget import Budget
-    from .llm import DEFAULT_MODEL, LLM
-    from .orchestrator import run_goal_sync
-    from .sandbox import build_sandbox
-    from .secrets import scrub
+    from ..budget import Budget
+    from ..llm import DEFAULT_MODEL, LLM
+    from ..orchestrator import run_goal_sync
+    from ..sandbox import build_sandbox
+    from ..secrets import scrub
     return types.SimpleNamespace(
         Budget=Budget, LLM=LLM, DEFAULT_MODEL=DEFAULT_MODEL,
         run_goal_sync=run_goal_sync, build_sandbox=build_sandbox, scrub=scrub,
@@ -217,7 +217,7 @@ def _maybe_start_progress_poller(world_path, goal_id, stop_poll):
     is set (runtime override), or [features] streaming is off (persistent opt-out)."""
     import threading
 
-    from .config import get_features
+    from ..config import get_features
     try:
         streaming_on = get_features()["streaming"]
     except Exception:
@@ -265,7 +265,7 @@ def _configure_cli_logging() -> None:
     Delegates to ``logging_config.configure_logging`` (idempotent) so the
     JSON-format / context-filter wiring stays in one place.
     """
-    from .logging_config import configure_logging
+    from ..logging_config import configure_logging
     default_warning_filter = False
     if os.environ.get("MAVERICK_DEBUG"):
         level = "DEBUG"
@@ -313,7 +313,7 @@ def main(ctx: click.Context, db: str | None, model: str | None) -> None:
     # ~/.maverick/world.db, so single-tenant installs are unchanged. An explicit
     # --db always wins.
     if db is None:
-        from .workspace import Workspace
+        from ..workspace import Workspace
         db = str(Workspace.current().db_path)
     ctx.obj["db"] = Path(db)
     ctx.obj["model"] = model  # resolved lazily on first use
@@ -331,7 +331,7 @@ def gen_stubs_cmd() -> None:
 
     Run at image/VM build time, then set MAVERICK_NO_RUNTIME_PROTOC=1 so the
     runtime never invokes protoc (read-only FS / SBOM integrity)."""
-    from .grpc_stubs import generate_all
+    from ..grpc_stubs import generate_all
     try:
         done = generate_all()
     except Exception as e:
@@ -344,7 +344,7 @@ def _install_config_from_file(src: str) -> None:
     import shutil
     from pathlib import Path as _P
 
-    from .config import config_path
+    from ..config import config_path
     src_path = _P(src).expanduser()
     if not src_path.is_file():
         raise click.ClickException(f"no such config file: {src}")
@@ -360,7 +360,7 @@ def _install_config_from_file(src: str) -> None:
     # Surface unknown-section / type problems, but don't block (operators may use
     # newer keys than this build knows).
     try:
-        from .config_lint import lint_config
+        from ..config_lint import lint_config
         for finding in lint_config(cfg):
             click.echo(click.style(f"  ! {finding.section}: {finding.message}",
                                    fg="yellow"), err=True)
@@ -409,7 +409,7 @@ def init(fast: bool, resume: bool, from_file: str | None) -> None:
 @main.command()
 def doctor() -> None:
     """Diagnose your Maverick installation."""
-    from .health import diagnose
+    from ..health import diagnose
     if diagnose():
         # At least one ✗ check: exit nonzero so `maverick doctor && ...` and CI
         # health gates can detect a broken install (it always exited 0 before).
@@ -448,7 +448,7 @@ def version() -> None:
     click.echo("")
     click.echo(click.style("Runtime", bold=True))
     try:
-        from .world_model import SCHEMA_VERSION
+        from ..world_model import SCHEMA_VERSION
         click.echo(f"  schema:                v{SCHEMA_VERSION}")
     except Exception:
         pass
@@ -461,12 +461,12 @@ def version() -> None:
     except ImportError:
         click.echo("  shield backend:        (maverick-shield not installed)")
     try:
-        from .providers import KNOWN_PROVIDERS
+        from ..providers import KNOWN_PROVIDERS
         click.echo(f"  providers:             {', '.join(KNOWN_PROVIDERS)}")
     except Exception:
         pass
     try:
-        from .persona import load_persona
+        from ..persona import load_persona
         p = load_persona()
         if p["name"] or p["style"]:
             ident = p["name"] or "(unnamed)"
@@ -492,7 +492,7 @@ def support(output: str | None) -> None:
     """
     import json as _json
 
-    from .support_bundle import collect
+    from ..support_bundle import collect
     text = _json.dumps(collect(), indent=2, sort_keys=True, default=str)
     if output:
         from pathlib import Path as _P
@@ -524,7 +524,7 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
     approval, and on approval saves it so the sealed, knowledge-loaded agent
     goes live. Nothing is activated without your yes.
     """
-    from .intake import IntakeSpec, attach_docs_to_profile, run_intake, save_profile
+    from ..intake import IntakeSpec, attach_docs_to_profile, run_intake, save_profile
 
     # Only prompt when a human is attached (a TTY). In non-interactive use (CI,
     # piped stdin) the intake prompts used to fire and then abort even with
@@ -557,14 +557,14 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
     llm = None
     if not no_llm:
         try:
-            from .llm import DEFAULT_MODEL, LLM
+            from ..llm import DEFAULT_MODEL, LLM
             llm = LLM(model=ctx.obj.get("model") or DEFAULT_MODEL)
         except Exception as e:  # no provider/key -> deterministic generation
             click.echo(f"(LLM unavailable; using deterministic generation: {e})", err=True)
     kb = None
     try:
-        from .config import get_knowledge
-        from .workspace import Workspace
+        from ..config import get_knowledge
+        from ..workspace import Workspace
         kcfg = get_knowledge()
         if kcfg.get("enable"):
             from maverick_knowledge import KnowledgeBase, build_embedder, build_store
@@ -645,13 +645,13 @@ def whoami(principal: str | None, channel: str | None, user_id: str | None,
     """
     import json as _json
 
-    from .capability import capability_enforced, capability_from_config
+    from ..capability import capability_enforced, capability_from_config
 
     p = principal or "user:local"
     cap = capability_from_config(p, channel=channel, user_id=user_id)
     role = None
     try:  # role_for_principal ships with RBAC; tolerate older kernels.
-        from .capability import role_for_principal
+        from ..capability import role_for_principal
         role = role_for_principal(p)
     except Exception:
         pass
@@ -696,7 +696,7 @@ def capability_revoke_cmd(principal: str, reason: str) -> None:
     Propagates to running agents (the registry is re-read on change) when
     capability enforcement is on ([capabilities] enforce = true).
     """
-    from .revocation import shared
+    from ..revocation import shared
     rev = shared().revoke(principal, reason=reason)
     click.echo(click.style(f"revoked {principal!r}", fg="yellow")
                + (f" — {rev.reason}" if rev.reason else ""))
@@ -706,7 +706,7 @@ def capability_revoke_cmd(principal: str, reason: str) -> None:
 @click.argument("principal")
 def capability_unrevoke_cmd(principal: str) -> None:
     """Restore PRINCIPAL (remove it from the revocation list)."""
-    from .revocation import shared
+    from ..revocation import shared
     if shared().unrevoke(principal):
         click.echo(click.style(f"restored {principal!r}", fg="green"))
     else:
@@ -719,7 +719,7 @@ def capability_revocations_cmd(as_json: bool) -> None:
     """List revoked principals."""
     import json as _json
 
-    from .revocation import shared
+    from ..revocation import shared
     revs = shared().revoked()
     if as_json:
         click.echo(_json.dumps(
@@ -748,7 +748,7 @@ def trust_group() -> None:
 @trust_group.command("status")
 def trust_status_cmd() -> None:
     """Show whether the trust plane is engaged + the registered-agent count."""
-    from . import agent_trust
+    from .. import agent_trust
     st = agent_trust.status()
     state = click.style("ENGAGED", fg="green") if st["enforced"] else click.style(
         "disengaged", fg="yellow")
@@ -762,7 +762,7 @@ def trust_status_cmd() -> None:
 @trust_group.command("list")
 def trust_list_cmd() -> None:
     """List trusted external agents (id, direction, key, risk, scopes, active)."""
-    from . import agent_trust
+    from .. import agent_trust
     reg = agent_trust.load_registry()
     if not reg:
         click.echo("(no trusted agents configured)")
@@ -781,7 +781,7 @@ def trust_list_cmd() -> None:
 @click.argument("agent_id")
 def trust_show_cmd(agent_id: str) -> None:
     """Show one agent's full trust entry."""
-    from . import agent_trust
+    from .. import agent_trust
     a = agent_trust.lookup(agent_id)
     if a is None:
         raise click.ClickException(f"no trusted agent {agent_id!r}")
@@ -800,7 +800,7 @@ def trust_show_cmd(agent_id: str) -> None:
 @trust_group.command("pubkey")
 def trust_pubkey_cmd() -> None:
     """Print THIS deployment's pinned Ed25519 public key (hand to peers)."""
-    from . import agent_trust
+    from .. import agent_trust
     pk = agent_trust.local_pubkey()
     if not pk:
         raise click.ClickException(
@@ -823,7 +823,7 @@ def trust_pubkey_cmd() -> None:
 def trust_add_cmd(agent_id, pubkey, direction, allow_tools, max_risk, max_dollars,
                   data_scopes, a2a_token, grpc_token, mcp_token) -> None:
     """Add or replace a trusted external agent (managed overlay)."""
-    from . import agent_trust
+    from .. import agent_trust
 
     def _split(s):
         return [x.strip() for x in s.split(",") if x.strip()]
@@ -845,7 +845,7 @@ def trust_add_cmd(agent_id, pubkey, direction, allow_tools, max_risk, max_dollar
 @click.argument("agent_id")
 def trust_rm_cmd(agent_id: str) -> None:
     """Remove a managed trusted agent."""
-    from . import agent_trust
+    from .. import agent_trust
     if agent_trust.remove_agent(agent_id):
         click.echo(click.style(f"removed {agent_id!r}", fg="yellow"))
     else:
@@ -858,7 +858,7 @@ def trust_rm_cmd(agent_id: str) -> None:
 @click.argument("agent_id")
 def trust_revoke_cmd(agent_id: str) -> None:
     """Revoke a trusted agent immediately (denied even mid-rotation)."""
-    from . import agent_trust
+    from .. import agent_trust
     if not agent_trust.lookup(agent_id):
         raise click.ClickException(f"no trusted agent {agent_id!r}")
     if agent_trust.set_revoked(agent_id, True):
@@ -873,7 +873,7 @@ def trust_revoke_cmd(agent_id: str) -> None:
 @click.argument("agent_id")
 def trust_unrevoke_cmd(agent_id: str) -> None:
     """Lift a revocation on a managed agent."""
-    from . import agent_trust
+    from .. import agent_trust
     if agent_trust.set_revoked(agent_id, False):
         click.echo(click.style(f"unrevoked {agent_id!r}", fg="green"))
     else:
@@ -888,7 +888,7 @@ def trust_unrevoke_cmd(agent_id: str) -> None:
               default="inbound")
 def trust_verify_cmd(agent_id, tools, risk, direction) -> None:
     """Replay the trust decision for AGENT_ID and print allow/deny + reason."""
-    from . import agent_trust
+    from .. import agent_trust
     req = [x.strip() for x in tools.split(",") if x.strip()]
     if direction == "outbound":
         d = agent_trust.decide_outbound(agent_id, enforced=True)
@@ -911,7 +911,7 @@ def client_group() -> None:
 @client_group.command("status")
 def client_status_cmd() -> None:
     """Show the client binding + data root."""
-    from .client import status as client_status
+    from ..client import status as client_status
     st = client_status()
     if st["bound"]:
         click.echo(click.style(f"bound to {st['client_id']!r}", fg="green")
@@ -926,7 +926,7 @@ def client_status_cmd() -> None:
 @click.option("--out", default=None, help="Destination .tgz (default: under data root).")
 def client_export_cmd(out) -> None:
     """Export all of this client's data (data portability / DSAR)."""
-    from .backup import BackupError, create_backup
+    from ..backup import BackupError, create_backup
     try:
         path = create_backup(out)
     except BackupError as e:
@@ -944,7 +944,7 @@ def client_erase_cmd(confirm, keep_audit) -> None:
     Wipes the client's data root (world DB, memory, fleet, trust registry, and
     — unless --keep-audit — the audit chain). Refuses unless a client is bound
     so it can never target the shared root. Irreversible: export first."""
-    from .client import ClientBindingError, client_id, erase_client
+    from ..client import ClientBindingError, client_id, erase_client
     cid = client_id()
     if not cid:
         raise click.ClickException("no client bound — refusing to erase the shared root")
@@ -975,7 +975,7 @@ def backup_group() -> None:
 @click.option("--out", default=None, help="Destination .tgz (default: under data root).")
 def backup_create_cmd(out) -> None:
     """Create a consistent backup of this client's data."""
-    from .backup import BackupError, create_backup
+    from ..backup import BackupError, create_backup
     try:
         path = create_backup(out)
     except BackupError as e:
@@ -989,7 +989,7 @@ def backup_create_cmd(out) -> None:
               help="Restore even if the backup's client id differs (dangerous).")
 def backup_restore_cmd(tarball, force) -> None:
     """Restore TARBALL into this client's data root (fail-closed on client id)."""
-    from .backup import BackupError, restore_backup
+    from ..backup import BackupError, restore_backup
     try:
         root = restore_backup(tarball, force=force)
     except BackupError as e:
@@ -1001,7 +1001,7 @@ def backup_restore_cmd(tarball, force) -> None:
 @click.argument("tarball")
 def backup_info_cmd(tarball) -> None:
     """Show a backup's manifest (client id, time, file count, schema version)."""
-    from .backup import BackupError, read_manifest
+    from ..backup import BackupError, read_manifest
     try:
         m = read_manifest(tarball)
     except BackupError as e:
@@ -1029,7 +1029,7 @@ def overrides_group() -> None:
 @click.argument("dest", type=click.Path(file_okay=False))
 def overrides_export_cmd(dest: str) -> None:
     """Write this workspace's overrides (domain packs + role addendums) into DEST."""
-    from .overrides_bundle import export_overrides
+    from ..overrides_bundle import export_overrides
     n = export_overrides(dest)
     click.echo(f"exported {n['domains']} domain override(s), "
                f"{n['roles']} role addendum(s) to {dest}")
@@ -1039,7 +1039,7 @@ def overrides_export_cmd(dest: str) -> None:
 @click.argument("src", type=click.Path(exists=True, file_okay=False))
 def overrides_load_cmd(src: str) -> None:
     """Apply a bundle from SRC into this workspace (each item re-validated)."""
-    from .overrides_bundle import load_overrides
+    from ..overrides_bundle import load_overrides
     n = load_overrides(src)
     click.echo(f"loaded {n['domains']} domain override(s), "
                f"{n['roles']} role addendum(s)")
@@ -1055,7 +1055,7 @@ def governance() -> None:
 @governance.command("show")
 def governance_show() -> None:
     """Show the active org policy from [governance] (default-allow if unset)."""
-    from .governance import Policy
+    from ..governance import Policy
     pol = Policy.from_config()
     if pol.is_empty():
         click.echo("no [governance] policy configured (default-allow)")
@@ -1079,7 +1079,7 @@ def governance_check(action: str, risk: str | None, as_json: bool) -> None:
     """
     import json as _json
 
-    from .governance import evaluate
+    from ..governance import evaluate
     v = evaluate(action, risk=risk)
     if as_json:
         click.echo(_json.dumps({
@@ -1099,7 +1099,7 @@ def _governance_denied_counts(principals: set[str], *, limit: int = 500) -> dict
     """
     counts: dict[str, int] = {}
     try:
-        from .audit import EventKind, default_audit_log
+        from ..audit import EventKind, default_audit_log
         kinds = {EventKind.CAPABILITY_DENIED,
                  getattr(EventKind, "GOVERNANCE_DENIED", "governance_denied")}
         for ev in default_audit_log().tail(limit):
@@ -1125,8 +1125,8 @@ def fleet() -> None:
               help="An agent as NAME:ROLE (repeatable). ROLE is an RBAC role.")
 def fleet_create(name: str, owner: str, agents: tuple[str, ...]) -> None:
     """Create a fleet: an owner plus a roster of NAME:ROLE agents."""
-    from .capability import role_exists
-    from .fleet import Fleet, FleetAgent, save_fleet, valid_name
+    from ..capability import role_exists
+    from ..fleet import Fleet, FleetAgent, save_fleet, valid_name
     if not valid_name(name):
         click.echo("ERROR: name must be [A-Za-z0-9_-] (<=64 chars)", err=True)
         sys.exit(2)
@@ -1150,7 +1150,7 @@ def fleet_create(name: str, owner: str, agents: tuple[str, ...]) -> None:
 @fleet.command("list")
 def fleet_list() -> None:
     """List fleets."""
-    from .fleet import list_fleets
+    from ..fleet import list_fleets
     fleets = list_fleets()
     if not fleets:
         click.echo("no fleets. create one with `maverick fleet create`")
@@ -1166,7 +1166,7 @@ def fleet_show(name: str, as_json: bool) -> None:
     """Show a fleet's roster (each agent + its role/principal)."""
     import json as _json
 
-    from .fleet import load_fleet
+    from ..fleet import load_fleet
     f = load_fleet(name)
     if f is None:
         click.echo(f"no such fleet: {name}", err=True)
@@ -1186,7 +1186,7 @@ def fleet_show(name: str, as_json: bool) -> None:
 @click.argument("name")
 def fleet_rm(name: str) -> None:
     """Remove a fleet."""
-    from .fleet import remove_fleet
+    from ..fleet import remove_fleet
     if remove_fleet(name):
         click.echo(f"removed fleet {name!r}")
     else:
@@ -1209,9 +1209,9 @@ def fleet_run(ctx, fleet_name: str, agent_name: str, prompt: str,
     its own audit principal (``agent:<fleet>.<agent>``), so the oversight
     control plane governs the work automatically.
     """
-    from .capability import UnknownRoleError, capability_for_role
-    from .fleet import load_fleet, record_run
-    from .runner import run_goal_in_thread
+    from ..capability import UnknownRoleError, capability_for_role
+    from ..fleet import load_fleet, record_run
+    from ..runner import run_goal_in_thread
 
     f = load_fleet(fleet_name)
     if f is None:
@@ -1248,7 +1248,7 @@ def fleet_status(ctx, name: str, as_json: bool) -> None:
     """Supervisor oversight: each agent's recent runs + governance denials."""
     import json as _json
 
-    from .fleet import load_fleet, load_runs
+    from ..fleet import load_fleet, load_runs
     f = load_fleet(name)
     if f is None:
         click.echo(f"no such fleet: {name}", err=True)
@@ -1297,7 +1297,7 @@ def fleet_status(ctx, name: str, as_json: bool) -> None:
 @click.argument("action", type=click.Choice(["show", "path", "edit"]), default="show")
 def config(action: str) -> None:
     """Show, locate, or edit ~/.maverick/config.toml."""
-    from .config import config_path
+    from ..config import config_path
     p = config_path()
     if action == "path":
         click.echo(str(p))
@@ -1361,7 +1361,7 @@ def budget_tune(ctx, percentile: float, min_samples: int, as_json: bool) -> None
     """
     import json as _json
 
-    from .budget_tuner import recommend_for_world
+    from ..budget_tuner import recommend_for_world
     world = open_world(ctx.obj["db"])
     recs = recommend_for_world(world, pct=percentile, min_samples=min_samples)
     if as_json:
@@ -1387,7 +1387,7 @@ def confidential_compute_cmd(as_json: bool) -> None:
     """
     import json as _json
 
-    from .confidential_compute import detect
+    from ..confidential_compute import detect
     rep = detect()
     if as_json:
         click.echo(_json.dumps(rep))
@@ -1415,7 +1415,7 @@ def airgap_cmd(action: str, as_json: bool) -> None:
     """
     import json as _json
 
-    from .air_gap import audit
+    from ..air_gap import audit
     rep = audit()
     if as_json:
         click.echo(_json.dumps(rep))
@@ -1439,7 +1439,7 @@ def failures_cmd(as_json: bool) -> None:
     """
     import json as _json
 
-    from .failure_telemetry import enabled, summarize
+    from ..failure_telemetry import enabled, summarize
     s = summarize()
     if as_json:
         click.echo(_json.dumps(s))
@@ -1462,7 +1462,7 @@ def governance_lineage(goal_id: int, as_json: bool) -> None:
     """Show + verify the tamper-evident action lineage for a goal."""
     import json as _json
 
-    from . import governed_actions as _ga
+    from .. import governed_actions as _ga
     links = _ga.load_lineage(goal_id)
     status = _ga.verify_lineage_file(goal_id)
     if as_json:
@@ -1492,7 +1492,7 @@ def governance_impact(identifier: str, kind: str, as_json: bool) -> None:
     """
     import json as _json
 
-    from . import governed_actions as _ga
+    from .. import governed_actions as _ga
     hits = _ga.impact_of(identifier, kind=kind)
     if as_json:
         click.echo(_json.dumps(hits))
@@ -1518,7 +1518,7 @@ def analytics_cmd(ctx, sql: str | None, top: int) -> None:
     import json as _json
 
     try:
-        from .duckdb_analytics import WorldAnalytics
+        from ..duckdb_analytics import WorldAnalytics
         # duckdb imports lazily inside the constructor, so the actionable
         # "pip install 'maverick-agent[duckdb]'" ImportError fires HERE --
         # construction must sit inside the catch or the user gets a raw
@@ -1561,7 +1561,7 @@ def compounding(ctx, as_json: bool, window: int) -> None:
     """
     import json as _json
 
-    from .compounding_metric import report_from_world
+    from ..compounding_metric import report_from_world
     world = open_world(ctx.obj["db"])
     reps = report_from_world(world, window=window)
     if as_json:
@@ -1593,7 +1593,7 @@ def record_outcome(goal_id: int, episode_id: int, value: float, kind: str) -> No
     or a graded result). The flywheel then prefers this over the verifier proxy
     when it next turns, so learning is grounded in what actually happened.
     """
-    from .consequence import record_outcome as _rec
+    from ..consequence import record_outcome as _rec
     ok = _rec(goal_id, episode_id, value, kind=kind)
     click.echo(
         f"recorded outcome {value:g} for goal {goal_id} episode {episode_id}"
@@ -1614,7 +1614,7 @@ def codebook(ctx, limit: int, show: bool) -> None:
     Shield or a human. Reports the achievable compression. (Agents actively
     *speaking* the shorthand is a separate opt-in; this learns + inspects it.)
     """
-    from .emergent_protocol import compression_ratio, learn, shared
+    from ..emergent_protocol import compression_ratio, learn, shared
     store = shared()
     if show:
         book = store.book()
@@ -1649,8 +1649,8 @@ def codec_probe(ctx, limit: int, encoding: str, model: str | None, as_json: bool
     """
     import json as _json
 
-    from .codec_probe import measure, resolve_counter
-    from .emergent_protocol import learn
+    from ..codec_probe import measure, resolve_counter
+    from ..emergent_protocol import learn
     world = open_world(ctx.obj["db"])
     msgs = world.recent_event_contents(limit=limit)
     if not msgs:
@@ -1691,8 +1691,8 @@ def codec_learn(ctx, limit: int, encoding: str, model: str | None) -> None:
     token savings on the historical corpus -- the authoritative, cross-process
     number (the live blackboard telemetry confirms it during an actual run).
     """
-    from . import emergent_tokens as et
-    from .codec_probe import resolve_counter
+    from .. import emergent_tokens as et
+    from ..codec_probe import resolve_counter
     world = open_world(ctx.obj["db"])
     msgs = world.recent_event_contents(limit=limit)
     if not msgs:
@@ -1731,7 +1731,7 @@ def flywheel(as_json: bool) -> None:
     """
     import json as _json
 
-    from .flywheel import maybe_run
+    from ..flywheel import maybe_run
     rep = maybe_run()
     if as_json:
         click.echo(_json.dumps({
@@ -1777,7 +1777,7 @@ def cost_retro(ctx, top: int, as_json: bool) -> None:
     """
     import json as _json
 
-    from .cost_retrospective import retrospective
+    from ..cost_retrospective import retrospective
     world = open_world(ctx.obj["db"])
     rep = retrospective(world, top_n=top)
     if as_json:
@@ -1813,7 +1813,7 @@ def charts(ctx, days: int, plain: bool) -> None:
     Uses ``rich`` panels when installed; falls back to plain ASCII. Sections
     with no data say so. Read-only.
     """
-    from . import terminal_charts, tool_latency
+    from .. import terminal_charts, tool_latency
     world = open_world(ctx.obj["db"])
     report = tool_latency.report()
     if plain:
@@ -1851,7 +1851,7 @@ def _parse_metrics(pairs: tuple[str, ...]) -> dict:
               help="name=value (repeatable), e.g. --metric p95_latency_s=3.4")
 def canary_record(release: str, metrics: tuple[str, ...]) -> None:
     """Record RELEASE's metric snapshot (cost/latency/success_rate/...)."""
-    from .release_canary import CanaryStore
+    from ..release_canary import CanaryStore
     parsed = _parse_metrics(metrics)
     if not parsed:
         raise click.ClickException("at least one --metric is required")
@@ -1866,7 +1866,7 @@ def canary_record(release: str, metrics: tuple[str, ...]) -> None:
               help="Relative move allowed before flagging a regression.")
 def canary_compare(baseline: str, candidate: str, tolerance: float) -> None:
     """Compare CANDIDATE release metrics against BASELINE; exit 1 on regression."""
-    from .release_canary import CanaryStore, compare, render
+    from ..release_canary import CanaryStore, compare, render
     store = CanaryStore()
     base, cand = store.get(baseline), store.get(candidate)
     if base is None:
@@ -1898,7 +1898,7 @@ def calibrate(sample, as_json) -> None:
     """
     import json as _json
 
-    from . import calibration
+    from .. import calibration
 
     if sample is not None:
         conf_s, correct_s = sample
@@ -1931,7 +1931,7 @@ def calibrate(sample, as_json) -> None:
     click.echo(f"  brier score:     {report.brier:.3f}")
     click.echo(f"  {report.reason}")
     if not report.adequate:
-        from .config import get_calibration
+        from ..config import get_calibration
         if get_calibration()["enforce"]:
             click.echo(click.style(
                 "  learning is FROZEN (trajectory donation gated) until this passes.",
@@ -2093,7 +2093,7 @@ def tenant() -> None:
 def tenant_create(tenant_id: str, plan: str, display_name: str,
                   max_daily_dollars: float) -> None:
     """Provision a tenant + its isolated workspace."""
-    from .tenant_registry import create_tenant
+    from ..tenant_registry import create_tenant
     try:
         rec = create_tenant(tenant_id, plan=plan, display_name=display_name,
                              max_daily_dollars=max_daily_dollars)
@@ -2103,14 +2103,14 @@ def tenant_create(tenant_id: str, plan: str, display_name: str,
     click.echo(f"created tenant {rec.id!r} (plan {rec.plan}, status {rec.status})")
     # Tell the operator where to drop this tenant's own provider keys / models /
     # budget so each client can use its own credentials (overlays global config).
-    from .workspace import Workspace
+    from ..workspace import Workspace
     click.echo(f"  per-tenant config: {Workspace(rec.id).root / 'config.toml'}")
 
 
 @tenant.command("list")
 def tenant_list() -> None:
     """List provisioned tenants."""
-    from .tenant_registry import list_tenants, tenant_spend_today
+    from ..tenant_registry import list_tenants, tenant_spend_today
     rows = list_tenants()
     if not rows:
         click.echo("no tenants. create one with `maverick tenant create`")
@@ -2134,7 +2134,7 @@ def tenant_list() -> None:
 @click.argument("tenant_id")
 def tenant_suspend(tenant_id: str) -> None:
     """Suspend a tenant (its requests are refused until resumed)."""
-    from .tenant_registry import UnknownTenant, suspend_tenant
+    from ..tenant_registry import UnknownTenant, suspend_tenant
     try:
         suspend_tenant(tenant_id)
     except UnknownTenant:
@@ -2147,7 +2147,7 @@ def tenant_suspend(tenant_id: str) -> None:
 @click.argument("tenant_id")
 def tenant_resume(tenant_id: str) -> None:
     """Resume a suspended tenant."""
-    from .tenant_registry import UnknownTenant, resume_tenant
+    from ..tenant_registry import UnknownTenant, resume_tenant
     try:
         resume_tenant(tenant_id)
     except UnknownTenant:
@@ -2163,7 +2163,7 @@ def tenant_quota(tenant_id: str, max_daily_dollars: float) -> None:
     """Set a tenant's daily spend cap (USD; 0 = unlimited)."""
     import math
 
-    from .tenant_registry import UnknownTenant, set_quota
+    from ..tenant_registry import UnknownTenant, set_quota
     # A negative cap was silently clamped to 0 (= UNLIMITED), so a typo'd `-5`
     # quietly removed the cap; nan/inf likewise slipped past as "unlimited" /
     # "$inf/day" -- both disable the cap (user-testing finding). Require a
@@ -2190,7 +2190,7 @@ def tenant_quota(tenant_id: str, max_daily_dollars: float) -> None:
 @click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
 def tenant_delete(tenant_id: str, purge: bool, yes: bool) -> None:
     """Remove a tenant from the registry (optionally purging its data)."""
-    from .tenant_registry import delete_tenant
+    from ..tenant_registry import delete_tenant
     if purge and not yes and not click.confirm(
         f"PURGE all data for tenant {tenant_id!r}? This cannot be undone."
     ):
@@ -2220,9 +2220,9 @@ def billing_invoice(tenant_id: str, since: str | None, until: str | None,
     """Generate an invoice for a tenant from its metered usage."""
     import json as _json
 
-    from .audit.events import is_valid_day
-    from .billing import RateCard, generate_invoice
-    from .tenant_registry import get_tenant, list_tenants
+    from ..audit.events import is_valid_day
+    from ..billing import RateCard, generate_invoice
+    from ..tenant_registry import get_tenant, list_tenants
     # Period bounds compare lexically against YYYY-MM-DD ledger keys, so a typo'd
     # --since/--until ("2026-6-1", "june") silently fell out of range and minted
     # a misleading empty invoice. Reject anything that isn't a real calendar day.
@@ -2265,8 +2265,8 @@ def billing_invoice(tenant_id: str, since: str | None, until: str | None,
 @click.argument("tenant_id")
 def billing_entitlements(tenant_id: str) -> None:
     """Show a tenant's plan entitlements (features + limits)."""
-    from .billing import entitlements_for
-    from .tenant_registry import get_tenant
+    from ..billing import entitlements_for
+    from ..tenant_registry import get_tenant
     rec = get_tenant(tenant_id)
     plan = rec.plan if rec else "free"
     ent = entitlements_for(plan)
@@ -2288,7 +2288,7 @@ def diag_circuits(as_json: bool) -> None:
     """Show the provider circuit-breaker states (closed/open/half-open)."""
     import json as _json
 
-    from .circuit_breaker import snapshot
+    from ..circuit_breaker import snapshot
     snaps = snapshot()
     if as_json:
         click.echo(_json.dumps(snaps, indent=2))
@@ -2307,7 +2307,7 @@ def diag_ratelimits(as_json: bool) -> None:
     """Show recent per-provider call rates (feeds the rate-limit predictor)."""
     import json as _json
 
-    from .rate_limit_predictor import report
+    from ..rate_limit_predictor import report
     rows = report()
     if as_json:
         click.echo(_json.dumps(rows, indent=2))
@@ -2323,8 +2323,8 @@ def diag_ratelimits(as_json: bool) -> None:
 @click.argument("goal_id", type=int)
 def diag_health(goal_id: int) -> None:
     """Compute a 0-100 health score for a finished goal from its episode."""
-    from .health_score import compute_health, render
-    from .world_model import DEFAULT_DB, WorldModel
+    from ..health_score import compute_health, render
+    from ..world_model import DEFAULT_DB, WorldModel
     w = WorldModel(DEFAULT_DB)
     g = w.get_goal(goal_id)
     if g is None:
@@ -2344,7 +2344,7 @@ def diag_health(goal_id: int) -> None:
 @click.option("--kind", default=None, help="Only show events of this kind.")
 def diag_replay(trace_file: str, kind: str | None) -> None:
     """Read a replayable run trace (written when MAVERICK_TRACE_DIR is set)."""
-    from .replay_trace import read_trace
+    from ..replay_trace import read_trace
     events = read_trace(trace_file)
     shown = 0
     for e in events:
@@ -2362,8 +2362,8 @@ def diag_cost_by_tag(as_json: bool) -> None:
     """Split run cost across tags (from priced episodes)."""
     import json as _json
 
-    from .cost_by_tag import gather, render
-    from .world_model import DEFAULT_DB, WorldModel
+    from ..cost_by_tag import gather, render
+    from ..world_model import DEFAULT_DB, WorldModel
     buckets = gather(WorldModel(DEFAULT_DB))
     if as_json:
         click.echo(_json.dumps(buckets, indent=2))
@@ -2386,7 +2386,7 @@ def mcp_registry_group() -> None:
 @mcp_registry_group.command("browse")
 def mcp_registry_browse() -> None:
     """List MCP servers available in the registry."""
-    from .mcp_registry import load_mcp_registry
+    from ..mcp_registry import load_mcp_registry
     entries = load_mcp_registry()
     if not entries:
         click.echo("no registry entries (index empty or unreachable).")
@@ -2405,7 +2405,7 @@ def mcp_registry_browse() -> None:
 @click.argument("name")
 def mcp_registry_add(name: str) -> None:
     """Install a registry MCP server by name into config."""
-    from .mcp_registry import add_mcp_server_to_config, install_mcp_from_registry
+    from ..mcp_registry import add_mcp_server_to_config, install_mcp_from_registry
     try:
         spec = install_mcp_from_registry(name)
         add_mcp_server_to_config(spec.name, spec.to_dict())
@@ -2421,7 +2421,7 @@ def mcp_registry_add(name: str) -> None:
 @click.argument("name")
 def mcp_registry_remove(name: str) -> None:
     """Remove a configured MCP server from config."""
-    from .mcp_registry import remove_mcp_server_from_config
+    from ..mcp_registry import remove_mcp_server_from_config
     if remove_mcp_server_from_config(name):
         click.echo(f"removed: {name}")
     else:
@@ -2433,7 +2433,7 @@ def mcp_registry_remove(name: str) -> None:
 @click.pass_context
 def mcp_registry_list(ctx) -> None:
     """List MCP servers currently configured in ~/.maverick/config.toml."""
-    from .mcp_client import load_mcp_specs_from_config
+    from ..mcp_client import load_mcp_specs_from_config
     specs = load_mcp_specs_from_config()
     if not specs:
         click.echo("no MCP servers configured. add one with "
@@ -2513,7 +2513,7 @@ def start(
     if not dry_cost:
         _require_llm_key()
     if template_name:
-        from .templates import load_template
+        from ..templates import load_template
         try:
             tpl = load_template(template_name)
         except (FileNotFoundError, ValueError) as e:
@@ -2540,7 +2540,7 @@ def start(
 
     if dry_cost:
         # Forecast from past priced runs and exit — no goal created, no run.
-        from .cost_forecast import forecast, gather_samples, render
+        from ..cost_forecast import forecast, gather_samples, render
         world = open_world(ctx.obj["db"])
         try:
             fc = forecast(gather_samples(world), f"{title} {description}".strip())
@@ -2552,7 +2552,7 @@ def start(
     # Refuse BEFORE creating the goal row -- both of these used to surface
     # after `goal #N created`, leaving an orphan blocked/failed row per
     # attempt (platform-test finding).
-    from . import killswitch as _ks
+    from .. import killswitch as _ks
     try:
         _ks.check()
     except _ks.Halted:
@@ -2567,15 +2567,15 @@ def start(
     # `maverick start` ran goals freely for a suspended tenant (user-testing
     # finding). No-op for None tenant / no registry, so single-tenant flows are
     # unchanged. Same pre-goal-creation chokepoint as the killswitch above.
-    from .paths import current_tenant_id as _ctid
-    from .tenant_registry import TenantSuspended, assert_tenant_active
+    from ..paths import current_tenant_id as _ctid
+    from ..tenant_registry import TenantSuspended, assert_tenant_active
     try:
         assert_tenant_active(_ctid())
     except TenantSuspended as e:
         click.echo(f"Stopped: {e}", err=True)
         sys.exit(3)
-    from . import providers as _providers
-    from .config import load_config as _load_config
+    from .. import providers as _providers
+    from ..config import load_config as _load_config
     _specs = {
         s for s in (_load_config().get("models") or {}).values()
         if isinstance(s, str) and s
@@ -2597,8 +2597,8 @@ def start(
     # < config < explicit CLI flags. A None flag passes through as "unset".
     import types as _types
 
-    from .budget import budget_from_config
-    from .orchestrator import _budget_task_class
+    from ..budget import budget_from_config
+    from ..orchestrator import _budget_task_class
     bud = budget_from_config(
         defaults={"max_dollars": 5.0, "max_wall_seconds": 3600.0},
         # Learned per-class default cap (lowest precedence; opt-in via
@@ -2625,7 +2625,7 @@ def start(
         if coding_mode and best_of_n > 1:
             import asyncio as _asyncio
 
-            from .orchestrator import run_goal_best_of_n
+            from ..orchestrator import run_goal_best_of_n
             result = _asyncio.run(run_goal_best_of_n(
                 llm, world, bud, goal_id,
                 sandbox=sandbox, max_depth=max_depth, n=best_of_n,
@@ -2666,7 +2666,7 @@ def report_issue(ctx, goal_id: int, repo: str | None) -> None:
     github.com/.../issues/new link with the context filled in. No network
     call -- open the URL yourself to file the report.
     """
-    from .issue_report import DEFAULT_REPO, build_report
+    from ..issue_report import DEFAULT_REPO, build_report
     world = open_world(ctx.obj["db"])
     g = world.get_goal(goal_id)
     if g is None:
@@ -2686,7 +2686,7 @@ def share(goal_id: int) -> None:
     Exports the run's trajectory (secrets scrubbed) and uploads it as a
     secret gist. Needs a GitHub token in GITHUB_TOKEN (or GH_TOKEN).
     """
-    from .run_share import share_run
+    from ..run_share import share_run
     try:
         url = share_run(goal_id)
     except RuntimeError as e:
@@ -2702,7 +2702,7 @@ def _sanitize_progress_content(text: str, limit: int = 200) -> str:
     - Remove terminal control bytes / ANSI escape sequences.
     - Collapse CR/LF to spaces for one-line progress output.
     """
-    from .secrets import scrub  # lazy: only used by the streaming helper
+    from ..secrets import scrub  # lazy: only used by the streaming helper
     cleaned = scrub(text or "")
     # Strip common ANSI/OSC escape sequences.
     cleaned = re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", cleaned)
@@ -2837,7 +2837,7 @@ def chat(ctx, max_depth: int, max_dollars: float, workdir) -> None:
         # reply, which run_goal appends) into the next turn's context.
         world.append_turn(conversation.id, "user", full, goal_id=goal_id)
         click.echo(click.style(f"  ... goal #{goal_id}", fg="bright_black"))
-        from .budget import budget_from_config
+        from ..budget import budget_from_config
         bud = budget_from_config(max_dollars=max_dollars)
         try:
             result = k.run_goal_sync(llm, world, bud, goal_id,
@@ -2857,7 +2857,7 @@ def template() -> None:
 
 @template.command("list")
 def template_list() -> None:
-    from .templates import list_templates
+    from ..templates import list_templates
     names = list_templates()
     if not names:
         click.echo("no templates found.")
@@ -2869,7 +2869,7 @@ def template_list() -> None:
 @template.command("show")
 @click.argument("name")
 def template_show(name: str) -> None:
-    from .templates import load_template
+    from ..templates import load_template
     try:
         t = load_template(name)
     except (FileNotFoundError, ValueError) as e:
@@ -2884,12 +2884,12 @@ def template_show(name: str) -> None:
 @template.command("browse")
 def template_browse() -> None:
     """List goal templates available in the community registry."""
-    from .templates import browse_templates
+    from ..templates import browse_templates
     entries = browse_templates()
     if not entries:
         click.echo("no registry templates (index empty or unreachable).")
         return
-    from .marketplace_ratings import RatingsLedger, stars_bar
+    from ..marketplace_ratings import RatingsLedger, stars_bar
     ledger = RatingsLedger()
     for e in entries:
         mark = " [verified]" if e.verified else ""
@@ -2915,7 +2915,7 @@ def template_rate(name: str, stars: int, comment: str) -> None:
     Your ratings annotate `browse` output and can be exported for an index
     submission with `maverick template ratings-export`.
     """
-    from .marketplace_ratings import RatingsLedger, stars_bar
+    from ..marketplace_ratings import RatingsLedger, stars_bar
     try:
         entry = RatingsLedger().rate("templates", name, stars, comment)
     except ValueError as e:
@@ -2927,7 +2927,7 @@ def template_rate(name: str, stars: int, comment: str) -> None:
 @template.command("ratings-export")
 def template_ratings_export() -> None:
     """Print your local ratings as the JSON fragment an index PR expects."""
-    from .marketplace_ratings import RatingsLedger
+    from ..marketplace_ratings import RatingsLedger
     click.echo(RatingsLedger().export_for_submission())
 
 
@@ -2935,7 +2935,7 @@ def template_ratings_export() -> None:
 @click.argument("name")
 def template_add(name: str) -> None:
     """Install a registry goal template by name (hash-verified)."""
-    from .templates import install_template_from_catalog
+    from ..templates import install_template_from_catalog
     try:
         t = install_template_from_catalog(name)
     except ValueError as e:
@@ -2964,14 +2964,14 @@ def debate(ctx, question: str, rounds: int, max_dollars: float,
     then an impartial judge declares a winner. Useful for pressure-testing a
     decision before you commit to it.
     """
-    from .budget import Budget
-    from .debate import DebateParticipant, run_debate
+    from ..budget import Budget
+    from ..debate import DebateParticipant, run_debate
     # Friendly preflight (round-3 platform-test finding: an unconfigured
     # install got a raw anthropic-SDK TypeError traceback here), and route
     # through the configured role models instead of hard DEFAULT_MODEL
     # (kernel rule 2) -- debaters argue at the analyst tier.
     _require_llm_key()
-    from .llm import model_for_role
+    from ..llm import model_for_role
     k = _kernel()
     llm = k.LLM(model=ctx.obj["model"] or model_for_role("analyst"))
     participants = [
@@ -3009,8 +3009,8 @@ def schema_plan_cmd() -> None:
     maintenance window is needed. Exits 1 when the migration table fails its
     structural lint.
     """
-    from .schema_migrations import plan, render, validate
-    from .world_model import DEFAULT_DB, SCHEMA_VERSION, WorldModel
+    from ..schema_migrations import plan, render, validate
+    from ..world_model import DEFAULT_DB, SCHEMA_VERSION, WorldModel
     problems = validate()
     if problems:
         for pb in problems:
@@ -3028,8 +3028,8 @@ def schema_plan_cmd() -> None:
 def config_lint_cmd() -> None:
     """Validate ~/.maverick/config.toml: unknown sections/keys + obvious type
     mistakes, with closest-match suggestions. Exits 1 if any error-level finding."""
-    from .config import config_path, load_config
-    from .config_lint import format_findings, lint_config
+    from ..config import config_path, load_config
+    from ..config_lint import format_findings, lint_config
     # load_config() is deliberately fail-soft: a corrupt config.toml yields {}
     # with only a warning, so linting it would find nothing and print
     # "config OK" -- the one tool meant to catch a broken config blessing a
@@ -3079,8 +3079,8 @@ def costs_cmd(limit: int) -> None:
     """Cross-run spend, by day, from recorded episodes (the persisted ledger)."""
     from datetime import datetime, timezone
 
-    from .cost_report import format_report
-    from .world_model import DEFAULT_DB, WorldModel
+    from ..cost_report import format_report
+    from ..world_model import DEFAULT_DB, WorldModel
     w = WorldModel(DEFAULT_DB)
     rows: list[dict] = []
     try:
@@ -3108,7 +3108,7 @@ def migrate_cmd(do_apply: bool, config_path: str | None) -> None:
     """
     from pathlib import Path as _Path
 
-    from .migrate import migrate, render
+    from ..migrate import migrate, render
     report = migrate(_Path(config_path) if config_path else None, apply=do_apply)
     click.echo(render(report))
 
@@ -3127,13 +3127,13 @@ def plan_reflect(ctx, goal: str, max_iterations: int, max_dollars: float) -> Non
     decides DONE / REVISE / CONTINUE -- looping until the goal is met, the
     iteration cap is reached, or the budget runs out.
     """
-    from .budget import Budget
-    from .plan_execute_reflect import run_plan_execute_reflect
+    from ..budget import Budget
+    from ..plan_execute_reflect import run_plan_execute_reflect
     # Same preflight + role routing as `debate` (round-3 finding): planning
     # belongs to the orchestrator tier, and a missing provider must refuse
     # cleanly, not traceback inside the anthropic client constructor.
     _require_llm_key()
-    from .llm import model_for_role
+    from ..llm import model_for_role
     k = _kernel()
     llm = k.LLM(model=ctx.obj["model"] or model_for_role("orchestrator"))
     result = run_plan_execute_reflect(
@@ -3169,7 +3169,7 @@ def worker(idle_sleep: float, once: bool) -> None:
     resident -- run it from system cron or a systemd timer for scheduling
     without a persistent daemon.
     """
-    from .worker import Worker
+    from ..worker import Worker
     w = Worker(idle_sleep=idle_sleep)
     if once:
         n = w.drain()
@@ -3187,7 +3187,7 @@ def queue() -> None:
 @queue.command("status")
 def queue_status() -> None:
     """Show job counts by status (pending backlog, running, done, failed)."""
-    from .job_queue import JobQueue
+    from ..job_queue import JobQueue
     counts = JobQueue().counts()
     if not counts:
         click.echo("queue is empty.")
@@ -3206,7 +3206,7 @@ def queue_failed(limit: int) -> None:
 
     Crashed/exhausted jobs land in 'failed' and were otherwise invisible until
     `purge` deleted them — so an operator never saw a worker dropping work."""
-    from .job_queue import JobQueue
+    from ..job_queue import JobQueue
     jobs = JobQueue().list(status="failed", limit=limit)
     if not jobs:
         click.echo("no failed jobs.")
@@ -3234,8 +3234,8 @@ def schedule_add(cron_expr: str, kind: str, payload: str | None) -> None:
     """
     import json
 
-    from .job_queue import JobQueue
-    from .scheduler import CronError, next_run, schedule_cron
+    from ..job_queue import JobQueue
+    from ..scheduler import CronError, next_run, schedule_cron
     try:
         next_run(cron_expr)  # validate up front
     except CronError as e:
@@ -3251,7 +3251,7 @@ def schedule_add(cron_expr: str, kind: str, payload: str | None) -> None:
         if not isinstance(data, dict):
             click.echo("ERROR: --payload must be a JSON object.", err=True)
             sys.exit(2)
-    from .worker import BUILTIN_JOB_KINDS
+    from ..worker import BUILTIN_JOB_KINDS
     if kind not in BUILTIN_JOB_KINDS:
         click.echo(
             f"WARNING: {kind!r} is not a built-in job kind "
@@ -3271,7 +3271,7 @@ def schedule_list() -> None:
     """List armed recurring schedules (pending cron jobs)."""
     from datetime import datetime
 
-    from .job_queue import JobQueue
+    from ..job_queue import JobQueue
     jobs = [j for j in JobQueue().list(status="pending") if j.payload.get("__cron__")]
     if not jobs:
         click.echo("no scheduled jobs.")
@@ -3285,7 +3285,7 @@ def schedule_list() -> None:
 @click.argument("job_id", type=int)
 def schedule_rm(job_id: int) -> None:
     """Cancel a scheduled (pending) job by id."""
-    from .job_queue import JobQueue
+    from ..job_queue import JobQueue
     if JobQueue().cancel(job_id):
         click.echo(f"cancelled job {job_id}")
     else:
@@ -3308,8 +3308,8 @@ def schedule_goal(cron_expr: str, text: str, title: str | None) -> None:
 
     Example: maverick schedule goal "0 9 * * 1-5" "Summarize my overnight emails"
     """
-    from .job_queue import JobQueue
-    from .scheduler import CronError, next_run, schedule_cron
+    from ..job_queue import JobQueue
+    from ..scheduler import CronError, next_run, schedule_cron
     if not text.strip():
         click.echo("ERROR: goal TEXT must not be empty.", err=True)
         sys.exit(2)
@@ -3338,7 +3338,7 @@ def serve(max_depth: int, verbose: bool) -> None:
     # process and otherwise inherited a raw basicConfig with none of that
     # hygiene. Falls back to basicConfig if the config module is unavailable.
     try:
-        from .logging_config import configure_logging
+        from ..logging_config import configure_logging
         configure_logging(level="DEBUG" if verbose else "INFO")
     except Exception:
         logging.basicConfig(
@@ -3355,13 +3355,13 @@ def serve(max_depth: int, verbose: bool) -> None:
     # refuse to start the channel server unless they hold -- the same preflight
     # the dashboard entrypoint runs. No-op otherwise (kernel stays fail-open).
     try:
-        from .deployment import EnterpriseRequiredError, require_enterprise_or_die
+        from ..deployment import EnterpriseRequiredError, require_enterprise_or_die
         require_enterprise_or_die()
     except EnterpriseRequiredError as e:
         click.echo(e.summary, err=True)
         sys.exit(3)
     try:
-        from .server import build_from_config
+        from ..server import build_from_config
     except ImportError as e:
         click.echo(f"ERROR: {e}", err=True)
         sys.exit(2)
@@ -3460,7 +3460,7 @@ def ps(ctx, limit: int, as_json: bool) -> None:
     import datetime as _dt
     import json as _json
 
-    from .world_model import open_world
+    from ..world_model import open_world
 
     def _when(ts: float | None) -> str:
         if not ts:
@@ -3477,7 +3477,7 @@ def ps(ctx, limit: int, as_json: bool) -> None:
     except Exception:  # fail-soft: a missing/locked world shouldn't crash ps
         pass
     try:
-        from .job_queue import JobQueue
+        from ..job_queue import JobQueue
         for j in JobQueue().list(status="pending"):
             cron = j.payload.get("__cron__")
             what = j.kind + (f"  [{cron}]" if cron else "")
@@ -3566,7 +3566,7 @@ def resume(ctx, goal_id_arg, goal_id, max_depth: int, max_dollars, max_wall_seco
     llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
     # Honor [budget] config, and let --max-dollars/--max-wall-seconds raise
     # the cap on resume (the budget-halt message tells users to do this).
-    from .budget import budget_from_config
+    from ..budget import budget_from_config
     bud = budget_from_config(
         max_dollars=max_dollars,
         max_wall_seconds=max_wall_seconds,
@@ -3604,7 +3604,7 @@ def rewind(ctx, goal_id: int, to_step, fork: bool, list_only: bool) -> None:
     Requires durable execution ([durable] enabled) to have checkpointed the run.
     After rewinding, continue the run with `maverick resume`.
     """
-    from . import checkpoint as ckpt_mod
+    from .. import checkpoint as ckpt_mod
     world = open_world(ctx.obj["db"])
     if not world.get_goal(goal_id):
         click.echo(f"no such goal #{goal_id}. See `maverick status`.", err=True)
@@ -3668,7 +3668,7 @@ def skills(ctx: click.Context) -> None:
     """
     if ctx.invoked_subcommand is not None:
         return
-    from .skills import available_skills, builtin_skills_dir
+    from ..skills import available_skills, builtin_skills_dir
     items = available_skills()
     if not items:
         click.echo(f"no skills yet (in {builtin_skills_dir()} or ~/.maverick/skills).")
@@ -3682,8 +3682,8 @@ def skills(ctx: click.Context) -> None:
 @skills.command("stats")
 def skills_stats() -> None:
     """Show each skill's usage track record (uses / win-rate / recall weight)."""
-    from . import skill_stats
-    from .skills import load_skills
+    from .. import skill_stats
+    from ..skills import load_skills
     items = load_skills()
     if not items:
         click.echo("no skills yet.")
@@ -3710,8 +3710,8 @@ def skills_stats() -> None:
               help="Flag skills whose win rate is at or below this.")
 def skills_evict(do_apply: bool, min_uses: int, max_win_rate: float) -> None:
     """List (or with --apply, remove) skills that have had a fair trial and rarely help."""
-    from . import skill_stats
-    from .skills import remove_skill
+    from .. import skill_stats
+    from ..skills import remove_skill
     cands = skill_stats.evictable(min_uses=min_uses, max_win_rate=max_win_rate)
     if not cands:
         click.echo("no eviction candidates.")
@@ -3732,7 +3732,7 @@ def learned(limit: int) -> None:
     """List capabilities the swarm acquired via self-learning."""
     import datetime as _dt
 
-    from . import self_learning
+    from .. import self_learning
     items = self_learning.history(limit=limit)
     if not items:
         click.echo(
@@ -3758,7 +3758,7 @@ def plugin() -> None:
 @plugin.command("list")
 def plugin_list() -> None:
     """List active plugins (tools, channels, skills, personas) + the allowlist."""
-    from .plugins import _allowed_plugin_names, installed_plugins
+    from ..plugins import _allowed_plugin_names, installed_plugins
     try:
         slots = installed_plugins()
     except Exception as e:  # pragma: no cover -- discovery must never crash the CLI
@@ -3792,7 +3792,7 @@ def plugin_reload(dist_name: str) -> None:
     discovery pass re-imports the current code on disk. Already-instantiated
     tools/channels keep running old code until their owner rebuilds them.
     """
-    from .plugins import reload_plugin
+    from ..plugins import reload_plugin
     dropped = reload_plugin(dist_name)
     if not dropped:
         click.echo(f"no maverick entry points found for distribution {dist_name!r} "
@@ -3810,7 +3810,7 @@ def plugin_lock_cmd() -> None:
     Discovery verifies installed versions against the lock per
     [plugins] lock_policy = "off" | "warn" | "enforce".
     """
-    from .plugin_lock import lock_path, write_lock
+    from ..plugin_lock import lock_path, write_lock
     pins = write_lock()
     if not pins:
         click.echo("no plugin distributions found to pin.")
@@ -3823,7 +3823,7 @@ def plugin_lock_cmd() -> None:
 @plugin.command("verify")
 def plugin_verify_cmd() -> None:
     """Verify installed plugin versions against plugins.lock."""
-    from .plugin_lock import verify_lock
+    from ..plugin_lock import verify_lock
     report = verify_lock()
     if report.get("unlocked"):
         click.echo("no plugins.lock (run `maverick plugin lock` to pin). OK")
@@ -3846,8 +3846,8 @@ def plugin_stats_cmd() -> None:
     """Show local plugin-tool usage counts (opt-in [plugins] telemetry)."""
     import time as _time
 
-    from .plugin_telemetry import enabled as _ptel_enabled
-    from .plugin_telemetry import stats as _ptel_stats
+    from ..plugin_telemetry import enabled as _ptel_enabled
+    from ..plugin_telemetry import stats as _ptel_stats
     data = _ptel_stats()
     if not _ptel_enabled():
         click.echo("plugin telemetry is OFF ([plugins] telemetry = true to enable).")
@@ -3884,7 +3884,7 @@ def plugin_new(name: str, kind: str, dest: str) -> None:
     factory the contributor can ``pip install -e .`` and exercise
     immediately.
     """
-    from .plugin_scaffold import ScaffoldError, scaffold
+    from ..plugin_scaffold import ScaffoldError, scaffold
     try:
         files = scaffold(name, kind, dest=Path(dest))
     except ScaffoldError as e:
@@ -3909,7 +3909,7 @@ def skill() -> None:
 @click.argument("source")
 def skill_install(source: str) -> None:
     """Install a SKILL.md from a URL, gh:org/repo[:path], or local path."""
-    from .skills import install_skill
+    from ..skills import install_skill
     try:
         s = install_skill(source)
     except ValueError as e:
@@ -3921,7 +3921,7 @@ def skill_install(source: str) -> None:
 @skill.command("browse")
 def skill_browse() -> None:
     """List skills available in the federated catalog."""
-    from .catalog import load_catalog
+    from ..catalog import load_catalog
     entries = load_catalog("skills")
     if not entries:
         click.echo("no catalog entries (index empty or unreachable).")
@@ -3939,7 +3939,7 @@ def skill_browse() -> None:
 @click.argument("name")
 def skill_add(name: str) -> None:
     """Install a catalog skill by name (hash-verified)."""
-    from .skills import install_from_catalog
+    from ..skills import install_from_catalog
     try:
         s = install_from_catalog(name)
     except ValueError as e:
@@ -3951,7 +3951,7 @@ def skill_add(name: str) -> None:
 @skill.command("remove")
 @click.argument("name")
 def skill_remove(name: str) -> None:
-    from .skills import remove_skill
+    from ..skills import remove_skill
     if remove_skill(name):
         click.echo(f"removed: {name}")
     else:
@@ -3962,7 +3962,7 @@ def skill_remove(name: str) -> None:
 @skill.command("info")
 @click.argument("name")
 def skill_info(name: str) -> None:
-    from .skills import load_skills
+    from ..skills import load_skills
     for s in load_skills():
         if s.name == name:
             click.echo(s.path)
@@ -3979,7 +3979,7 @@ def skill_info(name: str) -> None:
 @click.argument("path", type=click.Path())
 def skill_validate(path: str) -> None:
     """Lint a SKILL.md for publish-readiness (offline; does not install)."""
-    from .skills import validate_skill_file
+    from ..skills import validate_skill_file
     r = validate_skill_file(Path(path))
     for w in r.warnings:
         click.echo(click.style(f"  warning: {w}", fg="yellow"))
@@ -3998,7 +3998,7 @@ def skill_validate(path: str) -> None:
 @click.pass_context
 def monitor(ctx, goal_id, interval) -> None:
     """Watch agent activity in real time (plan tree + recent events)."""
-    from .monitor import monitor_loop
+    from ..monitor import monitor_loop
     sys.exit(monitor_loop(
         db_path=ctx.obj["db"],
         goal_id=goal_id,
@@ -4014,7 +4014,7 @@ def session() -> None:
 @session.command("list")
 def session_list() -> None:
     """List providers with a stored session."""
-    from .session_providers import cookie_store
+    from ..session_providers import cookie_store
     names = cookie_store.list_sessions()
     if not names:
         click.echo("No sessions stored.")
@@ -4079,7 +4079,7 @@ def session_import(provider: str, token: str | None) -> None:
     Step 2: Open DevTools -> Application -> Cookies.
     Step 3: Copy the session cookie value and paste it here.
     """
-    from .session_providers import cookie_store
+    from ..session_providers import cookie_store
     profile = _SESSION_IMPORT_PROFILES[provider]
     canon, cookie_key, hint_url = profile["canon"], profile["cookie_key"], profile["hint_url"]
     extra_key = profile.get("extra_cookie_key")
@@ -4109,7 +4109,7 @@ def session_import(provider: str, token: str | None) -> None:
 @click.argument("provider")
 def session_clear(provider: str) -> None:
     """Delete a stored session."""
-    from .session_providers import cookie_store
+    from ..session_providers import cookie_store
     # `session import chatgpt` stores under the canonical name
     # ('chatgpt-session'), so accept the same short alias here -- otherwise
     # `session clear chatgpt` reports "no session" right after a successful
@@ -4278,7 +4278,7 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     # family erasure (local -> local:<uuid>) removes every scoped note.
     removed_user_notes = 0
     try:
-        from . import user_notes as _user_notes
+        from .. import user_notes as _user_notes
         removed_user_notes = _user_notes.erase_notes(
             channel, {c.user_id for c in convs if c.user_id},
         )
@@ -4305,9 +4305,9 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     # safe to drop. Only when the DB already exists, so a single erase on a
     # cache-disabled install doesn't create an empty cache file. Best-effort.
     try:
-        from .llm_cache import DEFAULT_DB as _llm_cache_db
+        from ..llm_cache import DEFAULT_DB as _llm_cache_db
         if _llm_cache_db.exists():
-            from .llm_cache import LLMCache
+            from ..llm_cache import LLMCache
             LLMCache().clear()
     except Exception as exc:  # pragma: no cover - defensive
         click.echo(
@@ -4328,7 +4328,7 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     # evidence).
     audit_scrubbed = 0
     try:
-        from .audit import scrub_user
+        from ..audit import scrub_user
         audit_scrubbed, _ = scrub_user(channel, user)
     except Exception as exc:
         click.echo(
@@ -4342,7 +4342,7 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     # signer before appending the erase marker. The compatibility hook is safe:
     # it refuses to rewrite already-broken chains unless the erase helper
     # verified them before mutation.
-    from . import audit
+    from .. import audit
 
     try:
         audit.reanchor_after_erase()
@@ -4397,7 +4397,7 @@ def erase_verify(channel: str, user: str, tenant: str | None, as_json: bool) -> 
     """
     import json as _json
 
-    from .erasure_verify import verify_erasure
+    from ..erasure_verify import verify_erasure
     report = verify_erasure(user, channel=channel, tenant=tenant)
     if as_json:
         click.echo(_json.dumps(report, default=str))
@@ -4434,7 +4434,7 @@ def compliance_cmd(ctx, fmt: str, strict: bool, framework: str) -> None:
     regulated deployment can fail a CI job / release gate when its posture
     regresses (the report still prints first).
     """
-    from .compliance import (
+    from ..compliance import (
         compliance_report,
         render_report_json,
         render_report_text,
@@ -4471,7 +4471,7 @@ def finance_status_cmd(fmt: str, strict: bool) -> None:
     Control coverage only -- not an audit opinion. Agents draft; humans post, pay,
     file, and certify. With --strict, exits non-zero if any control needs action.
     """
-    from .finance.status import (
+    from ..finance.status import (
         finance_status,
         render_status_json,
         render_status_text,
@@ -4492,8 +4492,8 @@ def finance_status_cmd(fmt: str, strict: bool) -> None:
 @finance_grp.command("lint-sod")
 def finance_lint_sod_cmd() -> None:
     """Lint the finance roster for segregation-of-duties conflicts (CI gate)."""
-    from .domain import builtin_dir, load_domains, user_dir
-    from .finance.sod_linter import lint_roster
+    from ..domain import builtin_dir, load_domains, user_dir
+    from ..finance.sod_linter import lint_roster
     packs = {n: p for n, p in {**load_domains(builtin_dir()),
                                **load_domains(user_dir())}.items()
              if n.startswith("finance_")}
@@ -4546,7 +4546,7 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
     (titled "[rehearsal] ...") so the next real attempt starts from a system
     that has already practiced. Refused while verifier calibration is frozen.
     """
-    from . import dreaming
+    from .. import dreaming
     if list_snaps:
         snaps = dreaming.list_snapshots()
         click.echo("\n".join(snaps) if snaps else "(no snapshots yet)")
@@ -4591,9 +4591,9 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
     # consolidate beneficial habits, propose improvements, all grounded in real
     # outcomes. No-op unless [data_engine] is enabled; never breaks dreaming.
     try:
-        from . import data_engine
+        from .. import data_engine
         if data_engine.enabled():
-            from .flywheel import maybe_run
+            from ..flywheel import maybe_run
             fw = maybe_run()
             if fw.acted:
                 click.echo(
@@ -4609,10 +4609,10 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
         click.echo("Rehearsal: no queued cases (enable [dreaming] rehearse "
                    "so dream cycles queue recurring failures).")
         return
-    from .budget import Budget
-    from .llm import LLM, model_for_role
-    from .orchestrator import run_goal
-    from .sandbox import build_sandbox
+    from ..budget import Budget
+    from ..llm import LLM, model_for_role
+    from ..orchestrator import run_goal
+    from ..sandbox import build_sandbox
 
     llm = LLM(model=ctx.obj["model"] or model_for_role("orchestrator"))
     sandbox = build_sandbox()
@@ -4633,7 +4633,7 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
         # Verifier-scored rehearsal: completion alone is a weak signal, so a
         # case only counts as practiced when the calibrated verifier rates
         # the answer too. Scoring spends from its own small budget.
-        from .verifier import verify_proposal
+        from ..verifier import verify_proposal
         v = await verify_proposal(
             prompt, output, llm, Budget(max_dollars=max(0.25, rehearse_budget / 4)),
         )
@@ -4660,8 +4660,8 @@ def demo_cmd() -> None:
     import tempfile
     from pathlib import Path as _P
 
-    from . import dreaming, hindsight, reflexion, workforce_value
-    from .world_model import WorldModel
+    from .. import dreaming, hindsight, reflexion, workforce_value
+    from ..world_model import WorldModel
 
     tmp = _P(tempfile.mkdtemp(prefix="maverick-demo-"))
     try:
@@ -4803,9 +4803,9 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
     A credentialed preparer reviews, completes, and signs -- this never
     files anything.
     """
-    from . import tax_constants, tax_prep
+    from .. import tax_constants, tax_prep
     try:
-        from .config import get_tax
+        from ..config import get_tax
         if get_tax()["auto_update"]:
             status, detail = tax_constants.check_for_update()
             if status == "applied":
@@ -4869,7 +4869,7 @@ def tax_backtest(cases_dir: str, tolerance: float | None, fmt: str,
     number, so "matched N of M in-scope within $T" is an honest signal a firm
     can act on in an afternoon -- on its own data, not synthetic samples.
     """
-    from . import tax_backtest as bt
+    from .. import tax_backtest as bt
     tol = bt.DEFAULT_TOLERANCE if tolerance is None else tolerance
     report = bt.run_backtest_dir(cases_dir, tolerance=tol)
     if fmt == "json":
@@ -4896,7 +4896,7 @@ def tax_onboard(profile: str) -> None:
     firm's own prior filed returns -- together they make "intake in days"
     concrete. Exits non-zero when there are blockers.
     """
-    from . import tax_onboarding as ob
+    from .. import tax_onboarding as ob
     rep = ob.assess_readiness(ob.load_profile(profile))
     click.echo(ob.render_readiness(rep))
     if not rep.ready_to_pilot:
@@ -4927,7 +4927,7 @@ def tax_update(bundle_file: str | None, url: str | None,
     every prep run without an upgrade. The previous bundle is kept for
     --rollback; every apply writes an audit row.
     """
-    from . import tax_constants
+    from .. import tax_constants
     if show_status:
         federal, _, provenance = tax_constants.active_constants()
         click.echo(f"TY{federal['year']} constants: {provenance}")
@@ -4970,7 +4970,7 @@ def proof(ctx, days: int, human_cost, as_json: bool, fleet: bool) -> None:
     chain) into one read-only report -- per department. The artifact a POC
     ends on and a diligence team runs. Measures only; changes nothing.
     """
-    from . import workforce_value
+    from .. import workforce_value
     world = open_world(ctx.obj["db"])
     v = workforce_value.compute(world, window_days=days, human_cost=human_cost)
     if as_json:
@@ -5001,7 +5001,7 @@ def fleet_memory_cmd(register: str | None, description: str) -> None:
     REST surface; this command manages the roster and shows the console
     view. Requires [fleet_memory] enable = true.
     """
-    from . import fleet_memory
+    from .. import fleet_memory
     if register:
         vendor, _, agent_id = register.partition(":")
         if not agent_id:
@@ -5034,7 +5034,7 @@ def record_grp() -> None:
 @click.pass_context
 def record_stats(ctx, limit: int) -> None:
     """Summarize the Operating Record (decisions, approvals, departments)."""
-    from . import operating_record as orec
+    from .. import operating_record as orec
     world = open_world(ctx.obj["db"])
     s = orec.stats(orec.assemble(world, limit=limit))
     click.echo(f"records: {s.n_records}  goals: {s.n_goals}  approvals: "
@@ -5050,7 +5050,7 @@ def record_stats(ctx, limit: int) -> None:
 @click.pass_context
 def record_search(ctx, text: str, department: str, actor: str) -> None:
     """Every decision that touched X (subject substring match)."""
-    from . import operating_record as orec
+    from .. import operating_record as orec
     world = open_world(ctx.obj["db"])
     hits = orec.query(orec.assemble(world), text=text,
                       department=department, actor=actor)
@@ -5066,7 +5066,7 @@ def record_search(ctx, text: str, department: str, actor: str) -> None:
 @click.pass_context
 def record_export(ctx, out: str, limit: int) -> None:
     """Export the operating mind as a SIGNED, portable capsule."""
-    from . import operating_record as orec
+    from .. import operating_record as orec
     world = open_world(ctx.obj["db"])
     try:
         path = orec.export_capsule(world, out, limit=limit)
@@ -5082,7 +5082,7 @@ def record_export(ctx, out: str, limit: int) -> None:
 @click.argument("capsule", type=click.Path(exists=True))
 def record_verify(capsule: str) -> None:
     """Verify a capsule's signature + integrity offline."""
-    from . import operating_record as orec
+    from .. import operating_record as orec
     ok, reason = orec.verify_capsule(capsule)
     click.echo(reason)
     if not ok:
@@ -5115,8 +5115,8 @@ def hindsight(ctx, before: str, limit: int, all_goals: bool, ledger: bool,
     covers. Deterministic and read-only (no agent re-runs, no tokens);
     snapshots come from `maverick dream`.
     """
-    from . import dreaming
-    from . import hindsight as _h
+    from .. import dreaming
+    from .. import hindsight as _h
     snaps = dreaming.list_snapshots()
     if not snaps:
         raise click.ClickException(
@@ -5158,7 +5158,7 @@ def domains_lint(ci: bool, show_warnings: bool) -> None:
     no knowledge sources, no deny list). Operator packs in the workspace
     domains dir are linted alongside the built-ins.
     """
-    from .domain import available_domains, lint_profile
+    from ..domain import available_domains, lint_profile
     domains = available_domains()
     n_err = n_warn = 0
     for name in sorted(domains):
@@ -5189,7 +5189,7 @@ def insights_export(out: str, max_insights: int) -> None:
     here) to add to their [dreaming] trusted_insight_pubkeys. Transport is
     yours: move the file however your security policy allows.
     """
-    from .insight_exchange import export_insights
+    from ..insight_exchange import export_insights
     try:
         path = export_insights(out, max_insights=max_insights)
     except RuntimeError as e:
@@ -5211,8 +5211,8 @@ def insights_import(bundle: str) -> None:
     imported lesson is redacted, Shield-scanned, provenance-tagged, and
     merged through the same dedup gate local dreaming uses.
     """
-    from .insight_exchange import import_insights
-    from .orchestrator import _build_shield
+    from ..insight_exchange import import_insights
+    from ..orchestrator import _build_shield
     imported, reason = import_insights(bundle, shield=_build_shield())
     if reason != "ok":
         raise click.ClickException(reason)
@@ -5346,7 +5346,7 @@ def donate() -> None:
 @donate.command("status")
 def donate_status() -> None:
     """Show pending records in the outbox (NOT yet uploaded)."""
-    from .donation import _donations_enabled, _text_donations_enabled, list_pending
+    from ..donation import _donations_enabled, _text_donations_enabled, list_pending
     click.echo(f"donate_trajectories: {_donations_enabled()}")
     click.echo(f"donate_text:         {_text_donations_enabled()}")
     pending = list_pending()
@@ -5362,7 +5362,7 @@ def donate_status() -> None:
 @click.option("--yes", is_flag=True)
 def donate_clear(yes: bool) -> None:
     """Delete every pending donation record without uploading."""
-    from .donation import clear_outbox, list_pending
+    from ..donation import clear_outbox, list_pending
     pending = list_pending()
     if not pending:
         click.echo("outbox: empty (nothing to clear)")
@@ -5406,7 +5406,7 @@ def watch(ctx, path: str, run: bool, max_dollars: float) -> None:
     """Scan a file or directory for `# AI: <task>` markers and (optionally)
     run each as a goal. One-shot scan; for a long-running watcher use
     `entr` / `watchman` / `fswatch` and pipe to this command."""
-    from .watch_mode import scan_dir, scan_file
+    from ..watch_mode import scan_dir, scan_file
     p = Path(path)
     matches = scan_file(p) if p.is_file() else scan_dir(p)
 
@@ -5477,7 +5477,7 @@ def _require_day_opt(day: str | None) -> None:
     layer refuses it too (a backstop for non-CLI callers); this just turns it
     into a friendly CLI error + exit 2, matching ``--since``/``--until``.
     """
-    from .audit.events import is_valid_day
+    from ..audit.events import is_valid_day
     if day is not None and not is_valid_day(day):
         click.echo("error: --day must be YYYY-MM-DD", err=True)
         sys.exit(2)
@@ -5491,7 +5491,7 @@ def audit_tail(num: int, day: str | None) -> None:
     import json as _json
 
     _require_day_opt(day)
-    from .audit import default_audit_log
+    from ..audit import default_audit_log
     for ev in default_audit_log().tail(num, day=day):
         click.echo(_json.dumps(ev, default=str))
 
@@ -5504,7 +5504,7 @@ def audit_grep(pattern: str, day: str | None) -> None:
     import json as _json
 
     _require_day_opt(day)
-    from .audit import default_audit_log
+    from ..audit import default_audit_log
     try:
         events = default_audit_log().grep(pattern, day=day)
     except ValueError as e:
@@ -5548,8 +5548,8 @@ def audit_verify(
     from pathlib import Path as _Path
 
     _require_day_opt(day)
-    from .audit import verify_anchors, verify_chain
-    from .paths import data_dir
+    from ..audit import verify_anchors, verify_chain
+    from ..paths import data_dir
 
     # Resolve the audit dir tenant-aware (matching the writer/signer), unless an
     # explicit --file pins one file in some other location.
@@ -5570,7 +5570,7 @@ def audit_verify(
         d = day or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
         anchor_dir = audit_dir
         day_file = audit_dir / f"{d}.ndjson"
-        from .audit.signing import _have_crypto
+        from ..audit.signing import _have_crypto
         audit_dir_empty = not audit_dir.exists() or not any(audit_dir.iterdir())
         if not day_file.exists() and _have_crypto() and audit_dir_empty:
             # A completely absent/empty audit directory means no audit events
@@ -5643,8 +5643,8 @@ def audit_seal(dry_run: bool) -> None:
     'audit verify' transparently decrypt sealed segments. Requires at-rest
     encryption to be enabled ([encryption] at_rest / MAVERICK_ENCRYPT_AT_REST).
     """
-    from .audit.sealing import seal_closed_segments
-    from .crypto_at_rest import EncryptionUnavailable
+    from ..audit.sealing import seal_closed_segments
+    from ..crypto_at_rest import EncryptionUnavailable
     try:
         report = seal_closed_segments(dry_run=dry_run)
     except EncryptionUnavailable as e:
@@ -5665,7 +5665,7 @@ def audit_rotate_key() -> None:
     Takes effect for the next day-file / process restart; restart a running
     'maverick serve' to begin signing with the new key.
     """
-    from .audit.signing import _have_crypto, rotate_audit_keypair
+    from ..audit.signing import _have_crypto, rotate_audit_keypair
     if not _have_crypto():
         raise click.ClickException(
             "audit signing needs the 'cryptography' package (pip install "
@@ -5723,7 +5723,7 @@ def audit_export(
     # denied when an explicit --tenant names a provisioned tenant whose plan
     # omits "audit_export"; unscoped/self-host export is unaffected.
     if tenant:
-        from .billing import feature_allowed
+        from ..billing import feature_allowed
         if not feature_allowed("audit_export", tenant=tenant):
             click.echo(
                 f"ERROR: tenant '{tenant}' plan does not include SIEM audit "
@@ -5732,7 +5732,7 @@ def audit_export(
             )
             sys.exit(2)
 
-    from .audit.export import audit_event_paths, iter_audit_events, to_cef, to_jsonl
+    from ..audit.export import audit_event_paths, iter_audit_events, to_cef, to_jsonl
 
     render = to_cef if fmt == "cef" else to_jsonl
     lines = (render(ev) for ev in iter_audit_events(
@@ -5781,7 +5781,7 @@ def audit_export(
 @click.option("--reason", default="manual halt", help="Why you're halting.")
 def halt(reason: str) -> None:
     """Halt all in-flight goals by writing the HALT file."""
-    from .killswitch import _halt_file_path
+    from ..killswitch import _halt_file_path
     p = _halt_file_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(reason + "\n")
@@ -5791,7 +5791,7 @@ def halt(reason: str) -> None:
 @main.command("unhalt")
 def unhalt() -> None:
     """Remove the HALT file to allow goals to run again."""
-    from .killswitch import _halt_file_path
+    from ..killswitch import _halt_file_path
     p = _halt_file_path()
     if p.exists():
         p.unlink()
@@ -5915,7 +5915,7 @@ def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
     import json as _json
 
     _require_day_opt(day)
-    from .audit import default_audit_log
+    from ..audit import default_audit_log
     al = default_audit_log()
     try:
         rows = al.grep(pattern, day=day) if pattern else al.tail(num, day=day)
@@ -5969,7 +5969,7 @@ def soc2(compact: bool) -> None:
     """
     import json as _json
 
-    from .soc2 import collect_soc2_evidence
+    from ..soc2 import collect_soc2_evidence
     evidence = collect_soc2_evidence()
     if compact:
         click.echo(_json.dumps(evidence, default=str))
@@ -6008,7 +6008,7 @@ def enterprise_verify(fmt: str, require: bool) -> None:
     prints a summary of which guarantees failed and exits non-zero so an unsafe
     deployment is blocked rather than merely reported.
     """
-    from .deployment import (
+    from ..deployment import (
         _preflight_summary,
         all_passed,
         render_json,
@@ -6042,7 +6042,7 @@ def ropa_cmd(fmt: str, output) -> None:
     controller to complete. A scaffold for a DPO to finish, not a legal
     attestation.
     """
-    from .ropa import generate_ropa, render_ropa_json, render_ropa_text
+    from ..ropa import generate_ropa, render_ropa_json, render_ropa_text
     record = generate_ropa()
     payload = render_ropa_json(record) if fmt == "json" else render_ropa_text(record)
     if output:
@@ -6071,7 +6071,7 @@ def dpia_cmd(fmt: str, output) -> None:
     now -- leaving necessity/proportionality and residual-risk sign-off to the
     controller. A scaffold for a DPO to finish, not a completed DPIA.
     """
-    from .dpia import generate_dpia, render_dpia_json, render_dpia_text
+    from ..dpia import generate_dpia, render_dpia_json, render_dpia_text
     dpia = generate_dpia()
     payload = render_dpia_json(dpia) if fmt == "json" else render_dpia_text(dpia)
     if output:
@@ -6098,7 +6098,7 @@ def ai_act_cmd(fmt: str) -> None:
     AI is limited-risk by default -- but you must rule out those lists for your
     use case. A self-assessment aid, not a legal classification.
     """
-    from .ai_act import assess_ai_act, render_ai_act_json, render_ai_act_text
+    from ..ai_act import assess_ai_act, render_ai_act_json, render_ai_act_text
     report = assess_ai_act()
     click.echo(render_ai_act_json(report) if fmt == "json" else render_ai_act_text(report))
 
@@ -6111,7 +6111,7 @@ def controls_cmd(query: tuple[str, ...], limit: int) -> None:
 
     Example: maverick controls vendor has no DPA
     """
-    from .controls import find_controls, render_control
+    from ..controls import find_controls, render_control
     hits = find_controls(" ".join(query), limit=limit)
     if not hits:
         raise click.ClickException(f"no controls matched {' '.join(query)!r}")
@@ -6134,7 +6134,7 @@ def hunt_cmd(fmt: str, since: str | None, until: str | None, strict: bool) -> No
     --strict, exits non-zero when any signal is present, so it can gate a
     monitoring job.
     """
-    from .threat_hunt import hunt, render_report_json, render_report_text
+    from ..threat_hunt import hunt, render_report_json, render_report_text
     report = hunt(all_days=(since is None and until is None), since=since, until=until)
     click.echo(render_report_json(report) if fmt == "json" else render_report_text(report))
     if strict and report.findings:
@@ -6159,7 +6159,7 @@ def remediate_cmd(do_apply: bool, fmt: str) -> None:
     everything behaviour-changing is proposed for a human. Every applied fix is
     audited and reports how to undo it.
     """
-    from .remediation import (
+    from ..remediation import (
         apply_remediation,
         plan,
         render_plan_json,
@@ -6198,7 +6198,7 @@ def assess_group() -> None:
 @assess_group.command("templates")
 def assess_templates() -> None:
     """List the available assessment types."""
-    from .assessment import list_templates
+    from ..assessment import list_templates
     for t in list_templates():
         click.echo(
             f"  {t.type:12} {t.title}  "
@@ -6212,7 +6212,7 @@ def assess_templates() -> None:
               help="Output format.")
 def assess_questions(assessment_type: str, fmt: str) -> None:
     """Print an assessment's questionnaire (so you -- or the agent -- can answer it)."""
-    from .assessment import get_template, render_questions_json, render_questions_text
+    from ..assessment import get_template, render_questions_json, render_questions_text
     tpl = get_template(assessment_type)
     if tpl is None:
         raise click.ClickException(
@@ -6237,7 +6237,7 @@ def assess_score(assessment_type: str, subject: str, answers_file: str,
     """Score a completed answer set into findings + a risk rating, and save it."""
     import json as _json
 
-    from .assessment import (
+    from ..assessment import (
         AssessmentSession,
         get_template,
         render_result_json,
@@ -6271,7 +6271,7 @@ def assess_score(assessment_type: str, subject: str, answers_file: str,
 @assess_group.command("list")
 def assess_list() -> None:
     """List saved assessments, newest first."""
-    from .assessment import list_saved
+    from ..assessment import list_saved
     rows = list_saved()
     if not rows:
         click.echo("No saved assessments.")
@@ -6291,7 +6291,7 @@ def assess_show(assessment_id: str, fmt: str) -> None:
     """Show a saved assessment by id."""
     import json as _json
 
-    from .assessment import AssessmentResult, Finding, load_saved, render_result_text
+    from ..assessment import AssessmentResult, Finding, load_saved, render_result_text
     data = load_saved(assessment_id)
     if data is None:
         raise click.ClickException(f"no saved assessment {assessment_id!r}")
@@ -6333,7 +6333,7 @@ def dsar_export(user_id: str, tenant: str | None, output, compact: bool) -> None
     """
     import json as _json
 
-    from .dsar import export_subject_data
+    from ..dsar import export_subject_data
     bundle = export_subject_data(user_id, tenant=tenant)
     payload = (
         _json.dumps(bundle, default=str)
@@ -6368,7 +6368,7 @@ def cache_stats_cmd() -> None:
     """Show cache sizes."""
     import json as _json
 
-    from .cache import stats
+    from ..cache import stats
     click.echo(_json.dumps(stats(), default=str, indent=2))
 
 
@@ -6382,7 +6382,7 @@ def cache_purge_cmd(scopes: tuple[str, ...]) -> None:
     """Purge cache(s)."""
     import json as _json
 
-    from .cache import purge
+    from ..cache import purge
     report = purge(scopes or ("all",))
     click.echo(_json.dumps(report, default=str, indent=2))
 
@@ -6414,7 +6414,7 @@ def retention_enforce_cmd(
     """Apply retention rules to the audit log and world model."""
     import json as _json
 
-    from .audit.retention import enforce
+    from ..audit.retention import enforce
     # CLI overrides take precedence if any are set; otherwise read config.
     cfg: dict | None = None
     if any(v is not None for v in (audit_days, episodes_days, events_days, usage_days)):
@@ -6448,8 +6448,8 @@ def encryption_migrate_cmd(ctx, dry_run: bool) -> None:
     """
     from pathlib import Path
 
-    from .crypto_at_rest import EncryptionUnavailable
-    from .encryption_migrate import migrate_world_db
+    from ..crypto_at_rest import EncryptionUnavailable
+    from ..encryption_migrate import migrate_world_db
     try:
         report = migrate_world_db(Path(ctx.obj["db"]), dry_run=dry_run)
     except EncryptionUnavailable as e:
@@ -6473,7 +6473,7 @@ def encryption_rotate_cmd() -> None:
     until you have re-sealed old data (e.g. `maverick encryption migrate`).
     Per-tenant envelope keys rotate via their own KMS, not this command.
     """
-    from .crypto_at_rest import EncryptionUnavailable, rotate_at_rest_key
+    from ..crypto_at_rest import EncryptionUnavailable, rotate_at_rest_key
     try:
         key_id = rotate_at_rest_key()
     except EncryptionUnavailable as e:
@@ -6497,7 +6497,7 @@ def local_runtime_plan() -> None:
     """
     import shlex
 
-    from .local_runtime import Launcher, LocalRuntimeError
+    from ..local_runtime import Launcher, LocalRuntimeError
     try:
         launcher = Launcher()
         argv, env = launcher.plan()
