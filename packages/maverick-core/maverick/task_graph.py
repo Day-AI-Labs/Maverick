@@ -15,8 +15,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .paths import data_dir
+
 _STATUSES = ("pending", "running", "done", "failed", "blocked")
-_STORE = Path.home() / ".maverick" / "task_graphs"
+_STORE = data_dir("task_graphs")
 
 
 class TaskGraph:

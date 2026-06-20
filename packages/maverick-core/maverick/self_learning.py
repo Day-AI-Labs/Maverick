@@ -54,11 +54,12 @@ from pathlib import Path
 from typing import Any
 
 from .config import env_flag
+from .paths import data_dir
 
 log = logging.getLogger(__name__)
 
-LEARNED_PATH = Path.home() / ".maverick" / "learned.ndjson"
-GENERATED_TOOLS_DIR = Path.home() / ".maverick" / "generated_tools"
+LEARNED_PATH = data_dir("learned.ndjson")
+GENERATED_TOOLS_DIR = data_dir("generated_tools")
 
 # A generated tool module must be addressable as a plain identifier and
 # must not shadow a stdlib / kernel module name when imported.

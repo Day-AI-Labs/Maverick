@@ -19,7 +19,9 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-_STORE = Path.home() / ".maverick" / "learned-skills"
+from .paths import data_dir
+
+_STORE = data_dir("learned-skills")
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with", "from",
     "by", "at", "as", "is", "are", "be", "this", "that", "it", "your", "my",

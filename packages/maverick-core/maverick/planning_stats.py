@@ -17,9 +17,11 @@ import threading
 import time
 from pathlib import Path
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-DEFAULT_PATH = Path.home() / ".maverick" / "planning_stats.json"
+DEFAULT_PATH = data_dir("planning_stats.json")
 _lock = threading.Lock()
 
 MODES = ("default", "tree_of_thought")

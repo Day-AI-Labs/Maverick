@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import env_flag
+from .paths import data_dir
 
 log = logging.getLogger(__name__)
 
@@ -46,8 +47,8 @@ log = logging.getLogger(__name__)
 # so one tenant's calibration samples and learning-freeze verdict never bleed
 # into another's self-improvement loop. With no active tenant these resolve to
 # exactly the historical paths below (single-tenant behaviour unchanged).
-SAMPLES_PATH = Path.home() / ".maverick" / "calibration.ndjson"
-VERDICT_PATH = Path.home() / ".maverick" / "calibration_verdict.json"
+SAMPLES_PATH = data_dir("calibration.ndjson")
+VERDICT_PATH = data_dir("calibration_verdict.json")
 
 
 def _samples_path() -> Path:

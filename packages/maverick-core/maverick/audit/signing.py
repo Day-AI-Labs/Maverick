@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..paths import data_dir
+
 log = logging.getLogger(__name__)
 
 
@@ -45,7 +47,7 @@ log = logging.getLogger(__name__)
 # override. With no override, ``_key_dir()`` resolves the *tenant-scoped* dir
 # via ``data_dir`` so each tenant gets an independent signing key, while the
 # no-tenant default stays exactly ``~/.maverick/audit/keys``.
-_LEGACY_KEY_DIR = Path.home() / ".maverick" / "audit" / "keys"
+_LEGACY_KEY_DIR = data_dir("audit", "keys")
 KEY_DIR = _LEGACY_KEY_DIR
 
 

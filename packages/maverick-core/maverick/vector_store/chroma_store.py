@@ -16,10 +16,12 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ..paths import data_dir
+
 log = logging.getLogger(__name__)
 
 
-DEFAULT_PATH = Path.home() / ".maverick" / "vector_store"
+DEFAULT_PATH = data_dir("vector_store")
 
 
 class ChromaStore:

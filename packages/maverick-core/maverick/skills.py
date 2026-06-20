@@ -20,10 +20,11 @@ from pathlib import Path
 from .blackboard import Blackboard
 from .budget import Budget
 from .llm import LLM, model_for_role
+from .paths import data_dir
 
 log = logging.getLogger(__name__)
 
-SKILLS_DIR = Path.home() / ".maverick" / "skills"
+SKILLS_DIR = data_dir("skills")
 # First-party skills shipped INSIDE the package (vs. user-installed skills under
 # SKILLS_DIR). Resolved via __file__ so it works from an installed wheel too.
 BUILTIN_SKILLS_DIR = Path(__file__).parent / "skills_builtin"

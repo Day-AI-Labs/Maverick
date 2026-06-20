@@ -32,10 +32,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
 
-DEFAULT_DB = Path.home() / ".maverick" / "llm_cache.db"
+DEFAULT_DB = data_dir("llm_cache.db")
 DEFAULT_TTL_S = 7 * 24 * 3600  # 7 days
 
 
