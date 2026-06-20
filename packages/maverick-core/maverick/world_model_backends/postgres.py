@@ -1102,6 +1102,14 @@ class PostgresWorldModel:
         """Record a goal deliverable; re-using (goal_id, title) appends the next
         version so the UI can show history. Returns the new row id."""
         with self._tx() as cur:
+            # Serialize concurrent writers for THIS (goal,title) across replicas
+            # so the MAX(version)+1 read-modify-write can't assign a duplicate
+            # version. Per-key advisory lock (auto-released at COMMIT); distinct
+            # (goal,title) pairs hash elsewhere and don't contend.
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"artifact:{int(goal_id)}:{title or ''}",),
+            )
             cur.execute(
                 "SELECT COALESCE(MAX(version), 0) FROM artifacts "
                 "WHERE goal_id=%s AND title=%s",
@@ -1697,6 +1705,15 @@ class PostgresWorldModel:
         tenant = _active_tenant()
         with self._tx() as cur:
             if _temporal_memory_enabled():
+                # Serialize concurrent writers for THIS key across replicas: the
+                # close-prior-window/open-new-window sequence is a read-modify-
+                # write that would otherwise leave TWO open windows (valid_to IS
+                # NULL) under a race. Per-key advisory lock (auto-released at
+                # COMMIT); other keys hash elsewhere and don't contend.
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                    (f"fact:{tenant or ''}:{key}",),
+                )
                 frag, params = _tenant_scope()
                 sql = (
                     "SELECT value, trust_tier FROM fact_history "
