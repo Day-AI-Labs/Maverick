@@ -141,6 +141,7 @@ class TaskStore:
         default_ttl_ms: int | None = None,
         max_ttl_ms: int | None = None,
         poll_interval_ms: int | None = None,
+        result_block_ms: int | None = None,
         page_size: int = 100,
         on_status_change: Callable[[McpTask], None] | None = None,
     ):
@@ -156,6 +157,10 @@ class TaskStore:
             "MAVERICK_MCP_TASK_MAX_TTL_MS", 86_400_000, lo=1_000, hi=604_800_000)
         self._poll_ms = poll_interval_ms if poll_interval_ms is not None else _env_int(
             "MAVERICK_MCP_TASK_POLL_MS", 1_000, lo=50, hi=3_600_000)
+        # Upper bound on how long a single ``tasks/result`` call blocks a worker
+        # thread, INDEPENDENT of the task's ttl (see result()). Defaults to 60s.
+        self._result_block_ms = result_block_ms if result_block_ms is not None else _env_int(
+            "MAVERICK_MCP_TASK_RESULT_BLOCK_MS", 60_000, lo=1_000, hi=600_000)
         self._page_size = max(1, page_size)
         workers = max_workers if max_workers is not None else _env_int(
             "MAVERICK_MCP_TASK_WORKERS", 4, lo=1, hi=64)
@@ -240,10 +245,16 @@ class TaskStore:
 
     def result(self, task_id: str, *, owner: str | None = None) -> dict:
         task = self._require(task_id, owner=owner)
-        # Block until terminal (spec requirement). The worker always reaches a
-        # terminal status (the tool is budget/wall-clock bounded), so the wait
-        # is bounded; ttl is the backstop.
-        task.done.wait(timeout=max(1.0, (task.ttl_ms or 0) / 1000.0 + 5.0))
+        # Block until terminal (spec requirement) -- but bound how long a SINGLE
+        # call blocks, independent of the task's ttl. result() runs on the HTTP
+        # dispatch thread pool, so waiting the full ttl (up to 24h) lets a caller
+        # pin every worker thread with a few large-ttl tasks and freeze the whole
+        # server (auth, /healthz, everything). Cap at _result_block_ms (default
+        # 60s); on timeout raise so the client re-issues tasks/result or polls
+        # tasks/get. The task keeps running until it terminates or its ttl lapses.
+        wait_s = max(1.0, min((task.ttl_ms or 0) / 1000.0 + 5.0,
+                              self._result_block_ms / 1000.0))
+        task.done.wait(timeout=wait_s)
         with self._lock:
             if task.status not in TASK_TERMINAL:
                 raise TaskError(_INTERNAL_ERROR, "timed out waiting for task result")

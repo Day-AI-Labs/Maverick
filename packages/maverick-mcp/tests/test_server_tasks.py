@@ -77,6 +77,34 @@ def test_runner_exception_marks_task_failed():
         store.shutdown()
 
 
+def test_result_call_block_is_bounded_independent_of_ttl():
+    """Audit round 12: a single tasks/result call must not block a worker thread
+    for the task's whole ttl (up to 24h). result() runs on the HTTP dispatch
+    pool, so an unbounded wait lets a few large-ttl tasks pin every thread and
+    freeze the server. The per-call block is capped (result_block_ms); on timeout
+    it raises so the client re-polls -- the task itself keeps running."""
+    release = threading.Event()
+
+    def runner(name, args):
+        release.wait(timeout=10)  # never released during the assertion
+        return _ok("late")
+
+    # Large ttl (60s) but a tiny per-call block ceiling (200ms).
+    store = TaskStore(runner, max_workers=2, result_block_ms=200)
+    try:
+        task = store.create("maverick_start", {}, {"ttl": 60000})
+        t0 = time.monotonic()
+        with pytest.raises(TaskError):
+            store.result(task.id)  # must time out fast, not wait ~60s
+        elapsed = time.monotonic() - t0
+        assert elapsed < 5.0, f"result() blocked {elapsed:.1f}s -- ttl not bounded"
+        # The task is still working (not cancelled/failed) -- only the call ended.
+        assert store.get(task.id)["status"] == "working"
+    finally:
+        release.set()
+        store.shutdown()
+
+
 def test_cancel_transitions_and_rejects_double_cancel():
     release = threading.Event()
     store = TaskStore(lambda n, a: (release.wait(timeout=5), _ok("late"))[1])
