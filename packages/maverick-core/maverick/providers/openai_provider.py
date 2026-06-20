@@ -127,6 +127,13 @@ class OpenAIClient:
     # provider context while still resolving known table ids after stripping
     # the prefix. Empty for the hosted OpenAI provider.
     PRICE_MODEL_PREFIX = ""
+    # Whether a missing ``usage`` block must abort the turn. True for paid hosted
+    # providers (OpenAI/Azure/DeepSeek/…) where we cannot let an untracked call
+    # bypass the budget. Self-hosted subclasses (ollama/vllm/tgi) override False:
+    # their ids price at $0, and many local OpenAI-compatible servers (llama.cpp,
+    # LM Studio, older vLLM) omit ``usage`` on non-streaming completions, so
+    # aborting there breaks a free, correct run for no benefit.
+    USAGE_REQUIRED = True
 
     def __init__(
         self,
@@ -321,6 +328,7 @@ class OpenAIClient:
         budget: Budget | None,
         model: str | None = None,
         price_model_prefix: str = "",
+        usage_required: bool = True,
     ) -> LLMResponse:
         if not getattr(resp, "choices", None):
             # Some OpenAI-compatible gateways (and OpenAI/Azure content-filter)
@@ -343,14 +351,31 @@ class OpenAIClient:
                 try:
                     args = json.loads(tc.function.arguments)
                 except (json.JSONDecodeError, AttributeError):
+                    # Truncated (length-capped) or malformed tool arguments from
+                    # a weak model behind vllm/tgi/openrouter. Running the tool
+                    # with {} silently can do the wrong thing, so surface it
+                    # rather than swallowing it without a trace.
                     args = {}
+                    log.warning(
+                        "tool call %r had unparseable arguments; running with {} "
+                        "(raw=%.200r)",
+                        getattr(tc.function, "name", "?"),
+                        getattr(tc.function, "arguments", None),
+                    )
                 tool_calls.append(ToolCall(
                     id=tc.id, name=tc.function.name, input=args,
                 ))
         if budget is not None:
             usage = getattr(resp, "usage", None)
-            if not usage:
+            if not usage and usage_required:
                 raise BudgetExceeded("OpenAI response missing token usage; cannot enforce budget")
+            if not usage:
+                # Self-hosted server omitted usage (see USAGE_REQUIRED). Its ids
+                # price at $0, so there is nothing to enforce: the getattr chain
+                # below reads 0/0 and records a $0, zero-token call (which keeps
+                # the call counted) instead of aborting the turn.
+                log.debug("%s omitted token usage; recording $0 self-hosted call",
+                          price_model_prefix.rstrip(":") or "provider")
             # Extract cached-token counts where the provider reports
             # them. Vendors expose this on the usage object under
             # different field names; we try the known shapes and fall
@@ -470,6 +495,7 @@ class OpenAIClient:
         return self._from_response(
             resp, budget, model=kwargs.get("model"),
             price_model_prefix=self.PRICE_MODEL_PREFIX,
+            usage_required=self.USAGE_REQUIRED,
         )
 
     async def complete_async(
@@ -489,4 +515,5 @@ class OpenAIClient:
         return self._from_response(
             resp, budget, model=kwargs.get("model"),
             price_model_prefix=self.PRICE_MODEL_PREFIX,
+            usage_required=self.USAGE_REQUIRED,
         )

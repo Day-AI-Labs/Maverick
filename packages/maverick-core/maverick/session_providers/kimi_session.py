@@ -122,7 +122,15 @@ class KimiSessionClient:
             )
         resp.raise_for_status()
         data = resp.json()
-        chat_id = data.get("id") or str(uuid.uuid4())
+        chat_id = data.get("id")
+        if not chat_id:
+            # Don't fabricate a UUID: POSTing the completion to a nonexistent
+            # /api/chat/<random> 404s deep in the next call and masks the real
+            # cause (the create-chat response schema changed). Fail loudly here.
+            raise RuntimeError(
+                "Kimi /api/chat returned no chat id; the endpoint schema may "
+                "have changed (re-capture the session if this persists)."
+            )
         return chat_id
 
     def _build_completion_body(self, prompt: str, model: str) -> dict:
