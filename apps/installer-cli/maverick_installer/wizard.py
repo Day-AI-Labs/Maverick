@@ -133,6 +133,12 @@ def _safe_int(s: str, *, default: int) -> int:
         return default
 
 
+def _csv_list(raw: str, *, lower: bool = False) -> list[str]:
+    """Split a comma-separated prompt answer into trimmed, non-empty items."""
+    items = [x.strip() for x in str(raw or "").split(",") if x.strip()]
+    return [x.lower() for x in items] if lower else items
+
+
 def _safe_float(s: str, *, default: float) -> float:
     """``float()`` that doesn't crash on whitespace, empty, or junk input."""
     try:
@@ -702,7 +708,7 @@ def _channel_allowlist(ch_id: str, cfg: dict[str, Any]) -> None:
             "only these can drive the agent",
             default="",
         )
-        ids = [s.strip() for s in raw_ids.split(",") if s.strip()]
+        ids = _csv_list(raw_ids)
         if ids:
             cfg["allowed_user_ids"] = ids
         else:
@@ -722,7 +728,7 @@ def _channel_allowlist(ch_id: str, cfg: dict[str, Any]) -> None:
             "blank = any authenticated caller)",
             default="",
         )
-        callers = [x.strip() for x in raw.split(",") if x.strip()]
+        callers = _csv_list(raw)
         if callers:
             cfg["allowed_callers"] = callers
 
@@ -824,7 +830,7 @@ def pick_signed_skills() -> dict[str, Any]:
         "leave blank to skip.[/dim]"
     )
     raw = _q_text("  Trusted skill publisher pubkeys (comma-separated hex)", default="")
-    trusted = [k.strip() for k in raw.split(",") if k.strip()]
+    trusted = _csv_list(raw)
     require = _q_confirm(
         "  Reject unsigned skills (only install signed + trusted ones)?",
         default=False,
@@ -1892,7 +1898,7 @@ def pick_webhooks() -> tuple[dict[str, Any], list[str]]:
         "  Endpoint URL(s), comma-separated",
         default="",
     ).strip()
-    urls = [u.strip() for u in raw.split(",") if u.strip()]
+    urls = _csv_list(raw)
     if not urls:
         return {}, []
     cfg: dict[str, Any] = {"outbound": urls}
@@ -1975,7 +1981,7 @@ def pick_connectors() -> dict[str, str]:
         "  Which systems? (comma-separated names, e.g. servicenow, snowflake)",
         default="",
     )
-    picked = [n.strip().lower() for n in raw.split(",") if n.strip()]
+    picked = _csv_list(raw, lower=True)
     keys: dict[str, str] = {}
     for name in dict.fromkeys(picked):  # dedupe, preserve order
         entry = by_name.get(name)
