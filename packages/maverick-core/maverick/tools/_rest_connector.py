@@ -129,15 +129,20 @@ def _rest_execute(
         deny = enterprise_egress_denial(url, tool=name)
         if deny:
             return f"ERROR: {deny}"
-        import httpx
-        # Do not follow redirects: only the initial ``url`` passed the egress
-        # boundary check above. A 3xx from the SaaS host to an internal/metadata
-        # address (e.g. 169.254.169.254) must not be auto-followed past that
-        # gate. (httpx already defaults to False; pin it so a refactor can't flip
-        # it open.)
-        r = httpx.request(op.upper(), url, headers=headers(tok),
-                          params=params or None, json=body, timeout=30.0,
-                          follow_redirects=False)
+        # Route through the SSRF-safe client: resolve the host ONCE and pin the
+        # connection to that validated public IP, so DNS-rebinding can't point
+        # the configured connector host at an internal/metadata address
+        # (169.254.169.254, 127.0.0.1) after the egress check above. The bearer
+        # token rides this request, so an unpinned fetch could exfil it. Redirects
+        # stay off (safe_client default) -- only ``url`` passed the gate. On-prem
+        # connectors opt in via MAVERICK_FETCH_ALLOW_PRIVATE=1.
+        from ._ssrf import BlockedHost, safe_client
+        try:
+            with safe_client(url, timeout=30.0) as client:
+                r = client.request(op.upper(), url, headers=headers(tok),
+                                   params=params or None, json=body)
+        except BlockedHost as e:
+            return f"ERROR: blocked host (SSRF guard): {e}"
         try:
             data = r.json()
         except ValueError:
@@ -409,13 +414,21 @@ def make_graphql_tool(
             deny = enterprise_egress_denial(base, tool=name)
             if deny:
                 return f"ERROR: {deny}"
-            import httpx
+            # Same SSRF-safe path as the REST branch: pin the host IP and keep
+            # redirects off (the old httpx.post relied on httpx's default and had
+            # no IP-pinning), so the bearer token can't be redirected/rebound to
+            # an internal address. On-prem opts in via MAVERICK_FETCH_ALLOW_PRIVATE=1.
+            from ._ssrf import BlockedHost, safe_client
             headers = _build_auth_headers(
                 tok, basic=basic, token_header=token_header, scheme=scheme,
                 extra_headers_env=extra_headers_env,
             )
-            r = httpx.post(base, headers=headers,
-                           json={"query": q, "variables": variables}, timeout=30.0)
+            try:
+                with safe_client(base, timeout=30.0) as client:
+                    r = client.post(base, headers=headers,
+                                    json={"query": q, "variables": variables})
+            except BlockedHost as e:
+                return f"ERROR: blocked host (SSRF guard): {e}"
             try:
                 data = r.json()
             except ValueError:

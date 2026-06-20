@@ -30,6 +30,10 @@ _ALWAYS_STRIP_ENV = (
     "GITHUB_TOKEN",
     "GH_TOKEN",
     "GITLAB_TOKEN",
+    # The SWE-bench gold patch: "GOLD_PATCH" matches no secret keyword in
+    # _SECRET_ENV_RE, so without this a `printenv` in a non-opaque child leaks
+    # the benchmark answer. shell.py only popped it for opaque runs.
+    "MAVERICK_GOLD_PATCH",
 )
 
 
