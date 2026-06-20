@@ -212,6 +212,50 @@ def test_decide_approval_rejects_bad_status(world):
         world.decide_approval(aid, "maybe")
 
 
+def test_child_writes_are_tenant_scoped(world):
+    """Child rows (episodes/events/turns/messages/questions/attachments) carry no
+    tenant_id; they inherit tenancy through their goal/conversation FK and reads
+    enforce it via a JOIN. The WRITES must too: a tenant must not inject a child
+    row onto another tenant's goal/conversation by id. Regression for the
+    unscoped PG child-write methods."""
+    from maverick.paths import reset_tenant, set_tenant
+
+    tok = set_tenant("acme")
+    try:
+        gid = world.create_goal("acme-goal")
+        conv = world.get_or_create_conversation("sms", "acme-user")
+        eid = world.start_episode(gid)  # happy path within the tenant works
+        assert isinstance(eid, int)
+    finally:
+        reset_tenant(tok)
+
+    tok = set_tenant("globex")
+    try:
+        # id-returning child writes against acme's ids are rejected.
+        for call in (
+            lambda: world.start_episode(gid),
+            lambda: world.append_event(gid, "orch", "note", "x"),
+            lambda: world.ask("q?", goal_id=gid),
+            lambda: world.add_attachment(gid, "f.txt", "text/plain", 1, "ab", "/tmp/f"),
+            lambda: world.append_turn(conv.id, "user", "x"),
+        ):
+            with pytest.raises(ValueError):
+                call()
+        # void writes silently no-op (don't raise, don't land).
+        world.append_message(gid, "user", "sneaky")
+        world.end_episode(eid, "done", "success")  # acme's episode; globex can't end it
+    finally:
+        reset_tenant(tok)
+
+    tok = set_tenant("acme")
+    try:
+        eps = world.list_episodes(goal_id=gid)
+        assert len(eps) == 1                 # no globex episode landed
+        assert eps[0].ended_at is None       # globex's end_episode was a no-op
+    finally:
+        reset_tenant(tok)
+
+
 def test_decide_approval_is_tenant_scoped(world):
     """A tenant must not decide another tenant's parked high-risk action.
 

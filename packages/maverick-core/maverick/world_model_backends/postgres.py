@@ -1522,14 +1522,39 @@ class PostgresWorldModel:
     # ----- episodes -----
 
     def start_episode(self, goal_id: int) -> int:
+        # Child rows (episodes/events/turns/...) carry no tenant_id; they inherit
+        # tenancy through their goal/conversation FK, and reads enforce it via a
+        # JOIN. The writes must too: gate the insert on the parent goal being in
+        # the active tenant so a write against another tenant's goal_id can't
+        # land. Single-tenant (empty frag) keeps the original direct insert.
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO episodes(goal_id, started_at) VALUES(%s, %s) "
-                "RETURNING id",
-                (goal_id, time.time()),
-            )
+            if frag:
+                cur.execute(
+                    "INSERT INTO episodes(goal_id, started_at) SELECT %s, %s "
+                    "WHERE EXISTS (SELECT 1 FROM goals WHERE id=%s AND "
+                    + frag + ") RETURNING id",
+                    (goal_id, time.time(), goal_id, *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO episodes(goal_id, started_at) VALUES(%s, %s) "
+                    "RETURNING id",
+                    (goal_id, time.time()),
+                )
             row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"unknown goal_id {goal_id!r} for the active tenant")
         return int(row[0])
+
+    def _episode_tenant_cond(self) -> tuple[str, list]:
+        """SQL fragment + params restricting an episode UPDATE (keyed by
+        episode_id) to episodes whose parent goal is in the active tenant.
+        Empty in single-tenant mode."""
+        frag, fparams = _tenant_scope()
+        if not frag:
+            return "", []
+        return (" AND goal_id IN (SELECT id FROM goals WHERE " + frag + ")", fparams)
 
     def update_episode_spend(
         self,
@@ -1544,13 +1569,14 @@ class PostgresWorldModel:
         Observability mirror only (see the SQLite backend's docstring): the
         `ended_at IS NULL` guard keeps it from clobbering `end_episode`.
         """
+        cond, cparams = self._episode_tenant_cond()
         with self._tx() as cur:
             cur.execute(
                 "UPDATE episodes SET cost_dollars=%s, input_tokens=%s, "
                 "output_tokens=%s, tool_calls=%s "
-                "WHERE id=%s AND ended_at IS NULL",
+                "WHERE id=%s AND ended_at IS NULL" + cond,
                 (cost_dollars, input_tokens, output_tokens, tool_calls,
-                 episode_id),
+                 episode_id, *cparams),
             )
 
     def end_episode(
@@ -1564,14 +1590,15 @@ class PostgresWorldModel:
         output_tokens: int = 0,
         tool_calls: int = 0,
     ) -> None:
+        cond, cparams = self._episode_tenant_cond()
         with self._tx() as cur:
             cur.execute(
                 "UPDATE episodes SET ended_at=%s, summary=%s, outcome=%s, "
                 "cost_dollars=%s, input_tokens=%s, output_tokens=%s, "
-                "tool_calls=%s WHERE id=%s",
+                "tool_calls=%s WHERE id=%s" + cond,
                 (time.time(), _seal(summary), _seal(outcome),
                  cost_dollars, input_tokens, output_tokens, tool_calls,
-                 episode_id),
+                 episode_id, *cparams),
             )
 
     def list_episodes(self, limit: int = 50, goal_id: int | None = None) -> list:
@@ -1645,13 +1672,26 @@ class PostgresWorldModel:
     # ----- events -----
 
     def append_event(self, goal_id: int, agent: str, kind: str, content: str) -> int:
+        # Gate on the parent goal being in the active tenant (see start_episode).
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO goal_events(goal_id, agent, kind, content, ts) "
-                "VALUES(%s, %s, %s, %s, %s) RETURNING id",
-                (goal_id, agent, kind, _seal(content), time.time()),
-            )
+            if frag:
+                cur.execute(
+                    "INSERT INTO goal_events(goal_id, agent, kind, content, ts) "
+                    "SELECT %s, %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") RETURNING id",
+                    (goal_id, agent, kind, _seal(content), time.time(),
+                     goal_id, *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO goal_events(goal_id, agent, kind, content, ts) "
+                    "VALUES(%s, %s, %s, %s, %s) RETURNING id",
+                    (goal_id, agent, kind, _seal(content), time.time()),
+                )
             row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"unknown goal_id {goal_id!r} for the active tenant")
         return int(row[0])
 
     def goal_events(self, goal_id: int, since_id: int = 0, limit: int = 200) -> list:
@@ -2014,13 +2054,27 @@ class PostgresWorldModel:
     # ----- questions (ask_user / human-in-the-loop) -----
 
     def ask(self, question: str, goal_id: int | None = None) -> int:
+        # When attached to a goal, gate on that goal being in the active tenant
+        # (matches `answer`, which scopes by the parent goal). A goal-less
+        # question has no parent to inherit from, so it inserts directly.
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO questions(goal_id, question, asked_at) "
-                "VALUES(%s, %s, %s) RETURNING id",
-                (goal_id, _seal(question), time.time()),
-            )
+            if frag and goal_id is not None:
+                cur.execute(
+                    "INSERT INTO questions(goal_id, question, asked_at) "
+                    "SELECT %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") RETURNING id",
+                    (goal_id, _seal(question), time.time(), goal_id, *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO questions(goal_id, question, asked_at) "
+                    "VALUES(%s, %s, %s) RETURNING id",
+                    (goal_id, _seal(question), time.time()),
+                )
             row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"unknown goal_id {goal_id!r} for the active tenant")
         return int(row[0])
 
     def answer(self, question_id: int, answer: str) -> bool:
@@ -2235,13 +2289,32 @@ class PostgresWorldModel:
     ) -> int:
         if role not in ("user", "assistant"):
             raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
+        # A turn inherits tenancy through its CONVERSATION (conversations carries
+        # tenant_id); gate the insert on that conversation being in the active
+        # tenant so a write against another tenant's conversation can't land.
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO turns(conversation_id, goal_id, role, content, ts) "
-                "VALUES(%s, %s, %s, %s, %s) RETURNING id",
-                (conversation_id, goal_id, role, _seal(content), time.time()),
+            if frag:
+                cur.execute(
+                    "INSERT INTO turns(conversation_id, goal_id, role, content, ts) "
+                    "SELECT %s, %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM conversations WHERE id=%s AND " + frag
+                    + ") RETURNING id",
+                    (conversation_id, goal_id, role, _seal(content), time.time(),
+                     conversation_id, *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO turns(conversation_id, goal_id, role, content, ts) "
+                    "VALUES(%s, %s, %s, %s, %s) RETURNING id",
+                    (conversation_id, goal_id, role, _seal(content), time.time()),
+                )
+            row = cur.fetchone()
+        if row is None:
+            raise ValueError(
+                f"unknown conversation_id {conversation_id!r} for the active tenant"
             )
-            return int(cur.fetchone()[0])
+        return int(row[0])
 
     def recent_turns(self, conversation_id: int, limit: int = 20) -> list:
         """Most recent N turns in chronological (ascending) order, ready to feed
@@ -2412,12 +2485,23 @@ class PostgresWorldModel:
     # ----- messages (goal-scoped log + full-text search) -----
 
     def append_message(self, goal_id: int, role: str, content: str) -> None:
+        # Gate on the parent goal being in the active tenant (see start_episode);
+        # a cross-tenant write silently no-ops, like set_goal_status.
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO messages(goal_id, role, content, ts) "
-                "VALUES(%s, %s, %s, %s)",
-                (goal_id, role, _seal(content), time.time()),
-            )
+            if frag:
+                cur.execute(
+                    "INSERT INTO messages(goal_id, role, content, ts) "
+                    "SELECT %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ")",
+                    (goal_id, role, _seal(content), time.time(), goal_id, *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO messages(goal_id, role, content, ts) "
+                    "VALUES(%s, %s, %s, %s)",
+                    (goal_id, role, _seal(content), time.time()),
+                )
 
     def search_messages(self, query: str, limit: int = 10) -> list[dict]:
         """Full-text search over message content, most-recent first.
@@ -2480,14 +2564,29 @@ class PostgresWorldModel:
         self, goal_id: int, filename: str, mime: str, size_bytes: int,
         sha256: str, path: str,
     ) -> int:
+        # Gate on the parent goal being in the active tenant (see start_episode).
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO attachments"
-                "(goal_id, filename, mime, size_bytes, sha256, path, created_at) "
-                "VALUES(%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-                (goal_id, filename, mime, size_bytes, sha256, path, time.time()),
-            )
-            return int(cur.fetchone()[0])
+            if frag:
+                cur.execute(
+                    "INSERT INTO attachments"
+                    "(goal_id, filename, mime, size_bytes, sha256, path, created_at) "
+                    "SELECT %s, %s, %s, %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") RETURNING id",
+                    (goal_id, filename, mime, size_bytes, sha256, path, time.time(),
+                     goal_id, *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO attachments"
+                    "(goal_id, filename, mime, size_bytes, sha256, path, created_at) "
+                    "VALUES(%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                    (goal_id, filename, mime, size_bytes, sha256, path, time.time()),
+                )
+            row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"unknown goal_id {goal_id!r} for the active tenant")
+        return int(row[0])
 
     def list_attachments(self, goal_id: int) -> list:
         from ..world_model import Attachment
