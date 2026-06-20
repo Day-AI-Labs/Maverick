@@ -22,6 +22,7 @@ from .openai_provider import OpenAIClient
 class TGIClient(OpenAIClient):
     DEFAULT_MODEL = "tgi"
     PRICE_MODEL_PREFIX = "tgi:"  # self-hosted: unknown ids price $0
+    USAGE_REQUIRED = False  # local server may omit usage; $0 -> nothing to enforce
 
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         key = api_key or os.environ.get("TGI_API_KEY") or "tgi-no-auth"
