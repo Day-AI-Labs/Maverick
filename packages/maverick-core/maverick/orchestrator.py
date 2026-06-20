@@ -323,7 +323,6 @@ def _maybe_recall_prior_work(world, goal, shield) -> str | None:
             "work, but verify they still apply before relying on them:\n\n"
             + "\n".join(lines)
         )
-        return None
 
 
 def _record_skill_outcome(ctx: Any, *, success: bool) -> None:
