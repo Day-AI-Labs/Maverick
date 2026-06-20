@@ -484,6 +484,27 @@ def _estimate_call_cost(model_id, system, messages, tools, max_tokens) -> float:
     return (chars / 4 / 1_000_000) * in_rate + (max_tokens / 1_000_000) * out_rate
 
 
+def _openai_cached_tokens(usage) -> int:
+    """Cached-prompt token count from an OpenAI-family usage object.
+
+    Mirrors the OpenAI provider's billing read: ``prompt_tokens_details.
+    cached_tokens`` (OpenAI / Gemini OpenAI-compat) or ``prompt_cache_hit_tokens``
+    (DeepSeek). Returns 0 for Anthropic usage (which has neither). These tokens
+    are INCLUDED in ``prompt_tokens``, so the caller subtracts them before
+    pricing the remainder at the full input rate.
+    """
+    if usage is None:
+        return 0
+    details = getattr(usage, "prompt_tokens_details", None)
+    n = getattr(details, "cached_tokens", 0) if details is not None else 0
+    if not n:
+        n = getattr(usage, "prompt_cache_hit_tokens", 0)
+    try:
+        return max(0, int(n or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _response_call_cost(model_id, resp) -> float | None:
     """Per-call $ derived from THIS response's own token usage, or ``None`` when
     the response carries no usage to price from.
@@ -500,6 +521,7 @@ def _response_call_cost(model_id, resp) -> float | None:
         return None
     from .budget import (
         _CACHE_READ_MULT,
+        CACHE_READ_MULT_OPENAI,
         _cache_write_mult_from_ttl,
         _lookup_price,
     )
@@ -516,17 +538,29 @@ def _response_call_cost(model_id, resp) -> float | None:
         return 0
 
     # Anthropic uses input/output_tokens; OpenAI-compat uses prompt/completion.
-    # ``input_tokens`` is non-cached input only; cache tokens are billed apart.
+    # Anthropic's ``input_tokens`` already EXCLUDES cache reads (they ride on the
+    # LLMResponse as cache_read_tokens). OpenAI-family ``prompt_tokens`` FOLDS the
+    # cached tokens IN and the provider doesn't surface them on the response, so
+    # without splitting them out here a cache hit is priced at the full input rate
+    # -- overstating OpenAI spend (~2x on the input side) in provider-health and
+    # the budget_dollars metric. Mirror the provider's billing split.
     in_tok = _u("input_tokens", "prompt_tokens")
     out_tok = _u("output_tokens", "completion_tokens")
     cache_read = int(getattr(resp, "cache_read_tokens", 0) or 0)
     cache_write = int(getattr(resp, "cache_creation_tokens", 0) or 0)
     if not (in_tok or out_tok or cache_read or cache_write):
         return None
+    # OpenAI/DeepSeek cached-prompt split (only when the response didn't already
+    # surface cache_read, i.e. the OpenAI-family path; in_tok is cache-inclusive).
+    openai_cached = 0
+    if not cache_read:
+        openai_cached = min(_openai_cached_tokens(usage), in_tok)
+        in_tok -= openai_cached
     in_rate, out_rate = _lookup_price(model_id)
     write_mult = _cache_write_mult_from_ttl(None)
     cost = (in_tok / 1_000_000) * in_rate
-    cost += (cache_read / 1_000_000) * in_rate * _CACHE_READ_MULT
+    cost += (cache_read / 1_000_000) * in_rate * _CACHE_READ_MULT          # Anthropic 0.1x
+    cost += (openai_cached / 1_000_000) * in_rate * CACHE_READ_MULT_OPENAI  # OpenAI-family 0.5x
     cost += (cache_write / 1_000_000) * in_rate * write_mult
     cost += (out_tok / 1_000_000) * out_rate
     return cost
