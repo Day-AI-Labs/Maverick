@@ -375,7 +375,9 @@ class InboundApplier:
         if not ok:
             log.warning("channel federation: rejected inbound envelope: %s", reason)
             return {"applied": False, "reason": reason, "result": None}
-        assert isinstance(envelope, dict)
+        if not isinstance(envelope, dict):  # defensive: honor the never-raises
+            return {"applied": False, "reason": "envelope is not an object",
+                    "result": None}
         origin = envelope["origin"]
         if envelope.get("to") != self.local:
             return {"applied": False,

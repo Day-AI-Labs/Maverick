@@ -492,7 +492,7 @@ class MCPClient:
     async def _request(self, method: str, params: dict) -> dict:
         # Register the Future + send under the small lock, but await the reply
         # OUTSIDE it so concurrent requests overlap instead of serializing.
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         async with self._lock:
             self._check_alive()

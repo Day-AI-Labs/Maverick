@@ -108,57 +108,56 @@ def _valid_theme_names() -> set[str]:
     return _VALID_THEMES | set(custom_themes())
 
 
-def _resolve_theme(request: Request) -> str:
-    """Pick the theme from ``?theme=`` query param, cookie, config, then dark."""
-    valid = _valid_theme_names()
-    q = (request.query_params.get("theme") or "").strip().lower()
+def _resolve_pref(
+    request: Request, *, param: str, cookie: str, valid, default: str,
+    config_key: str | None = None,
+) -> str:
+    """Resolve a UI preference via the shared query-param → cookie →
+    [dashboard] config → default ladder, accepting only values in ``valid``.
+    ``config_key=None`` skips the config step (cookie-only prefs)."""
+    q = (request.query_params.get(param) or "").strip().lower()
     if q in valid:
         return q
-    c = (request.cookies.get("mvk_theme") or "").strip().lower()
+    c = (request.cookies.get(cookie) or "").strip().lower()
     if c in valid:
         return c
-    try:
-        from maverick.config import load_config
-        cfg = (load_config() or {}).get("dashboard") or {}
-        cfg_theme = (cfg.get("theme") or "").strip().lower()
-        if cfg_theme in valid:
-            return cfg_theme
-    except Exception:
-        pass
-    return "dark"
+    if config_key is not None:
+        try:
+            from maverick.config import load_config
+            cfg = (load_config() or {}).get("dashboard") or {}
+            v = (cfg.get(config_key) or "").strip().lower()
+            if v in valid:
+                return v
+        except Exception:
+            pass
+    return default
+
+
+def _resolve_theme(request: Request) -> str:
+    """Pick the theme from ``?theme=`` query param, cookie, config, then dark."""
+    return _resolve_pref(
+        request, param="theme", cookie="mvk_theme", valid=_valid_theme_names(),
+        config_key="theme", default="dark",
+    )
 
 
 def resolve_density(request: Request) -> str:
     """UI density: ``?density=`` → ``mvk_density`` cookie → ``[dashboard]
     density`` config → comfortable. Default-off: ``comfortable`` is the
     existing layout; ``compact`` opts in to the denser one."""
-    q = (request.query_params.get("density") or "").strip().lower()
-    if q in _VALID_DENSITIES:
-        return q
-    c = (request.cookies.get("mvk_density") or "").strip().lower()
-    if c in _VALID_DENSITIES:
-        return c
-    try:
-        from maverick.config import load_config
-        cfg = (load_config() or {}).get("dashboard") or {}
-        cfg_density = (cfg.get("density") or "").strip().lower()
-        if cfg_density in _VALID_DENSITIES:
-            return cfg_density
-    except Exception:
-        pass
-    return "comfortable"
+    return _resolve_pref(
+        request, param="density", cookie="mvk_density", valid=_VALID_DENSITIES,
+        config_key="density", default="comfortable",
+    )
 
 
 def _resolve_font(request: Request) -> str:
     """Font preference: ``?font=`` → cookie → default. Independent axis from
     the theme so high-contrast + dyslexia-friendly compose."""
-    q = (request.query_params.get("font") or "").strip().lower()
-    if q in _VALID_FONTS:
-        return q
-    c = (request.cookies.get("mvk_font") or "").strip().lower()
-    if c in _VALID_FONTS:
-        return c
-    return "default"
+    return _resolve_pref(
+        request, param="font", cookie="mvk_font", valid=_VALID_FONTS,
+        default="default",
+    )
 
 
 # Context processor: every template gets the `theme` variable for the
@@ -304,6 +303,15 @@ _PLAN_TREE_CSP = (
 _PLAN_TREE_PATH_RE = re.compile(r"^/goals/\d+/plan/?$")
 
 
+def _persist_pref_cookie(request, response, *, param, cookie, valid, max_age) -> None:
+    """Set a preference cookie when ``?param=`` is a valid value. Shared by the
+    font/density/lang persistence (the theme uses its own _set_theme_cookie)."""
+    v = request.query_params.get(param)
+    if v and v.lower() in valid:
+        response.set_cookie(cookie, v.lower(), max_age=max_age,
+                            samesite="lax", httponly=False)
+
+
 @app.middleware("http")
 async def persist_theme(request: Request, call_next):
     """If ?theme= / ?font= / ?density= / ?lang= is in the URL, set a cookie so it sticks."""
@@ -311,19 +319,13 @@ async def persist_theme(request: Request, call_next):
     q = request.query_params.get("theme")
     if q and q.lower() in _valid_theme_names():
         _set_theme_cookie(response, q.lower())
-    f = request.query_params.get("font")
-    if f and f.lower() in _VALID_FONTS:
-        response.set_cookie("mvk_font", f.lower(), max_age=30 * 24 * 3600,
-                            samesite="lax", httponly=False)
-    d = request.query_params.get("density")
-    if d and d.lower() in _VALID_DENSITIES:
-        response.set_cookie("mvk_density", d.lower(), max_age=30 * 24 * 3600,
-                            samesite="lax", httponly=False)
-    lang = request.query_params.get("lang")
     from .i18n import LANGS
-    if lang and lang.lower() in LANGS:
-        response.set_cookie("mvk_lang", lang.lower(), max_age=365 * 24 * 3600,
-                            samesite="lax", httponly=False)
+    _persist_pref_cookie(request, response, param="font", cookie="mvk_font",
+                         valid=_VALID_FONTS, max_age=30 * 24 * 3600)
+    _persist_pref_cookie(request, response, param="density", cookie="mvk_density",
+                         valid=_VALID_DENSITIES, max_age=30 * 24 * 3600)
+    _persist_pref_cookie(request, response, param="lang", cookie="mvk_lang",
+                         valid=LANGS, max_age=365 * 24 * 3600)
     return response
 
 

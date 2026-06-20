@@ -739,7 +739,7 @@ class LLM:
                 return f"{op} {model}"
             def _gen_ai_attributes(*a, **kw):  # type: ignore
                 return {}
-        _t0 = _time.time()
+        _t0 = _time.monotonic()
         _d0 = budget.dollars if budget else 0.0
         _err = False
         _resp = None
@@ -766,7 +766,7 @@ class LLM:
         finally:
             if _held:
                 budget.release(_held)
-            _dt_ms = (_time.time() - _t0) * 1000.0
+            _dt_ms = (_time.monotonic() - _t0) * 1000.0
             # Price THIS call's own usage rather than diffing the shared
             # budget.dollars counter, which races concurrent sub-agents.
             _spent = _call_spend(model_id, _resp, budget, _d0)
@@ -856,7 +856,7 @@ class LLM:
                 return f"{op} {model}"
             def _gen_ai_attributes(*a, **kw):  # type: ignore
                 return {}
-        _t0 = _time.time()
+        _t0 = _time.monotonic()
         _d0 = budget.dollars if budget else 0.0
         _err = False
         _resp = None
@@ -938,7 +938,7 @@ class LLM:
         finally:
             if _held:
                 budget.release(_held)
-            _dt_ms = (_time.time() - _t0) * 1000.0
+            _dt_ms = (_time.monotonic() - _t0) * 1000.0
             # Price THIS call's own usage rather than diffing the shared
             # budget.dollars counter, which races concurrent sub-agents.
             _spent = _call_spend(model_id, _resp, budget, _d0)
