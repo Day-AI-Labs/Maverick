@@ -344,6 +344,41 @@ def _elicit_timeout() -> float:
     )
 
 
+def _elicit_allowed_hosts() -> frozenset[str]:
+    """Operator allowlist of hosts a URL-mode elicitation may point the user at.
+
+    From ``MAVERICK_MCP_ELICIT_ALLOWED_HOSTS`` (comma-separated, wins) or
+    ``[mcp] elicit_allowed_hosts`` in config. Empty -> no restriction (any
+    https, the documented residual risk that a prompt-injected model could aim
+    the user at an arbitrary site). Set it to pin elicitation to the providers
+    you actually use (e.g. accounts.google.com, github.com)."""
+    raw = os.environ.get("MAVERICK_MCP_ELICIT_ALLOWED_HOSTS")
+    hosts: list[str] = []
+    if raw and raw.strip():
+        hosts = [h.strip() for h in raw.split(",") if h.strip()]
+    else:
+        try:
+            from maverick.config import load_config
+            cfg = ((load_config() or {}).get("mcp") or {}).get("elicit_allowed_hosts") or []
+            hosts = [str(h).strip() for h in cfg if str(h).strip()]
+        except Exception:
+            hosts = []
+    return frozenset(h.lower().rstrip(".") for h in hosts)
+
+
+def _elicit_host_allowed(url: str, allowed: frozenset[str]) -> bool:
+    """True if ``url``'s host is in ``allowed`` (exact or a subdomain). An empty
+    allowlist means no restriction."""
+    if not allowed:
+        return True
+    from urllib.parse import urlparse
+    try:
+        host = (urlparse(url).hostname or "").lower().rstrip(".")
+    except Exception:
+        return False
+    return bool(host) and any(host == a or host.endswith("." + a) for a in allowed)
+
+
 def _tool_supports_tasks(tool_spec: dict) -> bool:
     """Whether a tool opted into task augmentation via execution.taskSupport."""
     return tool_spec.get("execution", {}).get("taskSupport") in ("optional", "required")
@@ -1119,6 +1154,14 @@ class MCPServer:
             return None
         if not isinstance(url, str) or not url.startswith("https://"):
             raise ValueError("URL-mode elicitation requires an https:// url")
+        # Host allowlist: the destination is model-influenced, so a prompt
+        # injection could otherwise aim the user at an attacker site to harvest
+        # the very credential this flow protects. When [mcp] elicit_allowed_hosts
+        # is configured, refuse a URL whose host isn't on it. No-op when unset.
+        if not _elicit_host_allowed(url, _elicit_allowed_hosts()):
+            raise ValueError(
+                "URL-mode elicitation host is not in [mcp] elicit_allowed_hosts"
+            )
         safe_message = self._screen_elicit_prompt(message)
         req_id = self._next_elicit_id()
         self._send({
