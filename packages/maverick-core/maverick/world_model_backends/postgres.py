@@ -887,6 +887,21 @@ class PostgresWorldModel:
             rows = cur.fetchall()
         return [EpisodeSpend(*r) for r in rows]
 
+    def episode_exists(self, goal_id: int, episode_id: int) -> bool:
+        frag, fparams = _tenant_scope("g.tenant_id")
+        table = "episodes e"
+        scope = ""
+        if frag:
+            table += " JOIN goals g ON g.id = e.goal_id"
+            scope = " AND " + frag
+        with self._tx() as cur:
+            cur.execute(
+                f"SELECT 1 FROM {table} "
+                f"WHERE e.id = %s AND e.goal_id = %s{scope} LIMIT 1",
+                tuple([episode_id, goal_id, *fparams]),
+            )
+            return cur.fetchone() is not None
+
     def total_spend(self) -> dict[str, float]:
         frag, params = _tenant_scope("g.tenant_id")
         table = "episodes e"

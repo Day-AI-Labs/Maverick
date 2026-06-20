@@ -625,7 +625,7 @@ async def record_outcome(request: Request, payload: OutcomeIn) -> None:
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
-    if not any(ep.id == episode_id for ep in w.list_episodes(goal_id=goal_id, limit=100_000)):
+    if not w.episode_exists(goal_id, episode_id):
         raise HTTPException(status_code=404, detail="no such episode")
     from maverick.consequence import record_outcome as _rec
     _rec(goal_id, episode_id, float(payload.value), kind=(payload.kind or ""))
