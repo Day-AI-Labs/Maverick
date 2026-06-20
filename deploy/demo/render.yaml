@@ -6,9 +6,10 @@
 # ANTHROPIC_API_KEY in the Render dashboard (marked sync:false so it is never
 # committed).
 #
-# Your demo link is then:
-#   https://<service-name>.onrender.com/?token=<MAVERICK_DASHBOARD_TOKEN>
-# (copy the generated token from the service's Environment tab).
+# Your demo link is then https://<service-name>.onrender.com/ — authenticate
+# with the dashboard token via the Authorization: Bearer header (the dashboard
+# no longer accepts ?token= in the URL, to keep the bearer out of logs/Referer).
+# Copy the generated token from the service's Environment tab.
 #
 # Render auto-detects the listening port (8765) and routes 443 -> it with TLS.
 

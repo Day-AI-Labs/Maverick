@@ -100,8 +100,14 @@ def _rest_execute(
         if deny:
             return f"ERROR: {deny}"
         import httpx
+        # Do not follow redirects: only the initial ``url`` passed the egress
+        # boundary check above. A 3xx from the SaaS host to an internal/metadata
+        # address (e.g. 169.254.169.254) must not be auto-followed past that
+        # gate. (httpx already defaults to False; pin it so a refactor can't flip
+        # it open.)
         r = httpx.request(op.upper(), url, headers=headers(tok),
-                          params=params or None, json=body, timeout=30.0)
+                          params=params or None, json=body, timeout=30.0,
+                          follow_redirects=False)
         try:
             data = r.json()
         except ValueError:

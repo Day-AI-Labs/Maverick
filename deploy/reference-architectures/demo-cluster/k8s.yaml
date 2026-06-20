@@ -81,10 +81,24 @@ spec:
       labels:
         app: maverick-demo
     spec:
+      # Pod hardening. The maverick image runs as the unprivileged "maverick"
+      # user (uid/gid 1000); seccomp + fsGroup are applied pod-wide and the
+      # maverick containers pin non-root + drop all caps individually (the nginx
+      # proxy keeps its own user model but also drops caps).
+      securityContext:
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         - name: seed
           image: REGISTRY/maverick:demo
           command: ["python", "/seed/seed_demo.py"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: state
               mountPath: /home/maverick/.maverick
@@ -96,6 +110,12 @@ spec:
       containers:
         - name: dashboard
           image: REGISTRY/maverick:demo
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           # Loopback bind: only the in-pod nginx can reach it; the pod IP
           # exposes nothing but the proxy.
           args: ["dashboard", "--host", "127.0.0.1", "--port", "8765"]
@@ -125,6 +145,10 @@ spec:
             limits: {cpu: "1", memory: "768Mi"}
         - name: proxy
           image: nginx:1.27-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 8080
               name: http

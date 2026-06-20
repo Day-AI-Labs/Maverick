@@ -6,8 +6,9 @@
 #   flyctl secrets set --config deploy/demo/fly.toml ANTHROPIC_API_KEY=... MAVERICK_DASHBOARD_TOKEN=...  # pragma: allowlist secret
 #   flyctl deploy --config deploy/demo/fly.toml
 #
-# Your demo link is then:
-#   https://<app-name>.fly.dev/?token=<the MAVERICK_DASHBOARD_TOKEN you set>
+# Your demo link is then https://<app-name>.fly.dev/ — authenticate with the
+# dashboard token via the Authorization: Bearer header (the dashboard no longer
+# accepts ?token= in the URL, to keep the bearer out of logs/Referer headers).
 
 app = "maverick-demo"
 primary_region = "iad"

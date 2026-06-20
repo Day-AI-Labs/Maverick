@@ -2017,9 +2017,21 @@ def dashboard(host: str, port: int, token) -> None:
     if token:
         os.environ["MAVERICK_DASHBOARD_TOKEN"] = token
         click.echo(click.style(
-            "Bearer auth enabled. Use ?token=... or Authorization: Bearer.",
+            "Bearer auth enabled. Authenticate with the Authorization: Bearer header.",
             fg="yellow",
         ))
+    # Mirror the module entrypoint's safety contract (app.main): refuse to bind a
+    # non-loopback host without a token, so this CLI path can't expose an
+    # unauthenticated admin surface even though the middleware would also 401.
+    if host not in {"127.0.0.1", "localhost", "::1"} and not os.environ.get(
+        "MAVERICK_DASHBOARD_TOKEN"
+    ):
+        click.echo(
+            "Refusing to bind dashboard to a non-loopback host without "
+            "MAVERICK_DASHBOARD_TOKEN set (pass --token or set the env var).",
+            err=True,
+        )
+        sys.exit(2)
     try:
         from maverick_dashboard.app import app as fastapi_app
     except ImportError:
@@ -3320,10 +3332,19 @@ def schedule_goal(cron_expr: str, text: str, title: str | None) -> None:
 @click.option("--verbose", "-v", is_flag=True)
 def serve(max_depth: int, verbose: bool) -> None:
     """Start the channel server."""
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    # Use Maverick's shared logging config (JSON via MAVERICK_LOG_FORMAT=json,
+    # correlation-id context filter, secret scrubbing) for parity with the
+    # dashboard server entrypoint -- `serve` is the other network-exposed
+    # process and otherwise inherited a raw basicConfig with none of that
+    # hygiene. Falls back to basicConfig if the config module is unavailable.
+    try:
+        from .logging_config import configure_logging
+        configure_logging(level="DEBUG" if verbose else "INFO")
+    except Exception:
+        logging.basicConfig(
+            level=logging.DEBUG if verbose else logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        )
     # _configure_cli_logging (run by the group) defaults the root level to
     # ERROR so library noise stays off a consumer's terminal -- but `serve`
     # is a long-running server that wants its INFO/DEBUG logs. basicConfig is
