@@ -240,8 +240,19 @@ def restore_backup(tarball: str | Path, *, force: bool = False) -> Path:
             dst = root / rel
             if dst.resolve() != root_resolved and root_resolved not in dst.resolve().parents:
                 raise BackupError(f"unsafe restore path: {rel}")
+            # The manifest is an EXHAUSTIVE allow-list: create_backup records a
+            # SHA-256 for every staged file, so a payload file with no manifest
+            # entry is not a legitimate backup -- it's a corrupt/tampered archive
+            # smuggling an unverified file into the live root. Reject it rather
+            # than write it through unchecked (the old `want is not None` guard
+            # silently skipped integrity for unlisted files).
             want = expected.get(str(rel))
-            if want is not None and _sha256(src) != want:
+            if want is None:
+                raise BackupError(
+                    f"backup payload {rel} is not in the manifest "
+                    f"(backup is corrupt or tampered)"
+                )
+            if _sha256(src) != want:
                 raise BackupError(
                     f"backup integrity check failed for {rel} "
                     f"(SHA-256 mismatch — backup is corrupt or truncated)"
