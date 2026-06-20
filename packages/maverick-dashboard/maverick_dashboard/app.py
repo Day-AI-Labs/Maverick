@@ -108,57 +108,56 @@ def _valid_theme_names() -> set[str]:
     return _VALID_THEMES | set(custom_themes())
 
 
-def _resolve_theme(request: Request) -> str:
-    """Pick the theme from ``?theme=`` query param, cookie, config, then dark."""
-    valid = _valid_theme_names()
-    q = (request.query_params.get("theme") or "").strip().lower()
+def _resolve_pref(
+    request: Request, *, param: str, cookie: str, valid, default: str,
+    config_key: str | None = None,
+) -> str:
+    """Resolve a UI preference via the shared query-param → cookie →
+    [dashboard] config → default ladder, accepting only values in ``valid``.
+    ``config_key=None`` skips the config step (cookie-only prefs)."""
+    q = (request.query_params.get(param) or "").strip().lower()
     if q in valid:
         return q
-    c = (request.cookies.get("mvk_theme") or "").strip().lower()
+    c = (request.cookies.get(cookie) or "").strip().lower()
     if c in valid:
         return c
-    try:
-        from maverick.config import load_config
-        cfg = (load_config() or {}).get("dashboard") or {}
-        cfg_theme = (cfg.get("theme") or "").strip().lower()
-        if cfg_theme in valid:
-            return cfg_theme
-    except Exception:
-        pass
-    return "dark"
+    if config_key is not None:
+        try:
+            from maverick.config import load_config
+            cfg = (load_config() or {}).get("dashboard") or {}
+            v = (cfg.get(config_key) or "").strip().lower()
+            if v in valid:
+                return v
+        except Exception:
+            pass
+    return default
+
+
+def _resolve_theme(request: Request) -> str:
+    """Pick the theme from ``?theme=`` query param, cookie, config, then dark."""
+    return _resolve_pref(
+        request, param="theme", cookie="mvk_theme", valid=_valid_theme_names(),
+        config_key="theme", default="dark",
+    )
 
 
 def resolve_density(request: Request) -> str:
     """UI density: ``?density=`` → ``mvk_density`` cookie → ``[dashboard]
     density`` config → comfortable. Default-off: ``comfortable`` is the
     existing layout; ``compact`` opts in to the denser one."""
-    q = (request.query_params.get("density") or "").strip().lower()
-    if q in _VALID_DENSITIES:
-        return q
-    c = (request.cookies.get("mvk_density") or "").strip().lower()
-    if c in _VALID_DENSITIES:
-        return c
-    try:
-        from maverick.config import load_config
-        cfg = (load_config() or {}).get("dashboard") or {}
-        cfg_density = (cfg.get("density") or "").strip().lower()
-        if cfg_density in _VALID_DENSITIES:
-            return cfg_density
-    except Exception:
-        pass
-    return "comfortable"
+    return _resolve_pref(
+        request, param="density", cookie="mvk_density", valid=_VALID_DENSITIES,
+        config_key="density", default="comfortable",
+    )
 
 
 def _resolve_font(request: Request) -> str:
     """Font preference: ``?font=`` → cookie → default. Independent axis from
     the theme so high-contrast + dyslexia-friendly compose."""
-    q = (request.query_params.get("font") or "").strip().lower()
-    if q in _VALID_FONTS:
-        return q
-    c = (request.cookies.get("mvk_font") or "").strip().lower()
-    if c in _VALID_FONTS:
-        return c
-    return "default"
+    return _resolve_pref(
+        request, param="font", cookie="mvk_font", valid=_VALID_FONTS,
+        default="default",
+    )
 
 
 # Context processor: every template gets the `theme` variable for the
