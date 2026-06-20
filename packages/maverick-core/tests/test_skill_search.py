@@ -168,6 +168,27 @@ class TestHFPull:
         assert any("leaky-skill" in r for r in result["rejected"])
         assert not (tmp_path / "leaky-skill.md").exists()
 
+    def test_import_rejects_path_traversal_name(self, tmp_path):
+        # The dataset is untrusted third-party input. A name with path separators
+        # or ".." would make the pre-validation temp write escape dest_dir and
+        # truncate-then-delete an arbitrary writable file. Such names must be
+        # rejected before any filesystem path is constructed. Regression for the
+        # import_records path-traversal hole.
+        dest = tmp_path / "skills"
+        dest.mkdir()
+        records = [{
+            "name": "../../escape",
+            "triggers": ["t"],
+            "tools_needed": ["shell"],
+            "body": "# Steps\n\n1. do the thing.\n",
+        }]
+        result = import_records(records, dest)
+        assert result["installed"] == []
+        assert any("invalid skill name" in r for r in result["rejected"])
+        # Nothing escaped dest_dir, and dest_dir itself stayed empty (no temp write).
+        assert not (tmp_path / "escape.md").exists()
+        assert list(dest.iterdir()) == []
+
     def test_import_skips_existing_without_overwrite(self, tmp_path):
         records = [{"name": "dup", "triggers": ["t"], "tools_needed": ["shell"],
                     "body": "# Steps\n\n1. first version of the body here.\n"}]
