@@ -37,6 +37,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .config import env_flag
+
 log = logging.getLogger(__name__)
 
 # Legacy/global fallback locations (single-tenant). Multi-tenant deployments
@@ -94,11 +96,9 @@ def collect_from_coding_enabled() -> bool:
     verifier call per coding FINAL). ``MAVERICK_CALIBRATION_COLLECT_CODING``
     overrides ``[calibration] collect_from_coding``.
     """
-    env = os.environ.get("MAVERICK_CALIBRATION_COLLECT_CODING", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_CALIBRATION_COLLECT_CODING")
+    if _v is not None:
+        return _v
     return bool(_settings().get("collect_from_coding", False))
 
 

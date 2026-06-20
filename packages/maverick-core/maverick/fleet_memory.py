@@ -31,6 +31,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .config import env_flag
+
 log = logging.getLogger(__name__)
 
 _LEGACY_DIR = Path.home() / ".maverick" / "fleet-memory"
@@ -58,11 +60,9 @@ def registry_path() -> Path:
 
 
 def enabled() -> bool:
-    env = os.environ.get("MAVERICK_FLEET_MEMORY", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_FLEET_MEMORY")
+    if _v is not None:
+        return _v
     try:
         from .config import load_config
         return bool((load_config().get("fleet_memory") or {}).get("enable", False))

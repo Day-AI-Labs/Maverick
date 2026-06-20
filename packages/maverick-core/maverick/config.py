@@ -192,6 +192,26 @@ def tenant_config_path() -> Path | None:
         return None
 
 
+_TRUTHY = {"1", "true", "yes", "on"}
+_FALSY = {"0", "false", "no", "off"}
+
+
+def env_flag(name: str) -> bool | None:
+    """Parse an env var as a tri-state boolean: ``True``/``False`` for a
+    recognized truthy/falsy value, ``None`` when unset or unrecognized. Lets the
+    module ``enabled()`` gates share one parser instead of re-spelling the
+    ``{"1","true","yes","on"}`` literal set (and its inverse) each time.
+
+    Positive-only callers use ``if env_flag(name): ...``; tri-state callers use
+    ``v = env_flag(name); if v is not None: return v``."""
+    raw = os.environ.get(name, "").strip().lower()
+    if raw in _TRUTHY:
+        return True
+    if raw in _FALSY:
+        return False
+    return None
+
+
 def load_config(path: Path | None = None) -> dict:
     if path is not None:
         return _load_config_file(path)

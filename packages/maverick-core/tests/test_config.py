@@ -130,3 +130,19 @@ def test_toml_cache_is_bounded(tmp_path, monkeypatch):
         assert len(cfg._toml_cache) <= 8     # bounded, not 40
     finally:
         cfg.reset_config_cache()
+
+
+def test_env_flag_tristate(monkeypatch):
+    from maverick.config import env_flag
+
+    for val in ("1", "true", "TRUE", "Yes", "on", " on "):
+        monkeypatch.setenv("MAVERICK_X", val)
+        assert env_flag("MAVERICK_X") is True, val
+    for val in ("0", "false", "No", "off", "OFF"):
+        monkeypatch.setenv("MAVERICK_X", val)
+        assert env_flag("MAVERICK_X") is False, val
+    for val in ("", "maybe", "2"):
+        monkeypatch.setenv("MAVERICK_X", val)
+        assert env_flag("MAVERICK_X") is None, val
+    monkeypatch.delenv("MAVERICK_X", raising=False)
+    assert env_flag("MAVERICK_X") is None
