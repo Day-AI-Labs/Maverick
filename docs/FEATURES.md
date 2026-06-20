@@ -46,13 +46,13 @@ here.
 - **Context lifecycle** — deferred tool loading + `find_tools`, cross-session
   `memory` tool (`tools/memory.py`), programmatic tool calling
   (`tools/code_exec.py`), structural/retrieval-augmented compaction
-  (`compaction.py`, `context_compactor.py`), and a **long-context retrieval
+  (`compaction/__init__.py`, `context_compactor.py`), and a **long-context retrieval
   router** (`long_context_router.py`) that shards an oversized payload (e.g. a
   document pasted into a goal) and keeps only the query-relevant shards instead
   of overflowing the model window — zero-dep lexical ranking by default, an
   injected Chroma/Qdrant store for embedding-quality retrieval; opt-in via
   `[context] retrieval_router`.
-- **Compaction plug-in API** (`compaction_plugins.py`) — register a custom
+- **Compaction plug-in API** (`compaction/plugins.py`) — register a custom
   context-compaction strategy (graph-structured, domain summarizer, a learned
   model) under a name and select it via `[context] compaction_strategy`; the
   shipping heuristic registers as the default `"heuristic"`, and `compact_with`
@@ -1921,7 +1921,7 @@ tested without spawning py-spy.
   exactly which digests differ and calls runs "comparable" only when
   config+inputs match; `audit_report()` sweeps the stored history. Two
   runs with differing digests are never claimed comparable.
-- **Compaction v6 hybrid** (`compaction_hybrid.py`): the strategy picker
+- **Compaction v6 hybrid** (`compaction/hybrid.py`): the strategy picker
   learned from this deployment's own outcomes — deterministic features
   over the message window, a per-(feature-bucket, strategy) outcome ledger
   (atomic 0600), epsilon-greedy with an injected PRNG, and an optional

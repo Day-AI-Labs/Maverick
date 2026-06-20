@@ -414,7 +414,7 @@ class _FastembedEmbedder:
     """Default embedder backed by the repo's optional fastembed util."""
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        from .skill_embeddings import embed as _embed
+        from ..skill_embeddings import embed as _embed
         return _embed(texts) or []
 
 
@@ -425,7 +425,7 @@ def default_embedder() -> Embedder | None:
     own ``Embedder``. Never raises.
     """
     try:
-        from .skill_embeddings import _have_fastembed
+        from ..skill_embeddings import _have_fastembed
     except Exception:  # pragma: no cover - import guard
         return None
     if not _have_fastembed():

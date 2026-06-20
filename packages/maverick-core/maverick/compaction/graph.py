@@ -25,9 +25,9 @@ from __future__ import annotations
 
 import logging
 
-from .compaction import KEEP_RECENT_TURNS, compact_messages
-from .context_compactor import _message_text
-from .llm import model_for_role
+from ..context_compactor import _message_text
+from ..llm import model_for_role
+from . import KEEP_RECENT_TURNS, compact_messages
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ _MAX_EXTRACT_CHARS = 24_000
 def _heuristic_triples(text: str) -> list[list[str]]:
     """Deterministic triples via the knowledge_graph relation-verb heuristic."""
     try:
-        from .tools.knowledge_graph import _extract
+        from ..tools.knowledge_graph import _extract
         return _extract(text)
     except Exception as e:  # pragma: no cover -- in-repo import never fails
         log.warning("graph compaction extractor unavailable (%s)", e)

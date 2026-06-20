@@ -31,10 +31,10 @@ import time
 from collections.abc import Generator
 from pathlib import Path
 
-from .compaction import KEEP_RECENT_TURNS
-from .context_compactor import _message_text
-from .llm import model_for_role
-from .paths import data_dir
+from ..context_compactor import _message_text
+from ..llm import model_for_role
+from ..paths import data_dir
+from . import KEEP_RECENT_TURNS
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def _ttl_seconds() -> float:
     """Stale-entry TTL for the sidecar, from ``[context]
     compaction_stream_ttl_days`` (default 30; <=0 disables pruning)."""
     try:
-        from .config import load_config
+        from ..config import load_config
 
         raw = load_config().get("context", {}).get(
             "compaction_stream_ttl_days", _DEFAULT_TTL_DAYS)
