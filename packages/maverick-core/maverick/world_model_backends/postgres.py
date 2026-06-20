@@ -262,12 +262,38 @@ _GOAL_DOMAIN_MIGRATION: list[str] = [
 ]
 
 
+# --- Projects (migration v15) ------------------------------------------------
+# Parity with the SQLite ``projects`` table + ``goals.project_id``: a goal can be
+# filed under one project (nullable). name/description are plaintext here (the PG
+# backend stores plaintext today, unlike SQLite's at-rest encryption); owner/
+# domain/status are plaintext for listing + scoping. ``tenant_id`` mirrors the
+# v10 tenancy seam so projects isolate per tenant like goals/facts.
+_PROJECTS_MIGRATION: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS projects (
+      id          SERIAL PRIMARY KEY,
+      name        TEXT,
+      description TEXT,
+      owner       TEXT NOT NULL DEFAULT '',
+      domain      TEXT NOT NULL DEFAULT '',
+      status      TEXT NOT NULL DEFAULT 'active',
+      created_at  DOUBLE PRECISION NOT NULL,
+      tenant_id   TEXT
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_projects_tenant ON projects(tenant_id);",
+    "ALTER TABLE goals ADD COLUMN IF NOT EXISTS project_id INTEGER;",
+    "CREATE INDEX IF NOT EXISTS idx_pg_goals_project ON goals(project_id);",
+]
+
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
     (11, _TENANT_UNIQUE_MIGRATION),
     (13, _APPROVAL_CLAIMS_MIGRATION),
     (14, _GOAL_DOMAIN_MIGRATION),
+    (15, _PROJECTS_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -757,6 +783,98 @@ class PostgresWorldModel:
             )
             rows = cur.fetchall()
         return [r[0] for r in rows if r and r[0]]
+
+    # ---- Projects (migration v15) -------------------------------------------
+
+    @staticmethod
+    def _project_from_row(row) -> dict:
+        # row: (id, name, description, owner, domain, status, created_at)
+        return {
+            "id": row[0], "name": row[1] or "", "description": row[2] or "",
+            "owner": row[3], "domain": row[4], "status": row[5],
+            "created_at": row[6],
+        }
+
+    def create_project(
+        self, name: str, *, description: str = "", owner: str = "", domain: str = "",
+    ) -> int:
+        """Create a project (plaintext name/description under PG). Returns its id."""
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO projects(name, description, owner, domain, status, "
+                "created_at, tenant_id) VALUES(%s, %s, %s, %s, 'active', %s, %s) "
+                "RETURNING id",
+                (name, description, owner or "", domain or "", time.time(),
+                 _active_tenant()),
+            )
+            return int(cur.fetchone()[0])
+
+    _PROJECT_COLS = "id, name, description, owner, domain, status, created_at"
+
+    def get_project(self, project_id: int) -> dict | None:
+        frag, params = _tenant_scope()
+        sql = f"SELECT {self._PROJECT_COLS} FROM projects WHERE id=%s"
+        p: list = [int(project_id)]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        with self._tx() as cur:
+            cur.execute(sql, tuple(p))
+            row = cur.fetchone()
+        return self._project_from_row(row) if row else None
+
+    def list_projects(self, *, owner: str | None = None) -> list[dict]:
+        """All projects newest first; each carries a ``goal_count``.
+
+        ``owner`` is accepted for signature parity; PG isolates by tenant
+        (applied below)."""
+        sql = f"SELECT {self._PROJECT_COLS} FROM projects"
+        params: list = []
+        frag, fparams = _tenant_scope()
+        if frag:
+            sql += " WHERE " + frag
+            params += fparams
+        sql += " ORDER BY id DESC"
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+            out: list[dict] = []
+            for r in rows:
+                proj = self._project_from_row(r)
+                cur.execute(
+                    "SELECT COUNT(*) FROM goals WHERE project_id=%s", (proj["id"],))
+                c = cur.fetchone()
+                proj["goal_count"] = int(c[0]) if c else 0
+                out.append(proj)
+        return out
+
+    def set_goal_project(self, goal_id: int, project_id: int | None) -> None:
+        """File a goal under a project (or clear it with ``None``)."""
+        frag, fparams = _tenant_scope()
+        sql = "UPDATE goals SET project_id=%s, updated_at=%s WHERE id=%s"
+        params: list = [
+            int(project_id) if project_id is not None else None,
+            time.time(), int(goal_id),
+        ]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+
+    def project_status_counts(self, project_id: int) -> dict[str, int]:
+        """Member-goal counts keyed by status (the project summary)."""
+        sql = "SELECT status, COUNT(*) FROM goals WHERE project_id=%s"
+        params: list = [int(project_id)]
+        frag, fparams = _tenant_scope()
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " GROUP BY status"
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        return {r[0]: int(r[1]) for r in rows}
 
     def list_active_goals(self, limit: int = 50) -> list[PGGoal]:
         frag, params = _tenant_scope()

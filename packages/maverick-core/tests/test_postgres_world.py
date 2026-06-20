@@ -564,3 +564,29 @@ def test_recent_event_contents(world):
     gid = world.create_goal("evented goal")
     world.append_event(gid, "agent-x", "note", "hello-corpus")
     assert "hello-corpus" in world.recent_event_contents(limit=100)
+
+
+def test_projects_crud_and_goal_membership(world):
+    pid = world.create_project("Migration Q3", description="d", owner="al", domain="eng")
+    assert isinstance(pid, int)
+    p = world.get_project(pid)
+    assert p is not None and p["name"] == "Migration Q3"
+    assert p["owner"] == "al" and p["domain"] == "eng" and p["status"] == "active"
+
+    g1 = world.create_goal("member 1")
+    g2 = world.create_goal("member 2")
+    world.set_goal_project(g1, pid)
+    world.set_goal_project(g2, pid)
+    world.set_goal_status(g2, "done")
+    assert world.project_status_counts(pid) == {"pending": 1, "done": 1}
+
+    listed = {pr["id"]: pr for pr in world.list_projects()}
+    assert listed[pid]["goal_count"] == 2
+
+    # clearing membership drops it from the counts
+    world.set_goal_project(g2, None)
+    assert world.project_status_counts(pid) == {"pending": 1}
+
+
+def test_get_missing_project_returns_none(world):
+    assert world.get_project(999_999_999) is None

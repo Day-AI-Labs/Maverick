@@ -20,17 +20,18 @@ def test_pending_from_fresh_db_applies_everything():
 def test_pending_skips_already_applied():
     # A DB already at the latest version has nothing to do.
     assert pg.pending_migrations(pg._PG_SCHEMA_VERSION) == []
-    # A DB at v1 still needs both tenant migrations (v10 columns, v11 uniques),
-    # the approval-claims migration (v13), and the goal-domain column (v14).
+    # A DB at v1 still needs the tenant migrations (v10 columns, v11 uniques),
+    # approval-claims (v13), goal-domain (v14), and projects (v15).
     pending = pg.pending_migrations(1)
-    assert [v for v, _ in pending] == [10, 11, 13, 14]
-    # A DB at v10 still needs the tenant-unique, approval-claims, domain migrations.
-    assert [v for v, _ in pg.pending_migrations(10)] == [11, 13, 14]
-    # A DB at v11 still needs the approval-claims + goal-domain migrations for
-    # upgraded deployments that already applied the previous Postgres ladder.
-    assert [v for v, _ in pg.pending_migrations(11)] == [13, 14]
-    # A DB at v13 still needs the goal-domain migration.
-    assert [v for v, _ in pg.pending_migrations(13)] == [14]
+    assert [v for v, _ in pending] == [10, 11, 13, 14, 15]
+    # A DB at v10 still needs the remaining upgrades.
+    assert [v for v, _ in pg.pending_migrations(10)] == [11, 13, 14, 15]
+    # A DB at v11 still needs approval-claims + goal-domain + projects.
+    assert [v for v, _ in pg.pending_migrations(11)] == [13, 14, 15]
+    # A DB at v13 still needs goal-domain + projects.
+    assert [v for v, _ in pg.pending_migrations(13)] == [14, 15]
+    # A DB at v14 still needs the projects migration.
+    assert [v for v, _ in pg.pending_migrations(14)] == [15]
 
 
 def test_pending_is_ordered_with_custom_ladder():
@@ -68,13 +69,19 @@ def test_approval_claims_migration_adds_collaboration_columns():
 
 
 def test_schema_version_is_latest_migration():
-    assert pg._PG_SCHEMA_VERSION == 14
+    assert pg._PG_SCHEMA_VERSION == 15
     assert max(v for v, _ in pg.MIGRATIONS) == pg._PG_SCHEMA_VERSION
 
 
 def test_goal_domain_migration_adds_domain_column():
     stmts = dict(pg.MIGRATIONS)[14]
     assert "ALTER TABLE goals ADD COLUMN IF NOT EXISTS domain TEXT" in "\n".join(stmts)
+
+
+def test_projects_migration_adds_table_and_goal_fk():
+    joined = "\n".join(dict(pg.MIGRATIONS)[15])
+    assert "CREATE TABLE IF NOT EXISTS projects" in joined
+    assert "ALTER TABLE goals ADD COLUMN IF NOT EXISTS project_id INTEGER" in joined
 
 
 def test_tenant_scope_noop_without_active_tenant(monkeypatch):
