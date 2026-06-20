@@ -526,6 +526,14 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
         pass
 
     world.set_goal_status(goal_id, "active")
+    # Success-path audit: a tamper-evident GOAL_START on the signed chain so the
+    # audit trail records the run beginning, not just denials. Never block a run.
+    try:
+        from .audit import EventKind, record
+        record(EventKind.GOAL_START, goal_id=goal_id, agent="orchestrator",
+               title=goal.title, description=getattr(goal, "description", None))
+    except Exception:  # pragma: no cover
+        pass
     episode_id = resume_episode_id
     if episode_id is None and resume:
         try:
@@ -1262,6 +1270,17 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                 pass
         _end_episode_with_spend(world, episode_id, summary, "success", budget, goal_id)
         world.set_goal_status(goal_id, "done", result=summary)
+        # Success-path audit: GOAL_END on the signed chain records the outcome,
+        # closing the GOAL_START..GOAL_END pair for a completed run. Block/denial
+        # exits are already covered by their own audit events. Never block.
+        try:
+            from .audit import EventKind, record
+            _res = summary if isinstance(summary, str) else None
+            record(EventKind.GOAL_END, goal_id=goal_id, agent="orchestrator",
+                   status="succeeded",
+                   result=(_res[:500] + "…") if _res and len(_res) > 500 else _res)
+        except Exception:  # pragma: no cover
+            pass
         _record_quota_usage()
         # Index this finished goal into the semantic store (#432) so future
         # runs recall it via vector search. No-op unless a [memory] backend is

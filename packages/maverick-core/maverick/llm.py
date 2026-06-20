@@ -627,6 +627,12 @@ class LLM:
         # EgressBlocked before any prompt is dispatched.
         from .enterprise import assert_provider_allowed
         assert_provider_allowed(provider)
+        # Outbound data-minimization (opt-in, default off): strip detectable
+        # PII/secrets from the prompt before it leaves the box to a cloud
+        # provider. No-op unless [privacy] redact_egress is on; skipped for
+        # local providers. Rewrites the outbound copy only.
+        from .privacy_egress import maybe_redact_egress
+        system, messages = maybe_redact_egress(provider, system, messages)
         _record_provider_call(provider)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
@@ -748,6 +754,12 @@ class LLM:
         # Egress lock (no-op unless enterprise mode is on): see complete().
         from .enterprise import assert_provider_allowed
         assert_provider_allowed(provider)
+        # Outbound data-minimization (opt-in, default off): strip detectable
+        # PII/secrets from the prompt before it leaves the box to a cloud
+        # provider. No-op unless [privacy] redact_egress is on; skipped for
+        # local providers. Rewrites the outbound copy only.
+        from .privacy_egress import maybe_redact_egress
+        system, messages = maybe_redact_egress(provider, system, messages)
         _record_provider_call(provider)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)

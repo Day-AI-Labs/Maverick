@@ -246,6 +246,25 @@ def _tool_call_failed(output: str) -> bool:
     return text.lstrip().startswith(("ERROR", "⚠", "BLOCKED by Shield"))
 
 
+def _audit_summary(value: Any, limit: int = 200) -> str:
+    """Short, whitespace-collapsed, length-bounded text for the audit log.
+
+    Used for the ``input_summary`` / ``output_summary`` of TOOL_CALL /
+    TOOL_RESULT events. The audit writer scrubs secrets before signing, so this
+    only needs to bound size, not redact."""
+    try:
+        s = value if isinstance(value, str) else json.dumps(value, default=str)
+    except Exception:  # pragma: no cover -- unserializable arg
+        s = repr(value)
+    s = " ".join((s or "").split())
+    return s[:limit] + ("…" if len(s) > limit else "")
+
+
+def _tool_status(output: str) -> str:
+    """'error' | 'ok' for a tool result -- the TOOL_RESULT audit status."""
+    return "error" if _tool_call_failed(output) else "ok"
+
+
 # A single runaway tool result (multi-MB shell stdout, a giant query/file dump)
 # would otherwise enter the CURRENT context window uncapped -- compaction only
 # trims results behind the recent window -- blowing tokens/budget in one turn.
@@ -1393,6 +1412,17 @@ class Agent:
             f"{_gov.reason}. Not granted, so the tool was not executed."
         )
 
+    def _audit_tool_event(self, kind: str, **payload: Any) -> None:
+        """Record a tool-lifecycle audit event on the signed chain (best-effort).
+
+        Kept off ``_run_tool`` so the audit path adds no control-flow branches to
+        that hot method, and never raises into a running tool call."""
+        try:
+            from .audit import record
+            record(kind, agent=self.name, goal_id=self.ctx.goal_id, **payload)
+        except Exception:  # pragma: no cover
+            pass
+
     async def _run_tool(self, name: str, args: dict) -> str:
         # Record the tool name on this agent's action sequence so a parent can
         # capture per-sub-agent trajectories (maverick.credit.build_subtrajectories).
@@ -1498,6 +1528,11 @@ class Agent:
             )
             return "⚠ BLOCKED by hook. The tool was not executed."
 
+        # Success-path audit (who-did-what-when): a tamper-evident record that
+        # this tool call executed, on the same signed chain as the denial events.
+        self._audit_tool_event("tool_call", name=name,
+                               input_summary=_audit_summary(args))
+
         output = await self.tools.run(name, args)
 
         post_ctx = HookContext(
@@ -1564,6 +1599,11 @@ class Agent:
             f"{output}\n"
             f"</tool_output {nonce}>"
         )
+        # Success-path audit: the tool's outcome (ok/error) + a bounded output
+        # summary, completing the TOOL_CALL/TOOL_RESULT pair on the signed chain.
+        self._audit_tool_event("tool_result", name=name,
+                               status=_tool_status(output),
+                               output_summary=_audit_summary(output))
         # Loop guard: detect a repeated identical FAILURE from the raw result
         # (before framing) and, past threshold, append a nudge OUTSIDE the data
         # block -- it's trusted loop-control guidance, not tool output.
