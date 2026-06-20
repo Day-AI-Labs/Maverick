@@ -506,3 +506,61 @@ def test_rls_enforces_tenant_isolation_at_db_level(monkeypatch):
             cur.execute("REASSIGN OWNED BY mvk_rls_app TO CURRENT_USER")
             cur.execute("DROP OWNED BY mvk_rls_app")
             cur.execute("DROP ROLE IF EXISTS mvk_rls_app")
+
+
+# --- Backend parity (SQLite v13 -> v20 catch-up) -----------------------------
+
+def test_set_goal_domain_and_v14_schema(world):
+    from maverick.world_model_backends.postgres import _PG_SCHEMA_VERSION
+    assert _PG_SCHEMA_VERSION >= 14
+    gid = world.create_goal("domain-tagged goal")
+    world.set_goal_domain(gid, "finance")  # v14 goals.domain column
+
+
+def test_search_goals_matches_title_desc_result_case_insensitive(world):
+    import uuid
+    tok = uuid.uuid4().hex[:10]
+    g1 = world.create_goal(f"Fix the {tok} export", description="urgent")
+    world.create_goal("unrelated cleanup")
+    g3 = world.create_goal("note", description=f"see {tok} for context")
+    hits = {g.id for g in world.search_goals(tok.upper())}  # case-insensitive
+    assert g1 in hits and g3 in hits
+    # bounded + ordered newest-first
+    assert all(isinstance(g.title, str) for g in world.search_goals(tok))
+    assert world.search_goals("   ") == []
+
+
+def test_count_facts_and_stale_keys(world):
+    import time as _t
+    import uuid
+    base = world.count_facts()
+    k = f"k-{uuid.uuid4().hex[:8]}"
+    world.upsert_fact(k, "v")
+    assert world.count_facts() == base + 1
+    assert k in world.stale_fact_keys(_t.time() + 100)        # cutoff in future
+    assert k not in world.stale_fact_keys(_t.time() - 10_000)  # cutoff in past
+
+
+def test_list_approvals_newest_first(world):
+    a1 = world.create_approval("act-one", risk="high")
+    a2 = world.create_approval("act-two", risk="low")
+    ids = [a.id for a in world.list_approvals()]
+    assert a1 in ids and a2 in ids
+    assert ids.index(a2) < ids.index(a1)  # newest (a2) first
+
+
+def test_release_processed_message_allows_retry(world):
+    import uuid
+    ext = uuid.uuid4().hex
+    assert world.mark_message_processed("sms", ext) is True
+    assert world.is_processed_message("sms", ext) is True
+    world.release_processed_message("sms", ext)
+    assert world.is_processed_message("sms", ext) is False
+    # released -> a retry can claim it again
+    assert world.mark_message_processed("sms", ext) is True
+
+
+def test_recent_event_contents(world):
+    gid = world.create_goal("evented goal")
+    world.append_event(gid, "agent-x", "note", "hello-corpus")
+    assert "hello-corpus" in world.recent_event_contents(limit=100)

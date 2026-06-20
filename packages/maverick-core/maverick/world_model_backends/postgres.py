@@ -252,11 +252,22 @@ _APPROVAL_CLAIMS_MIGRATION: list[str] = [
 # converge); higher versions are incremental. The applied set is tracked in the
 # ``schema_migrations`` table so a statement runs at most once and the first
 # schema change against live customer data has a safe, recorded path.
+# --- Goal domain (department pack) (migration v14) ---------------------------
+# Parity with the SQLite ``goals.domain`` column: the department pack a goal runs
+# as, so learning loops can filter by department without decrypting. Plain-text
+# (pack names are operator identifiers, not user content). Fresh DBs add it here;
+# existing DBs get the idempotent ALTER.
+_GOAL_DOMAIN_MIGRATION: list[str] = [
+    "ALTER TABLE goals ADD COLUMN IF NOT EXISTS domain TEXT;",
+]
+
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
     (11, _TENANT_UNIQUE_MIGRATION),
     (13, _APPROVAL_CLAIMS_MIGRATION),
+    (14, _GOAL_DOMAIN_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -634,6 +645,118 @@ class PostgresWorldModel:
             params += fparams
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
+
+    # --- Backend parity (SQLite v13 -> v20 catch-up): methods on existing
+    #     tables that the SQLite WorldModel exposes but the PG backend lacked.
+    #     New-table methods (projects/share-links/sign-offs/artifacts/origin)
+    #     follow in their own migrations. ----------------------------------
+
+    def set_goal_domain(self, goal_id: int, domain: str) -> None:
+        """Record the department (domain pack) a goal runs as (plain text)."""
+        frag, fparams = _tenant_scope()
+        sql = "UPDATE goals SET domain=%s WHERE id=%s"
+        params: list = [domain or "", goal_id]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+
+    def search_goals(
+        self, query: str, *, owner: str | None = None,
+        limit: int = 50, scan: int = 1000,
+    ) -> list[PGGoal]:
+        """Search goals by text in title / description / result (newest first).
+
+        PG stores these plaintext, so the match is a SQL ILIKE (no scan-then-
+        decrypt as in SQLite). ``owner`` is accepted for signature parity but
+        not used -- PG isolates by tenant, applied below. ``scan`` is ignored
+        (the SQL bound is ``limit``)."""
+        q = (query or "").strip()
+        if not q:
+            return []
+        like = f"%{q}%"
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals "
+            "WHERE (title ILIKE %s OR description ILIKE %s OR result ILIKE %s)"
+        )
+        params: list = [like, like, like]
+        frag, fparams = _tenant_scope()
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " ORDER BY updated_at DESC LIMIT %s"
+        params.append(max(1, int(limit)))
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        return [PGGoal(*r) for r in rows]
+
+    def count_facts(self) -> int:
+        """Number of stored facts (tenant-scoped)."""
+        frag, params = _tenant_scope()
+        sql = "SELECT COUNT(*) FROM facts"
+        if frag:
+            sql += " WHERE " + frag
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            row = cur.fetchone()
+        return int(row[0]) if row else 0
+
+    def stale_fact_keys(self, older_than: float, limit: int = 500) -> list[str]:
+        """Keys of facts not updated since ``older_than``, oldest first."""
+        sql = "SELECT key FROM facts WHERE updated_at < %s"
+        params: list = [older_than]
+        frag, fparams = _tenant_scope()
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " ORDER BY updated_at ASC LIMIT %s"
+        params.append(max(1, int(limit)))
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        return [r[0] for r in rows]
+
+    def list_approvals(self, limit: int = 500) -> list:
+        """All approvals, newest first (the Operating Record's decision feed)."""
+        from ..world_model import Approval
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT id, action, risk, scope, detail, provenance, status, "
+            "requested_at, decided_at, claimed_by, claimed_at, decided_by "
+            "FROM approvals"
+        )
+        p: list = list(params) if frag else []
+        if frag:
+            sql += " WHERE " + frag
+        sql += " ORDER BY requested_at DESC LIMIT %s"
+        p.append(max(1, int(limit)))
+        with self._tx() as cur:
+            cur.execute(sql, tuple(p))
+            rows = cur.fetchall()
+        return [Approval(*r) for r in rows]
+
+    def release_processed_message(self, channel: str, external_id: str) -> None:
+        """Undo a ``mark_message_processed`` claim so a failed run can retry."""
+        with self._tx() as cur:
+            cur.execute(
+                "DELETE FROM processed_messages "
+                "WHERE COALESCE(tenant_id, '') = COALESCE(%s, '') "
+                "AND channel = %s AND external_id = %s",
+                (_active_tenant(), channel, external_id),
+            )
+
+    def recent_event_contents(self, limit: int = 5000) -> list[str]:
+        """Coordination-message bodies across goals (newest first). Read-only."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT content FROM goal_events ORDER BY id DESC LIMIT %s",
+                (int(limit),),
+            )
+            rows = cur.fetchall()
+        return [r[0] for r in rows if r and r[0]]
 
     def list_active_goals(self, limit: int = 50) -> list[PGGoal]:
         frag, params = _tenant_scope()
