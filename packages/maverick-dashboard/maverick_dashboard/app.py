@@ -484,6 +484,13 @@ def _is_same_origin(request: Request) -> bool:
     return False
 
 
+def _require_same_origin(request: Request) -> None:
+    """Reject a cross-site mutating form POST (403). Shared CSRF guard inlined by
+    ~20 form handlers."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+
+
 def _is_loopback_client(host: str) -> bool:
     """True for in-process/loopback callers (safe to serve without a token)."""
     if not host:
@@ -1008,8 +1015,7 @@ async def projects_page(request: Request) -> HTMLResponse:
 async def projects_create(request: Request, name: str = Form(...),
                           description: str = Form(""), domain: str = Form("")) -> RedirectResponse:
     """Create a project, then redirect to it. Same-origin; owned by the caller."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     if not name.strip():
         raise HTTPException(status_code=422, detail="a project needs a name")
     pid = _world().create_project(
@@ -1039,8 +1045,7 @@ async def goal_set_project(request: Request, goal_id: int,
                            project_id: str = Form("")) -> RedirectResponse:
     """File a goal under a project (empty value clears it). Same-origin; the
     caller must be able to access the goal."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -1065,8 +1070,7 @@ async def styles_page(request: Request) -> HTMLResponse:
 async def styles_set(request: Request, name: str = Form("")) -> RedirectResponse:
     """Set the active output style (empty value clears it). Same-origin; the
     operator role (it changes how every agent responds)."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "operate")
     from maverick import runtime_overrides
     n = (name or "").strip()
@@ -1770,8 +1774,7 @@ async def plugins_toggle(request: Request, name: str = Form(...),
                          action: str = Form(...)) -> RedirectResponse:
     """Enable / disable / reset a plugin from the dashboard. Writes the runtime
     overlay, never config.toml. Enabling loads the plugin's code on the next goal."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     # Enabling a plugin loads its code on the next goal -- a control-plane
     # change as privileged as /plugins/install (which requires admin). Gate it
     # the same way so a viewer/operator can't alter what code the agent loads.
@@ -1801,8 +1804,7 @@ async def plugins_install(request: Request, name: str = Form(...)) -> RedirectRe
     explicit ``MAVERICK_ALLOW_PLUGIN_INSTALL`` opt-in, the admin role, and the
     install allowlist (``install_plugin`` rejects anything not on it). Only the
     allowlisted package names are ever accepted -- never free-text input."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     if os.environ.get("MAVERICK_ALLOW_PLUGIN_INSTALL", "").lower() not in {"1", "true", "yes"}:
         raise HTTPException(
             status_code=403,
@@ -1874,8 +1876,7 @@ async def mcp_add(request: Request) -> RedirectResponse:
     """Add a dashboard-managed MCP server from the form. Builds a stdio
     (command/args/env) or http (url/headers/auth) spec and stores it in the
     runtime overlay; the kernel validates + unions it on the next goal."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import add_mcp_server
     form = await request.form()
@@ -1914,8 +1915,7 @@ async def mcp_add(request: Request) -> RedirectResponse:
 @app.post("/mcp/remove")
 async def mcp_remove(request: Request, name: str = Form(...)) -> RedirectResponse:
     """Remove a dashboard-added MCP server (config.toml servers are untouched)."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import remove_mcp_server
     remove_mcp_server((name or "").strip())
@@ -2281,8 +2281,7 @@ async def channels_save(request: Request) -> RedirectResponse:
     """Enable/disable a channel and set its credentials from the form. Stored in
     the dashboard overlay (dashboard-config.toml), never config.toml; blank
     fields keep the current value so a toggle never wipes a hidden secret."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     form = await request.form()
@@ -2299,8 +2298,7 @@ async def channels_save(request: Request) -> RedirectResponse:
 @app.post("/channels/clear")
 async def channels_clear(request: Request, channel: str = Form(...)) -> RedirectResponse:
     """Remove a channel's dashboard overlay (reverts to config.toml / env)."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     try:
@@ -2855,8 +2853,7 @@ async def chat_send(
     description: str = Form(""),
     files: list[UploadFile] = File(default=[]),
 ) -> RedirectResponse:
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "operate")
     require_provider_or_400()
     check_goal_rate_limit(request)
@@ -2987,8 +2984,7 @@ async def settings_set_model(request: Request, model: str = Form("")) -> Redirec
 
     An empty value clears the pin, reverting to config.toml / built-in
     defaults. config.toml is never written."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import (
         allowed_models,
@@ -3014,8 +3010,7 @@ async def settings_set_budget(request: Request, max_dollars: str = Form("")) -> 
     """Set (or clear) the dashboard's per-goal spend cap via the runtime
     overlay. An empty value clears it, reverting to config.toml / defaults.
     config.toml is never written."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import clear_budget, set_budget
     val = (max_dollars or "").strip()
@@ -3035,8 +3030,7 @@ async def settings_set_budget(request: Request, max_dollars: str = Form("")) -> 
 async def settings_set_role_models(request: Request) -> RedirectResponse:
     """Set/clear per-role model pins from the settings page in one write. Each
     form field is named for a role; an empty value clears that role's pin."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import allowed_models, set_role_models
     roles = ("orchestrator", "coder", "researcher", "writer",
@@ -3061,8 +3055,7 @@ async def settings_set_allowed_models(request: Request) -> RedirectResponse:
     ``models`` field is an allowed spec; none checked clears the restriction
     (every model allowed again). Saved to the dashboard overlay, never
     config.toml; ``llm.model_for_role`` then caps every role to this set."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import set_allowed_models
     form = await request.form()
@@ -3083,8 +3076,7 @@ async def settings_set_provider(
     """Save a provider's API key / base URL to the dashboard config overlay
     (0600). Empty fields are left unchanged (so re-saving a base URL never wipes
     a key you can't see); resolved before env vars; config.toml is never written."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     try:
@@ -3097,8 +3089,7 @@ async def settings_set_provider(
 @app.post("/settings/providers/clear")
 async def settings_clear_provider(request: Request, provider: str = Form(...)) -> RedirectResponse:
     """Remove a provider's dashboard-set key (config.toml / env unaffected)."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     try:
@@ -3111,8 +3102,7 @@ async def settings_clear_provider(request: Request, provider: str = Form(...)) -
 @app.post("/settings/capabilities")
 async def settings_set_capabilities(request: Request) -> RedirectResponse:
     """Activate/deactivate capabilities via the dashboard config overlay."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     form = await request.form()
@@ -3124,8 +3114,7 @@ async def settings_set_capabilities(request: Request) -> RedirectResponse:
 @app.post("/settings/features")
 async def settings_set_features(request: Request) -> RedirectResponse:
     """Activate/deactivate features via the dashboard config overlay."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     form = await request.form()
@@ -3176,8 +3165,7 @@ async def users_set_role(
 ) -> RedirectResponse:
     """Assign a dashboard role to a user principal (admin only)."""
     require_permission(request, "admin")
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     from . import rbac
     try:
         rbac.set_role(principal.strip(), role.strip())
@@ -3191,8 +3179,7 @@ async def users_remove(request: Request, principal: str = Form(...)) -> Redirect
     """Remove a user's explicit role assignment (admin only). A bootstrap admin
     pinned in config is unaffected — it can't be removed here."""
     require_permission(request, "admin")
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     from . import rbac
     rbac.remove_user(principal.strip())
     return RedirectResponse("/users?saved=removed", status_code=303)
