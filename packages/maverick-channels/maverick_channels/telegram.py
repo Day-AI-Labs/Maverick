@@ -105,7 +105,12 @@ class TelegramChannel(Channel):
             # the user gets a generic message (matches slack/signal).
             log.exception("handler error")
             reply = "⚠ An internal error occurred."
-        await update.message.reply_text(reply)
+        # An empty reply (action-only goal, or a Reply whose text dispatch
+        # dropped) must not be sent: Telegram rejects reply_text("") with a 400
+        # "message text is empty", which raises out of the handler. Guard with
+        # `if reply:`, matching bluesky/whatsapp/mastodon and the other channels.
+        if reply:
+            await update.message.reply_text(reply)
 
     async def start(self) -> None:
         self._app = Application.builder().token(self.token).build()
