@@ -176,6 +176,17 @@ def _format_tree_of_thought_plan(winning_plan: str, *, shield: Any | None = None
     )
 
 
+def _budget_exceeded_message(budget: Any, goal_id: Any) -> str:
+    """Sentence-style cap message a non-engineer can read, with resume advice."""
+    return (
+        f"Stopped: this goal hit your spending or time limit "
+        f"(${budget.dollars:.2f} of ${budget.max_dollars:.2f} cap, "
+        f"{budget.elapsed():.0f}s of {budget.max_wall_seconds:.0f}s).\n"
+        f"Resume with a higher cap: "
+        f"maverick resume {goal_id} --max-dollars <higher>"
+    )
+
+
 def _fire_webhook(event: str, payload: dict[str, Any]) -> None:
     """Emit a run-lifecycle webhook, never raising into the run loop.
 
@@ -1039,12 +1050,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                 "result": f"budget exceeded: {e}",
             })
             # Sentence-style error so a non-engineer can read it.
-            return (
-                f"Stopped: this goal hit your spending or time limit "
-                f"(${budget.dollars:.2f} of ${budget.max_dollars:.2f} cap, {budget.elapsed():.0f}s of {budget.max_wall_seconds:.0f}s).\n"
-                f"Resume with a higher cap: "
-                f"maverick resume {goal_id} --max-dollars <higher>"
-            )
+            return _budget_exceeded_message(budget, goal_id)
         except Exception as e:
             # Anything else escaping the swarm (LLM auth/network errors, a
             # sandbox exec failure) used to leave the goal row stuck 'active'
@@ -1164,12 +1170,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                     "goal_id": goal_id, "status": "blocked",
                     "result": f"budget exceeded: {be}",
                 })
-                return (
-                    f"Stopped: this goal hit your spending or time limit "
-                    f"(${budget.dollars:.2f} of ${budget.max_dollars:.2f} cap, {budget.elapsed():.0f}s of {budget.max_wall_seconds:.0f}s).\n"
-                    f"Resume with a higher cap: "
-                    f"maverick resume {goal_id} --max-dollars <higher>"
-                )
+                return _budget_exceeded_message(budget, goal_id)
             # A halt tripped mid-run surfaces as result.error too. Give the
             # clear unhalt instruction rather than the generic error (whose
             # 'resume' advice would just halt again).
@@ -1209,12 +1210,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                 # A sub-agent's call was refused by the budget reservation;
                 # surface the same friendly cap message as a top-level
                 # BudgetExceeded, not the generic "ran into an error".
-                return (
-                    f"Stopped: this goal hit your spending or time limit "
-                    f"(${budget.dollars:.2f} of ${budget.max_dollars:.2f} cap, {budget.elapsed():.0f}s of {budget.max_wall_seconds:.0f}s).\n"
-                    f"Resume with a higher cap: "
-                    f"maverick resume {goal_id} --max-dollars <higher>"
-                )
+                return _budget_exceeded_message(budget, goal_id)
             return (
                 f"Stopped: the assistant ran into an error and couldn't finish.\n"
                 f"Detail: {result.error}\n"

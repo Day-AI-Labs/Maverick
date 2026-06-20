@@ -930,7 +930,7 @@ def _parse_needs(text: str) -> list[str]:
         data = json.loads(m.group(0))
     except json.JSONDecodeError:
         return []
-    return [str(x).strip() for x in data if isinstance(x, (str,)) and str(x).strip()][:10]
+    return [str(x).strip() for x in data if isinstance(x, str) and str(x).strip()][:10]
 
 
 async def preflight(

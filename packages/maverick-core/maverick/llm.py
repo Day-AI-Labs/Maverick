@@ -405,16 +405,8 @@ def _provider_api_key(provider: str, anthropic_api_key: str | None) -> str | Non
     key = _configured_provider_api_key(provider)
     if key:
         return key
-    env_keys = {
-        "anthropic": ("ANTHROPIC_API_KEY",),
-        "openai": ("OPENAI_API_KEY",),
-        "deepseek": ("DEEPSEEK_API_KEY",),
-        "moonshot": ("MOONSHOT_API_KEY",),
-        "xai": ("XAI_API_KEY", "GROK_API_KEY"),
-        "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
-        "openrouter": ("OPENROUTER_API_KEY",),
-    }
-    for env_key in env_keys.get(provider, ()):
+    from .config import PROVIDER_KEY_ENV_MAP
+    for env_key in PROVIDER_KEY_ENV_MAP.get(provider, ()):
         value = os.environ.get(env_key, "").strip()
         if value:
             return value
