@@ -111,7 +111,7 @@ def _lookup_price(model: str | None) -> tuple[float, float]:
     # id) used to silently bill at the Sonnet fallback rate. Consult the
     # router's own pricing table before giving up.
     try:
-        from .cost_router import price_for_model
+        from .cost.router import price_for_model
         priced = price_for_model(model) or price_for_model(bare)
         if priced is not None:
             return priced

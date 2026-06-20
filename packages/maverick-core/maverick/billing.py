@@ -195,7 +195,7 @@ def entitled(plan: str, feature: str) -> bool:
 def tenant_entitled(tenant_id: str, feature: str) -> bool:
     """Whether the tenant's registered plan includes ``feature``. Unknown
     tenants get the ``free`` entitlements."""
-    from .tenant_registry import get_tenant
+    from .tenant.registry import get_tenant
     rec = get_tenant(tenant_id)
     return entitled(rec.plan if rec else "free", feature)
 
@@ -220,7 +220,7 @@ def feature_allowed(feature: str, *, tenant: str | None = None) -> bool:
         tid = tenant or _active_tenant_id()
         if not tid:
             return True
-        from .tenant_registry import get_tenant
+        from .tenant.registry import get_tenant
         rec = get_tenant(tid)
         if rec is None:
             return True

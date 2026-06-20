@@ -163,7 +163,7 @@ def scan_secrets(text: str, *, where: str = "body") -> list[Finding]:
     reported once. Never raises -- a detector hiccup degrades to no finding.
     """
     try:
-        from .safety.secret_detector import scan
+        from ..safety.secret_detector import scan
     except Exception:  # pragma: no cover -- detector must not crash moderation
         return []
     seen: set[str] = set()
@@ -207,7 +207,7 @@ def moderate_skill(skill_md: Path) -> ModerationReport:
     except (OSError, UnicodeDecodeError) as e:
         return _single(report, Finding("unreadable", Severity.REJECT, f"cannot read submission: {e}"))
 
-    from . import skills as skills_mod
+    from .. import skills as skills_mod
 
     validation = skills_mod.validate_skill_file(skill_md)
     for err in validation.errors:
@@ -270,7 +270,7 @@ def moderate_plugin(manifest_path: Path) -> ModerationReport:
     root = manifest_path.parent
     report = ModerationReport(target=str(root), kind="plugin", verdict=Verdict.APPROVE)
 
-    from . import plugin_manifest
+    from .. import plugin_manifest
 
     manifest = plugin_manifest.parse(manifest_path)
     if manifest is None:

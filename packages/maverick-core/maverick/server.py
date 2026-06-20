@@ -106,7 +106,7 @@ class Server:
         (admit); a suspension/over-quota/plan denial is a deliberate refusal.
         """
         try:
-            from .tenant_registry import (
+            from .tenant.registry import (
                 TenantSuspended,
                 assert_tenant_active,
                 tenant_over_quota,
@@ -200,7 +200,7 @@ class Server:
         # from the tenant's plan entitlement; no-op when tenant is None or the
         # plan is unlimited. Held across the whole goal run and released in the
         # finally below so a crash never leaks a slot.
-        from . import tenant_concurrency
+        from .tenant import concurrency as tenant_concurrency
         if not tenant_concurrency.acquire(tenant):
             log.warning("message refused: tenant %s at concurrency ceiling", tenant)
             return ("⚠ This workspace is at its concurrent-task limit. "
@@ -556,7 +556,7 @@ def _advise_channel_tenancy(server) -> None:
     """
     try:
         from .paths import tenant_by_user_enabled
-        from .tenant_registry import list_tenants
+        from .tenant.registry import list_tenants
         multi = tenant_by_user_enabled() or len(list_tenants()) > 1
         if multi and server._channels:
             log.warning(

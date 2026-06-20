@@ -1,7 +1,7 @@
 """Cost split by tag (ROADMAP 2028 H1)."""
 from __future__ import annotations
 
-from maverick.cost_by_tag import gather, render, split_by_tag
+from maverick.cost.by_tag import gather, render, split_by_tag
 
 
 def test_split_groups_and_sorts_by_cost():

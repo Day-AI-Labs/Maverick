@@ -26,8 +26,8 @@ _inflight: dict[str, int] = {}
 def _limit_for(tenant: str) -> int:
     """The tenant's concurrent-goal ceiling (0 = unlimited). Fail-open to 0."""
     try:
-        from .billing import entitlements_for
-        from .tenant_registry import get_tenant
+        from ..billing import entitlements_for
+        from .registry import get_tenant
         rec = get_tenant(tenant)
         plan = rec.plan if rec else "free"
         return max(0, int(entitlements_for(plan).max_concurrent_goals))

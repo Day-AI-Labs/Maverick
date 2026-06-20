@@ -47,14 +47,14 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .catalog import VALID_KINDS, CatalogEntry
-from .federation_envelope import (
+from ..catalog import VALID_KINDS, CatalogEntry
+from ..federation_envelope import (
     local_origin,
     peer_allowlist,
     sign_envelope,
     verify_envelope,
 )
-from .marketplace_donations import validate_donation_url
+from .donations import validate_donation_url
 
 log = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ def export_listings(
     unavailable — an unsigned bundle is never produced.
     """
     if entries is None:
-        from .catalog import load_catalog
+        from ..catalog import load_catalog
         entries = []
         for kind in (kinds or VALID_KINDS):
             try:
@@ -156,7 +156,7 @@ def export_listings(
 def _store_path(path: Path | None = None) -> Path:
     if path is not None:
         return Path(path)
-    from .paths import data_dir
+    from ..paths import data_dir
     return data_dir() / "marketplace_federation_imports.json"
 
 
@@ -187,7 +187,7 @@ def _moderate(name: str, summary: str, kind: str) -> dict:
     tags=[kind] (a catalog entry has no free-form tags; its kind is the one
     real category it carries).
     """
-    from .tools.marketplace_moderation import _scan
+    from ..tools.marketplace_moderation import _scan
     return _scan({"title": name, "description": summary, "tags": [kind]})
 
 
@@ -221,7 +221,7 @@ def import_listings(
     # Agent Trust Plane: when engaged, the (signature-verified) origin must also
     # be a registered, inbound-permitted agent (single allowlist). No-op when
     # disengaged (kernel rule 1).
-    from . import agent_trust
+    from .. import agent_trust
     decision = agent_trust.decide_inbound(origin)
     if decision.denied:
         agent_trust.record_denied(origin, decision, direction="inbound")

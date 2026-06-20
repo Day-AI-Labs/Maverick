@@ -2,7 +2,7 @@
 ([routing.roles.<role>]). v1 behavior must be untouched when the table is absent."""
 from __future__ import annotations
 
-from maverick import cost_router as cr
+from maverick.cost import router as cr
 
 
 def _enable(monkeypatch, providers=("anthropic", "deepseek", "openai")):

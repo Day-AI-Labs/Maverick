@@ -26,8 +26,8 @@ import secrets
 import threading
 from typing import Protocol
 
-from .crypto_at_rest import EncryptionUnavailable, _have_crypto
-from .paths import data_dir
+from ..crypto_at_rest import EncryptionUnavailable, _have_crypto
+from ..paths import data_dir
 
 _DEK_BYTES = 32
 _NONCE_BYTES = 12
@@ -108,13 +108,13 @@ def _resolve_local_kek() -> bytes:
     and rotating the at-rest key rotates the KEK."""
     raw = os.environ.get("MAVERICK_KMS_KEK")
     if raw:
-        from .crypto_at_rest import _decode_injected_key
+        from ..crypto_at_rest import _decode_injected_key
         kek = _decode_injected_key(raw)
         if len(kek) != _DEK_BYTES:
             raise EncryptionUnavailable(
                 f"MAVERICK_KMS_KEK must decode to {_DEK_BYTES} bytes, got {len(kek)}")
         return kek
-    from .crypto_at_rest import _load_or_create_key
+    from ..crypto_at_rest import _load_or_create_key
     master = _load_or_create_key()
     # Domain-separated derivation so the KEK is distinct from the at-rest data key.
     return hashlib.sha256(b"maverick-kms-kek/v1\x00" + master).digest()
@@ -139,7 +139,7 @@ class LocalKMS:
 def get_kms() -> KMS:
     """The active KMS provider. ``[kms] provider`` selects it; default local."""
     try:
-        from .config import load_config
+        from ..config import load_config
         provider = str((load_config() or {}).get("kms", {}).get("provider") or "local")
     except Exception:
         provider = "local"
@@ -150,7 +150,7 @@ def get_kms() -> KMS:
         # HSM-backed provider must never be downgraded to in-process key material
         # (fail-closed, consistent with crypto_at_rest). Callers surface this
         # (doctor's at-rest check, the audit-seal CLI) rather than writing plaintext.
-        from .kms_backends import build_cloud_kms
+        from ..kms_backends import build_cloud_kms
         return build_cloud_kms(provider)
     return LocalKMS()
 

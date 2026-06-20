@@ -22,13 +22,13 @@ empty (allow-all — unchanged default). ``host_allowed`` is the pure decision
 """
 from __future__ import annotations
 
-from .sandbox.network_policy import _matches
-from .sandbox.network_policy import host_allowed as _tool_host_allowed
+from ..sandbox.network_policy import _matches
+from ..sandbox.network_policy import host_allowed as _tool_host_allowed
 
 
 def _resolve_tenant(tenant: str | None) -> str | None:
     if tenant == "__active__":
-        from .paths import current_tenant_id
+        from ..paths import current_tenant_id
         return current_tenant_id()
     return tenant
 
@@ -36,7 +36,7 @@ def _resolve_tenant(tenant: str | None) -> str | None:
 def load_tenant_egress(tenant: str | None = "__active__") -> dict:
     """The egress plane for ``tenant``: the per-tenant override or the default."""
     try:
-        from .config import load_config
+        from ..config import load_config
         cfg = load_config() or {}
     except Exception:  # pragma: no cover -- config never blocks egress
         return {}

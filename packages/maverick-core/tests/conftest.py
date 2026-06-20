@@ -95,7 +95,7 @@ def _reset_client_binding_cache():
         except Exception:
             pass
         try:
-            from maverick import tenant_kms
+            from maverick.tenant import kms as tenant_kms
             tenant_kms._clear_cache()
         except Exception:
             pass

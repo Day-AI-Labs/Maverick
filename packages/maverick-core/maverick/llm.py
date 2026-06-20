@@ -269,7 +269,7 @@ def _resolve_model_for_role(role: str) -> str:
     # disabled or when no provider is configured, so this is a no-op for the
     # default install.
     try:
-        from .cost_router import pick, signal_for_role
+        from .cost.router import pick, signal_for_role
         routed = pick(signal_for_role(role))
         if routed:
             return routed

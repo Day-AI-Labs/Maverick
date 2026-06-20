@@ -61,7 +61,7 @@ def test_lookup_price_resolves_openrouter_spec():
 
 
 def test_minimax_in_router_cheap_tier():
-    from maverick import cost_router
+    from maverick.cost import router as cost_router
     rows = [
         r for r in cost_router._PRICING
         if r[0] == "openrouter" and r[1] == MINIMAX_ID

@@ -6,7 +6,7 @@ and asserts the verdict + findings. No network, no install, no code execution.
 from __future__ import annotations
 
 import pytest
-from maverick.marketplace_moderation import (
+from maverick.marketplace.moderation import (
     Severity,
     Verdict,
     moderate,
@@ -232,7 +232,7 @@ class TestDispatch:
         assert report.verdict is Verdict.REJECT
 
     def test_cli_exit_codes(self, tmp_path, capsys):
-        from maverick.marketplace_moderation import main
+        from maverick.marketplace.moderation import main
         # approve -> 0
         p = _write_skill(tmp_path, extra_front="license: MIT\n")
         assert main([str(p)]) == 0
@@ -245,7 +245,7 @@ class TestDispatch:
     def test_cli_emits_json(self, tmp_path, capsys):
         import json
 
-        from maverick.marketplace_moderation import main
+        from maverick.marketplace.moderation import main
         p = _write_skill(tmp_path, extra_front="license: MIT\n")
         main([str(p)])
         out = json.loads(capsys.readouterr().out)

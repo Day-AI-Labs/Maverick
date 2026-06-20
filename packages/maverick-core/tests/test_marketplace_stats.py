@@ -1,8 +1,8 @@
 """Marketplace stats aggregation over the ratings ledger."""
 from __future__ import annotations
 
-from maverick.marketplace_ratings import RatingsLedger
-from maverick.marketplace_stats import summarize
+from maverick.marketplace.ratings import RatingsLedger
+from maverick.marketplace.stats import summarize
 
 
 def _ledger(tmp_path, ratings):

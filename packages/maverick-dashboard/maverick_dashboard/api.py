@@ -136,7 +136,7 @@ def _to_tenant_out(rec) -> TenantOut:
 
 
 def _get_tenant_or_404(tenant_id: str):
-    from maverick import tenant_registry
+    from maverick.tenant import registry as tenant_registry
     rec = tenant_registry.get_tenant(tenant_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="no such tenant")
@@ -146,14 +146,14 @@ def _get_tenant_or_404(tenant_id: str):
 @router.get("/admin/tenants", response_model=list[TenantOut])
 async def list_tenants(request: Request) -> list[TenantOut]:
     require_permission(request, "admin")
-    from maverick import tenant_registry
+    from maverick.tenant import registry as tenant_registry
     return [_to_tenant_out(r) for r in tenant_registry.list_tenants()]
 
 
 @router.post("/admin/tenants", response_model=TenantOut, status_code=201)
 async def create_tenant(request: Request, body: TenantCreateIn) -> TenantOut:
     require_permission(request, "admin")
-    from maverick import tenant_registry
+    from maverick.tenant import registry as tenant_registry
     try:
         rec = tenant_registry.create_tenant(
             body.id, plan=body.plan, display_name=body.display_name,
@@ -174,7 +174,7 @@ async def get_tenant(request: Request, tenant_id: str) -> TenantOut:
 @router.post("/admin/tenants/{tenant_id}/suspend", response_model=TenantOut)
 async def suspend_tenant(request: Request, tenant_id: str) -> TenantOut:
     require_permission(request, "admin")
-    from maverick import tenant_registry
+    from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.suspend_tenant(tenant_id))
 
@@ -182,7 +182,7 @@ async def suspend_tenant(request: Request, tenant_id: str) -> TenantOut:
 @router.post("/admin/tenants/{tenant_id}/resume", response_model=TenantOut)
 async def resume_tenant(request: Request, tenant_id: str) -> TenantOut:
     require_permission(request, "admin")
-    from maverick import tenant_registry
+    from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.resume_tenant(tenant_id))
 
@@ -192,7 +192,7 @@ async def set_tenant_plan(
     request: Request, tenant_id: str, body: TenantPlanIn,
 ) -> TenantOut:
     require_permission(request, "admin")
-    from maverick import tenant_registry
+    from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.set_plan(tenant_id, body.plan))
 
@@ -202,7 +202,7 @@ async def set_tenant_quota(
     request: Request, tenant_id: str, body: TenantQuotaIn,
 ) -> TenantOut:
     require_permission(request, "admin")
-    from maverick import tenant_registry
+    from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(
         tenant_registry.set_quota(tenant_id, body.max_daily_dollars)
@@ -214,7 +214,7 @@ async def delete_tenant(
     request: Request, tenant_id: str, purge: bool = False,
 ) -> Response:
     require_permission(request, "admin")
-    from maverick import tenant_registry
+    from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     tenant_registry.delete_tenant(tenant_id, purge=purge)
     return Response(status_code=204)
@@ -733,8 +733,8 @@ async def marketplace_stats() -> dict:
     """Aggregate stats over the local ratings ledger (total / average / 1–5★
     distribution / per-kind / top-rated). Self-host-first: the operator's own
     ratings, the JSON face of the marketplace stats view."""
-    from maverick.marketplace_ratings import RatingsLedger
-    from maverick.marketplace_stats import summarize
+    from maverick.marketplace.ratings import RatingsLedger
+    from maverick.marketplace.stats import summarize
     return summarize(RatingsLedger())
 
 
@@ -2920,7 +2920,7 @@ async def benchmarks_api() -> dict:
 def _walkthroughs_dir():
     """Where the dashboard's exported walkthrough videos live.
 
-    ``maverick.replay_video.render`` writes wherever the caller points it
+    ``maverick.replay.video.render`` writes wherever the caller points it
     (there is no fixed dir in core), so the dashboard standardises on
     ``<maverick home>/walkthroughs`` for everything the /walkthroughs page
     lists and serves.
@@ -2956,7 +2956,7 @@ def _vtt_for_frames(frames) -> str:
 async def export_walkthrough(request: Request, goal_id: int) -> dict:
     """Export a run's replay video into the walkthroughs dir.
 
-    Uses the real machinery (``maverick.replay_video.render``): always writes
+    Uses the real machinery (``maverick.replay.video.render``): always writes
     the frame manifest + a WebVTT captions track derived from the storyboard;
     the MP4 encode itself needs Pillow + ffmpeg and the response says honestly
     whether it happened (``encoded``/``detail``) and carries the exact ffmpeg
@@ -2976,7 +2976,7 @@ async def export_walkthrough(request: Request, goal_id: int) -> dict:
             status_code=400,
             detail="no events recorded for this goal — run it first, then export",
         )
-    from maverick.replay_video import render, storyboard
+    from maverick.replay.video import render, storyboard
     out_dir = _walkthroughs_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     frames = storyboard(goal_id, events=events)

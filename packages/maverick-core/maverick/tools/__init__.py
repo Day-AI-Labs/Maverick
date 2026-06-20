@@ -1197,7 +1197,7 @@ def base_registry(
     # offline diff proposal workflows, but do not expose it to agents by default.
 
     # Runtime / introspection tools (ROADMAP 2028 H1/H2).
-    from ..cost_curve_fitter import cost_curve_tool
+    from ..cost.curve_fitter import cost_curve_tool
     from .capability_query import capability_query
     from .oidc_tool import oidc_tool
     reg.register(capability_query(user_id=user_id))

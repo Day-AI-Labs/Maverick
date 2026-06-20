@@ -31,7 +31,7 @@ def test_empty_state(monkeypatch, tmp_path):
 
 def test_lists_provisioned_tenants(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
-    from maverick import tenant_registry as tr
+    from maverick.tenant import registry as tr
     tr.create_tenant("acme", plan="enterprise", display_name="Acme Inc",
                      max_daily_dollars=100)
     tr.create_tenant("beta")

@@ -169,7 +169,7 @@ def test_channel_federation_gated_by_registry(monkeypatch):
 
 
 def test_marketplace_federation_gated_by_registry(monkeypatch):
-    from maverick import marketplace_federation as mf
+    from maverick.marketplace import federation as mf
     monkeypatch.setattr(mf, "verify_envelope", lambda *a, **k: (True, "ok"))
     _patch(monkeypatch, {})
     env = {"schema": "maverick-marketplace-fed/1", "origin": "ghost",

@@ -1777,7 +1777,7 @@ def cost_retro(ctx, top: int, as_json: bool) -> None:
     """
     import json as _json
 
-    from ..cost_retrospective import retrospective
+    from ..cost.retrospective import retrospective
     world = open_world(ctx.obj["db"])
     rep = retrospective(world, top_n=top)
     if as_json:
@@ -2093,7 +2093,7 @@ def tenant() -> None:
 def tenant_create(tenant_id: str, plan: str, display_name: str,
                   max_daily_dollars: float) -> None:
     """Provision a tenant + its isolated workspace."""
-    from ..tenant_registry import create_tenant
+    from ..tenant.registry import create_tenant
     try:
         rec = create_tenant(tenant_id, plan=plan, display_name=display_name,
                              max_daily_dollars=max_daily_dollars)
@@ -2110,7 +2110,7 @@ def tenant_create(tenant_id: str, plan: str, display_name: str,
 @tenant.command("list")
 def tenant_list() -> None:
     """List provisioned tenants."""
-    from ..tenant_registry import list_tenants, tenant_spend_today
+    from ..tenant.registry import list_tenants, tenant_spend_today
     rows = list_tenants()
     if not rows:
         click.echo("no tenants. create one with `maverick tenant create`")
@@ -2134,7 +2134,7 @@ def tenant_list() -> None:
 @click.argument("tenant_id")
 def tenant_suspend(tenant_id: str) -> None:
     """Suspend a tenant (its requests are refused until resumed)."""
-    from ..tenant_registry import UnknownTenant, suspend_tenant
+    from ..tenant.registry import UnknownTenant, suspend_tenant
     try:
         suspend_tenant(tenant_id)
     except UnknownTenant:
@@ -2147,7 +2147,7 @@ def tenant_suspend(tenant_id: str) -> None:
 @click.argument("tenant_id")
 def tenant_resume(tenant_id: str) -> None:
     """Resume a suspended tenant."""
-    from ..tenant_registry import UnknownTenant, resume_tenant
+    from ..tenant.registry import UnknownTenant, resume_tenant
     try:
         resume_tenant(tenant_id)
     except UnknownTenant:
@@ -2163,7 +2163,7 @@ def tenant_quota(tenant_id: str, max_daily_dollars: float) -> None:
     """Set a tenant's daily spend cap (USD; 0 = unlimited)."""
     import math
 
-    from ..tenant_registry import UnknownTenant, set_quota
+    from ..tenant.registry import UnknownTenant, set_quota
     # A negative cap was silently clamped to 0 (= UNLIMITED), so a typo'd `-5`
     # quietly removed the cap; nan/inf likewise slipped past as "unlimited" /
     # "$inf/day" -- both disable the cap (user-testing finding). Require a
@@ -2190,7 +2190,7 @@ def tenant_quota(tenant_id: str, max_daily_dollars: float) -> None:
 @click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
 def tenant_delete(tenant_id: str, purge: bool, yes: bool) -> None:
     """Remove a tenant from the registry (optionally purging its data)."""
-    from ..tenant_registry import delete_tenant
+    from ..tenant.registry import delete_tenant
     if purge and not yes and not click.confirm(
         f"PURGE all data for tenant {tenant_id!r}? This cannot be undone."
     ):
@@ -2222,7 +2222,7 @@ def billing_invoice(tenant_id: str, since: str | None, until: str | None,
 
     from ..audit.events import is_valid_day
     from ..billing import RateCard, generate_invoice
-    from ..tenant_registry import get_tenant, list_tenants
+    from ..tenant.registry import get_tenant, list_tenants
     # Period bounds compare lexically against YYYY-MM-DD ledger keys, so a typo'd
     # --since/--until ("2026-6-1", "june") silently fell out of range and minted
     # a misleading empty invoice. Reject anything that isn't a real calendar day.
@@ -2266,7 +2266,7 @@ def billing_invoice(tenant_id: str, since: str | None, until: str | None,
 def billing_entitlements(tenant_id: str) -> None:
     """Show a tenant's plan entitlements (features + limits)."""
     from ..billing import entitlements_for
-    from ..tenant_registry import get_tenant
+    from ..tenant.registry import get_tenant
     rec = get_tenant(tenant_id)
     plan = rec.plan if rec else "free"
     ent = entitlements_for(plan)
@@ -2344,7 +2344,7 @@ def diag_health(goal_id: int) -> None:
 @click.option("--kind", default=None, help="Only show events of this kind.")
 def diag_replay(trace_file: str, kind: str | None) -> None:
     """Read a replayable run trace (written when MAVERICK_TRACE_DIR is set)."""
-    from ..replay_trace import read_trace
+    from ..replay.trace import read_trace
     events = read_trace(trace_file)
     shown = 0
     for e in events:
@@ -2362,7 +2362,7 @@ def diag_cost_by_tag(as_json: bool) -> None:
     """Split run cost across tags (from priced episodes)."""
     import json as _json
 
-    from ..cost_by_tag import gather, render
+    from ..cost.by_tag import gather, render
     from ..world_model import DEFAULT_DB, WorldModel
     buckets = gather(WorldModel(DEFAULT_DB))
     if as_json:
@@ -2540,7 +2540,7 @@ def start(
 
     if dry_cost:
         # Forecast from past priced runs and exit — no goal created, no run.
-        from ..cost_forecast import forecast, gather_samples, render
+        from ..cost.forecast import forecast, gather_samples, render
         world = open_world(ctx.obj["db"])
         try:
             fc = forecast(gather_samples(world), f"{title} {description}".strip())
@@ -2568,7 +2568,7 @@ def start(
     # finding). No-op for None tenant / no registry, so single-tenant flows are
     # unchanged. Same pre-goal-creation chokepoint as the killswitch above.
     from ..paths import current_tenant_id as _ctid
-    from ..tenant_registry import TenantSuspended, assert_tenant_active
+    from ..tenant.registry import TenantSuspended, assert_tenant_active
     try:
         assert_tenant_active(_ctid())
     except TenantSuspended as e:
@@ -2889,7 +2889,7 @@ def template_browse() -> None:
     if not entries:
         click.echo("no registry templates (index empty or unreachable).")
         return
-    from ..marketplace_ratings import RatingsLedger, stars_bar
+    from ..marketplace.ratings import RatingsLedger, stars_bar
     ledger = RatingsLedger()
     for e in entries:
         mark = " [verified]" if e.verified else ""
@@ -2915,7 +2915,7 @@ def template_rate(name: str, stars: int, comment: str) -> None:
     Your ratings annotate `browse` output and can be exported for an index
     submission with `maverick template ratings-export`.
     """
-    from ..marketplace_ratings import RatingsLedger, stars_bar
+    from ..marketplace.ratings import RatingsLedger, stars_bar
     try:
         entry = RatingsLedger().rate("templates", name, stars, comment)
     except ValueError as e:
@@ -2927,7 +2927,7 @@ def template_rate(name: str, stars: int, comment: str) -> None:
 @template.command("ratings-export")
 def template_ratings_export() -> None:
     """Print your local ratings as the JSON fragment an index PR expects."""
-    from ..marketplace_ratings import RatingsLedger
+    from ..marketplace.ratings import RatingsLedger
     click.echo(RatingsLedger().export_for_submission())
 
 
@@ -3079,7 +3079,7 @@ def costs_cmd(limit: int) -> None:
     """Cross-run spend, by day, from recorded episodes (the persisted ledger)."""
     from datetime import datetime, timezone
 
-    from ..cost_report import format_report
+    from ..cost.report import format_report
     from ..world_model import DEFAULT_DB, WorldModel
     w = WorldModel(DEFAULT_DB)
     rows: list[dict] = []

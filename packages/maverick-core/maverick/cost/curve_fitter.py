@@ -119,7 +119,7 @@ def _run(args: dict, world) -> str:
 
 
 def cost_curve_tool(world):
-    from .tools import Tool
+    from ..tools import Tool
     return Tool(
         name="cost_curve",
         description=(

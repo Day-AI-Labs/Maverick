@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 from maverick import billing
-from maverick import tenant_registry as tr
 from maverick.paths import reset_tenant, set_tenant
+from maverick.tenant import registry as tr
 
 
 @pytest.fixture(autouse=True)
