@@ -421,6 +421,19 @@ def import_records(
     result: dict[str, list[str]] = {"installed": [], "rejected": [], "skipped": []}
     for record in records:
         name = record["name"]
+        # The dataset is untrusted third-party input and `name` is used to build
+        # filesystem paths below (target AND the .import.tmp temp file, written
+        # BEFORE validate_skill_file runs). A non-kebab name such as
+        # "../../../.ssh/authorized_keys" would make the temp write escape
+        # dest_dir and truncate-then-delete an arbitrary writable file. Reject
+        # anything that isn't a plain kebab skill id up front, before any path
+        # is constructed -- the frontmatter-name check inside validate_skill_file
+        # runs too late and only inspects the file body, not this stem.
+        if not isinstance(name, str) or not skills_mod._KEBAB_RE.match(name):
+            result["rejected"].append(
+                f"{name!r}: invalid skill name (must be kebab-case: a-z, 0-9, hyphens)"
+            )
+            continue
         target = dest_dir / f"{name}.md"
         if target.exists() and not overwrite:
             result["skipped"].append(name)
