@@ -1401,7 +1401,50 @@ def rollback_learning_state(
                     tmp.unlink()
             except OSError:
                 pass
+    # A store ABSENT from the snapshot but present live now was CREATED during
+    # the cycle being rolled back; remove it so the rollback is a FULL revert
+    # (see _remove_post_snapshot_stores).
+    restored.extend(_remove_post_snapshot_stores(src_dir, stores))
     return restored
+
+
+def _remove_post_snapshot_stores(
+    src_dir: Path, stores: dict[str, Path],
+) -> list[str]:
+    """Delete live stores absent from the snapshot (created during the cycle).
+
+    ``snapshot_learning_state`` skips stores that don't exist yet, so the
+    restore loop never touches a store created mid-cycle (e.g. the first-ever
+    ``insights.ndjson`` / ``learned-skills/`` on a fresh tenant). Without this a
+    newly-created store SURVIVES the rollback -- a partial revert that defeats
+    the "fully restored or unchanged" guarantee ``learning_rollout`` relies on
+    (a failed promotion would leave a just-distilled poisoned skill on disk).
+    Each is removed via rename-aside so a failure can't half-delete a dir store.
+    """
+    import shutil
+    removed: list[str] = []
+    for name, live in stores.items():
+        if (src_dir / name).exists():
+            continue  # in the snapshot -> handled by the restore loop
+        live = Path(live)
+        if not live.exists():
+            continue
+        tmp = live.with_name(live.name + ".rollbackdel")
+        try:
+            if tmp.is_dir():
+                shutil.rmtree(tmp, ignore_errors=True)
+            elif tmp.exists():
+                tmp.unlink()
+            os.replace(live, tmp)  # the live store vanishes in one atomic rename
+            if tmp.is_dir():
+                shutil.rmtree(tmp, ignore_errors=True)
+            else:
+                tmp.unlink(missing_ok=True)
+            removed.append(name)
+        except OSError as e:
+            log.warning(
+                "dreaming: rollback could not remove post-snapshot %s: %s", name, e)
+    return removed
 
 
 def dream_cycle_dry(world: Any | None = None, **kwargs) -> DreamReport:
