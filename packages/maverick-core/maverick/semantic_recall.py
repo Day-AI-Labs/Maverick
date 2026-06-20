@@ -50,25 +50,48 @@ def backend_name() -> str | None:
     return name if name in ("chroma", "qdrant", "weaviate", "pgvector") else None
 
 
+def _tenant_ns() -> str | None:
+    """Sanitized active-tenant namespace, or None for single-tenant use."""
+    try:
+        from .paths import current_tenant
+        t = current_tenant()
+    except Exception:  # pragma: no cover -- tenancy never blocks a run
+        return None
+    if not t:
+        return None
+    import re
+    return re.sub(r"[^0-9A-Za-z]", "_", str(t))[:48] or None
+
+
 def build_store(backend: str | None = None) -> Any | None:
     """Construct the configured vector store, or None if unavailable.
 
     Never raises: a missing extra or a backend error returns None so the
     caller falls back to lexical/embedding recall.
+
+    Multi-tenant isolation: the SHARED external backends (chroma/qdrant/weaviate)
+    run similarity SEARCH across every row in a collection -- id-namespacing
+    isolates get/delete-by-id but NOT search -- so one tenant's recall would
+    surface another tenant's goals. Give each tenant its OWN collection (the
+    standard vector-DB multi-tenancy pattern; a wrong name errors loudly rather
+    than leaking). No-op single-tenant. pgvector already scopes by a tenant_id
+    column, so it keeps the shared collection.
     """
     backend = backend or backend_name()
     if backend is None:
         return None
+    ns = _tenant_ns()
     try:
         if backend == "chroma":
             from .vector_store import ChromaStore
-            return ChromaStore(collection="goals")
+            return ChromaStore(collection=f"t_{ns}__goals" if ns else "goals")
         if backend == "qdrant":
             from .vector_store import QdrantStore
-            return QdrantStore(collection="goals")
+            return QdrantStore(collection=f"t_{ns}__goals" if ns else "goals")
         if backend == "weaviate":
             from .vector_store import WeaviateStore
-            return WeaviateStore(collection="Goals")
+            # Weaviate class names must start with an uppercase letter.
+            return WeaviateStore(collection=f"T_{ns}__Goals" if ns else "Goals")
         if backend == "pgvector":
             # pgvector does not embed; inject the local fastembed embedder
             # (the same one skills use). No embedder -> fail-open to lexical.

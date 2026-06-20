@@ -176,3 +176,56 @@ async def test_run_goal_indexes_on_success(tmp_path: Path, fake_llm, make_llm_re
     assert store.count() == 1
     hits = sr.search("index me on success", store=store)
     assert hits[0][1]["goal_id"] == gid
+
+
+class TestTenantCollectionIsolation:
+    """build_store gives each tenant its OWN collection on the shared external
+    backends (chroma/qdrant/weaviate) so similarity SEARCH can't cross tenants.
+    """
+
+    def _capture(self, monkeypatch):
+        import maverick.vector_store as vs
+        captured = {}
+
+        class _Fake:
+            def __init__(self, collection=None, **kw):
+                captured["collection"] = collection
+
+        monkeypatch.setattr(vs, "ChromaStore", _Fake)
+        monkeypatch.setattr(vs, "QdrantStore", _Fake)
+        monkeypatch.setattr(vs, "WeaviateStore", _Fake)
+        return captured
+
+    def test_collection_is_tenant_namespaced(self, monkeypatch):
+        captured = self._capture(monkeypatch)
+        from maverick import paths
+        monkeypatch.setattr(paths, "current_tenant", lambda: "acme-1")
+
+        sr.build_store("chroma")
+        assert captured["collection"] == "t_acme_1__goals"
+        sr.build_store("qdrant")
+        assert captured["collection"] == "t_acme_1__goals"
+        sr.build_store("weaviate")  # class names must start uppercase
+        assert captured["collection"] == "T_acme_1__Goals"
+
+    def test_single_tenant_collection_unchanged(self, monkeypatch):
+        captured = self._capture(monkeypatch)
+        from maverick import paths
+        monkeypatch.setattr(paths, "current_tenant", lambda: None)
+
+        sr.build_store("chroma")
+        assert captured["collection"] == "goals"
+        sr.build_store("weaviate")
+        assert captured["collection"] == "Goals"
+
+    def test_two_tenants_get_distinct_collections(self, monkeypatch):
+        captured = self._capture(monkeypatch)
+        from maverick import paths
+
+        monkeypatch.setattr(paths, "current_tenant", lambda: "tenant_a")
+        sr.build_store("qdrant")
+        a = captured["collection"]
+        monkeypatch.setattr(paths, "current_tenant", lambda: "tenant_b")
+        sr.build_store("qdrant")
+        b = captured["collection"]
+        assert a != b and a == "t_tenant_a__goals" and b == "t_tenant_b__goals"
