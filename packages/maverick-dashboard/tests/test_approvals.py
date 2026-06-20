@@ -88,3 +88,42 @@ def test_approvals_api_lists_pending(monkeypatch, tmp_path):
     assert a["action"] == "rm-rf"
     assert a["risk"] == "high"
     assert a["scope"] == "/x"
+
+
+def test_decision_is_anchored_in_audit_chain(monkeypatch, tmp_path):
+    # H28: a human approve/deny is recorded in the signed audit chain so its
+    # integrity doesn't rest on the mutable approvals row alone.
+    _isolate(monkeypatch, tmp_path)
+    w = _world(tmp_path)
+    aid = w.create_approval("wire-funds", risk="high")
+
+    recorded = []
+    import maverick.audit as audit
+    monkeypatch.setattr(audit, "record",
+                        lambda kind, **p: recorded.append((kind, p)) or True)
+
+    client = _client()
+    r = client.post(f"/api/v1/approvals/{aid}/approve",
+                    headers={"Origin": "http://testserver"})
+    assert r.status_code == 204
+
+    assert len(recorded) == 1
+    kind, payload = recorded[0]
+    assert kind == audit.EventKind.APPROVAL_DECISION
+    assert payload["approval_id"] == aid
+    assert payload["status"] == "approved"
+    assert payload["decided_by"]  # the supervisor identity is attributed
+
+
+def test_no_audit_event_when_decision_is_a_noop(monkeypatch, tmp_path):
+    # A 404 (unknown/already-decided) must NOT emit a decision event.
+    _isolate(monkeypatch, tmp_path)
+    recorded = []
+    import maverick.audit as audit
+    monkeypatch.setattr(audit, "record",
+                        lambda kind, **p: recorded.append((kind, p)) or True)
+    client = _client()
+    r = client.post("/api/v1/approvals/999999/deny",
+                    headers={"Origin": "http://testserver"})
+    assert r.status_code == 404
+    assert recorded == []

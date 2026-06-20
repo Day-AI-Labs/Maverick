@@ -1989,22 +1989,38 @@ def _supervisor(request: Request) -> str:
     return caller_principal(request) or "operator"
 
 
+def _audit_approval_decision(approval_id: int, status: str, decided_by: str) -> None:
+    """Anchor a human approve/deny in the signed audit chain (audit H28).
+
+    The decision's integrity must not rest on the mutable `approvals` row alone;
+    record it in the tamper-evident Ed25519 chain. Best-effort: an audit-write
+    failure never blocks the oversight decision that already committed."""
+    try:
+        from maverick.audit import EventKind, record
+        record(EventKind.APPROVAL_DECISION, approval_id=int(approval_id),
+               status=status, decided_by=decided_by or "")
+    except Exception:  # pragma: no cover - audit failure must not break the decision
+        pass
+
+
 @router.post("/approvals/{approval_id}/approve", status_code=204)
 async def approve_approval(request: Request, approval_id: int) -> None:
     """Approve a parked action; the polling consent path then proceeds."""
     require_permission(request, "operate")
-    if not _world().decide_approval(approval_id, "approved",
-                                    decided_by=_supervisor(request)):
+    who = _supervisor(request)
+    if not _world().decide_approval(approval_id, "approved", decided_by=who):
         raise HTTPException(status_code=404, detail="no such pending approval")
+    _audit_approval_decision(approval_id, "approved", who)
 
 
 @router.post("/approvals/{approval_id}/deny", status_code=204)
 async def deny_approval(request: Request, approval_id: int) -> None:
     """Deny a parked action; the polling consent path then refuses it."""
     require_permission(request, "operate")
-    if not _world().decide_approval(approval_id, "denied",
-                                    decided_by=_supervisor(request)):
+    who = _supervisor(request)
+    if not _world().decide_approval(approval_id, "denied", decided_by=who):
         raise HTTPException(status_code=404, detail="no such pending approval")
+    _audit_approval_decision(approval_id, "denied", who)
 
 
 @router.post("/approvals/{approval_id}/claim")

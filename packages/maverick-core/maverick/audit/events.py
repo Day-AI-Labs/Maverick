@@ -117,6 +117,11 @@ class EventKind:
     # file:str (capture basename under data_dir("captures")), sha256:str (sealed
     # digest, verifiable via screenshot_seal.verify_file).
     EVIDENCE_CAPTURE = "evidence_capture"
+    # Human-oversight decision on a parked approval (approve/deny). Anchors the
+    # who-decided-what in the signed chain so the integrity of the decision does
+    # not rest on the mutable world-model `approvals` row alone (audit H28).
+    # payload: approval_id:int, status:str (approved|denied), decided_by:str.
+    APPROVAL_DECISION = "approval_decision"
 
 
 @dataclass
