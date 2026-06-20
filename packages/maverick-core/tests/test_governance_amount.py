@@ -24,12 +24,26 @@ def test_wildcard_threshold_applies_to_all_actions():
     assert evaluate("any_action", amount=500, policy=pol).decision is Decision.ALLOW
 
 
-def test_exact_action_overrides_wildcard():
+def test_wildcard_floor_binds_lower_than_exact_action():
+    # Strictest-wins: a "*" catch-all is a FLOOR, so a per-action key can only
+    # tighten it, never loosen it (audit round 15). release_payment is gated at
+    # min(10000, 1000)=1000, NOT its own higher 10000.
     pol = Policy(require_human_above={"*": 1000, "release_payment": 10000})
-    # release_payment uses its own higher threshold
-    assert evaluate("release_payment", amount=5000, policy=pol).decision is Decision.ALLOW
-    # a different action falls back to the wildcard
+    # $5k release_payment trips the $1k catch-all floor (used to ALLOW under the
+    # higher per-action threshold -- the money-movement bypass this closes).
+    assert evaluate("release_payment", amount=5000, policy=pol).decision is Decision.REQUIRE_HUMAN
+    # Below the floor: still allowed.
+    assert evaluate("release_payment", amount=500, policy=pol).decision is Decision.ALLOW
+    # A different action falls back to the same wildcard floor.
     assert evaluate("post_note", amount=5000, policy=pol).decision is Decision.REQUIRE_HUMAN
+
+
+def test_exact_action_tighter_than_wildcard_still_applies():
+    # A per-action key STRICTER than "*" binds (min picks it): $200 wire gated.
+    pol = Policy(require_human_above={"*": 5000, "wire_transfer": 100})
+    assert evaluate("wire_transfer", amount=200, policy=pol).decision is Decision.REQUIRE_HUMAN
+    # A non-wire action uses the looser $5k catch-all.
+    assert evaluate("post_note", amount=200, policy=pol).decision is Decision.ALLOW
 
 
 def test_deny_above_beats_require_human_above():
