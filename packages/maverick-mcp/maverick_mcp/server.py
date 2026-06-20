@@ -784,6 +784,16 @@ class MCPServer:
             pending.clear()
         try:
             result = self._dispatch_tool(name, arguments)
+        except (_ProtocolError, TaskError):
+            # Control-flow errors carry an explicit JSON-RPC (code, message) and
+            # MUST surface as a structured protocol error -- both transports
+            # convert them (stdio _dispatch_stdio_message, http _exception_to_
+            # error_response). Collapsing them into an isError envelope here (the
+            # blanket catch did) broke the documented -32602 contract for typed
+            # clients AND leaked the internal class name ("_ProtocolError: ...")
+            # into the tool-result text. Re-raise; only genuine tool crashes
+            # below become isError.
+            raise
         except Exception as e:
             return {
                 "isError": True,
