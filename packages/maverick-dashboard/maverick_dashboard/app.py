@@ -3437,24 +3437,48 @@ async def webhook_gitlab(request: Request, bg: BackgroundTasks) -> JSONResponse:
     return JSONResponse({"goal_id": goal_id}, status_code=201)
 
 
-# Per-process replay dedup for inbound issue webhooks, keyed on the request's
-# HMAC signature (unique per signed body), so a captured delivery replayed
-# within the freshness window is rejected once per process. NOTE: this is
-# per-process -- with multiple workers the stateless Linear/Jira freshness check
-# (issue_webhooks.is_fresh) is the cross-worker bound; a shared store would be
-# needed for cross-worker dedup.
+# Replay dedup for inbound issue webhooks, keyed on the request's HMAC signature
+# (unique per signed body), so a captured delivery replayed within the freshness
+# window is rejected. Backed by the SHARED world store when Postgres is
+# configured (HA / multi-replica) so a replay can't slip through on a sibling
+# replica; falls back to the per-process window for the default single-process /
+# SQLite deployment. Same first-writer-wins primitive used for channel dedup and
+# the OIDC replay guard.
 _issue_webhook_seen: dict[str, float] = {}
 _issue_webhook_seen_lock = threading.Lock()
 _ISSUE_WEBHOOK_SEEN_MAX = 4096
+_ISSUE_WEBHOOK_CHANNEL = "__issue_webhook__"
+
+
+def _shared_issue_webhook_seen(signature: str) -> bool | None:
+    """Record/check ``signature`` in the shared store when Postgres (HA) is
+    configured. Returns True if already seen (replay), False on first delivery,
+    or None when there is no shared backend / it is unavailable (caller falls
+    back to the in-process window). Never raises -- a degraded store must not
+    drop webhooks; the HMAC + freshness checks still hold."""
+    try:
+        from maverick.world_model_backends import is_postgres_configured
+        if not is_postgres_configured():
+            return None
+        # True == first writer (not previously seen) -> NOT a replay.
+        first = bool(_world().mark_message_processed(_ISSUE_WEBHOOK_CHANNEL, signature))
+        return not first
+    except Exception:  # pragma: no cover - shared dedup must never drop a webhook
+        log.warning("issue webhook dedup: shared store unavailable, using in-process window")
+        return None
 
 
 def _issue_webhook_replay_seen(signature: str, ttl_seconds: int) -> bool:
     """True if ``signature`` was already delivered within ``ttl_seconds``.
 
-    Records the signature with the current time and evicts expired/overflow
-    entries. The first delivery returns False (and is recorded); a replay
-    within the window returns True.
+    Prefers the shared store (cross-replica) when Postgres is configured;
+    otherwise records the signature in the per-process window and evicts
+    expired/overflow entries. The first delivery returns False (and is
+    recorded); a replay returns True.
     """
+    shared = _shared_issue_webhook_seen(signature)
+    if shared is not None:
+        return shared
     now = time.time()
     with _issue_webhook_seen_lock:
         for k, t in list(_issue_webhook_seen.items()):
