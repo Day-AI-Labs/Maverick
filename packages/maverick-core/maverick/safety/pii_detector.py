@@ -75,9 +75,15 @@ _IPV6 = re.compile(
     r"|::"
     r")"
 )
-# Credit card candidates (13-19 digits with optional spaces / dashes).
+# Credit card candidates. A maximal run of >=13 digits with optional single
+# space/dash separators, anchored on DIGIT boundaries (look-arounds, not \b).
+# The old `\b(?:\d[ -]*?){13,19}\b` could not match a run of >=20 digits at all
+# -- no word boundary lands exactly 13-19 digits in from either end -- so a real
+# card concatenated with extra digits (an order id, card+expiry, an unspaced CSV
+# cell) was NEVER redacted and leaked to logs / model context. We now match the
+# whole run and Luhn-scan it (see _cc_run_has_card).
 _CC = re.compile(
-    r"\b(?:\d[ -]*?){13,19}\b"
+    r"(?<!\d)\d(?:[ -]*\d){12,}(?!\d)"
 )
 # US street address heuristic: number + 1-3 words + street suffix.
 _STREET = re.compile(
@@ -104,6 +110,26 @@ def _luhn_valid(digits: str) -> bool:
     return total % 10 == 0
 
 
+def _cc_run_has_card(run: str) -> bool:
+    """True if a digit run contains a Luhn-valid 13-19 digit card.
+
+    For a normal-length run (<=19 digits) we Luhn-check the whole thing, exactly
+    as before, so no new false positives are introduced for ordinary cards. For
+    a LONGER run (>=20 digits -- the concatenation bypass) we slide a 13-19 digit
+    window so an embedded card is still caught. Redaction covers the whole run
+    (over-redaction is the safe direction -- the module errs toward redaction).
+    """
+    digits = "".join(c for c in run if c.isdigit())
+    n = len(digits)
+    if n <= 19:
+        return _luhn_valid(digits)
+    for length in range(13, 20):
+        for i in range(0, n - length + 1):
+            if _luhn_valid(digits[i:i + length]):
+                return True
+    return False
+
+
 def scan(text: str) -> list[PIIMatch]:
     """Return non-overlapping PII matches found in ``text``."""
     if not text:
@@ -124,7 +150,7 @@ def scan(text: str) -> list[PIIMatch]:
     # Credit cards: extra step. Test candidates with Luhn so we don't
     # tag random 16-digit strings (UUIDs without dashes, hashes).
     for m in _CC.finditer(text):
-        if _luhn_valid(m.group(0)):
+        if _cc_run_has_card(m.group(0)):
             found.append(PIIMatch(kind="credit_card", span=m.span(), value_preview=_MASK))
 
     # Coalesce overlapping spans into one redaction range per cluster. Two kinds

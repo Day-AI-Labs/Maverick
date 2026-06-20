@@ -39,7 +39,7 @@ static DEFS: &[(&str, &str, bool)] = &[
     ("aws_access_key_id", r"\bAKIA[0-9A-Z]{16}\b", false),
     (
         "aws_secret_access",
-        r#"(?i)(?:aws_secret_access_key|aws_secret)[\s=:"']{1,5}([A-Za-z0-9/+=]{40})"#,
+        r#"(?i)(?:aws_secret_access_key|aws_secret)[\s=:"']{1,16}([A-Za-z0-9/+=]{40})"#,
         false,
     ),
     ("github_pat_classic", r"\bghp_[A-Za-z0-9]{36,40}\b", false),
@@ -94,7 +94,7 @@ static DEFS: &[(&str, &str, bool)] = &[
     // MULTILINE via (?m); only the `val` group is redacted.
     (
         "env_secret",
-        r"(?m)(?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*(?P<val>[^\s\n]+)",
+        r#"(?m)(?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*(?P<val>"[^"\n]*"|'[^'\n]*'|[^\s\n]+)"#,
         true,
     ),
 ];
