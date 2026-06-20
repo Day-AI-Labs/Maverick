@@ -149,7 +149,7 @@ class SMSChannel(Channel):
         msg = IncomingMessage(user_id=From, text=Body, channel="sms")
         try:
             reply = await self.dispatch_text(msg)
-        except Exception as e:  # pragma: no cover
+        except Exception:  # pragma: no cover
             log.exception("handler error")
             # The goal didn't complete -- release the claim so Twilio's retry
             # re-processes instead of being deduped against a failed run.
@@ -159,7 +159,9 @@ class SMSChannel(Channel):
                 except Exception:  # pragma: no cover
                     log.warning("SMS dedup release failed")
             try:
-                await self.send(From, f"⚠ error: {e}")
+                # Generic text only; the raw exception (possible secret) is
+                # logged above, never sent back to the handset.
+                await self.send(From, "⚠ An internal error occurred.")
             except Exception:  # pragma: no cover
                 log.exception("SMS error-reply send failed")
             return Response(content="", media_type="text/xml")

@@ -99,9 +99,11 @@ class EmailChannel(Channel):
                 )
                 try:
                     reply = await self.dispatch_text(msg)
-                except Exception as e:  # pragma: no cover
+                except Exception:  # pragma: no cover
+                    # Generic reply; raw exception detail (possible secret) is
+                    # logged above, not emailed back to the sender.
                     log.exception("handler error")
-                    reply = f"⚠ error: {e}"
+                    reply = "⚠ An internal error occurred."
                 reply_subject = f"Re: {subject}" if subject else "Maverick"
                 # A single SMTP send failure must not abort the batch —
                 # otherwise already-handled messages get reprocessed (and
