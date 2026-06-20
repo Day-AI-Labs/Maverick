@@ -3140,7 +3140,7 @@ async def settings_set_features(request: Request) -> RedirectResponse:
 
 @app.get("/users", response_class=HTMLResponse)
 async def users_page(request: Request) -> HTMLResponse:
-    """Admin: manage dashboard user roles (admin / operator / viewer)."""
+    """Admin: manage dashboard user roles (admin / operator / auditor / viewer)."""
     require_permission(request, "admin")
     import os as _os
 

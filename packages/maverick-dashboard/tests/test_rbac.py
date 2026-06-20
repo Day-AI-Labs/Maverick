@@ -37,6 +37,16 @@ def test_permissions_map():
     assert rbac.permissions_for("operator") == frozenset({"operate", "view"})
     assert rbac.permissions_for("viewer") == frozenset({"view"})
     assert rbac.permissions_for(None) == frozenset()
+    # Separation of duties: only admin and the dedicated auditor role hold the
+    # "audit" permission; operator/viewer never do. The auditor grants ONLY
+    # read access (audit + view), nothing operational.
+    assert rbac.permissions_for("auditor") == frozenset({"audit", "view"})
+    assert "audit" in rbac.permissions_for("admin")
+    assert "audit" not in rbac.permissions_for("operator")
+    assert "audit" not in rbac.permissions_for("viewer")
+    assert "operate" not in rbac.permissions_for("auditor")
+    assert "admin" not in rbac.permissions_for("auditor")
+    assert "auditor" in rbac.ROLES
 
 
 def test_role_for_principal(monkeypatch, tmp_path):
@@ -132,10 +142,10 @@ def test_users_link_in_nav(monkeypatch, tmp_path):
     assert 'href="/users"' in c.get("/").text
 
 
-def test_audit_endpoints_require_admin(monkeypatch, tmp_path):
-    # The audit trail (who-did-what-when) is admin-only: an operator/viewer is
-    # 403'd, auth-off (local mode) and admin get through. Regression for the gap
-    # where /api/v1/audit/tail + /audit/grep had no role gate.
+def test_audit_endpoints_require_audit_permission(monkeypatch, tmp_path):
+    # The audit trail (who-did-what-when) is gated by the "audit" permission:
+    # an operator/viewer is 403'd, auth-off (local mode) and admin get through.
+    # Regression for the gap where /api/v1/audit/tail + /audit/grep had no gate.
     monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "")
     c = _client(monkeypatch, tmp_path)
     from maverick_dashboard import rbac
@@ -143,6 +153,32 @@ def test_audit_endpoints_require_admin(monkeypatch, tmp_path):
     _as(monkeypatch, "user:op2")
     assert c.get("/api/v1/audit/tail").status_code == 403
     assert c.get("/api/v1/audit/grep?pattern=x").status_code == 403
+    # a viewer is likewise 403'd: read-of-the-trail is a distinct grant.
+    rbac.set_role("user:vw2", "viewer")
+    _as(monkeypatch, "user:vw2")
+    assert c.get("/api/v1/audit/tail").status_code == 403
     # auth-off (no principal -> local single-user mode) is unrestricted.
     _as(monkeypatch, None)
     assert c.get("/api/v1/audit/tail").status_code == 200
+
+
+def test_auditor_reads_audit_but_nothing_operational(monkeypatch, tmp_path):
+    # Separation of duties: the auditor role reaches the audit trail (read-only)
+    # but is 403'd from every operate/admin surface -- it can review the
+    # who-did-what-when record without being able to run goals, change settings,
+    # or manage users.
+    monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "")
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import rbac
+    rbac.set_role("user:aud", "auditor")
+    _as(monkeypatch, "user:aud")
+    # audit surface: reachable (200, not 403).
+    assert c.get("/api/v1/audit/tail").status_code == 200
+    assert c.get("/api/v1/audit/grep?pattern=x").status_code == 200
+    # admin surfaces: denied.
+    assert c.get("/settings").status_code == 403
+    assert c.get("/users").status_code == 403
+    # operate surfaces: denied (no running goals, no spending).
+    assert c.post("/chat/send", data={"title": "hi"}).status_code == 403
+    assert c.post("/api/v1/goals/compose",
+                  json={"title": "spend money"}).status_code == 403

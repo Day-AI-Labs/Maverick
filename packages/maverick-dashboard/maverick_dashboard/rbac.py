@@ -1,4 +1,4 @@
-"""Dashboard RBAC: admin-managed user roles (admin / operator / viewer).
+"""Dashboard RBAC: admin-managed user roles (admin / operator / auditor / viewer).
 
 This is the dashboard's *access-control* layer and is deliberately distinct from
 the kernel's ``[roles]`` (``maverick.capability``), which only ATTENUATES an
@@ -22,12 +22,21 @@ import json
 import os
 from pathlib import Path
 
-ROLES = ("admin", "operator", "viewer")
+ROLES = ("admin", "operator", "auditor", "viewer")
 
+# Permission lattice. The "audit" permission gates the audit-trail read surface
+# (/api/v1/audit/*): the who-did-what-when record that can name principals, tool
+# inputs and costs. It is held by "admin" and by the dedicated read-only
+# "auditor" role -- separation of duties, so a compliance reviewer can read the
+# audit log WITHOUT also holding operate/admin (run goals, change settings,
+# manage users). "auditor" deliberately grants NOTHING operational: audit + view
+# only. "operator"/"viewer" do NOT get "audit" -- reading the trail is a
+# distinct grant, not implied by operate.
 _PERMISSIONS: dict[str, frozenset[str]] = {
-    "admin": frozenset({"admin", "operate", "view"}),     # users, settings, secrets, + all
-    "operator": frozenset({"operate", "view"}),           # run/cancel goals, approve, tools
-    "viewer": frozenset({"view"}),                        # read-only
+    "admin": frozenset({"admin", "audit", "operate", "view"}),  # users, settings, secrets, + all
+    "operator": frozenset({"operate", "view"}),                 # run/cancel goals, approve, tools
+    "auditor": frozenset({"audit", "view"}),                    # read audit trail (read-only)
+    "viewer": frozenset({"view"}),                              # read-only
 }
 
 

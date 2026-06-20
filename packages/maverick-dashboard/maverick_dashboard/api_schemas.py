@@ -282,4 +282,4 @@ class TenantOut(BaseModel):
 
 class TenantRoleIn(BaseModel):
     """Grant a principal a role within one tenant (per-tenant RBAC)."""
-    role: str = Field(..., pattern="^(admin|operator|viewer)$")
+    role: str = Field(..., pattern="^(admin|operator|auditor|viewer)$")
