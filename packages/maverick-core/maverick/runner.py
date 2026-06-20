@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any, Protocol
 
 from ._envparse import env_float, env_int
@@ -38,6 +39,28 @@ _run_semaphore = threading.BoundedSemaphore(MAX_CONCURRENT_GOALS)
 # thread forever (the daemon stops draining the queue entirely). On
 # timeout we refuse the run and let the job queue retry later.
 _ACQUIRE_TIMEOUT = env_float("MAVERICK_GOAL_ACQUIRE_TIMEOUT", 300.0)
+
+
+def inflight_goals() -> int:
+    """How many goals currently hold a concurrency slot (are running).
+
+    Derived from the bounded semaphore's free permits; the same expression the
+    dashboard's /healthz + /metrics gauges use."""
+    return MAX_CONCURRENT_GOALS - _run_semaphore._value  # type: ignore[attr-defined]
+
+
+def drain_inflight(timeout: float = 25.0, poll: float = 0.5) -> int:
+    """Block until no goal holds a slot, or ``timeout`` elapses.
+
+    For graceful shutdown: give running goals a bounded chance to finish before
+    the worker process exits, instead of hard-killing them mid-LLM-call (which
+    bills for work that is then discarded and can leave a goal wedged 'running').
+    Returns the count still in-flight at return (0 = fully drained). Synchronous
+    (polls the semaphore) -- call it off the event loop. Never raises."""
+    deadline = time.monotonic() + max(0.0, timeout)
+    while inflight_goals() > 0 and time.monotonic() < deadline:
+        time.sleep(max(0.05, poll))
+    return inflight_goals()
 
 
 DEFAULT_MAX_DOLLARS = env_float("MAVERICK_DEFAULT_MAX_DOLLARS", 2.0)
