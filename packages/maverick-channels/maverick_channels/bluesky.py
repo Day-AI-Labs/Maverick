@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections import deque
 
 from .base import (
     Channel,
@@ -31,6 +32,9 @@ log = logging.getLogger(__name__)
 
 _API_BASE = "https://bsky.social/xrpc"
 _POLL_INTERVAL_SEC = 30.0
+# Bound on the recently-seen notification-uri dedup set (FIFO eviction). The
+# poll window is the 50 newest notifications, so this is generous headroom.
+_MAX_SEEN_URIS = 1000
 
 
 class BlueskyChannel(Channel):
@@ -65,7 +69,15 @@ class BlueskyChannel(Channel):
             )
         self.poll_interval = poll_interval
         self._session: dict = {}
+        # ``_last_seen_indexed_at`` is a FLOOR seeded to startup time so a cold
+        # start doesn't backfill history. Dedup is by notification ``uri`` (a
+        # bounded recently-seen set), NOT a strict high-water-mark on the floor:
+        # AT-proto indexedAt is not monotonic (clock skew / late server
+        # indexing), so advancing a watermark to the newest timestamp silently
+        # dropped a genuinely-new notification indexed a moment earlier.
         self._last_seen_indexed_at: str | None = None
+        self._seen_uris: set[str] = set()
+        self._seen_order: deque[str] = deque()
         self._running = False
         self._stop_event = asyncio.Event()
 
@@ -110,18 +122,31 @@ class BlueskyChannel(Channel):
                 return []
             resp.raise_for_status()
             notifs = (resp.json() or {}).get("notifications") or []
-        # Filter: only new mentions / replies / DMs.
+        # Filter: only new mentions / replies. Floor on the startup cursor (no
+        # history backfill), then dedup by uri -- so a notification indexed just
+        # before the newest one (out-of-order/late indexing) is still delivered,
+        # not dropped by a strict timestamp watermark.
         new: list[dict] = []
         for n in notifs:
             reason = n.get("reason")
             if reason not in ("mention", "reply"):
                 continue
             ts = n.get("indexedAt", "")
-            if self._last_seen_indexed_at and ts <= self._last_seen_indexed_at:
-                continue
+            if self._last_seen_indexed_at and ts and ts <= self._last_seen_indexed_at:
+                continue  # at/before startup -> pre-history, skip
+            uri = n.get("uri") or ""
+            if uri and uri in self._seen_uris:
+                continue  # already delivered this exact notification
             new.append(n)
-        if new:
-            self._last_seen_indexed_at = max(n.get("indexedAt", "") for n in new)
+        for n in new:
+            uri = n.get("uri") or ""
+            if uri:
+                self._seen_uris.add(uri)
+                self._seen_order.append(uri)
+        # Bound the dedup set (FIFO); the polling window is the last ~50, so a
+        # few hundred entries is ample headroom against re-delivery.
+        while len(self._seen_order) > _MAX_SEEN_URIS:
+            self._seen_uris.discard(self._seen_order.popleft())
         return new
 
     async def _dispatch(self, notif: dict) -> None:
