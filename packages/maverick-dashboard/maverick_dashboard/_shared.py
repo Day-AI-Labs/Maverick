@@ -8,11 +8,35 @@ reintroducing the cycle; both modules ``from ._shared import`` these.
 """
 from __future__ import annotations
 
+import asyncio
+import os
 from typing import Any
 
 # One process-wide WorldModel cache keyed by absolute DB path (was a
 # separate dict per module). Tests clear it via ``<module>._world_cache``.
 _world_cache: dict[str, Any] = {}
+
+
+# SSE concurrency cap. Each open event-stream holds a slot; new streams 503
+# past the cap. This lived as a verbatim copy in both ``app`` and ``api``,
+# which created TWO independent semaphores -- so the real ceiling was the cap
+# per module, not process-wide. One shared semaphore makes the limit actually
+# bind across all streaming routes. Built lazily on the running loop.
+def _max_sse_streams() -> int:
+    try:
+        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_SSE", "64")))
+    except ValueError:
+        return 64
+
+
+_sse_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_sse_semaphore() -> asyncio.Semaphore:
+    global _sse_semaphore
+    if _sse_semaphore is None:
+        _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
+    return _sse_semaphore
 
 def _any_provider_key_set() -> bool:
     """True iff some LLM provider is configured (env key, base-url env, or

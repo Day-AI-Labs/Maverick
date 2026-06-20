@@ -7,7 +7,6 @@ mcp/server.py.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import hmac
 import ipaddress
 import json
@@ -48,7 +47,7 @@ from maverick.oidc import VerifiedPrincipal
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ._shared import _any_provider_key_set, _world
+from ._shared import _any_provider_key_set, _get_sse_semaphore, _world
 from ._shared import _world_cache as _world_cache  # re-export: tests clear app._world_cache
 from .api import router as api_router
 from .auth import (
@@ -845,25 +844,9 @@ def check_goal_rate_limit(
 # ----- SSE stream concurrency cap -----
 # Council security finding (exposed-deployment hardening): each open SSE
 # stream spawns a 300s task polling SQLite every 0.5s. Thousands of
-# EventSource opens exhaust file descriptors and the event loop. Cap the
-# number of concurrent streams with a semaphore (no new dependency) and
-# return 503 past the cap. Built lazily on the running loop so the limit
-# binds to the event loop the streams actually run on.
-def _max_sse_streams() -> int:
-    try:
-        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_SSE", "64")))
-    except ValueError:
-        return 64
-
-
-_sse_semaphore: asyncio.Semaphore | None = None
-
-
-def _get_sse_semaphore() -> asyncio.Semaphore:
-    global _sse_semaphore
-    if _sse_semaphore is None:
-        _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
-    return _sse_semaphore
+# EventSource opens exhaust file descriptors and the event loop. The cap now
+# lives in _shared so app and api share ONE process-wide semaphore (was a
+# verbatim copy in each module -> two independent caps). Imported above.
 
 
 def _load_skills():

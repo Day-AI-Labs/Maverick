@@ -30,7 +30,7 @@ from maverick.runner import (
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
-from ._shared import _any_provider_key_set, _world
+from ._shared import _any_provider_key_set, _get_sse_semaphore, _world
 from ._shared import _world_cache as _world_cache  # re-export: tests clear api._world_cache
 from .api_schemas import (
     AgentOverrideIn,
@@ -394,22 +394,10 @@ _TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled", "blocked", "error
 # ----- v1 SSE stream resource limits -----
 # Match the legacy dashboard stream hardening: open SSE streams hold an async
 # task and repeatedly poll SQLite, so cap concurrency, enforce a finite stream
-# lifetime, and use a server-controlled polling cadence with idle backoff.
-def _max_sse_streams() -> int:
-    try:
-        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_SSE", "64")))
-    except ValueError:
-        return 64
-
-
-_sse_semaphore: asyncio.Semaphore | None = None
-
-
-def _get_sse_semaphore() -> asyncio.Semaphore:
-    global _sse_semaphore
-    if _sse_semaphore is None:
-        _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
-    return _sse_semaphore
+# lifetime, and use a server-controlled polling cadence with idle backoff. The
+# semaphore lives in _shared so app and api share ONE process-wide cap (was a
+# duplicate definition here -> two independent caps). _get_sse_semaphore is
+# imported above.
 
 
 _SSE_POLL_INTERVAL = 0.5
