@@ -421,6 +421,15 @@ _MIGRATIONS_TABLE = (
     ");"
 )
 
+# Transaction-scoped advisory lock serializing schema migration across replicas.
+# Postgres CREATE TABLE/INDEX ... IF NOT EXISTS is NOT concurrency-safe (two
+# replicas running it at once can raise "tuple concurrently updated" /
+# duplicate-key on the catalog), so concurrent startup of an HA fleet could fail
+# or partially-migrate. Holding this lock makes the second replica wait, then
+# re-read the version and find nothing to do. Arbitrary fixed key (auto-released
+# at COMMIT/ROLLBACK).
+_MIGRATION_ADVISORY_LOCK = 0x6D766B6D6967  # 'mvkmig'
+
 
 def pending_migrations(
     current_version: int,
@@ -768,8 +777,14 @@ class PostgresWorldModel:
 
     def _migrate(self) -> None:
         """Apply pending migrations atomically, recording each in
-        ``schema_migrations`` so a statement runs at most once."""
+        ``schema_migrations`` so a statement runs at most once.
+
+        Takes a transaction-scoped advisory lock first so that concurrent
+        replica startup serializes -- the second waiter re-reads the version
+        after the first commits and applies nothing, rather than racing the
+        non-concurrency-safe DDL."""
         with self._tx() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", (_MIGRATION_ADVISORY_LOCK,))
             cur.execute(_MIGRATIONS_TABLE)
             cur.execute("SELECT COALESCE(MAX(version), 0) FROM schema_migrations")
             current = int((cur.fetchone() or [0])[0])

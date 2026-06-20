@@ -717,3 +717,34 @@ def test_rate_events_window_count(world):
     assert world.count_rate_events(key, now + 5) == 0
     # An unrelated key sees none of them.
     assert world.count_rate_events("rl-other", now - 60) == 0
+
+
+def test_concurrent_migrate_does_not_race(world):
+    # Advisory lock (audit follow-up): many replicas migrating the same DB at
+    # once must not error -- Postgres CREATE/ALTER ... IF NOT EXISTS DDL is not
+    # concurrency-safe without serialization. Each thread opens its own backend
+    # (its own connection) and runs migration on construction.
+    import threading
+
+    from maverick.world_model_backends.postgres import (
+        _PG_SCHEMA_VERSION,
+        PostgresWorldModel,
+    )
+
+    errs: list[str] = []
+
+    def go():
+        try:
+            w = PostgresWorldModel(dsn=_DSN)
+            w.close()
+        except Exception as e:  # noqa: BLE001
+            errs.append(repr(e))
+
+    threads = [threading.Thread(target=go) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errs == [], f"concurrent migration raced: {errs}"
+    assert world.schema_version == _PG_SCHEMA_VERSION
