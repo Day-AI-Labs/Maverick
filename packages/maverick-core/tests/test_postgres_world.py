@@ -833,3 +833,76 @@ def test_search_facts_matches_value_under_encryption(world, monkeypatch, tmp_pat
     world.upsert_fact("srch:color", "the user prefers MAGENTA")
     hits = world.search_facts("srch:", "magenta")
     assert ("srch:color", "the user prefers MAGENTA") in hits
+
+
+def test_concurrent_add_artifact_no_duplicate_versions(world):
+    # Per-key advisory lock: N threads appending the same (goal, title) must get
+    # N distinct, gapless versions -- not duplicates from a MAX(version)+1 race.
+    import threading
+
+    from maverick.world_model_backends.postgres import PostgresWorldModel
+
+    gid = world.create_goal("artifact-race")
+    n = 12
+    barrier = threading.Barrier(n)
+    errs: list[str] = []
+
+    def go():
+        try:
+            w = PostgresWorldModel(dsn=_DSN)
+            barrier.wait()  # maximize overlap on the read-modify-write
+            w.add_artifact(gid, "text", "report", "body")
+            w.close()
+        except Exception as e:  # noqa: BLE001
+            errs.append(repr(e))
+
+    threads = [threading.Thread(target=go) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errs == [], errs
+    versions = sorted(a["version"] for a in world.artifacts_for_goal(gid)
+                      if a["title"] == "report")
+    assert versions == list(range(1, n + 1)), versions  # distinct + gapless
+
+
+def test_concurrent_upsert_fact_single_open_window(world, monkeypatch):
+    # Per-key advisory lock: concurrent temporal upserts of one key must leave
+    # exactly ONE open history window (valid_to IS NULL), not several.
+    import threading
+
+    from maverick import world_model as wm
+    from maverick.world_model_backends.postgres import PostgresWorldModel
+
+    monkeypatch.setattr(wm, "_temporal_memory_enabled", lambda: True)
+
+    key = f"k-{id(object())}"
+    n = 12
+    barrier = threading.Barrier(n)
+    errs: list[str] = []
+
+    def go(i):
+        try:
+            w = PostgresWorldModel(dsn=_DSN)
+            barrier.wait()
+            w.upsert_fact(key, f"v{i}", trust_tier=(i % 5) + 1)
+            w.close()
+        except Exception as e:  # noqa: BLE001
+            errs.append(repr(e))
+
+    threads = [threading.Thread(target=go, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errs == [], errs
+    with world._tx() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM fact_history WHERE key = %s AND valid_to IS NULL",
+            (key,),
+        )
+        open_windows = cur.fetchone()[0]
+    assert open_windows == 1, f"expected exactly one open window, got {open_windows}"
