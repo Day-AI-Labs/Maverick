@@ -7,7 +7,6 @@ mcp/server.py.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import hmac
 import ipaddress
 import json
@@ -48,7 +47,12 @@ from maverick.oidc import VerifiedPrincipal
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ._shared import _any_provider_key_set, _world
+from ._shared import (
+    _any_provider_key_set,
+    _get_sse_semaphore,
+    _world,
+    require_provider_or_400,
+)
 from ._shared import _world_cache as _world_cache  # re-export: tests clear app._world_cache
 from .api import router as api_router
 from .auth import (
@@ -844,25 +848,9 @@ def check_goal_rate_limit(
 # ----- SSE stream concurrency cap -----
 # Council security finding (exposed-deployment hardening): each open SSE
 # stream spawns a 300s task polling SQLite every 0.5s. Thousands of
-# EventSource opens exhaust file descriptors and the event loop. Cap the
-# number of concurrent streams with a semaphore (no new dependency) and
-# return 503 past the cap. Built lazily on the running loop so the limit
-# binds to the event loop the streams actually run on.
-def _max_sse_streams() -> int:
-    try:
-        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_SSE", "64")))
-    except ValueError:
-        return 64
-
-
-_sse_semaphore: asyncio.Semaphore | None = None
-
-
-def _get_sse_semaphore() -> asyncio.Semaphore:
-    global _sse_semaphore
-    if _sse_semaphore is None:
-        _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
-    return _sse_semaphore
+# EventSource opens exhaust file descriptors and the event loop. The cap now
+# lives in _shared so app and api share ONE process-wide semaphore (was a
+# verbatim copy in each module -> two independent caps). Imported above.
 
 
 def _load_skills():
@@ -2836,16 +2824,7 @@ async def chat_send(
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
     require_permission(request, "operate")
-    if not _any_provider_key_set():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No LLM provider key or endpoint configured. Run 'maverick "
-                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
-                "[providers.<name>] api_key/base_url to "
-                "~/.maverick/config.toml before starting the dashboard."
-            ),
-        )
+    require_provider_or_400()
     check_goal_rate_limit(request)
     title = (title or "").strip()
     if not title:
@@ -3223,16 +3202,7 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
     if not verify_signature(body, signature, secret, timestamp=timestamp):
         raise HTTPException(status_code=403, detail="bad webhook signature")
 
-    if not _any_provider_key_set():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No LLM provider key or endpoint configured. Run 'maverick "
-                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
-                "[providers.<name>] api_key/base_url to "
-                "~/.maverick/config.toml before starting the dashboard."
-            ),
-        )
+    require_provider_or_400()
     try:
         payload = json.loads(body or b"{}")
     except (ValueError, UnicodeDecodeError) as exc:
@@ -3310,16 +3280,7 @@ async def webhook_run(request: Request, bg: BackgroundTasks) -> JSONResponse:
     if not verify_signature(body, signature, secret, timestamp=timestamp):
         raise HTTPException(status_code=403, detail="bad webhook signature")
 
-    if not _any_provider_key_set():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No LLM provider key or endpoint configured. Run 'maverick "
-                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
-                "[providers.<name>] api_key/base_url to "
-                "~/.maverick/config.toml before starting the dashboard."
-            ),
-        )
+    require_provider_or_400()
     try:
         payload = json.loads(body or b"{}")
     except (ValueError, UnicodeDecodeError) as exc:

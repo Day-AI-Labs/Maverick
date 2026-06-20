@@ -423,3 +423,55 @@ No files were changed by this audit other than this report.
 - Postgres backend has **no SQL injection** (all dynamic fragments are `%s`
   placeholders; LIKE inputs go through `_like_escape`) and no cursor leaks.
 - Webhook signature checks consistently use `hmac.compare_digest` (no `==`).
+
+---
+
+## Remediation status (updated 2026-06-20)
+
+### Fixed (landed on `claude/codebase-improvement-audit-nd1tu3`, PRs #1640 / #1645)
+
+**Security / correctness (High):**
+- Postgres tenant-isolation leaks in `recent_goal_events`, `recent_turns`,
+  `open_questions`, `all_questions`, and the `prune_*` deletes — now scoped.
+- `tools/__init__._apply_generated_tools` no-shadowing guard added.
+- Shield base64-deobfuscation bypass closed; added `disk_overwrite`,
+  `recursive_chmod_chown_root`, `fork_bomb` rules; broadened `rm_rf_root`;
+  `guard.from_config` no longer KeyErrors on a partial config.
+
+**Channels:** email `\Seen` dedup; voice token required at listen; bluesky/
+mastodon log instead of silent-drop; 3 duplicate `_normalize_allowlist` removed.
+
+**Knowledge:** embedder length-mismatch guards; OCR pixel-cap kept in force
+during decode (`_pixel_cap`); `SqliteVectorStore` thread-safe; `pillow` floor
+raised to `>=12.2.0`.
+
+**Dedup / perf:** evolve TOML serializer unified; MCP `_dispatch_tool` dict +
+`_shield_block_or_none`; `mcp_client._finalize_tool_result`; REST/GraphQL
+connector `_env_config`/`_build_auth_headers` (GraphQL gained basic/extra-header
+auth); `WorldModel.episode_exists` (was a 100k-row scan); single canonical
+`PROVIDER_KEY_ENV_MAP`; `orchestrator._budget_exceeded_message`; **dashboard SSE
+semaphore now process-wide shared** (was 2 independent caps); dashboard
+`require_provider_or_400`; dreaming `_atomic_write_lines`; self_learning
+`_raise_if_import_check_failed`; assorted redundant-import/`isinstance` tidy-ups.
+
+**Docs:** world-model schema version synced to v20.
+
+All landed with passing tests (full suite: 11,337 passed / 148 skipped / 3 xfailed).
+
+### Deferred — large structural refactors (recommend separate, individually
+reviewed PRs; out of scope for a single safe automated pass per kernel rule 7
+"surgical diffs / no speculative abstractions")
+
+- Split the god-files: `cli.py` (6483 lines → Click subcommand package),
+  `agent._run_inner` (~1140), `orchestrator.run_goal` (~1000).
+- Reorganize the 354 flat core modules into subpackages
+  (`compaction/`, `cost/`, `providers/`, `grpc_api/`, `tenant/`, …).
+- `config.py` declarative section schema (~30 near-identical getters).
+- Cross-module helper unification carrying real behavior risk: retry/backoff
+  classifier (4 modules → `retry_classifier`), TTL/LRU cache base (5 modules),
+  `feature_enabled` (47 `enabled()` sites), and routing every state-file path
+  through `paths.data_dir()` (~80 modules — a tenant-isolation correctness win,
+  but touches where data is stored, so needs migration care).
+- Dashboard auth-path consolidations (HMAC webhook preamble ×5, same-origin
+  `Depends` ×18, tenant-admin sub-router ×12) — touch CSRF/auth enforcement, so
+  warrant focused review rather than a bulk rewrite.

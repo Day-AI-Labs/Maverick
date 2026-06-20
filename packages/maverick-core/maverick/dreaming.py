@@ -358,6 +358,23 @@ def promote_shared_insights(
 
 # ---------- insight store ----------
 
+def _atomic_write_lines(path: Path, lines) -> None:
+    """Write pre-rendered lines (each incl. its trailing newline) to ``path``
+    atomically: a sibling ``.tmp`` is replaced into place and chmod 0600. The
+    tmp/replace/chmod scaffold was copy-pasted across the four NDJSON writers.
+    Raises OSError on failure; callers decide how to report it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for ln in lines:
+            f.write(ln)
+    os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 def load_insights(path: Path | str | None = None) -> list[DreamInsight]:
     p = Path(path) if path is not None else insights_path()
     if not p.exists():
@@ -429,16 +446,9 @@ def append_insights(
     keep = existing[-max(1, max_insights):]
     p = Path(path)
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for ins in keep:
-                f.write(json.dumps(ins.to_dict(), default=str) + "\n")
-        os.replace(tmp, p)
-        try:
-            os.chmod(p, 0o600)
-        except OSError:
-            pass
+        _atomic_write_lines(
+            p, (json.dumps(ins.to_dict(), default=str) + "\n" for ins in keep)
+        )
     except OSError as e:
         log.warning("dreaming: insight write failed: %s", e)
         return 0
@@ -544,15 +554,8 @@ def prune_reflexions(
     if dropped <= 0:
         return 0
     try:
-        tmp = p.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for _, _, ln in reversed(kept):  # restore chronological order
-                f.write(ln)
-        os.replace(tmp, p)
-        try:
-            os.chmod(p, 0o600)
-        except OSError:
-            pass
+        # restore chronological order
+        _atomic_write_lines(p, (ln for _, _, ln in reversed(kept)))
     except OSError as e:
         log.warning("dreaming: reflexion prune failed: %s", e)
         return 0
@@ -563,16 +566,11 @@ def _rewrite_insights(keep: list[DreamInsight], path: Path | str) -> bool:
     """Atomically replace the insight store with ``keep`` (chronological)."""
     p = Path(path)
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for ins in sorted(keep, key=lambda i: i.ts):
-                f.write(json.dumps(ins.to_dict(), default=str) + "\n")
-        os.replace(tmp, p)
-        try:
-            os.chmod(p, 0o600)
-        except OSError:
-            pass
+        _atomic_write_lines(
+            p,
+            (json.dumps(ins.to_dict(), default=str) + "\n"
+             for ins in sorted(keep, key=lambda i: i.ts)),
+        )
         return True
     except OSError as e:
         log.warning("dreaming: insight rewrite failed: %s", e)
@@ -784,16 +782,9 @@ def save_rehearsals(cases: list[dict], path: Path | str | None = None) -> int:
     """Replace the rehearsal queue with this cycle's cases (atomic)."""
     p = Path(path) if path is not None else rehearsals_path()
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for c in cases:
-                f.write(json.dumps(c, default=str) + "\n")
-        os.replace(tmp, p)
-        try:
-            os.chmod(p, 0o600)
-        except OSError:
-            pass
+        _atomic_write_lines(
+            p, (json.dumps(c, default=str) + "\n" for c in cases)
+        )
     except OSError as e:
         log.warning("dreaming: rehearsal write failed: %s", e)
         return 0
@@ -958,8 +949,6 @@ def _replay_critiques(
     reflexions. Empty unless trajectory donation is enabled and has records.
     """
     try:
-        import json as _json
-
         from .donation import list_pending
         paths = list_pending(Path(outbox) if outbox is not None else None)
     except Exception:  # pragma: no cover -- donations never block a dream
@@ -967,7 +956,7 @@ def _replay_critiques(
     out: list[dict] = []
     for p in paths[-limit:]:
         try:
-            d = _json.loads(Path(p).read_text(encoding="utf-8"))
+            d = json.loads(Path(p).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         critique = str(d.get("verifier_critique", "") or "").strip()

@@ -630,6 +630,16 @@ print({ok!r})
 '''
 
 
+def _raise_if_import_check_failed(stdout: str | None, stderr: str | None, exit_code: int) -> None:
+    """Shared success check for the sandbox and plain-subprocess import probes:
+    a clean run prints exactly the OK sentinel and exits 0."""
+    if exit_code != 0 or (stdout or "") != f"{_IMPORT_CHECK_OK}\n":
+        detail = (stderr or "").strip() or (stdout or "").strip()
+        raise ValueError(
+            f"generated tool failed validation: {detail or 'import check failed'}"
+        )
+
+
 def _validate_import_isolated(path: Path, *, sandbox: Any = None) -> None:
     """Import ``path`` and check its make_tool() shape in a child process.
 
@@ -652,13 +662,9 @@ def _validate_import_isolated(path: Path, *, sandbox: Any = None) -> None:
             raise ValueError(
                 f"generated tool import check could not run: {type(e).__name__}: {e}"
             ) from e
-        stdout = result.stdout or ""
-        exit_code = getattr(result, "exit_code", 1)
-        if exit_code != 0 or stdout != f"{_IMPORT_CHECK_OK}\n":
-            detail = (result.stderr or "").strip() or stdout.strip()
-            raise ValueError(
-                f"generated tool failed validation: {detail or 'import check failed'}"
-            )
+        _raise_if_import_check_failed(
+            result.stdout, result.stderr, getattr(result, "exit_code", 1),
+        )
         return
     try:
         proc = subprocess.run(  # noqa: S603 -- isolated import check, not a tool shell
@@ -667,12 +673,7 @@ def _validate_import_isolated(path: Path, *, sandbox: Any = None) -> None:
         )
     except subprocess.TimeoutExpired as e:
         raise ValueError("generated tool failed validation: import timed out") from e
-    stdout = proc.stdout or ""
-    if proc.returncode != 0 or stdout != f"{_IMPORT_CHECK_OK}\n":
-        detail = (proc.stderr or "").strip() or stdout.strip()
-        raise ValueError(
-            f"generated tool failed validation: {detail or 'import check failed'}"
-        )
+    _raise_if_import_check_failed(proc.stdout, proc.stderr, proc.returncode)
 
 
 def write_generated_tool(
@@ -930,7 +931,7 @@ def _parse_needs(text: str) -> list[str]:
         data = json.loads(m.group(0))
     except json.JSONDecodeError:
         return []
-    return [str(x).strip() for x in data if isinstance(x, (str,)) and str(x).strip()][:10]
+    return [str(x).strip() for x in data if isinstance(x, str) and str(x).strip()][:10]
 
 
 async def preflight(

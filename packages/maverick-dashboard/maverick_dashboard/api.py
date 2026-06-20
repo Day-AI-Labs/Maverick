@@ -30,7 +30,12 @@ from maverick.runner import (
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
-from ._shared import _any_provider_key_set, _world
+from ._shared import (
+    _any_provider_key_set,
+    _get_sse_semaphore,
+    _world,
+    require_provider_or_400,
+)
 from ._shared import _world_cache as _world_cache  # re-export: tests clear api._world_cache
 from .api_schemas import (
     AgentOverrideIn,
@@ -251,16 +256,7 @@ async def remove_tenant_role(
 @router.post("/goals", response_model=GoalOut, status_code=201)
 async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
     require_permission(request, "operate")
-    if not _any_provider_key_set():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No LLM provider key or endpoint configured. Run 'maverick "
-                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
-                "GEMINI_API_KEY, or add a [providers.<name>] api_key/base_url "
-                "to ~/.maverick/config.toml before starting the dashboard."
-            ),
-        )
+    require_provider_or_400()
     # Shared sliding-window cap across /chat/send + this route, so a
     # runaway loop can't spawn unbounded (paid) goals.
     from maverick_dashboard.app import check_goal_rate_limit
@@ -394,22 +390,10 @@ _TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled", "blocked", "error
 # ----- v1 SSE stream resource limits -----
 # Match the legacy dashboard stream hardening: open SSE streams hold an async
 # task and repeatedly poll SQLite, so cap concurrency, enforce a finite stream
-# lifetime, and use a server-controlled polling cadence with idle backoff.
-def _max_sse_streams() -> int:
-    try:
-        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_SSE", "64")))
-    except ValueError:
-        return 64
-
-
-_sse_semaphore: asyncio.Semaphore | None = None
-
-
-def _get_sse_semaphore() -> asyncio.Semaphore:
-    global _sse_semaphore
-    if _sse_semaphore is None:
-        _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
-    return _sse_semaphore
+# lifetime, and use a server-controlled polling cadence with idle backoff. The
+# semaphore lives in _shared so app and api share ONE process-wide cap (was a
+# duplicate definition here -> two independent caps). _get_sse_semaphore is
+# imported above.
 
 
 _SSE_POLL_INTERVAL = 0.5
@@ -2669,16 +2653,7 @@ async def compose_goal(request: Request, payload: ComposeIn, bg: BackgroundTasks
     ``max_dollars`` cap. Steps become a markdown checklist.
     """
     require_permission(request, "operate")
-    if not _any_provider_key_set():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No LLM provider key or endpoint configured. Run 'maverick "
-                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
-                "GEMINI_API_KEY, or add a [providers.<name>] api_key/base_url "
-                "to ~/.maverick/config.toml before starting the dashboard."
-            ),
-        )
+    require_provider_or_400()
     from maverick_dashboard.app import check_goal_rate_limit
     check_goal_rate_limit(request)
     title = (payload.title or "").strip()

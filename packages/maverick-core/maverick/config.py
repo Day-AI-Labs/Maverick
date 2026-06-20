@@ -238,10 +238,21 @@ def get_provider_config(provider: str) -> dict:
 
 
 # Well-known credential env vars, one per hosted provider.
-PROVIDER_KEY_ENV_VARS = (
-    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
-    "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "DEEPSEEK_API_KEY",
-    "XAI_API_KEY",
+# Canonical provider -> credential env var(s) map. Single source of truth for
+# both "which env var holds a provider's key" (llm._provider_api_key) and the
+# flat "is any provider configured?" check below. Aliases (GROK/GOOGLE) included.
+PROVIDER_KEY_ENV_MAP: dict[str, tuple[str, ...]] = {
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "moonshot": ("MOONSHOT_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
+    "xai": ("XAI_API_KEY", "GROK_API_KEY"),
+}
+
+PROVIDER_KEY_ENV_VARS = tuple(
+    dict.fromkeys(v for vs in PROVIDER_KEY_ENV_MAP.values() for v in vs)
 )
 
 # Self-hosted endpoints configured by env var (the mechanism each provider's

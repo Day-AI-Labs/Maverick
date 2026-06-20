@@ -119,8 +119,9 @@ def test_captions_503_when_sse_capacity_full(scripted_source, monkeypatch):
     import maverick_dashboard.api as api
 
     # A zero-permit semaphore is already locked() -> every SSE slot in use ->
-    # the route must 503 before opening (acquiring) a new stream.
-    monkeypatch.setattr(api, "_sse_semaphore", asyncio.Semaphore(0))
+    # the route must 503 before opening (acquiring) a new stream. The shared
+    # cap now lives in _shared, so override the accessor the route calls.
+    monkeypatch.setattr(api, "_get_sse_semaphore", lambda: asyncio.Semaphore(0))
 
     r = client.get("/api/v1/voice/captions")
     assert r.status_code == 503
