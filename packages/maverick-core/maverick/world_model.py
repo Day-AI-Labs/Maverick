@@ -1214,16 +1214,20 @@ class WorldModel:
         it); ``content`` is encrypted at rest like other agent output."""
         now = time.time()
         with self._writing() as conn:
-            cur = conn.execute(
-                "SELECT COALESCE(MAX(version), 0) FROM artifacts WHERE goal_id = ? AND title = ?",
-                (int(goal_id), title or ""),
-            )
-            version = int(cur.fetchone()[0]) + 1
+            # Compute the next version in the SAME statement as the INSERT so the
+            # whole read-modify-write is atomic under SQLite's per-statement write
+            # lock. A separate SELECT MAX(version)+1 then INSERT races ACROSS
+            # PROCESSES (the dashboard + worker each hold their own _writing lock,
+            # and a deferred txn takes no write lock until the INSERT) -> two
+            # processes assign the SAME version. The scalar subquery closes that
+            # gap; mirrors the per-key serialization done in the Postgres backend.
             cur = conn.execute(
                 "INSERT INTO artifacts(goal_id, kind, title, content, version, created_at) "
-                "VALUES(?, ?, ?, ?, ?, ?)",
-                (int(goal_id), str(kind or "text"), title or "",
-                 _enc_field(content), version, now),
+                "VALUES(?, ?, ?, ?, "
+                "(SELECT COALESCE(MAX(version), 0) + 1 FROM artifacts "
+                " WHERE goal_id = ? AND title = ?), ?)",
+                (int(goal_id), str(kind or "text"), title or "", _enc_field(content),
+                 int(goal_id), title or "", now),
             )
             return int(cur.lastrowid)
 
