@@ -189,6 +189,14 @@ Roles available:
 
 The installer keeps these separated automatically.
 
+> **Config is not schema-validated.** An unknown or **mis-typed** key is
+> silently ignored and the runtime uses the built-in default — so a typo like
+> `[budget] max_dollarss` runs **uncapped** rather than erroring. Until
+> schema validation lands, after editing `config.toml` by hand run
+> `maverick doctor` and confirm the security/cost-critical values
+> (`[budget]`, `[enterprise]`, `[encryption]`, `[audit]`, `[safety]`) read back
+> as you intend — e.g. via `maverick compliance` for the enterprise boundary.
+
 ## Overriding the config path
 
 ```bash
