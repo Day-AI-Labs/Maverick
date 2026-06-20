@@ -204,7 +204,11 @@ async def _lifespan(app: FastAPI):
     Replaces the deprecated ``@app.on_event("startup")`` handlers. The two
     startup steps (orphan-goal reclaim, queue-dispatcher install) run in their
     original registration order; their bodies each guard with try/except so a
-    failure never blocks startup. No shutdown work is needed.
+    failure never blocks startup.
+
+    On shutdown we drain in-flight goals (bounded) so a rolling upgrade / pod
+    eviction lets running goals finish instead of hard-killing them mid-LLM-call
+    (which bills for discarded work and can wedge a goal 'running').
 
     One exception to "never blocks startup": when the deployment has opted into
     a mandatory enterprise boundary (MAVERICK_REQUIRE_ENTERPRISE=1 /
@@ -217,6 +221,21 @@ async def _lifespan(app: FastAPI):
     await _reclaim_orphans()
     await _install_queue_dispatcher()
     yield
+    # Graceful drain: give running goals a bounded window to finish. Bounded by
+    # MAVERICK_DRAIN_TIMEOUT (default 25s, under the typical 30s
+    # terminationGracePeriod so the kubelet's SIGKILL doesn't pre-empt it). Runs
+    # off the event loop (the drain polls a threading primitive); best-effort --
+    # never raise on the way down.
+    try:
+        from maverick.runner import drain_inflight
+        timeout = float(os.environ.get("MAVERICK_DRAIN_TIMEOUT", "25") or 25)
+        left = await run_in_threadpool(drain_inflight, timeout)
+        if left:
+            log.warning(
+                "shutdown: %d goal(s) still in-flight after %.0fs drain timeout", left, timeout
+            )
+    except Exception:  # pragma: no cover - shutdown must never raise
+        pass
 
 
 app = FastAPI(
