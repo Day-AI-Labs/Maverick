@@ -30,5 +30,5 @@ def test_json_mode_disables_uvicorn_log_config(monkeypatch):
 def test_text_mode_keeps_uvicorn_default_log_config(monkeypatch):
     monkeypatch.setenv("MAVERICK_LOG_FORMAT", "text")
     captured = _run_main(monkeypatch)
-    from uvicorn.config import LOGGING_CONFIG
-    assert captured["log_config"] is LOGGING_CONFIG
+    # Text mode omits log_config entirely so uvicorn keeps its colored default.
+    assert "log_config" not in captured
