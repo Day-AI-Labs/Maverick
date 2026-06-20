@@ -4659,7 +4659,19 @@ def main() -> None:
         pass
 
     import uvicorn
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    # JSON logging consistency: uvicorn installs its OWN plaintext access/error
+    # formatters by default, so even after configure_logging() switches the root
+    # handler to JSON the access lines stayed plaintext -- a mixed JSON+text
+    # stream that breaks strict ingestion (Loki/CloudWatch). In JSON mode pass
+    # log_config=None so uvicorn doesn't reconfigure those loggers; they then
+    # propagate to the JSON root handler. In text mode omit the kwarg entirely so
+    # uvicorn keeps its colored default for the local-dev experience.
+    _json_logs = os.environ.get("MAVERICK_LOG_FORMAT", "text").strip().lower() == "json"
+    if _json_logs:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info",
+                    log_config=None)
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":
