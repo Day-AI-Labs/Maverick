@@ -341,7 +341,6 @@ def gen_stubs_cmd() -> None:
 
 def _install_config_from_file(src: str) -> None:
     """Headless provisioning: validate SRC and install it as config.toml (0600)."""
-    import shutil
     from pathlib import Path as _P
 
     from ..config import config_path
@@ -368,8 +367,30 @@ def _install_config_from_file(src: str) -> None:
         pass
     dst = config_path()
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(src_path, dst)
-    os.chmod(dst, 0o600)
+    # Tighten ~/.maverick to 0700: a bare `init` can create it before any
+    # world-DB command does, and the config we're about to drop may carry inline
+    # provider api_keys. Matches world_model / cookie_store.
+    try:
+        os.chmod(dst.parent, 0o700)
+    except OSError:
+        pass
+    # Write with mode-at-creation 0600. The previous shutil.copyfile (like a
+    # write_text) created the file world-readable (0644 & ~umask) and only
+    # chmod'd it AFTER the whole config body -- which can embed raw api_keys --
+    # was on disk: a window a co-located user could read. Mirror wizard
+    # write_config: O_CREAT|O_WRONLY|O_TRUNC with 0o600, plus a final chmod to
+    # cover the case where dst pre-existed with looser perms. Copy the source
+    # bytes verbatim so comments/formatting survive.
+    data = src_path.read_bytes()
+    fd = os.open(str(dst), os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+    finally:
+        try:
+            os.chmod(dst, 0o600)
+        except OSError:
+            pass
     click.echo(click.style(f"installed config -> {dst} (0600)", fg="green"))
 
 
