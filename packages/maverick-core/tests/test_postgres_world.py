@@ -7,6 +7,7 @@ method-parity work can extend (so parity is testable, not shipped blind).
 """
 from __future__ import annotations
 
+import importlib.util
 import os
 
 import pytest
@@ -652,3 +653,42 @@ def test_goal_origins(world):
     ids = [g.id for g in world.goals_for_origin("schedule", ref)]
     assert g1 in ids and g2 in ids and ids == sorted(ids, reverse=True)
     assert world.origin_status_counts("schedule", ref) == {"pending": 1, "done": 1}
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("cryptography") is None,
+    reason="cryptography extra not installed (at-rest sealing needs AES-256-GCM)",
+)
+def test_at_rest_encryption_seals_columns_and_round_trips(world, monkeypatch, tmp_path):
+    """With encryption on, sensitive columns are AES-256-GCM ciphertext on disk
+    yet read back as plaintext (audit C4: Postgres at-rest sealing)."""
+    import psycopg
+    from maverick import crypto_at_rest as car
+
+    # Enable at-rest with an isolated key under tmp.
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "at_rest.key")
+    assert car.at_rest_enabled() is True
+
+    gid = world.create_goal("SENSITIVE-TITLE-xyz", "SENSITIVE-DESC-xyz")
+    world.set_goal_status(gid, "active", result="SENSITIVE-RESULT-xyz")
+    world.upsert_fact("enc:k", "SENSITIVE-FACT-xyz")
+
+    # Reads transparently decrypt. (get_fact reads only this key, so the
+    # assertion doesn't depend on other rows' key/plaintext state.)
+    g = world.get_goal(gid)
+    assert g.title == "SENSITIVE-TITLE-xyz"
+    assert g.result == "SENSITIVE-RESULT-xyz"
+    assert world.get_fact("enc:k") == "SENSITIVE-FACT-xyz"
+    # Search still finds it (scan-then-decrypt under encryption).
+    assert gid in [x.id for x in world.search_goals("sensitive-title")]
+
+    # Raw columns are sealed ciphertext, never plaintext.
+    c = psycopg.connect(_DSN)
+    title, result = c.execute(
+        "SELECT title, result FROM goals WHERE id=%s", (gid,)).fetchone()
+    val = c.execute("SELECT value FROM facts WHERE key=%s", ("enc:k",)).fetchone()[0]
+    c.close()
+    assert title.startswith("MVKAR1:") and "SENSITIVE-TITLE-xyz" not in title
+    assert result.startswith("MVKAR1:") and "SENSITIVE-RESULT-xyz" not in result
+    assert val.startswith("MVKAR1:") and "SENSITIVE-FACT-xyz" not in val
