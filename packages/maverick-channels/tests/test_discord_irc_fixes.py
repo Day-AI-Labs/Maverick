@@ -6,7 +6,6 @@ import asyncio
 from maverick_channels import discord as dmod
 from maverick_channels.irc import IRCChannel, format_privmsg
 
-
 # --- Discord: CRITICAL -- on_message hit AttributeError on every message ------
 
 class _Author:
