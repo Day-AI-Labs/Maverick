@@ -119,7 +119,7 @@ def test_dsar_export_unknown_user_is_empty_and_exits_zero():
     result = CliRunner().invoke(main, ["dsar", "export", "--user", "nobody"])
     assert result.exit_code == 0
     bundle = json.loads(result.output)
-    assert bundle["world"] == {"conversations": [], "goals": []}
+    assert bundle["world"] == {"conversations": [], "goals": [], "facts": {}, "fact_history": {}}
     assert bundle["counts"]["conversations"] == 0
 
 
