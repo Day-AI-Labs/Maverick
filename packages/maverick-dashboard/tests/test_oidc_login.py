@@ -314,3 +314,75 @@ def test_routes_404_when_login_disabled(monkeypatch, tmp_path):
     c = TestClient(app)
     for path in ("/auth/login", "/auth/callback", "/auth/logout", "/auth/error"):
         assert c.get(path, follow_redirects=False).status_code == 404
+
+
+# ---- replay guard: shared store backs the multi-replica HA case ---------------
+
+
+class _FakeSharedWorld:
+    """Minimal stand-in for the shared world model: a first-writer-wins insert
+    mirroring ``mark_message_processed`` (True once per id, then False)."""
+
+    def __init__(self):
+        self.seen: set[tuple[str, str]] = set()
+
+    def mark_message_processed(self, channel, external_id, goal_id=None):
+        key = (channel, external_id)
+        if key in self.seen:
+            return False
+        self.seen.add(key)
+        return True
+
+
+def test_consume_tx_in_process_guard_is_default(monkeypatch):
+    """No shared backend (the default SQLite / single-process deployment): the
+    in-process dict consumes once and rejects the replay."""
+    import asyncio
+
+    from maverick import world_model_backends
+    monkeypatch.setattr(world_model_backends, "is_postgres_configured", lambda: False)
+    ol._CONSUMED_TX_IDS.clear()
+
+    assert asyncio.run(ol._consume_tx_once("tx-1", ol._now() + 600)) is True
+    assert asyncio.run(ol._consume_tx_once("tx-1", ol._now() + 600)) is False
+    assert "tx-1" in ol._CONSUMED_TX_IDS  # recorded in-process
+
+
+def test_consume_tx_uses_shared_store_under_postgres(monkeypatch):
+    """HA / Postgres: the id is consumed in the SHARED store (so the guard holds
+    across replicas), and the in-process dict is bypassed entirely."""
+    import asyncio
+
+    import maverick_dashboard._shared as shared
+    from maverick import world_model_backends
+    monkeypatch.setattr(world_model_backends, "is_postgres_configured", lambda: True)
+    fake = _FakeSharedWorld()
+    monkeypatch.setattr(shared, "_world", lambda: fake)
+    ol._CONSUMED_TX_IDS.clear()
+
+    assert asyncio.run(ol._consume_tx_once("tx-A", ol._now() + 600)) is True
+    assert asyncio.run(ol._consume_tx_once("tx-A", ol._now() + 600)) is False
+    # consumed in the shared store under the namespaced channel...
+    assert (ol._OIDC_TX_CHANNEL, "tx-A") in fake.seen
+    # ...and the in-process guard was never touched.
+    assert ol._CONSUMED_TX_IDS == {}
+
+
+def test_consume_tx_falls_back_when_shared_store_errors(monkeypatch):
+    """A broken shared store degrades to the in-process guard rather than
+    hard-failing every login (defense-in-depth: cookie+PKCE+state still hold)."""
+    import asyncio
+
+    import maverick_dashboard._shared as shared
+    from maverick import world_model_backends
+    monkeypatch.setattr(world_model_backends, "is_postgres_configured", lambda: True)
+
+    def _boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(shared, "_world", _boom)
+    ol._CONSUMED_TX_IDS.clear()
+
+    assert asyncio.run(ol._consume_tx_once("tx-Z", ol._now() + 600)) is True
+    assert asyncio.run(ol._consume_tx_once("tx-Z", ol._now() + 600)) is False
+    assert "tx-Z" in ol._CONSUMED_TX_IDS  # fell back to in-process recording
