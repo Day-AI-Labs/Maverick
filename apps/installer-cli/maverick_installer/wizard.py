@@ -90,6 +90,7 @@ STEPS: list[tuple[str, str]] = [
     ("sandbox", "Sandbox"),
     ("capabilities", "Capabilities"),
     ("self_learning", "Self-learning"),
+    ("automation_import", "Automation import"),
     ("durable", "Durable execution"),
     ("finance", "Finance suite"),
     ("advanced", "Advanced reasoning"),
@@ -972,6 +973,33 @@ def pick_self_learning() -> dict[str, Any]:
         "distill_local": distill_local,
         "max_acquisitions": 5,
     }
+
+
+def pick_automation_import() -> dict[str, Any]:
+    """Opt-in to importing clients' existing automations into Lightwork.
+
+    Off by default. When on, ``maverick import`` can pull workflow definitions
+    from platforms that expose them (n8n/Make/Workato/Power Automate/UiPath) and
+    turn each into a Lightwork template, plus connect-and-trigger for Zapier/
+    Notion. It reaches out to third-party platforms and writes user templates,
+    so it ships disabled. Returns a dict written under ``[automation_import]``.
+    """
+    console.print()
+    console.print(
+        "[dim]Automation import pulls workflows your clients already built "
+        "(n8n/Make/Workato/Power Automate/UiPath) into Lightwork templates, and "
+        "lets Zapier/Notion trigger Lightwork. It calls third-party APIs and "
+        "writes templates, so it's OFF by default.[/dim]"
+    )
+    enable = _q_confirm("Enable automation import?", default=False)
+    if not enable:
+        return {"enable": False}
+    create_schedules = _q_confirm(
+        "  Auto-create Lightwork schedules for imported cron triggers? "
+        "(off = import the template, you activate the schedule yourself)",
+        default=False,
+    )
+    return {"enable": True, "create_schedules": create_schedules}
 
 
 def pick_durable() -> dict[str, Any]:
@@ -2520,6 +2548,17 @@ def _cfg_self_learning(self_learning: dict[str, Any] | None) -> list[str]:
     return lines
 
 
+def _cfg_automation_import(automation_import: dict[str, Any] | None) -> list[str]:
+    if not automation_import:
+        return []
+    # Automation import. enable gates the whole feature; create_schedules lets a
+    # recovered cron trigger auto-create a Lightwork schedule on import.
+    lines = ["", "[automation_import]"]
+    for k, v in automation_import.items():
+        _emit_kv(lines, k, v)
+    return lines
+
+
 def _cfg_durable(durable: dict[str, Any] | None) -> list[str]:
     if not (durable and durable.get("enabled")):
         return []
@@ -3024,6 +3063,7 @@ def write_config(
     web_search_enabled: bool = False,
     skills: dict[str, Any] | None = None,
     self_learning: dict[str, Any] | None = None,
+    automation_import: dict[str, Any] | None = None,
     durable: dict[str, Any] | None = None,
     finance: dict[str, Any] | None = None,
     deployment: str | None = None,
@@ -3106,6 +3146,7 @@ def write_config(
     lines += _cfg_core(budget, safety, sandbox)
     lines += _cfg_skills(skills)
     lines += _cfg_self_learning(self_learning)
+    lines += _cfg_automation_import(automation_import)
     lines += _cfg_durable(durable)
     lines += _cfg_finance(finance)
 
@@ -3593,6 +3634,11 @@ def _run_simple_picks(state: dict[str, Any], _announce) -> dict[str, Any]:
     _save_partial(state)
 
     _announce()
+    automation_import = state.get("automation_import") or pick_automation_import()
+    state["automation_import"] = automation_import
+    _save_partial(state)
+
+    _announce()
     durable = state.get("durable") or pick_durable()
     state["durable"] = durable
     _save_partial(state)
@@ -3614,6 +3660,7 @@ def _run_simple_picks(state: dict[str, Any], _announce) -> dict[str, Any]:
         "sandbox": sandbox,
         "capabilities": capabilities,
         "self_learning": self_learning,
+        "automation_import": automation_import,
         "durable": durable,
         "finance": finance,
         "advanced": advanced,
@@ -3801,6 +3848,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
     sandbox = _simple["sandbox"]
     capabilities = _simple["capabilities"]
     self_learning = _simple["self_learning"]
+    automation_import = _simple["automation_import"]
     durable = _simple["durable"]
     finance = _simple["finance"]
     advanced = _simple["advanced"]
@@ -3907,6 +3955,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         web_search_enabled=web_search_enabled,
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed") or signed_skills.get("require_signed_catalog")) else None,
         self_learning=self_learning if self_learning.get("enable") else None,
+        automation_import=automation_import if automation_import.get("enable") else None,
         durable=durable if durable.get("enabled") else None,
         finance=finance if finance.get("enable") else None,
         suites=suites,

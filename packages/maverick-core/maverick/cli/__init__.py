@@ -5419,7 +5419,12 @@ def _soc2_posture_ready(evidence) -> bool:
 # Register command groups that have been split into submodules. Imported last,
 # so every shared helper and `main` is defined before the submodule decorators
 # run (@main.group/@main.command register onto `main` on import).
-from . import _compliance_groups, _finance_groups, _ops_groups  # noqa: E402,F401
+from . import (  # noqa: E402,F401
+    _compliance_groups,
+    _finance_groups,
+    _import_groups,
+    _ops_groups,
+)
 
 if __name__ == "__main__":
     main()

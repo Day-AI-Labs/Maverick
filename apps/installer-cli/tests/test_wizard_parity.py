@@ -68,6 +68,7 @@ def test_bluesky_channel_env_vars():
     "pick_notifications",
     "pick_webhooks",
     "pick_self_learning",
+    "pick_automation_import",
 ])
 def test_new_pick_exists(name):
     from maverick_installer import wizard
