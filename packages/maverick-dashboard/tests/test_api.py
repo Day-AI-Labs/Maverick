@@ -64,6 +64,20 @@ class TestGoals:
         })
         assert resp.status_code == 400
         assert "invalid template name" in resp.json()["detail"]
+
+    def test_create_unknown_template_404_does_not_leak_path(self, monkeypatch):
+        # A valid-named but non-existent template -> 404 that reflects the
+        # caller's name, never the absolute on-disk template path.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+        resp = client.post("/api/v1/goals", json={
+            "title": "t", "template": "no_such_template_xyz",
+        })
+        assert resp.status_code == 404
+        detail = resp.json()["detail"]
+        assert "no_such_template_xyz" in detail   # reflects the request
+        assert "/" not in detail                  # no filesystem path leaked
+        assert ".maverick" not in detail
+
     def test_create_clamps_max_dollars(self, monkeypatch):
         """Pydantic Field bounds reject values outside [0, 100]."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")

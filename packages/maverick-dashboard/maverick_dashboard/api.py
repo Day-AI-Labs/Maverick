@@ -271,7 +271,12 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except FileNotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e)) from e
+            # Don't echo the raw error: its str() carries the absolute on-disk
+            # template path. Reflect the caller's own template name instead; the
+            # original (with path) stays chained for server-side logs.
+            raise HTTPException(
+                status_code=404, detail=f"template not found: {payload.template!r}"
+            ) from e
         try:
             title, description = tpl.render(**(payload.params or {}))
         except ValueError as e:
@@ -1493,7 +1498,12 @@ async def create_schedule(request: Request, payload: ScheduleIn) -> ScheduleOut:
         except ValueError as e:           # unknown template / missing params
             raise HTTPException(status_code=400, detail=str(e)) from e
         except FileNotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e)) from e
+            # Don't echo the raw error: its str() carries the absolute on-disk
+            # template path. Reflect the caller's own template name instead; the
+            # original (with path) stays chained for server-side logs.
+            raise HTTPException(
+                status_code=404, detail=f"template not found: {payload.template!r}"
+            ) from e
         text, title = body, (title or rtitle)
     else:
         text = (payload.text or "").strip()
@@ -1582,7 +1592,11 @@ async def create_trigger(request: Request, payload: TriggerIn) -> TriggerOut:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        # Reflect the caller's template name, not the raw error (it carries the
+        # absolute on-disk path). Original stays chained for server logs.
+        raise HTTPException(
+            status_code=404, detail=f"template not found: {payload.template!r}"
+        ) from e
     from maverick_dashboard import triggers_store
     try:
         rec = triggers_store.set_trigger(
