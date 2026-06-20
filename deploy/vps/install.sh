@@ -76,6 +76,16 @@ install_system_deps() {
 }
 
 install_maverick() {
+  # Supply-chain warning: installing from the mutable `main` branch (the default
+  # when MAVERICK_VERSION is unset) means a `curl | sudo bash` bootstrap runs
+  # whatever main points at right now -- not a reviewed, immutable revision. For
+  # a production VPS, pin a released tag or a full commit SHA:
+  #   curl -sSL ...install.sh | sudo MAVERICK_VERSION=v0.1.6 bash
+  if [[ "${MAVERICK_VERSION}" == "main" ]]; then
+    log "WARNING: installing from the mutable 'main' branch. For a reproducible,"
+    log "         reviewable install, set MAVERICK_VERSION to a release tag or a"
+    log "         full commit SHA (see the usage header)."
+  fi
   log "Installing maverick @ ${MAVERICK_VERSION} for user ${TARGET_USER}..."
   if [[ ! -d /opt/maverick ]]; then
     git clone --branch "${MAVERICK_VERSION}" --depth 1 \
