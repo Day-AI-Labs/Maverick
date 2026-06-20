@@ -158,16 +158,28 @@ def test_world_for_tenant_rejects_overlong_tenant(monkeypatch):
 
 
 def test_world_for_tenant_caps_cached_tenant_worlds(monkeypatch):
+    # The cache is now an LRU: reaching MAX_TENANT_WORLDS evicts the
+    # least-recently-used tenant instead of raising, so a busy fleet of many
+    # tenants keeps working (audit M7).
     import maverick.world_model as wm
 
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    wm._tenant_worlds.clear()
     monkeypatch.setattr(wm, "MAX_TENANT_WORLDS", 2)
 
     first = world_for_tenant("tenant-1")
     assert world_for_tenant("tenant-2") is not first
+    # Touch tenant-1 so tenant-2 becomes the least-recently-used.
     assert world_for_tenant("tenant-1") is first
-    with pytest.raises(wm.TenantWorldLimitError):
-        world_for_tenant("tenant-3")
+    # A third tenant does NOT raise; it evicts the LRU (tenant-2) and is cached.
+    third = world_for_tenant("tenant-3")
+    assert third is not first
+    keys = list(wm._tenant_worlds)
+    assert len(wm._tenant_worlds) == 2
+    assert not any(k.endswith("tenant-2/world.db") for k in keys)  # evicted
+    assert any(k.endswith("tenant-1/world.db") for k in keys)      # kept (recent)
+    assert any(k.endswith("tenant-3/world.db") for k in keys)      # added
+    wm._tenant_worlds.clear()
 
 
 def test_handle_message_rejects_tenant_resolution_failure(monkeypatch):
