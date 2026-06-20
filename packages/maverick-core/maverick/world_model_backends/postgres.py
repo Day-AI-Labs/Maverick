@@ -1448,22 +1448,55 @@ class PostgresWorldModel:
         SQLite WorldModel (kernel calls this on dashboard/serve startup).
         Returns the number of rows reclaimed.
         """
+        env_override = os.environ.get("MAVERICK_ORPHAN_RECLAIM_SECONDS")
+        if env_override is not None:
+            try:
+                max_age_seconds = max(0.0, float(env_override))
+            except ValueError:
+                pass
         cutoff = time.time() - max_age_seconds
         now = time.time()
+        marker = " [process restarted mid-run]"
         frag, fparams = _tenant_scope()
-        sql = (
-            "UPDATE goals SET status = 'blocked', "
-            "result = COALESCE(result, '') || ' [process restarted mid-run]', "
-            "updated_at = %s "
+        from ..crypto_at_rest import at_rest_enabled
+        if not at_rest_enabled():
+            sql = (
+                "UPDATE goals SET status = 'blocked', "
+                "result = COALESCE(result, '') || %s, "
+                "updated_at = %s "
+                "WHERE status IN ('active', 'pending') AND updated_at < %s"
+            )
+            params: list = [marker, now, cutoff]
+            if frag:
+                sql += " AND " + frag
+                params += fparams
+            with self._tx() as cur:
+                cur.execute(sql, tuple(params))
+                return cur.rowcount
+        # At-rest encryption on: `result` is sealed ciphertext. Concatenating the
+        # marker in SQL would corrupt the ciphertext (unrecoverable on decrypt)
+        # or write bare plaintext into a sealed column. Append through the seal
+        # layer per row instead -- mirrors the SQLite backend. The stale-orphan
+        # set on startup is tiny, so the row-by-row cost is negligible.
+        sel = (
+            "SELECT id, result FROM goals "
             "WHERE status IN ('active', 'pending') AND updated_at < %s"
         )
-        params: list = [now, cutoff]
+        sparams: list = [cutoff]
         if frag:
-            sql += " AND " + frag
-            params += fparams
+            sel += " AND " + frag
+            sparams += fparams
         with self._tx() as cur:
-            cur.execute(sql, tuple(params))
-            return cur.rowcount
+            cur.execute(sel, tuple(sparams))
+            rows = cur.fetchall()
+            for row in rows:
+                prior = _unseal(row[1]) or ""
+                cur.execute(
+                    "UPDATE goals SET status = 'blocked', result = %s, "
+                    "updated_at = %s WHERE id = %s",
+                    (_seal(prior + marker), now, row[0]),
+                )
+            return len(rows)
 
     # ----- episodes -----
 
@@ -1741,17 +1774,33 @@ class PostgresWorldModel:
         """Delete user-scoped facts (see :meth:`facts_matching`); return the keys."""
         keys = sorted(self.facts_matching(token).keys())
         prefix = f"user:{token}:" if token else ""
+        # Scope BOTH deletes to the active tenant. `keys` is gathered tenant-
+        # scoped (facts_matching -> get_facts -> _tenant_scope), but facts are
+        # UNIQUE per (tenant, key): another tenant can hold the same key, so a
+        # DELETE keyed only on `key` would erase that tenant's row too -- a
+        # cross-tenant GDPR over-deletion. The read side scopes; the write side
+        # must match.
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
             if keys:
                 ph = ",".join(["%s"] * len(keys))
-                cur.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
+                sql = f"DELETE FROM facts WHERE key IN ({ph})"
+                params = list(keys)
+                if frag:
+                    sql += " AND " + frag
+                    params += fparams
+                cur.execute(sql, tuple(params))
             # GDPR Art.17: hard-purge the bitemporal history for the WHOLE subject
             # prefix (not just live keys) so a value individually deleted earlier
             # -- window closed, row retained -- is erased too and can't be
             # recovered via get_fact(as_of=...). No-op when temporal never wrote.
             if prefix:
-                cur.execute("DELETE FROM fact_history WHERE key LIKE %s ESCAPE '\\'",
-                            (self._like_escape(prefix) + "%",))
+                sql = "DELETE FROM fact_history WHERE key LIKE %s ESCAPE '\\'"
+                params = [self._like_escape(prefix) + "%"]
+                if frag:
+                    sql += " AND " + frag
+                    params += fparams
+                cur.execute(sql, tuple(params))
         return keys
 
     def fact_history_matching(self, token: str) -> dict[str, list]:
@@ -1890,22 +1939,47 @@ class PostgresWorldModel:
         self, key_prefix: str, query: str, limit: int = 50,
     ) -> list[tuple[str, str]]:
         pfx = self._like_escape(key_prefix) + "%"
-        q = "%" + self._like_escape(query) + "%"
         frag, params = _tenant_scope()
-        sql = (
-            "SELECT key, value FROM facts WHERE key LIKE %s ESCAPE '\\' "
-            "AND (key LIKE %s ESCAPE '\\' OR value LIKE %s ESCAPE '\\')"
-        )
-        p: list = [pfx, q, q]
+        from ..crypto_at_rest import at_rest_enabled
+        if not at_rest_enabled():
+            q = "%" + self._like_escape(query) + "%"
+            sql = (
+                "SELECT key, value FROM facts WHERE key LIKE %s ESCAPE '\\' "
+                "AND (key LIKE %s ESCAPE '\\' OR value LIKE %s ESCAPE '\\')"
+            )
+            p: list = [pfx, q, q]
+            if frag:
+                sql += " AND " + frag
+                p += params
+            sql += " ORDER BY updated_at DESC LIMIT %s"
+            p.append(limit)
+            with self._tx() as cur:
+                cur.execute(sql, tuple(p))
+                rows = cur.fetchall()
+            return [(r[0], _unseal(r[1])) for r in rows]
+        # Encryption on: `value` is sealed ciphertext, so a SQL LIKE over it can
+        # never match the plaintext query (search would silently return nothing)
+        # and the returned value would be ciphertext. Keys are plaintext: narrow
+        # the scan by prefix in SQL, then decrypt + substring-match in Python.
+        # Mirrors the SQLite backend (case-insensitive, like SQLite LIKE).
+        sql = "SELECT key, value FROM facts WHERE key LIKE %s ESCAPE '\\'"
+        p = [pfx]
         if frag:
             sql += " AND " + frag
             p += params
-        sql += " ORDER BY updated_at DESC LIMIT %s"
-        p.append(limit)
+        sql += " ORDER BY updated_at DESC"
         with self._tx() as cur:
             cur.execute(sql, tuple(p))
             rows = cur.fetchall()
-        return [(r[0], r[1]) for r in rows]
+        needle = query.lower()
+        out: list[tuple[str, str]] = []
+        for r in rows:
+            val = _unseal(r[1])
+            if needle in r[0].lower() or (val is not None and needle in val.lower()):
+                out.append((r[0], val))
+                if len(out) >= limit:
+                    break
+        return out
 
     # ----- questions (ask_user / human-in-the-loop) -----
 

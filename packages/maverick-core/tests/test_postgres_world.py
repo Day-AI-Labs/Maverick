@@ -748,3 +748,88 @@ def test_concurrent_migrate_does_not_race(world):
 
     assert errs == [], f"concurrent migration raced: {errs}"
     assert world.schema_version == _PG_SCHEMA_VERSION
+
+
+# ---------- audit round 6: Postgres backend at-rest / tenant parity ----------
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("cryptography") is None,
+    reason="cryptography extra not installed (at-rest sealing needs AES-256-GCM)",
+)
+def test_reclaim_orphan_goals_preserves_sealed_result(world, monkeypatch, tmp_path):
+    """Under at-rest encryption, reclaim must append the marker THROUGH the seal
+    layer. The old bulk `result = COALESCE(result,'') || ' [marker]'` SQL
+    concatenated plaintext onto ciphertext, corrupting the sealed result so it
+    no longer decrypts -- the deliverable was permanently lost on crash
+    recovery. (Mirrors the SQLite backend's at-rest branch.)"""
+    from maverick import crypto_at_rest as car
+
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "at_rest.key")
+    assert car.at_rest_enabled() is True
+
+    gid = world.create_goal("orphan-enc")
+    world.set_goal_status(gid, "active", result="SEALED-RESULT-keepme")
+
+    n = world.reclaim_orphan_goals(max_age_seconds=0)
+    assert n >= 1
+
+    g = world.get_goal(gid)
+    assert g.status == "blocked"
+    # The original result is still readable (decryptable) and the marker is on it.
+    assert "SEALED-RESULT-keepme" in g.result
+    assert "[process restarted mid-run]" in g.result
+
+
+def test_delete_facts_matching_is_tenant_scoped(world):
+    """A GDPR erase for a subject in one tenant must not delete another tenant's
+    fact that happens to share the same key. The DELETE keyed only on `key` (no
+    tenant predicate) over-deleted across tenants; the read side was already
+    scoped, so the write side has to match."""
+    from maverick.paths import reset_tenant, set_tenant
+
+    key = "user:telegram:alice:preference"
+    tok = set_tenant("acme")
+    try:
+        world.upsert_fact(key, "acme-alice-value")
+    finally:
+        reset_tenant(tok)
+    tok = set_tenant("globex")
+    try:
+        world.upsert_fact(key, "globex-alice-value")
+    finally:
+        reset_tenant(tok)
+
+    # acme erases its alice: only acme's row goes.
+    tok = set_tenant("acme")
+    try:
+        removed = world.delete_facts_matching("telegram:alice")
+        assert key in removed
+        assert world.get_fact(key) is None
+    finally:
+        reset_tenant(tok)
+    # globex's identically-keyed fact is untouched.
+    tok = set_tenant("globex")
+    try:
+        assert world.get_fact(key) == "globex-alice-value"
+    finally:
+        reset_tenant(tok)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("cryptography") is None,
+    reason="cryptography extra not installed (at-rest sealing needs AES-256-GCM)",
+)
+def test_search_facts_matches_value_under_encryption(world, monkeypatch, tmp_path):
+    """With encryption on, `value` is ciphertext, so a SQL LIKE over it can never
+    match the plaintext query. search_facts must scan by key prefix then decrypt
+    + substring-match in Python, and return PLAINTEXT (not ciphertext)."""
+    from maverick import crypto_at_rest as car
+
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "at_rest.key")
+    assert car.at_rest_enabled() is True
+
+    world.upsert_fact("srch:color", "the user prefers MAGENTA")
+    hits = world.search_facts("srch:", "magenta")
+    assert ("srch:color", "the user prefers MAGENTA") in hits
