@@ -243,7 +243,7 @@ def _rank_embed(need: str, entries: list, max_n: int) -> list[Candidate] | None:
     empty if nothing clears ``_EMBED_MIN_SCORE``).
     """
     try:
-        from .skill_embeddings import _cosine, _have_fastembed, embed
+        from .skill.embeddings import _cosine, _have_fastembed, embed
 
         if not _have_fastembed() or not entries:
             return None

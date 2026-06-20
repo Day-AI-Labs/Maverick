@@ -343,7 +343,7 @@ class TestReflexionSemanticRecall:
     def test_jaccard_path_misses_reworded_lesson(self, tmp_path, monkeypatch):
         # No embeddings available -> jaccard. The infra lesson shares no
         # tokens with the query, so the lexical path cannot surface it.
-        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed",
+        monkeypatch.setattr("maverick.skill.embeddings._have_fastembed",
                             lambda: False)
         path = tmp_path / "reflexions.ndjson"
         self._seed(path)
@@ -351,9 +351,9 @@ class TestReflexionSemanticRecall:
         assert not any(r.goal_text == self.INFRA_LESSON for _, r in hits)
 
     def test_embedding_path_recalls_reworded_lesson(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed",
+        monkeypatch.setattr("maverick.skill.embeddings._have_fastembed",
                             lambda: True)
-        monkeypatch.setattr("maverick.skill_embeddings.embed", self._fake_embed)
+        monkeypatch.setattr("maverick.skill.embeddings.embed", self._fake_embed)
         path = tmp_path / "reflexions.ndjson"
         self._seed(path)
         hits = reflexion.recall(self.QUERY, path=path)
@@ -366,11 +366,11 @@ class TestReflexionSemanticRecall:
     def test_embedding_failure_falls_back_to_jaccard(self, tmp_path, monkeypatch):
         # A lesson that DOES share tokens with the query is still found when
         # the embedder raises -- recall must fail open, not blow up.
-        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed",
+        monkeypatch.setattr("maverick.skill.embeddings._have_fastembed",
                             lambda: True)
         def _boom(_texts):
             raise RuntimeError("embedding backend down")
-        monkeypatch.setattr("maverick.skill_embeddings.embed", _boom)
+        monkeypatch.setattr("maverick.skill.embeddings.embed", _boom)
         path = tmp_path / "reflexions.ndjson"
         reflexion.record(
             goal_text="fix the flaky parser test",

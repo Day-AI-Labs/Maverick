@@ -195,7 +195,8 @@ def test_sota_loop_toggles_write_and_are_read(tmp_path, monkeypatch):
     for section in ("[adaptive_compute]", "[search]", "[skill_synthesis]", "[experience]"):
         assert section in cfg
 
-    from maverick import adaptive_compute, best_of_n, experience, skill_synthesis
+    from maverick import adaptive_compute, best_of_n, experience
+    from maverick.skill import synthesis as skill_synthesis
     assert adaptive_compute.enabled() is True
     assert best_of_n.enabled() is True
     assert skill_synthesis.enabled() is True

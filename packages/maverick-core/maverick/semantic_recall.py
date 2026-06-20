@@ -72,7 +72,7 @@ def build_store(backend: str | None = None) -> Any | None:
         if backend == "pgvector":
             # pgvector does not embed; inject the local fastembed embedder
             # (the same one skills use). No embedder -> fail-open to lexical.
-            from . import skill_embeddings
+            from .skill import embeddings as skill_embeddings
             from .vector_store import PgVectorStore
 
             def _embed(texts):

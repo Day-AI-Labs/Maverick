@@ -337,6 +337,81 @@ def _last_assistant_text(messages: list[dict]) -> str:
     return ""
 
 
+def _assemble_assistant_content(resp: Any, final_dropped_tools: bool) -> list[dict]:
+    """Rebuild the assistant message content blocks from an LLM response,
+    preserving Anthropic's exact thinking-block order/signatures (interleaved
+    blocks must be echoed back unmodified). Extracted verbatim from
+    _run_inner; see the inline council-fix notes for the ordering rules."""
+    assistant_content: list[dict] = []
+    ordered_blocks = getattr(resp, "content_blocks", None)
+    if final_dropped_tools:
+        # May 28 fix #2: the model emitted a FINAL: marker AND
+        # tool_use in the same turn; we discard the tool attempt and
+        # treat FINAL as the answer. Do NOT replay the model's blocks
+        # here. Dropping the interleaved tool_use would merge
+        # previously-separated thinking blocks into one consecutive
+        # run, and on a revision pass (verifier/patch reject ->
+        # continue) the re-sent turn 400s:
+        #   messages.N.content.M: `thinking`/`redacted_thinking`
+        #   blocks in the latest assistant message cannot be modified.
+        # The tool_use can't stay either (orphan with no
+        # tool_result). Omitting thinking from a turn is explicitly
+        # allowed (the API auto-filters prior-turn thinking), so emit
+        # a clean text-only turn. resp.text is non-empty here (guarded
+        # by `resp.text and resp.tool_calls` above).
+        assistant_content.append({"type": "text", "text": resp.text})
+    elif ordered_blocks:
+        # May 28 fix: replay the model's blocks in their ORIGINAL
+        # order, COMPLETE and UNMODIFIED. Anthropic rejects a
+        # rearranged thinking-block sequence on the next request —
+        # the bucket-by-type rebuild in the else branch reordered
+        # interleaved Opus 4.7 turns (thinking between tool_use) and
+        # triggered "thinking blocks in the latest assistant message
+        # cannot be modified". (The only tool_use-dropping case,
+        # FINAL, is handled above — here every block is kept so the
+        # tool_use blocks always have matching tool_results below.)
+        for blk in ordered_blocks:
+            assistant_content.append(dict(blk))
+    else:
+        # May 26 council fix: emit ONE thinking block per original
+        # block, preserving each block's exact signature. Concatenating
+        # text but keeping only the first signature corrupted multi-
+        # block interleaved thinking on Opus 4.7 — the signature is
+        # derived from the EXACT text of its block. Falls back to
+        # the legacy single-block path when thinking_blocks is empty
+        # but resp.thinking is set (older mocks / non-Anthropic).
+        thinking_blocks = getattr(resp, "thinking_blocks", None) or []
+        if thinking_blocks:
+            # May 26 council fix (API audit #2): include the block
+            # EVEN IF the text is empty as long as a signature is
+            # present. Anthropic still requires the signature-bearing
+            # block to be echoed back to maintain continuity. The old
+            # `if resp.thinking:` check at the elif below would drop
+            # empty-text-signature pairs entirely.
+            for tb_text, tb_sig in thinking_blocks:
+                if not tb_text and not tb_sig:
+                    continue
+                block_dict: dict = {"type": "thinking", "thinking": tb_text}
+                if tb_sig:
+                    block_dict["signature"] = tb_sig
+                assistant_content.append(block_dict)
+        elif resp.thinking or getattr(resp, "thinking_signature", None):
+            sig = getattr(resp, "thinking_signature", None)
+            thinking_block: dict = {
+                "type": "thinking", "thinking": resp.thinking or "",
+            }
+            if sig:
+                thinking_block["signature"] = sig
+            assistant_content.append(thinking_block)
+        if resp.text:
+            assistant_content.append({"type": "text", "text": resp.text})
+        for tc in resp.tool_calls:
+            assistant_content.append(
+                {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input}
+            )
+    return assistant_content
+
+
 @dataclass
 class AgentResult:
     final: str | None = None
@@ -773,7 +848,7 @@ class Agent:
                     # orchestrator can attribute this run's outcome to them
                     # at finalize. Fully fail-safe: stats are an optimization.
                     try:
-                        from . import skill_stats
+                        from .skill import stats as skill_stats
                         names = [s.name for s in skills]
                         skill_stats.record_use(names)
                         self.ctx.skills_used.update(names)
@@ -2153,73 +2228,7 @@ class Agent:
                     resp.tool_calls = []
                     final_dropped_tools = True
 
-            assistant_content: list[dict] = []
-            ordered_blocks = getattr(resp, "content_blocks", None)
-            if final_dropped_tools:
-                # May 28 fix #2: the model emitted a FINAL: marker AND
-                # tool_use in the same turn; we discard the tool attempt and
-                # treat FINAL as the answer. Do NOT replay the model's blocks
-                # here. Dropping the interleaved tool_use would merge
-                # previously-separated thinking blocks into one consecutive
-                # run, and on a revision pass (verifier/patch reject ->
-                # continue) the re-sent turn 400s:
-                #   messages.N.content.M: `thinking`/`redacted_thinking`
-                #   blocks in the latest assistant message cannot be modified.
-                # The tool_use can't stay either (orphan with no
-                # tool_result). Omitting thinking from a turn is explicitly
-                # allowed (the API auto-filters prior-turn thinking), so emit
-                # a clean text-only turn. resp.text is non-empty here (guarded
-                # by `resp.text and resp.tool_calls` above).
-                assistant_content.append({"type": "text", "text": resp.text})
-            elif ordered_blocks:
-                # May 28 fix: replay the model's blocks in their ORIGINAL
-                # order, COMPLETE and UNMODIFIED. Anthropic rejects a
-                # rearranged thinking-block sequence on the next request —
-                # the bucket-by-type rebuild in the else branch reordered
-                # interleaved Opus 4.7 turns (thinking between tool_use) and
-                # triggered "thinking blocks in the latest assistant message
-                # cannot be modified". (The only tool_use-dropping case,
-                # FINAL, is handled above — here every block is kept so the
-                # tool_use blocks always have matching tool_results below.)
-                for blk in ordered_blocks:
-                    assistant_content.append(dict(blk))
-            else:
-                # May 26 council fix: emit ONE thinking block per original
-                # block, preserving each block's exact signature. Concatenating
-                # text but keeping only the first signature corrupted multi-
-                # block interleaved thinking on Opus 4.7 — the signature is
-                # derived from the EXACT text of its block. Falls back to
-                # the legacy single-block path when thinking_blocks is empty
-                # but resp.thinking is set (older mocks / non-Anthropic).
-                thinking_blocks = getattr(resp, "thinking_blocks", None) or []
-                if thinking_blocks:
-                    # May 26 council fix (API audit #2): include the block
-                    # EVEN IF the text is empty as long as a signature is
-                    # present. Anthropic still requires the signature-bearing
-                    # block to be echoed back to maintain continuity. The old
-                    # `if resp.thinking:` check at the elif below would drop
-                    # empty-text-signature pairs entirely.
-                    for tb_text, tb_sig in thinking_blocks:
-                        if not tb_text and not tb_sig:
-                            continue
-                        block_dict: dict = {"type": "thinking", "thinking": tb_text}
-                        if tb_sig:
-                            block_dict["signature"] = tb_sig
-                        assistant_content.append(block_dict)
-                elif resp.thinking or getattr(resp, "thinking_signature", None):
-                    sig = getattr(resp, "thinking_signature", None)
-                    thinking_block: dict = {
-                        "type": "thinking", "thinking": resp.thinking or "",
-                    }
-                    if sig:
-                        thinking_block["signature"] = sig
-                    assistant_content.append(thinking_block)
-                if resp.text:
-                    assistant_content.append({"type": "text", "text": resp.text})
-                for tc in resp.tool_calls:
-                    assistant_content.append(
-                        {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input}
-                    )
+            assistant_content = _assemble_assistant_content(resp, final_dropped_tools)
             messages.append({"role": "assistant", "content": assistant_content})
 
             if resp.text:

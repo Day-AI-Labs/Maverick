@@ -32,8 +32,8 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
-from . import fastjson as _fastjson
-from .paths import data_dir
+from .. import fastjson as _fastjson
+from ..paths import data_dir
 
 _DEFAULT_SIZE = 256
 _lock = threading.Lock()
@@ -50,7 +50,7 @@ def _env_true(name: str) -> bool:
 
 def _cfg() -> dict:
     try:
-        from .config import load_config
+        from ..config import load_config
         return (load_config() or {}).get("tools", {}) or {}
     except Exception:  # pragma: no cover -- config never blocks the cache
         return {}

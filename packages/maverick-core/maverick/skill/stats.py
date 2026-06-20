@@ -27,7 +27,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .paths import data_dir
+from ..paths import data_dir
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def _resolve(path: Path | None) -> Path:
     # module-attr lookup below stays last so tests monkeypatching
     # DEFAULT_PATH keep working in the single-tenant layout.
     try:
-        from .paths import current_tenant, data_dir
+        from ..paths import current_tenant, data_dir
         if current_tenant():
             return data_dir("skill_stats.json")
     except Exception:  # pragma: no cover -- isolation never blocks resolution

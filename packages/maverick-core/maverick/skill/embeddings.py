@@ -14,7 +14,7 @@ import math
 import threading
 from dataclasses import dataclass
 
-from .paths import data_dir
+from ..paths import data_dir
 
 log = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ def relevant_skills_embed(
     # rides along with failures yields rank. Threshold still gates on raw
     # relevance — decay only re-orders skills that already cleared it, never
     # pulls in an irrelevant one. Neutral 1.0 when stats are unavailable.
-    from .skills import _decay_weights
+    from ..skills import _decay_weights
     weights = _decay_weights(list(by_name))
     scored: list[tuple[float, object]] = []
     for name, entry in cache.items():

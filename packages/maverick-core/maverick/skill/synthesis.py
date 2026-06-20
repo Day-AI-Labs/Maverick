@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .config import env_flag
+from ..config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def enabled() -> bool:
     if _v is not None:
         return _v
     try:
-        from .config import get_skill_synthesis
+        from ..config import get_skill_synthesis
         return bool(get_skill_synthesis()["enable"])
     except Exception:  # pragma: no cover
         return False
@@ -48,7 +48,7 @@ def _sanitize_text(
 ) -> str | None:
     safe = str(text or "")[:max_chars]
     try:
-        from .safety.secret_detector import redact as _redact
+        from ..safety.secret_detector import redact as _redact
         safe, _ = _redact(safe)
     except Exception:  # pragma: no cover
         pass
@@ -92,7 +92,7 @@ async def synthesize_task_skill(
     """
     if not task or not task.strip():
         return None
-    from .llm import model_for_role
+    from ..llm import model_for_role
 
     safe_task = _sanitize_text(
         task, shield=shield, max_chars=2000, scan_method="scan_input"

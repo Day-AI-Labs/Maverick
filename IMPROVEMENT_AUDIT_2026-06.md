@@ -511,3 +511,31 @@ a safe mechanical change, and belongs in its own designed/reviewed PR:
 - **`run_goal` / `_run_inner` full decomposition** — dense shared local state
   (`brief`, `_planning_mode`, ~10 interdependent locals on the hot path); safe
   extraction needs a class-level refactor + careful review, not a bulk move.
+
+### Update 2 (2026-06-20): god-file decomposition + cache/retry verification
+
+**Decompositions landed (behavior-preserving, full suite green):**
+- `orchestrator.run_goal` — extracted the ~300-line brief assembly into
+  `_brief_facts_block`, `_apply_brief_enrichments`, and `_build_orchestrator_brief`.
+- `agent._run_inner` — extracted `_assemble_assistant_content` (the interleaved
+  thinking-block reconstruction). The remaining FINAL-handling block mutates
+  `messages` and drives continue/break, so it needs a run-state object, not a
+  verbatim lift — left for a dedicated change.
+
+**Cache TTL/LRU "shared base" — evaluated, partially applied:** `cache.llm`
+(SQLite rows) and `cache.learning` (JSON-persisted dict) back incompatible
+stores with different TTL encodings (relative age vs absolute `expires_at`), so a
+single concrete store base would require migrating one's on-disk format. Instead
+the shared *policy* is extracted to `cache/eviction.py` (`is_expired`,
+`lru_keys_to_evict`), adopted by the dict-based `learning` cache; the SQLite
+`llm` cache references it and keeps its SQL eviction. A full store-base merge was
+rejected per kernel rule 7 (no speculative/behavior-changing abstraction).
+
+**Retry classifier "single source of truth" — verified already integrated:**
+`retry.sync_retry`/`async_retry` already delegate the terminal check to
+`retry.classifier.classify`; `provider_failover.should_retry_llm_error` is an
+orthogonal control-signal *type* guard (BudgetExceeded/EgressBlocked/
+PreflightFailed/ConsentDenied), not transient classification; and
+`failover_policy.classify_error` is a deliberately different 7-class failover
+taxonomy. Collapsing them onto one classifier would change which errors
+retry/failover, so no further unification is safe.

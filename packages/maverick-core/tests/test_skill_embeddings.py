@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from maverick.skill_embeddings import (
+from maverick.skill.embeddings import (
     _cosine,
     _have_fastembed,
     _skill_to_embed_text,

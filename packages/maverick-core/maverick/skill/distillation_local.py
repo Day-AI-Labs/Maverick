@@ -19,7 +19,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .paths import data_dir
+from ..paths import data_dir
 
 _STORE = data_dir("learned-skills")
 _STOPWORDS = {
@@ -37,7 +37,7 @@ def enabled() -> bool:
     if _env_true("MAVERICK_DISTILL_LOCAL"):
         return True
     try:
-        from .config import load_config
+        from ..config import load_config
         return bool((load_config() or {}).get("self_learning", {}).get("distill_local", False))
     except Exception:  # pragma: no cover
         return False

@@ -46,7 +46,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from .config import env_flag
+from ..config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def enabled() -> bool:
     if env_flag("MAVERICK_LEARNING_CACHE"):
         return True
     try:
-        from .config import load_config
+        from ..config import load_config
         return bool((load_config() or {}).get("memory", {}).get("learning_cache", False))
     except Exception:  # pragma: no cover -- config never blocks a caller
         return False
@@ -96,7 +96,7 @@ class LearningCache:
         clock: Callable[[], float] = time.time,
     ):
         if path is None:
-            from .paths import data_dir
+            from ..paths import data_dir
             path = data_dir("learning_cache.json")
         self.path = Path(path).expanduser()
         self.max_entries = max(1, int(max_entries))
@@ -148,9 +148,10 @@ class LearningCache:
             log.warning("learning cache: could not persist %s (%s)", self.path, exc)
 
     def _evict_locked(self) -> None:
-        while len(self._entries) > self.max_entries:
-            oldest = min(self._entries, key=lambda k: self._entries[k].get("last_used", 0.0))
-            del self._entries[oldest]
+        from .eviction import lru_keys_to_evict
+        last_used = {k: e.get("last_used", 0.0) for k, e in self._entries.items()}
+        for key in lru_keys_to_evict(last_used, self.max_entries):
+            del self._entries[key]
 
     # -- API ----------------------------------------------------------------
 
@@ -177,7 +178,7 @@ class LearningCache:
             )
         if float(ttl_days) <= 0:
             raise ValueError("ttl_days must be > 0")
-        from .safety.secret_detector import scan
+        from ..safety.secret_detector import scan
         found = scan(str(result)) + scan(str(task))
         if found:
             kinds = ", ".join(sorted({m.name for m in found}))
@@ -215,7 +216,8 @@ class LearningCache:
             if entry is None:
                 self._misses += 1
                 return None
-            if now >= float(entry.get("expires_at", 0.0)):
+            from .eviction import is_expired
+            if is_expired(now, entry.get("expires_at", 0.0)):
                 del self._entries[key]
                 self._save_locked()
                 self._misses += 1
@@ -238,10 +240,11 @@ class LearningCache:
         """Drop expired entries and enforce the LRU cap; returns entries removed."""
         now = float(self._clock())
         with self._lock:
+            from .eviction import is_expired
             before = len(self._entries)
             self._entries = {
                 k: e for k, e in self._entries.items()
-                if now < float(e.get("expires_at", 0.0))
+                if not is_expired(now, e.get("expires_at", 0.0))
             }
             self._evict_locked()
             removed = before - len(self._entries)

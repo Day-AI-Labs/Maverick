@@ -196,7 +196,7 @@ def test_scheduler_leap_day_still_resolves():
 # ---------- llm_cache: row cap eviction ----------
 
 def test_llm_cache_evicts_beyond_max_rows(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db", max_rows=3)
     # Insert 5 distinct keys; cap is 3.
     for i in range(5):
@@ -206,7 +206,7 @@ def test_llm_cache_evicts_beyond_max_rows(tmp_path):
 
 
 def test_llm_cache_eviction_is_lru_keeps_newest(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db", max_rows=2)
     cache.store("hot", provider="p", model="m", text="x")
     # hit_count is intentionally NOT the eviction key. A naive LFU policy
@@ -227,7 +227,7 @@ def test_llm_cache_eviction_is_lru_keeps_newest(tmp_path):
 
 
 def test_llm_cache_unbounded_when_max_rows_zero(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db", max_rows=0)
     for i in range(20):
         cache.store(f"k{i}", provider="p", model="m", text="x")

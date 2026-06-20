@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 from maverick import speculative_tools as st
-from maverick import tool_cache
+from maverick.cache import tool as tool_cache
 
 
 @dataclass
