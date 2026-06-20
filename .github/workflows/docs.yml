@@ -26,7 +26,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -53,7 +53,7 @@ jobs:
         # enablement: true turns GitHub Pages on (build type = GitHub Actions)
         # if it isn't already, so a fresh clone/fork doesn't 404 until someone
         # flips the repo setting by hand. No-op once Pages is enabled.
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
         with:
           enablement: true
       - name: Build site
