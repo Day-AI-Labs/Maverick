@@ -315,8 +315,7 @@ async def _reclaim_orphans() -> None:
     and `active_goal()` returns a ghost. Council finding (Tier 0).
     """
     try:
-        from maverick.world_model import DEFAULT_DB, WorldModel
-        wm = WorldModel(DEFAULT_DB)
+        wm = _world()  # honor the configured backend (SQLite or Postgres)
         n = wm.reclaim_orphan_goals()
         if n:
             log.warning("reclaimed %d orphan goal(s) from prior crash", n)
@@ -1897,8 +1896,7 @@ async def tools_page(request: Request) -> HTMLResponse:
     try:
         from maverick.sandbox import build_sandbox
         from maverick.tools import base_registry
-        from maverick.world_model import DEFAULT_DB, WorldModel
-        wm = WorldModel(DEFAULT_DB)
+        wm = _world()  # honor the configured backend (SQLite or Postgres)
         sb = build_sandbox()
         reg = base_registry(world=wm, sandbox=sb)
         tools = [{"name": t.name, "description": (t.description or "")[:240]}
@@ -1964,8 +1962,7 @@ def _permissions_snapshot() -> dict:
     try:
         from maverick.sandbox import build_sandbox
         from maverick.tools import base_registry
-        from maverick.world_model import DEFAULT_DB, WorldModel
-        wm = WorldModel(DEFAULT_DB)
+        wm = _world()  # honor the configured backend (SQLite or Postgres)
         reg = base_registry(world=wm, sandbox=build_sandbox())
         enabled = {t.name for t in reg.all()}
     except Exception as e:

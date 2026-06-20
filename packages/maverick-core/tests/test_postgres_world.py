@@ -506,3 +506,149 @@ def test_rls_enforces_tenant_isolation_at_db_level(monkeypatch):
             cur.execute("REASSIGN OWNED BY mvk_rls_app TO CURRENT_USER")
             cur.execute("DROP OWNED BY mvk_rls_app")
             cur.execute("DROP ROLE IF EXISTS mvk_rls_app")
+
+
+# --- Backend parity (SQLite v13 -> v20 catch-up) -----------------------------
+
+def test_set_goal_domain_and_v14_schema(world):
+    from maverick.world_model_backends.postgres import _PG_SCHEMA_VERSION
+    assert _PG_SCHEMA_VERSION >= 14
+    gid = world.create_goal("domain-tagged goal")
+    world.set_goal_domain(gid, "finance")  # v14 goals.domain column
+
+
+def test_search_goals_matches_title_desc_result_case_insensitive(world):
+    import uuid
+    tok = uuid.uuid4().hex[:10]
+    g1 = world.create_goal(f"Fix the {tok} export", description="urgent")
+    world.create_goal("unrelated cleanup")
+    g3 = world.create_goal("note", description=f"see {tok} for context")
+    hits = {g.id for g in world.search_goals(tok.upper())}  # case-insensitive
+    assert g1 in hits and g3 in hits
+    # bounded + ordered newest-first
+    assert all(isinstance(g.title, str) for g in world.search_goals(tok))
+    assert world.search_goals("   ") == []
+
+
+def test_count_facts_and_stale_keys(world):
+    import time as _t
+    import uuid
+    base = world.count_facts()
+    k = f"k-{uuid.uuid4().hex[:8]}"
+    world.upsert_fact(k, "v")
+    assert world.count_facts() == base + 1
+    assert k in world.stale_fact_keys(_t.time() + 100)        # cutoff in future
+    assert k not in world.stale_fact_keys(_t.time() - 10_000)  # cutoff in past
+
+
+def test_list_approvals_newest_first(world):
+    a1 = world.create_approval("act-one", risk="high")
+    a2 = world.create_approval("act-two", risk="low")
+    ids = [a.id for a in world.list_approvals()]
+    assert a1 in ids and a2 in ids
+    assert ids.index(a2) < ids.index(a1)  # newest (a2) first
+
+
+def test_release_processed_message_allows_retry(world):
+    import uuid
+    ext = uuid.uuid4().hex
+    assert world.mark_message_processed("sms", ext) is True
+    assert world.is_processed_message("sms", ext) is True
+    world.release_processed_message("sms", ext)
+    assert world.is_processed_message("sms", ext) is False
+    # released -> a retry can claim it again
+    assert world.mark_message_processed("sms", ext) is True
+
+
+def test_recent_event_contents(world):
+    gid = world.create_goal("evented goal")
+    world.append_event(gid, "agent-x", "note", "hello-corpus")
+    assert "hello-corpus" in world.recent_event_contents(limit=100)
+
+
+def test_projects_crud_and_goal_membership(world):
+    pid = world.create_project("Migration Q3", description="d", owner="al", domain="eng")
+    assert isinstance(pid, int)
+    p = world.get_project(pid)
+    assert p is not None and p["name"] == "Migration Q3"
+    assert p["owner"] == "al" and p["domain"] == "eng" and p["status"] == "active"
+
+    g1 = world.create_goal("member 1")
+    g2 = world.create_goal("member 2")
+    world.set_goal_project(g1, pid)
+    world.set_goal_project(g2, pid)
+    world.set_goal_status(g2, "done")
+    assert world.project_status_counts(pid) == {"pending": 1, "done": 1}
+
+    listed = {pr["id"]: pr for pr in world.list_projects()}
+    assert listed[pid]["goal_count"] == 2
+
+    # clearing membership drops it from the counts
+    world.set_goal_project(g2, None)
+    assert world.project_status_counts(pid) == {"pending": 1}
+
+
+def test_get_missing_project_returns_none(world):
+    assert world.get_project(999_999_999) is None
+
+
+def test_artifacts_versioning_and_latest(world):
+    gid = world.create_goal("produces deliverables")
+    a1 = world.add_artifact(gid, "markdown", "Report", "v1 body")
+    a2 = world.add_artifact(gid, "markdown", "Report", "v2 body")  # same title -> v2
+    a3 = world.add_artifact(gid, "code", "script.py", "print(1)")
+    assert a1 != a2 != a3
+
+    allv = world.artifacts_for_goal(gid)
+    report_versions = [a["version"] for a in allv if a["title"] == "Report"]
+    assert report_versions == [1, 2]  # ordered by title, version
+
+    latest = {a["title"]: a for a in world.latest_artifacts(gid)}
+    assert latest["Report"]["content"] == "v2 body"
+    assert latest["Report"]["versions"] == 2
+    assert latest["script.py"]["versions"] == 1
+
+
+def test_share_links_lifecycle(world):
+    gid = world.create_goal("shared goal")
+    lid, token = world.create_share_link(gid, created_by="al")
+    assert isinstance(lid, int) and token
+    assert world.resolve_share_link(token) == gid
+    assert world.resolve_share_link("bogus") is None
+    links = world.share_links_for_goal(gid)
+    assert links[0]["id"] == lid and links[0]["active"] is True
+    # revoke -> no longer resolves, marked revoked/inactive
+    assert world.revoke_share_link(lid, goal_id=gid) is True
+    assert world.resolve_share_link(token) is None
+    assert world.share_links_for_goal(gid)[0]["active"] is False
+    # expired link does not resolve
+    _, t2 = world.create_share_link(gid, ttl_seconds=-1)
+    assert world.resolve_share_link(t2) is None
+
+
+def test_signoffs_round_trip_and_batch(world):
+    g1 = world.create_goal("deliverable 1")
+    g2 = world.create_goal("deliverable 2")
+    assert world.signoff_for(g1) is None
+    world.record_signoff(g1, "approved", decided_by="al", note="ok")
+    s = world.signoff_for(g1)
+    assert s["decision"] == "approved" and s["decided_by"] == "al" and s["note"] == "ok"
+    # a later decision replaces the earlier one (one row per goal)
+    world.record_signoff(g1, "rejected", decided_by="bo")
+    assert world.signoff_for(g1)["decision"] == "rejected"
+    world.record_signoff(g2, "approved")
+    assert world.signoffs_for_goals([g1, g2, 999]) == {g1: "rejected", g2: "approved"}
+    assert world.signoffs_for_goals([]) == {}
+
+
+def test_goal_origins(world):
+    import uuid
+    ref = f"sched-{uuid.uuid4().hex[:8]}"
+    g1 = world.create_goal("auto 1")
+    world.record_goal_origin(g1, "schedule", ref)
+    g2 = world.create_goal("auto 2")
+    world.record_goal_origin(g2, "schedule", ref)
+    world.set_goal_status(g2, "done")
+    ids = [g.id for g in world.goals_for_origin("schedule", ref)]
+    assert g1 in ids and g2 in ids and ids == sorted(ids, reverse=True)
+    assert world.origin_status_counts("schedule", ref) == {"pending": 1, "done": 1}

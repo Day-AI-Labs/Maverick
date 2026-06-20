@@ -20,15 +20,23 @@ def test_pending_from_fresh_db_applies_everything():
 def test_pending_skips_already_applied():
     # A DB already at the latest version has nothing to do.
     assert pg.pending_migrations(pg._PG_SCHEMA_VERSION) == []
-    # A DB at v1 still needs both tenant migrations (v10 columns, v11 uniques)
-    # and the approval-claims migration (v13).
+    # A DB at v1 still needs the tenant migrations (v10 columns, v11 uniques),
+    # approval-claims (v13), goal-domain (v14), projects (v15), artifacts (v16),
+    # and share/signoff/origin (v17).
     pending = pg.pending_migrations(1)
-    assert [v for v, _ in pending] == [10, 11, 13]
-    # A DB at v10 still needs the tenant-unique and approval-claims migrations.
-    assert [v for v, _ in pg.pending_migrations(10)] == [11, 13]
-    # A DB at v11 still needs the approval-claims migration for upgraded
-    # deployments that already applied the previous Postgres ladder.
-    assert [v for v, _ in pg.pending_migrations(11)] == [13]
+    assert [v for v, _ in pending] == [10, 11, 13, 14, 15, 16, 17]
+    # A DB at v10 still needs the remaining upgrades.
+    assert [v for v, _ in pg.pending_migrations(10)] == [11, 13, 14, 15, 16, 17]
+    # A DB at v11 still needs the rest of the ladder.
+    assert [v for v, _ in pg.pending_migrations(11)] == [13, 14, 15, 16, 17]
+    # A DB at v13 still needs goal-domain + projects + artifacts + share/etc.
+    assert [v for v, _ in pg.pending_migrations(13)] == [14, 15, 16, 17]
+    # A DB at v14 still needs projects + artifacts + share/signoff/origin.
+    assert [v for v, _ in pg.pending_migrations(14)] == [15, 16, 17]
+    # A DB at v15 still needs artifacts + share/signoff/origin.
+    assert [v for v, _ in pg.pending_migrations(15)] == [16, 17]
+    # A DB at v16 still needs the share/signoff/origin migration.
+    assert [v for v, _ in pg.pending_migrations(16)] == [17]
 
 
 def test_pending_is_ordered_with_custom_ladder():
@@ -66,8 +74,30 @@ def test_approval_claims_migration_adds_collaboration_columns():
 
 
 def test_schema_version_is_latest_migration():
-    assert pg._PG_SCHEMA_VERSION == 13
+    assert pg._PG_SCHEMA_VERSION == 17
     assert max(v for v, _ in pg.MIGRATIONS) == pg._PG_SCHEMA_VERSION
+
+
+def test_artifacts_migration_adds_table():
+    assert "CREATE TABLE IF NOT EXISTS artifacts" in "\n".join(dict(pg.MIGRATIONS)[16])
+
+
+def test_share_signoff_origin_migration_adds_tables():
+    joined = "\n".join(dict(pg.MIGRATIONS)[17])
+    assert "CREATE TABLE IF NOT EXISTS share_links" in joined
+    assert "CREATE TABLE IF NOT EXISTS signoffs" in joined
+    assert "CREATE TABLE IF NOT EXISTS goal_origins" in joined
+
+
+def test_goal_domain_migration_adds_domain_column():
+    stmts = dict(pg.MIGRATIONS)[14]
+    assert "ALTER TABLE goals ADD COLUMN IF NOT EXISTS domain TEXT" in "\n".join(stmts)
+
+
+def test_projects_migration_adds_table_and_goal_fk():
+    joined = "\n".join(dict(pg.MIGRATIONS)[15])
+    assert "CREATE TABLE IF NOT EXISTS projects" in joined
+    assert "ALTER TABLE goals ADD COLUMN IF NOT EXISTS project_id INTEGER" in joined
 
 
 def test_tenant_scope_noop_without_active_tenant(monkeypatch):
