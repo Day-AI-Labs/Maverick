@@ -475,3 +475,39 @@ reviewed PRs; out of scope for a single safe automated pass per kernel rule 7
 - Dashboard auth-path consolidations (HMAC webhook preamble ×5, same-origin
   `Depends` ×18, tenant-admin sub-router ×12) — touch CSRF/auth enforcement, so
   warrant focused review rather than a bulk rewrite.
+
+---
+
+## Remediation status — round 2 (deferred items, 2026-06-20)
+
+### Additionally fixed (PR #1648, full suite green at each step)
+- **cli.py god-file split** — `cli.py` → `cli/` package + extracted finance/
+  compliance/ops command clusters (~1,120 lines out of `__init__.py`).
+- **`config.env_flag`** — shared tri-state env parser adopted across 23 `enabled()`
+  gates (the `feature_enabled` finding).
+- **`_verify_maverick_webhook`** — deduped the `/webhook/start` + `/webhook/run`
+  HMAC preamble.
+- **agent denial methods** — routed through the existing `_audit_tool_event`
+  helper (audit-record scaffold no longer hand-rolled in 5 methods).
+- **orchestrator enrichment blocks** — `_enrich(label)` context manager replaces
+  the repeated `try/except/log.debug("X skipped")` scaffold in 14 blocks.
+- **`_require_same_origin`** — the inline CSRF guard in 20 form handlers.
+
+### Investigated and intentionally NOT bulk-applied (with reasons)
+These were examined at the code level; each is a risky rewrite or pure churn, not
+a safe mechanical change, and belongs in its own designed/reviewed PR:
+- **TTL/LRU cache "base"** — `llm_cache` (SQLite) and `learning_cache` (JSON dict)
+  share the *concept*, not literal code; a common base means rewriting two
+  different storage engines (eviction/persistence/concurrency behavior risk).
+- **retry unification (4 modules)** — `retry`, `retry_classifier`,
+  `provider_failover`, `failover_policy` are context-specific classifiers;
+  forcing them onto one classifier changes provider-retry decisions (cost/latency
+  behavior risk).
+- **354-module subpackage reorg** — purely navigational; one family (compaction)
+  alone touches ~30 import sites; kernel rule 7 ("no speculative abstractions").
+- **`paths.data_dir()` across ~80 modules** — silently relocates persisted state
+  in multi-tenant deployments (`~/.maverick/x` → `tenants/<t>/x`); needs a data
+  migration, not just a code edit.
+- **`run_goal` / `_run_inner` full decomposition** — dense shared local state
+  (`brief`, `_planning_mode`, ~10 interdependent locals on the hot path); safe
+  extraction needs a class-level refactor + careful review, not a bulk move.
