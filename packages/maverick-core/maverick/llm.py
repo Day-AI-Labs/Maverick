@@ -226,7 +226,6 @@ def _resolve_model_for_role(role: str) -> str:
     say when no model was pinned, and it returns None (defers to 5) unless
     the operator opted in. This keeps "users own model choice" intact.
     """
-    import os
     override = os.environ.get(f"MAVERICK_MODEL_OVERRIDE_{role.upper()}")
     if override:
         return override
