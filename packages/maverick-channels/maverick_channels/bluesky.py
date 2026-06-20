@@ -14,6 +14,7 @@ Heavy deps deferred to import time; the optional install is
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import logging
 import os
 from collections import deque
@@ -28,6 +29,12 @@ from .base import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def _now_iso_z() -> str:
+    """Current UTC time as an AT-Protocol timestamp (``...Z``). Uses a
+    timezone-aware now() -- datetime.utcnow() is deprecated in 3.12+."""
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 _API_BASE = "https://bsky.social/xrpc"
@@ -191,7 +198,7 @@ class BlueskyChannel(Channel):
             "record": {
                 "$type": "app.bsky.feed.post",
                 "text": text[:300],  # 300-char limit
-                "createdAt": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                "createdAt": _now_iso_z(),
                 "reply": {
                     "root": reply_root,
                     "parent": {
@@ -218,11 +225,7 @@ class BlueskyChannel(Channel):
         # start (or any restart) re-runs the agent swarm on the last 50
         # mentions in history — duplicate replies + real LLM spend.
         if self._last_seen_indexed_at is None:
-            import datetime as _dt
-            self._last_seen_indexed_at = (
-                _dt.datetime.now(_dt.timezone.utc)
-                .strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-            )
+            self._last_seen_indexed_at = _now_iso_z()
         log.info("Bluesky channel started (handle=%s)", self.handle)
         errors = 0
         try:
@@ -262,7 +265,7 @@ class BlueskyChannel(Channel):
             "record": {
                 "$type": "app.bsky.feed.post",
                 "text": f"@{user_id}: {text[:280]}",
-                "createdAt": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                "createdAt": _now_iso_z(),
             },
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
