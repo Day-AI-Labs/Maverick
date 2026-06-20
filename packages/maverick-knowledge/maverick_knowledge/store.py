@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -58,7 +59,12 @@ class SqliteVectorStore:
         # would raise on a missing directory. ":memory:" needs no dir.
         if str(path) != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self._db = sqlite3.connect(str(path))
+        # KnowledgeBase shares one store across threads (ingestion runs under
+        # asyncio.to_thread / a worker pool), so allow cross-thread use and
+        # serialize access with a lock -- a single sqlite connection is not safe
+        # for concurrent use.
+        self._db = sqlite3.connect(str(path), check_same_thread=False)
+        self._lock = threading.Lock()
         self._db.execute(
             "CREATE TABLE IF NOT EXISTS chunks ("
             "collection TEXT, id TEXT, text TEXT, vec TEXT, meta TEXT, "
@@ -67,21 +73,23 @@ class SqliteVectorStore:
         self._db.commit()
 
     def add(self, collection, items) -> None:
-        self._db.executemany(
-            "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?)",
-            [
-                (collection, cid, text, json.dumps(vec), json.dumps(meta))
-                for cid, text, vec, meta in items
-            ],
-        )
-        self._db.commit()
+        with self._lock:
+            self._db.executemany(
+                "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?)",
+                [
+                    (collection, cid, text, json.dumps(vec), json.dumps(meta))
+                    for cid, text, vec, meta in items
+                ],
+            )
+            self._db.commit()
 
     def search(self, collection, vector, k: int = 5) -> list[Match]:
         if k <= 0:
             return []
-        rows = self._db.execute(
-            "SELECT text, vec, meta FROM chunks WHERE collection = ?", (collection,)
-        ).fetchall()
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT text, vec, meta FROM chunks WHERE collection = ?", (collection,)
+            ).fetchall()
         scored: list[Match] = []
         for text, vec, meta in rows:
             stored = json.loads(vec)
@@ -100,13 +108,15 @@ class SqliteVectorStore:
 
     def delete_collection(self, collection: str) -> None:
         """Remove all chunks for one collection."""
-        self._db.execute("DELETE FROM chunks WHERE collection = ?", (collection,))
-        self._db.commit()
+        with self._lock:
+            self._db.execute("DELETE FROM chunks WHERE collection = ?", (collection,))
+            self._db.commit()
 
     def count(self, collection: str) -> int:
-        (n,) = self._db.execute(
-            "SELECT COUNT(*) FROM chunks WHERE collection = ?", (collection,)
-        ).fetchone()
+        with self._lock:
+            (n,) = self._db.execute(
+                "SELECT COUNT(*) FROM chunks WHERE collection = ?", (collection,)
+            ).fetchone()
         return n
 
     def close(self) -> None:
