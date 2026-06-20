@@ -130,3 +130,19 @@ def test_admin_manages_users_and_cannot_be_locked_out(monkeypatch, tmp_path):
 def test_users_link_in_nav(monkeypatch, tmp_path):
     c = _client(monkeypatch, tmp_path)
     assert 'href="/users"' in c.get("/").text
+
+
+def test_audit_endpoints_require_admin(monkeypatch, tmp_path):
+    # The audit trail (who-did-what-when) is admin-only: an operator/viewer is
+    # 403'd, auth-off (local mode) and admin get through. Regression for the gap
+    # where /api/v1/audit/tail + /audit/grep had no role gate.
+    monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "")
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import rbac
+    rbac.set_role("user:op2", "operator")
+    _as(monkeypatch, "user:op2")
+    assert c.get("/api/v1/audit/tail").status_code == 403
+    assert c.get("/api/v1/audit/grep?pattern=x").status_code == 403
+    # auth-off (no principal -> local single-user mode) is unrestricted.
+    _as(monkeypatch, None)
+    assert c.get("/api/v1/audit/tail").status_code == 200
