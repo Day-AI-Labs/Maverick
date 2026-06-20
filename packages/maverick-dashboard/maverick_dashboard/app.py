@@ -421,6 +421,40 @@ async def _read_limited_skill_validator_body(request: Request) -> bytes:
         too_large_detail="skill too large (max 256 KiB)",
     )
 
+
+async def _verify_maverick_webhook(request: Request) -> dict:
+    """Verify a Maverick-format inbound webhook (HMAC over body+timestamp) and
+    return the parsed JSON object. Shared by /webhook/start and /webhook/run,
+    which had byte-identical preambles. Raises HTTPException (401 unconfigured,
+    403 bad signature, 400 bad body) and enforces a configured LLM provider."""
+    from maverick.webhooks import inbound_secret, verify_signature
+
+    secret = inbound_secret()
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "inbound webhooks are not configured. Set a [webhooks] "
+                "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
+            ),
+        )
+    signature = request.headers.get("X-Maverick-Signature") or ""
+    timestamp = request.headers.get("X-Maverick-Timestamp") or ""
+    if not signature or not timestamp:
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+    body = await _read_limited_webhook_body(request)
+    if not verify_signature(body, signature, secret, timestamp=timestamp):
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+
+    require_provider_or_400()
+    try:
+        payload = json.loads(body or b"{}")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="body must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    return payload
+
 # Safe methods skip the CSRF check (browsers send Origin/Referer
 # inconsistently on GETs from address bars and bookmarks).
 _CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -3183,32 +3217,7 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
     configured freshness window (``[webhooks] max_age_seconds``) is rejected,
     so a captured signed request can't be replayed to re-spend budget.
     """
-    from maverick.webhooks import inbound_secret, verify_signature
-
-    secret = inbound_secret()
-    if not secret:
-        raise HTTPException(
-            status_code=401,
-            detail=(
-                "inbound webhooks are not configured. Set a [webhooks] "
-                "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
-            ),
-        )
-    signature = request.headers.get("X-Maverick-Signature") or ""
-    timestamp = request.headers.get("X-Maverick-Timestamp") or ""
-    if not signature or not timestamp:
-        raise HTTPException(status_code=403, detail="bad webhook signature")
-    body = await _read_limited_webhook_body(request)
-    if not verify_signature(body, signature, secret, timestamp=timestamp):
-        raise HTTPException(status_code=403, detail="bad webhook signature")
-
-    require_provider_or_400()
-    try:
-        payload = json.loads(body or b"{}")
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise HTTPException(status_code=400, detail="body must be valid JSON") from exc
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    payload = await _verify_maverick_webhook(request)
 
     title = str(payload.get("title") or "").strip()
     if not title:
@@ -3262,31 +3271,7 @@ async def webhook_run(request: Request, bg: BackgroundTasks) -> JSONResponse:
     if not get_features().get("triggers", True):
         raise HTTPException(status_code=404, detail="triggers are disabled")
 
-    from maverick.webhooks import inbound_secret, verify_signature
-    secret = inbound_secret()
-    if not secret:
-        raise HTTPException(
-            status_code=401,
-            detail=(
-                "inbound webhooks are not configured. Set a [webhooks] "
-                "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
-            ),
-        )
-    signature = request.headers.get("X-Maverick-Signature") or ""
-    timestamp = request.headers.get("X-Maverick-Timestamp") or ""
-    if not signature or not timestamp:
-        raise HTTPException(status_code=403, detail="bad webhook signature")
-    body = await _read_limited_webhook_body(request)
-    if not verify_signature(body, signature, secret, timestamp=timestamp):
-        raise HTTPException(status_code=403, detail="bad webhook signature")
-
-    require_provider_or_400()
-    try:
-        payload = json.loads(body or b"{}")
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise HTTPException(status_code=400, detail="body must be valid JSON") from exc
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    payload = await _verify_maverick_webhook(request)
     name = str(payload.get("trigger") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="trigger is required")
