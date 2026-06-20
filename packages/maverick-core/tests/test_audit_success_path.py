@@ -4,8 +4,6 @@ events. Regression guard for the "tamper-evident log only captured denials" gap.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from maverick.budget import Budget
 from maverick.orchestrator import run_goal
