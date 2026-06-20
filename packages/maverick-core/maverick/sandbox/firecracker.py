@@ -330,12 +330,25 @@ class FirecrackerBackend:
                         exit_code=126, stdout="",
                         stderr=f"e2b sandbox create failed: {status}",
                     )
-                run = self._e2b_process(client, sb_id, cmd)
-                client.delete(
-                    f"https://api.e2b.dev/sandboxes/{sb_id}",
-                    headers=self._e2b_headers(),
-                )
-                return self._e2b_exec_result(run)
+                # Tear the microVM down in a finally: if _e2b_process raises (a
+                # transient ReadTimeout/ConnectError -- exactly the failures this
+                # system retries), skipping the DELETE would orphan a *billable*
+                # sandbox until E2B's idle TTL reaps it. The delete is best-effort
+                # so a teardown failure never masks the real exec error.
+                try:
+                    run = self._e2b_process(client, sb_id, cmd)
+                    return self._e2b_exec_result(run)
+                finally:
+                    try:
+                        client.delete(
+                            f"https://api.e2b.dev/sandboxes/{sb_id}",
+                            headers=self._e2b_headers(),
+                        )
+                    except Exception:  # noqa: BLE001 - cleanup must not raise
+                        log.warning(
+                            "e2b sandbox %s delete failed; relying on idle TTL",
+                            sb_id,
+                        )
         except Exception as e:
             return ExecResult(exit_code=125, stdout="", stderr=f"e2b error: {e}")
 
