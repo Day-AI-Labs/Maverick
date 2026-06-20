@@ -1,0 +1,65 @@
+name: Go (model proxy)
+
+# Builds and tests the Go model proxy (go/model-proxy) — a faithful port of
+# maverick.model_proxy that runs the listener out-of-process. Go's
+# goroutine-per-request model forwards concurrent calls without the GIL
+# serialization of Python's ThreadingHTTPServer (throughput/density), while the
+# security-critical decision logic stays byte-for-byte identical to Python.
+#
+# Two jobs, mirroring the native (Rust) carve:
+#   - go:     build + vet + gofmt + race-tested unit/parity tests.
+#   - parity: regenerate the parity fixture from the REAL Python model_proxy and
+#             fail if it differs from the committed one, so the two can't drift.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "go/model-proxy/**"
+      - "packages/maverick-core/maverick/model_proxy.py"
+      - ".github/workflows/go-model-proxy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-model-proxy-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  go:
+    name: go (build + vet + test -race)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go/model-proxy
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+      - run: go build ./...
+      - run: go vet ./...
+      - name: gofmt (no diff)
+        run: test -z "$(gofmt -l .)" || { echo 'run: gofmt -w go/model-proxy'; gofmt -l .; exit 1; }
+      - run: go test -race ./...
+
+  parity:
+    name: parity fixture matches Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # model_proxy imports maverick.config; an editable core install is enough
+      # to regenerate the fixture from the source-of-truth Python.
+      - run: pip install -e ./packages/maverick-core
+      - run: python3 go/model-proxy/gen_parity.py
+      - name: fixture is up to date
+        run: |
+          git diff --exit-code go/model-proxy/testdata/parity.json || {
+            echo "::error::parity.json is stale — run python3 go/model-proxy/gen_parity.py and commit";
+            exit 1;
+          }
