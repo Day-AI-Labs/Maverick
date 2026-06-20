@@ -378,6 +378,26 @@ _FACT_HISTORY_MIGRATION: list[str] = [
 ]
 
 
+# --- Shared rate-limit events (migration v19) --------------------------------
+# A cross-replica sliding-window counter for the dashboard's goal-creation rate
+# limit. The dashboard's in-process limiter can't hold across replicas (N
+# replicas allow N x the cap); on Postgres (the HA backend) the limiter records
+# one row per admitted goal here and counts rows inside the window so every
+# replica shares one ceiling. ``rl_key`` is the per-client/global bucket; rows
+# are pruned past the window. Append-only and tiny; not tenant-scoped (the
+# bucket key already encodes principal/source).
+_RATE_EVENTS_MIGRATION: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS rate_events (
+      id      BIGSERIAL PRIMARY KEY,
+      rl_key  TEXT NOT NULL,
+      ts      DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_rate_events_key_ts ON rate_events (rl_key, ts);",
+]
+
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
@@ -388,6 +408,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (16, _ARTIFACTS_MIGRATION),
     (17, _SHARE_SIGNOFF_ORIGIN_MIGRATION),
     (18, _FACT_HISTORY_MIGRATION),
+    (19, _RATE_EVENTS_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -2421,6 +2442,30 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             return cur.rowcount
+
+    # ----- shared rate-limit window (cross-replica goal-creation cap) -----
+    def record_rate_event(self, rl_key: str, ts: float | None = None) -> None:
+        """Append one admitted event to the shared sliding-window counter.
+
+        Backs the dashboard's cross-replica goal-creation rate limit: every
+        replica records here so the window is shared. Opportunistically prunes
+        rows older than two windows so the table can't grow unbounded."""
+        now = ts if ts is not None else time.time()
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO rate_events(rl_key, ts) VALUES(%s, %s)", (rl_key, now)
+            )
+            cur.execute("DELETE FROM rate_events WHERE ts < %s", (now - 120.0,))
+
+    def count_rate_events(self, rl_key: str, since: float) -> int:
+        """Count events for ``rl_key`` with ``ts >= since`` (the window count)."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM rate_events WHERE rl_key = %s AND ts >= %s",
+                (rl_key, since),
+            )
+            row = cur.fetchone()
+        return int(row[0]) if row else 0
 
     @property
     def schema_version(self) -> int:
