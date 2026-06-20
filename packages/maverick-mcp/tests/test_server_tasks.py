@@ -50,6 +50,37 @@ def test_create_runs_and_completes_with_related_task_meta():
         store.shutdown()
 
 
+def test_per_owner_task_quota_isolates_sessions():
+    """One HTTP session can't monopolize the shared global task cap: its ACTIVE
+    tasks are bounded by a per-owner sub-cap, while other sessions and the stdio
+    (owner=None) path are unaffected. Without this, 256 active tasks from one
+    session block task creation for every other client."""
+    release = threading.Event()
+
+    def runner(name, args):
+        release.wait(timeout=5)
+        return _ok("done")
+
+    store = TaskStore(runner, max_workers=4, max_tasks=100, max_tasks_per_owner=2)
+    try:
+        # Session A fills its per-owner quota with 2 active tasks.
+        a1 = store.create("maverick_start", {}, {}, owner="A")
+        a2 = store.create("maverick_start", {}, {}, owner="A")
+        assert a1.status == "working" and a2.status == "working"
+        # A's 3rd active task is rejected by the per-owner quota, even though the
+        # global cap (100) is nowhere near full.
+        with pytest.raises(TaskError, match="too many active tasks for this session"):
+            store.create("maverick_start", {}, {}, owner="A")
+        # A different session B is unaffected by A's saturation.
+        assert store.create("maverick_start", {}, {}, owner="B").status == "working"
+        # stdio single-client (owner=None) is not subject to the per-owner cap.
+        for _ in range(5):
+            store.create("maverick_start", {}, {}, owner=None)
+    finally:
+        release.set()
+        store.shutdown()
+
+
 def test_tool_iserror_marks_task_failed():
     store = TaskStore(lambda n, a: {"isError": True,
                                     "content": [{"type": "text", "text": "boom"}]})

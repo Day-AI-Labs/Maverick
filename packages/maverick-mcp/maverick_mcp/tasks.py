@@ -138,6 +138,7 @@ class TaskStore:
         *,
         max_workers: int | None = None,
         max_tasks: int | None = None,
+        max_tasks_per_owner: int | None = None,
         default_ttl_ms: int | None = None,
         max_ttl_ms: int | None = None,
         poll_interval_ms: int | None = None,
@@ -151,6 +152,17 @@ class TaskStore:
         self._on_status_change = on_status_change
         self._max_tasks = max_tasks if max_tasks is not None else _env_int(
             "MAVERICK_MCP_MAX_TASKS", 256, lo=1, hi=100_000)
+        # Per-owner sub-cap (HTTP multi-client mode only). The global cap above
+        # is shared, and _make_room only evicts TERMINAL tasks, so without this
+        # one HTTP session could fill all 256 slots with active tasks and block
+        # task creation for every other client -- defeating the per-session
+        # isolation MAVERICK_MCP_HTTP_TASKS exists to provide. Bounded by the
+        # global cap; ignored for stdio (owner=None, single client).
+        self._max_tasks_per_owner = (
+            max_tasks_per_owner if max_tasks_per_owner is not None else _env_int(
+                "MAVERICK_MCP_MAX_TASKS_PER_OWNER",
+                min(32, self._max_tasks), lo=1, hi=self._max_tasks)
+        )
         self._default_ttl_ms = default_ttl_ms if default_ttl_ms is not None else _env_int(
             "MAVERICK_MCP_TASK_TTL_MS", 3_600_000, lo=1_000, hi=604_800_000)
         self._max_ttl_ms = max_ttl_ms if max_ttl_ms is not None else _env_int(
@@ -187,6 +199,7 @@ class TaskStore:
             owner=owner,
         )
         with self._lock:
+            self._reject_if_owner_over_quota_locked(owner)
             self._make_room_for_task_locked()
             self._tasks[task.id] = task
             # Assign the future under the SAME lock that inserts the task: a
@@ -330,6 +343,22 @@ class TaskStore:
         if start < 0:
             raise TaskError(_INVALID_PARAMS, "invalid cursor")
         return start
+
+    def _reject_if_owner_over_quota_locked(self, owner: str | None) -> None:
+        # owner=None is stdio/single-client mode: the global cap governs, no
+        # per-owner quota. In HTTP mode, count this owner's NON-terminal tasks
+        # (the ones occupying worker/queue slots) and reject before one session
+        # can monopolize the shared global cap. Terminal records don't count --
+        # they're purged by _make_room and don't block other clients.
+        if owner is None:
+            return
+        active = sum(
+            1 for t in self._tasks.values()
+            if t.owner == owner and t.status not in TASK_TERMINAL
+        )
+        if active >= self._max_tasks_per_owner:
+            raise TaskError(
+                _INVALID_PARAMS, "too many active tasks for this session")
 
     def _make_room_for_task_locked(self) -> None:
         # Completed/failed/cancelled records are retained only for polling; drop
