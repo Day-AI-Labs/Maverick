@@ -568,8 +568,14 @@ class MCPClient:
             except Exception:  # noqa: BLE001 -- request already abandoned
                 pass
 
+        # Keep a strong reference: the event loop only holds a WEAK ref to a
+        # task, so a bare `create_task` whose handle isn't stored can be GC'd
+        # mid-flight, dropping the cancel notice ("Task was destroyed but it is
+        # pending"). Track it like _handle_inbound_request does so it stays alive
+        # until done and is cancelled on stop().
         task = asyncio.create_task(_bounded_send_cancel())
-        task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
+        self._inbound_tasks.add(task)
+        task.add_done_callback(self._inbound_tasks.discard)
 
     async def _send(self, payload: dict) -> None:
         assert self._proc is not None and self._proc.stdin is not None
