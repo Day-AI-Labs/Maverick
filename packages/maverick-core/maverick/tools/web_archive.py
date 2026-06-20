@@ -56,16 +56,23 @@ def _http_get_json(url: str) -> tuple[int, Any]:
         headers={"User-Agent": "maverick-web-archive"},
         method="GET",
     )
+    # Route through the SSRF-guarded opener (host allow-list + IP-pin + per-hop
+    # redirect revalidation), like the http_fetch tool. A raw urlopen here
+    # followed redirects from the archive host straight to an internal address
+    # with no re-check; guarded_urlopen revalidates every hop.
+    from .http_fetch import guarded_urlopen
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+        with guarded_urlopen(req, timeout=30) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
-            return resp.status, json.loads(raw)
+            return getattr(resp, "status", 200), json.loads(raw)
     except urllib.error.HTTPError as e:  # type: ignore[attr-defined]
         body = e.read().decode("utf-8", errors="replace")
         try:
             return e.code, json.loads(body)
         except ValueError:
             return e.code, body[:300]
+    except Exception as e:  # SSRF block / network error -> surface as a clean code
+        return 0, f"blocked or unreachable: {type(e).__name__}: {e}"
 
 
 def _op_snapshot(args: dict) -> str:
