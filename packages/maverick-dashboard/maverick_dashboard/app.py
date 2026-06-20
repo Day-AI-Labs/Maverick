@@ -303,6 +303,15 @@ _PLAN_TREE_CSP = (
 _PLAN_TREE_PATH_RE = re.compile(r"^/goals/\d+/plan/?$")
 
 
+def _persist_pref_cookie(request, response, *, param, cookie, valid, max_age) -> None:
+    """Set a preference cookie when ``?param=`` is a valid value. Shared by the
+    font/density/lang persistence (the theme uses its own _set_theme_cookie)."""
+    v = request.query_params.get(param)
+    if v and v.lower() in valid:
+        response.set_cookie(cookie, v.lower(), max_age=max_age,
+                            samesite="lax", httponly=False)
+
+
 @app.middleware("http")
 async def persist_theme(request: Request, call_next):
     """If ?theme= / ?font= / ?density= / ?lang= is in the URL, set a cookie so it sticks."""
@@ -310,19 +319,13 @@ async def persist_theme(request: Request, call_next):
     q = request.query_params.get("theme")
     if q and q.lower() in _valid_theme_names():
         _set_theme_cookie(response, q.lower())
-    f = request.query_params.get("font")
-    if f and f.lower() in _VALID_FONTS:
-        response.set_cookie("mvk_font", f.lower(), max_age=30 * 24 * 3600,
-                            samesite="lax", httponly=False)
-    d = request.query_params.get("density")
-    if d and d.lower() in _VALID_DENSITIES:
-        response.set_cookie("mvk_density", d.lower(), max_age=30 * 24 * 3600,
-                            samesite="lax", httponly=False)
-    lang = request.query_params.get("lang")
     from .i18n import LANGS
-    if lang and lang.lower() in LANGS:
-        response.set_cookie("mvk_lang", lang.lower(), max_age=365 * 24 * 3600,
-                            samesite="lax", httponly=False)
+    _persist_pref_cookie(request, response, param="font", cookie="mvk_font",
+                         valid=_VALID_FONTS, max_age=30 * 24 * 3600)
+    _persist_pref_cookie(request, response, param="density", cookie="mvk_density",
+                         valid=_VALID_DENSITIES, max_age=30 * 24 * 3600)
+    _persist_pref_cookie(request, response, param="lang", cookie="mvk_lang",
+                         valid=LANGS, max_age=365 * 24 * 3600)
     return response
 
 
