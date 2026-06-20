@@ -1,25 +1,27 @@
-"""open_world fails closed on Postgres + encryption-at-rest.
+"""open_world + Postgres encryption-at-rest.
 
-The Postgres backend does not seal content at rest yet (the SQLite backend
-does), so selecting it with encryption-at-rest on must refuse rather than
-silently store regulated data as plaintext. The gate fires BEFORE psycopg is
-imported, so it's verifiable without a live Postgres.
+The Postgres backend now seals the same sensitive content columns as SQLite
+(audit C4), so selecting it with encryption-at-rest on OPENS the backend (and
+seals on write) rather than failing closed. The full sealing round-trip +
+ciphertext-on-disk proof lives in test_postgres_world.py (skipped without a DSN);
+these cover the open_world dispatch without a live Postgres.
 """
 from __future__ import annotations
 
-import pytest
 from maverick import world_model as wm
 
 
-def test_open_world_refuses_postgres_when_encryption_at_rest(monkeypatch):
+def test_open_world_allows_postgres_with_encryption_at_rest(monkeypatch):
+    # Postgres now supports at-rest sealing, so the old fail-closed gate is gone:
+    # open_world proceeds to open the Postgres backend even with encryption on.
+    sentinel = object()
     monkeypatch.setattr("maverick.world_model_backends.is_postgres_configured", lambda: True)
     monkeypatch.setattr("maverick.crypto_at_rest.at_rest_enabled", lambda: True)
-    with pytest.raises(wm.PostgresAtRestUnsupported):
-        wm.open_world()
+    monkeypatch.setattr("maverick.world_model_backends.open_postgres_world", lambda: sentinel)
+    assert wm.open_world() is sentinel
 
 
 def test_open_world_allows_postgres_without_encryption(monkeypatch):
-    # Encryption off -> the gate must NOT fire; it proceeds to open Postgres.
     sentinel = object()
     monkeypatch.setattr("maverick.world_model_backends.is_postgres_configured", lambda: True)
     monkeypatch.setattr("maverick.crypto_at_rest.at_rest_enabled", lambda: False)
@@ -28,7 +30,7 @@ def test_open_world_allows_postgres_without_encryption(monkeypatch):
 
 
 def test_open_world_sqlite_is_unaffected(tmp_path, monkeypatch):
-    # The gate is Postgres-only; the default SQLite path is untouched.
+    # The dispatch is Postgres-only; the default SQLite path is untouched.
     monkeypatch.setattr("maverick.world_model_backends.is_postgres_configured", lambda: False)
     w = wm.open_world(tmp_path / "world.db")
     try:

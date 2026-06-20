@@ -150,3 +150,42 @@ class TestThrottlingThroughAgentLoop:
         result = await agent.run()
         assert result.final == "done"
         assert tracker["max"] == 2  # different hosts overlap
+
+
+def test_concurrent_loops_do_not_collide():
+    """Two goals on two threads = two live event loops. Each must get its OWN
+    per-host semaphore; the old single shared registry flip-flopped between
+    loops, raising "bound to a different loop" or losing the cap. Regression for
+    the cross-loop data race.
+    """
+    import threading
+
+    nc._reset_for_tests()
+    errors: list[BaseException] = []
+    sems: list[int] = []
+    barrier = threading.Barrier(2)
+
+    async def _use() -> None:
+        barrier.wait()  # maximise interleaving of the two loops' registry access
+        for _ in range(50):
+            ctx = nc.limit("http_fetch", {"url": "https://example.com/x"})
+            async with ctx:  # awaiting binds the semaphore to THIS loop
+                await asyncio.sleep(0)
+            sems.append(id(ctx))
+
+    def _runner() -> None:
+        try:
+            asyncio.run(_use())  # fresh loop per thread
+        except BaseException as e:  # noqa: BLE001 - surface any cross-loop error
+            errors.append(e)
+
+    threads = [threading.Thread(target=_runner) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"cross-loop semaphore error: {errors!r}"
+    # Each loop kept ONE stable semaphore for the host (not torn down by the
+    # other loop): exactly two distinct semaphore objects across the two loops.
+    assert len(set(sems)) == 2

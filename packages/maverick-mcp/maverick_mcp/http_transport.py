@@ -323,7 +323,16 @@ def _error_envelope(request_id, exc: Exception) -> dict:
     if isinstance(exc, (_ProtocolError, TaskError)):
         code, message = exc.code, exc.message
     else:
-        code, message = -32603, f"internal error: {exc}"
+        # Scrub the message before it reaches the HTTP client: a raw exception's
+        # args can carry secrets (DSNs, tokens, credentialed URLs). The stdio
+        # dispatch path (server._dispatch) already scrubs the same class of
+        # error; mirror it so both transports withhold the same internal detail.
+        try:
+            from maverick.secrets import scrub
+            detail = scrub(f"{type(exc).__name__}: {exc}")
+        except Exception:  # pragma: no cover - scrub must never mask the error
+            detail = type(exc).__name__
+        code, message = -32603, f"internal error: {detail}"
     return {"jsonrpc": "2.0", "id": request_id,
             "error": {"code": code, "message": message}}
 

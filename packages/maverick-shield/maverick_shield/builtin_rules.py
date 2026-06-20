@@ -105,23 +105,35 @@ def _decode_b64_blobs(text: str) -> list[str]:
         blob = m.group(0)
         window = _MAX_B64_DECODE_CHARS & ~3
         step = _B64_DECODE_STEP_CHARS & ~3
-        starts = range(0, len(blob), step) if step else (0,)
         blob_had_text = False
-        for window_idx, start in enumerate(starts):
-            if window_idx >= _MAX_B64_WINDOWS_PER_BLOB:
+        windows_used = 0
+        # Try all 4 phase alignments. _B64_BLOB greedily grabs any leading
+        # base64-alphabet chars, so an attacker can prepend 1-3 filler chars
+        # ("ABCignore..." base64'd) -- that shifts every 4-byte boundary and the
+        # real payload decodes to garbage, silently defeating this defense.
+        # Decoding from each of the 4 offsets re-aligns one of them. The window
+        # budget is shared across phases so the pre-pass stays bounded/linear.
+        for phase in range(4):
+            if windows_used >= _MAX_B64_WINDOWS_PER_BLOB:
                 break
-            chunk = blob[start:start + window]
-            if not chunk:
-                continue
-            try:
-                raw = base64.b64decode(chunk + "=" * (-len(chunk) % 4), validate=False)
-                decoded = raw.decode("utf-8", errors="ignore")
-            except (ValueError, UnicodeDecodeError):
-                continue
-            # Only keep decodes that look like text (the attack is in the words).
-            if decoded and any(c.isalpha() for c in decoded):
-                out.append(decoded)
-                blob_had_text = True
+            shifted = blob[phase:]
+            starts = range(0, len(shifted), step) if step else (0,)
+            for start in starts:
+                if windows_used >= _MAX_B64_WINDOWS_PER_BLOB:
+                    break
+                windows_used += 1
+                chunk = shifted[start:start + window]
+                if not chunk:
+                    continue
+                try:
+                    raw = base64.b64decode(chunk + "=" * (-len(chunk) % 4), validate=False)
+                    decoded = raw.decode("utf-8", errors="ignore")
+                except (ValueError, UnicodeDecodeError):
+                    continue
+                # Only keep decodes that look like text (the attack is in words).
+                if decoded and any(c.isalpha() for c in decoded):
+                    out.append(decoded)
+                    blob_had_text = True
         if blob_had_text:
             useful_blobs += 1
     return out
@@ -129,10 +141,23 @@ def _decode_b64_blobs(text: str) -> list[str]:
 
 def _candidates(text: str) -> list[str]:
     """Return the set of strings to scan: the original plus de-obfuscated and
-    base64-decoded variants. NFKC folds fullwidth/compatibility forms."""
-    norm = unicodedata.normalize("NFKC", text)
-    norm = _strip_invisible(norm).translate(_HOMOGLYPHS)
-    cands = {text, norm, _shell_deobfuscate(norm)}
+    base64-decoded variants. NFKC folds fullwidth/compatibility forms.
+
+    Invisible chars are handled BOTH ways: stripped (joiner-inside-a-word
+    evasion, ``ig​nore``) AND space-substituted (invisible-as-separator
+    evasion, ``ignore​all​previous`` -- deletion would collapse it to
+    ``ignoreallprevious`` and the ``\\s+`` rules would miss). Homoglyphs are
+    folded after a ``casefold()`` so an upper/mixed-case confusable (Cyrillic
+    capital ``І`` -> ``і``) maps onto the lowercase confusable table;
+    rules are IGNORECASE so the extra lowercasing is safe."""
+    norm0 = unicodedata.normalize("NFKC", text)
+    cands = {text}
+    # strip vs space-substitute invisibles; original-case vs casefolded.
+    for base in (_strip_invisible(norm0), _INVISIBLE.sub(" ", norm0)):
+        for variant in (base, base.casefold()):
+            folded = variant.translate(_HOMOGLYPHS)
+            cands.add(folded)
+            cands.add(_shell_deobfuscate(folded))
     for decoded in _decode_b64_blobs(text):
         cands.add(decoded)
         decoded_norm = unicodedata.normalize("NFKC", decoded)

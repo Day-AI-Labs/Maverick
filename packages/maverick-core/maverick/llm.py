@@ -558,11 +558,21 @@ class LLM:
                 # config dialed the client's env-var/localhost default and
                 # died with "Couldn't reach the LLM provider".
                 base_url = None
+                default_headers = None
                 try:
                     from .config import get_provider_config
-                    bu = (get_provider_config(provider) or {}).get("base_url")
+                    pcfg = get_provider_config(provider) or {}
+                    bu = pcfg.get("base_url")
                     if isinstance(bu, str) and bu.strip():
                         base_url = bu.strip()
+                    # Data-residency / ZDR: operator-set extra request headers a
+                    # compliance gateway enforces. Accept only a str->str dict.
+                    dh = pcfg.get("default_headers")
+                    if isinstance(dh, dict):
+                        clean = {str(k): str(v) for k, v in dh.items()
+                                 if isinstance(k, str)}
+                        if clean:
+                            default_headers = clean
                 except Exception:  # pragma: no cover -- config read fails soft
                     base_url = None
                 use_api_provider = (
@@ -571,7 +581,8 @@ class LLM:
                 )
                 if use_api_provider or key:
                     self._clients[provider] = get_provider_client(
-                        provider, api_key=key, base_url=base_url
+                        provider, api_key=key, base_url=base_url,
+                        default_headers=default_headers,
                     )
                 else:
                     if is_session_provider(provider):
@@ -585,7 +596,8 @@ class LLM:
                         )
                     else:
                         self._clients[provider] = get_provider_client(
-                            provider, api_key=key, base_url=base_url
+                            provider, api_key=key, base_url=base_url,
+                            default_headers=default_headers,
                         )
             return self._clients[provider]
 

@@ -2363,28 +2363,16 @@ def open_world(path: Path | None = None) -> Any:
     when selected, so the default SQLite path stays dependency-free and the
     kernel runs without psycopg installed.
 
-    **Fail-closed at-rest safety:** the Postgres backend does not seal content
-    at rest yet (unlike SQLite). Selecting it while encryption-at-rest is
-    enabled raises :class:`PostgresAtRestUnsupported` instead of silently
-    storing plaintext — use SQLite for encrypted/regulated deployments until
-    Postgres sealing lands.
+    **At-rest encryption:** the Postgres backend now seals the same sensitive
+    content columns as SQLite (goal title/description/result, messages, turns,
+    episodes, facts, questions, approvals, artifacts, projects, sign-off notes,
+    event bodies) with the shared AES-256-GCM field codec, so encryption-at-rest
+    is supported on Postgres too. Text search over sealed columns transparently
+    falls back to scan-then-decrypt.
     """
     from .world_model_backends import is_postgres_configured
 
     if is_postgres_configured():
-        # Fail closed rather than silently degrade the encryption-at-rest
-        # guarantee: the Postgres backend stores content as plaintext today.
-        # Checked BEFORE importing psycopg so a misconfig surfaces this clear
-        # error rather than an ImportError or, worse, plaintext-at-rest.
-        from .crypto_at_rest import at_rest_enabled
-        if at_rest_enabled():
-            raise PostgresAtRestUnsupported(
-                "encryption-at-rest is enabled, but the Postgres world-model "
-                "backend does not seal content at rest yet. Use the SQLite "
-                "backend (unset [world_model] backend / MAVERICK_WORLD_BACKEND) "
-                "for encrypted or regulated deployments, or disable "
-                "encryption-at-rest. Tracked in FIXES.md / docs/encryption.md."
-            )
         from .world_model_backends import open_postgres_world
 
         return open_postgres_world()

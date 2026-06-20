@@ -88,6 +88,12 @@ class EventKind:
     CONSENT_RESULT  = "consent_result"
     SECRET_REDACTED = "secret_redacted"
     ERASE           = "erase"
+    # Data-retention enforcement deleted aged audit day-files / world rows. One
+    # signed row per non-dry-run purge so a gap in the day-files (or shrunken
+    # episode/event tables) is provably policy-driven retention, not tampering.
+    # payload: audit_files_removed:int, audit_files:list[str], audit_cutoff_day,
+    # episodes_deleted:int, goal_events_deleted:int, usage_buckets_removed:int.
+    RETENTION_PURGE = "retention_purge"
     HALT            = "halt"
     CONFIG_REMEDIATED = "config_remediated"
     FEDERATION_DELEGATE = "federation_delegate"

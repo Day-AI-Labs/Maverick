@@ -478,6 +478,50 @@ class PGGoal:
     result: str | None
 
 
+def _seal(text):
+    """Seal a sensitive text column for storage (no-op when at-rest is off).
+
+    Reuses the SQLite backend's field codec so the on-disk format and the
+    fail-closed semantics are identical across backends."""
+    from ..world_model import _enc_field
+    return _enc_field(text)
+
+
+def _unseal(text):
+    """Inverse of :func:`_seal` (no-op when at-rest is off; legacy plaintext and
+    strict-mode handling identical to the SQLite backend)."""
+    from ..world_model import _dec_field
+    return _dec_field(text)
+
+
+def _dec_goal_row(row) -> PGGoal:
+    """Build a PGGoal from a row, unsealing the at-rest-encrypted text columns
+    (title / description / result). Reuses the SQLite backend's field codec so
+    sealing semantics (legacy-plaintext passthrough, strict-mode withhold) are
+    identical across backends. No-op when at-rest encryption is off."""
+    return PGGoal(
+        row[0], row[1], _unseal(row[2]), _unseal(row[3]), row[4],
+        row[5], row[6], row[7], _unseal(row[8]),
+    )
+
+
+def _dec_approval_row(r):
+    """Build an Approval, unsealing action/scope/detail (provenance is trusted
+    plaintext metadata, sealed neither here nor in SQLite). Row order: id,
+    action, risk, scope, detail, provenance, status, requested_at, decided_at,
+    claimed_by, claimed_at, decided_by."""
+    from ..world_model import Approval
+    return Approval(r[0], _unseal(r[1]), r[2], _unseal(r[3]), _unseal(r[4]),
+                    r[5], r[6], r[7], r[8], r[9], r[10], r[11])
+
+
+def _dec_question_row(r):
+    """Build a Question, unsealing the question text and the answer. Row order:
+    id, goal_id, question, asked_at, answer, answered_at."""
+    from ..world_model import Question
+    return Question(r[0], r[1], _unseal(r[2]), r[3], _unseal(r[4]), r[5])
+
+
 class PostgresWorldModel:
     """Postgres adapter. Public surface mirrors SQLite WorldModel.
 
@@ -698,7 +742,7 @@ class PostgresWorldModel:
                 "INSERT INTO goals(parent_id, title, description, status, "
                 "created_at, updated_at, tenant_id) "
                 "VALUES(%s, %s, %s, 'pending', %s, %s, %s) RETURNING id",
-                (parent_id, title, description, now, now, tenant),
+                (parent_id, _seal(title), _seal(description), now, now, tenant),
             )
             row = cur.fetchone()
         return int(row[0])
@@ -718,7 +762,7 @@ class PostgresWorldModel:
             row = cur.fetchone()
         if row is None:
             return None
-        return PGGoal(*row)
+        return _dec_goal_row(row)
 
     def set_goal_status(self, goal_id: int, status: str, *, result: str | None = None) -> None:
         now = time.time()
@@ -729,7 +773,7 @@ class PostgresWorldModel:
             "UPDATE goals SET status=%s, result=COALESCE(%s, result), "
             "updated_at=%s WHERE id=%s"
         )
-        params: list = [status, result, now, goal_id]
+        params: list = [status, _seal(result), now, goal_id]
         if frag:
             sql += " AND " + frag
             params += fparams
@@ -758,30 +802,55 @@ class PostgresWorldModel:
     ) -> list[PGGoal]:
         """Search goals by text in title / description / result (newest first).
 
-        PG stores these plaintext, so the match is a SQL ILIKE (no scan-then-
-        decrypt as in SQLite). ``owner`` is accepted for signature parity but
-        not used -- PG isolates by tenant, applied below. ``scan`` is ignored
-        (the SQL bound is ``limit``)."""
+        ``owner`` is accepted for signature parity but not used -- PG isolates by
+        tenant, applied below. When at-rest encryption is on, title/description/
+        result are ciphertext so a SQL ILIKE can't match; we then scan a bounded
+        window of the most-recent goals (``scan``) and filter on the decrypted
+        text in Python -- the same scan-then-decrypt shape the SQLite backend
+        uses. With encryption off, the plaintext ILIKE path runs (cheaper)."""
         q = (query or "").strip()
         if not q:
             return []
-        like = f"%{q}%"
-        sql = (
-            "SELECT id, parent_id, title, description, status, "
-            "created_at, updated_at, deadline, result FROM goals "
-            "WHERE (title ILIKE %s OR description ILIKE %s OR result ILIKE %s)"
-        )
-        params: list = [like, like, like]
+        from ..crypto_at_rest import at_rest_enabled
+        sealed = at_rest_enabled()
+        cols = ("SELECT id, parent_id, title, description, status, "
+                "created_at, updated_at, deadline, result FROM goals")
         frag, fparams = _tenant_scope()
+        cap = max(1, int(limit))
+        if sealed:
+            # Scan-then-decrypt: fetch a recent window, decrypt, filter in Python.
+            sql = cols
+            params: list = []
+            if frag:
+                sql += " WHERE " + frag
+                params += fparams
+            sql += " ORDER BY updated_at DESC LIMIT %s"
+            params.append(max(1, int(scan)))
+            with self._tx() as cur:
+                cur.execute(sql, tuple(params))
+                rows = cur.fetchall()
+            ql = q.lower()
+            out: list[PGGoal] = []
+            for r in rows:
+                g = _dec_goal_row(r)
+                hay = " ".join(p for p in (g.title, g.description, g.result) if p).lower()
+                if ql in hay:
+                    out.append(g)
+                    if len(out) >= cap:
+                        break
+            return out
+        like = f"%{q}%"
+        sql = cols + " WHERE (title ILIKE %s OR description ILIKE %s OR result ILIKE %s)"
+        params = [like, like, like]
         if frag:
             sql += " AND " + frag
             params += fparams
         sql += " ORDER BY updated_at DESC LIMIT %s"
-        params.append(max(1, int(limit)))
+        params.append(cap)
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
-        return [PGGoal(*r) for r in rows]
+        return [_dec_goal_row(r) for r in rows]
 
     def count_facts(self) -> int:
         """Number of stored facts (tenant-scoped)."""
@@ -811,7 +880,6 @@ class PostgresWorldModel:
 
     def list_approvals(self, limit: int = 500) -> list:
         """All approvals, newest first (the Operating Record's decision feed)."""
-        from ..world_model import Approval
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
@@ -826,7 +894,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(p))
             rows = cur.fetchall()
-        return [Approval(*r) for r in rows]
+        return [_dec_approval_row(r) for r in rows]
 
     def release_processed_message(self, channel: str, external_id: str) -> None:
         """Undo a ``mark_message_processed`` claim so a failed run can retry."""
@@ -846,15 +914,17 @@ class PostgresWorldModel:
                 (int(limit),),
             )
             rows = cur.fetchall()
-        return [r[0] for r in rows if r and r[0]]
+        return [_unseal(r[0]) for r in rows if r and r[0]]
 
     # ---- Projects (migration v15) -------------------------------------------
 
     @staticmethod
     def _project_from_row(row) -> dict:
         # row: (id, name, description, owner, domain, status, created_at)
+        # name/description are sealed at rest; owner/domain/status are plaintext.
         return {
-            "id": row[0], "name": row[1] or "", "description": row[2] or "",
+            "id": row[0], "name": _unseal(row[1]) or "",
+            "description": _unseal(row[2]) or "",
             "owner": row[3], "domain": row[4], "status": row[5],
             "created_at": row[6],
         }
@@ -862,14 +932,14 @@ class PostgresWorldModel:
     def create_project(
         self, name: str, *, description: str = "", owner: str = "", domain: str = "",
     ) -> int:
-        """Create a project (plaintext name/description under PG). Returns its id."""
+        """Create a project (name/description sealed at rest). Returns its id."""
         with self._tx() as cur:
             cur.execute(
                 "INSERT INTO projects(name, description, owner, domain, status, "
                 "created_at, tenant_id) VALUES(%s, %s, %s, %s, 'active', %s, %s) "
                 "RETURNING id",
-                (name, description, owner or "", domain or "", time.time(),
-                 _active_tenant()),
+                (_seal(name), _seal(description), owner or "", domain or "",
+                 time.time(), _active_tenant()),
             )
             return int(cur.fetchone()[0])
 
@@ -955,7 +1025,7 @@ class PostgresWorldModel:
             cur.execute(
                 "INSERT INTO artifacts(goal_id, kind, title, content, version, "
                 "created_at) VALUES(%s, %s, %s, %s, %s, %s) RETURNING id",
-                (int(goal_id), str(kind or "text"), title or "", content,
+                (int(goal_id), str(kind or "text"), title or "", _seal(content),
                  version, time.time()),
             )
             return int(cur.fetchone()[0])
@@ -970,7 +1040,7 @@ class PostgresWorldModel:
             )
             rows = cur.fetchall()
         return [{"id": r[0], "goal_id": r[1], "kind": r[2], "title": r[3] or "",
-                 "content": r[4] or "", "version": r[5], "created_at": r[6]}
+                 "content": _unseal(r[4]) or "", "version": r[5], "created_at": r[6]}
                 for r in rows]
 
     def latest_artifacts(self, goal_id: int) -> list[dict]:
@@ -1070,7 +1140,8 @@ class PostgresWorldModel:
                 "ON CONFLICT (goal_id) DO UPDATE SET decision=EXCLUDED.decision, "
                 "decided_by=EXCLUDED.decided_by, note=EXCLUDED.note, "
                 "created_at=EXCLUDED.created_at",
-                (int(goal_id), str(decision), str(decided_by or ""), note, time.time()),
+                (int(goal_id), str(decision), str(decided_by or ""), _seal(note),
+                 time.time()),
             )
 
     def signoff_for(self, goal_id: int) -> dict | None:
@@ -1085,7 +1156,7 @@ class PostgresWorldModel:
         if not r:
             return None
         return {"goal_id": r[0], "decision": r[1], "decided_by": r[2],
-                "note": r[3], "created_at": r[4]}
+                "note": _unseal(r[3]), "created_at": r[4]}
 
     def signoffs_for_goals(self, goal_ids) -> dict[int, str]:
         """Map ``goal_id -> decision`` for a batch of goals (goals with no
@@ -1125,7 +1196,7 @@ class PostgresWorldModel:
                 (str(kind), str(ref), max(1, int(limit))),
             )
             rows = cur.fetchall()
-        return [PGGoal(*r) for r in rows]
+        return [_dec_goal_row(r) for r in rows]
 
     def origin_status_counts(self, kind: str, ref: str) -> dict[str, int]:
         """An automation's spawned-goal counts keyed by status (run summary)."""
@@ -1155,7 +1226,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(p))
             rows = cur.fetchall()
-        return [PGGoal(*r) for r in rows]
+        return [_dec_goal_row(r) for r in rows]
 
     def list_goals(
         self,
@@ -1189,7 +1260,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
-        return [PGGoal(*r) for r in rows]
+        return [_dec_goal_row(r) for r in rows]
 
     def most_recent_goal(self) -> PGGoal | None:
         """Most-recently-updated goal regardless of status; mirrors SQLite."""
@@ -1204,7 +1275,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             row = cur.fetchone()
-        return PGGoal(*row) if row else None
+        return _dec_goal_row(row) if row else None
 
     def active_goal(self) -> PGGoal | None:
         frag, fparams = _tenant_scope()
@@ -1221,7 +1292,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             row = cur.fetchone()
-        return PGGoal(*row) if row else None
+        return _dec_goal_row(row) if row else None
 
     def inflight_goal(self) -> PGGoal | None:
         """Most-recently-updated in-flight goal (active/pending); mirrors SQLite."""
@@ -1239,7 +1310,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             row = cur.fetchone()
-        return PGGoal(*row) if row else None
+        return _dec_goal_row(row) if row else None
 
     def candidate_goals(self, include_running: bool, limit: int = 500) -> list[PGGoal]:
         """Goals with comparable text for recall (mirrors SQLite). Finished set
@@ -1263,7 +1334,7 @@ class PostgresWorldModel:
                 tuple(params),
             )
             rows = cur.fetchall()
-        return [PGGoal(*r) for r in rows]
+        return [_dec_goal_row(r) for r in rows]
 
     def subgoals(self, parent_id: int, limit: int = 50) -> list[PGGoal]:
         frag, fparams = _tenant_scope()
@@ -1280,7 +1351,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
-        return [PGGoal(*r) for r in rows]
+        return [_dec_goal_row(r) for r in rows]
 
     def reclaim_orphan_goals(self, *, max_age_seconds: float = 60.0) -> int:
         """Mark stale active/pending goals as 'blocked' after a crash.
@@ -1358,7 +1429,7 @@ class PostgresWorldModel:
                 "UPDATE episodes SET ended_at=%s, summary=%s, outcome=%s, "
                 "cost_dollars=%s, input_tokens=%s, output_tokens=%s, "
                 "tool_calls=%s WHERE id=%s",
-                (time.time(), summary, outcome,
+                (time.time(), _seal(summary), _seal(outcome),
                  cost_dollars, input_tokens, output_tokens, tool_calls,
                  episode_id),
             )
@@ -1390,7 +1461,9 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
-        return [EpisodeSpend(*r) for r in rows]
+        # outcome (index 4) is sealed at rest; the rest are numeric/timestamps.
+        return [EpisodeSpend(r[0], r[1], r[2], r[3], _unseal(r[4]),
+                             r[5], r[6], r[7], r[8]) for r in rows]
 
     def episode_exists(self, goal_id: int, episode_id: int) -> bool:
         frag, fparams = _tenant_scope("g.tenant_id")
@@ -1436,7 +1509,7 @@ class PostgresWorldModel:
             cur.execute(
                 "INSERT INTO goal_events(goal_id, agent, kind, content, ts) "
                 "VALUES(%s, %s, %s, %s, %s) RETURNING id",
-                (goal_id, agent, kind, content, time.time()),
+                (goal_id, agent, kind, _seal(content), time.time()),
             )
             row = cur.fetchone()
         return int(row[0])
@@ -1460,7 +1533,8 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
-        return [GoalEvent(*r) for r in rows]
+        # content (index 4) is sealed at rest.
+        return [GoalEvent(r[0], r[1], r[2], r[3], _unseal(r[4]), r[5]) for r in rows]
 
     def recent_goal_events(self, goal_id: int, limit: int = 200) -> list:
         from ..world_model import GoalEvent
@@ -1481,7 +1555,8 @@ class PostgresWorldModel:
                 tuple(params),
             )
             rows = cur.fetchall()
-        return [GoalEvent(*r) for r in rows]
+        # content (index 4) is sealed at rest.
+        return [GoalEvent(r[0], r[1], r[2], r[3], _unseal(r[4]), r[5]) for r in rows]
 
     # ----- facts (global key/value memory) -----
 
@@ -1503,7 +1578,7 @@ class PostgresWorldModel:
                 "value = EXCLUDED.value, "
                 "source_episode_id = EXCLUDED.source_episode_id, "
                 "updated_at = EXCLUDED.updated_at",
-                (key, value, episode_id, time.time(), _active_tenant()),
+                (key, _seal(value), episode_id, time.time(), _active_tenant()),
             )
 
     def get_facts(self) -> dict[str, str]:
@@ -1515,7 +1590,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
-        return {r[0]: r[1] for r in rows}
+        return {r[0]: _unseal(r[1]) for r in rows}
 
     def get_facts_with_trust(self) -> dict[str, tuple[str, int]]:
         # Provenance columns are sqlite-first; treat every Postgres fact as
@@ -1569,7 +1644,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(p))
             row = cur.fetchone()
-        return row[0] if row else None
+        return _unseal(row[0]) if row else None
 
     def delete_fact(self, key: str) -> int:
         frag, params = _tenant_scope()
@@ -1625,7 +1700,7 @@ class PostgresWorldModel:
             cur.execute(
                 "INSERT INTO questions(goal_id, question, asked_at) "
                 "VALUES(%s, %s, %s) RETURNING id",
-                (goal_id, question, time.time()),
+                (goal_id, _seal(question), time.time()),
             )
             row = cur.fetchone()
         return int(row[0])
@@ -1636,13 +1711,12 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(
                 "UPDATE questions SET answer = %s, answered_at = %s WHERE id = %s",
-                (answer, time.time(), question_id),
+                (_seal(answer), time.time(), question_id),
             )
             affected = cur.rowcount
         return affected > 0
 
     def open_questions(self, goal_id: int | None = None) -> list:
-        from ..world_model import Question
         cols = "q.id, q.goal_id, q.question, q.asked_at, q.answer, q.answered_at"
         frag, fparams = _tenant_scope("g.tenant_id")
         table = "questions q"
@@ -1661,10 +1735,9 @@ class PostgresWorldModel:
                 tuple([*params, *fparams]),
             )
             rows = cur.fetchall()
-        return [Question(*r) for r in rows]
+        return [_dec_question_row(r) for r in rows]
 
     def all_questions(self, goal_id: int) -> list:
-        from ..world_model import Question
         frag, fparams = _tenant_scope("g.tenant_id")
         table = "questions q"
         scope = ""
@@ -1678,7 +1751,7 @@ class PostgresWorldModel:
                 tuple([goal_id, *fparams]),
             )
             rows = cur.fetchall()
-        return [Question(*r) for r in rows]
+        return [_dec_question_row(r) for r in rows]
 
     # ----- approvals (high-risk action consent queue) -----
 
@@ -1700,13 +1773,13 @@ class PostgresWorldModel:
                 "INSERT INTO approvals(action, risk, scope, detail, provenance, status, "
                 "requested_at, tenant_id) VALUES(%s, %s, %s, %s, %s, 'pending', %s, %s) "
                 "RETURNING id",
-                (action, risk, scope, detail, provenance, time.time(), _active_tenant()),
+                (_seal(action), risk, _seal(scope), _seal(detail), provenance,
+                 time.time(), _active_tenant()),
             )
             row = cur.fetchone()
         return int(row[0])
 
     def get_approval(self, approval_id: int):
-        from ..world_model import Approval
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
@@ -1720,10 +1793,9 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(p))
             row = cur.fetchone()
-        return Approval(*row) if row else None
+        return _dec_approval_row(row) if row else None
 
     def pending_approvals(self) -> list:
-        from ..world_model import Approval
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
@@ -1736,7 +1808,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
-        return [Approval(*r) for r in rows]
+        return [_dec_approval_row(r) for r in rows]
 
     def decide_approval(self, approval_id: int, status: str,
                         decided_by: str | None = None) -> bool:
@@ -1843,7 +1915,7 @@ class PostgresWorldModel:
             cur.execute(
                 "INSERT INTO turns(conversation_id, goal_id, role, content, ts) "
                 "VALUES(%s, %s, %s, %s, %s) RETURNING id",
-                (conversation_id, goal_id, role, content, time.time()),
+                (conversation_id, goal_id, role, _seal(content), time.time()),
             )
             return int(cur.fetchone()[0])
 
@@ -1866,7 +1938,9 @@ class PostgresWorldModel:
                 tuple(params),
             )
             rows = cur.fetchall()
-        return list(reversed([Turn(*r) for r in rows]))
+        # content (index 4) is sealed at rest.
+        return list(reversed([Turn(r[0], r[1], r[2], r[3], _unseal(r[4]), r[5])
+                              for r in rows]))
 
     def list_conversations(self, channel: str | None = None) -> list:
         from ..world_model import Conversation
@@ -2000,16 +2074,17 @@ class PostgresWorldModel:
             cur.execute(
                 "INSERT INTO messages(goal_id, role, content, ts) "
                 "VALUES(%s, %s, %s, %s)",
-                (goal_id, role, content, time.time()),
+                (goal_id, role, _seal(content), time.time()),
             )
 
     def search_messages(self, query: str, limit: int = 10) -> list[dict]:
         """Full-text search over message content, most-recent first.
 
-        Uses Postgres FTS (plainto_tsquery) rather than SQLite's FTS5.
-        plainto_tsquery parses arbitrary natural-language input safely — it
-        ignores operators, so an unbalanced quote / leading `*` / `-` can't
-        raise a syntax error (the PG analog to the SQLite quoting fix)."""
+        With at-rest encryption off, uses Postgres FTS (plainto_tsquery, which
+        parses arbitrary natural-language input safely). With encryption on,
+        content is ciphertext so FTS can't match -- it then scans a bounded
+        window of recent messages and substring-matches on the decrypted text
+        (scan-then-decrypt), mirroring how the SQLite backend degrades."""
         if not query or not query.strip():
             return []
         cols = ["id", "goal_id", "role", "content", "ts"]
@@ -2018,16 +2093,40 @@ class PostgresWorldModel:
         table = "messages m"
         if frag:
             table += " JOIN goals g ON g.id = m.goal_id"
+        cap = max(1, int(limit))
+        from ..crypto_at_rest import at_rest_enabled
+        if at_rest_enabled():
+            sql = f"SELECT {', '.join(select_cols)} FROM {table}"
+            params: list = []
+            if frag:
+                sql += " WHERE " + frag
+                params += fparams
+            sql += " ORDER BY m.ts DESC LIMIT %s"
+            params.append(max(cap * 50, 500))  # bounded scan window
+            with self._tx() as cur:
+                cur.execute(sql, tuple(params))
+                rows = cur.fetchall()
+            ql = query.strip().lower()
+            out: list[dict] = []
+            for r in rows:
+                content = _unseal(r[3]) or ""
+                if ql in content.lower():
+                    d = dict(zip(cols, r, strict=False))
+                    d["content"] = content
+                    out.append(d)
+                    if len(out) >= cap:
+                        break
+            return out
         sql = (
             f"SELECT {', '.join(select_cols)} FROM {table} "
             "WHERE to_tsvector('english', m.content) @@ plainto_tsquery('english', %s)"
         )
-        params: list = [query]
+        params = [query]
         if frag:
             sql += " AND " + frag
             params += fparams
         sql += " ORDER BY m.ts DESC LIMIT %s"
-        params.append(limit)
+        params.append(cap)
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()

@@ -5,9 +5,20 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
+
+// lastHeaderValue returns the last value of a (possibly multi-valued) header,
+// matching Python's dict(headers) semantics in model_proxy.py: a duplicate
+// header collapses to its LAST value, not a comma-join. Joining diverged from
+// the source of truth on the auth-header comparison (a client sending two
+// Authorization headers would be compared against "a, b").
+func lastHeaderValue(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[len(values)-1]
+}
 
 // HTTPUpstream is the production Upstream over net/http. The response is
 // buffered whole (matching the Python proxy: an SSE stream is forwarded
@@ -42,7 +53,7 @@ func (h *HTTPUpstream) Do(method, url string, headers map[string]string, body []
 	}
 	respHeaders := make(map[string]string, len(resp.Header))
 	for k, vs := range resp.Header {
-		respHeaders[k] = strings.Join(vs, ", ")
+		respHeaders[k] = lastHeaderValue(vs)
 	}
 	return resp.StatusCode, respHeaders, respBody, nil
 }
@@ -66,7 +77,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	headers := make(map[string]string, len(r.Header))
 	for k, vs := range r.Header {
-		headers[k] = strings.Join(vs, ", ")
+		headers[k] = lastHeaderValue(vs)
 	}
 	status, respHeaders, out := Handle(s.Config, r.Method, r.URL.RequestURI(), headers, body, s.Upstream)
 	for k, v := range respHeaders {
