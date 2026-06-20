@@ -83,8 +83,16 @@ def _get_semaphore(key: str, cap: int) -> asyncio.Semaphore:
             registry = {}
             _by_loop[loop] = registry
         sem = registry.get(key)
-        if sem is None:
+        # Recreate when the requested cap differs from the cached one so
+        # MAVERICK_NET_HOST_CONCURRENCY is the live tunable the docstring
+        # promises -- the old code cached the FIRST cap seen per (loop, host)
+        # and ignored later changes for that loop's lifetime. The cap is tagged
+        # on the semaphore (registry values stay plain Semaphores). A cap change
+        # is rare, so the brief window where holders of the prior semaphore
+        # overlap the new one is acceptable for a per-host politeness cap.
+        if sem is None or getattr(sem, "_mvk_cap", None) != cap:
             sem = asyncio.Semaphore(cap)
+            sem._mvk_cap = cap
             registry[key] = sem
         return sem
 
