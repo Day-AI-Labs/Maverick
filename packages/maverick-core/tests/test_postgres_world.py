@@ -702,3 +702,18 @@ def test_goal_status_counts_and_ping(world):
     after = world.goal_status_counts()
     assert after.get("running", 0) == before.get("running", 0) + 1
     assert world.ping() is True
+
+
+def test_rate_events_window_count(world):
+    import time
+    now = time.time()
+    key = f"rl-{int(now*1e6)}"
+    world.record_rate_event(key, now - 30)
+    world.record_rate_event(key, now - 10)
+    world.record_rate_event(key, now)
+    # Window = last 60s -> all 3; tighter window -> fewer.
+    assert world.count_rate_events(key, now - 60) == 3
+    assert world.count_rate_events(key, now - 20) == 2
+    assert world.count_rate_events(key, now + 5) == 0
+    # An unrelated key sees none of them.
+    assert world.count_rate_events("rl-other", now - 60) == 0

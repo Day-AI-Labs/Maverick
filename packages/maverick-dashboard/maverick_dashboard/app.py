@@ -855,6 +855,51 @@ def _rate_limit_key(request: Request | None, source: str | None = None) -> str:
     return f"ip:{host}"
 
 
+# Synthetic bucket for the process-wide ceiling in the shared store.
+_RL_GLOBAL_KEY = "__rl_goal_global__"
+
+
+def _shared_rate_limit_check(key: str, cap: int, global_cap: int) -> bool:
+    """Cross-replica goal-creation rate check, backed by the shared world store.
+
+    The in-process windows below only bound ONE replica, so N replicas admit N x
+    the cap. When Postgres (the HA backend) is configured, count admitted events
+    in the shared ``rate_events`` table across a 60s wall-clock window (shared
+    across replicas, unlike the in-process monotonic clock) and record this one.
+    Returns True when it admitted the request, raises ``HTTPException(429)`` when
+    a cap is exceeded, and returns False when there is no shared backend / it is
+    unavailable (the caller then applies the in-process limiter). A small
+    over-admission race is acceptable for a spend backstop -- it is not a hard
+    security boundary."""
+    try:
+        from maverick.world_model_backends import is_postgres_configured
+        if not is_postgres_configured():
+            return False
+        w = _world()
+        now = time.time()
+        cutoff = now - 60.0
+        if w.count_rate_events(_RL_GLOBAL_KEY, cutoff) >= global_cap:
+            raise HTTPException(
+                status_code=429,
+                detail=f"goal rate limit reached ({global_cap}/min total). Try again shortly.",
+                headers={"Retry-After": "60"},
+            )
+        if w.count_rate_events(key, cutoff) >= cap:
+            raise HTTPException(
+                status_code=429,
+                detail=f"goal rate limit reached ({cap}/min). Try again shortly.",
+                headers={"Retry-After": "60"},
+            )
+        w.record_rate_event(_RL_GLOBAL_KEY, now)
+        w.record_rate_event(key, now)
+        return True
+    except HTTPException:
+        raise
+    except Exception:  # pragma: no cover - never fail the request closed on a store blip
+        log.warning("shared rate limiter unavailable, using in-process window")
+        return False
+
+
 def check_goal_rate_limit(
     request: Request | None = None, *, source: str | None = None
 ) -> None:
@@ -863,11 +908,15 @@ def check_goal_rate_limit(
     Two 60-second sliding windows are enforced: a per-client window keyed
     by principal/source (so one noisy client can't 429 everyone) and a
     process-wide global ceiling (so a distributed flood still can't spawn
-    unbounded paid goals).
+    unbounded paid goals). On the Postgres (HA) backend these windows are
+    shared across replicas (see :func:`_shared_rate_limit_check`); otherwise
+    they are the per-process windows below.
     """
     key = _rate_limit_key(request, source)
     cap = _max_goals_per_min()
     global_cap = _max_goals_global_per_min()
+    if _shared_rate_limit_check(key, cap, global_cap):
+        return
     now = time.monotonic()
     cutoff = now - 60.0
     with _goal_rl_lock:
