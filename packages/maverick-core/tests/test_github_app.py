@@ -165,3 +165,66 @@ class TestSlugify:
     def test_empty_falls_back(self):
         assert slugify("") == "issue"
         assert slugify("!!!") == "issue"
+
+
+class TestProcessIssueGitTimeout:
+    """A hung local git call must surface as a clean PRResult, not a hang/crash."""
+
+    def _payload(self):
+        from maverick.github_app import WebhookPayload
+        return WebhookPayload(
+            event="issues", action="labeled", repo_full_name="octocat/spoon",
+            issue_number=7, issue_title="t", issue_body="b",
+            trigger_label="maverick", sender_login="alice",
+        )
+
+    def test_checkout_timeout_returns_error(self, monkeypatch, tmp_path):
+        import asyncio
+        import subprocess
+
+        from maverick import github_app as ga
+
+        monkeypatch.setattr(ga, "clone_repo", lambda *a, **k: tmp_path)
+
+        def _boom(*a, **k):
+            raise subprocess.TimeoutExpired(cmd="git", timeout=ga._GIT_TIMEOUT)
+
+        monkeypatch.setattr(ga.subprocess, "run", _boom)
+
+        res = asyncio.run(ga.process_issue(self._payload(), token="x"))
+        assert res.pr_url is None
+        assert "checkout failed" in (res.error or "")
+
+    def test_checkout_calls_are_time_boxed(self, monkeypatch, tmp_path):
+        # Every git call in the post-clone path passes a timeout (regression:
+        # they previously had none and could hang the webhook handler).
+        import asyncio
+        import subprocess
+
+        from maverick import github_app as ga
+
+        monkeypatch.setattr(ga, "clone_repo", lambda *a, **k: tmp_path)
+        seen_timeouts = []
+        real = subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
+
+        def _spy(*a, **k):
+            seen_timeouts.append(k.get("timeout"))
+            return real
+
+        monkeypatch.setattr(ga.subprocess, "run", _spy)
+        # Stop after the checkout by making the branch-create the only call we
+        # need to observe: force an early "no changes" return path.
+        monkeypatch.setattr(ga, "build_sandbox", lambda **k: object(), raising=False)
+
+        async def _fake_run_goal(*a, **k):
+            return "did nothing"
+
+        monkeypatch.setattr(ga, "run_goal", _fake_run_goal, raising=False)
+        monkeypatch.setattr("maverick.world_model.WorldModel.create_goal",
+                            lambda self, *a, **k: 1, raising=False)
+        monkeypatch.setattr("maverick.llm.LLM.__init__", lambda self, *a, **k: None)
+
+        asyncio.run(ga.process_issue(self._payload(), token="x"))
+        # At least the checkout ran, and every observed call carried a timeout.
+        assert seen_timeouts
+        assert all(t is not None for t in seen_timeouts)
