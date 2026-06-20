@@ -302,7 +302,9 @@ def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3,
         # never injected; decay only re-orders skills that already cleared it.
         if score > 0 and score >= min_score:
             scored.append((score * weights.get(s.name, 1.0), s))
-    scored.sort(key=lambda x: -x[0])
+    # Deterministic tie-break by name (matches the BM25 + embedding paths): equal
+    # scores must not resolve to nondeterministic input order.
+    scored.sort(key=lambda x: (-x[0], x[1].name))
     return [s for _, s in scored[:max_n]]
 
 

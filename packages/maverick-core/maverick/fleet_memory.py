@@ -79,6 +79,17 @@ def _sanitize(text: str, *, shield: Any | None) -> str | None:
         safe, _ = _redact(safe)
     except Exception:  # pragma: no cover
         pass
+    # Fleet records are EXTERNAL-trust, third-party input that later rides into
+    # orchestrator prompts via dream/reflexion recall. Apply the same injection
+    # tripwire memory_guard uses for EXTERNAL writes (it documents this list as
+    # reusable by the fleet inbox), so a marker-bearing record is rejected even
+    # when no Shield is wired (shield=None, the common path).
+    try:
+        from .memory_guard import injection_markers
+        if injection_markers(safe):
+            return None
+    except Exception:  # pragma: no cover -- screening failure must not crash ingest
+        pass
     if shield is not None:
         try:
             verdict = shield.scan_input(safe)
