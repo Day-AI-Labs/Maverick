@@ -31,7 +31,7 @@ the next section for scope.
 | IPC | inter-agent communication | append-only blackboard, parent↔child spawn handoffs, and a peer message bus — **in-process today** (`blackboard.py`, `tools/spawn.py`, `agent_bus.py`) |
 | Memory management | context = RAM, long-term = disk | turn-list compaction (drop/summarize, opt-in digest RAG), a model-curated cross-session memory directory, and per-goal KV memory (`compaction.py`, `tools/memory.py`, `tools/kv_memory.py`) |
 | Permissions / capabilities | per-agent access control | tool allow/deny ACLs, per-identity risk ceilings, destructive-action consent gating, plus Ed25519-signable **attenuating** capabilities that can only narrow as they propagate to children (`safety/tool_acl.py`, `safety/tool_risk.py`, `safety/consent.py`, `capability.py`) |
-| Filesystem / state | persistent state | persistent world model (SQLite + FTS5, or Postgres; schema v16) and durable single-agent checkpoints for crash-resume (`world_model.py`, `checkpoint.py`) |
+| Filesystem / state | persistent state | persistent world model (SQLite + FTS5, or Postgres; schema v20) and durable single-agent checkpoints for crash-resume (`world_model.py`, `checkpoint.py`) |
 | Package manager | installable units | community skills and MCP servers with validated install and **Ed25519 signed-publisher** verification (`skills.py`, `mcp_registry.py`) |
 | Budgets / quotas | cost as a managed resource | a hard per-run `Budget.check()` (dollars / wall-clock / tokens) plus opt-in per-principal rolling-window quotas for chargeback (`budget.py`, `quotas.py`) |
 | Audit / governance | tamper-evident log | append-only NDJSON with an Ed25519 Merkle-chained signature and offline `verify_chain`, plus GDPR Art.17 erasure (`audit/signing.py`, `audit/erase.py`) |
