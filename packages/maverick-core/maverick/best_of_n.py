@@ -24,6 +24,15 @@ from .config import env_flag
 log = logging.getLogger(__name__)
 
 
+class AllAttemptsFailed(Exception):
+    """Every candidate/attempt in a best-of-N / racing primitive failed.
+
+    Defined here once and re-exported by latency_best_of_n and
+    speculative_best_of_n so a caller catching it from one module also catches
+    it from the others (they previously each defined their own, so an
+    ``except`` on one silently missed the other)."""
+
+
 def enabled() -> bool:
     _v = env_flag("MAVERICK_BEST_OF_N")
     if _v is not None:

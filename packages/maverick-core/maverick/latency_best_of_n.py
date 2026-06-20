@@ -13,9 +13,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-
-class AllAttemptsFailed(Exception):
-    """Every attempt raised before any succeeded."""
+from .best_of_n import AllAttemptsFailed  # re-export: single shared definition
 
 
 async def race_first_success(
