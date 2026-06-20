@@ -20,9 +20,11 @@ from maverick import model_proxy as mp
 def _cfg(**kw) -> mp.ProxyConfig:
     base = dict(
         upstream="https://api.anthropic.com",
-        api_key="REAL_KEY",
+        # Templated placeholders (`<...>`): obviously-fake fixtures, and the angle
+        # brackets keep detect-secrets' KeywordDetector from flagging them.
+        api_key="<upstream-key>",
         auth_style="bearer",
-        client_token="CLIENT_SECRET",
+        client_token="<client-token>",
         allowed_routes=frozenset(),
     )
     base.update(kw)
@@ -49,7 +51,7 @@ def _cfg_json(c: mp.ProxyConfig) -> dict:
 _OPENAI = "https://api.openai.com"
 
 _BUILD_CASES = [
-    (_cfg(), "/v1/messages", {"Authorization": "Bearer CLIENT_SECRET", "X-Custom": "v"}),
+    (_cfg(), "/v1/messages", {"Authorization": "Bearer <client-token>", "X-Custom": "v"}),
     (_cfg(), "v1/messages", {"x-api-key": "client-sent", "Content-Type": "application/json"}),
     (_cfg(auth_style="x-api-key"), "/v1/messages",
      {"authorization": "Bearer x", "api-key": "y", "Accept": "application/json"}),
@@ -65,14 +67,14 @@ _BUILD_CASES = [
 ]
 
 _AUTH_CASES = [
-    (_cfg(), {"Authorization": "Bearer CLIENT_SECRET"}),
-    (_cfg(), {"authorization": "Bearer CLIENT_SECRET"}),
+    (_cfg(), {"Authorization": "Bearer <client-token>"}),
+    (_cfg(), {"authorization": "Bearer <client-token>"}),
     (_cfg(), {"Authorization": "Bearer WRONG"}),
-    (_cfg(), {"x-maverick-proxy-token": "CLIENT_SECRET"}),
-    (_cfg(), {"X-Maverick-Proxy-Token": "CLIENT_SECRET"}),
+    (_cfg(), {"x-maverick-proxy-token": "<client-token>"}),
+    (_cfg(), {"X-Maverick-Proxy-Token": "<client-token>"}),
     (_cfg(), {"x-maverick-proxy-token": "nope"}),
     (_cfg(), {}),
-    (_cfg(), {"Authorization": "Bearer CLIENT_SECRET "}),  # trailing space stripped
+    (_cfg(), {"Authorization": "Bearer <client-token> "}),  # trailing space stripped
     (_cfg(client_token=""), {"Authorization": "Bearer "}),  # no token -> deny
 ]
 

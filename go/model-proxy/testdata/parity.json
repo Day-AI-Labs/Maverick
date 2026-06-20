@@ -4,13 +4,13 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
-        "Authorization": "Bearer CLIENT_SECRET"
+        "Authorization": "Bearer <client-token>"
       },
       "result": true
     },
@@ -18,13 +18,13 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
-        "authorization": "Bearer CLIENT_SECRET"
+        "authorization": "Bearer <client-token>"
       },
       "result": true
     },
@@ -32,9 +32,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
@@ -46,13 +46,13 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
-        "x-maverick-proxy-token": "CLIENT_SECRET"
+        "x-maverick-proxy-token": "<client-token>"
       },
       "result": true
     },
@@ -60,13 +60,13 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
-        "X-Maverick-Proxy-Token": "CLIENT_SECRET"
+        "X-Maverick-Proxy-Token": "<client-token>"
       },
       "result": true
     },
@@ -74,9 +74,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
@@ -88,9 +88,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {},
@@ -100,13 +100,13 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
-        "Authorization": "Bearer CLIENT_SECRET "
+        "Authorization": "Bearer <client-token> "
       },
       "result": true
     },
@@ -114,7 +114,7 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
         "client_token": "",
         "upstream": "https://api.anthropic.com"
@@ -130,19 +130,19 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
-        "Authorization": "Bearer CLIENT_SECRET",
+        "Authorization": "Bearer <client-token>",
         "X-Custom": "v"
       },
       "path": "/v1/messages",
       "result": {
         "headers": {
-          "Authorization": "Bearer REAL_KEY",
+          "Authorization": "Bearer <upstream-key>",
           "X-Custom": "v"
         },
         "url": "https://api.anthropic.com/v1/messages"
@@ -152,9 +152,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
@@ -164,7 +164,7 @@
       "path": "v1/messages",
       "result": {
         "headers": {
-          "Authorization": "Bearer REAL_KEY",
+          "Authorization": "Bearer <upstream-key>",
           "Content-Type": "application/json"
         },
         "url": "https://api.anthropic.com/v1/messages"
@@ -174,9 +174,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "x-api-key",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
@@ -188,7 +188,7 @@
       "result": {
         "headers": {
           "Accept": "application/json",
-          "x-api-key": "REAL_KEY"
+          "x-api-key": "<upstream-key>"
         },
         "url": "https://api.anthropic.com/v1/messages"
       }
@@ -197,9 +197,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
@@ -214,7 +214,7 @@
       "path": "/v1/messages",
       "result": {
         "headers": {
-          "Authorization": "Bearer REAL_KEY"
+          "Authorization": "Bearer <upstream-key>"
         },
         "url": "https://api.anthropic.com/v1/messages"
       }
@@ -223,9 +223,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.openai.com"
       },
       "headers": {
@@ -234,7 +234,7 @@
       "path": "/v1/chat/completions",
       "result": {
         "headers": {
-          "Authorization": "Bearer REAL_KEY"
+          "Authorization": "Bearer <upstream-key>"
         },
         "url": "https://api.openai.com/v1/chat/completions"
       }
@@ -243,9 +243,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
@@ -254,7 +254,7 @@
       "path": "https://evil.example.com/v1/messages",
       "result": {
         "headers": {
-          "Authorization": "Bearer REAL_KEY"
+          "Authorization": "Bearer <upstream-key>"
         },
         "url": "https://api.anthropic.com/https://evil.example.com/v1/messages"
       }
@@ -266,9 +266,9 @@
           "api.openai.com"
         ],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {
@@ -277,7 +277,7 @@
       "path": "/v1/messages",
       "result": {
         "headers": {
-          "Authorization": "Bearer REAL_KEY"
+          "Authorization": "Bearer <upstream-key>"
         },
         "url": "https://api.anthropic.com/v1/messages"
       }
@@ -286,16 +286,16 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "headers": {},
       "path": "/",
       "result": {
         "headers": {
-          "Authorization": "Bearer REAL_KEY"
+          "Authorization": "Bearer <upstream-key>"
         },
         "url": "https://api.anthropic.com/"
       }
@@ -348,9 +348,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "method": "POST",
@@ -361,9 +361,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "method": "post",
@@ -374,9 +374,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "method": "POST",
@@ -387,9 +387,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "method": "GET",
@@ -400,9 +400,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "method": "POST",
@@ -413,9 +413,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "method": "POST",
@@ -426,9 +426,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "method": "POST",
@@ -442,9 +442,9 @@
           "GET /healthz",
           "POST /v1/foo"
         ],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "method": "GET",
@@ -457,9 +457,9 @@
         "allowed_routes": [
           "GET /healthz"
         ],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "method": "POST",
@@ -470,9 +470,9 @@
       "config": {
         "allow_hosts": [],
         "allowed_routes": [],
-        "api_key": "REAL_KEY",
+        "api_key": "<upstream-key>",
         "auth_style": "bearer",
-        "client_token": "CLIENT_SECRET",
+        "client_token": "<client-token>",
         "upstream": "https://api.anthropic.com"
       },
       "method": "POST",
