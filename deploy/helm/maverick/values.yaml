@@ -107,6 +107,17 @@ podDisruptionBudget:
   enabled: false
   minAvailable: 1
 
+# Horizontal Pod Autoscaler. Off by default and only valid on the Postgres
+# backend: the default SQLite backend is single-writer on a RWO volume, so the
+# chart hard-fails if you enable this without worldModel.backend=postgres. When
+# enabled the Deployment stops pinning replicas (the HPA owns the count).
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: ""   # "" = omit the memory metric
+
 # NetworkPolicy. Default-deny ingress except to the dashboard port, and (when
 # restrictEgress=true) deny egress to RFC1918/link-local ranges to blunt SSRF to
 # cloud metadata while still allowing DNS + public LLM/provider egress.
