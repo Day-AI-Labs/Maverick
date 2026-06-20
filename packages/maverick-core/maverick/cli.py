@@ -3350,6 +3350,16 @@ def serve(max_depth: int, verbose: bool) -> None:
     # is a long-running server that wants its INFO/DEBUG logs. basicConfig is
     # a no-op once a handler exists, so set the level explicitly here.
     logging.getLogger().setLevel(logging.DEBUG if verbose else logging.INFO)
+    # Enterprise hard-gate: when the operator demands the data-boundary
+    # guarantees (MAVERICK_REQUIRE_ENTERPRISE=1 / [enterprise] require=true),
+    # refuse to start the channel server unless they hold -- the same preflight
+    # the dashboard entrypoint runs. No-op otherwise (kernel stays fail-open).
+    try:
+        from .deployment import EnterpriseRequiredError, require_enterprise_or_die
+        require_enterprise_or_die()
+    except EnterpriseRequiredError as e:
+        click.echo(e.summary, err=True)
+        sys.exit(3)
     try:
         from .server import build_from_config
     except ImportError as e:

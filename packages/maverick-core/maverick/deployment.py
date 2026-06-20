@@ -154,7 +154,49 @@ def verify_deployment() -> list[GuaranteeCheck]:
              "firecracker); 'local' runs agent code on the host unsandboxed",
     ))
 
+    # 7. Threat shield -- the input/tool/output screen must be installed and
+    #    enforcing. The kernel runs fail-open without it (CLAUDE.md rule 1), so
+    #    this is only a *gate* under a required enterprise deployment: there, a
+    #    silently-absent or disabled shield means the boundary does not hold.
+    checks.append(_verify_shield())
+
     return checks
+
+
+def _verify_shield() -> GuaranteeCheck:
+    """Verify the threat shield is installed and enforcing (profile != off).
+
+    Optional import: maverick-shield is not a hard dependency (kernel rule 1).
+    A required enterprise deployment, however, must not run with the screen off
+    -- so an absent or disabled shield fails this guarantee. The built-in
+    ruleset counts as enforcing (the detail nudges toward the full SDK)."""
+    name = "Threat shield"
+    try:
+        from maverick_shield import Shield
+    except Exception:
+        return GuaranteeCheck(
+            name, False,
+            "maverick-shield not installed; input/tool/output screening is off "
+            "(pip install maverick-shield)",
+        )
+    try:
+        shield = Shield.from_config(warn_if_missing=False)
+    except Exception as e:
+        return GuaranteeCheck(name, False, f"shield construction failed: {e}")
+    if not getattr(shield, "enabled", False):
+        return GuaranteeCheck(
+            name, False,
+            "shield installed but disabled ([safety] profile = off); set a "
+            "profile (strict/balanced) so screening is enforced",
+        )
+    backend = getattr(shield, "backend", "?")
+    full = backend == getattr(Shield, "BACKEND_SDK", "agent-shield")
+    detail = (
+        "agent-shield SDK active (full ruleset)" if full
+        else f"shield enforcing via {backend!r} backend (install agent-shield "
+             "for the full ruleset)"
+    )
+    return GuaranteeCheck(name, True, detail)
 
 
 def _verify_audit_signing() -> GuaranteeCheck:
