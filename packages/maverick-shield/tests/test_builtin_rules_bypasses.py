@@ -67,3 +67,27 @@ def test_benign_text_not_blocked():
 
 def test_plain_attack_still_blocked():
     assert _blocked(_ATTACK)
+
+
+# --- input-length DoS bound --------------------------------------------------
+
+def test_scan_input_length_is_bounded(monkeypatch):
+    """scan() truncates oversized input before the expensive de-obfuscation, so a
+    2 MB body can't be a linear-amplification CPU DoS. Proven deterministically:
+    with a tiny cap, a marker past the cap is truncated away (not scanned) while
+    the same marker within the cap still fires."""
+    monkeypatch.setenv("MAVERICK_SHIELD_MAX_SCAN_CHARS", "64")
+    # Marker within the first 64 chars -> still detected.
+    assert _blocked(_ATTACK)
+    # Marker pushed entirely past the 64-char cap -> truncated away.
+    assert not _blocked(("a" * 200) + _ATTACK)
+
+
+def test_scan_default_cap_bounds_oversized_input():
+    """A 2 MB input scans about as cheaply as the cap-sized prefix (no unbounded
+    amplification). Uses the default 256 KB cap (no env override)."""
+    import time
+    big = ("benign text " * 200_000)  # ~2.4 MB
+    t0 = time.perf_counter()
+    br.scan(big, block_threshold="high")
+    assert time.perf_counter() - t0 < 2.0
