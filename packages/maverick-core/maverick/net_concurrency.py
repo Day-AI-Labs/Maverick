@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import threading
+import weakref
 from urllib.parse import urlparse
 
 # Tools whose endpoint host is fixed (not derivable from args). Mapping the
@@ -30,14 +32,19 @@ _FIXED_HOST_TOOLS = {
     "hackernews": "ycombinator-hn",
 }
 
-# Lazily-created per-host semaphores for the CURRENT event loop. A Semaphore
-# binds to a loop the first time it is awaited, so reusing a module-level one
-# across loops -- a second asyncio.run(), the dashboard's loop, a worker
-# thread's loop -- raised "bound to a different loop" and broke same-host
-# fetches. We remember which loop the registry belongs to (by identity, so a
-# recycled id() can't alias a dead loop) and rebuild it when the loop changes.
-_semaphores: dict[str, asyncio.Semaphore] = {}
-_sem_loop: asyncio.AbstractEventLoop | None = None
+# Per-event-loop semaphore registries. A Semaphore binds to a loop the first
+# time it is awaited, so a single shared registry broke under the platform's OWN
+# concurrency: runner.run_goal_in_thread / orchestrator.run_goal_sync run each
+# goal under its own asyncio.run() on a worker thread, so two goals are two live
+# loops on two threads. The old single `_sem_loop` flip-flopped between them --
+# each clear() wiping the other's registry (an unsynchronized data race), and a
+# semaphore created for loop A could then be awaited under loop B ("bound to a
+# different loop"). We keep one registry PER loop, keyed by the loop in a
+# WeakKeyDictionary (auto-evicts a dead loop, so a recycled id() can't alias
+# it), and guard all access with a lock -- WeakKeyDictionary mutation is not
+# itself thread-safe across the concurrent loops that reach here.
+_lock = threading.Lock()
+_by_loop: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 def _cap() -> int:
@@ -64,21 +71,22 @@ def host_key(tool_name: str, args: dict) -> str | None:
 
 
 def _get_semaphore(key: str, cap: int) -> asyncio.Semaphore:
-    global _sem_loop
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:  # pragma: no cover - limit() is only used under a loop
-        loop = None
-    if loop is not _sem_loop:
-        # The active event loop changed; semaphores bound to the previous loop
-        # can't be awaited here. Start a fresh registry for this loop.
-        _semaphores.clear()
-        _sem_loop = loop
-    sem = _semaphores.get(key)
-    if sem is None:
-        sem = asyncio.Semaphore(cap)
-        _semaphores[key] = sem
-    return sem
+        # No running loop: hand back an uncached semaphore rather than touch the
+        # shared registry. It still gates the single call it's used for.
+        return asyncio.Semaphore(cap)
+    with _lock:
+        registry = _by_loop.get(loop)
+        if registry is None:
+            registry = {}
+            _by_loop[loop] = registry
+        sem = registry.get(key)
+        if sem is None:
+            sem = asyncio.Semaphore(cap)
+            registry[key] = sem
+        return sem
 
 
 def limit(tool_name: str, args: dict):
@@ -97,10 +105,9 @@ def limit(tool_name: str, args: dict):
 
 
 def _reset_for_tests() -> None:
-    """Clear the semaphore registry (tests that vary the cap)."""
-    global _sem_loop
-    _semaphores.clear()
-    _sem_loop = None
+    """Clear all per-loop semaphore registries (tests that vary the cap)."""
+    with _lock:
+        _by_loop.clear()
 
 
 __all__ = ["host_key", "limit"]

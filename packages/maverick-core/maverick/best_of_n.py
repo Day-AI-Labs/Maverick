@@ -16,19 +16,18 @@ Off by default + fail-open at the call site; this module is a pure primitive.
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+
+from .config import env_flag
 
 log = logging.getLogger(__name__)
 
 
 def enabled() -> bool:
-    env = os.environ.get("MAVERICK_BEST_OF_N", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_BEST_OF_N")
+    if _v is not None:
+        return _v
     try:
         from .config import get_search
         return bool(get_search()["enable"])

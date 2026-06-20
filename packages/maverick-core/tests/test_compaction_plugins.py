@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from maverick import compaction_plugins as cp
+from maverick.compaction import plugins as cp
 
 
 @pytest.fixture(autouse=True)

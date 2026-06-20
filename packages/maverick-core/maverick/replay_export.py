@@ -22,6 +22,7 @@ import logging
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+from .paths import data_dir
 from .safety.pii_detector import redact as _pii_redact
 from .secrets import scrub
 
@@ -40,7 +41,7 @@ def _sanitize(text: str) -> str:
 log = logging.getLogger(__name__)
 
 
-_AUDIT_DIR = Path.home() / ".maverick" / "audit"
+_AUDIT_DIR = data_dir("audit")
 
 
 _HTML_HEAD_TMPL = (

@@ -26,11 +26,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import threading
 from collections.abc import Callable
 
 from . import context_compactor as _cc
+from .config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ _MAX_KEYS = 256
 
 
 def enabled() -> bool:
-    if os.environ.get("MAVERICK_ASYNC_COMPACTION", "").strip().lower() in {"1", "true", "yes", "on"}:
+    if env_flag("MAVERICK_ASYNC_COMPACTION"):
         return True
     try:
         from .config import load_config

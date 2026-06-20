@@ -421,6 +421,40 @@ async def _read_limited_skill_validator_body(request: Request) -> bytes:
         too_large_detail="skill too large (max 256 KiB)",
     )
 
+
+async def _verify_maverick_webhook(request: Request) -> dict:
+    """Verify a Maverick-format inbound webhook (HMAC over body+timestamp) and
+    return the parsed JSON object. Shared by /webhook/start and /webhook/run,
+    which had byte-identical preambles. Raises HTTPException (401 unconfigured,
+    403 bad signature, 400 bad body) and enforces a configured LLM provider."""
+    from maverick.webhooks import inbound_secret, verify_signature
+
+    secret = inbound_secret()
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "inbound webhooks are not configured. Set a [webhooks] "
+                "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
+            ),
+        )
+    signature = request.headers.get("X-Maverick-Signature") or ""
+    timestamp = request.headers.get("X-Maverick-Timestamp") or ""
+    if not signature or not timestamp:
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+    body = await _read_limited_webhook_body(request)
+    if not verify_signature(body, signature, secret, timestamp=timestamp):
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+
+    require_provider_or_400()
+    try:
+        payload = json.loads(body or b"{}")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="body must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    return payload
+
 # Safe methods skip the CSRF check (browsers send Origin/Referer
 # inconsistently on GETs from address bars and bookmarks).
 _CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -448,6 +482,13 @@ def _is_same_origin(request: Request) -> bool:
             return True
         return False
     return False
+
+
+def _require_same_origin(request: Request) -> None:
+    """Reject a cross-site mutating form POST (403). Shared CSRF guard inlined by
+    ~20 form handlers."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
 
 
 def _is_loopback_client(host: str) -> bool:
@@ -974,8 +1015,7 @@ async def projects_page(request: Request) -> HTMLResponse:
 async def projects_create(request: Request, name: str = Form(...),
                           description: str = Form(""), domain: str = Form("")) -> RedirectResponse:
     """Create a project, then redirect to it. Same-origin; owned by the caller."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     if not name.strip():
         raise HTTPException(status_code=422, detail="a project needs a name")
     pid = _world().create_project(
@@ -1005,8 +1045,7 @@ async def goal_set_project(request: Request, goal_id: int,
                            project_id: str = Form("")) -> RedirectResponse:
     """File a goal under a project (empty value clears it). Same-origin; the
     caller must be able to access the goal."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -1031,8 +1070,7 @@ async def styles_page(request: Request) -> HTMLResponse:
 async def styles_set(request: Request, name: str = Form("")) -> RedirectResponse:
     """Set the active output style (empty value clears it). Same-origin; the
     operator role (it changes how every agent responds)."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "operate")
     from maverick import runtime_overrides
     n = (name or "").strip()
@@ -1736,8 +1774,7 @@ async def plugins_toggle(request: Request, name: str = Form(...),
                          action: str = Form(...)) -> RedirectResponse:
     """Enable / disable / reset a plugin from the dashboard. Writes the runtime
     overlay, never config.toml. Enabling loads the plugin's code on the next goal."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     # Enabling a plugin loads its code on the next goal -- a control-plane
     # change as privileged as /plugins/install (which requires admin). Gate it
     # the same way so a viewer/operator can't alter what code the agent loads.
@@ -1767,8 +1804,7 @@ async def plugins_install(request: Request, name: str = Form(...)) -> RedirectRe
     explicit ``MAVERICK_ALLOW_PLUGIN_INSTALL`` opt-in, the admin role, and the
     install allowlist (``install_plugin`` rejects anything not on it). Only the
     allowlisted package names are ever accepted -- never free-text input."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     if os.environ.get("MAVERICK_ALLOW_PLUGIN_INSTALL", "").lower() not in {"1", "true", "yes"}:
         raise HTTPException(
             status_code=403,
@@ -1840,8 +1876,7 @@ async def mcp_add(request: Request) -> RedirectResponse:
     """Add a dashboard-managed MCP server from the form. Builds a stdio
     (command/args/env) or http (url/headers/auth) spec and stores it in the
     runtime overlay; the kernel validates + unions it on the next goal."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import add_mcp_server
     form = await request.form()
@@ -1880,8 +1915,7 @@ async def mcp_add(request: Request) -> RedirectResponse:
 @app.post("/mcp/remove")
 async def mcp_remove(request: Request, name: str = Form(...)) -> RedirectResponse:
     """Remove a dashboard-added MCP server (config.toml servers are untouched)."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import remove_mcp_server
     remove_mcp_server((name or "").strip())
@@ -2247,8 +2281,7 @@ async def channels_save(request: Request) -> RedirectResponse:
     """Enable/disable a channel and set its credentials from the form. Stored in
     the dashboard overlay (dashboard-config.toml), never config.toml; blank
     fields keep the current value so a toggle never wipes a hidden secret."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     form = await request.form()
@@ -2265,8 +2298,7 @@ async def channels_save(request: Request) -> RedirectResponse:
 @app.post("/channels/clear")
 async def channels_clear(request: Request, channel: str = Form(...)) -> RedirectResponse:
     """Remove a channel's dashboard overlay (reverts to config.toml / env)."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     try:
@@ -2429,20 +2461,32 @@ async def goal_cost_breakdown(request: Request, goal_id: int) -> JSONResponse:
 
 
 @app.get("/api/v1/cost/anomalies")
-async def cost_anomalies(threshold_sigma: float = 3.0, limit: int = 500) -> JSONResponse:
+async def cost_anomalies(
+    request: Request, threshold_sigma: float = 3.0, limit: int = 500,
+) -> JSONResponse:
     """Cost anomaly alerts: goals whose spend is a statistical outlier.
 
     Computes per-goal spend over the recent episode window and flags goals
     above mean + threshold_sigma * stdev (min 3 goals before anything can
-    flag). The data behind a dashboard alert badge."""
+    flag). The data behind a dashboard alert badge.
+
+    Owner-scoped: an authenticated non-admin sees anomalies only among their own
+    goals (auth-off / admin see all), so other tenants' goal ids and exact spend
+    don't leak -- the same scoping ``/api/v1/cost/by-tag`` applies."""
     import statistics
 
     w = _world()
     limit = max(1, min(int(limit), 10_000))
+    owner = goal_owner_filter(request)
+    owned: set[int] | None = None
+    if owner is not None:
+        owned = {g.id for g in w.list_goals(owner=owner, limit=10_000, order="desc")}
     by_goal: dict[int, float] = {}
     for ep in w.list_episodes(limit=limit):
         gid = getattr(ep, "goal_id", None)
         if gid is None:
+            continue
+        if owned is not None and gid not in owned:
             continue
         by_goal[gid] = by_goal.get(gid, 0.0) + float(getattr(ep, "cost_dollars", 0) or 0)
     spends = [s for s in by_goal.values() if s > 0]
@@ -2724,7 +2768,10 @@ async def runs_compare(request: Request, ids: str) -> JSONResponse:
     for gid in goal_ids:
         g = w.get_goal(gid)
         if g is None:
-            raise HTTPException(status_code=404, detail=f"no such goal: {gid}")
+            # Opaque detail (no id) so "does not exist" is indistinguishable from
+            # assert_goal_access's "exists but forbidden" -- otherwise the two
+            # different messages re-introduce a cross-tenant existence oracle.
+            raise HTTPException(status_code=404, detail="no such goal")
         assert_goal_access(request, g)
         events = w.goal_events(gid, limit=10_000)
         errors = sum(1 for e in events if e.kind == "error")
@@ -2821,8 +2868,7 @@ async def chat_send(
     description: str = Form(""),
     files: list[UploadFile] = File(default=[]),
 ) -> RedirectResponse:
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "operate")
     require_provider_or_400()
     check_goal_rate_limit(request)
@@ -2953,8 +2999,7 @@ async def settings_set_model(request: Request, model: str = Form("")) -> Redirec
 
     An empty value clears the pin, reverting to config.toml / built-in
     defaults. config.toml is never written."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import (
         allowed_models,
@@ -2980,8 +3025,7 @@ async def settings_set_budget(request: Request, max_dollars: str = Form("")) -> 
     """Set (or clear) the dashboard's per-goal spend cap via the runtime
     overlay. An empty value clears it, reverting to config.toml / defaults.
     config.toml is never written."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import clear_budget, set_budget
     val = (max_dollars or "").strip()
@@ -3001,8 +3045,7 @@ async def settings_set_budget(request: Request, max_dollars: str = Form("")) -> 
 async def settings_set_role_models(request: Request) -> RedirectResponse:
     """Set/clear per-role model pins from the settings page in one write. Each
     form field is named for a role; an empty value clears that role's pin."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import allowed_models, set_role_models
     roles = ("orchestrator", "coder", "researcher", "writer",
@@ -3027,8 +3070,7 @@ async def settings_set_allowed_models(request: Request) -> RedirectResponse:
     ``models`` field is an allowed spec; none checked clears the restriction
     (every model allowed again). Saved to the dashboard overlay, never
     config.toml; ``llm.model_for_role`` then caps every role to this set."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick.runtime_overrides import set_allowed_models
     form = await request.form()
@@ -3049,8 +3091,7 @@ async def settings_set_provider(
     """Save a provider's API key / base URL to the dashboard config overlay
     (0600). Empty fields are left unchanged (so re-saving a base URL never wipes
     a key you can't see); resolved before env vars; config.toml is never written."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     try:
@@ -3063,8 +3104,7 @@ async def settings_set_provider(
 @app.post("/settings/providers/clear")
 async def settings_clear_provider(request: Request, provider: str = Form(...)) -> RedirectResponse:
     """Remove a provider's dashboard-set key (config.toml / env unaffected)."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     try:
@@ -3077,8 +3117,7 @@ async def settings_clear_provider(request: Request, provider: str = Form(...)) -
 @app.post("/settings/capabilities")
 async def settings_set_capabilities(request: Request) -> RedirectResponse:
     """Activate/deactivate capabilities via the dashboard config overlay."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     form = await request.form()
@@ -3090,8 +3129,7 @@ async def settings_set_capabilities(request: Request) -> RedirectResponse:
 @app.post("/settings/features")
 async def settings_set_features(request: Request) -> RedirectResponse:
     """Activate/deactivate features via the dashboard config overlay."""
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     require_permission(request, "admin")
     from maverick_dashboard import settings_store
     form = await request.form()
@@ -3142,8 +3180,7 @@ async def users_set_role(
 ) -> RedirectResponse:
     """Assign a dashboard role to a user principal (admin only)."""
     require_permission(request, "admin")
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     from . import rbac
     try:
         rbac.set_role(principal.strip(), role.strip())
@@ -3157,8 +3194,7 @@ async def users_remove(request: Request, principal: str = Form(...)) -> Redirect
     """Remove a user's explicit role assignment (admin only). A bootstrap admin
     pinned in config is unaffected — it can't be removed here."""
     require_permission(request, "admin")
-    if not _is_same_origin(request):
-        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    _require_same_origin(request)
     from . import rbac
     rbac.remove_user(principal.strip())
     return RedirectResponse("/users?saved=removed", status_code=303)
@@ -3183,32 +3219,7 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
     configured freshness window (``[webhooks] max_age_seconds``) is rejected,
     so a captured signed request can't be replayed to re-spend budget.
     """
-    from maverick.webhooks import inbound_secret, verify_signature
-
-    secret = inbound_secret()
-    if not secret:
-        raise HTTPException(
-            status_code=401,
-            detail=(
-                "inbound webhooks are not configured. Set a [webhooks] "
-                "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
-            ),
-        )
-    signature = request.headers.get("X-Maverick-Signature") or ""
-    timestamp = request.headers.get("X-Maverick-Timestamp") or ""
-    if not signature or not timestamp:
-        raise HTTPException(status_code=403, detail="bad webhook signature")
-    body = await _read_limited_webhook_body(request)
-    if not verify_signature(body, signature, secret, timestamp=timestamp):
-        raise HTTPException(status_code=403, detail="bad webhook signature")
-
-    require_provider_or_400()
-    try:
-        payload = json.loads(body or b"{}")
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise HTTPException(status_code=400, detail="body must be valid JSON") from exc
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    payload = await _verify_maverick_webhook(request)
 
     title = str(payload.get("title") or "").strip()
     if not title:
@@ -3262,31 +3273,7 @@ async def webhook_run(request: Request, bg: BackgroundTasks) -> JSONResponse:
     if not get_features().get("triggers", True):
         raise HTTPException(status_code=404, detail="triggers are disabled")
 
-    from maverick.webhooks import inbound_secret, verify_signature
-    secret = inbound_secret()
-    if not secret:
-        raise HTTPException(
-            status_code=401,
-            detail=(
-                "inbound webhooks are not configured. Set a [webhooks] "
-                "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
-            ),
-        )
-    signature = request.headers.get("X-Maverick-Signature") or ""
-    timestamp = request.headers.get("X-Maverick-Timestamp") or ""
-    if not signature or not timestamp:
-        raise HTTPException(status_code=403, detail="bad webhook signature")
-    body = await _read_limited_webhook_body(request)
-    if not verify_signature(body, signature, secret, timestamp=timestamp):
-        raise HTTPException(status_code=403, detail="bad webhook signature")
-
-    require_provider_or_400()
-    try:
-        payload = json.loads(body or b"{}")
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise HTTPException(status_code=400, detail="body must be valid JSON") from exc
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    payload = await _verify_maverick_webhook(request)
     name = str(payload.get("trigger") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="trigger is required")
@@ -3864,7 +3851,7 @@ async def errors_page(request: Request, goal_id: int) -> HTMLResponse:
 
 
 @app.get("/api/v1/cost.csv")
-async def cost_csv(month: str | None = None) -> StreamingResponse:
+async def cost_csv(request: Request, month: str | None = None) -> StreamingResponse:
     """CSV rollup of episode spend, streamed.
 
     Council perf finding: prior version fetched up to 100k episodes
@@ -3881,6 +3868,11 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
     import io as _io
 
     w = _world()
+    # Owner-scope the export: an authenticated non-admin gets only their own
+    # episodes (auth-off / admin get everything, the historical behaviour), so
+    # this chargeback CSV can't leak every tenant's spend ledger. Mirrors the
+    # owner scoping on /api/v1/cost/by-tag.
+    owner = goal_owner_filter(request)
     start_ts: float | None = None
     end_ts: float | None = None
     if month:
@@ -3915,16 +3907,25 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
         buf.seek(0)
         buf.truncate(0)
 
-        params: tuple = ()
         sql = (
             "SELECT id, goal_id, started_at, ended_at, outcome, "
             "cost_dollars, input_tokens, output_tokens, tool_calls "
             "FROM episodes"
         )
+        conds: list[str] = []
+        plist: list = []
         if start_ts is not None:
-            sql += " WHERE started_at >= ? AND started_at < ?"
-            params = (start_ts, end_ts)
+            conds.append("started_at >= ? AND started_at < ?")
+            plist += [start_ts, end_ts]
+        if owner is not None:
+            # Subquery (not a 10k-element IN list) avoids SQLite's bound-variable
+            # limit and scopes the stream to the caller's goals.
+            conds.append("goal_id IN (SELECT id FROM goals WHERE owner = ?)")
+            plist.append(owner)
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
         sql += " ORDER BY id"
+        params = tuple(plist)
 
         # outcome is a sealed column when at-rest encryption is on; this CSV reads
         # it via raw SQL, so decrypt it like the WorldModel accessors do.
@@ -4698,7 +4699,19 @@ def main() -> None:
         pass
 
     import uvicorn
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    # JSON logging consistency: uvicorn installs its OWN plaintext access/error
+    # formatters by default, so even after configure_logging() switches the root
+    # handler to JSON the access lines stayed plaintext -- a mixed JSON+text
+    # stream that breaks strict ingestion (Loki/CloudWatch). In JSON mode pass
+    # log_config=None so uvicorn doesn't reconfigure those loggers; they then
+    # propagate to the JSON root handler. In text mode omit the kwarg entirely so
+    # uvicorn keeps its colored default for the local-dev experience.
+    _json_logs = os.environ.get("MAVERICK_LOG_FORMAT", "text").strip().lower() == "json"
+    if _json_logs:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info",
+                    log_config=None)
+    else:
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

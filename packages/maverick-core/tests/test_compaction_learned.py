@@ -7,7 +7,7 @@ import stat
 
 import pytest
 from maverick.compaction import compact_messages
-from maverick.compaction_learned import (
+from maverick.compaction.learned import (
     TEMPLATES,
     LearnedSummarizer,
     OutcomeLedger,

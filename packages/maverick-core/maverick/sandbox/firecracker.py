@@ -34,6 +34,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..paths import data_dir
 from .local import ExecResult, scrub_env
 
 log = logging.getLogger(__name__)
@@ -189,8 +190,8 @@ class FirecrackerBackend:
         """Run a one-shot command via firectl. Scaffold."""
         # firectl invocation pattern (kernel + rootfs paths come from
         # ~/.maverick/firecracker/{kernel,rootfs}.img by convention).
-        kernel = Path.home() / ".maverick" / "firecracker" / "kernel.img"
-        rootfs = Path.home() / ".maverick" / "firecracker" / "rootfs.img"
+        kernel = data_dir("firecracker", "kernel.img")
+        rootfs = data_dir("firecracker", "rootfs.img")
         if not kernel.exists() or not rootfs.exists():
             return ExecResult(
                 exit_code=127,

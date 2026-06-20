@@ -13,18 +13,17 @@ Off by default + fail-open (``[skill_synthesis] enable`` /
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
+
+from .config import env_flag
 
 log = logging.getLogger(__name__)
 
 
 def enabled() -> bool:
-    env = os.environ.get("MAVERICK_SKILL_SYNTHESIS", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_SKILL_SYNTHESIS")
+    if _v is not None:
+        return _v
     try:
         from .config import get_skill_synthesis
         return bool(get_skill_synthesis()["enable"])

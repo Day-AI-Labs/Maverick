@@ -28,10 +28,10 @@ import tempfile
 import time
 from pathlib import Path
 
-from .compaction import KEEP_RECENT_TURNS, compact_messages
-from .context_compactor import _message_text
-from .llm import model_for_role
-from .paths import data_dir
+from ..context_compactor import _message_text
+from ..llm import model_for_role
+from ..paths import data_dir
+from . import KEEP_RECENT_TURNS, compact_messages
 
 log = logging.getLogger(__name__)
 

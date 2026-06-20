@@ -21,11 +21,12 @@ import logging
 import math
 import os
 import re
-from pathlib import Path
+
+from .paths import data_dir
 
 log = logging.getLogger(__name__)
 
-OVERRIDES_PATH = Path.home() / ".maverick" / "runtime-overrides.toml"
+OVERRIDES_PATH = data_dir("runtime-overrides.toml")
 _VALID_TOOL_NAME = re.compile(r"^[a-z0-9_-]+$")
 
 

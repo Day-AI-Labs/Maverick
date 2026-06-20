@@ -5,7 +5,7 @@ import base64
 import json
 import struct
 
-from maverick.compaction_multimodal import (
+from maverick.compaction.multimodal import (
     _dimensions,
     _human_size,
     compact_media,

@@ -33,7 +33,7 @@ class _HeuristicStrategy:
     name = "heuristic"
 
     def compact(self, messages: list[dict], **kwargs) -> list[dict]:
-        from .compaction import compact_messages
+        from . import compact_messages
         allowed = {k: kwargs[k] for k in ("keep_recent", "max_tool_bytes")
                    if k in kwargs}
         return compact_messages(messages, **allowed)
@@ -68,7 +68,7 @@ def _configured_name() -> str:
     if env:
         return env
     try:
-        from .config import load_config
+        from ..config import load_config
         name = str(((load_config() or {}).get("context") or {})
                    .get("compaction_strategy", "")).strip()
         return name or _DEFAULT
@@ -97,7 +97,7 @@ class _StrategyAdapter:
         self.name = name
 
     def compact(self, messages: list[dict], **kwargs) -> list[dict]:
-        from .compaction_strategies import compact_with_strategy
+        from .strategies import compact_with_strategy
         allowed = {k: kwargs[k] for k in
                    ("llm", "conversation_id", "keep_recent", "max_tool_bytes",
                     "budget", "scope")

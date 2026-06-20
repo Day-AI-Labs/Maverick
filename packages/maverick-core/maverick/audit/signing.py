@@ -20,6 +20,17 @@ Key management:
   - ``verify_chain()`` walks a file and confirms every signature +
     chain link. Returns a list of any breaks for human review.
 
+Externally-managed key (enterprise / H29): set
+``MAVERICK_AUDIT_SIGNING_KEY`` to a raw 32-byte Ed25519 private key (hex or
+base64). It then becomes the active signer and is held IN MEMORY ONLY -- the
+private key is never written to the local key dir, so the chain's trust anchor
+can be custodied in a KMS / HSM / secrets manager and injected at deploy time
+instead of generated-and-left on the host. Only the public half (plus an
+``.injected`` marker) is persisted, so local ``verify_chain`` still trusts the
+chain. An injected key takes precedence over any on-disk key; rotate it in your
+secret manager (the ``key_id`` is derived from the public key, so a new key
+chains additively exactly like ``rotate_audit_keypair``).
+
 Optional [audit-signing] extra (cryptography>=44.0.1).
 """
 
@@ -36,6 +47,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..paths import data_dir
+
 log = logging.getLogger(__name__)
 
 
@@ -45,7 +58,7 @@ log = logging.getLogger(__name__)
 # override. With no override, ``_key_dir()`` resolves the *tenant-scoped* dir
 # via ``data_dir`` so each tenant gets an independent signing key, while the
 # no-tenant default stays exactly ``~/.maverick/audit/keys``.
-_LEGACY_KEY_DIR = Path.home() / ".maverick" / "audit" / "keys"
+_LEGACY_KEY_DIR = data_dir("audit", "keys")
 KEY_DIR = _LEGACY_KEY_DIR
 
 
@@ -91,6 +104,127 @@ def _key_paths_for_id(key_id: str) -> tuple[Path, Path] | tuple[None, None]:
     except ValueError:
         return None, None
     return pub_path, priv_path
+
+
+# Env var carrying an externally-managed Ed25519 audit-signing PRIVATE key
+# (raw 32-byte key, hex or base64). When set, the key is the active signer and
+# is held in memory only -- never written to the local key dir -- so the audit
+# chain's trust anchor can live in a KMS / HSM / secrets manager and be injected
+# at deploy time rather than generated-and-left on local disk. See
+# ``_injected_keypair`` and the module docstring (H29 / enterprise key custody).
+_SIGNING_KEY_ENV = "MAVERICK_AUDIT_SIGNING_KEY"
+
+
+def _injected_marker_for_id(key_id: str) -> Path | None:
+    """Path of the ``.injected`` marker for ``key_id`` (or None if invalid).
+
+    The marker is a non-secret, empty file written next to the public key when
+    an env-injected key is provisioned. It lets local ``verify_chain`` trust the
+    lone ``<id>.pub`` (whose private ``.key`` is deliberately absent), exactly as
+    a real ``.key`` sibling would -- both rest on the same assumption that the
+    key dir is access-controlled (for third-party tamper-evidence, pass the
+    trusted ``pubkey_hex`` explicitly regardless).
+    """
+    if not _is_valid_key_id(key_id):
+        return None
+    key_dir = _key_dir()
+    marker = (key_dir / f"{key_id}.injected").resolve()
+    try:
+        marker.relative_to(key_dir.resolve())
+    except ValueError:
+        return None
+    return marker
+
+
+def _decode_injected_key(raw: str) -> bytes | None:
+    """Decode a raw 32-byte Ed25519 private key from hex or base64.
+
+    Returns the 32 key bytes, or None if the value isn't a valid encoding of a
+    32-byte key (so a malformed env value falls back to the on-disk key path
+    rather than crashing the audit writer).
+    """
+    import base64
+    import binascii
+
+    s = raw.strip()
+    if not s:
+        return None
+    # Hex first (64 chars, unambiguous); then base64 (std or urlsafe).
+    try:
+        b = bytes.fromhex(s)
+        if len(b) == 32:
+            return b
+    except ValueError:
+        pass
+    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            b = decoder(s + "=" * (-len(s) % 4))
+            if len(b) == 32:
+                return b
+        except (binascii.Error, ValueError):
+            continue
+    return None
+
+
+def _injected_keypair() -> tuple[bytes, bytes, str] | None:
+    """Return (priv, pub, key_id) for an env-injected signing key, or None.
+
+    Reads :data:`_SIGNING_KEY_ENV`. The private key is held in memory only; the
+    caller writes just the public key (+ an ``.injected`` marker) so verification
+    still trusts the chain without the secret ever touching local disk. A
+    malformed value logs a warning and returns None (fall back to disk keys).
+    """
+    raw = os.environ.get(_SIGNING_KEY_ENV)
+    if not raw:
+        return None
+    if not _have_crypto():
+        return None
+    priv_bytes = _decode_injected_key(raw)
+    if priv_bytes is None:
+        log.warning(
+            "%s is set but is not a valid hex/base64 32-byte Ed25519 key; "
+            "falling back to the on-disk audit signing key",
+            _SIGNING_KEY_ENV,
+        )
+        return None
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    priv = ed25519.Ed25519PrivateKey.from_private_bytes(priv_bytes)
+    pub_bytes = priv.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    key_id = hashlib.sha256(pub_bytes).hexdigest()[:16]
+    return priv_bytes, pub_bytes, key_id
+
+
+def _provision_injected_pubkey(pub: bytes, key_id: str) -> None:
+    """Persist the PUBLIC half (+ ``.injected`` marker) of an injected key.
+
+    Writes ``<key_id>.pub`` (world-readable) and an empty ``<key_id>.injected``
+    marker so local ``verify_chain`` trusts rows signed by the injected key,
+    while the private key stays out of the filesystem entirely. Best-effort and
+    idempotent: a read-only key dir (e.g. a locked-down container) is tolerated
+    -- signing still works from the in-memory key; only same-host local-trust
+    verification needs the on-disk pub.
+    """
+    try:
+        key_dir = _key_dir()
+        key_dir.mkdir(parents=True, exist_ok=True)
+        pub_path = key_dir / f"{key_id}.pub"
+        if not pub_path.exists():
+            pub_path.write_bytes(pub)
+            try:
+                os.chmod(pub_path, 0o644)
+            except OSError:
+                pass
+        marker = key_dir / f"{key_id}.injected"
+        if not marker.exists():
+            marker.write_bytes(b"")
+    except OSError:
+        # Never let key-dir provisioning failure break audit signing.
+        log.debug("could not persist injected audit pubkey for %s", key_id)
 
 
 @dataclass
@@ -201,7 +335,20 @@ def rotate_audit_keypair() -> str:
 
 
 def _load_or_create_keypair() -> tuple[bytes, bytes, str]:
-    """Load the most-recent keypair or generate one if none exists."""
+    """Load the most-recent keypair or generate one if none exists.
+
+    An env-injected key (:func:`_injected_keypair`) takes precedence over any
+    on-disk key: when ``MAVERICK_AUDIT_SIGNING_KEY`` is set, that key is the
+    active signer and is never persisted to disk (only its public half is, for
+    verification). This lets the audit chain's trust anchor live in a KMS / HSM
+    / secrets manager instead of being generated-and-left on the local host.
+    """
+    injected = _injected_keypair()
+    if injected is not None:
+        priv, pub, key_id = injected
+        _provision_injected_pubkey(pub, key_id)
+        return priv, pub, key_id
+
     key_dir = _key_dir()
     if key_dir.exists():
         priv_files = sorted(key_dir.glob("*.key"))
@@ -350,15 +497,21 @@ def verify_chain(path: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
         if pubkey_hex:
             obj = ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex))
         else:
-            # Trust a local .pub only when its private .key sibling also
-            # exists — i.e. this host actually generated that keypair.
-            # That closes the "attacker drops a lone forged <id>.pub and
-            # re-signs rows" vector while still honoring legitimate key
-            # rotation (which always writes both .key and .pub). For
-            # third-party tamper-evidence, callers should pass the
-            # trusted pubkey_hex explicitly.
+            # Trust a local .pub only when its private .key sibling also exists
+            # — i.e. this host actually generated that keypair — OR when an
+            # ``.injected`` marker is present (the key was provisioned out of
+            # band from a KMS/secret-manager, so the private half is
+            # deliberately absent from disk). That closes the "attacker drops a
+            # lone forged <id>.pub and re-signs rows" vector while still honoring
+            # key rotation (writes .key+.pub) and env-injected keys (write
+            # .pub+.injected). Both rest on the key dir being access-controlled;
+            # for third-party tamper-evidence, callers should pass the trusted
+            # pubkey_hex explicitly.
             pub_path, priv_path = _key_paths_for_id(key_id)
-            if pub_path is None or not pub_path.exists() or not priv_path.exists():
+            if pub_path is None or not pub_path.exists():
+                return None
+            marker = _injected_marker_for_id(key_id)
+            if not priv_path.exists() and (marker is None or not marker.exists()):
                 return None
             obj = ed25519.Ed25519PublicKey.from_public_bytes(pub_path.read_bytes())
         pubkey_cache[key_id] = obj

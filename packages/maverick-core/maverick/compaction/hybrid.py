@@ -42,7 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from random import Random
 
-from .cost_router_v3 import ContextualBandit
+from ..cost_router_v3 import ContextualBandit
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ def enabled() -> bool:
             "1", "true", "yes", "on"}:
         return True
     try:
-        from .config import load_config
+        from ..config import load_config
         return bool(((load_config() or {}).get("compaction") or {}).get("hybrid", False))
     except Exception:  # pragma: no cover - config never blocks compaction
         return False
@@ -194,7 +194,7 @@ def _vector_from_bucket(key: str) -> list[float] | None:
 def default_strategy(features: dict) -> str:
     """The existing deterministic ladder's pick (fail-open to structural)."""
     try:
-        from .tools.compaction_classifier import _pick
+        from ..tools.compaction_classifier import _pick
         out = _pick({
             "turns": int(features.get("messages", 0)),
             "tokens": int(features.get("total_chars", 0)) // 4,
@@ -321,12 +321,12 @@ def load_weights(path: Path | str | None) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def _default_ledger_path() -> Path:
-    from .paths import data_dir
+    from ..paths import data_dir
     return data_dir() / "compaction_hybrid.json"
 
 
 def default_weights_path() -> Path:
-    from .paths import data_dir
+    from ..paths import data_dir
     return data_dir() / "compaction_hybrid_weights.json"
 
 

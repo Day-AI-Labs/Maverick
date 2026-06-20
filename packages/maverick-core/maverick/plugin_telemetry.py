@@ -20,15 +20,15 @@ import threading
 import time
 from pathlib import Path
 
+from .config import env_flag
+
 _lock = threading.Lock()
 
 
 def enabled() -> bool:
-    env = os.environ.get("MAVERICK_PLUGIN_TELEMETRY", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_PLUGIN_TELEMETRY")
+    if _v is not None:
+        return _v
     try:
         from .config import load_config
         return bool(((load_config() or {}).get("plugins") or {}).get("telemetry", False))

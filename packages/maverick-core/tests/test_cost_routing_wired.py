@@ -103,7 +103,7 @@ def test_config_provider_key_is_passed_to_provider_client(_clean, monkeypatch, t
     class DummyClient:
         pass
 
-    def fake_get_provider_client(name, api_key=None, base_url=None):
+    def fake_get_provider_client(name, api_key=None, base_url=None, default_headers=None):
         calls.append((name, api_key))
         return DummyClient()
 

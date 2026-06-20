@@ -120,3 +120,17 @@ def test_write_cold_file_auto_unchanged(tmp_path, monkeypatch):
     assert path.name.endswith(".jsonl.gz")
     back = list(ts.read_cold(tmp_path, "episodes"))
     assert back == _ROWS
+
+
+def test_read_cold_dedups_duplicate_rows(tmp_path, monkeypatch):
+    """Crash-recovery idempotency: archive() durably renames a cold file BEFORE
+    its DELETE commits, so a crash in between leaves the same rows in a SECOND
+    cold file on the next run. read_cold must yield each id once, not twice.
+    """
+    monkeypatch.setenv("MAVERICK_WORLD_COLD_CODEC", "gzip")  # dep-free codec
+    rows = [{"id": 1, "ts": 10, "v": "a"}, {"id": 2, "ts": 20, "v": "b"}]
+    p1 = ts._write_cold_file(tmp_path, "episodes", "ts", rows)
+    p2 = ts._write_cold_file(tmp_path, "episodes", "ts", rows)  # the duplicate
+    assert p1 != p2
+    got = [r["id"] for r in ts.read_cold(tmp_path, "episodes")]
+    assert got == [1, 2], f"expected each id once, got {got}"

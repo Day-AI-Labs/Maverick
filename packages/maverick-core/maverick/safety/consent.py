@@ -29,12 +29,13 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from pathlib import Path
+
+from ..paths import data_dir
 
 log = logging.getLogger(__name__)
 
 
-CONSENT_LEDGER_PATH = Path.home() / ".maverick" / "consent.ledger"
+CONSENT_LEDGER_PATH = data_dir("consent.ledger")
 
 
 class ConsentDenied(Exception):

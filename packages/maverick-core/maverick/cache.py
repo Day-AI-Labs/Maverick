@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from pathlib import Path
+
+from .paths import data_dir
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ def stats() -> dict:
     """Return current cache sizes for the in-process caches."""
     from .file_cache import read_cache_stats
     out: dict = {"files": read_cache_stats()}
-    skill_path = Path.home() / ".maverick" / "skill_embeddings.json"
+    skill_path = data_dir("skill_embeddings.json")
     if skill_path.exists():
         try:
             out["skill_embeddings"] = {
@@ -64,7 +65,7 @@ def purge(scopes: Iterable[str] = ("all",)) -> dict:
         report["repo_map"] = {"cleared": True}
 
     if "skill_embeddings" in requested:
-        path = Path.home() / ".maverick" / "skill_embeddings.json"
+        path = data_dir("skill_embeddings.json")
         if path.exists():
             try:
                 size = path.stat().st_size

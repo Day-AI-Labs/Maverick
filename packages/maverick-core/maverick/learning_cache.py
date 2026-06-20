@@ -46,6 +46,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from .config import env_flag
+
 log = logging.getLogger(__name__)
 
 DEFAULT_TTL_DAYS = 30.0
@@ -58,7 +60,7 @@ def enabled() -> bool:
 
     ``MAVERICK_LEARNING_CACHE=1`` (env wins) or ``[memory] learning_cache``.
     """
-    if os.environ.get("MAVERICK_LEARNING_CACHE", "").strip().lower() in {"1", "true", "yes", "on"}:
+    if env_flag("MAVERICK_LEARNING_CACHE"):
         return True
     try:
         from .config import load_config

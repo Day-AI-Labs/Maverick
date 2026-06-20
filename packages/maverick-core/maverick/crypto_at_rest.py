@@ -45,6 +45,8 @@ import secrets
 import stat
 from pathlib import Path
 
+from .paths import data_dir
+
 _MAGIC = b"MVKAR1\n"          # versioned header: Maverick At-Rest v1 (single key)
 _MAGIC_V2 = b"MVKAR2\n"       # v2: keyring header -- MAGIC || keyid(8) || nonce || ct
 # Per-tenant envelope-sealed blob header. MUST equal tenant_kms._SEAL_MAGIC (a
@@ -54,7 +56,7 @@ _TENANT_MAGIC = b"MVKTEN1\n"
 _NONCE_BYTES = 12
 _KEY_BYTES = 32              # AES-256
 _KEYID_BYTES = 8             # short key fingerprint embedded in v2 blobs
-_KEY_PATH = Path.home() / ".maverick" / "keys" / "at_rest.key"
+_KEY_PATH = data_dir("keys", "at_rest.key")
 
 
 class EncryptionUnavailable(RuntimeError):

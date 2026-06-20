@@ -46,8 +46,11 @@ static DEFS: &[(&str, &str)] = &[
     ),
 ];
 
-// Credit-card candidate: 13-19 digit-ish run; Luhn-checked separately.
-static CC: &str = r"\b(?:\d[ -]*?){13,19}\b";
+// Credit-card candidate: a maximal run of >=13 digits with optional single
+// space/dash separators, anchored on DIGIT boundaries (not \b). Luhn-checked
+// per cc_run_has_card. Mirrors pii_detector._CC -- the old `\b...{13,19}\b`
+// matched NOTHING for runs of >=20 digits, leaking concatenated cards.
+static CC: &str = r"(?<!\d)\d(?:[ -]*\d){12,}(?!\d)";
 
 struct Compiled {
     kind: &'static str,
@@ -66,27 +69,11 @@ static PATTERNS: LazyLock<Vec<Compiled>> = LazyLock::new(|| {
 static CC_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_pattern(CC).expect("cc pattern must compile"));
 
-/// Standard Luhn over the ASCII digits in `candidate`.
-///
-/// Returns `Err` if the candidate carries a non-ASCII Unicode digit: Python's
-/// `\d` / `int()` would fold those in with their decimal value, which Rust's
-/// `to_digit` can't reproduce. Rather than risk a silent mismatch we signal
-/// ambiguity so the caller falls back to pure Python. The CC regex only ever
-/// matches `\d`, space and `-`, so any char outside `[0-9 -]` is exactly such a
-/// Unicode digit.
-fn luhn_ascii(candidate: &str) -> Result<bool, String> {
-    let mut digits: Vec<u8> = Vec::with_capacity(candidate.len());
-    for c in candidate.chars() {
-        if c.is_ascii_digit() {
-            digits.push((c as u8) - b'0');
-        } else if c == ' ' || c == '-' {
-            continue;
-        } else {
-            return Err("non-ascii digit in credit-card candidate".to_string());
-        }
-    }
+/// Luhn over a slice of decimal-digit VALUES (0-9). False unless length 13-19.
+/// Mirrors `pii_detector._luhn_valid`.
+fn luhn_over(digits: &[u8]) -> bool {
     if !(13..=19).contains(&digits.len()) {
-        return Ok(false);
+        return false;
     }
     let parity = digits.len() % 2;
     let mut total = 0u32;
@@ -100,7 +87,36 @@ fn luhn_ascii(candidate: &str) -> Result<bool, String> {
         }
         total += d;
     }
-    Ok(total.is_multiple_of(10)) // Python: total % 10 == 0
+    total.is_multiple_of(10) // Python: total % 10 == 0
+}
+
+/// Mirror of `pii_detector._cc_run_has_card`: a normal-length run (<=19 digits)
+/// is Luhn-checked whole; a longer run (>=20, the concatenation bypass) is
+/// scanned with a sliding 13-19 digit window. `Err` on a non-ASCII Unicode digit
+/// so the caller falls back to pure Python (Rust can't fold those like `int()`).
+fn cc_run_has_card(run: &str) -> Result<bool, String> {
+    let mut digits: Vec<u8> = Vec::with_capacity(run.len());
+    for c in run.chars() {
+        if c.is_ascii_digit() {
+            digits.push((c as u8) - b'0');
+        } else if c == ' ' || c == '-' {
+            continue;
+        } else {
+            return Err("non-ascii digit in credit-card candidate".to_string());
+        }
+    }
+    let n = digits.len();
+    if n <= 19 {
+        return Ok(luhn_over(&digits));
+    }
+    for length in 13..=19usize {
+        for i in 0..=(n - length) {
+            if luhn_over(&digits[i..i + length]) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Mirror of `pii_detector.scan`, returning coalesced `(kind, cp_start, cp_end)`
@@ -120,7 +136,7 @@ pub fn scan_spans(text: &str) -> Result<Vec<(String, usize, usize)>, String> {
     }
     for m in CC_RE.find_iter(text) {
         let m = m.map_err(|e| e.to_string())?;
-        if luhn_ascii(m.as_str())? {
+        if cc_run_has_card(m.as_str())? {
             raw.push(("credit_card", m.start(), m.end()));
         }
     }

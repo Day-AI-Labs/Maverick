@@ -34,9 +34,10 @@ conservative in the meantime.
 """
 from __future__ import annotations
 
-import os
 from collections.abc import Hashable
 from dataclasses import dataclass
+
+from .config import env_flag
 
 # --- pure decision core ----------------------------------------------------
 
@@ -98,11 +99,9 @@ def _settings() -> dict:
 
 def enabled() -> bool:
     """Whether speculative drafting may downshift a turn. OFF by default."""
-    env = os.environ.get("MAVERICK_SPECULATIVE", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_SPECULATIVE")
+    if _v is not None:
+        return _v
     return bool(_settings().get("enable", False))
 
 

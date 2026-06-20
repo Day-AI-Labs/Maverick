@@ -8,7 +8,10 @@ and homograph attacks:
     Source" attack vector)
   - Tag characters (E0000-E007F — Unicode tag block hides text from
     most renderers)
-  - Variation selectors that flip rendered glyphs
+
+Variation selectors (U+FE00–FE0F, U+E0100–E01EF) are deliberately NOT
+stripped: U+FE0F is the emoji-presentation selector, so removing it would
+mangle legitimate emoji. They are left to NFKC + the homograph layer.
 
 Two API surfaces:
 

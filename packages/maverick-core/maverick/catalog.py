@@ -55,13 +55,15 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
 VALID_KINDS = ("skills", "plugins", "mcp", "personas", "templates")
 SCHEMA_VERSION = 1
 FETCH_TIMEOUT = 15.0
 _CACHE_TTL = 6 * 3600  # 6 hours
-_CACHE_DIR = Path.home() / ".maverick" / "cache" / "catalog"
+_CACHE_DIR = data_dir("cache", "catalog")
 
 # Default index host. Until maverick.dev is registered this points at
 # the awesome-list raw content on GitHub (zero-ops Pages host). The

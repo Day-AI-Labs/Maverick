@@ -53,10 +53,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from .config import env_flag
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-LEARNED_PATH = Path.home() / ".maverick" / "learned.ndjson"
-GENERATED_TOOLS_DIR = Path.home() / ".maverick" / "generated_tools"
+LEARNED_PATH = data_dir("learned.ndjson")
+GENERATED_TOOLS_DIR = data_dir("generated_tools")
 
 # A generated tool module must be addressable as a plain identifier and
 # must not shadow a stdlib / kernel module name when imported.
@@ -70,11 +73,9 @@ _lock = threading.Lock()
 # --------------------------------------------------------------------------
 def enabled() -> bool:
     """Whether the self-learning loop is active. Off by default."""
-    env = os.environ.get("MAVERICK_SELF_LEARNING", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_SELF_LEARNING")
+    if _v is not None:
+        return _v
     try:
         from .config import get_self_learning
         return bool(get_self_learning()["enable"])
@@ -389,11 +390,9 @@ def mcp_acquisition_enabled() -> bool:
     re-enables the capability #392 disabled, so it's a separate, explicit
     trust decision. ``MAVERICK_ALLOW_MCP_ACQUISITION`` overrides config.
     """
-    env = os.environ.get("MAVERICK_ALLOW_MCP_ACQUISITION", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_ALLOW_MCP_ACQUISITION")
+    if _v is not None:
+        return _v
     return bool(settings().get("allow_mcp_acquisition", False))
 
 

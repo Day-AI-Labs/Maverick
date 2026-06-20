@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from statistics import median
 
+from .paths import data_dir
+
 FLAT_BAND = 0.01   # |relative slope per era| under this = "flat"
 
 
@@ -133,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
     p.add_argument("--store", default=None,
                    help="benchmark history dir (default ~/.maverick/benchmarks)")
     args = p.parse_args(argv)
-    store = Path(args.store) if args.store else Path.home() / ".maverick" / "benchmarks"
+    store = Path(args.store) if args.store else data_dir("benchmarks")
     history: list[dict] = []
     if store.is_dir():
         for f in sorted(store.glob("*.json")):

@@ -113,6 +113,48 @@ systemctl start maverick
 
 To restore: stop the writers, replace `world.db`, restart.
 
+## Postgres backup & disaster recovery
+
+When the world model runs on Postgres (`[world_model] backend = "postgres"` /
+`MAVERICK_WORLD_BACKEND=postgres`) the SQLite `.backup` path above does **not**
+apply — back up the database itself. The runtime's own `maverick backup`
+snapshot covers the single-node SQLite layout; Postgres DR is owned by your
+database, the same as any other Postgres-backed service.
+
+Recommended, in order of RPO:
+
+1. **Managed Postgres point-in-time recovery (PITR).** If you run RDS / Cloud
+   SQL / Aurora / a managed PG, enable automated backups + PITR. This is the
+   lowest-RPO option (seconds–minutes) and needs no Maverick-specific steps.
+
+2. **Continuous archiving (self-managed).** Enable WAL archiving
+   (`archive_mode = on`) + base backups (`pg_basebackup`) for PITR on a
+   self-managed cluster.
+
+3. **Logical dumps (portable, higher RPO).** A scheduled `pg_dump` is the
+   simplest portable backup:
+
+   ```sh
+   pg_dump --format=custom --no-owner \
+     "$MAVERICK_PG_DSN" > "maverick-pg-$(date +%Y%m%d).dump"
+   # restore into a fresh database:
+   pg_restore --no-owner --dbname "$MAVERICK_PG_DSN_RESTORE" maverick-pg-*.dump
+   ```
+
+Notes:
+
+- **Encryption at rest:** with `MAVERICK_ENCRYPT_AT_REST=1`, sensitive columns
+  are AES-256-GCM ciphertext in the dump too, so a `pg_dump` does not expose
+  plaintext — but the dump is only restorable with the **same at-rest key**
+  (`~/.maverick/keys/at_rest.key`). Back up that key separately and securely;
+  losing it makes sealed columns unrecoverable.
+- **Schema migrations are forward-only and idempotent**, applied on first
+  connect. Restoring an older dump and starting a newer Maverick re-applies any
+  pending migrations automatically (see `world_model_backends/postgres.py`).
+- **HA:** the world model on Postgres is shared across replicas, so failover is
+  a Postgres concern (a standby / managed failover), not a Maverick one. The
+  single-node `maverick backup` cold-standby model is for the SQLite default.
+
 ## Learning-state operations
 
 The learning loops persist state under `~/.maverick/` (reflexions, dreams/,

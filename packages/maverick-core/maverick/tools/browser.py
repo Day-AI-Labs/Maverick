@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from ..paths import data_dir
 from ..safety.action_evidence import seal_bracketed
 from ..safety.action_gate import browser_action_risk, gate_browser_action
 from . import Tool
@@ -63,7 +64,7 @@ _MAX_OBSERVE_AXTREE_CHARS = 20_000
 
 # ---------- session persistence (cookies + localStorage survive restarts) ----------
 
-_DEFAULT_STATE_PATH = Path.home() / ".maverick" / "browser" / "state.json"
+_DEFAULT_STATE_PATH = data_dir("browser", "state.json")
 
 
 def _persist_enabled() -> bool:

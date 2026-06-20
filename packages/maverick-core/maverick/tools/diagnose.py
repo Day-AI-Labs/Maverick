@@ -13,9 +13,9 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-from pathlib import Path
 from typing import Any
 
+from ..paths import data_dir
 from . import Tool
 
 _DIAG_SCHEMA: dict[str, Any] = {
@@ -54,7 +54,7 @@ def _check_provider_keys() -> list[str]:
 
 
 def _check_config_dir() -> list[str]:
-    home = Path.home() / ".maverick"
+    home = data_dir()
     if not home.exists():
         return ["  ! ~/.maverick does not exist (will be created on first run)"]
     out = ["  ✓ ~/.maverick exists"]

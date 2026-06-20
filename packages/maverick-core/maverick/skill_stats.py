@@ -27,9 +27,11 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-DEFAULT_PATH = Path.home() / ".maverick" / "skill_stats.json"
+DEFAULT_PATH = data_dir("skill_stats.json")
 _lock = threading.Lock()
 
 

@@ -23,12 +23,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import time
 
+from .config import env_flag
 from .safety.tool_risk import RISK_LEVELS, risk_rank
 
 log = logging.getLogger(__name__)
@@ -267,11 +267,9 @@ __all__ = ["ActionSpec", "Preview", "LineageLink", "GovernedActions", "ActionErr
 def enabled() -> bool:
     """Whether the run path records governed-action lineage. Off by default;
     ``[actions] enable`` / ``MAVERICK_GOVERNED_ACTIONS`` turns it on. Never raises."""
-    env = os.environ.get("MAVERICK_GOVERNED_ACTIONS", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_GOVERNED_ACTIONS")
+    if _v is not None:
+        return _v
     try:
         from .config import load_config
         return bool((load_config() or {}).get("actions", {}).get("enable", False))
