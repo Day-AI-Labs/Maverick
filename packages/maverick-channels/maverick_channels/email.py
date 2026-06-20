@@ -119,7 +119,10 @@ class EmailChannel(Channel):
             mail.select("INBOX")
             _, data = mail.search(None, "UNSEEN")
             for num in data[0].split():
-                _, msg_data = mail.fetch(num, "(RFC822)")
+                # BODY.PEEK does NOT implicitly set \Seen; we mark it explicitly
+                # below so the message is never re-fetched by a second poller or
+                # after a restart (which would re-drive the swarm at real cost).
+                _, msg_data = mail.fetch(num, "(BODY.PEEK[])")
                 if not msg_data or not msg_data[0]:
                     continue
                 payload = msg_data[0][1]
@@ -129,6 +132,13 @@ class EmailChannel(Channel):
                 from_addr = email.utils.parseaddr(m.get("From", ""))[1]
                 subject = m.get("Subject", "")
                 body = self._extract_body(m)
+                # Claim the message before handing it off: at-most-once delivery
+                # (a crash mid-dispatch drops one message rather than looping the
+                # swarm forever). Mirrors the dedup the other channels do.
+                try:
+                    mail.store(num, "+FLAGS", "\\Seen")
+                except Exception:  # pragma: no cover - flag store best-effort
+                    log.warning("email: could not mark message %s seen", num)
                 if from_addr and body:
                     out.append((from_addr, subject, body))
         return out

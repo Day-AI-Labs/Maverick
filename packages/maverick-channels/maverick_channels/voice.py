@@ -198,6 +198,13 @@ class VoiceChannel(Channel):
 
     async def start(self) -> None:
         import uvicorn
+        if not self.webhook_token:
+            # Inbound webhook auth rejects every request without a token, so the
+            # listener would accept nothing. Fail loudly rather than run inert.
+            raise ValueError(
+                "voice channel: webhook token not set "
+                "(pass webhook_token or set VAPI_WEBHOOK_TOKEN) to receive calls"
+            )
         log.info("Voice channel listening on :%d (provider=%s)",
                  self.port, self.provider)
         config = uvicorn.Config(
