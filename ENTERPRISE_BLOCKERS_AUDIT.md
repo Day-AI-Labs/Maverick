@@ -354,3 +354,71 @@ Severity legend: **C** critical (hard blocker) · **H** high · **M** medium · 
    dependabot, ship a NOTICE file — **H18–H23**.
 10. Audit-data SoD: role separation for read/delete, signed retention markers,
     KMS-held signing key — **M11/M12/M13/H29**.
+
+---
+
+## Remediation status (as of this session)
+
+This audit was a point-in-time snapshot; a large share of it has since been
+remediated. Re-verify the cited `file:line` before acting on any item — several
+were fixed by concurrent work and are no longer accurate.
+
+### Shipped / merged or in review
+
+- **Postgres/HA backend:** method parity, schema parity (migration ladder
+  extended), at-rest sealing (**C4**), temporal `fact_history`, dashboard uses
+  `open_world()` (**C2**), backend-agnostic `/healthz`+`/metrics` ping — **C1/C2/C3/C4** addressed.
+- **Compliance/privacy:** success-path `GOAL_*/TOOL_*/EPISODE_*` events to the
+  signed chain (**C10**), approval-decision integrity events (**H28**),
+  outbound-prompt PII redaction (**C11**), provider residency/ZDR headers (**C12**),
+  signed retention markers (**M13**), KMS/env-injected audit signing key (**H29**),
+  audit-endpoint RBAC + auditor read-only role (**M11/M12**).
+- **HA shared-store cluster correctness:** OIDC replay (**M22**), webhook dedup
+  (**H17**), goal-creation rate limit (**H16**) all moved to the shared store.
+- **Reliability/deploy:** graceful drain (**H12**), helm HPA + Dockerfile
+  healthcheck/digest hook (**H13/M6**); probes already hit `/livez`+`/readyz`,
+  PDB/NetworkPolicy/ServiceMonitor already shipped (**H11/H13/M1**).
+- **Security:** outbound webhooks held to the egress lock (**H27**), MCP
+  elicitation host allowlist (**L10**), REST-connector SSRF redirect pin (**M10**),
+  plugin content-hash integrity lock (**C9**).
+- **Config/ops:** startup config validation (**M5**), uvicorn JSON logs (**M4**),
+  `maverick serve` structured logging (**M3**), tenant-world LRU eviction (**M7**),
+  PG pool opt-in (**M8**), SBOM-on-release + VPS pin warning (**M19/M21**).
+- **Supply chain / docs:** dependabot (**H21**), THIRD-PARTY-NOTICES (**H23**),
+  Postgres DR docs (**M25**), rust license field (**L11**), runbook `/readyz`
+  correction (**L14**), constitutional invalid-rule logging (**M15**).
+
+### Backlog — deferred by decision (need product / business / infra input)
+
+These are not blind code fixes; each needs an owner decision and is left for
+explicit prioritization:
+
+- **C6 — ship/license the real "Shield" engine.** The marketed F1-0.988 SDK does
+  not ship; the builtin regex fallback loads instead. Product/legal decision:
+  build, license, or stop marketing the fallback as the product. (Bypasses in
+  the fallback were separately hardened.)
+- **C8 — container-by-default sandbox.** Making the default sandbox a container
+  is a breaking behavior change (pure-local dev without Docker stops working).
+  Needs a product call on the default posture vs. the enterprise opt-in that
+  already exists (`require_container`).
+- **C5 — Postgres-backed multi-tenancy.** Today tenancy is SQLite-file-per-tenant;
+  Postgres scales horizontally but isn't the per-tenant store. Unifying them is a
+  significant architecture project (per-tenant isolation model on a shared DB).
+- **H20 — sign/notarize native artifacts.** PyInstaller cosign + Tauri
+  notarization require an Apple Developer Program membership and signing
+  identities — an infra/credential provisioning task, not a code change.
+- **M16 — verify the LLM pricing table.** The budget-cap rates carry an
+  "unverified" TODO; correcting them needs authoritative current vendor pricing,
+  not a code edit.
+- **M23 / M24 — prior MIT release exposure & brand/trademark mismatch.** Legal /
+  brand decisions (irrevocable fork exposure from the `0.1.6` MIT publish;
+  "Lightwork by Daybreak Labs" vs. "Maverick / Day AI Labs" naming).
+
+### Larger items still open (tractable, not yet scheduled)
+
+- **H1–H4 / secure-by-default posture** — flipping controls to default-ON (or
+  hard-gating enterprise mode without them) is partially addressed by the
+  enterprise preflight; a full default-ON flip is a posture decision.
+- **H14/H15 — job queue & audit log shared/multi-host store** (the audit log is
+  host-local NDJSON by design; a multi-writer chain is a larger design).
+- **H28 (row-level signing)** beyond approvals; **M2** metrics-surface unification.
