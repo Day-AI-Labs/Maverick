@@ -124,7 +124,7 @@ def _cc_run_has_card(run: str) -> bool:
     if n <= 19:
         return _luhn_valid(digits)
     for length in range(13, 20):
-        for i in range(0, n - length + 1):
+        for i in range(n - length + 1):
             if _luhn_valid(digits[i:i + length]):
                 return True
     return False
