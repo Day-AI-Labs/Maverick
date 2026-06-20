@@ -12,7 +12,7 @@ import os
 import stat
 
 import pytest
-from maverick import skill_stats
+from maverick.skill import stats as skill_stats
 
 
 @pytest.fixture

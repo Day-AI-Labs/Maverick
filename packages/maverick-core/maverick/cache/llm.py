@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .paths import data_dir
+from ..paths import data_dir
 
 log = logging.getLogger(__name__)
 

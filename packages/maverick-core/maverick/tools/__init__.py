@@ -441,7 +441,7 @@ class ToolRegistry:
                 # or error results. See tool_cache.py.
                 _tool = self._tools[name]
                 try:
-                    from ..tool_cache import get_cached, store_cached
+                    from ..cache.tool import get_cached, store_cached
                 except ImportError:  # pragma: no cover
                     get_cached = store_cached = None  # type: ignore[assignment]
                 if get_cached is not None:

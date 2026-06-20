@@ -19,7 +19,7 @@ import threading
 from collections import OrderedDict
 from pathlib import Path
 
-from ..file_cache import _workdir_signature
+from ..cache.file import _workdir_signature
 from . import Tool
 
 _MAX_TOP_ENTRIES = 80

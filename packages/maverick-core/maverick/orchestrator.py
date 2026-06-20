@@ -336,7 +336,7 @@ def _record_skill_outcome(ctx: Any, *, success: bool) -> None:
     try:
         names = sorted(getattr(ctx, "skills_used", None) or ())
         if names:
-            from . import skill_stats
+            from .skill import stats as skill_stats
             skill_stats.record_outcome(names, success=success)
     except Exception:  # pragma: no cover -- stats never block a run
         pass
@@ -852,7 +852,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
         # task-specific cheat-sheet for THIS goal and inject it. No-op unless
         # [skill_synthesis] is enabled; spend is metered; fail-open.
         with _enrich("skill synthesis"):
-            from . import skill_synthesis
+            from .skill import synthesis as skill_synthesis
             if skill_synthesis.enabled():
                 _sk = await skill_synthesis.synthesize_task_skill(
                     f"{goal.title}\n{goal.description or ''}", llm, budget, shield=shield,
@@ -1395,7 +1395,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
         # the persisted goal history as trajectories, so no extra store is
         # needed. No-op unless enabled; never raises into the run.
         with _enrich("local skill distillation"):
-            from . import skill_distillation_local as _sdl
+            from .skill import distillation_local as _sdl
             if _sdl.enabled():
                 trajectories = [
                     {"goal": g.title, "success": True, "tools": [],
@@ -1404,7 +1404,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                 ]
                 # v2: gate on evidence + dedup against the learned-skills store
                 # so the loop doesn't accumulate near-duplicate skills each run.
-                from . import skill_distillation_v2 as _sdl2
+                from .skill import distillation_v2 as _sdl2
                 path, _why = _sdl2.distill_and_save_gated(trajectories)
                 if path:
                     blackboard.post("orchestrator", "skill",

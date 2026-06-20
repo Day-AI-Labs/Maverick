@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from maverick import tool_cache
+from maverick.cache import tool as tool_cache
 from maverick.tools.cache_admin import cache_admin
 
 

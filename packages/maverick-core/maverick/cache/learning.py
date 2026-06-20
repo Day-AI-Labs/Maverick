@@ -46,7 +46,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from .config import env_flag
+from ..config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def enabled() -> bool:
     if env_flag("MAVERICK_LEARNING_CACHE"):
         return True
     try:
-        from .config import load_config
+        from ..config import load_config
         return bool((load_config() or {}).get("memory", {}).get("learning_cache", False))
     except Exception:  # pragma: no cover -- config never blocks a caller
         return False
@@ -96,7 +96,7 @@ class LearningCache:
         clock: Callable[[], float] = time.time,
     ):
         if path is None:
-            from .paths import data_dir
+            from ..paths import data_dir
             path = data_dir("learning_cache.json")
         self.path = Path(path).expanduser()
         self.max_entries = max(1, int(max_entries))
@@ -177,7 +177,7 @@ class LearningCache:
             )
         if float(ttl_days) <= 0:
             raise ValueError("ttl_days must be > 0")
-        from .safety.secret_detector import scan
+        from ..safety.secret_detector import scan
         found = scan(str(result)) + scan(str(task))
         if found:
             kinds = ", ".join(sorted({m.name for m in found}))

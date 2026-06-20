@@ -292,7 +292,7 @@ def build_index(skills_dir: Path | None = None) -> SkillSearchIndex:
     ``skills.SKILLS_DIR`` at call time (not bound at import), so an operator
     who relocates the skills dir is honoured.
     """
-    from . import skills as skills_mod
+    from .. import skills as skills_mod
     target = skills_dir if skills_dir is not None else skills_mod.SKILLS_DIR
     return SkillSearchIndex([_doc_from_skill(s) for s in skills_mod.load_skills(target)])
 
@@ -415,7 +415,7 @@ def import_records(
     unless ``overwrite``. Returns ``{"installed": [...], "rejected": [...],
     "skipped": [...]}`` with human-readable reasons on the rejected entries.
     """
-    from . import skills as skills_mod
+    from .. import skills as skills_mod
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     result: dict[str, list[str]] = {"installed": [], "rejected": [], "skipped": []}
@@ -521,7 +521,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.export:
         return _cmd_export(args.export)
     if args.import_dataset:
-        from .skills import SKILLS_DIR
+        from ..skills import SKILLS_DIR
         return _cmd_import(args.import_dataset, args.dest or str(SKILLS_DIR))
     if args.query:
         return _cmd_search(args.query, args.limit)

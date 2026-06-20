@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .skill_distillation_local import _STORE, distill, save_skill
+from .distillation_local import _STORE, distill, save_skill
 
 # A small stop-list so the signature is content words, not glue.
 _STOP = frozenset({

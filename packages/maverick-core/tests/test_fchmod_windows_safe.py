@@ -26,7 +26,7 @@ def test_sealing_atomic_write_survives_no_fchmod(_no_fchmod, tmp_path):
 
 def test_learning_cache_save_survives_no_fchmod(_no_fchmod, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    from maverick.learning_cache import LearningCache
+    from maverick.cache.learning import LearningCache
     cache = LearningCache(path=tmp_path / "lc.json")
     cache.put("task-x", "result-y", verified_by="verifier:t-1")
     assert (tmp_path / "lc.json").exists()

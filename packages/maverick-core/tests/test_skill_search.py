@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from maverick.skill_search import (
+from maverick.skill.search import (
     SkillSearchIndex,
     build_index,
     export_jsonl,

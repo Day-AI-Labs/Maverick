@@ -24,7 +24,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-from ._envparse import env_float, env_int
+from .._envparse import env_float, env_int
 
 log = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ _TERMINAL_CLASSES = frozenset({
 
 def _is_terminal(exc: Exception) -> bool:
     try:
-        from .retry_classifier import classify
+        from .classifier import classify
         return classify(exc).value in _TERMINAL_CLASSES
     except Exception:  # pragma: no cover - classifier must never break retry
         return False

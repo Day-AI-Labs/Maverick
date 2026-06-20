@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 
-from .paths import data_dir
+from ..paths import data_dir
 
 log = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ _VALID_SCOPES = ("files", "repo_map", "skill_embeddings", "all")
 
 def stats() -> dict:
     """Return current cache sizes for the in-process caches."""
-    from .file_cache import read_cache_stats
+    from .file import read_cache_stats
     out: dict = {"files": read_cache_stats()}
     skill_path = data_dir("skill_embeddings.json")
     if skill_path.exists():
@@ -54,13 +54,13 @@ def purge(scopes: Iterable[str] = ("all",)) -> dict:
     report: dict = {}
 
     if "files" in requested:
-        from .file_cache import clear_read_cache, read_cache_stats
+        from .file import clear_read_cache, read_cache_stats
         before = read_cache_stats()
         clear_read_cache()
         report["files"] = {"cleared_entries": before["entries"], "cleared_bytes": before["bytes"]}
 
     if "repo_map" in requested:
-        from .file_cache import clear_repo_cache
+        from .file import clear_repo_cache
         clear_repo_cache()
         report["repo_map"] = {"cleared": True}
 

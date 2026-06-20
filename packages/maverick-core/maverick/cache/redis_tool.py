@@ -36,7 +36,7 @@ from __future__ import annotations
 import logging
 import os
 
-from .tool_cache import _key  # reuse: identical call identity to the local cache
+from .tool import _key  # reuse: identical call identity to the local cache
 
 log = logging.getLogger(__name__)
 
@@ -143,7 +143,7 @@ class RedisToolCache:
 
 def _tools_cfg() -> dict:
     try:
-        from .config import load_config
+        from ..config import load_config
         return (load_config() or {}).get("tools", {}) or {}
     except Exception:  # pragma: no cover -- config never blocks the tool path
         return {}

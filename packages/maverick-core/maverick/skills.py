@@ -277,7 +277,7 @@ def _decay_weights(names: list[str]) -> dict[str, float]:
     1.0 and ranking is unchanged.
     """
     try:
-        from . import skill_stats
+        from .skill import stats as skill_stats
         return skill_stats.decay_weights(names)
     except Exception:  # pragma: no cover -- stats never block recall
         return dict.fromkeys(names, 1.0)
@@ -335,7 +335,7 @@ def relevant_skills(goal: str, all_skills: list[Skill], max_n: int = 3) -> list[
     except Exception:  # pragma: no cover -- config never blocks recall
         embed_threshold, lexical_min = 0.35, 0.0
     try:
-        from .skill_embeddings import relevant_skills_embed
+        from .skill.embeddings import relevant_skills_embed
         result = relevant_skills_embed(goal, all_skills, max_n=max_n, threshold=embed_threshold)
         if result is not None:
             return result

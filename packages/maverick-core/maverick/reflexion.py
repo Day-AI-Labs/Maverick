@@ -8,7 +8,7 @@ Storage: ``~/.maverick/reflexions.ndjson`` (chmod 600), one JSON
 object per line. Each entry records:
   - ts            — when the failure happened
   - goal_text     — title + description of the goal
-  - failure_class — classified via maverick.retry_classifier
+  - failure_class — classified via maverick.retry.classifier
   - failure_msg   — the exception's short message
   - reflection    — the agent's own one-paragraph postmortem
   - tools_used    — list of tools the agent ran before failing
@@ -155,7 +155,7 @@ def _embed_sims(query: str, entries: list[Reflexion]) -> list[float] | None:
     fail-open contract.
     """
     try:
-        from .skill_embeddings import _cosine, _have_fastembed, embed
+        from .skill.embeddings import _cosine, _have_fastembed, embed
         if not _have_fastembed():
             return None
         vectors = embed([query] + [e.goal_text or "" for e in entries])

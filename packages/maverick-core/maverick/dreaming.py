@@ -693,8 +693,8 @@ def retire_stale_skills(
     ``retired.ndjson`` line recording when and why. Reversible by moving the
     file back. Returns the retired skill names.
     """
-    from . import skill_stats
-    from .skill_distillation_local import _STORE
+    from .skill import stats as skill_stats
+    from .skill.distillation_local import _STORE
     store_dir = Path(store) if store is not None else _STORE
     if not store_dir.is_dir():
         return []
@@ -1050,7 +1050,7 @@ def _distill_department_skills(
 
     Returns the paths of the skills written THIS cycle (the benchmark canary
     gate quarantines exactly these when the tracked suite is regressing)."""
-    from . import skill_distillation_v2 as _v2
+    from .skill import distillation_v2 as _v2
     saved_paths: list[Path] = []
     for trajectories in by_domain.values():
         if len(trajectories) < max(1, min_cluster):
@@ -1272,9 +1272,9 @@ def _audit_cycle(report: DreamReport) -> None:
 def _live_stores() -> dict[str, Path]:
     """The learned-state files/dirs a snapshot covers, resolved per tenant."""
     from . import reflexion as _r
-    from . import skill_stats as _ss
     from . import user_notes as _un
-    from .skill_distillation_local import _STORE
+    from .skill import stats as _ss
+    from .skill.distillation_local import _STORE
     return {
         "reflexions.ndjson": _r.default_path(),
         "insights.ndjson": Path(insights_path()),

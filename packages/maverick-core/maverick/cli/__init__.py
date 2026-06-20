@@ -3682,7 +3682,7 @@ def skills(ctx: click.Context) -> None:
 @skills.command("stats")
 def skills_stats() -> None:
     """Show each skill's usage track record (uses / win-rate / recall weight)."""
-    from .. import skill_stats
+    from ..skill import stats as skill_stats
     from ..skills import load_skills
     items = load_skills()
     if not items:
@@ -3710,7 +3710,7 @@ def skills_stats() -> None:
               help="Flag skills whose win rate is at or below this.")
 def skills_evict(do_apply: bool, min_uses: int, max_win_rate: float) -> None:
     """List (or with --apply, remove) skills that have had a fair trial and rarely help."""
-    from .. import skill_stats
+    from ..skill import stats as skill_stats
     from ..skills import remove_skill
     cands = skill_stats.evictable(min_uses=min_uses, max_win_rate=max_win_rate)
     if not cands:
@@ -4305,9 +4305,9 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     # safe to drop. Only when the DB already exists, so a single erase on a
     # cache-disabled install doesn't create an empty cache file. Best-effort.
     try:
-        from ..llm_cache import DEFAULT_DB as _llm_cache_db
+        from ..cache.llm import DEFAULT_DB as _llm_cache_db
         if _llm_cache_db.exists():
-            from ..llm_cache import LLMCache
+            from ..cache.llm import LLMCache
             LLMCache().clear()
     except Exception as exc:  # pragma: no cover - defensive
         click.echo(

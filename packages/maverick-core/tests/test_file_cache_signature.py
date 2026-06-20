@@ -1,7 +1,7 @@
 """Repo-map cache signature is content-aware (catches nested edits)."""
 from __future__ import annotations
 
-from maverick.file_cache import _workdir_signature, repo_map_cached
+from maverick.cache.file import _workdir_signature, repo_map_cached
 
 
 def test_nested_file_change_invalidates_signature(tmp_path):

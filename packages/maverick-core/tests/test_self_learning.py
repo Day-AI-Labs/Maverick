@@ -143,7 +143,7 @@ class TestSemanticSearch:
         return fake_load
 
     def _install_fake_embed(self, monkeypatch):
-        import maverick.skill_embeddings as se
+        import maverick.skill.embeddings as se
         monkeypatch.setattr(se, "_have_fastembed", lambda: True)
 
         def fake_embed(texts):
@@ -165,7 +165,7 @@ class TestSemanticSearch:
         monkeypatch.setattr("maverick.catalog.load_catalog", self._two_skills())
         need = "contact someone on their cell"
         # Lexical path (no fastembed) finds nothing.
-        import maverick.skill_embeddings as se
+        import maverick.skill.embeddings as se
         monkeypatch.setattr(se, "_have_fastembed", lambda: False)
         assert self_learning.search_capabilities(need, kinds=("skills",)) == []
         # Embedding path ranks send-sms first.
@@ -175,7 +175,7 @@ class TestSemanticSearch:
 
     def test_embed_failure_falls_back_to_lexical(self, monkeypatch):
         monkeypatch.setattr("maverick.catalog.load_catalog", self._two_skills())
-        import maverick.skill_embeddings as se
+        import maverick.skill.embeddings as se
         monkeypatch.setattr(se, "_have_fastembed", lambda: True)
         monkeypatch.setattr(se, "embed", lambda texts: None)  # embed unavailable
         # Token overlap on "messages" still works via the lexical fallback.
@@ -184,7 +184,7 @@ class TestSemanticSearch:
 
     def test_embed_exception_falls_back_to_lexical(self, monkeypatch):
         monkeypatch.setattr("maverick.catalog.load_catalog", self._two_skills())
-        import maverick.skill_embeddings as se
+        import maverick.skill.embeddings as se
         monkeypatch.setattr(se, "_have_fastembed", lambda: True)
 
         def boom(texts):
@@ -196,7 +196,7 @@ class TestSemanticSearch:
 
     def test_have_fastembed_exception_falls_back_to_lexical(self, monkeypatch):
         monkeypatch.setattr("maverick.catalog.load_catalog", self._two_skills())
-        import maverick.skill_embeddings as se
+        import maverick.skill.embeddings as se
 
         def boom():
             raise RuntimeError("broken fastembed install")
@@ -207,7 +207,7 @@ class TestSemanticSearch:
 
     def test_cosine_exception_falls_back_to_lexical(self, monkeypatch):
         monkeypatch.setattr("maverick.catalog.load_catalog", self._two_skills())
-        import maverick.skill_embeddings as se
+        import maverick.skill.embeddings as se
         monkeypatch.setattr(se, "_have_fastembed", lambda: True)
         monkeypatch.setattr(se, "embed", lambda texts: [[1.0], [1.0], [0.0]])
 
