@@ -69,7 +69,17 @@ def average_hash_file(path: str) -> str:
     with Image.open(path) as im:
         im = im.convert("RGB")
         width, height = im.size
-        pixels = list(im.getdata())
+        raw = im.tobytes()
+    # The native accelerator can hash the raw RGB buffer directly (one ``bytes``
+    # object across FFI instead of width*height tuples); fall back to the
+    # pure-Python pixel API when the wheel isn't built. Both are bit-identical.
+    _native_bytes = getattr(_native, "average_hash_from_rgb_bytes", None)
+    if _native_bytes is not None:
+        try:
+            return _native_bytes(raw, width, height)
+        except Exception:
+            pass
+    pixels = list(zip(raw[0::3], raw[1::3], raw[2::3], strict=False))
     return average_hash_from_pixels(pixels, width, height)
 
 
@@ -87,3 +97,41 @@ def synthetic_gradient() -> list[tuple[int, int, int]]:
         for y in range(64)
         for x in range(64)
     ]
+
+
+# --- Native fast path (optional) -------------------------------------------
+# A Rust implementation (the ``maverick_native`` extension, built from
+# ``rust/mvk-scan``) does the per-pixel luma loop GIL-free and far faster on the
+# computer-use hot path (every screenshot is hashed). It is OPTIONAL: when the
+# wheel isn't installed the pure-Python functions above are used unchanged, so
+# behaviour is identical either way -- the native module is a drop-in
+# accelerator, never a new dependency. The ``hasattr`` guards keep an older
+# ``maverick_native`` (built before these symbols existed) from breaking.
+try:  # pragma: no cover - import guard
+    import maverick_native as _native
+except Exception:  # pragma: no cover
+    _native = None
+
+if _native is not None and hasattr(  # pragma: no cover - active only with the wheel
+    _native, "average_hash_from_pixels"
+):
+    _average_hash_from_pixels_py = average_hash_from_pixels
+
+    def average_hash_from_pixels(  # noqa: F811
+        pixels: Sequence[tuple[int, int, int]], width: int, height: int,
+    ) -> str:
+        try:
+            return _native.average_hash_from_pixels(list(pixels), width, height)
+        except Exception:
+            # Any divergence (incl. the canonical ValueError on bad dimensions)
+            # falls back to pure Python, which is the source of truth.
+            return _average_hash_from_pixels_py(pixels, width, height)
+
+if _native is not None and hasattr(_native, "hamming"):  # pragma: no cover
+    _hamming_py = hamming
+
+    def hamming(a: str, b: str) -> int:  # noqa: F811
+        try:
+            return _native.hamming(a, b)
+        except Exception:
+            return _hamming_py(a, b)
