@@ -42,7 +42,13 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - name: gofmt (no diff)
-        run: test -z "$(gofmt -l .)" || { echo 'run: gofmt -w go/model-proxy'; gofmt -l .; exit 1; }
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed (run gofmt -w go/model-proxy):"
+            echo "$unformatted"
+            exit 1
+          fi
       - run: go test -race ./...
 
   parity:
