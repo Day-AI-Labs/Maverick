@@ -212,7 +212,8 @@ def _add_messages_cache_breakpoint(messages: list[dict]) -> list[dict]:
 class AnthropicClient:
     DEFAULT_MODEL = "claude-sonnet-4-6"
 
-    def __init__(self, api_key: str | None = None, base_url: str | None = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None,
+                 default_headers: dict | None = None):
         # May 26 council fix (long-tail audit #1): strip whitespace.
         # `export ANTHROPIC_API_KEY=$(cat key.txt)` is a common source of
         # trailing newline; without strip, every API call 401s and the
@@ -226,6 +227,12 @@ class AnthropicClient:
         # SDK's own default base_url (mirrors how OpenAIClient handles base_url).
         if base_url:
             kw["base_url"] = base_url
+        # Data-residency / ZDR control: operator-set `[providers.anthropic]
+        # default_headers` are attached to every request, so a compliance
+        # gateway can enforce region pinning / zero-data-retention headers
+        # (e.g. {"anthropic-region": "eu"}). Empty by default -> no extra headers.
+        if default_headers:
+            kw["default_headers"] = dict(default_headers)
         timeout = llm_http_timeout()
         if timeout is not None:
             kw["timeout"] = timeout
