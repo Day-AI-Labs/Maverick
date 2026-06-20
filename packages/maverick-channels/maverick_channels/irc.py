@@ -139,7 +139,13 @@ def format_privmsg(target: str, text: str, *, max_chars: int = _MAX_LINE_CHARS) 
     a 512-byte line cap). Each physical newline starts a new PRIVMSG; long lines
     are hard-wrapped at ``max_chars``."""
     lines: list[str] = []
-    for raw in (text or "").split("\n"):
+    # Normalize ALL line terminators to \n before splitting. Splitting on \n
+    # only left a bare \r embedded mid-line; IRC servers treat \r as a line
+    # terminator, so reply text like "hi\rJOIN #evil" injected an arbitrary IRC
+    # command under the bot's authenticated session. Each CR/LF now starts a new
+    # (safely-prefixed) PRIVMSG instead.
+    normalized = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    for raw in normalized.split("\n"):
         chunk = raw
         if not chunk:
             continue
@@ -190,6 +196,10 @@ class IRCChannel(Channel):
     async def _send_line(self, line: str) -> None:
         if self._writer is None:  # pragma: no cover -- guarded by start()
             return
+        # Single choke-point CR/LF strip: even if some caller assembles a line
+        # from attacker-influenced text (a crafted nick/target, a future code
+        # path), it can never inject a second IRC command on the wire.
+        line = line.replace("\r", "").replace("\n", "")
         self._writer.write((line + "\r\n").encode("utf-8", errors="replace"))
         await self._writer.drain()
 
