@@ -1306,6 +1306,21 @@ class WorldModel:
         )
         return {r["status"]: int(r["n"]) for r in rows}
 
+    def goal_status_counts(self) -> dict[str, int]:
+        """All goals keyed by status -- the backend-agnostic source for the
+        ``/metrics`` ``maverick_goals_total`` gauge (the dashboard inlined this
+        SQL against SQLite, so a Postgres deployment counted a stale local file)."""
+        rows = self._read_all("SELECT status, COUNT(*) AS n FROM goals GROUP BY status")
+        return {r["status"]: int(r["n"]) for r in rows}
+
+    def ping(self) -> bool:
+        """Cheap liveness probe for ``/healthz`` -- confirms the world store
+        answers a trivial read. Backend-agnostic (mirrored on Postgres) so the
+        deep health check probes the SAME store the app actually uses, not a
+        hard-coded local ``world.db``. Raises on failure (the caller reports it)."""
+        self._read_one("SELECT 1 AS one", ())
+        return True
+
     # ---- share links: revocable, expiring read-only access to a goal --------
 
     def create_share_link(self, goal_id: int, *, created_by: str = "",

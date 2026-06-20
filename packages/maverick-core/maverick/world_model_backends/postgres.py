@@ -1039,6 +1039,27 @@ class PostgresWorldModel:
             rows = cur.fetchall()
         return {r[0]: int(r[1]) for r in rows}
 
+    def goal_status_counts(self) -> dict[str, int]:
+        """All goals keyed by status (tenant-scoped) -- the backend-agnostic
+        source for the ``/metrics`` ``maverick_goals_total`` gauge."""
+        sql = "SELECT status, COUNT(*) FROM goals"
+        frag, params = _tenant_scope()
+        if frag:
+            sql += " WHERE " + frag
+        sql += " GROUP BY status"
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        return {r[0]: int(r[1]) for r in rows}
+
+    def ping(self) -> bool:
+        """Cheap liveness probe for ``/healthz`` -- confirms Postgres answers a
+        trivial read so the deep health check probes the SAME store the app uses."""
+        with self._tx() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+
     # ---- Artifacts (migration v16) ------------------------------------------
 
     def add_artifact(self, goal_id: int, kind: str, title: str, content: str) -> int:
