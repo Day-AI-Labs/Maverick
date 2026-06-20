@@ -23,9 +23,11 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-DEFAULT_PATH = Path.home() / ".maverick" / "dreams" / "user_notes.ndjson"
+DEFAULT_PATH = data_dir("dreams", "user_notes.ndjson")
 
 
 def default_path() -> Path:

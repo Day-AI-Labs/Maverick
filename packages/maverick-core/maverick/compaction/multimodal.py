@@ -23,8 +23,8 @@ import base64
 import logging
 import struct
 
-from .compaction import KEEP_RECENT_TURNS
-from .llm import model_for_role
+from ..llm import model_for_role
+from . import KEEP_RECENT_TURNS
 
 log = logging.getLogger(__name__)
 

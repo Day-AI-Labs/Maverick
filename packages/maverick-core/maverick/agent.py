@@ -1081,20 +1081,15 @@ class Agent:
             self.name, "error",
             f"tool={name} DENIED: principal {revoked} REVOKED",
         )
-        try:  # tamper-evident record of the denial; never block on audit
-            from .audit import EventKind, record
-            record(
-                EventKind.CAPABILITY_DENIED,
-                agent=self.name,
-                goal_id=self.ctx.goal_id,
+        from .audit import EventKind
+        self._audit_tool_event(
+            EventKind.CAPABILITY_DENIED,
                 tool=name,
                 principal=cap.principal,
                 revoked_principal=revoked,
                 channel=getattr(self.ctx, "channel", None),
                 user_id=getattr(self.ctx, "user_id", None),
-            )
-        except Exception:  # pragma: no cover
-            pass
+        )
         return (
             f"⚠ DENIED by capability policy: principal {revoked!r} "
             f"has been revoked. The tool was not executed."
@@ -1107,19 +1102,14 @@ class Agent:
             self.name, "error",
             f"tool={name} DENIED by capability (principal={cap.principal})",
         )
-        try:  # tamper-evident record of the denial; never block on audit
-            from .audit import EventKind, record
-            record(
-                EventKind.CAPABILITY_DENIED,
-                agent=self.name,
-                goal_id=self.ctx.goal_id,
+        from .audit import EventKind
+        self._audit_tool_event(
+            EventKind.CAPABILITY_DENIED,
                 tool=name,
                 principal=cap.principal,
                 channel=getattr(self.ctx, "channel", None),
                 user_id=getattr(self.ctx, "user_id", None),
-            )
-        except Exception:  # pragma: no cover
-            pass
+        )
         return (
             f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
             f"not granted tool {name!r}. The tool was not executed."
@@ -1171,13 +1161,9 @@ class Agent:
             f"tool={name} DENIED: per-call token verification failed "
             f"(principal={cap.principal})",
         )
-        try:  # tamper-evident record of the denial; never block on audit
-            from .audit import EventKind, record
-            record(EventKind.CAPABILITY_DENIED, agent=self.name,
-                   goal_id=self.ctx.goal_id, tool=name,
+        from .audit import EventKind
+        self._audit_tool_event(EventKind.CAPABILITY_DENIED, tool=name,
                    principal=cap.principal, reason="tool_token_invalid")
-        except Exception:  # pragma: no cover
-            pass
         return (
             f"⚠ DENIED by capability policy: per-call token for tool {name!r} "
             "could not be verified. The tool was not executed."
@@ -1209,13 +1195,9 @@ class Agent:
             f"tool={name} path={denied} DENIED by capability "
             f"(principal={cap.principal})",
         )
-        try:  # tamper-evident record of the denial; never block on audit
-            from .audit import EventKind, record
-            record(EventKind.CAPABILITY_DENIED, agent=self.name,
-                   goal_id=self.ctx.goal_id, tool=name,
+        from .audit import EventKind
+        self._audit_tool_event(EventKind.CAPABILITY_DENIED, tool=name,
                    principal=cap.principal, path=denied)
-        except Exception:  # pragma: no cover
-            pass
         return (
             f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
             f"not granted path {denied!r} for tool {name!r}. "
@@ -1246,13 +1228,9 @@ class Agent:
             f"tool={name} host={host} DENIED by capability "
             f"(principal={cap.principal})",
         )
-        try:  # tamper-evident record of the denial; never block on audit
-            from .audit import EventKind, record
-            record(EventKind.CAPABILITY_DENIED, agent=self.name,
-                   goal_id=self.ctx.goal_id, tool=name,
+        from .audit import EventKind
+        self._audit_tool_event(EventKind.CAPABILITY_DENIED, tool=name,
                    principal=cap.principal, host=host)
-        except Exception:  # pragma: no cover
-            pass
         return (
             f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
             f"not granted host {host!r} for tool {name!r}. "
@@ -2105,7 +2083,7 @@ class Agent:
             # Default path is the heuristic shrink; an operator can opt into a
             # richer strategy via [context] compaction_strategy (heuristic /
             # learned / multimodal / streaming / graph) — all registered in the
-            # one compaction_plugins dispatcher, which fails safe to heuristic
+            # one compaction.plugins dispatcher, which fails safe to heuristic
             # on an unknown name. The agent's llm seam + conversation id reach
             # the strategies that use them.
             # Process-reward guidance (opt-in, default off): if the PRM has
@@ -2118,7 +2096,7 @@ class Agent:
                 messages.append({"role": "user", "content": _prm_note})
                 self._last_prm_nudge_step = step
 
-            from .compaction_plugins import compact_with
+            from .compaction.plugins import compact_with
             # Some opt-in strategies make provider calls, so apply the same
             # pre-spend gate and budget object to compaction as the main turn.
             self.ctx.budget.check()

@@ -30,9 +30,11 @@ import os
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-DEFAULT_ROOT = Path.home() / ".maverick" / "attachments"
+DEFAULT_ROOT = data_dir("attachments")
 
 # 25 MiB per file, 100 MiB per goal. Tunable via env so a VPS deployment
 # can raise the cap without a code change.

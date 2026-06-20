@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from random import Random
 
+from .config import env_flag
+
 log = logging.getLogger(__name__)
 
 DEFAULT_EPSILON = 0.1   # explore 10% of the time
@@ -35,7 +37,7 @@ _MIN_PULLS = 2          # try each arm at least twice before exploiting
 
 
 def enabled() -> bool:
-    if os.environ.get("MAVERICK_ROUTING_BANDIT", "").strip().lower() in {"1", "true", "yes", "on"}:
+    if env_flag("MAVERICK_ROUTING_BANDIT"):
         return True
     try:
         from .config import load_config

@@ -40,12 +40,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
 # Injected LLM seam: (prompt, model_spec) -> completion text.
 LLMCall = Callable[[str, str], str]
 
-DEFAULT_LEDGER_PATH = Path.home() / ".maverick" / "speculative_ledger.json"
+DEFAULT_LEDGER_PATH = data_dir("speculative_ledger.json")
 # Role defaults only — the ROLES are named here, never model ids. "summarizer"
 # is the kernel's established cheap tier; both resolve via config first.
 DEFAULT_DRAFT_ROLE = "summarizer"

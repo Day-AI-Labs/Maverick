@@ -36,10 +36,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
 
-DEFAULT_PATH = Path.home() / ".maverick" / "reflexions.ndjson"
+DEFAULT_PATH = data_dir("reflexions.ndjson")
 
 def default_path() -> Path:
     """The active scope's reflexion log (tenant-isolated when one is active)."""

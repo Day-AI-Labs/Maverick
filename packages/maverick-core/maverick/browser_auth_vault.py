@@ -19,7 +19,9 @@ import os
 import stat
 from pathlib import Path
 
-_STORE = Path.home() / ".maverick" / "vault"
+from .paths import data_dir
+
+_STORE = data_dir("vault")
 _KEY_FILE = _STORE / "key"
 _DATA_FILE = _STORE / "browser.json"
 

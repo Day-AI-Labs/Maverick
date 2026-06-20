@@ -35,9 +35,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-DEFAULT_DIR = Path.home() / ".maverick" / "dreams"
+DEFAULT_DIR = data_dir("dreams")
 DEFAULT_INSIGHTS = DEFAULT_DIR / "insights.ndjson"
 DEFAULT_REHEARSALS = DEFAULT_DIR / "rehearsals.ndjson"
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from maverick.compaction import compact_messages
-from maverick.compaction_graph import (
+from maverick.compaction.graph import (
     compact_graph,
     extract_triples,
     render_digest,

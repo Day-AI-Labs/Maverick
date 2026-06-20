@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from contextlib import contextmanager
 from typing import Any
 
 from .agent import Agent
@@ -21,6 +22,17 @@ from .swarm import SwarmContext
 from .world_model import WorldModel
 
 log = logging.getLogger(__name__)
+
+
+@contextmanager
+def _enrich(label: str):
+    """Wrap an opt-in brief-enrichment block: its failure is logged at debug and
+    never blocks the run. Factors the identical try/except/log.debug scaffold the
+    enrichment blocks (experience, role-stats, reflexion, dreaming, ...) repeat."""
+    try:
+        yield
+    except Exception as e:  # pragma: no cover -- enrichment never blocks a run
+        log.debug("%s skipped: %s", label, e)
 
 # The "skill distill disabled" opt-in hint is a standing setting, not a
 # per-goal event -- show it at most once per process (see run_goal).
@@ -257,7 +269,7 @@ def _maybe_recall_prior_work(world, goal, shield) -> str | None:
         "1", "true", "yes", "on",
     }:
         return None
-    try:
+    with _enrich("auto-recall"):
         try:
             k = max(1, int(os.environ.get("MAVERICK_AUTO_RECALL_K", "3")))
         except ValueError:
@@ -311,9 +323,6 @@ def _maybe_recall_prior_work(world, goal, shield) -> str | None:
             "work, but verify they still apply before relying on them:\n\n"
             + "\n".join(lines)
         )
-    except Exception as e:  # pragma: no cover -- recall never blocks a run
-        log.debug("auto-recall skipped: %s", e)
-        return None
 
 
 def _record_skill_outcome(ctx: Any, *, success: bool) -> None:
@@ -400,7 +409,7 @@ def _maybe_record_reflexion(
     recalls the lesson. No-op unless reflexion is enabled. Never raises —
     a failed reflection write must not perturb the failure path.
     """
-    try:
+    with _enrich("reflexion record"):
         from . import reflexion
         if not reflexion.enabled():
             return
@@ -419,8 +428,6 @@ def _maybe_record_reflexion(
             user_id=user_id,
             domain=domain,
         )
-    except Exception as e:  # pragma: no cover -- reflexion never blocks a run
-        log.debug("reflexion record skipped: %s", e)
 
 
 async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decompose only under dedicated review
@@ -801,7 +808,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
         # gaps and pre-acquire matching catalog skills before the swarm
         # starts, so the agent's first turn already has them. Off by default;
         # MCP/tool creation stays agent-driven via the learn_capability tool.
-        try:
+        with _enrich("self-learning preflight"):
             from . import self_learning
             if self_learning.enabled() and self_learning.settings()["preflight"]:
                 acquired = await self_learning.preflight(
@@ -820,37 +827,31 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                         "\n\nIf you lack a skill, tool, or integration for this "
                         "goal, use the learn_capability tool to acquire or build it."
                     )
-        except Exception as e:  # pragma: no cover -- never blocks a run
-            log.debug("self-learning preflight skipped: %s", e)
 
         # Experience-guided orchestration (opt-in, SOTA HERA): condition the
         # brief on outcomes of similar prior goals (how many succeeded/failed).
         # No-op unless [experience] is enabled; fail-open.
-        try:
+        with _enrich("experience guidance"):
             from . import experience
             _exp = experience.recall(
                 world, f"{goal.title}\n{goal.description or ''}", shield=shield
             )
             if _exp:
                 brief = brief + "\n\n" + _exp
-        except Exception as e:  # pragma: no cover -- never blocks a run
-            log.debug("experience guidance skipped: %s", e)
 
         # Routing memory (opt-in, fed by CSCA): nudge toward roles that have
         # historically earned the most counterfactual credit. No-op unless
         # credit assignment is enabled and there's enough history.
-        try:
+        with _enrich("role-stats guidance"):
             from . import role_stats
             _rg = role_stats.guidance(domain=domain)
             if _rg:
                 brief = brief + "\n\n" + _rg
-        except Exception as e:  # pragma: no cover -- never blocks a run
-            log.debug("role-stats guidance skipped: %s", e)
 
         # Test-time skill synthesis (opt-in, SOTA SkillTTA): synthesize a short
         # task-specific cheat-sheet for THIS goal and inject it. No-op unless
         # [skill_synthesis] is enabled; spend is metered; fail-open.
-        try:
+        with _enrich("skill synthesis"):
             from . import skill_synthesis
             if skill_synthesis.enabled():
                 _sk = await skill_synthesis.synthesize_task_skill(
@@ -858,28 +859,24 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                 )
                 if _sk:
                     brief = brief + "\n\n" + skill_synthesis.frame_task_skill(_sk)
-        except Exception as e:  # pragma: no cover -- never blocks a run
-            log.debug("skill synthesis skipped: %s", e)
 
         # Human-correction ingestion (opt-in via [reflexion]): when the turn
         # that spawned this goal reads as "no, that's wrong" about the prior
         # answer, persist the correction as a lesson before the run starts —
         # deterministic phrase match, recorded once per correction message.
-        try:
+        with _enrich("correction ingestion"):
             from . import corrections as _corrections
             _corrections.maybe_record_correction(
                 world, conversation_id, goal, shield=shield,
                 channel=channel, user_id=user_id, domain=domain,
             )
-        except Exception as e:  # pragma: no cover -- never blocks a run
-            log.debug("correction ingestion skipped: %s", e)
 
         # Reflexion (opt-in): prepend lessons learned from prior FAILED
         # runs on similar goals so the orchestrator avoids repeating the
         # same dead ends. Recall is jaccard-ranked over goal text; the
         # block is empty (and this is a no-op) when reflexion is disabled
         # or there are no similar prior failures.
-        try:
+        with _enrich("reflexion recall"):
             from . import reflexion
             if reflexion.enabled():
                 recalled = reflexion.recall(
@@ -891,15 +888,13 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                 ctx_block = reflexion.format_context(recalled, shield=shield)
                 if ctx_block:
                     brief = brief + "\n" + ctx_block
-        except Exception as e:  # pragma: no cover -- recall never blocks a run
-            log.debug("reflexion recall skipped: %s", e)
 
         # Dream insights (opt-in, [dreaming]): prepend lessons consolidated
         # OFFLINE by `maverick dream` -- recurring failure patterns clustered
         # per department. Complements reflexion (raw per-failure lessons) with
         # the distilled cross-run pattern; a domain run is boosted toward its
         # own department's insights. No-op by default; never blocks the run.
-        try:
+        with _enrich("dream insight recall"):
             from . import dreaming
             if dreaming.enabled():
                 _dreamed = dreaming.recall_insights(
@@ -918,8 +913,6 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                 )
                 if _notes_block:
                     brief = brief + "\n" + _notes_block
-        except Exception as e:  # pragma: no cover -- recall never blocks a run
-            log.debug("dream insight recall skipped: %s", e)
 
         # Auto-recall (opt-in via MAVERICK_AUTO_RECALL=1): prepend the most
         # similar PRIOR *successful* goals + their results so the swarm reuses
@@ -938,7 +931,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
         # goal's cap; if it exhausts the budget, root.run() below surfaces the
         # graceful "hit your limit" message.
         _planning_mode = "default"
-        try:
+        with _enrich("tree-of-thought planning"):
             from . import tree_of_thought as _tot
             _use_tot = _tot.enabled()
             # Learned topology selection: [planning] mode = "auto" lets the
@@ -959,8 +952,6 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                     brief = brief + _format_tree_of_thought_plan(
                         _plan.winning_plan, shield=shield,
                     )
-        except Exception as e:  # pragma: no cover -- planning never blocks a run
-            log.debug("tree-of-thought planning skipped: %s", e)
 
         # Chokepoint #2: rescan the final agent brief after every prompt-surface
         # transformation above. In particular, the long-context router rewrites
@@ -1099,7 +1090,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
             # gathers it up front (recalled via reflexion; dreaming
             # consolidates repeats). No-op unless [reflexion] is enabled.
             if qs:
-                try:
+                with _enrich("blocked-question reflexion"):
                     from . import reflexion as _r
                     if _r.enabled():
                         _q = _r._sanitize_text(qs[0].question, shield=shield)[:200]
@@ -1117,8 +1108,6 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                             ),
                             channel=channel, user_id=user_id, domain=domain,
                         )
-                except Exception as e:  # pragma: no cover -- never block pause
-                    log.debug("blocked-question reflexion skipped: %s", e)
             if not qs:
                 return (
                     "Paused: the assistant said it needs more information, "
@@ -1286,11 +1275,9 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
         # runs recall it via vector search. No-op unless a [memory] backend is
         # configured; re-reads the goal so the indexed status/result reflect
         # the just-written 'done' state. Never blocks the finalize path.
-        try:
+        with _enrich("semantic index"):
             from . import semantic_recall
             semantic_recall.index_goal(world.get_goal(goal_id))
-        except Exception as e:  # pragma: no cover -- indexing never blocks a run
-            log.debug("semantic index skipped: %s", e)
         _record_deliverable_artifact(world, goal_id, summary)
         _record_skill_outcome(ctx, success=True)
         _record_planning_outcome(goal, domain, _planning_mode, success=True)
@@ -1314,7 +1301,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
         # can optionally overlap distillation (a blocking LLM call) instead of
         # running strictly before it.
         def _donate() -> None:
-            try:
+            with _enrich("trajectory donation"):
                 from .donation import TrajectoryRecord, hash_brief, write_record
                 entropy = getattr(ctx, "last_disagreement", 0.0)
                 record = TrajectoryRecord(
@@ -1340,8 +1327,6 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                     tokens_out=budget.output_tokens,
                 )
                 write_record(record)
-            except Exception as e:  # pragma: no cover
-                log.debug("trajectory donation skipped: %s", e)
 
         def _write_turn() -> None:
             if conversation_id is None:
@@ -1409,7 +1394,7 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
         # goals into a reusable SKILL.md under ~/.maverick/learned-skills. Uses
         # the persisted goal history as trajectories, so no extra store is
         # needed. No-op unless enabled; never raises into the run.
-        try:
+        with _enrich("local skill distillation"):
             from . import skill_distillation_local as _sdl
             if _sdl.enabled():
                 trajectories = [
@@ -1424,8 +1409,6 @@ async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decom
                 if path:
                     blackboard.post("orchestrator", "skill",
                                     f"distilled local skill -> {path}")
-        except Exception as e:  # pragma: no cover -- learning never blocks a run
-            log.debug("local skill distillation skipped: %s", e)
 
         # Join the speculative side effects before returning, so the turn /
         # donation writes are guaranteed durable to any caller that reads them

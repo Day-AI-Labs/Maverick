@@ -37,6 +37,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .config import env_flag
 from .emergent_protocol import learn as _learn_phrases
 
 log = logging.getLogger(__name__)
@@ -248,11 +249,9 @@ _shared_lock = threading.Lock()
 def enabled() -> bool:
     """Whether the live token-aware codec may measure on the coordination stream.
     OFF by default; env var overrides config."""
-    env = os.environ.get("MAVERICK_EMERGENT_CODEC", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_EMERGENT_CODEC")
+    if _v is not None:
+        return _v
     try:
         from .config import get_emergent_codec
 

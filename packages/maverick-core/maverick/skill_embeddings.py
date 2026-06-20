@@ -13,11 +13,12 @@ import logging
 import math
 import threading
 from dataclasses import dataclass
-from pathlib import Path
+
+from .paths import data_dir
 
 log = logging.getLogger(__name__)
 
-CACHE_PATH = Path.home() / ".maverick" / "skill_embeddings.json"
+CACHE_PATH = data_dir("skill_embeddings.json")
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 _model = None  # lazy singleton

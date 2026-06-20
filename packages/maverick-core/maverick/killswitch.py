@@ -22,6 +22,8 @@ import threading
 import time
 from pathlib import Path
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
 
@@ -34,7 +36,7 @@ def _default_halt_file() -> Path:
     ``Path.home()`` per call keeps the killswitch trustworthy — the one
     place we can least afford a stale path.
     """
-    return Path.home() / ".maverick" / "HALT"
+    return data_dir("HALT")
 
 
 class Halted(Exception):

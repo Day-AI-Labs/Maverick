@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from . import fastjson as _fastjson
+from .paths import data_dir
 
 _DEFAULT_SIZE = 256
 _lock = threading.Lock()
@@ -88,7 +89,7 @@ def _snapshot_path() -> Path:
     env = os.environ.get("MAVERICK_TOOL_CACHE_SNAPSHOT_PATH", "").strip()
     if env:
         return Path(env).expanduser()
-    return Path.home() / ".maverick" / "tool_cache_snapshot.jsonl"
+    return data_dir("tool_cache_snapshot.jsonl")
 
 
 def save_snapshot() -> int:

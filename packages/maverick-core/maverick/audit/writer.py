@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..paths import data_dir
 from .events import AuditEvent, EventKind, is_valid_day
 
 log = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ def goal_context(goal_id: int | None):
         reset_goal_context(token)
 
 
-DEFAULT_AUDIT_DIR = Path.home() / ".maverick" / "audit"
+DEFAULT_AUDIT_DIR = data_dir("audit")
 
 # Every live AuditLog registers here so an erase can drop the stale in-memory
 # chain head on *any* writer pointed at the erased dir -- not just the default

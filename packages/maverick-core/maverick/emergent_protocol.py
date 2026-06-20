@@ -29,6 +29,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .config import env_flag
+
 log = logging.getLogger(__name__)
 
 # Code sentinels use guillemet brackets, which don't occur in normal coordination
@@ -206,11 +208,9 @@ _shared_lock = threading.Lock()
 
 def enabled() -> bool:
     """Whether the emergent protocol may compress coordination. OFF by default."""
-    env = os.environ.get("MAVERICK_EMERGENT_PROTOCOL", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_EMERGENT_PROTOCOL")
+    if _v is not None:
+        return _v
     try:
         from .config import get_emergent_protocol
 

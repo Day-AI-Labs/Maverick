@@ -20,10 +20,10 @@ Pure + dependency-free + OFF by default (reads only the opt-in trajectory store;
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
 from . import promotion_effect as pe
+from .config import env_flag
 
 
 @dataclass(frozen=True)
@@ -42,11 +42,9 @@ class FailureClass:
 
 def enabled() -> bool:
     """Whether the data engine may run. OFF by default, fail-open."""
-    env = os.environ.get("MAVERICK_DATA_ENGINE", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_DATA_ENGINE")
+    if _v is not None:
+        return _v
     try:
         from .config import get_data_engine
 

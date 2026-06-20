@@ -23,6 +23,7 @@ import difflib
 from pathlib import Path
 from typing import Any
 
+from ..paths import data_dir
 from . import Tool
 
 _SCHEMA = {
@@ -42,7 +43,7 @@ _SCHEMA = {
 def _allowed_roots() -> list[Path]:
     """Roots a self-edit may touch: the maverick package + ~/.maverick."""
     pkg_root = Path(__file__).resolve().parent.parent  # .../maverick
-    return [pkg_root, (Path.home() / ".maverick").resolve()]
+    return [pkg_root, (data_dir()).resolve()]
 
 
 def _confined(path: Path) -> bool:

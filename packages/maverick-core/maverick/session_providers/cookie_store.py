@@ -16,12 +16,14 @@ import stat
 import time
 from pathlib import Path
 
-DEFAULT_DIR = Path.home() / ".maverick" / "sessions"
+from ..paths import data_dir
+
+DEFAULT_DIR = data_dir("sessions")
 
 
 def _session_dir() -> Path:
     # Re-resolved per call so tests can monkeypatch HOME.
-    return Path.home() / ".maverick" / "sessions"
+    return data_dir("sessions")
 
 
 def _path_for(provider: str) -> Path:

@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import os
 
-from .compaction import KEEP_RECENT_TURNS, MAX_TOOL_OUTPUT_BYTES, compact_messages
+from . import KEEP_RECENT_TURNS, MAX_TOOL_OUTPUT_BYTES, compact_messages
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def configured_strategy() -> str:
     if env in STRATEGIES:
         return env
     try:
-        from .config import load_config
+        from ..config import load_config
         raw = load_config().get("context", {}).get("compaction_strategy", "")
     except Exception:  # pragma: no cover -- config never blocks a run
         return ""
@@ -74,11 +74,11 @@ def compact_with_strategy(
         )
     try:
         if name == "learned":
-            from .compaction_learned import LearnedSummarizer
+            from .learned import LearnedSummarizer
             return LearnedSummarizer(llm=llm, budget=budget, scope=scope).compact(
                 messages, keep_recent=keep_recent)
         if name == "multimodal":
-            from .compaction_multimodal import compact_media
+            from .multimodal import compact_media
             # Stub heavy media blocks, then apply the standard shrink pass.
             return compact_messages(
                 compact_media(
@@ -86,12 +86,12 @@ def compact_with_strategy(
                 keep_recent=keep_recent, max_tool_bytes=max_tool_bytes,
             )
         if name == "streaming":
-            from .compaction_streaming import compact_streaming
+            from .streaming import compact_streaming
             return compact_streaming(
                 messages, conversation_id=conversation_id,
                 keep_recent=keep_recent, llm=llm, budget=budget,
             )
-        from .compaction_graph import compact_graph
+        from .graph import compact_graph
         return compact_graph(
             messages, keep_recent=keep_recent, llm=llm, budget=budget)
     except Exception as e:

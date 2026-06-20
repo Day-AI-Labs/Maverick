@@ -33,6 +33,7 @@ import logging
 import time
 from pathlib import Path
 
+from .paths import data_dir
 from .tax_prep import (
     FILING_STATUSES,
     STATE_CODES,
@@ -43,7 +44,7 @@ from .tax_prep import (
 log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-_LEGACY_DIR = Path.home() / ".maverick"
+_LEGACY_DIR = data_dir()
 _BUNDLE_NAME = "tax-constants.json"
 _STAMP_NAME = ".tax-constants-check"
 

@@ -24,9 +24,11 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-DEFAULT_DB = Path.home() / ".maverick" / "world.db"
+DEFAULT_DB = data_dir("world.db")
 SCHEMA_VERSION = 20
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
