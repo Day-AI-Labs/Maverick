@@ -24,6 +24,36 @@ from . import Tool, as_bool
 
 _WRITE_OPS = {"post", "put", "patch", "delete"}
 
+
+def _env_config(name: str, base_url_env: str, token_env: str) -> tuple[str, str]:
+    """Resolve (base_url, token) from env or raise a loud, consistent error.
+    Shared by the REST and GraphQL factories so they can't drift."""
+    base = os.environ.get(base_url_env, "").strip().rstrip("/")
+    tok = os.environ.get(token_env, "").strip()
+    if not base or not tok:
+        raise RuntimeError(f"{name} requires {base_url_env} + {token_env}.")
+    return base, tok
+
+
+def _build_auth_headers(
+    tok: str, *, basic: bool, token_header: str, scheme: str,
+    extra_headers_env: dict[str, str] | None,
+) -> dict[str, str]:
+    """Auth + content headers for a connector. Handles bearer/custom-scheme,
+    HTTP basic, and APIM-style extra-header creds -- shared by REST and GraphQL
+    so a GraphQL service needing basic/extra-header auth works like REST."""
+    h = {"Accept": "application/json", "Content-Type": "application/json"}
+    if basic:
+        raw = tok if ":" in tok else f"{tok}:x"
+        h["Authorization"] = "Basic " + base64.b64encode(raw.encode()).decode("ascii")
+    else:
+        h[token_header] = f"{scheme} {tok}".strip()
+    for hdr, env_name in (extra_headers_env or {}).items():
+        val = os.environ.get(env_name, "").strip()
+        if val:
+            h[hdr] = val
+    return h
+
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -159,24 +189,13 @@ def make_rest_tool(
     """
 
     def _config() -> tuple[str, str]:
-        base = os.environ.get(base_url_env, "").strip().rstrip("/")
-        tok = os.environ.get(token_env, "").strip()
-        if not base or not tok:
-            raise RuntimeError(f"{name} requires {base_url_env} + {token_env}.")
-        return base, tok
+        return _env_config(name, base_url_env, token_env)
 
     def _headers(tok: str) -> dict[str, str]:
-        h = {"Accept": "application/json", "Content-Type": "application/json"}
-        if basic:
-            raw = tok if ":" in tok else f"{tok}:x"
-            h["Authorization"] = "Basic " + base64.b64encode(raw.encode()).decode("ascii")
-        else:
-            h[token_header] = f"{scheme} {tok}".strip()
-        for hdr, env_name in (extra_headers_env or {}).items():
-            val = os.environ.get(env_name, "").strip()
-            if val:
-                h[hdr] = val
-        return h
+        return _build_auth_headers(
+            tok, basic=basic, token_header=token_header, scheme=scheme,
+            extra_headers_env=extra_headers_env,
+        )
 
     def _norm(path: str) -> str:
         p = path.strip()
@@ -361,16 +380,14 @@ def make_graphql_tool(
     description: str,
     token_header: str = "Authorization",
     scheme: str = "Bearer",
+    basic: bool = False,
+    extra_headers_env: dict[str, str] | None = None,
 ) -> Tool:
     """Build a GraphQL connector (single POST endpoint). Mutations are
     confirm-gated; queries run."""
 
     def _config() -> tuple[str, str]:
-        base = os.environ.get(base_url_env, "").strip().rstrip("/")
-        tok = os.environ.get(token_env, "").strip()
-        if not base or not tok:
-            raise RuntimeError(f"{name} requires {base_url_env} + {token_env}.")
-        return base, tok
+        return _env_config(name, base_url_env, token_env)
 
     def _run(args: dict[str, Any]) -> str:
         q = (args.get("query") or "").strip()
@@ -393,8 +410,10 @@ def make_graphql_tool(
             if deny:
                 return f"ERROR: {deny}"
             import httpx
-            headers = {"Content-Type": "application/json",
-                       token_header: f"{scheme} {tok}".strip()}
+            headers = _build_auth_headers(
+                tok, basic=basic, token_header=token_header, scheme=scheme,
+                extra_headers_env=extra_headers_env,
+            )
             r = httpx.post(base, headers=headers,
                            json={"query": q, "variables": variables}, timeout=30.0)
             try:
