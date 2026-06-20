@@ -287,6 +287,27 @@ _PROJECTS_MIGRATION: list[str] = [
 ]
 
 
+# --- Artifacts (migration v16) -----------------------------------------------
+# Parity with the SQLite ``artifacts`` table: deliverables a goal produced
+# (markdown/code/table/text), versioned per (goal_id, title). content is
+# plaintext under PG (SQLite encrypts at rest). Scoped through goal_id's tenant
+# like other child tables, so no tenant_id column of its own.
+_ARTIFACTS_MIGRATION: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS artifacts (
+      id          SERIAL PRIMARY KEY,
+      goal_id     INTEGER NOT NULL REFERENCES goals(id),
+      kind        TEXT NOT NULL DEFAULT 'text',
+      title       TEXT,
+      content     TEXT,
+      version     INTEGER NOT NULL DEFAULT 1,
+      created_at  DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_artifacts_goal ON artifacts(goal_id);",
+]
+
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
@@ -294,6 +315,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (13, _APPROVAL_CLAIMS_MIGRATION),
     (14, _GOAL_DOMAIN_MIGRATION),
     (15, _PROJECTS_MIGRATION),
+    (16, _ARTIFACTS_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -875,6 +897,48 @@ class PostgresWorldModel:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return {r[0]: int(r[1]) for r in rows}
+
+    # ---- Artifacts (migration v16) ------------------------------------------
+
+    def add_artifact(self, goal_id: int, kind: str, title: str, content: str) -> int:
+        """Record a goal deliverable; re-using (goal_id, title) appends the next
+        version so the UI can show history. Returns the new row id."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM artifacts "
+                "WHERE goal_id=%s AND title=%s",
+                (int(goal_id), title or ""),
+            )
+            version = int(cur.fetchone()[0]) + 1
+            cur.execute(
+                "INSERT INTO artifacts(goal_id, kind, title, content, version, "
+                "created_at) VALUES(%s, %s, %s, %s, %s, %s) RETURNING id",
+                (int(goal_id), str(kind or "text"), title or "", content,
+                 version, time.time()),
+            )
+            return int(cur.fetchone()[0])
+
+    def artifacts_for_goal(self, goal_id: int) -> list[dict]:
+        """Every artifact version for a goal, ordered by title then version."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, kind, title, content, version, created_at "
+                "FROM artifacts WHERE goal_id=%s ORDER BY title, version",
+                (int(goal_id),),
+            )
+            rows = cur.fetchall()
+        return [{"id": r[0], "goal_id": r[1], "kind": r[2], "title": r[3] or "",
+                 "content": r[4] or "", "version": r[5], "created_at": r[6]}
+                for r in rows]
+
+    def latest_artifacts(self, goal_id: int) -> list[dict]:
+        """Latest version of each titled artifact, with a ``versions`` count."""
+        by_title: dict[str, dict] = {}
+        counts: dict[str, int] = {}
+        for a in self.artifacts_for_goal(goal_id):  # title, version ascending
+            by_title[a["title"]] = a
+            counts[a["title"]] = counts.get(a["title"], 0) + 1
+        return [{**a, "versions": counts[t]} for t, a in by_title.items()]
 
     def list_active_goals(self, limit: int = 50) -> list[PGGoal]:
         frag, params = _tenant_scope()

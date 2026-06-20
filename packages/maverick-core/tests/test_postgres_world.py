@@ -590,3 +590,20 @@ def test_projects_crud_and_goal_membership(world):
 
 def test_get_missing_project_returns_none(world):
     assert world.get_project(999_999_999) is None
+
+
+def test_artifacts_versioning_and_latest(world):
+    gid = world.create_goal("produces deliverables")
+    a1 = world.add_artifact(gid, "markdown", "Report", "v1 body")
+    a2 = world.add_artifact(gid, "markdown", "Report", "v2 body")  # same title -> v2
+    a3 = world.add_artifact(gid, "code", "script.py", "print(1)")
+    assert a1 != a2 != a3
+
+    allv = world.artifacts_for_goal(gid)
+    report_versions = [a["version"] for a in allv if a["title"] == "Report"]
+    assert report_versions == [1, 2]  # ordered by title, version
+
+    latest = {a["title"]: a for a in world.latest_artifacts(gid)}
+    assert latest["Report"]["content"] == "v2 body"
+    assert latest["Report"]["versions"] == 2
+    assert latest["script.py"]["versions"] == 1
