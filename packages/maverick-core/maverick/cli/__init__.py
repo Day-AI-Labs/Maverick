@@ -3354,7 +3354,7 @@ def serve(max_depth: int, verbose: bool) -> None:
     # (e.g. an uncapped budget), so surface it now. Warn-only unless
     # MAVERICK_CONFIG_STRICT=1.
     try:
-        from .config_lint import warn_config_at_startup
+        from ..config_lint import warn_config_at_startup
         warn_config_at_startup()
     except SystemExit:
         raise
