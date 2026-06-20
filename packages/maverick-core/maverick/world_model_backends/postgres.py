@@ -972,12 +972,25 @@ class PostgresWorldModel:
             )
 
     def recent_event_contents(self, limit: int = 5000) -> list[str]:
-        """Coordination-message bodies across goals (newest first). Read-only."""
+        """Coordination-message bodies across THIS tenant's goals (newest first).
+
+        goal_events has no tenant_id; scope through the parent goal so a tenant
+        never reads another tenant's event bodies (no-op single-tenant). Mirrors
+        the scoping in :meth:`goal_events`."""
+        frag, fparams = _tenant_scope("g.tenant_id")
         with self._tx() as cur:
-            cur.execute(
-                "SELECT content FROM goal_events ORDER BY id DESC LIMIT %s",
-                (int(limit),),
-            )
+            if frag:
+                cur.execute(
+                    "SELECT ge.content FROM goal_events ge "
+                    "JOIN goals g ON g.id = ge.goal_id WHERE " + frag +
+                    " ORDER BY ge.id DESC LIMIT %s",
+                    tuple([*fparams, int(limit)]),
+                )
+            else:
+                cur.execute(
+                    "SELECT content FROM goal_events ORDER BY id DESC LIMIT %s",
+                    (int(limit),),
+                )
             rows = cur.fetchall()
         return [_unseal(r[0]) for r in rows if r and r[0]]
 
@@ -2012,12 +2025,18 @@ class PostgresWorldModel:
 
     def answer(self, question_id: int, answer: str) -> bool:
         """Record an answer. Returns False if no question has that id, so a
-        typo'd id is flagged instead of reported as a false success."""
+        typo'd id is flagged instead of reported as a false success.
+
+        Scoped through the parent goal's tenant so a tenant cannot answer
+        (overwrite) another tenant's question by id (no-op single-tenant)."""
+        frag, fparams = _tenant_scope("g.tenant_id")
+        sql = "UPDATE questions SET answer = %s, answered_at = %s WHERE id = %s"
+        params: list = [_seal(answer), time.time(), question_id]
+        if frag:
+            sql += " AND goal_id IN (SELECT g.id FROM goals g WHERE " + frag + ")"
+            params += fparams
         with self._tx() as cur:
-            cur.execute(
-                "UPDATE questions SET answer = %s, answered_at = %s WHERE id = %s",
-                (_seal(answer), time.time(), question_id),
-            )
+            cur.execute(sql, tuple(params))
             affected = cur.rowcount
         return affected > 0
 
@@ -2299,14 +2318,22 @@ class PostgresWorldModel:
 
         conv_ids = [int(cid) for cid in conversation_ids]
         with self._tx() as cur:
-            # The (channel, user_id) of the conversations being erased -- used
-            # to scrub the subject's explicitly user-scoped facts by key prefix
-            # below, the same subject the SQLite path derives in the CLI.
-            cur.execute(
-                "SELECT channel, user_id FROM conversations WHERE id = ANY(%s)",
-                (conv_ids,),
-            )
-            subjects = [(str(row[0]), str(row[1])) for row in cur.fetchall()]
+            # Restrict to conversations the ACTIVE TENANT owns before deleting
+            # anything: erase operates on caller-supplied ids, so without this a
+            # tenant could erase another tenant's conversations/goals/facts by
+            # passing foreign ids. No-op when no tenant is active (single-tenant).
+            # Same pass returns the (channel, user_id) subjects used to scrub the
+            # subject's user-scoped facts by key prefix below.
+            cfrag, cfparams = _tenant_scope()
+            csql = "SELECT id, channel, user_id FROM conversations WHERE id = ANY(%s)"
+            if cfrag:
+                csql += " AND " + cfrag
+            cur.execute(csql, tuple([conv_ids, *cfparams]))
+            owned = cur.fetchall()
+            conv_ids = [int(row[0]) for row in owned]
+            subjects = [(str(row[1]), str(row[2])) for row in owned]
+            if not conv_ids:
+                return set(), [], 0
 
             cur.execute(
                 "SELECT DISTINCT goal_id FROM turns "
