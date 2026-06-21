@@ -115,8 +115,19 @@ security posture by name:
   running against a cloud LLM on their own machine.
 - `enterprise` — the regulated posture. Turns [enterprise mode](#enterprise-mode-the-umbrella-switch)
   on by default (egress lock, consent fail-closed, capabilities enforced) on top
-  of the always-on controls. This is what the Helm chart and the reference
-  server deployments set.
+  of the always-on controls. It also flips three deployment-specific secure
+  defaults (each still overridable by its own explicit knob):
+  - **Sandbox = container.** A `local`/unset sandbox backend is upgraded to an
+    available container backend (docker → podman) instead of running
+    `shell=True` on the host; if no container runtime is installed it fails
+    closed rather than running unsandboxed (`[sandbox] backend` / `require_container`).
+  - **Plugin isolation = subprocess.** Third-party plugins run out-of-process by
+    default instead of in-process (`[plugins] isolation`).
+  - **Plugin lock = enforce.** The version/content lockfile is enforced (a no-op
+    until you run `maverick plugin lock`, then drifted/unpinned plugins are
+    refused) (`[plugins] lock_policy`).
+
+  This is what the Helm chart and the reference server deployments set.
 
 ```toml
 [profile]

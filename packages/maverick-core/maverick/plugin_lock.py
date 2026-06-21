@@ -67,17 +67,35 @@ def lock_path() -> Path:
     return data_dir() / "plugins.lock.json"
 
 
+def _enterprise_default_policy() -> str:
+    """Lock policy when nothing is configured: ``enforce`` under enterprise mode
+    (a regulated deployment refuses drifted/unpinned plugins once a lockfile
+    exists -- and it's a no-op with no lockfile, so it never breaks a fresh
+    install), ``off`` for single-tenant/dev."""
+    try:
+        from .enterprise import enterprise_enabled
+        return "enforce" if enterprise_enabled() else "off"
+    except Exception:  # pragma: no cover -- config never blocks discovery
+        return "off"
+
+
 def lock_policy() -> str:
+    """``MAVERICK_PLUGIN_LOCK_POLICY`` env wins over ``[plugins] lock_policy``.
+    When neither is set the default depends on the deployment profile (see
+    :func:`_enterprise_default_policy`); an explicit setting always wins."""
     env = os.environ.get("MAVERICK_PLUGIN_LOCK_POLICY", "").strip().lower()
     if env in _POLICIES:
         return env
     try:
         from .config import load_config
-        pol = str(((load_config() or {}).get("plugins") or {})
-                  .get("lock_policy", "off")).strip().lower()
-        return pol if pol in _POLICIES else "off"
+        raw = ((load_config() or {}).get("plugins") or {}).get("lock_policy")
     except Exception:  # pragma: no cover -- config never blocks discovery
-        return "off"
+        return _enterprise_default_policy()
+    if raw is not None:
+        pol = str(raw).strip().lower()
+        if pol in _POLICIES:
+            return pol
+    return _enterprise_default_policy()
 
 
 def _active_plugin_dists() -> dict[str, str]:
