@@ -452,8 +452,10 @@ here.
   (classify deps + flag copyleft), `self_capability` (report the run's capability
   grant), `oidc` (OIDC authorization-code client), `oauth_helper` (generic OAuth2 for
   any provider — PKCE authorize URL / code exchange / refresh; token responses
-  summarised with a sha fingerprint and never echoed into context, full tokens
-  land in a 0600 MAVERICK_OAUTH_OUT file), `cost_curve` (per-provider cost
+  summarised with a sha fingerprint and never echoed into context; full tokens
+  seal into the per-tenant OAuth vault — `oauth_vault.py`, AES-256-GCM under the
+  tenant DEK, refresh-aware via a caller-supplied refresher — when `[oauth] vault`
+  is on, else a 0600 MAVERICK_OAUTH_OUT file), `cost_curve` (per-provider cost
   model), `bench_track` (record benchmark scores + flag regressions), `teams`
   (Microsoft Teams webhook), `knowledge_graph` (extract/query/render
   subject-relation-object triples; no external graph DB), `cross_repo_deps`

@@ -71,6 +71,32 @@ def test_refresh(monkeypatch):
     assert "newtok" not in out and "expires_in: 60s" in out
 
 
+def test_exchange_seals_to_vault_when_enabled(monkeypatch, tmp_path):
+    import importlib.util
+
+    import pytest
+    if importlib.util.find_spec("cryptography") is None:
+        pytest.skip("cryptography extra not installed")
+    import maverick.tools.oauth_helper as mod
+    from maverick.tenant import kms
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_KMS_KEK", "cd" * 32)
+    monkeypatch.setenv("MAVERICK_OAUTH_VAULT", "1")
+    monkeypatch.delenv("MAVERICK_OAUTH_OUT", raising=False)
+    kms._clear_cache()
+    monkeypatch.setattr(mod, "_post_form",
+                        lambda url, data: {"access_token": "vaulted-secret",
+                                           "refresh_token": "rt", "expires_in": 3600})
+    out = _t().fn({"op": "exchange", "token_url": "https://x/t", "client_id": "c",
+                   "code": "k", "redirect_uri": "https://r", "provider": "notion"})
+    assert "vaulted-secret" not in out          # never echoed
+    assert "sealed in the per-tenant OAuth vault" in out
+    # Stored sealed and retrievable via the vault, not via a plaintext file.
+    from maverick.oauth_vault import get_vault
+    assert get_vault().get("notion")["access_token"] == "vaulted-secret"
+
+
 def test_errors_shaped(monkeypatch):
     import maverick.tools.oauth_helper as mod
     t = _t()
