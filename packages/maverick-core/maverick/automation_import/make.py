@@ -65,7 +65,11 @@ def _flatten_flow(flow: list) -> list[dict]:
 def _step_from_module(mod: dict) -> ImportedStep:
     app, op = _split_module(mod.get("module", ""))
     mapper = mod.get("mapper") if isinstance(mod.get("mapper"), dict) else {}
-    label = mod.get("metadata", {}).get("designer", {}).get("name") if isinstance(mod.get("metadata"), dict) else None
+    # metadata.designer.name is the operator's custom label; guard every hop --
+    # any of metadata/designer can be a non-dict on a hand-edited blueprint.
+    meta = mod.get("metadata") if isinstance(mod.get("metadata"), dict) else {}
+    designer = meta.get("designer") if isinstance(meta.get("designer"), dict) else {}
+    label = designer.get("name")
     name = str(label or f"{app} {op}".strip() or "step")
     return ImportedStep(
         name=name,
