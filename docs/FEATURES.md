@@ -634,6 +634,20 @@ here.
   encoded `rm -rf /` is blocked even though the literal surface form hid it.
   Monotonic (only upgrades an allowed verdict to a block), bounded against decode
   bombs, and fail-open; escape hatch `MAVERICK_SHIELD_NO_DECODE=1`.
+  **Trained cheap-probe seam + offline trainer** (`probe_model.probe_features`
+  n-gram extension + `maverick_shield/probe_train.py`, `python -m
+  maverick_shield.probe_train --corpus … --out model.json`): `probe_features`
+  now additively emits deterministic hashed char n-gram features (`ng:<bucket>`,
+  blake2b — stable across processes) when `ngram_buckets > 0`, so a model can
+  carry lexical content the 7 hand-named signals can't; `ngram_buckets = 0` keeps
+  the original contract, so every existing artifact is byte-for-byte unaffected.
+  The pure-stdlib trainer (no numpy/sklearn) fits an L2 logistic regression over
+  the SAME extractor inference uses (train/serve parity), selects a threshold at a
+  configurable benign false-positive ceiling (`--max-fp`, default 1%), and exports
+  the `{bias, weights, threshold, ngram_buckets, ngram_sizes}` JSON the shield
+  already loads. Still OFF by default and MAX-ensembled with the heuristic (can
+  only raise recall). Recommended datasets/model and the ship-gate are in
+  [`docs/research/shield-model-recommendation.md`](research/shield-model-recommendation.md).
   **Annual safety report generator** (`safety_report.py`, `python -m
   maverick.safety_report --since --until`): aggregates what the deployment
   actually recorded — shield blocks, capability denials, killswitch

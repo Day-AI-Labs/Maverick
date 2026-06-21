@@ -2,7 +2,14 @@
 
 > Research output. Decision-ready. Network was available during research
 > (HuggingFace MCP + web search both responded), so dataset sizes/licenses
-> below are confirmed against live Hub metadata (June 2026). No code changed.
+> below are confirmed against live Hub metadata (June 2026).
+>
+> **Implementation status (increment 3a — done):** the additive `probe_features`
+> n-gram seam and the pure-stdlib offline trainer (`maverick_shield/probe_train.py`)
+> are now implemented per the recommendation below. What remains (3b) is the
+> production training RUN over the large public corpora in a data-equipped
+> environment, then the ≤1% benign-FP ship-gate evaluation before flipping any
+> bundled model ON by default.
 
 ## Context: the integration seam (read this first)
 
