@@ -42,8 +42,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -183,15 +183,27 @@ def _load_store(path: Path) -> dict:
 
 
 def _save_store(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, sort_keys=True),
-                   encoding="utf-8")
-    os.replace(tmp, path)
-    try:
-        os.chmod(path, 0o600)
-    except OSError:  # pragma: no cover - best-effort on exotic filesystems
-        pass
+    # Unique temp + os.replace (0600): a fixed ".tmp" collides between two
+    # concurrent imports (one os.replace moves it out from under the other).
+    from ..file_lock import atomic_write_text
+    atomic_write_text(path, json.dumps(data, ensure_ascii=False, sort_keys=True))
+
+
+# Serializes the whole import_listings load-modify-save. Two concurrent imports
+# from DIFFERENT origins both load the same store; the second save (built on the
+# pre-first-write snapshot) clobbers the first origin's listings AND its rollback
+# watermark -- reopening the replay window the watermark exists to close.
+_IMPORT_LOCK = threading.Lock()
+
+
+def _import_locked(path: Path):
+    from contextlib import ExitStack
+
+    from ..file_lock import cross_process_lock
+    stack = ExitStack()
+    stack.enter_context(_IMPORT_LOCK)
+    stack.enter_context(cross_process_lock(path))
+    return stack
 
 
 def _moderate(name: str, summary: str, kind: str) -> dict:
@@ -261,63 +273,66 @@ def import_listings(
         report["reason"] = "missing or malformed created_at"
         return report
     path = _store_path(store_path)
-    store = _load_store(path)
-    watermarks = store.get(_WATERMARK_KEY)
-    if not isinstance(watermarks, dict):
-        watermarks = {}
-    prev = watermarks.get(origin)
-    if isinstance(prev, (int, float)) and created <= prev:
-        report["reason"] = (
-            "stale envelope: created_at is not newer than the last applied "
-            "import from this origin (replay/rollback?)")
-        return report
+    # Whole load-modify-save under the lock so two concurrent imports from
+    # different origins can't clobber each other's listings + rollback watermark.
+    with _import_locked(path):
+        store = _load_store(path)
+        watermarks = store.get(_WATERMARK_KEY)
+        if not isinstance(watermarks, dict):
+            watermarks = {}
+        prev = watermarks.get(origin)
+        if isinstance(prev, (int, float)) and created <= prev:
+            report["reason"] = (
+                "stale envelope: created_at is not newer than the last applied "
+                "import from this origin (replay/rollback?)")
+            return report
 
-    ts = time.time() if now is None else now
-    accepted: dict[str, dict[str, dict]] = {}
-    for raw in listings:
-        listing = _listing_for_export(raw)
-        if listing is None:
-            name = str(raw.get("name", "?")) if isinstance(raw, dict) else "?"
-            report["rejected"].append({"name": name, "reasons": ["malformed listing"]})
-            continue
-        name = listing["name"]
-        kind = listing["kind"]
-        verdict = _moderate(name, str(listing.get("summary", "")), kind)
-        if verdict["decision"] != "APPROVE":
-            report["rejected"].append(
-                {"name": name,
-                 "reasons": [f"moderation {verdict['decision']}"] + verdict["reasons"]})
-            continue
-        if "donation_url" in listing:
-            d_ok, d_reason = validate_donation_url(listing["donation_url"])
-            if not d_ok:
-                listing.pop("donation_url")
-                report["stripped_donations"].append(name)
-                log.info("marketplace federation: stripped donation_url on %s/%s: %s",
-                         origin, name, d_reason)
-        namespaced = f"{origin}/{name}"
-        listing["name"] = namespaced
-        listing["fed_origin"] = origin
-        listing["fed_name"] = name
-        listing["imported_at"] = round(ts, 3)
-        accepted.setdefault(kind, {})[namespaced] = listing
-        report["accepted"].append(namespaced)
+        ts = time.time() if now is None else now
+        accepted: dict[str, dict[str, dict]] = {}
+        for raw in listings:
+            listing = _listing_for_export(raw)
+            if listing is None:
+                name = str(raw.get("name", "?")) if isinstance(raw, dict) else "?"
+                report["rejected"].append({"name": name, "reasons": ["malformed listing"]})
+                continue
+            name = listing["name"]
+            kind = listing["kind"]
+            verdict = _moderate(name, str(listing.get("summary", "")), kind)
+            if verdict["decision"] != "APPROVE":
+                report["rejected"].append(
+                    {"name": name,
+                     "reasons": [f"moderation {verdict['decision']}"] + verdict["reasons"]})
+                continue
+            if "donation_url" in listing:
+                d_ok, d_reason = validate_donation_url(listing["donation_url"])
+                if not d_ok:
+                    listing.pop("donation_url")
+                    report["stripped_donations"].append(name)
+                    log.info("marketplace federation: stripped donation_url on %s/%s: %s",
+                             origin, name, d_reason)
+            namespaced = f"{origin}/{name}"
+            listing["name"] = namespaced
+            listing["fed_origin"] = origin
+            listing["fed_name"] = name
+            listing["imported_at"] = round(ts, 3)
+            accepted.setdefault(kind, {})[namespaced] = listing
+            report["accepted"].append(namespaced)
 
-    # Re-sync semantics: this import replaces the origin's previous set, so
-    # withdrawn/renamed listings disappear and the store stays bounded. (store
-    # was loaded above for the rollback check; reuse it.)
-    for kind, by_name in store.items():
-        if kind == _WATERMARK_KEY:
-            continue  # reserved metadata, not a listing kind
-        if isinstance(by_name, dict):
-            store[kind] = {n: v for n, v in by_name.items()
-                           if not n.startswith(f"{origin}/")}
-    for kind, by_name in accepted.items():
-        store.setdefault(kind, {}).update(by_name)
-    # Advance this origin's rollback watermark only after a successful apply.
-    watermarks[origin] = created
-    store[_WATERMARK_KEY] = watermarks
-    _save_store(path, store)
+        # Re-sync semantics: this import replaces the origin's previous set, so
+        # withdrawn/renamed listings disappear and the store stays bounded. (store
+        # was loaded above for the rollback check; reuse it.)
+        for kind, by_name in store.items():
+            if kind == _WATERMARK_KEY:
+                continue  # reserved metadata, not a listing kind
+            if isinstance(by_name, dict):
+                store[kind] = {n: v for n, v in by_name.items()
+                               if not n.startswith(f"{origin}/")}
+        for kind, by_name in accepted.items():
+            store.setdefault(kind, {}).update(by_name)
+        # Advance this origin's rollback watermark only after a successful apply.
+        watermarks[origin] = created
+        store[_WATERMARK_KEY] = watermarks
+        _save_store(path, store)
     report["ok"] = True
     report["reason"] = "ok"
     return report
