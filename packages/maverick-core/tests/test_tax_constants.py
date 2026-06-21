@@ -239,3 +239,34 @@ def test_validate_payload_rejects_non_finite_numeric_header():
     from maverick.tax_constants import validate_payload
     errs = validate_payload({"schema_version": float("inf"), "year": 2025, "version": 1})
     assert errs == ["malformed header fields"]
+
+
+def test_concurrent_apply_preserves_rollback_copy(store):
+    """Two concurrent applies of newer bundles must not interleave the .prev
+    backup + write: the bundle stays valid, a .prev rollback copy exists, and no
+    fixed-".tmp" residue is left."""
+    import threading
+
+    env1, pub1 = _sign(_payload(version=1))
+    assert tax_constants.apply_bundle(env1, trusted=[pub1])[0]  # seed v1
+
+    env2, pub2 = _sign(_payload(version=2))
+    env3, pub3 = _sign(_payload(version=3))
+
+    def apply(env, pub):
+        tax_constants.apply_bundle(env, trusted=[pub])
+
+    ts = [threading.Thread(target=apply, args=(env2, pub2)),
+          threading.Thread(target=apply, args=(env3, pub3))]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+
+    # The applied version is one of the two (whichever serialized last); the file
+    # is a valid bundle and a .prev rollback copy survives, with no temp residue.
+    assert tax_constants.active_version() in (2, 3)
+    p = tax_constants.bundle_path()
+    assert json.loads(p.read_text())  # valid JSON, not torn
+    assert p.with_suffix(p.suffix + ".prev").exists()
+    assert list(p.parent.glob("*.tmp")) == []

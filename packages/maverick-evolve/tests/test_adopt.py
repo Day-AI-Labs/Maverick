@@ -109,3 +109,30 @@ def test_render_pack_roundtrips_tables(tmp_path):
     data = tomllib.loads(text)
     assert data["models"] == {"orchestrator": "m1"}
     assert 'quoted' in data["persona"] and "\n" in data["persona"]
+
+
+def test_concurrent_adopt_keeps_one_bak_and_no_temp(tmp_path):
+    """The .bak guard (exists() and not bak.exists()) was a TOCTOU and the write
+    used a fixed ".tmp"; serialized under a lock, concurrent adoptions leave the
+    dest valid, exactly one .bak, and no temp residue."""
+    import threading
+
+    apath, pack = _setup(tmp_path, {
+        "persona": "You are a SOX specialist; verify evidence twice.",
+    })
+    out = tmp_path / "out"
+    n = 10
+
+    def worker():
+        adopt_best(apath, pack, out_dir=out)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    dest = out / pack.name
+    assert dest.exists() and "SOX specialist" in dest.read_text()
+    assert (out / (pack.name + ".bak")).exists()
+    assert list(out.glob("*.tmp")) == []

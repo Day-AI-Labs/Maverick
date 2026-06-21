@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import platform
 import time
 from collections.abc import Callable
@@ -149,14 +148,11 @@ def write_cert(cert: dict, path: Path | None = None) -> Path:
         from .paths import data_dir
         path = data_dir("reliability_cert.json")
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(cert, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, path)
-    try:
-        os.chmod(path, 0o600)
-    except OSError:  # pragma: no cover
-        pass
+    # Unique temp + os.replace (0600): a fixed ".tmp" collides if two CLI
+    # invocations write the cert concurrently (one os.replace moves it out from
+    # under the other).
+    from .file_lock import atomic_write_text
+    atomic_write_text(path, json.dumps(cert, indent=2, sort_keys=True))
     return path
 
 
