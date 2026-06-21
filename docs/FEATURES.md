@@ -1107,7 +1107,11 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   every cross-node reference is *reciprocated* (a node can't drop its half to
   hide an action) on top of each node's own chain/anchor check; an
   unreciprocated or forged link is reported with the missing counterpart,
-  date-windowed **SIEM export**, encryption-at-rest (`crypto_at_rest.py`,
+  date-windowed **SIEM export**, **WORM export** (`audit/worm.py`, `maverick audit
+  worm push`) — ships closed day-files to S3 Object-Lock (COMPLIANCE/GOVERNANCE)
+  or a local read-only mirror with a retention lock, so the historical trail is
+  *immutable*, not just tamper-evident; `maverick audit worm verify` proves every
+  closed file is durably shipped, encryption-at-rest (`crypto_at_rest.py`,
   `maverick encryption migrate`), SOC2 readiness (`soc2.py`), DSAR (`dsar.py`),
   **differential erasure verification** (`erasure_verify.py`, `maverick
   erase-verify`) — a right-to-erasure *proof*: reuses the DSAR export (whose

@@ -5327,7 +5327,55 @@ def audit_export(
         click.echo("no audit events to export", err=True)
 
 
-# ----- Killswitch --------------------------------------------------------
+@audit.group("worm")
+def audit_worm() -> None:
+    """Write-once (WORM) export of closed audit day-files (see docs/security-hardening.md)."""
+
+
+@audit_worm.command("push")
+@click.option("--dry-run", is_flag=True,
+              help="Show which day-files would be shipped; write nothing.")
+def audit_worm_push(dry_run: bool) -> None:
+    """Ship closed audit day-files to the configured write-once target.
+
+    Each day-file dated before today is shipped to an S3 Object-Lock bucket (or a
+    local read-only mirror) with a retention lock, so the historical trail can't
+    be altered or deleted even by a privileged insider. Idempotent: unchanged
+    files are skipped; a file changed by `audit seal` / erase is re-shipped as a
+    new locked version. Configure via `[audit.worm]`.
+    """
+    from ..audit.worm import WormUnavailable, push_closed_dayfiles
+    try:
+        report = push_closed_dayfiles(dry_run=dry_run)
+    except WormUnavailable as e:
+        raise click.ClickException(str(e)) from e
+    for name, status in sorted(report.items()):
+        click.echo(f"  {name}: {status}")
+    shipped = sum(1 for s in report.values()
+                  if s.startswith(("pushed", "re-pushed", "would")))
+    click.echo(f"{'Would ship' if dry_run else 'Shipped'} {shipped} day-file(s).")
+
+
+@audit_worm.command("verify")
+def audit_worm_verify() -> None:
+    """Check closed day-files against the WORM manifest.
+
+    Reports, per closed day-file, whether its current bytes were shipped (`ok`),
+    differ from the last shipped version (`changed since push` -- re-run push), or
+    were never shipped (`NOT pushed`). Exits non-zero if anything is unshipped or
+    diverged, so it can gate a compliance cron.
+    """
+    from ..audit.worm import verify
+    report = verify()
+    for name, status in sorted(report.items()):
+        click.echo(f"  {name}: {status}")
+    bad = [n for n, s in report.items() if s != "ok"]
+    if bad:
+        click.echo(f"{len(bad)} day-file(s) not durably shipped: {sorted(bad)}",
+                   err=True)
+        sys.exit(1)
+    click.echo(f"all {len(report)} closed day-file(s) verified in WORM store.")
+
 
 @main.command()
 @click.option("--reason", default="manual halt", help="Why you're halting.")

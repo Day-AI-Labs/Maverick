@@ -76,7 +76,7 @@ KNOWN_SCHEMA: dict[str, set[str] | None] = {
     # and migrate.py already lists it; config-lint flagged the whole section as
     # unknown ("did you mean auth?"), telling a regulated client their flagship
     # signed-audit config looked like a typo (client-journey finding).
-    "audit": {"sign"},
+    "audit": {"sign", "worm"},
     "durable": {"enabled", "keep_last"},
     "persona": {"name", "style", "addendum"},
     # The dashboard reads more than the auth token: theme/density/allow_extension
