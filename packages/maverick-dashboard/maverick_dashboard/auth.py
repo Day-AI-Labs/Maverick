@@ -358,6 +358,12 @@ def require_principal(
         # (MAVERICK_SCIM_TOKEN), verified by the SCIM router itself; they have no
         # OIDC session. The router 404s when SCIM is disabled.
         return None
+    if request.url.path.startswith("/saml/"):
+        # SAML SSO endpoints (metadata / login / ACS) are how a browser obtains a
+        # session -- the IdP POSTs a signed assertion to the ACS with no existing
+        # session. They self-gate (404 when [auth.saml] is unset) and the ACS
+        # verifies the assertion itself, like the OIDC /auth/ login routes.
+        return None
     # HMAC-signed webhooks (GitHub/Telegram/Linear/Jira/...) can't present an
     # OIDC ID token -- the external sender authenticates with a shared-secret
     # signature, verified by the webhook handler itself. Requiring an OIDC

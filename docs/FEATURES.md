@@ -1374,6 +1374,14 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `embedding_types`), local, or deterministic — fails loud rather than silently
   degrading.
 - **Reverse-proxy SSO** — trusted forwarded-identity header for enterprise auth.
+- **SAML 2.0 SSO** (`maverick_dashboard/saml.py`, the `[saml]` extra / pysaml2) —
+  a SAML SP browser-login front-end (`/saml/metadata`/`login`/`acs`) for IdPs that
+  mandate SAML over OIDC. The IdP's signed assertion is verified by pysaml2 (no
+  hand-rolled XML-dsig) and mints the SAME `mvk_session` cookie as the OIDC login,
+  so a SAML user flows through RBAC / `require_principal` identically
+  (`user:<NameID>`); open-redirect-safe RelayState; off by default (404s until
+  `[auth.saml]` is set). pysaml2 calls are isolated + unit-tested; certify a live
+  IdP round-trip before production.
 - **SCIM 2.0 provisioning** (`maverick_dashboard/scim.py`) — the RFC 7643/7644
   `/scim/v2` surface (Users CRUD + `ServiceProviderConfig`/`ResourceTypes`, the
   `userName eq` filter, Okta/Azure PATCH-deprovision forms) so an enterprise IdP

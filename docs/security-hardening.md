@@ -33,6 +33,7 @@ and how to confirm it's actually on.
 - [OIDC SSO authentication](#oidc-sso-authentication)
 - [OIDC browser login (built-in)](#oidc-browser-login-built-in)
 - [Reverse-proxy SSO](#reverse-proxy-sso)
+- [SAML SSO](#saml-sso)
 - [Encryption at rest](#encryption-at-rest)
 - [Risk-proportional verification](#risk-proportional-verification)
 - [Audit-log signing (tamper-evidence)](#audit-log-signing-tamper-evidence)
@@ -622,6 +623,60 @@ never trusted (fail-closed).
 **Verify it's on:** request a gated dashboard route through the proxy and confirm
 access matches the forwarded user (grep the audit log for `capability_denied` to
 see a role biting). Direct (non-proxy) requests must not carry a honored header.
+
+---
+
+## SAML SSO
+
+**What it does.** A SAML 2.0 SP browser-login front-end alongside
+[OIDC](#oidc-browser-login-built-in), for enterprises whose IdP (Okta,
+Entra/Azure AD, OneLogin, ADFS) mandates SAML. The IdP POSTs a **signed
+assertion** to the ACS; **pysaml2** verifies the XML signature (never hand-rolled
+XML-dsig), and the same hardened `mvk_session` cookie the OIDC login issues is
+minted — so a SAML user flows through [RBAC](#role-based-access-control-rbac) and
+every `require_principal` gate exactly like an OIDC user (principal
+`user:<NameID>`). Opt-in; off by default (the `/saml/*` routes 404 until configured).
+
+**config.toml**
+
+```toml
+[auth.saml]
+sp_entity_id = "https://YOUR-HOST/saml/metadata"
+acs_url = "https://YOUR-HOST/saml/acs"
+idp_metadata_url = "https://IDP/app/metadata"   # or idp_metadata_file = "/path/idp.xml"
+want_assertions_signed = true
+# sp_cert_file / sp_key_file  — to sign AuthnRequests / decrypt assertions
+
+[auth.oidc]
+session_secret = "<32+ random bytes>"   # SAML reuses the browser-login session secret
+```
+
+**Needs the extra:** `pip install 'maverick-agent[saml]'` (pysaml2). The routes
+503 with a hint if it's absent.
+
+**Wizard toggle:** yes — "Enable SAML 2.0 SSO?" (writes the `[auth.saml]` template).
+
+**Endpoints** (mounted on the dashboard app, exempt from the dashboard-token gate
+because the IdP POST carries no bearer):
+
+- `GET /saml/metadata` — SP metadata XML; register this with the IdP.
+- `GET /saml/login` — start SSO (redirects to the IdP). `?return_to=/path` sets a
+  same-site post-login redirect (open redirects are rejected).
+- `POST /saml/acs` — Assertion Consumer Service: verifies + sets the session.
+
+**Gotchas**
+
+- **Shares the session secret.** SAML mints the *same* `mvk_session` cookie as
+  OIDC, so `[auth.oidc] session_secret` must be set or the ACS can't issue a session.
+- **Not yet certified against a live IdP in-tree** — the pysaml2 calls are
+  isolated and unit-tested with the library mocked; do an Okta/Entra round-trip in
+  staging before production. Single-logout (SLO) is not implemented yet (local
+  session clear only).
+- Failures are opaque (`401 SAML assertion did not verify`) and never log the
+  assertion — like the OIDC callback.
+
+**Verify it's on:** `GET /saml/metadata` returns SP XML (not 404); a full IdP
+login lands you authenticated with `user:<NameID>` as the principal.
 
 ---
 
