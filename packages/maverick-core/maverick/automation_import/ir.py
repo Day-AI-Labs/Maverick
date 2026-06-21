@@ -58,9 +58,14 @@ class ImportedStep:
         if self.description and self.description.strip() != self.name.strip():
             line += f"\n   - {self.description.strip()}"
         if self.params:
-            # Keep inputs compact + readable; never dump huge blobs into the brief.
+            # Keep inputs compact: cap BOTH the key count and the rendered length
+            # so a single large value (an HTTP body, a big Set value) can't bloat
+            # the brief -- it's read by the model on every run.
             shown = {k: v for k, v in list(self.params.items())[:12]}
-            line += f"\n   - inputs: {shown}"
+            rendered = repr(shown)
+            if len(rendered) > 500:
+                rendered = rendered[:500] + " …(truncated)"
+            line += f"\n   - inputs: {rendered}"
         return line
 
 
@@ -114,7 +119,11 @@ class ImportedAutomation:
         ``source_id`` is present we append a short hash of it: re-importing the
         same automation lands on the same slug (idempotent), while different
         automations with the same name get distinct slugs (no data loss)."""
-        base = slugify(f"{self.source}-{self.name}")
+        # Cap the readable base so the on-disk "<slug>.md" stays well under the
+        # 255-byte filename limit (a long source name would otherwise OSError on
+        # save). The source_id hash below keeps distinct automations unique even
+        # when their truncated bases collide.
+        base = slugify(f"{self.source}-{self.name}")[:64].rstrip("-") or "imported"
         if self.source_id:
             suffix = hashlib.sha256(self.source_id.encode("utf-8")).hexdigest()[:6]
             return f"{base}-{suffix}"

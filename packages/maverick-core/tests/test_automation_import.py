@@ -145,6 +145,19 @@ class TestIR:
         a2 = ir.ImportedAutomation("n8n", "1", "Daily", ir.ImportedTrigger())
         assert a1.template_name() == a2.template_name()  # re-import overwrites itself
 
+    def test_template_name_length_capped_for_long_names(self):
+        # A 300-char name would overflow the 255-byte filename limit on save.
+        a = ir.ImportedAutomation("n8n", "wf1", "X" * 300, ir.ImportedTrigger())
+        name = a.template_name()
+        assert len(name) + len(".md") <= 255
+        assert a.source_id  # still unique via the hash suffix
+
+    def test_step_render_caps_large_param_value(self):
+        s = ir.ImportedStep(name="big", app="http", params={"body": "A" * 5000})
+        out = s.render(1)
+        assert "truncated" in out
+        assert len(out) < 1000  # not the full 5000-char value
+
     def test_unknown_trigger_kind_falls_back_to_event(self):
         t = ir.ImportedTrigger(kind="bogus")
         assert t.kind == ir.TRIGGER_EVENT
