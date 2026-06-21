@@ -117,3 +117,32 @@ def test_format_findings_summary():
     warn_idx = out.index("[warning]")
     assert err_idx < warn_idx
     assert "budget.max_dollars" in out
+
+
+# --- inline-secret detection -------------------------------------------------
+
+def test_inline_api_key_warns():
+    cfg = {"providers": {"anthropic": {"api_key": "sk-ant-deadbeef"}}}
+    findings = lint_config(cfg)
+    sec = [f for f in findings if f.key == "api_key"]
+    assert sec and sec[0].severity == "warning"
+    assert "inline secret" in sec[0].message
+    assert "providers.anthropic.api_key" in sec[0].message
+
+
+def test_env_ref_secret_is_clean():
+    for val in ("${ANTHROPIC_API_KEY}", "$ANTHROPIC_API_KEY", ""):
+        cfg = {"providers": {"x": {"api_key": val}}}
+        assert [f for f in lint_config(cfg) if f.key == "api_key"] == []
+
+
+def test_inline_secret_suffix_keys_warn():
+    cfg = {"oidc": {"client_secret": "hunter2"}, "x": {"webhook_token": "abc123"}}
+    keys = {f.key for f in lint_config(cfg) if f.severity == "warning"
+            and "inline secret" in f.message}
+    assert {"client_secret", "webhook_token"} <= keys
+
+
+def test_non_secret_key_not_flagged():
+    cfg = {"sandbox": {"backend": "local"}, "models": {"orchestrator": "anthropic:x"}}
+    assert [f for f in lint_config(cfg) if "inline secret" in f.message] == []
