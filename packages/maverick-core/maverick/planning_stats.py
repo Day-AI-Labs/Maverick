@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 import time
 from pathlib import Path
@@ -61,19 +60,19 @@ def record(mode: str, task_class: str, success: bool,
     if mode not in MODES or not task_class:
         return
     p = _resolve(path)
-    with _lock:
+    # In-process lock + cross-process flock: a bare write_text truncates in
+    # place (a concurrent _load() reader's JSONDecodeError is swallowed as an
+    # empty store, wiping the win/loss counters), and without the flock two
+    # processes lose updates that bias topology selection.
+    from .file_lock import atomic_write_text, cross_process_lock
+    with _lock, cross_process_lock(p):
         try:
             data = _load(p)
             entry = data.setdefault(f"{mode}::{task_class}", {})
             entry["runs"] = int(entry.get("runs", 0)) + 1
             entry["wins"] = int(entry.get("wins", 0)) + (1 if success else 0)
             entry["last"] = time.time()
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(data), encoding="utf-8")
-            try:
-                os.chmod(p, 0o600)
-            except OSError:
-                pass
+            atomic_write_text(p, json.dumps(data))
         except OSError as e:  # pragma: no cover -- stats never block a run
             log.debug("planning_stats record failed: %s", e)
 
