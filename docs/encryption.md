@@ -7,17 +7,27 @@ AES-256-GCM.
 
 ## Enable it
 
-Off by default. Turn it on with any of:
+**On by default** (secure-by-default). The key auto-generates on first use, so
+new writes are sealed with no configuration — see
+[Back up the key](#key-management) immediately, because losing it loses the data.
+
+Resolution (first match wins): a compliance floor (e.g. HIPAA) forces it on >
+`MAVERICK_ENCRYPT_AT_REST` env > `[encryption] at_rest` in config > enterprise
+mode > the secure-by-default switch (on). To **disable** it on a personal box:
 
 ```toml
 [encryption]
-at_rest = true
+at_rest = false
 ```
 
-- env: `MAVERICK_ENCRYPT_AT_REST=1`
-- the installer wizard ("Encrypt sensitive local stores at rest?")
-- **implied by [enterprise mode](safety.md#enterprise-mode-private--sensitive-data)** —
-  enabling enterprise mode enables this too.
+- env: `MAVERICK_ENCRYPT_AT_REST=0`
+- or turn off the whole secure-by-default posture with
+  `MAVERICK_SECURE_DEFAULT=0` / `[security] secure_defaults = false`
+  (see [Security hardening → Secure by default](security-hardening.md#secure-by-default)).
+
+Existing installs are safe to leave on: reads are plaintext-tolerant, so rows
+written before it was enabled are returned unchanged until rewritten (run
+`maverick encryption migrate` to seal them eagerly).
 
 ## What gets sealed
 
@@ -28,6 +38,11 @@ at_rest = true
 | Persisted facts | world DB | `facts.value` |
 | Per-goal agent message log | world DB | `messages.content` |
 | Clarifying questions | world DB | `questions.question`, `questions.answer` |
+| Goal content | world DB | `goals.title`, `goals.description`, `goals.result` |
+| Per-agent goal events | world DB | `goal_events.content` |
+| Episode summaries | world DB | `episodes.summary`, `episodes.outcome` |
+| Parked approvals | world DB | `approvals.action`, `approvals.scope`, `approvals.detail` |
+| Semantic-recall documents | `vector_store` (chroma/pgvector) | sealed document; vector from plaintext |
 
 Sealing is transparent — values are encrypted on write and decrypted on read, so
 application behaviour is unchanged. A value written **before** encryption was enabled
@@ -98,10 +113,6 @@ key matches still work.
 
 ## What is *not* sealed (and why)
 
-- **`goals.title` / `description` / `result` and `episodes.summary`** — these are read
-  by the dashboard through direct SQL and rendered in its UI, so sealing them safely
-  requires decrypting in every raw read path. Tracked as a follow-up; **do not assume
-  they are encrypted.**
 - **The audit log** (`~/.maverick/audit/*.ndjson`) — integrity comes from the Ed25519
   hash-chain plus the erase/retention tooling. **Closed** day-files can be sealed at
   rest with `maverick audit seal`; the **current** day-file stays plaintext for the
