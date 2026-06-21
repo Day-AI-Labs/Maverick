@@ -280,10 +280,16 @@ def _maybe_recall_prior_work(world, goal, shield) -> str | None:
         from . import semantic_recall
         sem = semantic_recall.search(query, k=k + 2, exclude_goal_id=goal.id)
         if sem is not None:
+            # The vector store holds only routing metadata (goal_id/status); the
+            # sensitive title/result are read back from the sealed world DB, so
+            # they are never duplicated in cleartext in the external store.
             for score, meta in sem:
+                gid = meta.get("goal_id")
+                g = world.get_goal(gid) if gid is not None else None
                 rows.append((
-                    score, meta.get("goal_id"),
-                    meta.get("title") or "", meta.get("result") or "",
+                    score, gid,
+                    (getattr(g, "title", None) or "") if g else "",
+                    (getattr(g, "result", None) or "") if g else "",
                 ))
         else:
             from .tools.recall import recall_past_goals

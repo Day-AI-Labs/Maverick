@@ -119,9 +119,12 @@ def index_goal(goal, *, store: Any | None = None) -> bool:
     """Upsert one goal into the vector store. Returns True if indexed.
 
     No-op (returns False) when no backend is configured/available. Stores
-    the goal's title+description as the document and id ``goal:<id>``, with
-    status/result in metadata. Delete-then-add so re-indexing upserts.
-    Never raises.
+    the goal's title+description as the document (it must be embedded as
+    plaintext for similarity search) and id ``goal:<id>``. Metadata is limited
+    to non-sensitive routing keys (``goal_id``/``status``): the sensitive
+    ``title``/``result`` are NOT duplicated here -- callers hydrate them from the
+    sealed world DB by ``goal_id`` -- so the external vector store holds no
+    verbatim copy of them. Delete-then-add so re-indexing upserts. Never raises.
     """
     store = store if store is not None else build_store()
     if store is None:
@@ -139,10 +142,11 @@ def index_goal(goal, *, store: Any | None = None) -> bool:
             [text],
             ids=[doc_id],
             metadatas=[{
+                # Routing only -- no sensitive content. title/result are read
+                # back from the sealed world DB by goal_id (see search() callers),
+                # so the vector store never holds a plaintext copy of them.
                 "goal_id": getattr(goal, "id", None),
-                "title": (getattr(goal, "title", None) or "")[:200],
                 "status": getattr(goal, "status", None),
-                "result": (getattr(goal, "result", None) or "")[:500],
             }],
         )
         return True
@@ -161,8 +165,10 @@ def search(
     """Semantic top-k over indexed goals.
 
     Returns a list of ``(score, metadata)`` where score is a similarity in
-    [0, 1] (``1 - distance``, clamped) and metadata carries goal_id / status
-    / result. Returns ``None`` when no backend is configured/available, so
+    [0, 1] (``1 - distance``, clamped) and metadata carries only routing keys
+    (goal_id / status); hydrate title/result from the world DB by goal_id (the
+    vector store keeps no plaintext copy). Returns ``None`` when no backend is
+    configured/available, so
     the caller knows to fall back to lexical/embedding recall (an empty list
     means "backend present, no matches"). Never raises.
     """

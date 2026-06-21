@@ -89,7 +89,19 @@ class TestIndexAndSearch:
         hits = sr.search("deploy the web app", store=store)
         assert hits is not None
         assert hits[0][1]["goal_id"] == 1
-        assert hits[0][1]["result"] == "used docker"
+        # Sensitive fields are NOT duplicated into the vector store's metadata --
+        # callers hydrate title/result from the sealed world DB by goal_id.
+        assert "result" not in hits[0][1]
+        assert "title" not in hits[0][1]
+
+    def test_index_omits_sensitive_metadata(self):
+        store = FakeStore()
+        sr.index_goal(_Goal(1, "deploy app", result="SECRET 4111111111111111"),
+                      store=store)
+        # The stored metadata holds no verbatim copy of the sensitive result.
+        _doc, meta = store.docs["goal:1"]
+        assert "4111111111111111" not in str(meta)
+        assert set(meta) <= {"goal_id", "status"}
 
     def test_index_upserts_not_duplicates(self):
         store = FakeStore()
@@ -99,7 +111,7 @@ class TestIndexAndSearch:
         sr.index_goal(g, store=store)
         assert store.count() == 1
         hits = sr.search("summarize sales", store=store)
-        assert hits[0][1]["result"] == "v2"
+        assert hits[0][1]["goal_id"] == 1
 
     def test_search_excludes_current_goal(self):
         store = FakeStore()
@@ -127,11 +139,12 @@ class TestOrchestratorRouting:
         monkeypatch.setenv("MAVERICK_AUTO_RECALL", "1")
         store = FakeStore()
         monkeypatch.setattr(sr, "build_store", lambda backend=None: store)
-        sr.index_goal(
-            _Goal(11, "build a sales CSV report", result="wrote report.csv"),
-            store=store,
-        )
         world = WorldModel(tmp_path / "w.db")
+        # The prior goal is a REAL world goal (title/result come from the sealed
+        # DB now, not from vector metadata); index that world goal.
+        prior = world.create_goal("build a sales CSV report", "group + sum")
+        world.set_goal_status(prior, "done", result="wrote report.csv")
+        sr.index_goal(world.get_goal(prior), store=store)
         cur = world.get_goal(
             world.create_goal("build a sales CSV report v2", "group + sum")
         )
