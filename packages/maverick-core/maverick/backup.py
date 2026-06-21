@@ -155,7 +155,22 @@ def create_backup(out: str | Path | None = None) -> Path:
             tar.add(Path(td) / MANIFEST, arcname=MANIFEST)
             tar.add(stage, arcname="data")
         os.chmod(tmp_out, 0o600)
+        # fsync the tarball before the rename: os.replace is atomic for
+        # VISIBILITY, but on a power-loss the rename can be durable while the
+        # file contents are not -- yielding a zero/short backup at the final
+        # name, exactly the DR artifact you reach for after a crash. Flush the
+        # bytes (and the parent dir entry) so a present backup is a complete one.
+        with open(tmp_out, "rb") as _f:
+            os.fsync(_f.fileno())
         os.replace(tmp_out, out)
+        try:
+            dir_fd = os.open(str(out.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:  # pragma: no cover -- dir fsync unsupported on some FS
+            pass
     log.info("backup written: %s (%d files, client=%s)", out, len(files), cid)
     return out
 
