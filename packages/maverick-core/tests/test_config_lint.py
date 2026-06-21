@@ -122,7 +122,7 @@ def test_format_findings_summary():
 # --- inline-secret detection -------------------------------------------------
 
 def test_inline_api_key_warns():
-    cfg = {"providers": {"anthropic": {"api_key": "sk-ant-deadbeef"}}}
+    cfg = {"providers": {"anthropic": {"api_key": "sk-ant-deadbeef"}}}  # pragma: allowlist secret
     findings = lint_config(cfg)
     sec = [f for f in findings if f.key == "api_key"]
     assert sec and sec[0].severity == "warning"
@@ -137,7 +137,8 @@ def test_env_ref_secret_is_clean():
 
 
 def test_inline_secret_suffix_keys_warn():
-    cfg = {"oidc": {"client_secret": "hunter2"}, "x": {"webhook_token": "abc123"}}
+    cfg = {"oidc": {"client_secret": "hunter2"},  # pragma: allowlist secret
+           "x": {"webhook_token": "abc123"}}  # pragma: allowlist secret
     keys = {f.key for f in lint_config(cfg) if f.severity == "warning"
             and "inline secret" in f.message}
     assert {"client_secret", "webhook_token"} <= keys
