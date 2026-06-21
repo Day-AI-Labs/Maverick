@@ -124,10 +124,50 @@ def encryption_migrate_cmd(ctx, dry_run: bool, no_backup: bool) -> None:
     verb = "would seal" if dry_run else "sealed"
     for key in sorted(report):
         click.echo(f"  {key}: {verb} {report[key]}")
+    total = sum(report.values())
     click.echo(
-        f"{verb} {sum(report.values())} value(s) total"
-        + (" (dry run)" if dry_run else "")
+        f"{verb} {total} value(s) total" + (" (dry run)" if dry_run else "")
     )
+    # Once legacy rows are sealed, strict mode (treat an unsealed value in a
+    # sealed column as tampering, instead of trusting it as plaintext) becomes
+    # safe to turn on -- nudge the operator there, since nothing else does.
+    if not dry_run:
+        try:
+            from ..crypto_at_rest import strict_at_rest
+            if not strict_at_rest():
+                click.echo(
+                    "tip: now that legacy rows are sealed, set [encryption] "
+                    "strict = true (or MAVERICK_ENCRYPT_STRICT=1) so an unsealed "
+                    "value in a sealed column is treated as tampering."
+                )
+        except Exception:  # pragma: no cover - never fail the command on a tip
+            pass
+
+
+@encryption_group.command("backup-key")
+@click.option("--to", "dest", required=True,
+              type=click.Path(file_okay=False, dir_okay=True),
+              help="Directory to copy the key material into (created 0700).")
+def encryption_backup_key_cmd(dest: str) -> None:
+    """Copy the at-rest key material to a directory for secure escrow.
+
+    The key file is the ONLY way to read sealed data -- if it is lost, that data
+    is unrecoverable. This copies the primary key and any rotation-keyring keys
+    (each 0600) so you can store them in a secrets manager / offline vault. Keep
+    the copies at least as protected as the originals; do not leave them next to
+    the data they unlock.
+    """
+    from pathlib import Path
+
+    from ..crypto_at_rest import EncryptionUnavailable, backup_key_material
+    try:
+        written = backup_key_material(Path(dest))
+    except EncryptionUnavailable as e:
+        raise click.ClickException(str(e)) from e
+    for p in written:
+        click.echo(f"  backed up {p}")
+    click.echo(f"copied {len(written)} key file(s) to {dest} -- store them "
+               "securely and delete any working copy you don't need.")
 
 
 @encryption_group.command("rotate")
