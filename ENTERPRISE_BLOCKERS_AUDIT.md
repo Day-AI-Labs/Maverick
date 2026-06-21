@@ -388,11 +388,50 @@ were fixed by concurrent work and are no longer accurate.
   Postgres DR docs (**M25**), rust license field (**L11**), runbook `/readyz`
   correction (**L14**), constitutional invalid-rule logging (**M15**).
 
+### New findings beyond the original 83 — found by deeper sweeps, fixed
+
+Multi-pass sweeps (concurrency/data-integrity, API/auth, multi-tenancy,
+budget/RBAC, logic-correctness, sandbox/event-loop, channels, gRPC/federation/
+MCP, file/path, relay/desktop/SDK) surfaced real bugs the original passes
+missed. Each was verified against the code (and against real PostgreSQL where
+relevant) before fixing, with non-vacuous tests:
+
+- **Cross-tenant data leaks (Postgres, RLS-off default — the highest-value
+  find).** `answer()` cross-tenant write, `recent_event_contents()` /
+  `erase_conversations()` cross-tenant read/delete, plus an exhaustive
+  method-by-method scoping audit that hardened the FK readers
+  (`artifacts_for_goal` / `share_links_for_goal` / `signoffs_for_goals` /
+  `origin_status_counts`) at the DB layer. External vector stores
+  (chroma/qdrant/weaviate) isolated per-tenant by collection.
+- **RBAC gaps:** goal mutators (`answer`/`retitle`/`reparent`) gated on
+  ownership but not the `operate` role; `/agents/{name}/validate` and
+  `/redact/preview` were unauthenticated.
+- **Concurrency/data-integrity:** Postgres per-key write races (artifact
+  version, fact-history window) → advisory locks; the SQLite cross-process
+  analog (artifact version) → atomic single-statement insert; Postgres schema
+  migration race across replicas → `pg_advisory_xact_lock`.
+- **Reliability/security:** unbounded `git` calls in the GitHub webhook handler
+  (process hang) → time-boxed; async-compaction pending queue uncapped → bounded;
+  WhatsApp / model-proxy / dashboard-template error responses leaked internal
+  detail → scrubbed/generic.
+- **Verified clean (filtered out, not churned into PRs):** budget enforcement,
+  logic-correctness in the safety gates, gRPC/federation/MCP authz, file/path/
+  upload/installer handling, Tauri/desktop/TS-SDK, the relay edge service, the
+  knowledge store (per-tenant path). ~40–50% of agent-reported "findings" were
+  false positives dismissed on inspection.
+
 ### Backlog — deferred by decision (need product / business / infra input)
 
 These are not blind code fixes; each needs an owner decision and is left for
 explicit prioritization:
 
+- **H1–H4 — secure-by-default posture (THE top remaining blocker).** Every
+  protective control still ships OFF (shield, egress lock, audit signing,
+  at-rest encryption, consent gate, OIDC, tenancy, Postgres RLS). The enterprise
+  *preflight* (`MAVERICK_REQUIRE_ENTERPRISE=1`) hard-gates startup when the
+  boundary isn't satisfied, but there is no single "turn the boundary ON" switch
+  and the defaults stay permissive. Flipping defaults is a posture decision
+  (breaks local/dev UX) — but it is the item a regulated buyer flags first.
 - **C6 — ship/license the real "Shield" engine.** The marketed F1-0.988 SDK does
   not ship; the builtin regex fallback loads instead. Product/legal decision:
   build, license, or stop marketing the fallback as the product. (Bypasses in
