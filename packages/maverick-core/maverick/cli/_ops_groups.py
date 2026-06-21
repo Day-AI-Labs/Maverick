@@ -91,19 +91,34 @@ def encryption_group() -> None:
 @encryption_group.command("migrate")
 @click.option("--dry-run", is_flag=True,
               help="Report what would be sealed without writing.")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the pre-migration plaintext backup (NOT recommended).")
 @click.pass_context
-def encryption_migrate_cmd(ctx, dry_run: bool) -> None:
+def encryption_migrate_cmd(ctx, dry_run: bool, no_backup: bool) -> None:
     """Seal existing plaintext in the world DB (turns, facts, messages, questions).
 
     Enabling encryption only seals NEW writes; this seals data written before it
     was on. Idempotent and safe to re-run. Requires at-rest encryption enabled.
+
+    The reseal is in place, so unless --no-backup is given a timestamped plaintext
+    snapshot of the DB is written alongside it first (mode 0600); delete that
+    backup once you have verified the migration.
     """
     from pathlib import Path
 
     from ..crypto_at_rest import EncryptionUnavailable
-    from ..encryption_migrate import migrate_world_db
+    from ..encryption_migrate import backup_world_db, migrate_world_db
+    db = Path(ctx.obj["db"])
     try:
-        report = migrate_world_db(Path(ctx.obj["db"]), dry_run=dry_run)
+        if not dry_run and not no_backup and db.exists():
+            # Only snapshot when there is plaintext left to seal, so idempotent
+            # re-runs don't litter identical backups. The CLI owns the backup
+            # (so it can echo the path); the real run below skips its own.
+            if sum(migrate_world_db(db, dry_run=True).values()):
+                bpath = backup_world_db(db)
+                click.echo(f"backed up plaintext world DB to {bpath} "
+                           "(mode 0600; delete once the migration is verified)")
+        report = migrate_world_db(db, dry_run=dry_run, backup=False)
     except EncryptionUnavailable as e:
         raise click.ClickException(str(e)) from e
     verb = "would seal" if dry_run else "sealed"
