@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -72,8 +71,27 @@ class ContextualBandit:
 
     # -- learning ---------------------------------------------------------
 
+    def _cplock(self):
+        # Cross-process lock over the load-apply-save; no-op for an in-memory
+        # (path-less) bandit. Without it two processes each hold a stale cached
+        # _table and the second _save clobbers the first's accumulated pulls.
+        if self.path is None:
+            from contextlib import nullcontext
+            return nullcontext()
+        from ..file_lock import cross_process_lock
+        return cross_process_lock(self.path)
+
+    def _reload_locked(self) -> None:
+        # Refresh the cached table from disk (picking up other processes'
+        # writes) before applying this delta. Call only while holding _cplock.
+        if self.path is None:
+            return
+        self._table = {}
+        self._load()
+
     def record(self, context: str, arm: str, reward: float) -> None:
-        with self._lock:
+        with self._lock, self._cplock():
+            self._reload_locked()
             a = self._table.setdefault(context, {}).setdefault(arm, _Arm())
             a.pulls += 1
             a.total_reward += float(reward)
@@ -139,13 +157,10 @@ class ContextualBandit:
             data = {ctx: {a: {"pulls": v.pulls, "total_reward": v.total_reward}
                           for a, v in arms.items()}
                     for ctx, arms in self._table.items()}
-            tmp = p.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
-            os.replace(tmp, p)
-            try:
-                os.chmod(p, 0o600)
-            except OSError:
-                pass
+            # Unique temp + os.replace: a fixed ".tmp" collides between two
+            # processes' saves (one os.replace moves it out from under the other).
+            from ..file_lock import atomic_write_text
+            atomic_write_text(p, json.dumps(data, sort_keys=True))
         except Exception:  # pragma: no cover -- persistence is best-effort
             log.debug("bandit save failed", exc_info=True)
 

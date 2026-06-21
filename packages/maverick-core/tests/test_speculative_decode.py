@@ -201,3 +201,29 @@ def test_explicit_models_win_without_touching_roles(ledger):
         draft_model="a:b", target_model="c:d", ledger=ledger,
     )
     assert (res.draft_model, res.target_model) == ("a:b", "c:d")
+
+
+def test_record_is_concurrency_safe(tmp_path):
+    """Separate ledgers at one path (≈ separate processes) must accumulate
+    accept/total counts, not clobber each other."""
+    import threading
+
+    p = tmp_path / "ledger.json"
+    n, per = 8, 25
+
+    def worker():
+        led = AcceptanceLedger(p)
+        for _ in range(per):
+            led.record("draft", "target", True)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    final = AcceptanceLedger(p)
+    rate, samples = final.accept_rate("draft", "target")
+    assert samples == n * per
+    assert rate == 1.0
+    assert list(tmp_path.glob("*.tmp")) == []

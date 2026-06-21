@@ -144,3 +144,27 @@ def test_task_class_helper_buckets_by_verb():
     class _Numeric:
         title = "2027 roadmap"
     assert _budget_task_class(_Numeric()) == "default"
+
+
+def test_observe_is_concurrency_safe(tmp_path):
+    """Separate learners at one path (≈ separate processes) must accumulate
+    observations, not clobber each other."""
+    import threading
+
+    p = tmp_path / "bt.json"
+    n, per = 8, 25
+
+    def worker():
+        b = SelfTuningBudget(path=p, rng=Random(0))
+        for _ in range(per):
+            b.observe("research", 1.0)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    final = SelfTuningBudget(path=p, rng=Random(0))
+    assert final.stats("research")["count"] == n * per
+    assert list(tmp_path.glob("*.tmp")) == []
