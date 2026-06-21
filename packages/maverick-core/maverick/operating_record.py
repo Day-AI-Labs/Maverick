@@ -204,8 +204,13 @@ def export_capsule(
                "sig": sig.hex()}
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(capsule, indent=2, default=str),
-                   encoding="utf-8")
+    # Atomic write: a crash mid-write must not leave a truncated capsule that
+    # verify_capsule would then flag as unreadable / invalid-signature. Write a
+    # temp sibling, then atomically replace -- the path is always either the old
+    # capsule or the complete new one.
+    tmp = out.with_name(out.name + ".tmp")
+    tmp.write_text(json.dumps(capsule, indent=2, default=str), encoding="utf-8")
+    tmp.replace(out)
     try:
         from .audit import EventKind, record
         record(EventKind.LEARNING_UPDATE, agent="operating_record",

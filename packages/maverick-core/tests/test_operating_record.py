@@ -46,6 +46,8 @@ def test_capsule_roundtrip_and_tamper_detection(world, tmp_path, monkeypatch):
     out = orec.export_capsule(world, tmp_path / "mind.capsule.json", now=5.0)
     ok, reason = orec.verify_capsule(out)
     assert ok, reason
+    # Written atomically (temp + replace): no .tmp sibling left behind.
+    assert not out.with_name(out.name + ".tmp").exists()
     # Tamper with one decision: the capsule must fail verification.
     text = out.read_text(encoding="utf-8").replace(
         "Reconcile the quarterly ledger", "Reconcile the doctored ledger")

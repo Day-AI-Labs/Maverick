@@ -142,6 +142,17 @@ def resolve_max_risk(
         if isinstance(u, str) and u in RISK_LEVELS:
             candidates.append(u)
     if not candidates:
+        # Secure-by-default: with no configured ceiling, cap at 'high' so
+        # CRITICAL-risk tools (funds movement, mass-delete, prod writes) are not
+        # exposed without an explicit ceiling raise. High-risk tools stay
+        # available but are gated by the consent layer. No-op when secure
+        # defaults are off; an explicit [security] max_risk always wins above.
+        try:
+            from ..security_defaults import secure_by_default
+            if secure_by_default():
+                return "high"
+        except Exception:
+            pass
         return None
     return min(candidates, key=risk_rank)
 
