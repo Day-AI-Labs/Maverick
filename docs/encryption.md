@@ -42,10 +42,19 @@ to be rewritten), run:
 ```
 maverick encryption migrate            # seal existing turns/facts/messages/questions
 maverick encryption migrate --dry-run  # report how much would be sealed
+maverick encryption migrate --no-backup # skip the pre-migration backup (not recommended)
 ```
 
 It is **idempotent** (already-sealed values are skipped, so it is safe to re-run)
 and requires at-rest encryption to be enabled first.
+
+**Backup-first:** the reseal happens *in place* and shreds the pre-encryption
+plaintext residue (`secure_delete` + VACUUM), so before touching any row the
+command writes a transactionally-consistent snapshot of the DB next to it —
+`world.db.pre-encrypt-<timestamp>.bak`, mode `0600`. That snapshot is a
+**plaintext** copy (it predates the seal), so delete it once you have verified
+the migration. The backup is skipped on `--dry-run`, on `--no-backup`, and when
+there is nothing left to seal (so idempotent re-runs don't litter copies).
 
 ## Key management
 

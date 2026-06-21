@@ -6,12 +6,19 @@ migration). This module force-seals that pre-existing plaintext so the whole
 store is encrypted, not just new data. It is **idempotent** — already-sealed
 values are skipped — so it is safe to re-run.
 
-Exposed as ``maverick encryption migrate [--dry-run]``.
+The reseal happens **in place** and shreds the pre-encryption plaintext residue
+(``secure_delete`` + VACUUM), so a crash or key problem mid-migration would be
+unrecoverable. To make it safe, a transactionally-consistent **plaintext backup**
+of the DB is taken first (:func:`backup_world_db`) unless explicitly disabled.
+
+Exposed as ``maverick encryption migrate [--dry-run] [--no-backup]``.
 """
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
+import time
 from pathlib import Path
 
 from .crypto_at_rest import (
@@ -44,13 +51,53 @@ _SEALED_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
-def migrate_world_db(db_path: Path, *, dry_run: bool = False) -> dict[str, int]:
+def backup_world_db(db_path: Path) -> Path:
+    """Write a private, transactionally-consistent snapshot of the world DB.
+
+    Returns the backup path. Taken before an in-place reseal so a crash or key
+    problem mid-migration is recoverable. The snapshot is a *pre-encryption* copy
+    and therefore **plaintext**, so it is created ``0600`` and the operator should
+    delete it once the migration is verified. Uses SQLite's online backup API, so
+    the copy is consistent even with a live WAL sidecar.
+    """
+    ts = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    dest = db_path.with_name(f"{db_path.name}.pre-encrypt-{ts}.bak")
+    n = 1
+    while dest.exists():  # avoid clobbering a same-second backup
+        dest = db_path.with_name(f"{db_path.name}.pre-encrypt-{ts}.{n}.bak")
+        n += 1
+    # Create the destination privately *before* any plaintext lands in it.
+    os.close(os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+    src = sqlite3.connect(str(db_path))
+    try:
+        dst = sqlite3.connect(str(dest))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+    try:
+        os.chmod(dest, 0o600)
+    except OSError:  # pragma: no cover - best effort on exotic filesystems
+        pass
+    return dest
+
+
+def migrate_world_db(
+    db_path: Path, *, dry_run: bool = False, backup: bool = True
+) -> dict[str, int]:
     """Seal any remaining plaintext in the world DB's sensitive columns.
 
     Returns a ``{"table.column": rows_sealed}`` report. Requires at-rest
     encryption to be enabled (so the key is configured); raises
     :class:`EncryptionUnavailable` otherwise, or if the crypto backend / key is
     missing -- this never writes plaintext.
+
+    Unless ``backup`` is False (or ``dry_run`` is set), a plaintext snapshot of
+    the DB is written via :func:`backup_world_db` before any row is resealed, so
+    the in-place migration is recoverable. The backup is skipped when there is no
+    plaintext to seal, so idempotent re-runs don't litter identical copies.
     """
     if not at_rest_enabled():
         raise EncryptionUnavailable(
@@ -64,10 +111,10 @@ def migrate_world_db(db_path: Path, *, dry_run: bool = False) -> dict[str, int]:
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA busy_timeout=5000")
-        # Zero freed cells as rows are re-sealed in place, so the pre-encryption
-        # plaintext can't be recovered from the DB file's free list.
-        if not dry_run:
-            conn.execute("PRAGMA secure_delete=ON")
+        # Phase 1 -- read-only scan: find the plaintext rows. No transaction/lock
+        # is held after this (default isolation only locks on DML), so the backup
+        # below can open its own connection cleanly.
+        work: list[tuple[str, str, int, str]] = []
         for table, col in _SEALED_COLUMNS:
             try:
                 rows = conn.execute(
@@ -80,16 +127,27 @@ def migrate_world_db(db_path: Path, *, dry_run: bool = False) -> dict[str, int]:
                 val = r["val"]
                 if val is None or is_sealed_str(val):
                     continue
-                if not dry_run:
-                    conn.execute(
-                        f"UPDATE {table} SET {col} = ? WHERE rowid = ?",
-                        (seal_to_str(val), r["rid"]),
-                    )
                 sealed += 1
+                if not dry_run:
+                    work.append((table, col, r["rid"], val))
             report[f"{table}.{col}"] = sealed
-        if not dry_run:
-            conn.commit()
-            _shred_residue(conn, report)
+        if dry_run or not work:
+            log.info("encryption migrate (dry_run=%s): %s", dry_run, report)
+            return report
+        # Phase 2 -- back up the pre-migration plaintext, then reseal in place.
+        if backup:
+            path = backup_world_db(db_path)
+            log.info("encryption migrate: backed up world DB to %s before reseal", path)
+        # Zero freed cells as rows are re-sealed in place, so the pre-encryption
+        # plaintext can't be recovered from the DB file's free list.
+        conn.execute("PRAGMA secure_delete=ON")
+        for table, col, rid, val in work:
+            conn.execute(
+                f"UPDATE {table} SET {col} = ? WHERE rowid = ?",
+                (seal_to_str(val), rid),
+            )
+        conn.commit()
+        _shred_residue(conn, report)
     finally:
         conn.close()
     log.info("encryption migrate (dry_run=%s): %s", dry_run, report)
@@ -119,4 +177,4 @@ def _shred_residue(conn: sqlite3.Connection, report: dict[str, int]) -> None:
         )
 
 
-__all__ = ["migrate_world_db"]
+__all__ = ["backup_world_db", "migrate_world_db"]
