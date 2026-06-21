@@ -243,21 +243,45 @@ class Shield:
         # detectors with base64 / hex / percent-encoding / Unicode homoglyphs.
         # If the surface form was allowed, re-scan the de-obfuscated variants so
         # an encoded ``rm -rf /`` is caught. Monotonic: only an allowed verdict
-        # is ever upgraded to a block, never the reverse. Scoped to the builtin
-        # regex floor -- it's literal and needs it; a real SDK model is presumed
-        # to handle obfuscation, and re-scanning every variant would multiply
-        # its (remote) calls.
-        if verdict.allowed and self.backend == self.BACKEND_BUILTIN:
+        # is ever upgraded to a block, never the reverse. Runs under ANY active
+        # backend -- the variant scan goes through the LOCAL builtin floor
+        # (``_scan_builtin_floor``), so an SDK deployment also gets decode
+        # coverage without per-variant remote calls. (Previously skipped under
+        # the SDK backend, which left every encoding-evasion path uncovered on
+        # exactly the deployments that paid for the SDK.)
+        if verdict.allowed and self.backend != self.BACKEND_NONE:
             decoded = self._scan_decoded_variants(text)
             if decoded is not None:
                 return decoded
         return verdict
 
+    def _scan_builtin_floor(self, text: str) -> ShieldVerdict:
+        """Scan ``text`` through the LOCAL builtin regex floor, regardless of the
+        active backend. The decode pre-pass uses this so de-obfuscated variants
+        are checked even under an SDK backend -- catching an encoded payload the
+        SDK only ever saw in obfuscated surface form -- WITHOUT multiplying the
+        SDK's (remote) calls by the variant count."""
+        if self.backend == self.BACKEND_NONE:
+            return ShieldVerdict.allow()
+        if not isinstance(text, str):
+            text = (bytes(text).decode("utf-8", "replace")
+                    if isinstance(text, (bytes, bytearray)) else str(text))
+        try:
+            blocked, severity, names = builtin_scan(
+                text, block_threshold=self.block_threshold)
+            if blocked:
+                return ShieldVerdict.block(
+                    severity=severity, reason="; ".join(names) or "builtin-rule")
+            return ShieldVerdict.allow()
+        except Exception as e:  # pragma: no cover -- detector bug must fail open
+            log.error("Shield builtin floor scan failed (fail-open): %s", e)
+            return ShieldVerdict.allow()
+
     def _scan_decoded_variants(self, text: str) -> ShieldVerdict | None:
-        """Re-scan de-obfuscated variants of an allowed input through the same
-        detectors; return a BLOCK if any decoded layer trips one (the payload
-        the literal surface form hid), else ``None``. Fail-open: a pre-pass error
-        leaves the literal verdict standing. Escape hatch:
+        """Re-scan de-obfuscated variants of an allowed input through the local
+        builtin floor; return a BLOCK if any decoded layer trips a rule (the
+        payload the literal surface form hid), else ``None``. Fail-open: a
+        pre-pass error leaves the literal verdict standing. Escape hatch:
         ``MAVERICK_SHIELD_NO_DECODE=1``."""
         if (not isinstance(text, str)
                 or os.environ.get("MAVERICK_SHIELD_NO_DECODE", "").strip().lower()
@@ -266,7 +290,7 @@ class Shield:
         try:
             from .deobfuscate import decoded_variants
             for variant in decoded_variants(text):
-                v = self._apply_constitution(variant, self._scan_via_backend(variant))
+                v = self._apply_constitution(variant, self._scan_builtin_floor(variant))
                 if not v.allowed:
                     return ShieldVerdict.block(
                         severity=v.severity,
@@ -319,9 +343,10 @@ class Shield:
         # it matters most. Fail-open semantics preserved by _apply_constitution.
         verdict = self._apply_constitution(payload, verdict)
         # Decode pre-pass on the tool-call surface (C6): an encoded payload in a
-        # tool ARGUMENT must not bypass the builtin detectors either. Same
-        # monotonic, builtin-scoped, fail-open mechanism as scan_input.
-        if verdict.allowed and self.backend == self.BACKEND_BUILTIN:
+        # tool ARGUMENT must not bypass the detectors either. Same monotonic,
+        # local-builtin-floor, fail-open mechanism as scan_input; runs under any
+        # active backend.
+        if verdict.allowed and self.backend != self.BACKEND_NONE:
             decoded = self._scan_decoded_variants(payload)
             if decoded is not None:
                 return decoded
@@ -385,9 +410,10 @@ class Shield:
         else:
             final = ShieldVerdict.block(severity=extra_sev, reason="; ".join(extra_reasons))
         # Decode pre-pass on the output surface too (C6): an encoded payload in
-        # tool OUTPUT must not bypass the builtin detectors. Same monotonic,
-        # builtin-scoped, fail-open mechanism as scan_input.
-        if final.allowed and self.backend == self.BACKEND_BUILTIN:
+        # tool OUTPUT must not bypass the detectors. Same monotonic,
+        # local-builtin-floor, fail-open mechanism as scan_input; runs under any
+        # active backend.
+        if final.allowed and self.backend != self.BACKEND_NONE:
             decoded = self._scan_decoded_variants(text)
             if decoded is not None:
                 return decoded
