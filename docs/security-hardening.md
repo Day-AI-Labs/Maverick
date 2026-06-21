@@ -1,17 +1,20 @@
 # Security hardening (operator guide)
 
-Lightwork ships **defense in depth**, but almost every *enterprise/security*
-control is **opt-in and off by default** so a personal install behaves exactly
-as before. That makes the controls easy to miss: turning them on currently
-means knowing the config key. This guide is the single place that lists every
-one — what it does, the exact `~/.maverick/config.toml` block, the
+Lightwork ships **defense in depth**. The protective controls that don't break
+the happy path are now **on by default** ([Secure by default](#secure-by-default)
+— at-rest encryption, audit signing, fail-closed consent for high/critical
+actions, a sane tool-risk ceiling); the rest (OIDC, egress lock, Postgres RLS,
+...) stay **opt-in** so a personal install isn't forced into operational burden.
+Either way the controls are easy to miss, so this guide is the single place that
+lists every one — what it does, the exact `~/.maverick/config.toml` block, the
 environment-variable equivalent, the installer-wizard toggle (if any), gotchas,
 and how to confirm it's actually on.
 
-> **Precedence.** For every toggle below, an explicitly-set environment
-> variable wins over `~/.maverick/config.toml`. A few controls
-> (capabilities, encryption-at-rest) are additionally **implied by enterprise
-> mode** — see [Enterprise mode](#enterprise-mode-the-umbrella-switch).
+> **Precedence.** For every toggle below: a mandatory compliance floor wins over
+> an explicit code arg, which wins over an environment variable, which wins over
+> `~/.maverick/config.toml`, which wins over the secure-by-default posture. A few
+> controls (capabilities, encryption-at-rest) are additionally **implied by
+> enterprise mode** — see [Enterprise mode](#enterprise-mode-the-umbrella-switch).
 
 > **Verify what's on.** `maverick soc2` prints a JSON posture snapshot of the
 > main toggles (capabilities, tenant isolation, quotas, OIDC, encryption-at-rest,
@@ -21,6 +24,7 @@ and how to confirm it's actually on.
 ## Contents
 
 - [Always-on safety (not opt-in)](#always-on-safety-not-opt-in)
+- [Secure by default](#secure-by-default)
 - [Enterprise mode (the umbrella switch)](#enterprise-mode-the-umbrella-switch)
 - [Capability enforcement](#capability-enforcement)
 - [Role-based access control (RBAC)](#role-based-access-control-rbac)
@@ -58,7 +62,44 @@ opt-in controls build on:
 - **Consent / HITL** — human-in-the-loop confirmation gates for sensitive or
   destructive actions.
 
-The sections below are the controls you must **explicitly turn on**.
+Most of the sections below are now **on by default** (next section); the rest you
+**explicitly turn on**.
+
+---
+
+## Secure by default
+
+The protective controls that don't break the happy path ship **on by default**.
+No configuration is needed for a hardened baseline; you opt *out* if you want the
+old behaviour. On by default:
+
+| Control | Default-on behaviour | Opt out |
+|---|---|---|
+| [Encryption at rest](#encryption-at-rest) | seals sensitive stores; key auto-generates | `[encryption] at_rest = false` |
+| [Audit-log signing](#audit-log-signing-tamper-evidence) | Ed25519 tamper-evidence; key auto-generates | `[audit] sign = false` |
+| Fail-closed consent | high/critical-risk actions require confirmation (not auto-approved) | per-action consent config |
+| Tool-risk ceiling | caps at `high` (CRITICAL tools need an explicit raise) | set `[security] max_risk` |
+
+Still **opt-in** (operational burden / can break a working deployment): OIDC,
+the egress lock (enterprise mode), and [Postgres RLS](multi-tenancy.md#enabling-rls-safely-guided-opt-in).
+The Shield stays **fail-open** (the kernel runs without it).
+
+**Master switch.** Turn the whole posture off with:
+
+```toml
+[security]
+secure_defaults = false
+```
+
+- env: `MAVERICK_SECURE_DEFAULT=0`
+- **Precedence** (per control): a mandatory compliance floor > explicit code arg >
+  env var > config > `secure_defaults`. So an explicit `[encryption] at_rest = true`
+  always wins, and HIPAA-mode at-rest can't be turned off by `secure_defaults = false`.
+
+**Existing installs are safe.** Sealed reads are plaintext-tolerant, so data
+written before the flip is returned unchanged until rewritten; run
+`maverick encryption migrate` to seal it eagerly (and **back up the auto-generated
+key** — `maverick encryption backup-key --to <dir>` — losing it loses the data).
 
 ---
 
@@ -539,22 +580,21 @@ see a role biting). Direct (non-proxy) requests must not carry a honored header.
 ## Encryption at rest
 
 **What it does.** AES-256-GCM authenticated encryption for Lightwork's sensitive
-local stores. By default the kernel keeps state in plaintext on disk; this seals
-it so anyone who can read `~/.maverick` can't read its contents. This increment
-wires it into the **cross-session memory** store (the most leak-sensitive
-per-tenant store).
+local stores, so anyone who can read `~/.maverick` can't read its contents.
+**On by default** ([Secure by default](#secure-by-default)); the key
+auto-generates on first use.
 
-**config.toml**
+**config.toml** (to **disable** on a personal box)
 
 ```toml
 [encryption]
-at_rest = true
+at_rest = false
 ```
 
 **Environment variable**
 
 ```bash
-export MAVERICK_ENCRYPT_AT_REST=1     # a falsey value force-disables
+export MAVERICK_ENCRYPT_AT_REST=0     # 1 to force-enable; 0 to force-disable
 ```
 
 **Wizard toggle:** yes — "Encrypt sensitive local stores at rest?"
@@ -571,10 +611,17 @@ export MAVERICK_ENCRYPT_AT_REST=1     # a falsey value force-disables
 
 **Gotchas**
 
-- **Scope today.** This increment covers the **memory store**. The world DB and
-  the audit log are a **documented future increment** — do not assume they are
-  encrypted yet. (Confirm in your version before relying on it for those
-  stores.)
+- **Scope.** Sealed: the **memory store**, the sensitive **world-DB content
+  columns** (goal title/description/result, facts, turns/messages, questions,
+  goal events, episode summaries/outcomes, parked approvals), and the
+  **semantic-recall documents** on the chroma/pgvector backends. Run
+  `maverick encryption migrate` to seal rows written before it was on. Not sealed:
+  the live audit day-file (seal closed ones with `maverick audit seal`) and the
+  qdrant/weaviate vector backends — see [encryption.md](encryption.md) for the
+  full map.
+- **Back up the key.** The auto-generated `~/.maverick/keys/at_rest.key` is the
+  only way to read sealed data — escrow it with `maverick encryption backup-key
+  --to <dir>`; if it's lost, the data is unrecoverable.
 - **Requires `cryptography`.** With at-rest enabled but the package missing,
   `seal()` **fails closed** (raises `EncryptionUnavailable`) rather than writing
   plaintext: `pip install 'maverick-agent[audit-signing]'`.
@@ -629,27 +676,28 @@ regardless of cost.
 Merkle-chained, tamper-evident** log: each row is hash-chained and signed, and a
 cross-file tip-ledger (`anchors.ndjson`) catches deletion/truncation of a whole
 day-file. This is what makes [`maverick audit verify`](#compliance-commands)
-and the `soc2` audit-chain probe meaningful — without signing, the log is
-append-only NDJSON but not cryptographically tamper-evident (the probe reports
-`unsigned`).
+and the `soc2` audit-chain probe meaningful. **On by default**
+([Secure by default](#secure-by-default)); the signing key auto-generates. With
+it off the log is append-only NDJSON but not cryptographically tamper-evident
+(the probe reports `unsigned`).
 
-**config.toml**
+**config.toml** (to **disable**)
 
 ```toml
 [audit]
-sign = true
+sign = false
 ```
 
 **Environment variable**
 
 ```bash
-export MAVERICK_AUDIT_SIGN=1
+export MAVERICK_AUDIT_SIGN=0     # 1 to force-enable; 0 to force-disable
 ```
 
 **Gotchas**
 
 - Precedence: explicit code arg > `MAVERICK_AUDIT_SIGN` env > `[audit] sign` in
-  config.
+  config > the secure-by-default posture (on).
 - Requires `cryptography` (`pip install 'maverick-agent[audit-signing]'`).
 - The signing key lives under `~/.maverick/keys/`; `maverick soc2`'s
   `audit_signing_key` probe reports whether a key is present.

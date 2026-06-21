@@ -7,17 +7,27 @@ AES-256-GCM.
 
 ## Enable it
 
-Off by default. Turn it on with any of:
+**On by default** (secure-by-default). The key auto-generates on first use, so
+new writes are sealed with no configuration — see
+[Back up the key](#key-management) immediately, because losing it loses the data.
+
+Resolution (first match wins): a compliance floor (e.g. HIPAA) forces it on >
+`MAVERICK_ENCRYPT_AT_REST` env > `[encryption] at_rest` in config > enterprise
+mode > the secure-by-default switch (on). To **disable** it on a personal box:
 
 ```toml
 [encryption]
-at_rest = true
+at_rest = false
 ```
 
-- env: `MAVERICK_ENCRYPT_AT_REST=1`
-- the installer wizard ("Encrypt sensitive local stores at rest?")
-- **implied by [enterprise mode](safety.md#enterprise-mode-private--sensitive-data)** —
-  enabling enterprise mode enables this too.
+- env: `MAVERICK_ENCRYPT_AT_REST=0`
+- or turn off the whole secure-by-default posture with
+  `MAVERICK_SECURE_DEFAULT=0` / `[security] secure_defaults = false`
+  (see [Security hardening → Secure by default](security-hardening.md#secure-by-default)).
+
+Existing installs are safe to leave on: reads are plaintext-tolerant, so rows
+written before it was enabled are returned unchanged until rewritten (run
+`maverick encryption migrate` to seal them eagerly).
 
 ## What gets sealed
 
@@ -28,6 +38,11 @@ at_rest = true
 | Persisted facts | world DB | `facts.value` |
 | Per-goal agent message log | world DB | `messages.content` |
 | Clarifying questions | world DB | `questions.question`, `questions.answer` |
+| Goal content | world DB | `goals.title`, `goals.description`, `goals.result` |
+| Per-agent goal events | world DB | `goal_events.content` |
+| Episode summaries | world DB | `episodes.summary`, `episodes.outcome` |
+| Parked approvals | world DB | `approvals.action`, `approvals.scope`, `approvals.detail` |
+| Semantic-recall documents | `vector_store` (chroma/pgvector) | sealed document; vector from plaintext |
 
 Sealing is transparent — values are encrypted on write and decrypted on read, so
 application behaviour is unchanged. A value written **before** encryption was enabled
@@ -98,10 +113,6 @@ key matches still work.
 
 ## What is *not* sealed (and why)
 
-- **`goals.title` / `description` / `result` and `episodes.summary`** — these are read
-  by the dashboard through direct SQL and rendered in its UI, so sealing them safely
-  requires decrypting in every raw read path. Tracked as a follow-up; **do not assume
-  they are encrypted.**
 - **The audit log** (`~/.maverick/audit/*.ndjson`) — integrity comes from the Ed25519
   hash-chain plus the erase/retention tooling. **Closed** day-files can be sealed at
   rest with `maverick audit seal`; the **current** day-file stays plaintext for the
@@ -109,11 +120,18 @@ key matches still work.
   until it rolls and is sealed. Secrets in audit payloads are redacted before write
   regardless.
 - **The semantic-recall vector store** (`~/.maverick/vector_store/**` and external
-  chroma/qdrant/weaviate/pgvector) — when a vector backend is configured, indexed
-  goal text is embedded and stored there by the backend and is **not** sealed at
-  rest (the embedding is computed from plaintext, so sealing the stored document
-  would break similarity search). Keep the vector store on encrypted storage, or
-  leave the vector backend unset (the default world-DB recall path **is** sealed).
+  chroma/qdrant/weaviate/pgvector) — under at-rest encryption the stored document
+  **is sealed** for the **chroma** and **pgvector** backends: the query/goal text is
+  embedded client-side (local all-MiniLM) from the plaintext and only the *sealed*
+  document + the vector are stored, so similarity search still works while no
+  verbatim text lives in the store (a separate `_s` collection keeps sealed data
+  apart from any legacy plaintext-embedded vectors — re-indexing repopulates it).
+  The **qdrant**/**weaviate** backends embed server-side, so the sealed path isn't
+  wired for them yet: under at-rest the semantic path is **disabled** for those two
+  (it falls back to lexical recall over the sealed world DB rather than ship them
+  plaintext). With at-rest off, behaviour is unchanged. Metadata never carries the
+  sensitive `title`/`result` on any backend (hydrated from the sealed DB by
+  `goal_id`).
 - **Attachments** (`~/.maverick/attachments/**`) — on-disk uploaded files; only the
   metadata row lives in the DB.
 - **`config.toml` / `.env`** — configuration and API keys; `.env` is already
