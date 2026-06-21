@@ -109,11 +109,18 @@ key matches still work.
   until it rolls and is sealed. Secrets in audit payloads are redacted before write
   regardless.
 - **The semantic-recall vector store** (`~/.maverick/vector_store/**` and external
-  chroma/qdrant/weaviate/pgvector) — when a vector backend is configured, indexed
-  goal text is embedded and stored there by the backend and is **not** sealed at
-  rest (the embedding is computed from plaintext, so sealing the stored document
-  would break similarity search). Keep the vector store on encrypted storage, or
-  leave the vector backend unset (the default world-DB recall path **is** sealed).
+  chroma/qdrant/weaviate/pgvector) — under at-rest encryption the stored document
+  **is sealed** for the **chroma** and **pgvector** backends: the query/goal text is
+  embedded client-side (local all-MiniLM) from the plaintext and only the *sealed*
+  document + the vector are stored, so similarity search still works while no
+  verbatim text lives in the store (a separate `_s` collection keeps sealed data
+  apart from any legacy plaintext-embedded vectors — re-indexing repopulates it).
+  The **qdrant**/**weaviate** backends embed server-side, so the sealed path isn't
+  wired for them yet: under at-rest the semantic path is **disabled** for those two
+  (it falls back to lexical recall over the sealed world DB rather than ship them
+  plaintext). With at-rest off, behaviour is unchanged. Metadata never carries the
+  sensitive `title`/`result` on any backend (hydrated from the sealed DB by
+  `goal_id`).
 - **Attachments** (`~/.maverick/attachments/**`) — on-disk uploaded files; only the
   metadata row lives in the DB.
 - **`config.toml` / `.env`** — configuration and API keys; `.env` is already
