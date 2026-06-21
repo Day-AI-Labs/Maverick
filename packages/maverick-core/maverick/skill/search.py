@@ -446,6 +446,21 @@ def import_records(
             if not validation.ok:
                 result["rejected"].append(f"{name}: {'; '.join(validation.errors)}")
                 continue
+            # The dataset is untrusted and a skill body is concatenated into the
+            # agent's system prompt at recall (render_for_prompt). validate_skill_file
+            # only lints frontmatter + scans for secrets -- it does NOT shield-scan
+            # the body for prompt injection, nor enforce the [skills] signing policy.
+            # Apply both here (same gates as a free-text/catalog install) so a
+            # poisoned public dataset can't install a jailbreak body or land an
+            # unsigned skill under require_signed.
+            try:
+                parsed = skills_mod.Skill.parse(text, tmp)
+                skills_mod._verify_skill_signature(parsed)
+                from ..catalog_trust import shield_scan
+                shield_scan(parsed.body or "", label="imported skill body")
+            except Exception as e:
+                result["rejected"].append(f"{name}: {e}")
+                continue
             tmp.replace(target)
             result["installed"].append(name)
         finally:
