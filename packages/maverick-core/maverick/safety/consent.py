@@ -286,8 +286,17 @@ def _decide_via_dashboard(
     except Exception:  # pragma: no cover -- delegation never blocks consent
         pass
     try:
+        # N-of-M dual control: a risk band may require multiple distinct approvers
+        # before the action is granted (segregation of duties). Default 1 ->
+        # unchanged single-approver behaviour.
+        from .dual_control import required_approvals
+        required = required_approvals(risk)
+    except Exception:  # pragma: no cover -- config never blocks consent
+        required = 1
+    try:
         approval_id = wm.create_approval(
             action, risk=risk, scope=scope, detail=detail, provenance=provenance,
+            approvals_required=required,
         )
     except Exception as e:
         log.warning("consent: cannot queue approval, falling back: %s", e)
