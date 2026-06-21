@@ -1022,7 +1022,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   + deceptive-link heuristics, composed into `Shield.scan_output`),
   **operator-defined constitutional rules** (custom regex policy via `[safety]
   constitution`, `maverick_shield/constitutional.py`),
-  Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`),
+  Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`) — whose
+  heuristic cheap probe can now ensemble a **trained classifier**
+  (`maverick_shield/probe_model.py`): plain-JSON linear weights over the probe's
+  named features (no pickle → loading an operator model can't execute code),
+  combined by MAX so the model only raises recall, opt-in via `[shield]
+  probe_model` / `MAVERICK_SHIELD_PROBE_MODEL`,
   **voice safety pass** (`safety/voice_safety.py`): transcript screen for
   wake-word stuffing + spoken role-switch before an utterance drives the
   agent, and redact-before-speak (secrets/PII never read aloud) wired into
