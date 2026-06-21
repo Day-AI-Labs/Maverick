@@ -161,21 +161,27 @@ class OutcomeLedger:
         """Score one compaction by its downstream signal. Fail-safe no-op on error."""
         if template_id not in TEMPLATES:
             return
-        data = self._load()
-        by_template = data.setdefault(kind, {})
-        if not isinstance(by_template, dict):  # corrupt entry: rebuild
-            by_template = data[kind] = {}
-        st = by_template.get(template_id)
-        if not isinstance(st, dict):
-            st = by_template[template_id] = {"trials": 0, "reward_sum": 0.0}
-        try:
-            st["trials"] = int(st.get("trials", 0)) + 1
-            st["reward_sum"] = float(st.get("reward_sum", 0.0)) + reward(
-                success, continuation_turns)
-        except (TypeError, ValueError):
-            st["trials"], st["reward_sum"] = 1, reward(success, continuation_turns)
-        st["last"] = self._clock()
-        self._save(data)
+        # The docstring promises "the same discipline as the quota ledger" -- that
+        # discipline is a CROSS-PROCESS lock around the load-modify-save, not just
+        # the atomic write. Without it two processes both load the ledger and the
+        # second save clobbers the first's trial/reward update. flock supplies it.
+        from ..file_lock import cross_process_lock
+        with cross_process_lock(self.path):
+            data = self._load()
+            by_template = data.setdefault(kind, {})
+            if not isinstance(by_template, dict):  # corrupt entry: rebuild
+                by_template = data[kind] = {}
+            st = by_template.get(template_id)
+            if not isinstance(st, dict):
+                st = by_template[template_id] = {"trials": 0, "reward_sum": 0.0}
+            try:
+                st["trials"] = int(st.get("trials", 0)) + 1
+                st["reward_sum"] = float(st.get("reward_sum", 0.0)) + reward(
+                    success, continuation_turns)
+            except (TypeError, ValueError):
+                st["trials"], st["reward_sum"] = 1, reward(success, continuation_turns)
+            st["last"] = self._clock()
+            self._save(data)
 
     def pick_template(self, kind: str, rng: random.Random) -> str:
         """Bandit-lite pick: untried first (fixed order), then epsilon-greedy.
