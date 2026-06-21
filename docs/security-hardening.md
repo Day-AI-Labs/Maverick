@@ -49,7 +49,12 @@ opt-in controls build on:
 
 - **Agent Shield** — the safety detection layer (`packages/maverick-shield/`).
   Fail-open with a warning if not installed; it's a chokepoint, not a hard
-  dependency.
+  dependency. Inputs run through a **decode/defang pre-pass** (`deobfuscate.py`):
+  base64/hex/percent-encoded and Unicode-homoglyph payloads are decoded and the
+  detectors re-run over each variant, so an encoded `rm -rf /` is caught even
+  though the literal surface form hid it. The pre-pass is monotonic (it can only
+  turn an allowed input into a block, never the reverse) and bounded against
+  decode bombs; escape hatch `MAVERICK_SHIELD_NO_DECODE=1`.
 - **Sandbox-mediated shell** — all tool shell execution goes through
   `sandbox.exec()` (local/Firecracker backends), never raw `subprocess`.
 - **Hard `Budget` caps** — every long-running path respects a per-run budget

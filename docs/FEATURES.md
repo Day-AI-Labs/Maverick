@@ -627,6 +627,13 @@ here.
   unsigned, mis-signed, tampered, downgraded, or un-anchored bundles are
   refused, and a verified bundle stages `shield_rules.json` (0600) atomically —
   the kernel never imports the shield itself (rule 1).
+  **Shield decode/defang pre-pass** (`maverick_shield/deobfuscate.py`): before
+  the builtin detectors pass an input, the shield decodes base64/hex/percent
+  encodings and folds Unicode homoglyphs (Cyrillic/Greek lookalikes NFKC leaves
+  alone), then re-scans every de-obfuscated variant — so an encoded `rm -rf /`
+  is blocked even though the literal surface form hid it. Monotonic (only
+  upgrades an allowed verdict to a block), bounded against decode bombs, and
+  fail-open; escape hatch `MAVERICK_SHIELD_NO_DECODE=1`.
   **Annual safety report generator** (`safety_report.py`, `python -m
   maverick.safety_report --since --until`): aggregates what the deployment
   actually recorded — shield blocks, capability denials, killswitch

@@ -16,6 +16,7 @@ but never fail-open SILENTLY; the constructor logs which backend is active.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -237,8 +238,43 @@ class Shield:
     def scan_input(self, text: str) -> ShieldVerdict:
         if not self._scan_input_enabled:
             return ShieldVerdict.allow()
-        verdict = self._scan_via_backend(text)
-        return self._apply_constitution(text, verdict)
+        verdict = self._apply_constitution(text, self._scan_via_backend(text))
+        # Decode pre-pass (C6): an attacker hides a payload from the literal
+        # detectors with base64 / hex / percent-encoding / Unicode homoglyphs.
+        # If the surface form was allowed, re-scan the de-obfuscated variants so
+        # an encoded ``rm -rf /`` is caught. Monotonic: only an allowed verdict
+        # is ever upgraded to a block, never the reverse. Scoped to the builtin
+        # regex floor -- it's literal and needs it; a real SDK model is presumed
+        # to handle obfuscation, and re-scanning every variant would multiply
+        # its (remote) calls.
+        if verdict.allowed and self.backend == self.BACKEND_BUILTIN:
+            decoded = self._scan_decoded_variants(text)
+            if decoded is not None:
+                return decoded
+        return verdict
+
+    def _scan_decoded_variants(self, text: str) -> ShieldVerdict | None:
+        """Re-scan de-obfuscated variants of an allowed input through the same
+        detectors; return a BLOCK if any decoded layer trips one (the payload
+        the literal surface form hid), else ``None``. Fail-open: a pre-pass error
+        leaves the literal verdict standing. Escape hatch:
+        ``MAVERICK_SHIELD_NO_DECODE=1``."""
+        if (not isinstance(text, str)
+                or os.environ.get("MAVERICK_SHIELD_NO_DECODE", "").strip().lower()
+                in {"1", "true", "yes", "on"}):
+            return None
+        try:
+            from .deobfuscate import decoded_variants
+            for variant in decoded_variants(text):
+                v = self._apply_constitution(variant, self._scan_via_backend(variant))
+                if not v.allowed:
+                    return ShieldVerdict.block(
+                        severity=v.severity,
+                        reason="decoded-layer: " + "; ".join(v.reasons),
+                    )
+        except Exception as e:  # pragma: no cover -- pre-pass must never break scan
+            log.error("Shield decode pre-pass failed (fail-open): %s", e)
+        return None
 
     def _apply_constitution(self, text: str, verdict: ShieldVerdict) -> ShieldVerdict:
         """Compose operator-defined constitutional rules onto ``verdict``.
