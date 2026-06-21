@@ -1139,12 +1139,19 @@ class PostgresWorldModel:
 
     def artifacts_for_goal(self, goal_id: int) -> list[dict]:
         """Every artifact version for a goal, ordered by title then version."""
+        # Defense-in-depth: artifacts has no tenant_id (FK-scoped via the goal).
+        # Callers already assert goal access, but bound the read to the active
+        # tenant's goals at the DB layer too so a future caller can't leak.
+        frag, fparams = _tenant_scope()
+        sql = ("SELECT id, goal_id, kind, title, content, version, created_at "
+               "FROM artifacts WHERE goal_id=%s")
+        params: list = [int(goal_id)]
+        if frag:
+            sql += " AND goal_id IN (SELECT id FROM goals WHERE " + frag + ")"
+            params += fparams
+        sql += " ORDER BY title, version"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, goal_id, kind, title, content, version, created_at "
-                "FROM artifacts WHERE goal_id=%s ORDER BY title, version",
-                (int(goal_id),),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return [{"id": r[0], "goal_id": r[1], "kind": r[2], "title": r[3] or "",
                  "content": _unseal(r[4]) or "", "version": r[5], "created_at": r[6]}
@@ -1200,12 +1207,16 @@ class PostgresWorldModel:
     def share_links_for_goal(self, goal_id: int) -> list[dict]:
         """Share links for a goal (manage UI), newest first. Tokens are NOT
         returned (only the hash exists); each row carries its lifecycle state."""
+        frag, fparams = _tenant_scope()  # defense-in-depth: bound to active tenant's goals
+        sql = ("SELECT id, created_by, created_at, expires_at, revoked "
+               "FROM share_links WHERE goal_id=%s")
+        params: list = [int(goal_id)]
+        if frag:
+            sql += " AND goal_id IN (SELECT id FROM goals WHERE " + frag + ")"
+            params += fparams
+        sql += " ORDER BY id DESC"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, created_by, created_at, expires_at, revoked "
-                "FROM share_links WHERE goal_id=%s ORDER BY id DESC",
-                (int(goal_id),),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         now = time.time()
         out = []
@@ -1271,11 +1282,14 @@ class PostgresWorldModel:
         ids = [int(g) for g in goal_ids]
         if not ids:
             return {}
+        frag, fparams = _tenant_scope()  # defense-in-depth: only this tenant's goals
+        sql = "SELECT goal_id, decision FROM signoffs WHERE goal_id = ANY(%s)"
+        params: list = [ids]
+        if frag:
+            sql += " AND goal_id IN (SELECT id FROM goals WHERE " + frag + ")"
+            params += fparams
         with self._tx() as cur:
-            cur.execute(
-                "SELECT goal_id, decision FROM signoffs WHERE goal_id = ANY(%s)",
-                (ids,),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return {r[0]: r[1] for r in rows}
 
@@ -1306,14 +1320,22 @@ class PostgresWorldModel:
         return [_dec_goal_row(r) for r in rows]
 
     def origin_status_counts(self, kind: str, ref: str) -> dict[str, int]:
-        """An automation's spawned-goal counts keyed by status (run summary)."""
+        """An automation's spawned-goal counts keyed by status (run summary).
+
+        Scoped to the active tenant's goals: a trigger/schedule ``ref`` can
+        collide across tenants, so the aggregate must not span them (the
+        dashboard owner-scopes too; this is the DB-layer backstop)."""
+        frag, fparams = _tenant_scope("g.tenant_id")
+        sql = ("SELECT g.status, COUNT(*) FROM goals g "
+               "JOIN goal_origins o ON o.goal_id = g.id "
+               "WHERE o.kind=%s AND o.ref=%s")
+        params: list = [str(kind), str(ref)]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " GROUP BY g.status"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT g.status, COUNT(*) FROM goals g "
-                "JOIN goal_origins o ON o.goal_id = g.id "
-                "WHERE o.kind=%s AND o.ref=%s GROUP BY g.status",
-                (str(kind), str(ref)),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return {r[0]: int(r[1]) for r in rows}
 
