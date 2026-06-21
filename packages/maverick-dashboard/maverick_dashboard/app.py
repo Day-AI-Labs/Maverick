@@ -4409,11 +4409,17 @@ async def automations_page(request: Request) -> HTMLResponse:
     /api/v1/triggers; each section is hidden when its [features] knob is off."""
     from maverick.config import get_features
     feats = get_features()
+    try:
+        from maverick.automation_import import enabled as _import_enabled
+        import_enabled = _import_enabled()
+    except Exception:  # pragma: no cover -- never block the page on the feature
+        import_enabled = False
     return templates.TemplateResponse(
         request, "automations.html",
         {
             "scheduling_enabled": feats.get("scheduling", True),
             "triggers_enabled": feats.get("triggers", True),
+            "import_enabled": import_enabled,
         },
     )
 

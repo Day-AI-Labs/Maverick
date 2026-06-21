@@ -93,6 +93,42 @@ class ScheduleOut(BaseModel):
     schedule_id: str = ""
 
 
+class ImportRunIn(BaseModel):
+    """Import automations from an external platform into Lightwork templates.
+
+    ``source`` is one of the registered importers (n8n/make/.../zapier). Provide
+    ``definitions`` (exported definition JSON objects) for an offline/connect
+    import, or omit it to live-fetch from the platform's API (server env creds).
+    ``dry_run`` previews without writing; ``activate_schedules`` auto-creates
+    schedules for recovered cron triggers; ``create_webhook_triggers`` wires an
+    inbound webhook trigger for each webhook-triggered automation.
+    """
+    source: str = Field(..., max_length=40)
+    definitions: list[dict] | None = None
+    dry_run: bool = False
+    activate_schedules: bool = False
+    create_webhook_triggers: bool = False
+
+
+class ImportResultOut(BaseModel):
+    source: str
+    name: str
+    template: str
+    created: bool
+    trigger: str
+    webhook_trigger: str | None = None
+    schedule: dict | None = None
+    tools: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class ImportRunOut(BaseModel):
+    imported: list[ImportResultOut]
+    dry_run: bool
+    webhook_url: str
+    secret_configured: bool
+
+
 class TriggerIn(BaseModel):
     """Bind a saved template to an inbound webhook. ``params`` are the operator's
     default values (baked at registration); an HMAC-signed POST to /webhook/run
