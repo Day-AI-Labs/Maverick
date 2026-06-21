@@ -10,8 +10,11 @@ are cited to the modules that enforce them.
 
 The kernel ships fail-open and cloud-capable by design — the right default for a
 personal agent, the wrong one for sensitive data. **Enterprise mode is one opt-in
-switch** (`MAVERICK_ENTERPRISE=1`, `[enterprise] mode = true`, or the installer)
-that flips the defaults fail-closed (`maverick/enterprise.py`):
+switch** (`MAVERICK_ENTERPRISE=1`, `[enterprise] mode = true`, or the installer) —
+or, simplest, the named **deployment profile** `MAVERICK_PROFILE=enterprise`
+(`maverick/profile.py`), which composes enterprise mode *and* the
+deployment-specific secure defaults below in one knob — that flips the defaults
+fail-closed (`maverick/enterprise.py`):
 
 - **Egress lock.** Every LLM call is pinned to a local / self-hosted provider
   (Ollama / vLLM / TGI, or an allow-listed endpoint). A call routed to a cloud
@@ -24,6 +27,14 @@ that flips the defaults fail-closed (`maverick/enterprise.py`):
 - **Encryption at rest.** The world model and cross-session memory are sealed with
   AES-256-GCM (`crypto_at_rest.py`); `maverick encryption migrate` seals
   pre-existing plaintext.
+- **Container-default sandbox.** A `local`/unset sandbox backend is upgraded to an
+  available container runtime (docker → podman) instead of running `shell=True` on
+  the host; if no container runtime is installed it fails closed rather than
+  running agent-generated commands unsandboxed (`sandbox/__init__.py`).
+- **Plugin supply-chain containment.** Third-party plugins run **out-of-process**
+  (subprocess isolation) and are checked against a **content-hash lockfile** —
+  a drifted or unpinned plugin is refused (`plugin_isolation.py`,
+  `plugin_lock.py`).
 
 **Prove it, don't trust the flag.** `maverick enterprise verify`
 (`deployment.py`) *actively exercises* the load-bearing guarantees — it confirms
@@ -57,7 +68,8 @@ the host — so a pass means the boundary holds, not merely that a config flag r
 - **Data subject rights.** DSAR export (`dsar.py`) and data-retention enforcement
   (`audit/retention.py`, GDPR Art. 5(1)(e) storage limitation).
 - **Supply chain.** A CycloneDX SBOM is produced in CI; dependencies are scanned
-  (`pip-audit`).
+  (`pip-audit`). Third-party plugins are isolation- and lockfile-gated under the
+  enterprise profile (see the data-boundary guarantees above).
 
 ## Compliance posture
 

@@ -1499,6 +1499,14 @@ def pick_advanced() -> dict[str, Any]:
             "cron). Defaults to a local mirror; edit [audit.worm] for S3.",
             default=False,
         ),
+        "saml": _q_confirm(
+            "Enable SAML 2.0 SSO (alongside or instead of OIDC)? For enterprises "
+            "whose IdP (Okta, Entra/Azure AD, ADFS) mandates SAML over OIDC. "
+            "Writes a [auth.saml] template you fill in with your SP/IdP details, "
+            "then hand /saml/metadata to the IdP. Needs the [saml] extra (pysaml2) "
+            "and the browser-login session secret. Off by default.",
+            default=False,
+        ),
         "security_autofix": _q_confirm(
             "Let the security assessor auto-fix low-risk gaps? With enterprise mode "
             "on, `maverick remediate --apply` may auto-apply reversible, in-boundary "
@@ -3070,6 +3078,18 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
             val = oidc.get(key)
             if val:
                 _emit_kv(lines, key, val)
+    if advanced.get("saml"):
+        lines.append("")
+        # SAML 2.0 SP browser SSO (alongside OIDC). Fill in the SP/IdP details
+        # then hand /saml/metadata to the IdP. Needs the [saml] extra (pysaml2)
+        # and the [auth.oidc] session_secret above. See docs/security-hardening.md.
+        lines.append("[auth.saml]")
+        lines.append('sp_entity_id = "https://YOUR-HOST/saml/metadata"')
+        lines.append('acs_url = "https://YOUR-HOST/saml/acs"')
+        lines.append('idp_metadata_url = "https://IDP/app/metadata"   # or idp_metadata_file')
+        lines.append("# want_assertions_signed = true")
+        lines.append('# sp_cert_file = ""   # to sign AuthnRequests / decrypt')
+        lines.append('# sp_key_file = ""')
     return lines
 
 
@@ -3718,6 +3738,7 @@ def _regulated_deployment(advanced: dict[str, Any]) -> bool:
         or advanced.get("audit_sign")
         or advanced.get("audit_worm")
         or advanced.get("dual_approval")
+        or advanced.get("saml")
         or advanced.get("security_autofix")
     )
 

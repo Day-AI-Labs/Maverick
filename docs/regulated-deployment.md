@@ -18,12 +18,16 @@ With the profile below, every load-bearing control is fail-closed at once:
 | **Tamper-evident audit** | Every event is Ed25519 hash-chained, so a forged or deleted log line is detectable. | EU AI Act Art. 12 |
 | **Human oversight** | Destructive-action consent defaults to `ask` — and therefore *deny* in non-interactive contexts — instead of auto-approve. | EU AI Act Art. 14 |
 | **Storage limitation** | Retention windows expire audit, episode, and event data on a schedule. | GDPR Art. 5(1)(e) |
+| **Isolated execution** | Agent-generated shell runs in a container (docker → podman), never `shell=True` on the host; if no container runtime exists it fails closed. Third-party plugins run out-of-process and are content-hash-locked — a drifted or unpinned plugin is refused. | EU AI Act Art. 15 (robustness / cybersecurity) |
 
 ## The profile
 
 Put this in `~/.maverick/config.toml`. Enterprise mode alone gives you the egress lock,
-fail-closed consent, capability enforcement, **and** at-rest encryption; signing,
-retention, and anonymization are the extra knobs.
+fail-closed consent, capability enforcement, at-rest encryption, **and** the
+deployment-specific secure defaults (container-default sandbox, plugin isolation +
+hash-lock); signing, retention, and anonymization are the extra knobs. Setting
+`[profile] name = "enterprise"` (or `MAVERICK_PROFILE=enterprise`) selects enterprise
+mode plus those defaults in a single knob.
 
 ```toml
 [enterprise]

@@ -635,3 +635,16 @@ def test_dual_approval_writes_security_quorum(tmp_path, monkeypatch):
 def test_dual_approval_off_writes_no_quorum(tmp_path, monkeypatch):
     cfg = _write(tmp_path, monkeypatch, {"dual_approval": False})
     assert "approvals_required" not in cfg
+
+
+def test_saml_writes_auth_saml_template(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"saml": True})
+    assert "[auth.saml]" in cfg
+    assert "sp_entity_id" in cfg and "acs_url" in cfg and "idp_metadata_url" in cfg
+    parsed = tomllib.loads(cfg)
+    assert "saml" in parsed["auth"]
+
+
+def test_saml_off_writes_no_section(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"saml": False})
+    assert "[auth.saml]" not in cfg

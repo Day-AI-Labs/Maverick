@@ -6,6 +6,8 @@ Lightwork wraps its agent loop in [Agent Shield](https://github.com/cdayAI/agent
 2. **Tool-call scan** — every `tool_use` request goes through `shield.scan_tool_call(name, args)` before the sandbox executes it.
 3. **Output scan** — every final answer goes through `shield.scan_output()` before reaching the user.
 
+All three chokepoints additionally run a **decode/defang pre-pass** (`maverick_shield/deobfuscate.py`): base64 / hex / percent-encoded payloads are decoded and Unicode homoglyphs (Cyrillic/Greek lookalikes NFKC leaves alone) plus zero-width/bidi chars are folded, then the detectors re-run over each variant — so an *encoded* `rm -rf /` is caught even when the literal surface form hides it. This is part of the **built-in** shield (not the optional SDK), is monotonic (it can only turn an allowed scan into a block, never the reverse), bounded against decode bombs, and fail-open. Escape hatch: `MAVERICK_SHIELD_NO_DECODE=1`.
+
 ## Profiles
 
 | Profile | Block threshold | Use case |
@@ -40,11 +42,17 @@ The **full Agent Shield SDK** (`pip install agent-shield`, ~115 patterns, F1 0.9
 - **Sybil attacks** — coordinated fake agents, voting collusion
 - **Side channels** — DNS exfiltration, timing-based encoding, beaconing
 
+> **Obfuscation is no longer SDK-only.** The built-in shield's decode/defang
+> pre-pass (above) covers base64/hex/percent/homoglyph/zero-width evasion on all
+> three surfaces, so an encoded payload is decoded and re-scanned against the
+> built-in rules even without the full SDK. The SDK still adds breadth (ROT13,
+> leetspeak, the wider pattern set); the *decoding* layer is now always present.
+
 ## When the shield is missing
 
 Two layers can be missing, and they degrade differently:
 
-- **Full `agent-shield` SDK absent** (but the `maverick-shield` wrapper present): detection uses the **built-in ~20-pattern** matcher — the F1 0.988 ruleset is forgone, but scans still run.
+- **Full `agent-shield` SDK absent** (but the `maverick-shield` wrapper present): detection uses the **built-in** layer — ~20 high-impact rules, the decode/defang pre-pass, and a cheap-probe (regex + Unicode heuristics, optionally ensembled with a trained linear model via `[shield] probe_model`). The F1 0.988 SDK ruleset is forgone, but scans — including obfuscation-decoding — still run.
 - **Shield wrapper absent entirely**: scans are **skipped (fail-open)** with a startup warning, per the kernel's "runs without the shield" rule.
 
 The installer does **not** pull in `agent-shield` automatically — install it with `pip install agent-shield` for the full ruleset.
@@ -78,13 +86,23 @@ mode = true
 local_providers = ["my-internal-vllm"]
 ```
 
-Or set `MAVERICK_ENTERPRISE=1`, or pick it in `maverick init`. **Off by default.** When on:
+Or set `MAVERICK_ENTERPRISE=1`, or pick it in `maverick init`. **Off by default.**
+
+The simplest way to select the whole regulated posture is the **named deployment
+profile**: `MAVERICK_PROFILE=enterprise` (or `[profile] name = "enterprise"`).
+`enterprise` turns on enterprise mode *plus* the deployment-specific secure
+defaults below in one knob; `standard` (the default) keeps the zero-config happy
+path. Every individual control still has its own explicit override, and a
+compliance floor can force any control on — both win over the profile. When the
+posture is on:
 
 | Control | Default kernel behavior | Enterprise mode |
 |---|---|---|
 | **LLM egress** | any configured provider (incl. cloud) sees the prompt | **pinned to local/self-hosted** (`ollama`/`vllm`/`tgi` or an allow-listed endpoint); a cloud-routed call raises `EgressBlocked` **before any prompt is sent**, and the denial is audited |
 | **Consent** | `auto-approve` | `ask` (and therefore *deny* in non-interactive contexts) |
 | **Capabilities** | opt-in | enforced (least privilege; sub-agents can only narrow their grant) |
+| **Sandbox** | `local` host shell (warned) | **container-default** — a `local`/unset backend is upgraded to an available container runtime (docker → podman); if none is installed it fails closed rather than running `shell=True` on the host (`[sandbox] backend` / `require_container`) |
+| **Plugins** | in-process, lockfile off | **subprocess isolation** (third-party plugins run out-of-process) + **lock-enforce** (version/content drift refused once a lockfile exists) (`[plugins] isolation` / `lock_policy`) |
 
 The egress lock is enforced at the single LLM dispatch chokepoint (`maverick.llm.LLM.complete`),
 so it covers every agent, role, and tool-driven model call. An explicit env/config setting
