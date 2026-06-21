@@ -353,6 +353,11 @@ def require_principal(
         # in the route, which 404s an invalid one); an external recipient has no
         # OIDC session, like the webhook paths below.
         return None
+    if request.url.path.startswith("/scim/"):
+        # SCIM clients (Okta/Azure AD) authenticate with a static IdP bearer
+        # (MAVERICK_SCIM_TOKEN), verified by the SCIM router itself; they have no
+        # OIDC session. The router 404s when SCIM is disabled.
+        return None
     # HMAC-signed webhooks (GitHub/Telegram/Linear/Jira/...) can't present an
     # OIDC ID token -- the external sender authenticates with a shared-secret
     # signature, verified by the webhook handler itself. Requiring an OIDC

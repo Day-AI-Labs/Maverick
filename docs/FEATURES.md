@@ -1341,6 +1341,13 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `embedding_types`), local, or deterministic — fails loud rather than silently
   degrading.
 - **Reverse-proxy SSO** — trusted forwarded-identity header for enterprise auth.
+- **SCIM 2.0 provisioning** (`maverick_dashboard/scim.py`) — the RFC 7643/7644
+  `/scim/v2` surface (Users CRUD + `ServiceProviderConfig`/`ResourceTypes`, the
+  `userName eq` filter, Okta/Azure PATCH-deprovision forms) so an enterprise IdP
+  drives user lifecycle automatically: a SCIM user provisions a backing tenant,
+  `active=false`/DELETE suspends/removes it. Carries its own static IdP bearer
+  (`MAVERICK_SCIM_TOKEN`, constant-time compare), exempt from the dashboard-token
+  middleware and OIDC gate; 404s when unset, so it's inert off by default.
 - **Tenant-aware persistence** — workspaces wall each tenant into
   `~/.maverick/tenants/<t>/` (`workspace.py`, `paths.py`), with a per-tenant
   world DB and `data_dir()`-routed audit / quotas / DSAR / fleets. The shared
