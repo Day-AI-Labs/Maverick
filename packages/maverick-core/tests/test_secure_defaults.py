@@ -50,3 +50,27 @@ def test_audit_signing_explicit_knob_wins(secure, monkeypatch):
     # And the explicit arg always wins.
     assert _resolve_signing(False) is False
     assert _resolve_signing(True) is True
+
+
+def test_at_rest_encryption_on_by_default(secure, monkeypatch, tmp_path):
+    monkeypatch.delenv("MAVERICK_ENCRYPT_AT_REST", raising=False)
+    from maverick import crypto_at_rest as car
+    monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "keys" / "at_rest.key")
+    assert car.at_rest_enabled() is True
+    # Zero-config round-trip: the key auto-generates and seal->unseal restores.
+    sealed = car.seal_to_str("PHI: patient record")
+    assert sealed != "PHI: patient record"          # actually sealed
+    assert car.unseal_from_str(sealed) == "PHI: patient record"
+
+
+def test_at_rest_reads_are_plaintext_tolerant(secure, monkeypatch, tmp_path):
+    # Existing plaintext (written before the flip) still reads back unchanged.
+    from maverick import crypto_at_rest as car
+    monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "keys" / "at_rest.key")
+    assert car.unseal_from_str("legacy plaintext value") == "legacy plaintext value"
+
+
+def test_at_rest_explicit_off_wins(secure, monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "0")
+    from maverick import crypto_at_rest as car
+    assert car.at_rest_enabled() is False

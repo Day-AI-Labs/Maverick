@@ -103,9 +103,16 @@ def at_rest_enabled() -> bool:
         v = cfg.get("at_rest")
         return _truthy(v) if isinstance(v, str) else bool(v)
     # Enterprise mode implies at-rest encryption (sensitive data stays sealed).
+    # Secure-by-default otherwise: seal new writes unless explicitly disabled.
+    # Safe for existing installs -- reads are plaintext-tolerant (unseal_from_str
+    # returns unmarked legacy values unchanged), so mixing sealed + plaintext
+    # rows just works; the key auto-generates on first use (~/.maverick/keys).
     try:
         from .enterprise import enterprise_enabled
-        return enterprise_enabled()
+        if enterprise_enabled():
+            return True
+        from .security_defaults import secure_by_default
+        return secure_by_default()
     except Exception:
         return False
 
