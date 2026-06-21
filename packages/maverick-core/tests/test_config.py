@@ -90,15 +90,16 @@ def test_get_governed_connectors_defaults_off(monkeypatch):
     import maverick.config as cfg_mod
     monkeypatch.setattr(cfg_mod, "load_config", lambda *a, **k: {})
     gc = cfg_mod.get_governed_connectors()
-    assert gc == {"enable": False, "connectors": []}
+    assert gc == {"enable": False, "connectors": [], "approver": ""}
 
 
 def test_get_governed_connectors_parses_list_and_csv(monkeypatch):
     import maverick.config as cfg_mod
     monkeypatch.setattr(cfg_mod, "load_config", lambda *a, **k: {
-        "governed_connectors": {"enable": True, "connectors": ["salesforce", " servicenow "]}})
+        "governed_connectors": {"enable": True, "connectors": ["salesforce", " servicenow "],
+                                "approver": "ops@corp"}})
     assert cfg_mod.get_governed_connectors() == {
-        "enable": True, "connectors": ["salesforce", "servicenow"]}
+        "enable": True, "connectors": ["salesforce", "servicenow"], "approver": "ops@corp"}
     # A CSV string (an operator hand-edit) is tolerated and split.
     monkeypatch.setattr(cfg_mod, "load_config", lambda *a, **k: {
         "governed_connectors": {"enable": True, "connectors": "salesforce, servicenow"}})

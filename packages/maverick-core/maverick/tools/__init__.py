@@ -1239,6 +1239,15 @@ def base_registry(
     _apply_rate_limits(reg, fail_silently=True)
     _apply_deferred_loading(reg)
 
+    # Opt-in: route configured enterprise-connector WRITES through GovernedActions
+    # (preview + approval-gate). Off by default; no-op unless
+    # [governed_connectors] enable. Done last so it wraps the final tool objects.
+    try:
+        from ..governed_tools import apply_governed_connectors
+        apply_governed_connectors(reg)
+    except Exception:  # pragma: no cover -- governance must never break assembly
+        pass
+
     return reg
 
 

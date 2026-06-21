@@ -79,6 +79,34 @@ class TestLearning:
         assert all(v == 0.0 for v in model.weights.values())
 
 
+class TestReweight:
+    def test_agreement_keeps_weight_disagreement_downweights(self):
+        from maverick.training.reward_model import reweight_pairs_with_model
+        rows_by_id = {
+            "good": _row("good", "f", 1.0, n_msgs=3, n_err=0),
+            "bad": _row("bad", "f", 0.0, n_msgs=3, n_err=3),
+        }
+        # Model that scores the clean trajectory higher (agrees with verifier).
+        model, _ = train_reward_model(
+            [_row(f"{i}-g", f"f{i}", 1.0, n_err=0) for i in range(4)]
+            + [_row(f"{i}-b", f"f{i}", 0.0, n_err=3) for i in range(4)], epochs=300, lr=0.2)
+        agree_pair = {"chosen_id": "good", "rejected_id": "bad", "weight": 1.0}
+        disagree_pair = {"chosen_id": "bad", "rejected_id": "good", "weight": 1.0}
+        pairs = [agree_pair, disagree_pair]
+        rep = reweight_pairs_with_model(pairs, rows_by_id, model, disagree_penalty=0.25)
+        assert agree_pair["weight"] == 1.0          # corroborated -> unchanged
+        assert disagree_pair["weight"] == 0.25      # not corroborated -> downweighted
+        assert rep["agreement_rate"] == 0.5
+
+    def test_unresolvable_ids_skipped(self):
+        from maverick.training.reward_model import reweight_pairs_with_model
+        model = PreferenceRewardModel()
+        pairs = [{"chosen_id": "x", "rejected_id": "y", "weight": 1.0}]
+        rep = reweight_pairs_with_model(pairs, {}, model)
+        assert rep["agreement_rate"] == 0.0
+        assert pairs[0]["weight"] == 1.0  # untouched
+
+
 class TestPersistence:
     def test_roundtrip(self, tmp_path):
         model, _ = train_reward_model(

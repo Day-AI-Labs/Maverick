@@ -178,6 +178,36 @@ def train_reward_model(
     return model, report
 
 
+def reweight_pairs_with_model(
+    pairs: list[dict], rows_by_id: dict[str, dict], model: PreferenceRewardModel,
+    *, disagree_penalty: float = 0.5,
+) -> dict:
+    """Cross-check verifier preference labels with a learned reward model.
+
+    The verifier produced each ``(chosen, rejected)`` pair; a cheap learned
+    reward model is an independent second opinion. Where the model AGREES
+    (``score(chosen) > score(rejected)``) the pair's ``weight`` is kept; where it
+    DISAGREES the weight is scaled by ``disagree_penalty`` -- so a DPO trainer
+    leans less on preferences that two independent signals don't corroborate
+    (label-noise mitigation). Mutates ``pairs`` in place and returns a report
+    ``{"pairs", "agree", "agreement_rate"}``. Pairs whose ids aren't resolvable
+    are left unchanged and excluded from the rate."""
+    agree = 0
+    scored = 0
+    for p in pairs:
+        c = rows_by_id.get(p.get("chosen_id"))
+        r = rows_by_id.get(p.get("rejected_id"))
+        if c is None or r is None:
+            continue
+        scored += 1
+        if model.score(c) > model.score(r):
+            agree += 1
+        else:
+            p["weight"] = float(p.get("weight", 1.0) or 1.0) * float(disagree_penalty)
+    return {"pairs": len(pairs), "agree": agree,
+            "agreement_rate": (agree / scored) if scored else 0.0}
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
