@@ -24,9 +24,13 @@ The ledger (``data_dir("provider_spend.json")``) maps
 ``{period_key: {provider: dollars}}`` — period keys are ``YYYY-MM-DD`` (day)
 or ``YYYY-MM`` (month), always UTC so the window doesn't shift with host
 timezone/DST. Writes are atomic (unique temp file + ``os.replace``, 0600)
-and serialized under a process lock, mirroring :mod:`maverick.quotas`; the
-ledger reloads per call rather than caching, so concurrent processes don't
-clobber each other's totals. Recording is fail-soft (accounting must not
+and the whole read-modify-write is serialized by an in-process lock **plus a
+cross-process advisory flock** on a ``.lock`` sidecar, mirroring
+:mod:`maverick.quotas`; the ledger reloads per call rather than caching, so
+concurrent processes don't clobber each other's totals (without the flock two
+processes both load the same total, both add, and the second ``os.replace``
+wins -- dollars vanish from a *spend-cap* ledger and the deployment overspends
+past the configured ceiling). Recording is fail-soft (accounting must not
 take down the agent loop) — but :func:`enforce` itself is the cap, and a cap
 that is configured and exceeded *raises*.
 
@@ -45,6 +49,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .file_lock import cross_process_lock
 from .paths import data_dir
 
 log = logging.getLogger(__name__)
@@ -177,7 +182,11 @@ def record(provider: str, dollars: float, *, now: float | None = None,
     key = period_key(now)
     ledger = path if path is not None else _ledger_path()
     try:
-        with _LEDGER_LOCK:
+        # In-process lock + cross-process flock: serialize the whole
+        # load-modify-save so two processes can't both load the same total and
+        # have the second save clobber the first -- which would under-record
+        # spend and let the deployment slip past its provider cap.
+        with _LEDGER_LOCK, cross_process_lock(ledger):
             data = _load(ledger)
             bucket = data.setdefault(key, {})
             bucket[name] = float(bucket.get(name, 0.0)) + amount
@@ -252,7 +261,7 @@ def prune(*, now: float | None = None, path: Path | None = None) -> int:
     """
     current = period_key(now)
     ledger = path if path is not None else _ledger_path()
-    with _LEDGER_LOCK:
+    with _LEDGER_LOCK, cross_process_lock(ledger):
         data = _load(ledger)
         stale = [k for k in data if k != current]
         if not stale:
