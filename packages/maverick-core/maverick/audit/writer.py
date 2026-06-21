@@ -137,8 +137,14 @@ def _resolve_signing(explicit: bool | None) -> bool:
         return env_bool("MAVERICK_AUDIT_SIGN", False)
     try:
         from ..config import load_config
+        from ..security_defaults import secure_by_default
 
-        return bool(((load_config() or {}).get("audit") or {}).get("sign", False))
+        # Secure-by-default: sign + hash-chain the audit log unless explicitly
+        # disabled. An explicit [audit] sign still wins when present.
+        sign = ((load_config() or {}).get("audit") or {}).get("sign")
+        if sign is not None:
+            return bool(sign)
+        return secure_by_default()
     except Exception:
         return False
 
