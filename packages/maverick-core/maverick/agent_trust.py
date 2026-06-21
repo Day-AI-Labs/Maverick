@@ -57,6 +57,7 @@ import contextlib
 import logging
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -75,6 +76,23 @@ _PUBKEY_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _RISK_LEVELS = ("low", "medium", "high")
 _DIRECTIONS = frozenset({"inbound", "outbound", "both"})
 _MAX_AGENTS = 256
+
+# Serializes the managed-registry load-modify-save. _save_managed is already
+# atomic (no torn read), but the mutators are lock-free RMW: a set_revoked
+# racing a put_agent/rotate would otherwise be clobbered -- a revoked external
+# agent silently stays trusted. In-process threading.Lock + cross-process flock.
+_MANAGED_LOCK = threading.Lock()
+
+
+def _managed_locked():
+    from contextlib import ExitStack
+
+    from .file_lock import cross_process_lock
+    stack = ExitStack()
+    stack.enter_context(_MANAGED_LOCK)
+    stack.enter_context(cross_process_lock(managed_path()))
+    return stack
+
 
 _TRUE_WORDS = {"1", "true", "yes", "on"}
 
@@ -437,34 +455,37 @@ def put_agent(entry: dict) -> TrustedAgent:
     agent = _agent_from_entry(entry)
     if agent is None:
         raise AgentTrustError(f"invalid agent entry: {entry!r}")
-    entries = [e for e in _load_managed() if str(e.get("id") or "") != agent.id]
-    clean = {k: v for k, v in entry.items() if v not in (None, "", [], {})}
-    clean["id"] = agent.id
-    entries.append(clean)
-    _save_managed(entries)
+    with _managed_locked():
+        entries = [e for e in _load_managed() if str(e.get("id") or "") != agent.id]
+        clean = {k: v for k, v in entry.items() if v not in (None, "", [], {})}
+        clean["id"] = agent.id
+        entries.append(clean)
+        _save_managed(entries)
     return agent
 
 
 def remove_agent(agent_id: str) -> bool:
     """Delete a managed agent by id. Returns True if one was removed."""
-    entries = _load_managed()
-    kept = [e for e in entries if str(e.get("id") or "") != agent_id]
-    if len(kept) == len(entries):
-        return False
-    _save_managed(kept)
+    with _managed_locked():
+        entries = _load_managed()
+        kept = [e for e in entries if str(e.get("id") or "") != agent_id]
+        if len(kept) == len(entries):
+            return False
+        _save_managed(kept)
     return True
 
 
 def set_revoked(agent_id: str, revoked: bool) -> bool:
     """Mark a managed agent revoked / unrevoked. Returns True if it existed."""
-    entries = _load_managed()
-    found = False
-    for e in entries:
-        if str(e.get("id") or "") == agent_id:
-            e["revoked"] = bool(revoked)
-            found = True
-    if found:
-        _save_managed(entries)
+    with _managed_locked():
+        entries = _load_managed()
+        found = False
+        for e in entries:
+            if str(e.get("id") or "") == agent_id:
+                e["revoked"] = bool(revoked)
+                found = True
+        if found:
+            _save_managed(entries)
     return found
 
 
