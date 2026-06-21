@@ -1695,6 +1695,8 @@ async def import_run_endpoint(request: Request, payload: ImportRunIn) -> ImportR
         from maverick.job_queue import JobQueue
         queue = JobQueue()
 
+    from maverick.config import get_features
+    triggers_on = get_features().get("triggers", True)
     from maverick_dashboard import triggers_store
     results: list[dict] = []
     for a in automations:
@@ -1702,10 +1704,15 @@ async def import_run_endpoint(request: Request, payload: ImportRunIn) -> ImportR
         webhook_trigger = None
         # Wire the inbound webhook trigger when asked and the automation is
         # webhook-triggered (the one step the CLI can't do: triggers_store is
-        # dashboard-side).
+        # dashboard-side). Respect the [features] triggers gate -- if the
+        # operator disabled triggers, don't silently create ones that bypass
+        # that decision; import the template and say so.
         sug = res.suggested_trigger or {}
-        if (payload.create_webhook_triggers and not payload.dry_run
-                and res.created_template and sug.get("kind") == "webhook"):
+        want_webhook = (payload.create_webhook_triggers and not payload.dry_run
+                        and res.created_template and sug.get("kind") == "webhook")
+        if want_webhook and not triggers_on:
+            res.notes.append("webhook trigger not created: [features] triggers is off")
+        elif want_webhook:
             try:
                 rec = triggers_store.set_trigger(res.template_name, res.template_name)
                 webhook_trigger = rec["name"]

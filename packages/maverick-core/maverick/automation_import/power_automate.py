@@ -82,6 +82,7 @@ def _toposort_actions(actions: dict) -> list[str]:
 
 
 def _step(name: str, spec: dict) -> ImportedStep:
+    spec = spec if isinstance(spec, dict) else {}  # an action value can be null
     inputs = spec.get("inputs") if isinstance(spec.get("inputs"), dict) else {}
     atype = str(spec.get("type") or "")
     app, op = ("", "")

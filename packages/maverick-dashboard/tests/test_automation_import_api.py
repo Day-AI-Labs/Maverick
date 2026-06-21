@@ -54,12 +54,12 @@ def test_run_creates_template_from_definitions():
     assert body["dry_run"] is False
     assert len(body["imported"]) == 1
     item = body["imported"][0]
-    assert item["template"] == "n8n-lead-to-slack"
+    assert item["template"].startswith("n8n-lead-to-slack-")
     assert item["created"] is True
     assert item["trigger"] == "webhook"
     # The template now exists.
     from maverick.templates import load_template
-    assert load_template("n8n-lead-to-slack") is not None
+    assert load_template(item["template"]) is not None
 
 
 def test_dry_run_writes_nothing():
@@ -67,10 +67,11 @@ def test_dry_run_writes_nothing():
         "source": "n8n", "definitions": [N8N_WF], "dry_run": True,
     })
     assert r.status_code == 200
-    assert r.json()["imported"][0]["created"] is False
+    item = r.json()["imported"][0]
+    assert item["created"] is False
     from maverick.templates import load_template
     with pytest.raises(FileNotFoundError):
-        load_template("n8n-lead-to-slack")
+        load_template(item["template"])
 
 
 def test_create_webhook_trigger_wires_it():
@@ -79,9 +80,24 @@ def test_create_webhook_trigger_wires_it():
     })
     assert r.status_code == 200
     item = r.json()["imported"][0]
-    assert item["webhook_trigger"] == "n8n-lead-to-slack"
+    assert item["webhook_trigger"] == item["template"]
     from maverick_dashboard import triggers_store
-    assert triggers_store.get_trigger("n8n-lead-to-slack") is not None
+    assert triggers_store.get_trigger(item["template"]) is not None
+
+
+def test_webhook_trigger_respects_features_gate(monkeypatch):
+    # When [features] triggers is off, the import must NOT create webhook
+    # triggers (it would bypass the operator's deliberate decision).
+    import maverick.config as cfg
+    real = cfg.get_features
+    monkeypatch.setattr(cfg, "get_features", lambda: {**real(), "triggers": False})
+    r = _client().post("/api/v1/import/run", json={
+        "source": "n8n", "definitions": [N8N_WF], "create_webhook_triggers": True,
+    })
+    assert r.status_code == 200
+    item = r.json()["imported"][0]
+    assert item["webhook_trigger"] is None
+    assert any("triggers is off" in n for n in item["notes"])
 
 
 def test_gate_blocks_when_disabled(monkeypatch):

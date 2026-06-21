@@ -73,7 +73,7 @@ def materialize(
 
     trig = automation.trigger
     if trig.kind == TRIGGER_SCHEDULE:
-        if trig.cron and queue is not None:
+        if trig.cron and queue is not None and save:
             from uuid import uuid4
 
             from ..scheduler import CronError, schedule_cron

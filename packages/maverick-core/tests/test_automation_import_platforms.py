@@ -95,6 +95,15 @@ class TestPowerAutomate:
         assert a.trigger.kind == ir.TRIGGER_SCHEDULE
         assert "Day" in a.trigger.description
 
+    def test_null_action_value_does_not_crash(self):
+        # A hand-edited definition with a null action value must not AttributeError.
+        flow = {"definition": {
+            "triggers": {"m": {"type": "Request"}},
+            "actions": {"Broken": None, "Ok": {"type": "Compose", "runAfter": {}}},
+        }}
+        a = power_automate.translate(flow)
+        assert {s.name for s in a.steps} == {"Broken", "Ok"}
+
     def test_empty_raises(self):
         with pytest.raises(ai.ImporterError):
             power_automate.translate({"definition": {}})

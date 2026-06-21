@@ -15,6 +15,7 @@ the orchestrator runs the work.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -105,8 +106,19 @@ class ImportedAutomation:
     raw: dict[str, Any] = field(default_factory=dict)
 
     def template_name(self) -> str:
-        """Stable, collision-resistant template slug: ``<source>-<name>``."""
-        return slugify(f"{self.source}-{self.name}")
+        """Stable, collision-resistant template slug.
+
+        ``<source>-<name>`` is readable but NOT unique -- two distinct
+        automations with the same name (e.g. several "Untitled Zap"s) would slug
+        identically and the second would overwrite the first. When a stable
+        ``source_id`` is present we append a short hash of it: re-importing the
+        same automation lands on the same slug (idempotent), while different
+        automations with the same name get distinct slugs (no data loss)."""
+        base = slugify(f"{self.source}-{self.name}")
+        if self.source_id:
+            suffix = hashlib.sha256(self.source_id.encode("utf-8")).hexdigest()[:6]
+            return f"{base}-{suffix}"
+        return base
 
     def render(self) -> tuple[str, str]:
         """Return ``(title, body)`` for :func:`templates.save_user_template`.
