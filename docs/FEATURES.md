@@ -198,8 +198,14 @@ here.
   default `high`), and **lineage-tracked** (a tamper-evident hash chain from
   outcome → action → inputs/sources/skills; `verify_lineage` / `trace`).
   `Connector`s expose a system of record as `<sys>.read` (low risk) /
-  `<sys>.write` (high) governed Actions. Palantir-style action governance, for
-  self-improving agents (see `docs/palantir-playbook.md`).
+  `<sys>.write` (high) governed Actions. `governed_rest.py` adapts the LIVE
+  enterprise REST connectors (Salesforce, ServiceNow) into this surface — the
+  write previews its effect without a network call, hits the approval floor,
+  commits through the same SSRF-safe / egress-guarded path the tool form uses,
+  and records lineage — so a real system-of-record write is governed, not just
+  a confirm-gated tool call. Opt-in via `[governed_connectors] enable` +
+  `connectors` (`MAVERICK_GOVERNED_CONNECTORS`; wizard step). Palantir-style
+  action governance, for self-improving agents (see `docs/palantir-playbook.md`).
 - **Governed learning at scale** (`access_policy.py`, `learning_rollout.py`;
   opt-in, additive) — **PBAC**: a skill declares `purposes:` and
   `relevant_skills` recalls it only under a matching run purpose
