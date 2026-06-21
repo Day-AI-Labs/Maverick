@@ -202,6 +202,21 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _at_rest_sealing_active() -> bool:
+    """True only when at-rest encryption is enabled AND sealing can actually run
+    (crypto + key present). When sealing isn't possible (e.g. no key configured,
+    as in CI) we can't expect closed day-files to be sealed, so the WORM
+    plaintext gate stays inert rather than refusing every push."""
+    try:
+        from ..crypto_at_rest import at_rest_enabled, seal
+        if not at_rest_enabled():
+            return False
+        seal(b"")  # cheap probe: raises EncryptionUnavailable if key/crypto absent
+        return True
+    except Exception:
+        return False
+
+
 # --- orchestration ----------------------------------------------------------
 
 def push_closed_dayfiles(
@@ -238,11 +253,28 @@ def push_closed_dayfiles(
         sink = build_sink(cfg)   # raises WormUnavailable if unconfigured
     retain_until = _utcnow() + _dt.timedelta(days=retention_days)
 
+    # Never ship PLAINTEXT audit data into an immutable WORM lock. A closed
+    # day-file is sealed in-place by `audit seal`; WORM push is a separate
+    # command with no enforced ordering, so pushing first would lock plaintext
+    # (sensitive action detail) under a multi-year S3 Object-Lock COMPLIANCE
+    # retention -- an exposure that can't be deleted and breaks GDPR erasability.
+    # Refuse an unsealed file, but only when sealing is actually active (at-rest
+    # enabled AND a key present): when sealing can't run (e.g. no key in CI) we
+    # can't expect files to be sealed, so the gate stays inert.
+    seal_required = _at_rest_sealing_active()
+    from ..crypto_at_rest import is_sealed
+
     for p in closed:
         try:
             data = p.read_bytes()
         except OSError as e:
             report[p.name] = f"error ({e})"
+            continue
+        if seal_required and not is_sealed(data):
+            report[p.name] = (
+                "refused: unsealed plaintext -- run `maverick audit seal` before "
+                "WORM push (at-rest encryption is on)"
+            )
             continue
         digest = _sha256(data)
         prior = manifest.get(p.name)
