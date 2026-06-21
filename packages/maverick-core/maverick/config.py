@@ -466,6 +466,8 @@ def get_knowledge() -> dict:
         "base_url": cfg.get("base_url", "https://api.voyageai.com/v1"),
         "dim": int(cfg.get("dim", 1024)),
         "path": cfg.get("path", ""),
+        # DSN for the pgvector scale backend (falls back to env in build_store).
+        "dsn": cfg.get("dsn", ""),
     }
 
 

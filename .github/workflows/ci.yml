@@ -331,7 +331,9 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        # pgvector image = postgres:16 + the `vector` extension, so the same
+        # service also exercises the pgvector knowledge store (round-trip below).
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: maverick
           POSTGRES_PASSWORD: maverick
@@ -352,12 +354,17 @@ jobs:
         run: |
           set -x
           pip install -e ./packages/maverick-core
+          pip install -e ./packages/maverick-knowledge
           pip install 'psycopg[binary]>=3.1'
           pip install pytest pytest-asyncio
       - name: Test PostgresWorldModel
         env:
           MAVERICK_PG_DSN: postgres://maverick:maverick@localhost:5432/maverick_test
         run: pytest -vvs packages/maverick-core/tests/test_postgres_world.py
+      - name: Test pgvector knowledge store
+        env:
+          MAVERICK_PG_DSN: postgres://maverick:maverick@localhost:5432/maverick_test
+        run: pytest -vvs packages/maverick-knowledge/tests/test_knowledge.py -k PgVectorLive
 
   docker:
     runs-on: ubuntu-latest
