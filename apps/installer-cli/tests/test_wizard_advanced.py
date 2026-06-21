@@ -617,3 +617,16 @@ def test_audit_worm_writes_worm_section(tmp_path, monkeypatch):
 def test_audit_worm_off_writes_no_worm_section(tmp_path, monkeypatch):
     cfg = _write(tmp_path, monkeypatch, {"audit_worm": False})
     assert "[audit.worm]" not in cfg
+
+
+def test_saml_writes_auth_saml_template(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"saml": True})
+    assert "[auth.saml]" in cfg
+    assert "sp_entity_id" in cfg and "acs_url" in cfg and "idp_metadata_url" in cfg
+    parsed = tomllib.loads(cfg)
+    assert "saml" in parsed["auth"]
+
+
+def test_saml_off_writes_no_section(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"saml": False})
+    assert "[auth.saml]" not in cfg
