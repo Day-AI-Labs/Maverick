@@ -318,3 +318,46 @@ def test_listing_name_charset_is_validated():
         assert _listing_for_export({**base, "name": ok}) is not None, ok
     for bad in ("../etc", "other-origin/foo", "a/b", "a b", ".hidden", "x\ny", "/abs"):
         assert _listing_for_export({**base, "name": bad}) is None, bad
+
+
+def test_concurrent_imports_from_different_origins_do_not_clobber(tmp_path):
+    """import_listings does a load-modify-save of one shared store. Two
+    concurrent imports from DIFFERENT origins must each keep their listings AND
+    their rollback watermark -- without the lock the second save (built on the
+    pre-first snapshot) wipes the first origin's listings + watermark, reopening
+    the replay window."""
+    import threading
+
+    from maverick.marketplace.federation import _WATERMARK_KEY, _load_store
+
+    store = tmp_path / "fed_store.json"
+    env_a = _export(origin="peer-a", now=1_750_000_000.0)
+    env_b = _export(origin="peer-b", now=1_750_000_500.0)
+    peers = {"peer-a": {"origin": "peer-a", "pubkey": env_a["pubkey"]},
+             "peer-b": {"origin": "peer-b", "pubkey": env_b["pubkey"]}}
+    reports: list[dict] = []
+    lock = threading.Lock()
+    barrier = threading.Barrier(2)
+
+    def do(env):
+        barrier.wait()
+        r = import_listings(env, peers=peers, store_path=store)
+        with lock:
+            reports.append(r)
+
+    ts = [threading.Thread(target=do, args=(env_a,)),
+          threading.Thread(target=do, args=(env_b,))]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+
+    assert all(r["ok"] for r in reports), reports
+    # Both origins' listings survive.
+    names = {ls["name"] for ls in imported_listings(store_path=store)}
+    assert "peer-a/summarize-url" in names
+    assert "peer-b/summarize-url" in names
+    # Both rollback watermarks survive (neither was clobbered).
+    wm = _load_store(store).get(_WATERMARK_KEY) or {}
+    assert "peer-a" in wm and "peer-b" in wm
+    assert list(tmp_path.glob("*.tmp")) == []
