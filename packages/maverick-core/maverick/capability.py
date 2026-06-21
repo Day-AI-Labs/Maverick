@@ -345,7 +345,14 @@ def capability_from_config(
         allowed, denied = resolve_lists(channel=channel, user_id=user_id)
         max_risk = resolve_max_risk(channel=channel, user_id=user_id)
     except Exception:
-        allowed, denied, max_risk = set(), set(), None
+        # Fail CLOSED, not open. An EMPTY allow_tools means "all tools", so the
+        # old fallback (set(), set(), None) was an all-permissive root grant on a
+        # resolver error -- the inverse of tool_acl's _FAIL_CLOSED posture.
+        # _DENY_ALL makes permits() refuse every tool; "low" is the tightest
+        # risk ceiling. Dead-defensive today (resolve_lists/resolve_max_risk
+        # swallow their own config errors and already return fail-closed), but a
+        # latent trap for any future refactor that lets those resolvers raise.
+        allowed, denied, max_risk = {_DENY_ALL}, set(), "low"
     base = Capability(
         principal=principal,
         allow_tools=frozenset(allowed),

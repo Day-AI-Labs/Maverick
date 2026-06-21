@@ -162,6 +162,14 @@ def ingest(record: dict, *, shield: Any | None = None) -> tuple[bool, str]:
         return False, "fleet memory is disabled ([fleet_memory] enable = true)"
     agent_id = str(record.get("agent_id", "") or "")
     vendor = str(record.get("vendor", "") or "")
+    # Re-validate the identifiers up front: ingest later builds an inbox
+    # filename from them (f"...-{vendor}-{agent_id}.json"), so a "/" or ".."
+    # here would be path-injection. register_agent already enforces _ID_RE, so a
+    # legitimately-registered agent always passes this; checking per-component
+    # (rather than relying on the roster string-equality match below to reject a
+    # malformed pair) makes the path-safety local and explicit.
+    if not (_ID_RE.match(agent_id) and _ID_RE.match(vendor)):
+        return False, "invalid agent_id or vendor (must match the registered id format)"
     source = f"{vendor}:{agent_id}"
     if not any(r.get("source") == source for r in roster()):
         return False, f"unregistered fleet agent {source!r}: register it first"

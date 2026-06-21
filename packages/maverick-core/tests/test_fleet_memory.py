@@ -91,3 +91,17 @@ def test_bad_ids_and_kinds_rejected():
         "kind": "opinion", "goal_text": "x",
     })
     assert not ok and "kind" in reason
+
+
+def test_ingest_rejects_path_injection_identifiers():
+    """ingest builds an inbox filename from vendor/agent_id, so a '/' or '..'
+    must be refused up front (defense-in-depth, not only via the roster match)."""
+    _register()  # registers a valid ("order-bot", "agentforce")
+    for bad in (
+        {"agent_id": "../../etc/passwd", "vendor": "agentforce"},
+        {"agent_id": "order-bot", "vendor": "a/b"},
+        {"agent_id": "a b", "vendor": "agentforce"},
+        {"agent_id": "x\ny", "vendor": "agentforce"},
+    ):
+        ok, reason = fleet_memory.ingest({**bad, "kind": "lesson", "goal_text": "x"})
+        assert not ok and "invalid" in reason, bad

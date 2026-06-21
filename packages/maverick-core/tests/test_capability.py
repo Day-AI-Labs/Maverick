@@ -528,3 +528,18 @@ def test_no_role_assignment_is_noop(monkeypatch):
     cap = capability_from_config("user:alice")
     assert cap.permits("shell") is False
     assert cap.permits("read_file") is True
+
+
+def test_capability_from_config_fails_closed_on_resolver_error(monkeypatch):
+    """If the ACL resolver raises, the root grant must DENY every tool, not fall
+    back to an all-permissive (empty allow_tools) grant -- an empty allow-list
+    means 'all tools', so the error path must use the _DENY_ALL sentinel."""
+    def _boom(**_kw):
+        raise RuntimeError("resolver exploded")
+    monkeypatch.setattr("maverick.safety.tool_acl.resolve_lists", _boom)
+    monkeypatch.setattr("maverick.safety.tool_acl.resolve_max_risk", _boom)
+    cap = capability_from_config("user:alice")
+    assert cap.principal == "user:alice"
+    assert cap.permits("read_file") is False
+    assert cap.permits("shell") is False
+    assert cap.permits("web_search") is False
