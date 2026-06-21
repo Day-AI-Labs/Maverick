@@ -40,12 +40,16 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import logging
 import os
 import secrets
+import shutil
 import stat
 from pathlib import Path
 
 from .paths import data_dir
+
+log = logging.getLogger(__name__)
 
 _MAGIC = b"MVKAR1\n"          # versioned header: Maverick At-Rest v1 (single key)
 _MAGIC_V2 = b"MVKAR2\n"       # v2: keyring header -- MAGIC || keyid(8) || nonce || ct
@@ -253,7 +257,64 @@ def _load_or_create_key() -> bytes:
     except FileExistsError:
         # Another process won the first-use race; load the private key it wrote.
         return _read_key_file()
+    # At-rest is on by default now, so this auto-generation happens silently on
+    # most installs. The key file is the ONLY way to read sealed data -- losing it
+    # loses everything sealed under it -- so make the durability requirement loud.
+    log.warning(
+        "at-rest encryption generated a new key at %s. This key is the only way "
+        "to decrypt sealed data; if it is lost, that data is unrecoverable. Back "
+        "it up now to a secure location: `maverick encryption backup-key --to "
+        "<dir>` (or inject your own via MAVERICK_ENCRYPTION_KEY).",
+        _KEY_PATH,
+    )
     return key
+
+
+def backup_key_material(dest_dir: Path) -> list[Path]:
+    """Copy the at-rest key material to ``dest_dir`` for safe escrow.
+
+    Copies the primary key (``at_rest.key``) and every rotation-keyring key
+    (``at_rest.d/*.key``) into ``dest_dir``, each ``0600`` inside a ``0700``
+    directory. Returns the paths written. Raises :class:`EncryptionUnavailable`
+    when no key material exists yet (nothing has been sealed) or the copy fails.
+
+    The copies are plaintext key material -- store them somewhere at least as
+    protected as the originals (a secrets manager / offline vault), not next to
+    the data they unlock. A key injected via ``MAVERICK_ENCRYPTION_KEY`` lives
+    in your secrets manager already and is not on disk to copy.
+    """
+    sources: list[Path] = []
+    if _KEY_PATH.exists():
+        sources.append(_KEY_PATH)
+    try:
+        sources.extend(sorted(_keyring_dir().glob("*.key")))
+    except OSError:
+        pass
+    if not sources:
+        raise EncryptionUnavailable(
+            f"no at-rest key material to back up under {_KEY_PATH.parent} "
+            "(nothing has been sealed yet, or the key is injected via "
+            "MAVERICK_ENCRYPTION_KEY and not stored on disk)."
+        )
+    try:
+        dest_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(dest_dir, 0o700)
+    except OSError as e:
+        raise EncryptionUnavailable(
+            f"cannot prepare key backup dir {dest_dir}: {e}"
+        ) from e
+    written: list[Path] = []
+    for src in sources:
+        dst = dest_dir / src.name
+        try:
+            shutil.copyfile(src, dst)
+            os.chmod(dst, 0o600)
+        except OSError as e:
+            raise EncryptionUnavailable(
+                f"cannot copy key {src} -> {dst}: {e}"
+            ) from e
+        written.append(dst)
+    return written
 
 
 # --- rotation keyring -------------------------------------------------------
@@ -532,5 +593,6 @@ __all__ = [
     "seal_to_str",
     "unseal_from_str",
     "rotate_at_rest_key",
+    "backup_key_material",
     "EncryptionUnavailable",
 ]

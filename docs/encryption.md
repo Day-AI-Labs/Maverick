@@ -68,6 +68,19 @@ Key resolution (first match wins):
 **Fail-closed:** if encryption is enabled but the `cryptography` backend or the key is
 unavailable, a write *errors* rather than silently storing plaintext.
 
+**Back up the key — losing it loses the data.** The key file is the only way to
+read data sealed under it; if it is lost, that data is unrecoverable. At-rest is
+on by default, so the key auto-generates on first use (with a one-time warning).
+Escrow it immediately into a secrets manager / offline vault:
+
+```
+maverick encryption backup-key --to /secure/escrow   # copies at_rest.key + keyring keys (0600)
+```
+
+Store the copies at least as well-protected as the originals, and not next to the
+data they unlock. Operators who inject `MAVERICK_ENCRYPTION_KEY` already hold the
+key in their secrets manager and need no on-disk backup.
+
 **Backend:** at-rest sealing is implemented in the **SQLite** backend only. The
 **Postgres** backend does not seal content at rest yet, so `open_world` **fails closed**
 — selecting Postgres (`[world_model] backend = "postgres"` / `MAVERICK_WORLD_BACKEND`)
@@ -90,9 +103,17 @@ key matches still work.
   requires decrypting in every raw read path. Tracked as a follow-up; **do not assume
   they are encrypted.**
 - **The audit log** (`~/.maverick/audit/*.ndjson`) — integrity comes from the Ed25519
-  hash-chain plus the erase/retention tooling, which read and rewrite the NDJSON;
-  encrypting it is a separate design. Secrets in audit payloads are redacted before
-  write regardless.
+  hash-chain plus the erase/retention tooling. **Closed** day-files can be sealed at
+  rest with `maverick audit seal`; the **current** day-file stays plaintext for the
+  live append + signing path, so there is a confidentiality window on today's file
+  until it rolls and is sealed. Secrets in audit payloads are redacted before write
+  regardless.
+- **The semantic-recall vector store** (`~/.maverick/vector_store/**` and external
+  chroma/qdrant/weaviate/pgvector) — when a vector backend is configured, indexed
+  goal text is embedded and stored there by the backend and is **not** sealed at
+  rest (the embedding is computed from plaintext, so sealing the stored document
+  would break similarity search). Keep the vector store on encrypted storage, or
+  leave the vector backend unset (the default world-DB recall path **is** sealed).
 - **Attachments** (`~/.maverick/attachments/**`) — on-disk uploaded files; only the
   metadata row lives in the DB.
 - **`config.toml` / `.env`** — configuration and API keys; `.env` is already

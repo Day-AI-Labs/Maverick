@@ -542,3 +542,35 @@ def test_rotated_key_file_is_private(monkeypatch):
     for p in car._keyring_dir().glob("*.key"):
         mode = _stat.S_IMODE(p.stat().st_mode)
         assert mode & 0o077 == 0, f"{p} is group/world accessible ({oct(mode)})"
+
+
+# --- key durability: generation warning + escrow backup -----------------------
+
+def test_keygen_logs_backup_warning(monkeypatch, caplog):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    import logging
+    with caplog.at_level(logging.WARNING, logger="maverick.crypto_at_rest"):
+        car._load_or_create_key()
+    assert any("only way to decrypt" in r.message or "backup-key" in r.message
+               for r in caplog.records)
+
+
+def test_backup_key_material_copies_primary_and_keyring(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    car._load_or_create_key()              # create the primary key
+    car.rotate_at_rest_key()               # create a keyring key too
+    dest = tmp_path / "escrow"
+    written = car.backup_key_material(dest)
+    names = sorted(p.name for p in written)
+    assert "at_rest.key" in names
+    assert any(n.endswith(".key") and n != "at_rest.key" for n in names)
+    import stat as _stat
+    assert all(_stat.S_IMODE(p.stat().st_mode) == 0o600 for p in written)
+    # The escrowed primary key matches the live one (usable for recovery).
+    assert (dest / "at_rest.key").read_text() == car._KEY_PATH.read_text()
+
+
+def test_backup_key_material_errors_when_no_key(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    with pytest.raises(car.EncryptionUnavailable, match="no at-rest key material"):
+        car.backup_key_material(tmp_path / "escrow")
