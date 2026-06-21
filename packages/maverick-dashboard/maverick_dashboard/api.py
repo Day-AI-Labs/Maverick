@@ -53,6 +53,8 @@ from .api_schemas import (
     GoalIn,
     GoalOut,
     HaltIn,
+    ImportRunIn,
+    ImportRunOut,
     OutcomeIn,
     RedactIn,
     ReparentIn,
@@ -1632,6 +1634,96 @@ async def delete_trigger_endpoint(request: Request, name: str) -> dict:
     if not triggers_store.delete_trigger(name):
         raise HTTPException(status_code=404, detail="no trigger with that name")
     return {"deleted": name}
+
+
+# ---- automation import: pull clients' existing automations into Lightwork -----
+
+
+def _require_automation_import() -> None:
+    from maverick.automation_import import enabled
+    if not enabled():
+        raise HTTPException(
+            status_code=403,
+            detail=("automation import is off; enable [automation_import] in "
+                    "config.toml or set MAVERICK_AUTOMATION_IMPORT=1"),
+        )
+
+
+@router.get("/import/sources")
+async def import_sources_endpoint() -> dict:
+    """Automation platforms Lightwork can import from + each one's mode."""
+    from maverick.automation_import import available_sources, get_importer
+    sources = []
+    for s in available_sources():
+        imp = get_importer(s)
+        sources.append({
+            "source": s,
+            "mode": "definition-import" if imp.can_fetch_definitions else "connect-and-trigger",
+        })
+    return {"sources": sources}
+
+
+@router.post("/import/run", response_model=ImportRunOut)
+async def import_run_endpoint(request: Request, payload: ImportRunIn) -> ImportRunOut:
+    require_permission(request, "operate")
+    _require_automation_import()
+    from maverick.automation_import import ImporterError, get_importer, materialize, translate_all
+
+    try:  # validate the source name -> 400, not a scrubbed 500
+        get_importer(payload.source)
+    except ImporterError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Definitions from the request (offline/connect) or a live fetch (env creds).
+    if payload.definitions is not None:
+        raws = [d for d in payload.definitions if isinstance(d, dict)]
+    else:
+        try:
+            raws = await run_in_threadpool(get_importer(payload.source).fetch)
+        except ImporterError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    automations = translate_all(payload.source, raws)
+    if not automations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"no importable automations found from {payload.source!r}",
+        )
+
+    queue = None
+    if payload.activate_schedules and not payload.dry_run:
+        from maverick.job_queue import JobQueue
+        queue = JobQueue()
+
+    from maverick_dashboard import triggers_store
+    results: list[dict] = []
+    for a in automations:
+        res = materialize(a, save=not payload.dry_run, queue=queue)
+        webhook_trigger = None
+        # Wire the inbound webhook trigger when asked and the automation is
+        # webhook-triggered (the one step the CLI can't do: triggers_store is
+        # dashboard-side).
+        sug = res.suggested_trigger or {}
+        if (payload.create_webhook_triggers and not payload.dry_run
+                and res.created_template and sug.get("kind") == "webhook"):
+            try:
+                rec = triggers_store.set_trigger(res.template_name, res.template_name)
+                webhook_trigger = rec["name"]
+            except ValueError as e:
+                res.notes.append(f"could not create webhook trigger: {e}")
+        results.append({
+            "source": a.source, "name": a.name, "template": res.template_name,
+            "created": res.created_template, "trigger": a.trigger.kind,
+            "webhook_trigger": webhook_trigger, "schedule": res.schedule,
+            "tools": res.tool_hints, "notes": res.notes,
+        })
+
+    return ImportRunOut(
+        imported=results,
+        dry_run=payload.dry_run,
+        webhook_url=_WEBHOOK_RUN_PATH,
+        secret_configured=_inbound_secret_set(),
+    )
 
 
 # ---- automation run history (provenance): goals a schedule/trigger spawned ---

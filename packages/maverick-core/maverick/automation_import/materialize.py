@@ -74,13 +74,27 @@ def materialize(
     trig = automation.trigger
     if trig.kind == TRIGGER_SCHEDULE:
         if trig.cron and queue is not None:
+            from uuid import uuid4
+
             from ..scheduler import CronError, schedule_cron
+            # Match the dashboard /api/v1/schedules payload exactly: the worker's
+            # start_goal handler mints a fresh goal from "text" on every fire and
+            # requires it to be non-empty (a {"template": ...} payload would fail
+            # at run time). We snapshot the rendered brief as the goal text, like
+            # the dashboard does, and carry a schedule_id for run provenance.
+            schedule_id = uuid4().hex
+            payload = {
+                "text": body,
+                "title": title[:200],
+                "__cron__": trig.cron,
+                "schedule_id": schedule_id,
+            }
             try:
-                job_id, run_at = schedule_cron(
-                    queue, trig.cron, "start_goal",
-                    {"template": tname, "params": {}, "origin": f"import:{automation.source}"},
-                )
-                result.schedule = {"job_id": job_id, "run_at": run_at, "cron": trig.cron}
+                job_id, run_at = schedule_cron(queue, trig.cron, "start_goal", payload)
+                result.schedule = {
+                    "job_id": job_id, "run_at": run_at, "cron": trig.cron,
+                    "schedule_id": schedule_id,
+                }
             except CronError as e:
                 notes.append(f"could not create schedule from cron {trig.cron!r}: {e}")
         elif trig.cron:

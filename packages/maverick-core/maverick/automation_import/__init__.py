@@ -20,7 +20,15 @@ Gated by ``[automation_import] enable`` / ``MAVERICK_AUTOMATION_IMPORT``.
 from __future__ import annotations
 
 # Importers self-register on import. Keep this list as the platforms grow.
-from . import n8n  # noqa: E402,F401  -- registers "n8n"
+from . import (
+    make,  # noqa: E402,F401  -- registers "make"
+    n8n,  # noqa: E402,F401  -- registers "n8n"
+    notion,  # noqa: E402,F401  -- registers "notion" (connect-and-trigger)
+    power_automate,  # noqa: E402,F401  -- registers "power_automate"
+    uipath,  # noqa: E402,F401  -- registers "uipath"
+    workato,  # noqa: E402,F401  -- registers "workato"
+    zapier,  # noqa: E402,F401  -- registers "zapier" (connect-and-trigger)
+)
 from .base import (
     Importer,
     ImporterError,

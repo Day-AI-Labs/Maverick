@@ -198,7 +198,24 @@ class TestMaterialize:
         assert res.schedule is not None
         assert res.schedule["cron"] == "0 9 * * *"
         assert q.enqueued and q.enqueued[0][0] == "start_goal"
-        assert q.enqueued[0][1]["template"] == res.template_name
+        payload = q.enqueued[0][1]
+        # The worker's start_goal handler mints a goal from a non-empty "text";
+        # a {"template": ...} payload (no text) would fail at run time. The
+        # payload must match the dashboard /api/v1/schedules shape.
+        assert payload["text"] and "Send email" in payload["text"]
+        assert payload["title"]
+        assert payload["__cron__"] == "0 9 * * *"
+        assert payload["schedule_id"]
+        assert "template" not in payload  # snapshot the brief, not a template ref
+
+    def test_scheduled_payload_satisfies_worker_contract(self):
+        # Regression: feed the enqueued payload straight to the worker's
+        # start_goal validation so an empty-text payload can't slip back in.
+        a = n8n.translate(CRON_WORKFLOW)
+        q = _FakeQueue()
+        ai.materialize(a, queue=q)
+        payload = q.enqueued[0][1]
+        assert (payload.get("text") or "").strip(), "worker rejects empty text"
 
     def test_schedule_without_queue_suggests_it(self):
         a = n8n.translate(CRON_WORKFLOW)

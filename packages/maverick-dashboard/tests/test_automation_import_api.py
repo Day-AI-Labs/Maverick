@@ -1,0 +1,116 @@
+"""Dashboard endpoints for importing external automations into Lightwork.
+
+Hermetic like the other dashboard tests: HOME/MAVERICK_HOME isolated to tmp,
+USER_TEMPLATES (import-time bound) monkeypatched, the world DB under tmp. The
+import feature is gated, so the gate env is set on.
+"""
+from __future__ import annotations
+
+import pytest
+from starlette.testclient import TestClient
+
+
+def _client():
+    from maverick_dashboard.app import app
+    return TestClient(app, headers={"Origin": "http://testserver"})
+
+
+@pytest.fixture(autouse=True)
+def _isolate(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
+    monkeypatch.setenv("MAVERICK_AUTOMATION_IMPORT", "1")
+    from maverick import world_model
+    monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
+    import maverick.templates as tpl
+    monkeypatch.setattr(tpl, "USER_TEMPLATES", tmp_path / ".maverick" / "templates")
+
+
+N8N_WF = {
+    "id": "1", "name": "Lead to Slack", "active": True,
+    "nodes": [
+        {"name": "Hook", "type": "n8n-nodes-base.webhook", "parameters": {}},
+        {"name": "Notify", "type": "n8n-nodes-base.slack", "parameters": {"operation": "post"}},
+    ],
+    "connections": {"Hook": {"main": [[{"node": "Notify"}]]}},
+}
+
+
+def test_sources_lists_modes():
+    r = _client().get("/api/v1/import/sources")
+    assert r.status_code == 200
+    sources = {s["source"]: s["mode"] for s in r.json()["sources"]}
+    assert sources["n8n"] == "definition-import"
+    assert sources["zapier"] == "connect-and-trigger"
+
+
+def test_run_creates_template_from_definitions():
+    r = _client().post("/api/v1/import/run", json={
+        "source": "n8n", "definitions": [N8N_WF],
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["dry_run"] is False
+    assert len(body["imported"]) == 1
+    item = body["imported"][0]
+    assert item["template"] == "n8n-lead-to-slack"
+    assert item["created"] is True
+    assert item["trigger"] == "webhook"
+    # The template now exists.
+    from maverick.templates import load_template
+    assert load_template("n8n-lead-to-slack") is not None
+
+
+def test_dry_run_writes_nothing():
+    r = _client().post("/api/v1/import/run", json={
+        "source": "n8n", "definitions": [N8N_WF], "dry_run": True,
+    })
+    assert r.status_code == 200
+    assert r.json()["imported"][0]["created"] is False
+    from maverick.templates import load_template
+    with pytest.raises(FileNotFoundError):
+        load_template("n8n-lead-to-slack")
+
+
+def test_create_webhook_trigger_wires_it():
+    r = _client().post("/api/v1/import/run", json={
+        "source": "n8n", "definitions": [N8N_WF], "create_webhook_triggers": True,
+    })
+    assert r.status_code == 200
+    item = r.json()["imported"][0]
+    assert item["webhook_trigger"] == "n8n-lead-to-slack"
+    from maverick_dashboard import triggers_store
+    assert triggers_store.get_trigger("n8n-lead-to-slack") is not None
+
+
+def test_gate_blocks_when_disabled(monkeypatch):
+    monkeypatch.setenv("MAVERICK_AUTOMATION_IMPORT", "0")
+    r = _client().post("/api/v1/import/run", json={"source": "n8n", "definitions": [N8N_WF]})
+    assert r.status_code == 403
+
+
+def test_unknown_source_400():
+    r = _client().post("/api/v1/import/run", json={"source": "nope", "definitions": [{}]})
+    assert r.status_code == 400
+
+
+def test_connect_source_live_fetch_400():
+    # zapier has no definitions to fetch; omitting definitions -> fetch() raises 400.
+    r = _client().post("/api/v1/import/run", json={"source": "zapier"})
+    assert r.status_code == 400
+    assert "webhook" in r.json()["detail"].lower()
+
+
+def test_automations_page_shows_import_section_when_enabled():
+    r = _client().get("/automations")
+    assert r.status_code == 200
+    assert "Import from another platform" in r.text
+    assert 'id="auto-import-form"' in r.text
+
+
+def test_automations_page_hides_import_when_disabled(monkeypatch):
+    monkeypatch.setenv("MAVERICK_AUTOMATION_IMPORT", "0")
+    r = _client().get("/automations")
+    assert r.status_code == 200
+    assert "Import from another platform" not in r.text
