@@ -49,6 +49,13 @@ spec:
               value: "1"
             {{- end }}
             {{- end }}
+            {{- if .Values.enterprise.profile }}
+            # Named deployment posture. "enterprise" turns the data-boundary on by
+            # default (egress lock + fail-closed consent + capabilities); requires a
+            # self-hosted/allow-listed LLM provider. "standard" leaves it off.
+            - name: MAVERICK_PROFILE
+              value: {{ .Values.enterprise.profile | quote }}
+            {{- end }}
             {{- if .Values.enterprise.required }}
             # Hard preflight gate: dashboard startup aborts unless the enterprise
             # data-boundary guarantees hold (see values.yaml: enterprise.required).

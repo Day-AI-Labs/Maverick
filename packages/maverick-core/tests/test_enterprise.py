@@ -16,6 +16,7 @@ from maverick.safety import consent
 def _clean_env(monkeypatch):
     """Start each test from a known-off state with an empty config."""
     monkeypatch.delenv("MAVERICK_ENTERPRISE", raising=False)
+    monkeypatch.delenv("MAVERICK_PROFILE", raising=False)
     monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
     monkeypatch.delenv("MAVERICK_ENFORCE_CAPABILITIES", raising=False)
     monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: {})

@@ -64,6 +64,15 @@ env: {}
 # preflight without enabling the boundary is exactly the misconfiguration this
 # gate is meant to catch.
 enterprise:
+  # Deployment posture (MAVERICK_PROFILE). "enterprise" (the default for this
+  # chart — a server deployment is the regulated path) turns the data boundary ON
+  # by default: the egress lock pins every LLM call to a self-hosted/allow-listed
+  # provider, consent fails closed, and capabilities are enforced. This means you
+  # MUST configure a local/self-hosted provider (ollama / vllm / tgi) or an
+  # allow-listed endpoint, otherwise cloud LLM calls are refused by design. Set to
+  # "standard" to run fail-open and cloud-capable (e.g. a quick non-regulated pilot
+  # with a hosted Anthropic key). Any explicit [enterprise] knob still wins.
+  profile: enterprise
   required: false
 
 # Pod/container security. Matches the image: unprivileged uid/gid 1000.
