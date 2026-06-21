@@ -1030,3 +1030,31 @@ def test_erase_conversations_cannot_cross_tenant(world, monkeypatch):
 
     monkeypatch.setattr(pg, "_active_tenant", lambda: "erA")
     assert any(c.id == conv_a for c in world.list_conversations())  # survived
+
+
+def test_fk_readers_are_tenant_scoped(world, monkeypatch):
+    # Defense-in-depth: artifact/share-link/signoff/origin readers must not
+    # return another tenant's rows even if handed a foreign goal_id directly.
+    from maverick.world_model_backends import postgres as pg
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "fkA")
+    ga = world.create_goal("a")
+    world.add_artifact(ga, "text", "rep", "secretA")
+    world.create_share_link(ga, created_by="a")
+    world.record_signoff(ga, "approved", decided_by="a")
+    world.record_goal_origin(ga, "schedule", "shared-ref")
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "fkB")
+    # Tenant B hands tenant A's goal id to each reader -> empty.
+    assert world.artifacts_for_goal(ga) == []
+    assert world.share_links_for_goal(ga) == []
+    assert world.signoffs_for_goals([ga]) == {}
+    # origin_status_counts for the colliding ref must not see A's goals.
+    assert world.origin_status_counts("schedule", "shared-ref") == {}
+
+    # Tenant A still sees its own.
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "fkA")
+    assert len(world.artifacts_for_goal(ga)) == 1
+    assert len(world.share_links_for_goal(ga)) == 1
+    assert world.signoffs_for_goals([ga]) == {ga: "approved"}
+    assert world.origin_status_counts("schedule", "shared-ref")  # non-empty
