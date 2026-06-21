@@ -303,3 +303,18 @@ def test_peer_allowlist_parses_tables_and_strings():
 def test_module_states_ratings_do_not_federate():
     import maverick.marketplace.federation as mod
     assert "Ratings do NOT federate" in (mod.__doc__ or "")
+
+
+def test_listing_name_charset_is_validated():
+    # A peer controls `name`; on import it becomes the f"{origin}/{name}" key.
+    # _listing_for_export (the export AND import normalizer) must drop names with
+    # a `/` (key injection), a leading `..`/`.` (traversal/hidden), or whitespace/
+    # control chars, while keeping ordinary kebab/identifier/dotted/scoped names.
+    from maverick.marketplace.federation import _listing_for_export
+
+    base = {"kind": "skills", "summary": "s",
+            "source": "gh:a:b", "sha256": "ab" * 32}
+    for ok in ("summarize-url", "my_plugin", "tool.v2", "Weather3", "scope@pkg"):
+        assert _listing_for_export({**base, "name": ok}) is not None, ok
+    for bad in ("../etc", "other-origin/foo", "a/b", "a b", ".hidden", "x\ny", "/abs"):
+        assert _listing_for_export({**base, "name": bad}) is None, bad
