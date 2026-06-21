@@ -102,3 +102,31 @@ def test_guard_escape_hatch_disables_decode(monkeypatch):
     enc = base64.b64encode(b"rm -rf /").decode()
     # With the pre-pass off, the encoded payload is not decoded -> allowed.
     assert sh.scan_input(f"run: {enc}").allowed
+
+
+def test_tool_call_blocks_base64_encoded_arg():
+    # An encoded payload smuggled through a tool-call ARGUMENT must be caught.
+    sh = _builtin_shield()
+    enc = base64.b64encode(b"rm -rf /").decode()
+    verdict = sh.scan_tool_call("shell", {"cmd": f"echo {enc} | base64 -d"})
+    assert not verdict.allowed
+    assert any("decoded-layer" in r for r in verdict.reasons)
+
+
+def test_tool_call_allows_clean_args():
+    sh = _builtin_shield()
+    assert sh.scan_tool_call("search", {"query": "weather in Paris"}).allowed
+
+
+def test_output_blocks_base64_encoded_payload():
+    # An encoded payload in tool OUTPUT must be caught.
+    sh = _builtin_shield()
+    enc = base64.b64encode(b"rm -rf /").decode()
+    verdict = sh.scan_output(f"the tool returned: {enc}")
+    assert not verdict.allowed
+    assert any("decoded-layer" in r for r in verdict.reasons)
+
+
+def test_output_allows_clean_text():
+    sh = _builtin_shield()
+    assert sh.scan_output("the weather in Paris is sunny today").allowed

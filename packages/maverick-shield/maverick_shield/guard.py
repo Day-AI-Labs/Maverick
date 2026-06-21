@@ -317,7 +317,15 @@ class Shield:
         # surface too -- the most dangerous sink. scan_input/scan_output do
         # this; omitting it here left the constitution unenforced exactly where
         # it matters most. Fail-open semantics preserved by _apply_constitution.
-        return self._apply_constitution(payload, verdict)
+        verdict = self._apply_constitution(payload, verdict)
+        # Decode pre-pass on the tool-call surface (C6): an encoded payload in a
+        # tool ARGUMENT must not bypass the builtin detectors either. Same
+        # monotonic, builtin-scoped, fail-open mechanism as scan_input.
+        if verdict.allowed and self.backend == self.BACKEND_BUILTIN:
+            decoded = self._scan_decoded_variants(payload)
+            if decoded is not None:
+                return decoded
+        return verdict
 
     def scan_output(self, text: str, known_prompt: str | None = None) -> ShieldVerdict:
         if not self._scan_output_enabled:
@@ -368,13 +376,22 @@ class Shield:
                 extra_reasons += [f"constitution: {n}" for n in c_names]
 
         if not extra_reasons:
-            return verdict
-        if not verdict.allowed:
-            return ShieldVerdict.block(
+            final = verdict
+        elif not verdict.allowed:
+            final = ShieldVerdict.block(
                 severity=_max_severity(verdict.severity, extra_sev),
                 reason="; ".join(verdict.reasons + extra_reasons),
             )
-        return ShieldVerdict.block(severity=extra_sev, reason="; ".join(extra_reasons))
+        else:
+            final = ShieldVerdict.block(severity=extra_sev, reason="; ".join(extra_reasons))
+        # Decode pre-pass on the output surface too (C6): an encoded payload in
+        # tool OUTPUT must not bypass the builtin detectors. Same monotonic,
+        # builtin-scoped, fail-open mechanism as scan_input.
+        if final.allowed and self.backend == self.BACKEND_BUILTIN:
+            decoded = self._scan_decoded_variants(text)
+            if decoded is not None:
+                return decoded
+        return final
 
 
 def _max_severity(a: str, b: str) -> str:
