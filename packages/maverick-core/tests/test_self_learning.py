@@ -233,6 +233,29 @@ class TestAddMcpServer:
         assert 'command = "node"' in text
         assert 'args = ["server.js"]' in text
 
+    def test_atomic_write_preserves_existing_and_leaves_no_temp(self, monkeypatch, tmp_path):
+        # The block is written via temp + os.replace, not appended to the live
+        # file: pre-existing config survives, the result is always valid TOML
+        # (a truncated append would corrupt the whole file), and no .tmp leaks.
+        try:
+            import tomllib
+        except ModuleNotFoundError:  # Python 3.10
+            import tomli as tomllib
+
+        cfg = tmp_path / "config.toml"
+        cfg.write_text("[self_learning]\nenable = true\n", encoding="utf-8")
+        monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
+
+        self_learning.add_mcp_server("first", "node")
+        self_learning.add_mcp_server("second", "node")
+
+        text = cfg.read_text()
+        assert not cfg.with_name(cfg.name + ".tmp").exists()  # no temp leak
+        parsed = tomllib.loads(text)  # valid TOML, not a truncated append
+        assert parsed["self_learning"]["enable"] is True       # prior content kept
+        assert "first" in parsed["mcp_servers"]
+        assert "second" in parsed["mcp_servers"]
+
     def test_rejects_duplicate(self, monkeypatch, tmp_path):
         cfg = tmp_path / "config.toml"
         monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
