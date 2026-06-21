@@ -16,10 +16,13 @@ Threading: prompts serialize through a lock so two parallel agents
 don't both pop a prompt simultaneously on the same TTY.
 
 Note: this is the *primitive*. Tools wire it in themselves (the ``shell``
-tool does). The default mode is ``auto-approve`` so gating is strictly
-opt-in -- an operator turns it on via ``MAVERICK_CONSENT_MODE`` -- which
-keeps the out-of-the-box behavior unchanged while making the approvals
-queue / dashboard actually reachable.
+tool does). The base mode is ``auto-approve``, but under **secure-by-default**
+**high-** and **critical-risk** actions fail closed to ``ask`` (routing to the
+approvals queue / dashboard) instead of auto-approving; low/medium stay
+non-interactive out of the box. An operator can widen or narrow this via
+``MAVERICK_CONSENT_MODE`` (or per-action config), and ``[security]
+secure_defaults = false`` / ``MAVERICK_SECURE_DEFAULT=0`` restores the old
+fully-opt-in behavior.
 """
 from __future__ import annotations
 
