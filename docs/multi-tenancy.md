@@ -121,3 +121,30 @@ SQLite is single-writer (one replica per state volume). To run multiple
 replicas, move the world model to Postgres — see
 [`deploy/postgres/README.md`](../deploy/postgres/README.md). Row-level security
 (`MAVERICK_PG_RLS=1`) enforces the tenant boundary in the database itself.
+
+### Enabling RLS safely (guided opt-in)
+
+RLS is **opt-in**, not on by default, because its policy is strict, fail-closed
+equality: a row is visible/writable only when its `tenant_id` equals the active
+tenant. That has two sharp edges you must clear *before* turning it on, or you
+will break a running install:
+
+- **Pre-tenancy rows have `tenant_id IS NULL`** and would become invisible *and*
+  frozen the moment RLS is forced (`NULL = <tenant>` is never true).
+- **Only the table owner** may install the policy; a non-owner app role fails at
+  startup instead.
+
+So enabling RLS is a sequenced migration, not a config flip:
+
+```
+maverick tenant rls-preflight              # per-table: does this role own it?
+                                           # how many legacy NULL-tenant rows?
+maverick tenant backfill --tenant <id>     # assign those NULL rows to a tenant
+maverick tenant backfill --tenant <id> --dry-run   # preview first
+```
+
+Once `rls-preflight` reports **READY** (every table owned by the app role, no
+NULL-tenant rows left), set `[world_model] rls = true` (or `MAVERICK_PG_RLS=1`).
+The installer's advanced step writes this with the same reminder. RLS is
+defense-in-depth: the app-layer `_tenant_scope` predicate already isolates
+tenants NULL-tolerantly, so single-tenant and SQLite installs need none of this.

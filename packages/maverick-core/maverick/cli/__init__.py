@@ -2224,6 +2224,97 @@ def tenant_delete(tenant_id: str, purge: bool, yes: bool) -> None:
         sys.exit(2)
 
 
+@tenant.command("rls-preflight")
+@click.option("--dsn", default=None,
+              help="Postgres DSN (else MAVERICK_PG_DSN / [world_model] dsn).")
+def tenant_rls_preflight(dsn: str | None) -> None:
+    """Check readiness to enable Postgres Row-Level Security.
+
+    Reports, per tenant-scoped table, whether this DB role owns it (only the
+    owner can install the RLS policy) and how many legacy NULL-tenant rows remain
+    (which RLS would hide). Assign those rows with `maverick tenant backfill`,
+    then set [world_model] rls = true.
+    """
+    from ..world_model_backends import pg_rls
+    resolved = pg_rls.resolve_dsn(dsn)
+    if not resolved:
+        click.echo("ERROR: no Postgres DSN (set MAVERICK_PG_DSN or "
+                   "[world_model] dsn).", err=True)
+        sys.exit(2)
+    try:
+        conn = pg_rls.connect(resolved, autocommit=True)
+    except ImportError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    try:
+        rep = pg_rls.preflight(conn)
+    finally:
+        conn.close()
+    click.echo(f"role: {rep['role']}")
+    for t, info in rep["tables"].items():
+        if info.get("missing"):
+            click.echo(f"  {t}: MISSING (run the app once to migrate the schema)")
+            continue
+        own = ("owned" if info["owned_by_current_role"]
+               else f"NOT owned (owner={info['owner']})")
+        click.echo(f"  {t}: {own}, {info['null_tenant_rows']} legacy "
+                   f"NULL-tenant row(s)")
+    if rep["ready"]:
+        click.echo("READY: set [world_model] rls = true (or MAVERICK_PG_RLS=1) "
+                   "to enforce database tenant isolation.")
+    else:
+        click.echo("NOT READY: assign NULL rows with `maverick tenant backfill "
+                   "--tenant <id>` and ensure this role owns every table above.")
+
+
+@tenant.command("backfill")
+@click.option("--tenant", "tenant_id", required=True,
+              help="Tenant id to assign legacy NULL-tenant rows to.")
+@click.option("--dsn", default=None,
+              help="Postgres DSN (else MAVERICK_PG_DSN / [world_model] dsn).")
+@click.option("--dry-run", is_flag=True,
+              help="Report how many rows would be assigned without writing.")
+def tenant_backfill(tenant_id: str, dsn: str | None, dry_run: bool) -> None:
+    """Assign legacy NULL-tenant rows to a tenant before enabling RLS.
+
+    Pre-tenancy rows have a NULL tenant_id and RLS (strict equality) would hide
+    them. This assigns them to --tenant so they stay visible under that tenant.
+    Idempotent and safe to re-run. Run `maverick tenant rls-preflight` first.
+    """
+    from ..world_model_backends import pg_rls
+    resolved = pg_rls.resolve_dsn(dsn)
+    if not resolved:
+        click.echo("ERROR: no Postgres DSN (set MAVERICK_PG_DSN or "
+                   "[world_model] dsn).", err=True)
+        sys.exit(2)
+    # Warn (don't block) if the target tenant isn't in the registry: a typo would
+    # otherwise silently assign every legacy row to a non-existent tenant.
+    try:
+        from ..tenant.registry import get_tenant
+        if get_tenant(tenant_id) is None:
+            click.echo(f"WARNING: tenant {tenant_id!r} is not in the registry; "
+                       "continuing (use `maverick tenant create` if this is a typo).")
+    except Exception:
+        pass
+    try:
+        conn = pg_rls.connect(resolved, autocommit=False)
+    except ImportError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    try:
+        report = pg_rls.backfill(conn, tenant_id, dry_run=dry_run)
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    finally:
+        conn.close()
+    verb = "would assign" if dry_run else "assigned"
+    for t in sorted(report):
+        click.echo(f"  {t}: {verb} {report[t]}")
+    click.echo(f"{verb} {sum(report.values())} row(s) to tenant {tenant_id!r}"
+               + (" (dry run)" if dry_run else ""))
+
+
 @main.group()
 def billing() -> None:
     """Rate metered usage into invoices and inspect plan entitlements."""

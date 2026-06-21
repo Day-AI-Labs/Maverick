@@ -43,10 +43,21 @@ def test_advanced_all_on_writes_kernel_sections(tmp_path, monkeypatch):
 def test_advanced_all_off_writes_no_sections(tmp_path, monkeypatch):
     cfg = _write(tmp_path, monkeypatch, dict.fromkeys(
         ["cost_aware", "verify_ensemble", "tree_of_thought",
-         "compact_history", "reflexion", "enforce_quotas"], False,
+         "compact_history", "reflexion", "enforce_quotas", "pg_rls"], False,
     ))
-    for section in ("[routing]", "[planning]", "[context]", "[reflexion]", "[quotas]"):
+    for section in ("[routing]", "[planning]", "[context]", "[reflexion]",
+                    "[quotas]", "[world_model]"):
         assert section not in cfg
+
+
+def test_pg_rls_writes_world_model_section_with_prep_reminder(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"pg_rls": True})
+    assert "[world_model]" in cfg
+    assert "rls = true" in cfg
+    # The guided opt-in must point at the prep commands, or NULL-tenant rows vanish.
+    assert "rls-preflight" in cfg and "backfill" in cfg
+    parsed = tomllib.loads(cfg)
+    assert parsed["world_model"]["rls"] is True
 
 
 def test_kernel_modules_read_what_the_wizard_writes(tmp_path, monkeypatch):
