@@ -87,14 +87,23 @@ class TelegramChannel(Channel):
                         getattr(update.effective_user, "id", None),
                         getattr(update.effective_chat, "id", None))
             return
+        # Per the IncomingMessage contract, user_id is the REPLY/SEND TARGET and
+        # sender_id is the human identity. For a room-based adapter that means
+        # the CHAT id is the target (so a proactive channel.send(msg.user_id, ...)
+        # reaches the group, not the sender's private chat -- which the bot often
+        # can't even open), and the user id is the sender. Matches the Slack
+        # adapter. In a 1:1 chat the two ids coincide, so phone-companion mode is
+        # unchanged, and principal_id (sender_id or user_id) stays the human in
+        # both cases -- so auth/history/tenant keying is identical to before.
         # effective_user is None for channel posts / anonymous admins;
-        # _is_authorized denies those (they can't be attributed to an
-        # allowlisted sender), but guard here too rather than AttributeError.
+        # _is_authorized denies those, but guard here too rather than
+        # AttributeError.
         msg = IncomingMessage(
-            user_id=str(update.effective_user.id) if update.effective_user else "",
+            user_id=str(update.effective_chat.id) if update.effective_chat else "",
             text=update.message.text,
             channel="telegram",
             raw=update,
+            sender_id=str(update.effective_user.id) if update.effective_user else None,
             message_id=str(update.message.message_id),
         )
         try:
