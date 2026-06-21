@@ -16,15 +16,21 @@ unprovisioned deployments are unchanged.
 from __future__ import annotations
 
 import json
-import os
+import threading
 import time
 from dataclasses import dataclass, replace
 
+from ..file_lock import atomic_write_text, cross_process_lock
 from ..paths import _tenant_segment, maverick_home
 
 ACTIVE = "active"
 SUSPENDED = "suspended"
 _STATUSES = frozenset({ACTIVE, SUSPENDED})
+
+# Serializes the roster load-modify-save across threads in this process; the
+# cross_process_lock below extends that across processes (the registry is edited
+# from both the CLI and the dashboard, which are separate processes).
+_REGISTRY_LOCK = threading.Lock()
 
 
 class TenantSuspended(PermissionError):
@@ -110,13 +116,26 @@ def _load() -> dict[str, TenantRecord]:
 
 
 def _save(records: dict[str, TenantRecord]) -> None:
-    path = _registry_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"tenants": [records[k].to_dict() for k in sorted(records)]}
-    # 0600: the roster is operator control-plane metadata.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, sort_keys=True)
+    # Atomic temp+replace (0600): a bare O_TRUNC write truncates in place, so a
+    # concurrent _load()/is_active() reader sees a half-written file -> its
+    # JSONDecodeError is swallowed as an EMPTY roster, which spuriously refuses a
+    # legitimately-active tenant. Each mutator also holds _REGISTRY_LOCK +
+    # cross_process_lock across the whole load-modify-save so two edits (e.g. a
+    # suspend racing a set_quota) can't have the second save clobber the first.
+    atomic_write_text(
+        _registry_path(),
+        json.dumps(payload, indent=2, sort_keys=True),
+    )
+
+
+def _locked():
+    """Serialize a roster load-modify-save in-process AND cross-process."""
+    from contextlib import ExitStack
+    stack = ExitStack()
+    stack.enter_context(_REGISTRY_LOCK)
+    stack.enter_context(cross_process_lock(_registry_path()))
+    return stack
 
 
 def list_tenants() -> list[TenantRecord]:
@@ -134,17 +153,18 @@ def create_tenant(
 ) -> TenantRecord:
     """Provision a tenant + its workspace dir. Raises ValueError if it exists."""
     tid = _validate_id(tenant_id)
-    records = _load()
-    if tid in records:
-        raise ValueError(f"tenant already exists: {tid!r}")
-    now = time.time()
-    rec = TenantRecord(
-        id=tid, status=ACTIVE, plan=plan, display_name=display_name,
-        max_daily_dollars=max(0.0, float(max_daily_dollars or 0.0)),
-        created_at=now, updated_at=now,
-    )
-    records[tid] = rec
-    _save(records)
+    with _locked():
+        records = _load()
+        if tid in records:
+            raise ValueError(f"tenant already exists: {tid!r}")
+        now = time.time()
+        rec = TenantRecord(
+            id=tid, status=ACTIVE, plan=plan, display_name=display_name,
+            max_daily_dollars=max(0.0, float(max_daily_dollars or 0.0)),
+            created_at=now, updated_at=now,
+        )
+        records[tid] = rec
+        _save(records)
     # Materialize the workspace home so the tenant's data dir exists.
     from ..workspace import Workspace
     Workspace(tid).root.mkdir(parents=True, exist_ok=True)
@@ -153,13 +173,14 @@ def create_tenant(
 
 def _mutate(tenant_id: str, **changes) -> TenantRecord:
     tid = (tenant_id or "").strip()
-    records = _load()
-    rec = records.get(tid)
-    if rec is None:
-        raise UnknownTenant(tid)
-    rec = replace(rec, updated_at=time.time(), **changes)
-    records[tid] = rec
-    _save(records)
+    with _locked():
+        records = _load()
+        rec = records.get(tid)
+        if rec is None:
+            raise UnknownTenant(tid)
+        rec = replace(rec, updated_at=time.time(), **changes)
+        records[tid] = rec
+        _save(records)
     return rec
 
 
@@ -183,11 +204,12 @@ def delete_tenant(tenant_id: str, *, purge: bool = False) -> bool:
     """Remove a tenant from the registry. With ``purge=True`` also delete its
     data directory (irreversible). Returns False if the tenant was unknown."""
     tid = (tenant_id or "").strip()
-    records = _load()
-    if tid not in records:
-        return False
-    del records[tid]
-    _save(records)
+    with _locked():
+        records = _load()
+        if tid not in records:
+            return False
+        del records[tid]
+        _save(records)
     if purge:
         import shutil
 
