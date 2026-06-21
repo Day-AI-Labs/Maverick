@@ -5512,9 +5512,11 @@ def _soc2_posture_ready(evidence) -> bool:
 # run (@main.group/@main.command register onto `main` on import).
 from . import (  # noqa: E402,F401
     _compliance_groups,
+    _connector_groups,
     _finance_groups,
     _import_groups,
     _ops_groups,
+    _training_groups,
 )
 
 if __name__ == "__main__":

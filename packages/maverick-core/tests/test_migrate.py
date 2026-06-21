@@ -22,6 +22,26 @@ def test_apply_with_no_rewrites_reads_differently_from_dry_run(tmp_path):
     assert "--apply" in applied
 
 
+def test_apply_rewrites_renames_key(monkeypatch):
+    # The rewrite machinery ships with REWRITES empty (no key renamed yet), so
+    # its apply path was untested. Exercise it directly with a temporary rename
+    # so a future 2.0 rename lands on validated code, not shipped-blind.
+    import maverick.migrate as m
+    monkeypatch.setattr(m, "REWRITES", [("old_section.key", "new_section.key")])
+    cfg = {"old_section": {"key": "v", "other": 1}}
+    findings = m._apply_rewrites(cfg)
+    assert cfg == {"old_section": {"other": 1}, "new_section": {"key": "v"}}
+    assert findings and findings[0].kind == "rewrite" and findings[0].applied
+
+
+def test_apply_rewrites_noop_when_key_absent(monkeypatch):
+    import maverick.migrate as m
+    monkeypatch.setattr(m, "REWRITES", [("a.b", "c.d")])
+    cfg = {"unrelated": {"x": 1}}
+    assert m._apply_rewrites(cfg) == []
+    assert cfg == {"unrelated": {"x": 1}}
+
+
 def test_clean_config(tmp_path):
     p = _cfg(tmp_path, "[budget]\nmax_dollars = 5.0\n")
     report = migrate(p)

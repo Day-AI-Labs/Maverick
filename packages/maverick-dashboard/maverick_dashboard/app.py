@@ -257,6 +257,13 @@ app.include_router(api_router)
 # flow isn't fully configured, so including the router unconditionally is inert
 # off by default. See maverick_dashboard.oidc_login.
 app.include_router(oidc_login_router)
+# SCIM 2.0 user provisioning (/scim/v2). Self-gates on MAVERICK_SCIM_TOKEN and
+# 404s when unset, so including it is inert off by default. It carries its own
+# static IdP bearer, so the /scim/ prefix is exempted from the dashboard-token
+# middleware and the OIDC gate below.
+from .scim import router as scim_router  # noqa: E402
+
+app.include_router(scim_router)
 a2a.mount(app)
 
 _DOCS_CSP = (
@@ -568,7 +575,8 @@ def _is_proxied(request: Request) -> bool:
 @app.middleware("http")
 async def bearer_auth(request: Request, call_next):
     expected = os.environ.get("MAVERICK_DASHBOARD_TOKEN")
-    if request.url.path in _AUTH_EXEMPT or request.url.path.startswith("/share/"):
+    if (request.url.path in _AUTH_EXEMPT or request.url.path.startswith("/share/")
+            or request.url.path.startswith("/scim/")):
         # /share/<token> self-authenticates with its signed, revocable token
         # (verified in the route, which 404s an invalid/expired/revoked one) --
         # an external recipient has no dashboard bearer, like the webhook paths.
