@@ -947,10 +947,21 @@ def check_goal_rate_limit(
                 headers={"Retry-After": str(max(1, retry))},
             )
 
-        # Opportunistically drop empty per-client windows so a flood of
-        # distinct IPs can't grow the dict without bound.
-        for stale_key in [k for k, w in _goal_times.items() if not w and k != key]:
-            del _goal_times[stale_key]
+        # Sweep EVERY other key's window of expired entries, then drop the ones
+        # that became empty. The old check only collected ALREADY-empty deques,
+        # but a key whose lone entry expired and whose IP/principal never recurs
+        # was never pruned (its deque kept len 1, so `not w` stayed False) -- so
+        # a stream of distinct one-shot keys (many principals / direct client
+        # IPs) grew the dict without bound. Bounded by the number of keys active
+        # within the window now.
+        for stale_key in list(_goal_times):
+            if stale_key == key:
+                continue
+            w = _goal_times[stale_key]
+            while w and w[0] < cutoff:
+                w.popleft()
+            if not w:
+                del _goal_times[stale_key]
 
         window.append(now)
         _goal_times_global.append(now)
