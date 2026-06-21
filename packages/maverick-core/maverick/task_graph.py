@@ -19,6 +19,12 @@ from .paths import data_dir
 
 _STATUSES = ("pending", "running", "done", "failed", "blocked")
 _STORE = data_dir("task_graphs")
+# Cap the node count of a single persisted graph. The graph is built by an
+# agent-callable tool and persisted, so without a bound an agent (steerable by
+# prompt-injection in tool output) could grow an arbitrarily large graph that
+# makes every later topo_order O(V^2) and bloats the on-disk file. Generous --
+# real decompositions are dozens of tasks.
+_MAX_TASKS = 10_000
 
 
 class TaskGraph:
@@ -33,6 +39,8 @@ class TaskGraph:
         deps = [str(d).strip() for d in deps if str(d).strip()]
         if task_id in deps:
             raise ValueError(f"task {task_id!r} cannot depend on itself")
+        if task_id not in self.tasks and len(self.tasks) >= _MAX_TASKS:
+            raise ValueError(f"task graph is full (max {_MAX_TASKS} tasks)")
         existing = self.tasks.get(task_id, {})
         self.tasks[task_id] = {
             "title": title or existing.get("title", ""),
@@ -108,22 +116,37 @@ class TaskGraph:
         return sorted(frontier, key=lambda tid: (-tail.get(tid, 0.0), tid))
 
     def has_cycle(self) -> bool:
+        # Iterative 3-colour DFS (explicit stack, NOT recursion): a deep linear
+        # chain -- which an agent can build via repeated `add` ops on this
+        # persisted, tool-callable graph -- would overflow the Python stack with
+        # a recursive visit (RecursionError ~1000 deep), and _run does not catch
+        # it, so the tool call tears down and every later op on the persisted
+        # graph re-crashes. The explicit stack has no such depth limit.
         WHITE, GRAY, BLACK = 0, 1, 2
         color = dict.fromkeys(self.tasks, WHITE)
-
-        def visit(node: str) -> bool:
-            color[node] = GRAY
-            for dep in self.tasks.get(node, {}).get("deps", []):
-                if dep not in color:
-                    continue  # unknown dep can't form a cycle within the graph
-                if color[dep] == GRAY:
-                    return True
-                if color[dep] == WHITE and visit(dep):
-                    return True
-            color[node] = BLACK
-            return False
-
-        return any(color[tid] == WHITE and visit(tid) for tid in self.tasks)
+        for root in self.tasks:
+            if color[root] != WHITE:
+                continue
+            color[root] = GRAY
+            stack = [(root, iter(self.tasks.get(root, {}).get("deps", [])))]
+            while stack:
+                _node, deps_it = stack[-1]
+                descended = False
+                for dep in deps_it:
+                    if dep not in color:
+                        continue  # unknown dep can't form a cycle within the graph
+                    if color[dep] == GRAY:
+                        return True  # back-edge to a node on the current path
+                    if color[dep] == WHITE:
+                        color[dep] = GRAY
+                        stack.append(
+                            (dep, iter(self.tasks.get(dep, {}).get("deps", []))))
+                        descended = True
+                        break  # resume deps_it later, where it left off
+                    # BLACK: fully explored already, no cycle through it
+                if not descended:
+                    color[stack.pop()[0]] = BLACK
+        return False
 
     def topo_order(self) -> list[str]:
         """A dependency-respecting order (deps before dependents).
