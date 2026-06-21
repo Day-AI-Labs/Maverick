@@ -43,6 +43,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,6 +74,11 @@ _WATERMARK_KEY = "__watermarks__"
 # aggregates (rating, ratings_count, verified, install_count) are intentionally
 # absent — see module docstring. donation_url is carried when the raw listing
 # declares one (CatalogEntry does not model it, so entry-built exports won't).
+# Conservative listing-name shape: starts alphanumeric, then alnum/._@- only
+# (no `/`, no whitespace/control, no leading dot). Covers kebab/identifier/
+# dotted/scoped catalog names while blocking key-injection and traversal shapes.
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
+
 _EXPORT_KEYS = ("name", "version", "kind", "summary", "source", "sha256",
                 "author", "spec", "donation_url")
 
@@ -105,6 +111,14 @@ def _listing_for_export(raw: object) -> dict | None:
     name = str(raw.get("name") or "").strip()
     kind = raw.get("kind")
     if not name or kind not in VALID_KINDS:
+        return None
+    # A peer controls `name`, and on import it becomes the dict key
+    # f"{origin}/{name}". Unlike `origin` (validated by _ORIGIN_RE), name was
+    # only stripped -- a `/` would inject extra path segments into the key and a
+    # leading `..`/control char yields confusing/unsafe display strings. Require
+    # a conservative identifier shape (no `/`, no leading dot, no whitespace/
+    # control); a hostile name is dropped as malformed.
+    if not _SAFE_NAME.match(name):
         return None
     out = {k: raw[k] for k in _EXPORT_KEYS if raw.get(k) not in (None, "", {}, [])}
     out["name"] = name
