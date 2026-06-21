@@ -116,17 +116,13 @@ def write_lock(path: Path | None = None) -> dict[str, str]:
     pins = _active_plugin_dists()
     hashes = {n: h for n in pins if (h := _dist_content_hash(n)) is not None}
     p = Path(path) if path else lock_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(
+    # Unique temp + os.replace (0600): a fixed ".tmp" collides if two CLI
+    # invocations regenerate the lockfile concurrently.
+    from .file_lock import atomic_write_text
+    atomic_write_text(p, json.dumps(
         {"generated_at": time.time(), "pins": pins, "hashes": hashes},
         indent=2, sort_keys=True,
-    ), encoding="utf-8")
-    os.replace(tmp, p)
-    try:
-        os.chmod(p, 0o600)
-    except OSError:
-        pass
+    ))
     return pins
 
 
