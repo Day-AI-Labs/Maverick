@@ -3186,9 +3186,13 @@ def write_config(
     lines += _cfg_table("personas", personas)
     lines += _cfg_table("a2a", a2a)
 
-    # Config has no secrets today but does carry provider names and
-    # runtime settings. chmod 600 so multi-user hosts don't
-    # leak it to other accounts.
+    # SECURITY: config.toml is NOT secret-free. Unlike API keys (which live in
+    # ~/.maverick/.env and are referenced via ${VAR}), the OIDC browser-login
+    # client_secret and session_secret (HMAC session-cookie signing key) are
+    # written here as literal values. The 0600 mode below is therefore load-
+    # bearing, not just tidiness -- never relax it, and treat this file as
+    # secret-bearing in backups/log redaction. chmod 600 so multi-user hosts
+    # don't leak it to other accounts.
     config_body = "\n".join(lines) + "\n"
     _backup(CONFIG_FILE)
     fd = os.open(
