@@ -1747,8 +1747,37 @@ class WorldModel:
         evolution. An unchanged value refreshes provenance without a new version.
         """
         now = time.time()
-        enc = _enc_field(value)
         with self._writing() as conn:
+            # Fleet memory coherence (opt-in): a write that conflicts with an
+            # existing belief is adjudicated (trust -> corroboration -> source
+            # reliability -> recency) instead of the base last-writer-wins. A
+            # rejected challenger leaves the current value untouched; an accepted
+            # one may carry a trust/provenance merge (a corroboration keeps the
+            # higher trust). Disengaged or any error -> skipped (legacy behavior).
+            try:
+                from . import memory_coherence as _mc
+                if _mc.enabled():
+                    prior = conn.execute(
+                        "SELECT value, trust_tier, source, updated_at FROM facts "
+                        "WHERE key = ? LIMIT 1", (key,)
+                    ).fetchone()
+                    if prior is not None:
+                        adj = _mc.resolve(
+                            key,
+                            _mc.Belief(value=_dec_field(prior[0]),
+                                       source=prior[2] or "",
+                                       trust=int(prior[1]),
+                                       updated_at=float(prior[3] or 0.0)),
+                            _mc.Belief(value=value, source=source,
+                                       trust=int(trust_tier), updated_at=now),
+                        )
+                        if not adj.accept:
+                            return  # incumbent held; current value untouched
+                        value, source = adj.final.value, adj.final.source
+                        trust_tier = int(adj.final.trust)
+            except Exception:  # pragma: no cover -- coherence never blocks a write
+                log.debug("memory_coherence hook failed; legacy write", exc_info=True)
+            enc = _enc_field(value)
             if self._temporal_memory:
                 prior = conn.execute(
                     "SELECT value, trust_tier FROM facts WHERE key = ? LIMIT 1",

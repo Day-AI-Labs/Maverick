@@ -112,6 +112,12 @@ class EventKind:
     # payload: action:str (write|write_blocked|recall_filter), plus key/source/
     # trust/sensitivity/reason/markers (writes) or kept/dropped/min_trust (recall).
     MEMORY_GUARD = "memory_guard"
+    # Fleet memory coherence: two sources asserted conflicting values for the same
+    # belief key and the coherence engine adjudicated a winner deterministically.
+    # payload: action:str (adjudicate), key:str, rule:str (the clause that
+    # decided), state:str (stable|contested|quarantined), winner/loser source +
+    # trust + value digest, changed:bool.
+    MEMORY_COHERENCE = "memory_coherence"
     # Tamper-evident before/after capture for a governed computer/browser action.
     # payload: action:str (e.g. "browser.click"), phase:str (before|after),
     # file:str (capture basename under data_dir("captures")), sha256:str (sealed

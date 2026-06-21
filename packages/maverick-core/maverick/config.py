@@ -705,6 +705,17 @@ def get_memory_guard() -> dict:
     }
 
 
+def get_memory_coherence() -> dict:
+    """Return the ``[memory_coherence]`` section (Fleet Memory Coherence Engine).
+    OFF by default. When on, a write that conflicts with an existing belief is
+    adjudicated deterministically (trust -> corroboration -> source reliability ->
+    recency) instead of the base last-writer-wins, so a fleet of agents converges
+    on one coherent, trust-weighted value per key. Also honored via
+    ``MAVERICK_MEMORY_COHERENCE=1``."""
+    cfg = load_config().get("memory_coherence", {})
+    return {"enable": bool(cfg.get("enable", False))}
+
+
 def get_domains() -> dict:
     """Return the ``[domains]`` section with defaults filled in.
 
