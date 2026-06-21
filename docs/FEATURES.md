@@ -1014,6 +1014,14 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 
 ## Safety & security
 
+- **Secure by default** (`security_defaults.py`, `MAVERICK_SECURE_DEFAULT` /
+  `[security] secure_defaults`) — the protective controls that don't break the
+  happy path ship **on**: at-rest encryption (auto-key), audit-log signing
+  (auto-key), fail-closed consent for high/critical-risk actions, and a `high`
+  tool-risk ceiling (CRITICAL needs an explicit raise). Precedence: compliance
+  floor > explicit arg > env > config > the secure-by-default switch; opt out per
+  control or flip the whole posture off. OIDC, the egress lock, and Postgres RLS
+  stay opt-in; the Shield stays fail-open. See `docs/security-hardening.md`.
 - **Shield** at 3 chokepoints (input / tool-call / output); built-in rule set
   fail-open if the SDK isn't installed.
 - **Floors** — secret detector, PII detector, jailbreak heuristics, unicode /

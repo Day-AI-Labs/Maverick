@@ -154,8 +154,10 @@ class AuditLog:
 
     Single writer instance per process. Thread-safe.
 
-    When signing is enabled (opt-in via ``sign=True`` /
-    ``MAVERICK_AUDIT_SIGN`` / ``[audit] sign``), each row is routed
+    When signing is enabled (**on by default** via secure-by-default; also
+    forced by ``sign=True`` / ``MAVERICK_AUDIT_SIGN`` / ``[audit] sign``, and
+    turned off by ``[audit] sign = false`` / ``MAVERICK_AUDIT_SIGN=0`` / the
+    ``secure_defaults`` master switch), each row is routed
     through :class:`maverick.audit.signing.AuditSigner`, adding an
     Ed25519 ``prev_hash``/``hash``/``sig`` chain so tampering is
     detectable by ``maverick audit verify``. For third-party

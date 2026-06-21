@@ -7,9 +7,14 @@ sensitive data: anyone who can read ``~/.maverick`` sees everything.
 
 This module provides authenticated at-rest encryption for bytes/text plus key
 management that reuses the local-keyfile pattern of the audit signer. It is
-**opt-in**: enable it with ``[encryption] at_rest = true`` /
-``MAVERICK_ENCRYPT_AT_REST=1``, and it is **implied by enterprise mode** (handling
-sensitive data -> seal it at rest). Off by default -> behaviour is unchanged.
+**on by default** (secure-by-default): new writes are sealed and the key
+auto-generates on first use. Disable it with ``[encryption] at_rest = false`` /
+``MAVERICK_ENCRYPT_AT_REST=0`` (or the whole posture via ``[security]
+secure_defaults = false`` / ``MAVERICK_SECURE_DEFAULT=0``); it is also **implied
+by enterprise mode** and **forced by a compliance floor** (e.g. HIPAA), which an
+opt-out cannot override. Existing installs are safe to leave on -- reads are
+plaintext-tolerant, so rows written before it was enabled are returned unchanged
+until rewritten (``maverick encryption migrate`` seals them eagerly).
 
 Key resolution (first match wins):
   1. ``MAVERICK_ENCRYPTION_KEY`` — a 32-byte key as hex or base64, so an operator
