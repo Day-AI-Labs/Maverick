@@ -1048,7 +1048,14 @@ def pick_governed_connectors() -> dict[str, Any]:
         return {"enable": False}
     selected = [c for c in choices
                 if _q_confirm(f"  Register {c} as a governed connector?", default=False)]
-    return {"enable": True, "connectors": selected}
+    # Standing approver of record: when these connectors are wrapped in the live
+    # tool path, a write is approval-gated against this identity (the agent can't
+    # self-approve). Blank = writes are previewed but refused until an operator
+    # commits them out of band.
+    approver = _q_text(
+        "  Approver of record for governed writes (blank = refuse agent writes "
+        "without out-of-band approval):", default="").strip()
+    return {"enable": True, "connectors": selected, "approver": approver}
 
 
 def pick_durable() -> dict[str, Any]:

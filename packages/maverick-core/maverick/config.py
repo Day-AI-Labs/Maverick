@@ -511,6 +511,9 @@ def get_governed_connectors() -> dict:
     return {
         "enable": bool(cfg.get("enable", False)),
         "connectors": names,
+        # Standing approver of record for governed connector writes in the live
+        # tool path (the agent can't self-approve). Env: MAVERICK_GOVERNED_APPROVER.
+        "approver": str(cfg.get("approver", "")).strip(),
     }
 
 
