@@ -202,9 +202,12 @@ class TaskGraph:
         return g
 
     def save(self, path: str | Path) -> None:
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        # Atomic temp+replace: a bare write_text truncates in place, so a
+        # concurrent reader's json.load would see a half-written file and the
+        # whole DAG would be lost. (Cross-process serialization of the
+        # load-modify-save is handled by the tool's _run via cross_process_lock.)
+        from .file_lock import atomic_write_text
+        atomic_write_text(path, json.dumps(self.to_dict(), indent=2))
 
     @classmethod
     def load(cls, path: str | Path) -> TaskGraph:
@@ -241,17 +244,24 @@ _SCHEMA = {
 def _run(args: dict) -> str:
     op = args.get("op")
     path = _graph_path(args.get("graph") or "default")
+    from .file_lock import cross_process_lock
     try:
+        # Mutating ops do a load-modify-save: hold a cross-process lock across
+        # the whole thing so two concurrent add/status ops (dashboard + serve +
+        # a swarm scheduler are separate processes) can't both load the same
+        # graph and have the second save clobber the first's status transition.
+        if op in ("add", "status"):
+            with cross_process_lock(path):
+                g = TaskGraph.load(path)
+                if op == "add":
+                    g.add_task(args.get("task") or "", args.get("title") or "",
+                               args.get("deps") or [])
+                    g.save(path)
+                    return f"added task {args.get('task')!r}"
+                g.set_status(args.get("task") or "", args.get("value") or "")
+                g.save(path)
+                return f"task {args.get('task')!r} -> {args.get('value')}"
         g = TaskGraph.load(path)
-        if op == "add":
-            g.add_task(args.get("task") or "", args.get("title") or "",
-                       args.get("deps") or [])
-            g.save(path)
-            return f"added task {args.get('task')!r}"
-        if op == "status":
-            g.set_status(args.get("task") or "", args.get("value") or "")
-            g.save(path)
-            return f"task {args.get('task')!r} -> {args.get('value')}"
         if op == "ready":
             r = g.ready()
             return "\n".join(r) if r else "(no ready tasks)"
