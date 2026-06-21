@@ -74,3 +74,28 @@ def test_at_rest_explicit_off_wins(secure, monkeypatch):
     monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "0")
     from maverick import crypto_at_rest as car
     assert car.at_rest_enabled() is False
+
+
+def test_consent_gates_high_and_critical_risk_by_default(secure, monkeypatch):
+    from maverick.safety import consent
+    monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+    assert consent._resolve_mode("high") == "ask"
+    assert consent._resolve_mode("critical") == "ask"
+    # Low/medium stay frictionless so normal goals are unaffected.
+    assert consent._resolve_mode("low") == "auto-approve"
+    assert consent._resolve_mode("medium") == "auto-approve"
+
+
+def test_consent_high_risk_denied_non_interactive(secure, monkeypatch):
+    monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+    from maverick.safety.consent import require_consent
+    # No operator present (non-tty) -> a critical action is fail-closed.
+    assert require_consent("wipe-prod", risk="critical", scope="db").granted is False
+    # ...but a low-risk action still proceeds.
+    assert require_consent("read-file", risk="low", scope="f").granted is True
+
+
+def test_consent_explicit_mode_opts_out(secure, monkeypatch):
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+    from maverick.safety import consent
+    assert consent._resolve_mode("critical") == "auto-approve"

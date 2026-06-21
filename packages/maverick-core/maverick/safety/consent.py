@@ -57,22 +57,30 @@ class ConsentDecision:
 _prompt_lock = threading.Lock()
 
 
-def _resolve_mode() -> str:
-    # Default 'auto-approve': gating is opt-in, so wiring require_consent into
-    # tools (e.g. shell) does not change out-of-the-box behavior. Operators
-    # set MAVERICK_CONSENT_MODE=ask/dashboard/auto-deny to actually gate.
+def _resolve_mode(risk: str | None = None) -> str:
+    # Explicit operator setting always wins (any risk level).
     env = os.environ.get("MAVERICK_CONSENT_MODE")
     if env:
         return env.strip().lower()
     # Enterprise mode flips the default to 'ask' so destructive actions are gated
-    # (and denied in non-interactive contexts) when handling sensitive data. An
-    # explicit MAVERICK_CONSENT_MODE above still wins.
+    # (and denied in non-interactive contexts) when handling sensitive data.
     try:
         from ..enterprise import enterprise_enabled
         if enterprise_enabled():
             return "ask"
     except Exception:
         pass
+    # Secure-by-default: gate HIGH/CRITICAL-risk actions (an autonomous run can't
+    # take a destructive action without an explicit decision -> 'ask', which
+    # denies in a non-interactive context). Low/medium stay frictionless so
+    # normal goals are unaffected. An explicit MAVERICK_CONSENT_MODE opts out.
+    if str(risk or "").strip().lower() in ("high", "critical"):
+        try:
+            from ..security_defaults import secure_by_default
+            if secure_by_default():
+                return "ask"
+        except Exception:
+            pass
     return "auto-approve"
 
 
@@ -185,8 +193,8 @@ def require_consent(
     # 1) Ledger fast-path (skipped when a fresh decision is demanded).
     if consult_ledger and _check_ledger(action, scope):
         return _emit(ConsentDecision(True, "ledger", risk, ts), action, scope, detail)
-    # 2) Mode override.
-    mode = _resolve_mode()
+    # 2) Mode override (risk-aware: secure-by-default gates high/critical risk).
+    mode = _resolve_mode(risk)
     if mode == "auto-approve":
         d = _emit(
             ConsentDecision(allow_auto_approve, "auto", risk, ts),
