@@ -369,6 +369,33 @@ def _check_shield() -> None:
              fix="set [safety] profile = \"balanced\" in ~/.maverick/config.toml to re-enable")
 
 
+def _check_profile() -> None:
+    """Surface the active deployment profile + security posture so an operator
+    can confirm which posture is live (the single ``MAVERICK_PROFILE`` /
+    ``[profile] name`` switch). Informational; a misconfigured enterprise
+    boundary is reported in depth by ``maverick enterprise verify``."""
+    try:
+        from .enterprise import enterprise_enabled
+        from .profile import active_profile
+        from .security_defaults import secure_by_default
+    except Exception:  # pragma: no cover - never break doctor
+        return
+    prof = active_profile()
+    ent = enterprise_enabled()
+    sec = secure_by_default()
+    posture = []
+    posture.append("egress lock ON" if ent else "egress lock off (cloud-capable)")
+    posture.append("hardened defaults ON" if sec else "hardened defaults OFF")
+    if prof == "enterprise":
+        _row(GREEN, "profile",
+             f"deployment profile = enterprise ({', '.join(posture)})")
+    else:
+        _row(GREEN, "profile",
+             f"deployment profile = standard ({', '.join(posture)})",
+             fix="set MAVERICK_PROFILE=enterprise (or [profile] name) for the "
+                 "regulated, data-boundary posture")
+
+
 def _check_data_residency(cfg: dict) -> None:
     """When the deployment DECLARES a data-residency requirement
     (``[residency] region`` / ``MAVERICK_RESIDENCY_REGION``), warn about any
@@ -532,6 +559,7 @@ def diagnose() -> int:
     click.echo(click.style("Maverick health check\n", bold=True))
     cfg = _check_config()
     _check_config_perms()
+    _check_profile()
     _check_data_residency(cfg)
     _check_client_binding()
     _check_anthropic()
