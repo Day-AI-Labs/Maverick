@@ -1417,6 +1417,16 @@ def pick_advanced() -> dict[str, Any]:
             "Off by default (single-tenant boxes don't need it).",
             default=False,
         ),
+        "pg_rls": _q_confirm(
+            "Database-enforced tenant isolation (Postgres Row-Level Security)? "
+            "Only for the shared Postgres backend with MULTIPLE tenants: the DB "
+            "itself rejects cross-tenant rows as defense-in-depth over the "
+            "app-layer scoping. REQUIRES one-time prep first — assign legacy rows "
+            "with `maverick tenant backfill --tenant <id>` and verify with "
+            "`maverick tenant rls-preflight`, or pre-tenancy rows become invisible. "
+            "Off by default; leave off for SQLite or single-tenant installs.",
+            default=False,
+        ),
         "audit_sign": _q_confirm(
             "Sign the audit log for tamper-evidence? Ed25519 hash-chains every "
             "audit row (plus a signed cross-file ledger) so `maverick audit verify` "
@@ -2806,6 +2816,17 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("at_rest = true")
         if advanced.get("encrypt_per_tenant"):
             lines.append("per_tenant = true")
+    if advanced.get("pg_rls"):
+        lines.append("")
+        lines.append("[world_model]")
+        # Database-enforced tenant isolation (Postgres backend only; ignored on
+        # SQLite). The policy is strict, fail-closed equality, so prep BEFORE the
+        # first start or pre-tenancy (NULL-tenant) rows become invisible:
+        #   maverick tenant rls-preflight         # ownership + legacy-row check
+        #   maverick tenant backfill --tenant ID  # assign pre-tenancy NULL rows
+        lines.append("# Run `maverick tenant rls-preflight` + `maverick tenant "
+                     "backfill` before first start (see docs/multi-tenancy.md).")
+        lines.append("rls = true")
     if advanced.get("audit_sign"):
         lines.append("")
         lines.append("[audit]")
