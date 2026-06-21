@@ -79,7 +79,10 @@ def _client():
             "Content-Type": "application/json",
             "Accept": "application/json",
         },
-        timeout=30.0, follow_redirects=True,
+        # follow_redirects=False: the X-Shopify-Access-Token is a client default
+        # header httpx replays across a cross-origin 30x, so an open-redirect off
+        # the store host would leak the token to another host.
+        timeout=30.0, follow_redirects=False,
     )
 
 

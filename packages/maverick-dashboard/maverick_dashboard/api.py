@@ -517,6 +517,7 @@ async def upload_attachment(
     `list_attachments` tool exposes the uploaded set, and image
     attachments are auto-embedded as vision blocks on the first message.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -2813,6 +2814,7 @@ async def create_child_goal(request: Request, goal_id: int, payload: ChildIn) ->
     run — start it later via chat or POST /api/v1/goals. It inherits the
     parent's owner so the subtree stays visible to the same principal.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -3128,6 +3130,7 @@ async def export_walkthrough(request: Request, goal_id: int) -> dict:
     whether it happened (``encoded``/``detail``) and carries the exact ffmpeg
     command for out-of-band encoding when it didn't.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
