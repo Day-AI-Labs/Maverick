@@ -99,3 +99,23 @@ def test_consent_explicit_mode_opts_out(secure, monkeypatch):
     monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
     from maverick.safety import consent
     assert consent._resolve_mode("critical") == "auto-approve"
+
+
+def test_tool_risk_ceiling_caps_critical_by_default(secure, monkeypatch):
+    from maverick.safety.tool_acl import resolve_max_risk
+    # No configured ceiling -> default cap at 'high' (drops only CRITICAL tools).
+    assert resolve_max_risk() == "high"
+
+
+def test_tool_risk_ceiling_explicit_config_wins(secure, monkeypatch):
+    monkeypatch.setattr("maverick.config.load_config",
+                        lambda: {"security": {"max_risk": "low"}})
+    from maverick.safety.tool_acl import resolve_max_risk
+    assert resolve_max_risk() == "low"   # tighter explicit ceiling wins
+
+
+def test_tool_risk_ceiling_off_when_secure_disabled(monkeypatch):
+    monkeypatch.setenv("MAVERICK_SECURE_DEFAULT", "0")
+    monkeypatch.setattr("maverick.config.load_config", dict)
+    from maverick.safety.tool_acl import resolve_max_risk
+    assert resolve_max_risk() is None    # legacy: no cap
