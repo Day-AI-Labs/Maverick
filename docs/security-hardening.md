@@ -103,6 +103,36 @@ key** — `maverick encryption backup-key --to <dir>` — losing it loses the da
 
 ---
 
+## Deployment profile (one named switch)
+
+If you only remember one knob, remember this one. `profile` picks the whole
+security posture by name:
+
+- `standard` (default) — the personal / dev posture. The always-on hardened
+  controls (audit signing, at-rest encryption, fail-closed consent, tool-risk
+  ceiling — see [Secure by default](#secure-by-default)) stay on, but the
+  egress lock and the rest of enterprise mode stay off. Right for a single user
+  running against a cloud LLM on their own machine.
+- `enterprise` — the regulated posture. Turns [enterprise mode](#enterprise-mode-the-umbrella-switch)
+  on by default (egress lock, consent fail-closed, capabilities enforced) on top
+  of the always-on controls. This is what the Helm chart and the reference
+  server deployments set.
+
+```toml
+[profile]
+name = "enterprise"     # or "standard"
+```
+
+```bash
+export MAVERICK_PROFILE=enterprise    # env wins over config
+```
+
+Precedence is preserved: this only sets the *default* an unset control falls
+back to. Any explicit knob (e.g. `[enterprise] mode = false`) and any compliance
+floor still win over the profile. Because `enterprise` engages the egress lock,
+make sure a local/self-hosted (or allow-listed) provider is configured, or runs
+fail closed by design.
+
 ## Enterprise mode (the umbrella switch)
 
 The fastest way to a hardened posture. Enterprise mode pins every LLM call to a
