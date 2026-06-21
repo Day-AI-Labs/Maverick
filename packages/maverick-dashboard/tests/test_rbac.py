@@ -31,6 +31,29 @@ def test_store_roundtrip_and_validation(monkeypatch, tmp_path):
         rbac.set_role("", "viewer")
 
 
+def test_concurrent_set_role_does_not_lose_assignments(monkeypatch, tmp_path):
+    """set_role does a load-modify-save; without the lock two concurrent role
+    assignments both load the same roster and the second drops the first -- a
+    lost role grant/revoke on a security store. All N must survive."""
+    import threading
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from maverick_dashboard import rbac
+    n = 24
+
+    def assign(i: int):
+        rbac.set_role(f"user:u{i:03d}", "viewer")
+
+    threads = [threading.Thread(target=assign, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(rbac.list_users()) == n
+    assert list((tmp_path / ".maverick").glob("*.tmp")) == []
+
+
 def test_permissions_map():
     from maverick_dashboard import rbac
     assert "admin" in rbac.permissions_for("admin")
