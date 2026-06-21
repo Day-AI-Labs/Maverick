@@ -198,8 +198,14 @@ here.
   default `high`), and **lineage-tracked** (a tamper-evident hash chain from
   outcome → action → inputs/sources/skills; `verify_lineage` / `trace`).
   `Connector`s expose a system of record as `<sys>.read` (low risk) /
-  `<sys>.write` (high) governed Actions. Palantir-style action governance, for
-  self-improving agents (see `docs/palantir-playbook.md`).
+  `<sys>.write` (high) governed Actions. `governed_rest.py` adapts the LIVE
+  enterprise REST connectors (Salesforce, ServiceNow) into this surface — the
+  write previews its effect without a network call, hits the approval floor,
+  commits through the same SSRF-safe / egress-guarded path the tool form uses,
+  and records lineage — so a real system-of-record write is governed, not just
+  a confirm-gated tool call. Opt-in via `[governed_connectors] enable` +
+  `connectors` (`MAVERICK_GOVERNED_CONNECTORS`; wizard step). Palantir-style
+  action governance, for self-improving agents (see `docs/palantir-playbook.md`).
 - **Governed learning at scale** (`access_policy.py`, `learning_rollout.py`;
   opt-in, additive) — **PBAC**: a skill declares `purposes:` and
   `relevant_skills` recalls it only under a matching run purpose
@@ -446,8 +452,10 @@ here.
   (classify deps + flag copyleft), `self_capability` (report the run's capability
   grant), `oidc` (OIDC authorization-code client), `oauth_helper` (generic OAuth2 for
   any provider — PKCE authorize URL / code exchange / refresh; token responses
-  summarised with a sha fingerprint and never echoed into context, full tokens
-  land in a 0600 MAVERICK_OAUTH_OUT file), `cost_curve` (per-provider cost
+  summarised with a sha fingerprint and never echoed into context; full tokens
+  seal into the per-tenant OAuth vault — `oauth_vault.py`, AES-256-GCM under the
+  tenant DEK, refresh-aware via a caller-supplied refresher — when `[oauth] vault`
+  is on, else a 0600 MAVERICK_OAUTH_OUT file), `cost_curve` (per-provider cost
   model), `bench_track` (record benchmark scores + flag regressions), `teams`
   (Microsoft Teams webhook), `knowledge_graph` (extract/query/render
   subject-relation-object triples; no external graph DB), `cross_repo_deps`
@@ -1014,7 +1022,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   + deceptive-link heuristics, composed into `Shield.scan_output`),
   **operator-defined constitutional rules** (custom regex policy via `[safety]
   constitution`, `maverick_shield/constitutional.py`),
-  Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`),
+  Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`) — whose
+  heuristic cheap probe can now ensemble a **trained classifier**
+  (`maverick_shield/probe_model.py`): plain-JSON linear weights over the probe's
+  named features (no pickle → loading an operator model can't execute code),
+  combined by MAX so the model only raises recall, opt-in via `[shield]
+  probe_model` / `MAVERICK_SHIELD_PROBE_MODEL`,
   **voice safety pass** (`safety/voice_safety.py`): transcript screen for
   wake-word stuffing + spoken role-switch before an utterance drives the
   agent, and redact-before-speak (secrets/PII never read aloud) wired into

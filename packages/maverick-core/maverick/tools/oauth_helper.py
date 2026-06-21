@@ -62,12 +62,31 @@ def _fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
 
 
-def _persist_tokens(payload: dict) -> str | None:
-    """Write the full token response to the operator-named out-file (0600).
+def _persist_to_vault(payload: dict, provider: str) -> str | None:
+    """Seal the token response into the per-tenant OAuth vault (encrypted at
+    rest). Returns a status string when stored, else None. Fail-soft: any error
+    falls back to the file path so a capture is never silently lost."""
+    try:
+        from ..oauth_vault import enabled, get_vault
+        if not (enabled() and provider):
+            return None
+        get_vault().put(provider, payload)
+        return f"sealed in the per-tenant OAuth vault (provider={provider})"
+    except Exception:  # pragma: no cover -- vault is best-effort over the file
+        return None
 
-    Returns the path written, or None when MAVERICK_OAUTH_OUT is unset (then
-    only the summary exists and the caller must re-run with it set to capture
-    the secret material)."""
+
+def _persist_tokens(payload: dict, provider: str | None = None) -> str | None:
+    """Persist the full token response. When the sealed OAuth vault is enabled
+    and a ``provider`` is given, store it encrypted-at-rest under the tenant
+    DEK; otherwise write the operator-named out-file (0600).
+
+    Returns a human status string, or None when neither sink is configured (then
+    only the summary exists and the caller must enable the vault or set
+    MAVERICK_OAUTH_OUT to capture the secret material)."""
+    sealed = _persist_to_vault(payload, provider or "")
+    if sealed:
+        return sealed
     out = os.environ.get("MAVERICK_OAUTH_OUT", "").strip()
     if not out:
         return None
@@ -79,7 +98,7 @@ def _persist_tokens(payload: dict) -> str | None:
         os.chmod(p, 0o600)
     except OSError:
         pass
-    return str(p)
+    return f"written to: {p}"
 
 
 def _summarise(resp: dict) -> list[str]:
@@ -145,9 +164,10 @@ def _exchange(args: dict[str, Any]) -> str:
     if not resp.get("access_token"):
         return "ERROR: no access_token in response"
     lines = _summarise(resp)
-    saved = _persist_tokens(resp)
-    lines.append(f"full tokens written to: {saved}" if saved else
-                 "set MAVERICK_OAUTH_OUT=<path> to capture the full tokens to a 0600 file")
+    saved = _persist_tokens(resp, args.get("provider"))
+    lines.append(f"full tokens {saved}" if saved else
+                 "enable [oauth] vault or set MAVERICK_OAUTH_OUT=<path> to capture "
+                 "the full tokens")
     return "\n".join(lines)
 
 
@@ -169,9 +189,9 @@ def _refresh(args: dict[str, Any]) -> str:
     if not resp.get("access_token"):
         return "ERROR: no access_token in response"
     lines = _summarise(resp)
-    saved = _persist_tokens(resp)
+    saved = _persist_tokens(resp, args.get("provider"))
     if saved:
-        lines.append(f"full tokens written to: {saved}")
+        lines.append(f"full tokens {saved}")
     return "\n".join(lines)
 
 
@@ -200,6 +220,8 @@ _SCHEMA: dict[str, Any] = {
         "code": {"type": "string", "description": "authorization code (exchange)"},
         "verifier": {"type": "string", "description": "PKCE verifier from authorize_url"},
         "refresh_token": {"type": "string"},
+        "provider": {"type": "string", "description": "provider key to seal tokens "
+                     "under in the per-tenant OAuth vault (when [oauth] vault is on)"},
     },
     "required": ["op"],
 }
@@ -212,8 +234,10 @@ def oauth_helper() -> Tool:
             "Generic OAuth2 flow for any provider. op=authorize_url builds the "
             "consent URL (PKCE S256) and returns the verifier to keep; "
             "op=exchange swaps the code for tokens; op=refresh rotates. Token "
-            "responses are summarised with a fingerprint, never echoed; set "
-            "MAVERICK_OAUTH_OUT to write the full tokens to a 0600 file."
+            "responses are summarised with a fingerprint, never echoed. Pass "
+            "'provider' to seal tokens in the per-tenant OAuth vault (encrypted "
+            "at rest) when [oauth] vault is enabled, else set MAVERICK_OAUTH_OUT "
+            "to write the full tokens to a 0600 file."
         ),
         input_schema=_SCHEMA,
         fn=_run,

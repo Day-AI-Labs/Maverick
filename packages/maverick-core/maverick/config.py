@@ -466,6 +466,8 @@ def get_knowledge() -> dict:
         "base_url": cfg.get("base_url", "https://api.voyageai.com/v1"),
         "dim": int(cfg.get("dim", 1024)),
         "path": cfg.get("path", ""),
+        # DSN for the pgvector scale backend (falls back to env in build_store).
+        "dsn": cfg.get("dsn", ""),
     }
 
 
@@ -484,6 +486,31 @@ def get_automation_import() -> dict:
     return {
         "enable": bool(cfg.get("enable", False)),
         "create_schedules": bool(cfg.get("create_schedules", False)),
+    }
+
+
+def get_governed_connectors() -> dict:
+    """Return the ``[governed_connectors]`` section with defaults filled in.
+
+    Routing a live system-of-record write through a governed Action
+    (simulate -> approve -> commit -> lineage) instead of a bare confirm-gated
+    tool call is OFF by default: it changes how enterprise writes are authorized
+    (they hit the approval floor) and records a tamper-evident lineage link, so
+    the operator opts in. ``connectors`` selects which reference REST connectors
+    to register (see :data:`maverick.governed_rest.GOVERNED_REST_FACTORIES`).
+    Env override: ``MAVERICK_GOVERNED_CONNECTORS``.
+    """
+    cfg = load_config().get("governed_connectors", {}) or {}
+    raw = cfg.get("connectors", [])
+    if isinstance(raw, str):
+        names = [s.strip() for s in raw.split(",") if s.strip()]
+    elif isinstance(raw, (list, tuple)):
+        names = [str(s).strip() for s in raw if str(s).strip()]
+    else:
+        names = []
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "connectors": names,
     }
 
 

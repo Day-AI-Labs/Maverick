@@ -91,6 +91,8 @@ STEPS: list[tuple[str, str]] = [
     ("capabilities", "Capabilities"),
     ("self_learning", "Self-learning"),
     ("automation_import", "Automation import"),
+    ("oauth_vault", "OAuth token vault"),
+    ("governed_connectors", "Governed connectors"),
     ("durable", "Durable execution"),
     ("finance", "Finance suite"),
     ("advanced", "Advanced reasoning"),
@@ -1000,6 +1002,53 @@ def pick_automation_import() -> dict[str, Any]:
         default=False,
     )
     return {"enable": True, "create_schedules": create_schedules}
+
+
+def pick_oauth_vault() -> dict[str, Any]:
+    """Opt-in to sealing captured OAuth tokens in the per-tenant vault.
+
+    Off by default. When on, the OAuth helper seals access/refresh tokens
+    encrypted-at-rest under the tenant's DEK (one data key per tenant) instead
+    of writing them to a plaintext file. Returns a dict written under
+    ``[oauth]``.
+    """
+    console.print()
+    console.print(
+        "[dim]The OAuth token vault seals captured access/refresh tokens "
+        "encrypted-at-rest under each tenant's own key (no plaintext token "
+        "files, no cross-tenant readability). Recommended for hosted/multi-"
+        "tenant deploys. OFF by default.[/dim]"
+    )
+    return {"vault": _q_confirm("Seal OAuth tokens in the per-tenant vault?",
+                                default=False)}
+
+
+def pick_governed_connectors() -> dict[str, Any]:
+    """Opt-in to routing live system-of-record writes through governed Actions.
+
+    Off by default. When on, a selected enterprise connector (Salesforce,
+    ServiceNow) is registered as a typed governed Action: a write previews its
+    effect, hits the approval floor (``[actions] require_approval_at``), and
+    records a tamper-evident lineage link -- instead of a bare confirm-gated
+    tool call. Returns a dict written under ``[governed_connectors]``.
+    """
+    try:
+        from maverick.governed_rest import available_rest_connectors
+        choices = available_rest_connectors()
+    except Exception:  # pragma: no cover -- never block the wizard
+        choices = ["salesforce", "servicenow"]
+    console.print()
+    console.print(
+        "[dim]Governed connectors route a live system-of-record write "
+        f"({', '.join(choices)}) through simulate -> approve -> commit -> "
+        "lineage: the write hits the approval floor and is recorded in a "
+        "tamper-evident chain. OFF by default.[/dim]"
+    )
+    if not _q_confirm("Enable governed system-of-record connectors?", default=False):
+        return {"enable": False}
+    selected = [c for c in choices
+                if _q_confirm(f"  Register {c} as a governed connector?", default=False)]
+    return {"enable": True, "connectors": selected}
 
 
 def pick_durable() -> dict[str, Any]:
@@ -2569,6 +2618,24 @@ def _cfg_automation_import(automation_import: dict[str, Any] | None) -> list[str
     return lines
 
 
+def _cfg_oauth(oauth: dict[str, Any] | None) -> list[str]:
+    if not (oauth and oauth.get("vault")):
+        return []
+    # Seal captured OAuth tokens in the per-tenant vault (encrypted at rest).
+    return ["", "[oauth]", "vault = true"]
+
+
+def _cfg_governed_connectors(governed_connectors: dict[str, Any] | None) -> list[str]:
+    if not (governed_connectors and governed_connectors.get("enable")):
+        return []
+    # Governed system-of-record connectors. enable turns on the governed write
+    # path; connectors selects which reference REST connectors to register.
+    lines = ["", "[governed_connectors]"]
+    for k, v in governed_connectors.items():
+        _emit_kv(lines, k, v)
+    return lines
+
+
 def _cfg_durable(durable: dict[str, Any] | None) -> list[str]:
     if not (durable and durable.get("enabled")):
         return []
@@ -3085,6 +3152,8 @@ def write_config(
     skills: dict[str, Any] | None = None,
     self_learning: dict[str, Any] | None = None,
     automation_import: dict[str, Any] | None = None,
+    oauth: dict[str, Any] | None = None,
+    governed_connectors: dict[str, Any] | None = None,
     durable: dict[str, Any] | None = None,
     finance: dict[str, Any] | None = None,
     deployment: str | None = None,
@@ -3168,6 +3237,8 @@ def write_config(
     lines += _cfg_skills(skills)
     lines += _cfg_self_learning(self_learning)
     lines += _cfg_automation_import(automation_import)
+    lines += _cfg_oauth(oauth)
+    lines += _cfg_governed_connectors(governed_connectors)
     lines += _cfg_durable(durable)
     lines += _cfg_finance(finance)
 
@@ -3664,6 +3735,16 @@ def _run_simple_picks(state: dict[str, Any], _announce) -> dict[str, Any]:
     _save_partial(state)
 
     _announce()
+    oauth = state.get("oauth") or pick_oauth_vault()
+    state["oauth"] = oauth
+    _save_partial(state)
+
+    _announce()
+    governed_connectors = state.get("governed_connectors") or pick_governed_connectors()
+    state["governed_connectors"] = governed_connectors
+    _save_partial(state)
+
+    _announce()
     durable = state.get("durable") or pick_durable()
     state["durable"] = durable
     _save_partial(state)
@@ -3686,6 +3767,8 @@ def _run_simple_picks(state: dict[str, Any], _announce) -> dict[str, Any]:
         "capabilities": capabilities,
         "self_learning": self_learning,
         "automation_import": automation_import,
+        "oauth": oauth,
+        "governed_connectors": governed_connectors,
         "durable": durable,
         "finance": finance,
         "advanced": advanced,
@@ -3874,6 +3957,8 @@ def run(fast: bool = False, resume: bool = False) -> int:
     capabilities = _simple["capabilities"]
     self_learning = _simple["self_learning"]
     automation_import = _simple["automation_import"]
+    oauth = _simple["oauth"]
+    governed_connectors = _simple["governed_connectors"]
     durable = _simple["durable"]
     finance = _simple["finance"]
     advanced = _simple["advanced"]
@@ -3981,6 +4066,8 @@ def run(fast: bool = False, resume: bool = False) -> int:
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed") or signed_skills.get("require_signed_catalog")) else None,
         self_learning=self_learning if self_learning.get("enable") else None,
         automation_import=automation_import if automation_import.get("enable") else None,
+        oauth=oauth if oauth.get("vault") else None,
+        governed_connectors=governed_connectors if governed_connectors.get("enable") else None,
         durable=durable if durable.get("enabled") else None,
         finance=finance if finance.get("enable") else None,
         suites=suites,
