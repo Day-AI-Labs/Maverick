@@ -67,6 +67,28 @@ def test_adopt_writes_valid_toml_and_backs_up(tmp_path):
     assert dest.with_suffix(".toml.bak").exists()
 
 
+def test_inplace_adoption_preserves_original_in_bak(tmp_path):
+    # With the default out_dir the pack is edited in place. The .bak must always
+    # hold the PRISTINE original, even after adopting repeatedly -- a second
+    # adoption must NOT clobber the original backup with the first adopted copy
+    # (which used to make the shipped pack unrecoverable).
+    apath, pack = _setup(tmp_path, {"persona": "V1 persona."})
+    original = pack.read_text(encoding="utf-8")
+    bak = pack.with_suffix(".toml.bak")
+
+    # First in-place adoption: pack -> V1, .bak = original.
+    assert adopt_best(apath, pack) == pack
+    assert bak.read_text(encoding="utf-8") == original
+
+    # New best, second in-place adoption: pack -> V2, .bak STILL = the original.
+    archive = Archive.load(apath)
+    archive.add(Candidate(config={"persona": "V2 persona."}, score=0.99))
+    archive.save(apath)
+    assert adopt_best(apath, pack) == pack
+    assert tomllib.loads(pack.read_text(encoding="utf-8"))["persona"] == "V2 persona."
+    assert bak.read_text(encoding="utf-8") == original  # original still recoverable
+
+
 def test_adopt_writes_atomically_no_temp_left(tmp_path):
     # The pack is written via a temp sibling + os.replace (matching
     # Archive.save) so a crash can't leave a half-written pack. After a clean
