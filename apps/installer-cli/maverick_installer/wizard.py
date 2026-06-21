@@ -1490,6 +1490,15 @@ def pick_advanced() -> dict[str, Any]:
             "Needs the [audit-signing] extra; falls back to unsigned if absent.",
             default=False,
         ),
+        "audit_worm": _q_confirm(
+            "Export closed audit day-files to a write-once (WORM) store? Beyond "
+            "tamper-EVIDENCE, this makes the historical log un-alterable: each "
+            "closed day-file is shipped with a retention lock so it can't be "
+            "rewritten or deleted (S3 Object-Lock for regulator-grade WORM, or a "
+            "local read-only mirror). Run `maverick audit worm push` (e.g. nightly "
+            "cron). Defaults to a local mirror; edit [audit.worm] for S3.",
+            default=False,
+        ),
         "security_autofix": _q_confirm(
             "Let the security assessor auto-fix low-risk gaps? With enterprise mode "
             "on, `maverick remediate --apply` may auto-apply reversible, in-boundary "
@@ -2905,6 +2914,19 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[audit]")
         lines.append("sign = true")
+    if advanced.get("audit_worm"):
+        lines.append("")
+        # WORM export of closed audit day-files. Defaults to a local read-only
+        # mirror (best-effort, tamper-evident); switch provider to "s3" + an
+        # Object-Lock bucket for regulator-grade immutability. Ship with
+        # `maverick audit worm push` (see docs/security-hardening.md).
+        lines.append("[audit.worm]")
+        lines.append('provider = "local"   # or "s3" for S3 Object-Lock')
+        lines.append("retention_days = 2555   # lock duration (~7y)")
+        lines.append('# bucket = "my-audit-worm"   # s3: Object-Lock + versioning enabled')
+        lines.append('# prefix = "maverick/audit/"')
+        lines.append('# mode = "COMPLIANCE"        # COMPLIANCE | GOVERNANCE')
+        lines.append('# region = "us-east-1"')
     # Dashboard editing locks. Both default on, so we only emit the disables --
     # and as ONE [features] table (two tables would be a duplicate-key TOML
     # error). The kernel reads these via config.get_features.
@@ -3677,6 +3699,7 @@ def _regulated_deployment(advanced: dict[str, Any]) -> bool:
         advanced.get("enterprise")
         or advanced.get("encrypt_at_rest")
         or advanced.get("audit_sign")
+        or advanced.get("audit_worm")
         or advanced.get("security_autofix")
     )
 

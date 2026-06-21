@@ -602,3 +602,18 @@ def test_both_editing_locks_share_one_features_table(tmp_path, monkeypatch):
     from maverick.config import get_features
     feats = get_features()
     assert feats["pack_editing"] is False and feats["role_editing"] is False
+
+
+def test_audit_worm_writes_worm_section(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"audit_worm": True})
+    assert "[audit.worm]" in cfg
+    assert 'provider = "local"' in cfg
+    assert "worm push" in cfg or "worm" in cfg  # points at the command/docs
+    parsed = tomllib.loads(cfg)
+    assert parsed["audit"]["worm"]["provider"] == "local"
+    assert parsed["audit"]["worm"]["retention_days"] == 2555
+
+
+def test_audit_worm_off_writes_no_worm_section(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"audit_worm": False})
+    assert "[audit.worm]" not in cfg

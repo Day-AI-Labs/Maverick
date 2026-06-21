@@ -36,6 +36,7 @@ and how to confirm it's actually on.
 - [Encryption at rest](#encryption-at-rest)
 - [Risk-proportional verification](#risk-proportional-verification)
 - [Audit-log signing (tamper-evidence)](#audit-log-signing-tamper-evidence)
+- [WORM audit export (immutable retention)](#worm-audit-export-immutable-retention)
 - [Compliance commands](#compliance-commands)
 - [Verifying your posture](#verifying-your-posture)
 - [Recommended enterprise baseline](#recommended-enterprise-baseline)
@@ -734,6 +735,59 @@ export MAVERICK_AUDIT_SIGN=0     # 1 to force-enable; 0 to force-disable
 
 **Verify it's on:** `maverick audit verify` (see below) and `maverick soc2` →
 `audit_log.status == "ok"` (vs `unsigned` when signing is off).
+
+---
+
+## WORM audit export (immutable retention)
+
+**What it does.** Signing makes the log tamper-**evident** (you can *prove* an
+alteration). WORM makes the historical records **un-alterable**: each closed
+day-file is shipped to a write-once target with a retention lock, so neither a
+privileged insider nor an attacker with filesystem/root access can rewrite or
+delete the trail — the "immutable audit" a regulator (SEC 17a-4, HIPAA, SOX)
+actually means. Opt-in (default off).
+
+**config.toml**
+
+```toml
+[audit.worm]
+provider = "s3"            # s3 (Object-Lock) | local (read-only mirror)
+retention_days = 2555      # lock duration (~7y)
+bucket = "my-audit-worm"   # s3: bucket with Object-Lock + versioning enabled
+prefix = "maverick/audit/"
+mode = "COMPLIANCE"        # COMPLIANCE (even root can't delete) | GOVERNANCE
+region = "us-east-1"
+# local provider: dir = "/mnt/worm/audit"
+```
+
+- env: `MAVERICK_AUDIT_WORM=1` (uses the `[audit.worm]` block).
+- **Wizard toggle:** yes — "Export closed audit day-files to a write-once store?"
+
+**Run it** (idempotent; cron it, e.g. nightly):
+
+```
+maverick audit worm push              # ship closed day-files to the WORM target
+maverick audit worm push --dry-run    # show what would ship
+maverick audit worm verify            # closed files all durably shipped? (non-zero if not)
+```
+
+**Gotchas**
+
+- Only **closed** day-files (date < today) ship — today's file is still being
+  appended. A file changed afterwards by `audit seal` / GDPR erase is re-shipped
+  as a new locked version on the next push (push *after* sealing so the locked
+  copy is the sealed one).
+- **S3 setup is one-time, operator-side:** the bucket must be created with
+  Object-Lock enabled (implies versioning); `boto3` is required (`pip install boto3`).
+- **`local` is best-effort** (mode `0444`; an owner can chmod it back) — it gives
+  on-box tamper-*evidence* via the manifest hash, not true WORM. Use `s3` +
+  `COMPLIANCE` for regulator-grade immutability.
+- GDPR erasure vs. WORM is a genuine tension: under COMPLIANCE lock a record
+  can't be deleted before expiry. Crypto-shred (revoke the at-rest key) rather
+  than expecting to rewrite a locked object.
+
+**Verify it's on:** `maverick audit worm verify` (exits non-zero if any closed
+day-file isn't in the WORM store).
 
 ---
 
