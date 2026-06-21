@@ -355,7 +355,21 @@ async def verify_proposal_ensemble(
             log.warning("MAV verifier %s failed: %s", model, e)
             return VerifierVerdict.reject(f"verifier {model} failed: {e}")
 
-    verdicts = await asyncio.gather(*(_one(m) for m in panel))
+    # return_exceptions=True so a BudgetExceeded from ONE member doesn't
+    # propagate out of gather mid-flight and leave the other _one coroutines
+    # running orphaned (no awaiter) -- still spending tokens against an already
+    # exhausted budget and producing late completions nobody reads. gather then
+    # awaits all members; we re-raise the budget error once they've settled
+    # (matches the kernel pattern in agent.py / tools/spawn.py).
+    results = await asyncio.gather(*(_one(m) for m in panel), return_exceptions=True)
+    for r in results:
+        if isinstance(r, BudgetExceeded):
+            raise r
+    verdicts = [
+        r if isinstance(r, VerifierVerdict)
+        else VerifierVerdict.reject(f"verifier panel member crashed: {r}")
+        for r in results
+    ]
     return _combine(verdicts, weighted=weighted)
 
 
