@@ -67,3 +67,26 @@ def test_store_is_0600(tmp_path):
     evaluate(w, path=store)
     assert oct(store.stat().st_mode)[-3:] == "600"
     w.close()
+
+
+def test_evaluate_preserves_prior_unlocks_under_reload(tmp_path):
+    """evaluate() reloads the earned set under a cross-process lock before
+    writing, so an unlock another process persisted between this call's start
+    and its write is not clobbered."""
+    import json
+
+    store = tmp_path / "ach.json"
+    # A prior unlock written by "another process" after this store was first read.
+    store.write_text(json.dumps({"_prior": 111.0}), encoding="utf-8")
+
+    w = _world(tmp_path)
+    gid = w.create_goal("g", "")
+    w.set_goal_status(gid, "done")  # triggers first_goal
+    fresh = evaluate(w, path=store, now=2000.0)
+
+    keys = {a.key for a in fresh}
+    earned = unlocked(store)
+    assert "first_goal" in keys
+    assert earned.get("first_goal") == 2000.0
+    assert earned.get("_prior") == 111.0  # the prior unlock survived
+    assert list(tmp_path.glob("*.tmp")) == []
