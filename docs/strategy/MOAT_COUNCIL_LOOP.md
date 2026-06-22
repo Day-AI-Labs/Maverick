@@ -135,6 +135,23 @@ Two full rounds (6 councils) have eliminated every "wedge" from current assets: 
 ### Hardest question → Round 3 Adversarial
 **Enforce+hash-chain-at-source is the only non-copyable asset, but it's a RUNTIME capability the kernel forbids selling as the competitive category. Does ANYTHING fundable survive that isn't the unbuilt verifiable-self-improvement loop? And is that moonshot winnable by a tiny team — or also a mirage (broken Proof-of-Learning + prior-art wall)?** If both "no," honest verdict = feature/acqui-hire, full stop.
 
+## ROUND 3 — ADVERSARIAL council DECISIVE verdict
+**Survivor 1 (enforcement-at-source) = FEATURE, already shipped by every incumbent this quarter:**
+- **AWS Bedrock AgentCore Policy** (GA Mar 3 2026): intercepts all agent traffic "entirely outside agent code — model can't reason around it, agent can't bypass it"; has log-only mode. = verbatim the pitch.
+- **ServiceNow AI Control Tower**: real-time cross-runtime kill switch (30 connectors). **MS Agent 365**: hard budget cutoff at 125% prepaid.
+- Per-decision **Ed25519 + hash-chain signing = TABLE STAKES** (DeepInspect, **Microsoft Agent Governance Toolkit**, LangChain compliance handler, VeritasChain — all → Art. 12). Maverick's crypto is line-for-line the 2026 industry-standard pattern. **Ceiling: sub-$5M acqui-hire.**
+
+**Survivor 2 (verifiable self-improvement) = RESEARCH MIRAGE; the NEED IS INVERTED:**
+- Natural buyer (pharma/GxP) is **legally required to keep models LOCKED/static**; self-modifying learning = a compliance defect. Answer to "prove self-improvement safe" = "we don't self-improve in production." Can't sell a proof for a forbidden behavior. (Gartner: >40% agentic projects canceled by 2027.) Teams that self-improve work at prompt/memory layer; zero demand for crypto proof.
+- Unwinnable by a tiny team (zkML 10³–10⁴× too slow; verifiable frontier-training = Jun-2026 academic, buyers = ~5 labs + regulators). **Patentability foreclosed** (PoL broken; issued 2025 US patents 12456052/12340176 on verifiable ML unlearning/veracity).
+
+**BOTTOM LINE: NO credible $20M path from current assets. Honest valuation ≈ $1–4M acqui-hire** (team + Rust `--pubkey` verifier + enforcement engineering).
+**What would change it (none reachable "from here"):** a NEW proprietary-data/distribution asset; a NEW market where "locked + provable" is the product not the prohibition; or TIME (frontier-scale verifiable training, 3–5 yrs) the team can't fund. → it's a bet on the TEAM, not the idea.
+
+### THE decisive question → Round 3 Idea-Gen (resurrect or bury)
+**"Is there any buyer LEGALLY OR CONTRACTUALLY COMPELLED to obtain a tamper-evident record from a party OTHER than the agent's own runtime vendor — and who will NOT get it free from AWS/MS/ServiceNow?"**
+Maverick's only non-commoditized asset = *independent/third-party* verification (Rust `--pubkey`). Self-hosted is already compliant + free from the cloud vendor. So a company exists IFF a MANDATED ADVERSARIAL relationship needs one party to verify another's agent without trusting the runtime vendor's log: auditor↔auditee, principal↔AI-subprocessor, regulator↔lab, clearing-house↔trading-firm, defense↔contractor. If no affirmative sourced answer → STOP; document the $1–4M acqui-hire + the real (team/vertical/data) path that WOULD create $20M.
+
 ---
 # ROUND LOG
 
