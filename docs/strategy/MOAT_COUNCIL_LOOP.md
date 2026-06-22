@@ -311,3 +311,15 @@ Given the whitespace above is real but (a) not yet regulation-required and (b) t
 
 ### Hardest question → Round 3 Validator
 Is "financial-services agent conduct data" actually a defensible moat vs. entrenched trade/comms-surveillance incumbents (Nasdaq/Verafin, SteelEye, Behavox, Smarsh, Global Relay) + the funded agent-trust startups (t54, Nava)? Are $150–250K ACVs real for a 4-day-old vendor? Can this team land a PAID B-D pilot, and what's the concrete 18-month de-risked plan?
+
+---
+## ROUND 3 — VALIDATOR verdict (data-moat KILLED; real asset + OEM exit identified)
+**Scorecard:** Moat-defensibility **1.5**, Demand/WTP **3.5**, Competitive-whitespace **1.5**, Time-to-paid-pilot **2**, Path-to-$20M **1.5** → **KILL as standalone $20M data-moat company; CONDITIONAL as a control-plane layer sold THROUGH an incumbent.**
+- **Cross-firm conduct-data moat is closed + legally blocked:** Nasdaq Verafin (2,800 institutions, 20-yr consortium, already agentic-AI-wired), Behavox Polaris+LLM (BNY/Mizuho), SteelEye, Smarsh (autonomous Intelligent Agent + AWS GenAI), Theta Lake aiComms ("53% of agents exceeding permissions"), Norm Ai ($140M+), Bretton/Greenlite ($75M Series B Feb 2026). Agent-conduct data INVERTS the Verafin fraud-consortium model (own competitively-sensitive Reg-S-P behavior, not external bad actors) → no CCO pools it. Moat doesn't compound.
+- **$150–250K paid pilot from a no-SOC2 4-day-old vendor = NO** (6–12 mo vendor-risk review; Reg S-P 2026 vendor-oversight; "don't be the first logo").
+- **THE REAL ASSET (verified in-repo, 3,354 LOC audit/ + Rust verifier + budget.py + killswitch):** a **tamper-evident agent-action-of-record + record-time enforcement layer incumbents don't have natively.** Packs + surveillance analytics DON'T transfer.
+- **Honest end-state:** no standalone $20M. **Best: $5–15M OEM/tuck-in to Smarsh/Global Relay/Theta Lake** (they have relationships+data, lack the enforcement+verifier tech). **Floor: $1–4M acqui-hire (Smarsh most likely).**
+- **Surviving company shape:** reframe to "the agent control plane B-Ds put around their OWN internal agents to satisfy FINRA," sold THROUGH an incumbent, **~$60–120K ACV**, ~$0.4–0.7M ARR/18mo, gated on **SOC 2 + 1 design partner**.
+
+### THE decisive question → Round 4
+**Is the OEM-under-an-incumbent path real — would Smarsh/Global Relay/Theta Lake co-sell or buy the record-time-enforcement + independent-verifier layer rather than build it (3–6 mo of work for them)? Is there a warm path to that conversation, and what's the minimum proof (SOC2 + 1 design partner) to open it?** This separates a $5–15M outcome from a doomed head-on company.
