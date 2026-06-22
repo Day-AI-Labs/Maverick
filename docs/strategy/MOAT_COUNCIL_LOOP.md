@@ -111,6 +111,30 @@ Two candidate answers for Idea-Gen to fight out:
 
 **LOAD-BEARING RISK (Validator must resolve FIRST):** the "independent third-party custody" requirement may be **vendor-manufactured** (TrueScreen/CertifyWebContent marketing), NOT in the Article 12 text or a harmonized standard. If the forthcoming **CEN/CENELEC** standard / Commission guidance permits **self-hosted** tamper-evident logs (which Maverick's own WORM+hash-chain already satisfies in-house), the wedge collapses into an in-house feature → back to the inside-out problem. **Validator: verify the actual legal text + draft harmonized standard, not the compliance-vendor blogs.**
 
+## ROUND 2 — VALIDATOR council verdict (P1 KILLED on the legal premise)
+**LOAD-BEARING LEGAL FINDING: VENDOR-MANUFACTURED.** The "independent third-party custodian" requirement does NOT exist in the EU AI Act. Triangulated:
+- **Art. 19 + Art. 26:** providers/deployers "shall KEEP the logs… to the extent such logs are UNDER THEIR CONTROL" — self-keeping, NOT third-party custody.
+- **Art. 12:** only "technically allow for automatic recording of events" — silent on immutability/external custody/eIDAS/third parties.
+- **EC AI Act Service Desk (Art. 12):** no third-party custody / external immutability / eIDAS mention.
+- The "immutable by a third party independent of provider AND deployer" sentence = **TrueScreen's own marketing**, hedged as litigation-value advice, citing no Article/implementing act. Real "third party" (Art. 43 notified body) assesses QMS/docs, is NOT a custodian, absent for ~90% of high-risk (credit/hiring/insurance = internal self-assessment, Annex VI). Draft harmonized std **prEN 18286** mandates nothing of the sort.
+- → "you're legally barred from self-certifying = buy us" is **FALSE**.
+
+**Scorecard:** P1 **KILL** (Feasibility 4, IP 1, Demand 1, Time-to-$ 2, Moat 1 — comp ceiling €60/mo notary / $25–40-per-seat WORM; Vanta/Drata/OneTrust own the buyer + add QTSP in a quarter). P3 insurer variant **CONDITIONAL but a 2028 thesis** (un-gameable is honest there because the insured is adversarial — but no buyer today).
+
+**HONEST VALUATION OF CURRENT ASSETS:** enforcement-at-source + killswitch + hash-chained audit + WORM + Rust verifier = genuinely strong agent-governance infra; **enforcement-at-source is the one thing a pure notary can't replicate.** But standalone = **feature, not company → low-single-digit-$M acqui-hire / strategic feature sale**, NOT $20M. **The only $20M+ optionality = the UNBUILT verifiable self-improvement loop.**
+
+### ROUND 2 CONVERGED POSITION
+Two full rounds (6 councils) have eliminated every "wedge" from current assets: governance platform (commoditized), insurance feed (inside-out/un-gameable), outside-in scanner (no asset + crowded), TEE (OPAQUE owns it), Article-12 custody (false premise). **What survives:** (1) enforcement-at-source governance — REAL but "a feature" and in tension with the kernel "never compete on the runtime" rule; (2) the **unbuilt verifiable self-improvement loop** — the only $20M+ prize nobody owns. **Strategic truth crystallizing: there is no $20M standalone company in what's already built; the $20M path REQUIRES building the moonshot for real.**
+
+### Scoreboard (after Round 2)
+- **KILLED:** insurance loss-control feed, Article-12 custodian P1, outside-in scanner P4, standalone TEE P2.
+- **PARKED:** P3 insurer-evidence (2028 thesis).
+- **STANDING:** enforcement-at-source governance = real but feature/acqui-hire.
+- **THE ONE $20M CANDIDATE LEFT:** verifiable self-improvement loop (UNBUILT; `NOT_RUN`; prior-art wall Laminator/VerifiableFL/optimistic-verifiable-training; academic Proof-of-Learning broken).
+
+### Hardest question → Round 3 Adversarial
+**Enforce+hash-chain-at-source is the only non-copyable asset, but it's a RUNTIME capability the kernel forbids selling as the competitive category. Does ANYTHING fundable survive that isn't the unbuilt verifiable-self-improvement loop? And is that moonshot winnable by a tiny team — or also a mirage (broken Proof-of-Learning + prior-art wall)?** If both "no," honest verdict = feature/acqui-hire, full stop.
+
 ---
 # ROUND LOG
 
