@@ -58,4 +58,69 @@ _(none yet)_
 
 ---
 # ROUND LOG
-_(each round appended below)_
+
+## ROUND 1 — ADVERSARIAL council verdict
+*Sources: live research (Google Gemini Enterprise Agent Platform deep-dive, Apr 2026 Cloud Next; A2A→Linux Foundation Jun 2025) + competitive knowledge of Salesforce Agentforce/Trust Layer, Microsoft Copilot Studio + Entra Agent ID + Purview, AWS Bedrock AgentCore, ServiceNow, Sierra, Writer, LangSmith, Credo AI/OneTrust.*
+
+### Top attacks (ranked by severity to the $20M thesis)
+1. **[LETHAL] Hyperscalers are shipping your exact "governed agent control plane" — with distribution you'll never match.** Microsoft **Entra Agent ID** (first-class agent identity) + **Purview** (DLP/audit/compliance for agents); Google **Agent Identity** (SPIFFE/X.509, DPoP/mTLS, dual agent+user audit) + **Model Armor** + ISO 42001; **AWS Bedrock AgentCore** (identity/memory/observability/gateway, GA 2025); **Salesforce Trust Layer**. "Identity + audit + compliance + guardrails for agents" became *table stakes* in 2025–26, bundled into suites enterprises already buy. → *Neutralize only by going where they structurally won't: vendor-independent, on-prem/air-gapped/sovereign, cross-model.*
+2. **[LETHAL] The inter-org agent-trust standard is already owned.** **A2A donated to Linux Foundation** (AWS, Cisco, Google, Microsoft, Salesforce, SAP, ServiceNow + 100 cos); Entra Agent ID; SPIFFE. **M3 (Agent Trust Fabric) is dead as a standalone moat** — you'd reinvent a standard the giants already control. → *Pivot to a governance overlay ON TOP of A2A/SPIFFE, never a competing PKI.*
+3. **[LETHAL] No proprietary data + no customers = no data moat yet.** M2 fleet-learning only compounds *after* traction; today it's a promise. Diligence collapses the $20M here.
+4. **[HIGH] "Provable governance / verifiable learning" solves a problem the market doesn't yet *require*.** No regulator today mandates cryptographic proof-of-learning; EU AI Act / NIST AI RMF / SOC2 demand *documentation & risk management*, which competitors' "reporting" already satisfies. Hardest tech, unclear near-term buyer. → *Find the buyer who needs it NOW: model-risk (SR 11-7), defense/IC, pharma GxP, critical infra.*
+5. **[HIGH] Self-improving / self-modifying agents are an enterprise FEAR, not a want.** Risk committees want determinism + control. Your headline feature may *repel* your ICP. → *Reframe as "provably-bounded improvement, human sign-off, instant rollback" — a control story.*
+6. **[HIGH] Commodity components.** Ed25519, hash-chained logs, RLS, KMS, Sigstore, SBOM, MCP are all open/standard; a competent team clones the plumbing in 3–6 months. The 1,118 packs are LLM-regenerable content. *What here is irreplaceable?*
+7. **[MED] Key-person / bus-factor + no traction** → heavy diligence discount on a small pre-revenue team.
+8. **[MED] Distribution void / rip-and-replace problem** — why displace Copilot/Agentforce/Gemini already bundled & paid for?
+9. **[MED] Frontier-model dependency** — Anthropic/OpenAI can absorb governance features (and are).
+10. **[MED] Compliance/"Operating Record" space owned by GRC incumbents** (Credo AI, OneTrust, Holistic AI) + ISO 42001 tooling.
+
+### The 3 fatal flaws (cap value < $20M if unaddressed)
+- **F1 — Undifferentiated control plane:** governance-as-moat is being commoditized by hyperscalers with infinite distribution.
+- **F2 — Mispositioned + unmonetized crown jewel:** provable self-improvement solves a not-yet-required problem AND scares the ICP.
+- **F3 — Nothing irreplaceable:** no data, no customers, commodity tech → diligence finds no asset supporting $20M.
+
+### Replicable in 6 months (un-defensible)
+Signed audit chain, RLS multi-tenancy, killswitch, budget caps, proof-pack plumbing, the packs — everything *except* accumulated signed data, certifications, patents, and brand/category.
+
+### Hardest question handed to the Idea-Generator council
+**"What can Maverick be the ONLY one able to do — that hyperscalers structurally CANNOT or WILL NOT do — that a high-assurance buyer needs badly enough to pay for *now*, and that compounds into a $20M+ irreplaceable asset?"**
+Vector hints: vendor-independence / anti-lock-in; sovereignty / air-gap; a *cross-vendor* verifiable record; model-risk assurance for regulated autonomous agents; the "black-box flight recorder + provable safety envelope" the model vendors won't build because it commoditizes their own models.
+
+### Scoreboard impact
+- **M3 → KILLED** as standalone moat (A2A/Entra/SPIFFE own it). Survives only as overlay.
+- **M1, M2 → confirmed whitespace** (no hyperscaler analog for signed closed-loop self-improvement) but **repositioning required** (attacks 4, 5).
+- **M4, D-series → at risk** of commoditization; need a sharper wedge.
+
+### COMPETITIVE INTELLIGENCE (researched, ~90 sources, Jun 2026) — reusable across all rounds
+**The category is real, huge, and crowded by giants** (validates the kernel thesis that the competitors are enterprise platforms, NOT free runtimes):
+- Salesforce **Agentforce** standalone ARR **$1.2B (+205% YoY)**; Einstein Trust Layer, Command Center observability, **AgentExchange** marketplace, Flex Credits metering, MuleSoft **Agent Fabric** cross-vendor control plane. *No signed/tamper-evident audit claim.*
+- Microsoft: **20M paid Copilot seats**; **Entra Agent ID** (GA, agent identity blueprints, Conditional Access, "block high-risk agent"), **Agent 365** control plane (registry/inventory of "tens of millions of agents"), **Purview** DLP/audit for agents, **Foundry** evals/tracing, **Agent Billing Policies** (cost *tracking*, not caps), ISO 42001. *No signed audit, no autonomous self-improvement.*
+- Google: **Gemini Enterprise Agent Platform** = "the agentic control plane"; **Agent Identity (SPIFFE/X.509, DPoP/mTLS)**, Model Armor, immutable Cloud Audit Logs, ISO 42001, **A2A → Linux Foundation** (v1.0, signed Agent Cards). *No budget caps, no multi-tenant world model, no provable self-improvement.*
+- ServiceNow: **Now Assist $1.5B ACV target**; **AI Control Tower** (Discover/Observe/Govern/Secure/Measure), **real-time agent kill-switch via AI Gateway**, **Veza** (agent identity), **Traceloop** acq (observability), 5 risk frameworks aligned to **NIST AI RMF + EU AI Act**. *Admits cost-governance is a live weakness; no tamper-evident/signed audit; hard per-agent caps not evidenced.*
+- Sierra (Bret Taylor) **$15.8B val / ~$200M ARR**: immutable agent snapshots + instant rollback, deterministic guardrails, Constellation supervisors, ISO 42001/FedRAMP High. *No budget caps, no signed audit, no marketplace, CX-only.*
+- Decagon **$4.5B val**: **Duet Autopilot "first verified self-improving CX agent" + DuetBench** (Jun 2026) — the closest thing to "provable learning," w/ versioned diffs + human approval, but **not cryptographically signed**. Reviewers flag its audit-log depth as weak.
+- Cognition (Devin) **$26B / ~$492M ARR**: **ACUs + admin spend caps** (the only real runtime budget-cap analog among peers), MultiDevin orchestration, Audit Logs API (unsigned). SOC2 only.
+- Glean **$7.2B / $200M ARR**: permissions-aware graph, Agent Governance + **Protect/AWARE** security, ADLC, ISO 42001. **Explicitly single-tenant**; no budget caps; observability not signed.
+- Writer ($1.9B), LangChain/LangSmith ($1.25B, OSS), CrewAI, Vellum: strong dev/observability/eval + SOC2/HIPAA; **none** have signed audit, hard budget caps, multi-tenant world model, or provable closed-loop learning.
+- Governance GRC layer (Credo AI **GAIA**, OneTrust, Holistic AI, IBM watsonx.governance, Vanta/Drata): own "compliance reporting + policy packs (EU AI Act/NIST/ISO42001/SOC2)" — so **M4 'compliance reporting' is commoditized**; only *signed evidence* differentiates.
+- Identity standards: **no single 'agent PKI' yet**; consolidating on OAuth2.1 + RFC 8707/9728 (MCP), A2A signed Agent Cards (LF), W3C VC 2.0, SPIFFE; agent-OBO still competing IETF drafts. → M3 confirmed dead as a standalone standard play.
+- Regulatory reality (attack #4 corroborated): **EU AI Act high-risk obligations DELAYED to Dec 2027 / Aug 2028** (Digital Omnibus, May 2026); GPAI live since Aug 2025 but enforcement deferred to Aug 2026; **no regulation requires cryptographic proof-of-learning today.** ISO 42001 is the credential everyone is racing to (AWS, Anthropic, MS, SAP, Snowflake, Sierra, Glean; 350+ certs).
+
+### THE UNCONTESTED WHITESPACE (held by zero competitors) — the foundation for Rounds 2–5
+1. **Cryptographically-signed, tamper-evident audit of agent actions AND learning** (Ed25519 hash-chain + off-host/KMS signing + independently-verifiable proof-pack — already shipped in Maverick).
+2. **Provable closed-loop learning** (signed proof-of-improvement: approved-data-derived, eval-gated, non-regressing, reproducible).
+3. **Hard budget/cost ENFORCEMENT** (`budget.check()` runtime caps + cluster spend ledger) — a HOT, publicly-admitted pain (ServiceNow), only Cognition has an analog.
+4. **Cross-tenant fleet world model / fleet memory** for external agents — nobody has it.
+
+### MARKET FRAMING (analyst-grade, researched) — sizes the $20M thesis
+- **Gartner: "Guardian Agents" = 10–15% of the agentic-AI market by 2030** (Reviewers/Monitors/Protectors) — a named, sized category for governance/oversight = exactly Maverick.
+- **Forrester (Predictions 2026): AI-governance spend grows ~3× AI-capability spend**; "half of enterprise ERP vendors will launch autonomous governance modules (explainable AI, automated audit trails, real-time compliance)"; governance = "significant market differentiation opportunity."
+- **Gartner AI TRiSM (Feb 2025): "runtime enforcement is no longer optional"**; the AI-governance + runtime-enforcement layers are consolidating into a distinct market segment; **≥80% of unauthorized AI transactions through 2026 = internal policy violations** (oversharing/misuse, not attacks) → validates Maverick's enforcement primitives (budget caps, killswitch, shield, tenant isolation).
+- **Gartner (Jun 2025): 40%+ of agentic-AI projects canceled by end-2027** — cost, unclear value, *inadequate risk controls* among top causes. Only ~130 of "thousands" of agentic vendors are "real."
+- **Menlo Ventures (Dec 2025): enterprise GenAI spend $37B in 2025**; 2026 theme "explainability & governance go mainstream — governments demanding audit logs and explainable decisions." Only **16% of enterprise deployments are 'true agents.'**
+- **a16z (Jan 2025): as models commoditize, proprietary data + "process power" are the moats**; governance operationalizes the moat.
+- **Commoditizing substrate (avoid):** OTel GenAI semantic conventions; A2A + MCP both donated to Linux Foundation (AAIF); AWS Bedrock AgentCore bundles Runtime/Memory/Gateway/Identity/Guardrails/Observability + **13 free evaluators**; provider-native traces (OpenAI/Anthropic SDKs). Raw tracing/eval/identity/interop = table stakes.
+- **Implication:** the durable, monetizable layer = **governance + provable learning + enforcement + signed evidence** — and it's a *sized, analyst-validated* category, not a niche. The $20M bar is reachable IF Maverick owns a defensible slice of the "Guardian"/AI-TRiSM segment with something the giants can't copy.
+
+### REFINED hardest question for Idea-Gen
+Given the whitespace above is real but (a) not yet regulation-required and (b) the "self-improving" framing scares risk committees and is being chased by Decagon: **What is the wedge product that turns the 4 uncontested capabilities into something a high-assurance buyer (bank model-risk/SR 11-7, defense/IC, pharma GxP, critical infra, or an enterprise terrified of agent liability) will PAY for in the next 12 months — and that compounds into a $20M+ irreplaceable asset the hyperscalers structurally won't build because it commoditizes their own models/lock-in?**
