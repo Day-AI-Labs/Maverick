@@ -97,3 +97,34 @@ def test_shared_consult_fails_open(world):
         killswitch._last_shared_check_ts = 0.0
         killswitch._shared_world = None
         assert killswitch._shared_halt_active() is None  # fail-open, no raise
+
+
+# ----- cluster-wide provider spend ledger (council C5) -----
+
+def test_provider_spend_atomic_increment(world):
+    assert world.get_provider_spend("2026-06-22", "anthropic") == 0.0
+    assert world.add_provider_spend("2026-06-22", "anthropic", 1.50) == 1.50
+    assert world.add_provider_spend("2026-06-22", "anthropic", 2.25) == 3.75
+    assert world.get_provider_spend("2026-06-22", "anthropic") == 3.75
+    # Distinct (period, provider) keys are independent.
+    assert world.add_provider_spend("2026-06-22", "openai", 0.50) == 0.50
+    assert world.add_provider_spend("2026-06-23", "anthropic", 1.0) == 1.0
+    assert world.get_provider_spend("2026-06-22", "anthropic") == 3.75
+
+
+def test_provider_cost_cap_uses_shared_store_when_postgres(world, monkeypatch):
+    # record/check route through the shared world (not the per-host JSON file)
+    # when a shared backend is configured, so the cap total is fleet-wide.
+    from maverick import provider_cost_cap as pcc
+    monkeypatch.setattr(pcc, "_shared_world_cache", None)
+    monkeypatch.setattr(
+        "maverick.world_model_backends.is_postgres_configured", lambda: True
+    )
+    monkeypatch.setattr("maverick.world_model.open_world", lambda: world)
+    monkeypatch.setenv("MAVERICK_PROVIDER_CAPS_PERIOD", "day")
+    pcc.record("anthropic", 2.0, now=1_750_000_000.0)
+    pcc.record("anthropic", 1.0, now=1_750_000_000.0)
+    st = pcc.check("anthropic", now=1_750_000_000.0)
+    assert st.spent == 3.0  # read back from the shared ledger, not a local file
+    key = pcc.period_key(1_750_000_000.0)
+    assert world.get_provider_spend(key, "anthropic") == 3.0

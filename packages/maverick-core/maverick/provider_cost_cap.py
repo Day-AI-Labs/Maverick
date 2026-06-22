@@ -59,6 +59,32 @@ PERIOD_MONTH = "month"
 
 _LEDGER_LOCK = threading.Lock()
 
+# Cached shared-world handle for the cluster-wide ledger (see _shared_world).
+_shared_world_cache = None
+
+
+def _shared_world():
+    """The shared world store when a shared backend (Postgres) is configured,
+    else ``None``.
+
+    Routes the provider spend ledger through one authoritative shared total so
+    the cap holds across the fleet -- the per-host JSON ledger lets N replicas
+    each spend up to the cap. Returns ``None`` on the SQLite default (the local
+    JSON file is the ledger) or on any error (fail-soft). The handle is cached;
+    a connection error drops it so the next call reconnects."""
+    global _shared_world_cache
+    try:
+        from .world_model_backends import is_postgres_configured
+        if not is_postgres_configured():
+            return None
+        if _shared_world_cache is None:
+            from .world_model import open_world
+            _shared_world_cache = open_world()
+        return _shared_world_cache
+    except Exception:  # pragma: no cover -- fail-soft; reconnect next time
+        _shared_world_cache = None
+        return None
+
 
 class ProviderCapExceeded(Exception):
     """A provider's per-period spend ceiling has been reached."""
@@ -180,6 +206,19 @@ def record(provider: str, dollars: float, *, now: float | None = None,
     if not name or amount == 0.0:
         return
     key = period_key(now)
+    # Cluster-wide ledger: an explicit ``path`` (tests) always uses the file;
+    # otherwise a shared backend (Postgres) records to the single authoritative
+    # total instead of a per-host JSON file. Fail-soft (don't fall back to a
+    # per-host file under a shared backend -- that would split the total).
+    if path is None:
+        shared = _shared_world()
+        if shared is not None:
+            try:
+                shared.add_provider_spend(key, name, amount)
+            except Exception as e:  # pragma: no cover -- accounting is fail-soft
+                log.warning("provider_cost_cap: shared record of $%.4f for %r "
+                            "failed: %s", amount, name, e)
+            return
     ledger = path if path is not None else _ledger_path()
     try:
         # In-process lock + cross-process flock: serialize the whole
@@ -204,8 +243,17 @@ def check(provider: str, *, now: float | None = None,
     """
     name = _canon(provider)
     cap = caps_from_config().get(name)
-    ledger = path if path is not None else _ledger_path()
-    spent = float((_load(ledger).get(period_key(now)) or {}).get(name, 0.0))
+    # Read from the shared ledger on a shared backend (Postgres); an explicit
+    # ``path`` (tests) always reads the file. Fail-soft read -> 0.0 so a
+    # shared-store hiccup never raises a false cap trip.
+    if path is None and (shared := _shared_world()) is not None:
+        try:
+            spent = float(shared.get_provider_spend(period_key(now), name))
+        except Exception:  # pragma: no cover -- fail-soft read
+            spent = 0.0
+    else:
+        ledger = path if path is not None else _ledger_path()
+        spent = float((_load(ledger).get(period_key(now)) or {}).get(name, 0.0))
     if cap is None:
         return CapStatus(allowed=True, spent=spent, cap=None, remaining=None)
     remaining = max(0.0, cap - spent)

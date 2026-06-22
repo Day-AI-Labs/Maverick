@@ -449,6 +449,16 @@ _HALT_MIGRATION = [
     " armed_at DOUBLE PRECISION NOT NULL)",
 ]
 
+# v23 cluster-wide provider spend ledger: one authoritative per-(period,
+# provider) total so provider_cost_cap's ceiling holds across the fleet. Not
+# tenant-scoped -- a provider cap is a deployment-wide spend ceiling.
+_PROVIDER_SPEND_MIGRATION = [
+    "CREATE TABLE IF NOT EXISTS provider_spend ("
+    " period_key TEXT NOT NULL, provider TEXT NOT NULL,"
+    " dollars DOUBLE PRECISION NOT NULL DEFAULT 0,"
+    " PRIMARY KEY (period_key, provider))",
+]
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
@@ -462,6 +472,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (19, _RATE_EVENTS_MIGRATION),
     (21, _DUAL_CONTROL_MIGRATION),
     (22, _HALT_MIGRATION),
+    (23, _PROVIDER_SPEND_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -2925,6 +2936,34 @@ class PostgresWorldModel:
             return None
         return {"reason": row[0] or "", "source": row[1] or "",
                 "armed_by": row[2] or "", "armed_at": row[3]}
+
+    # ----- cluster-wide provider spend ledger (v23) -----
+    def add_provider_spend(self, period_key: str, provider: str,
+                           amount: float) -> float:
+        """Atomically add ``amount`` and return the new running total. The single
+        authoritative spend total on shared Postgres so N replicas can't each
+        spend up to the provider cap (ON CONFLICT increment is row-atomic)."""
+        amt = max(0.0, float(amount or 0.0))
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO provider_spend(period_key, provider, dollars) "
+                "VALUES(%s, %s, %s) ON CONFLICT(period_key, provider) "
+                "DO UPDATE SET dollars = provider_spend.dollars + EXCLUDED.dollars "
+                "RETURNING dollars",
+                (period_key, provider, amt),
+            )
+            row = cur.fetchone()
+        return float(row[0]) if row else amt
+
+    def get_provider_spend(self, period_key: str, provider: str) -> float:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT dollars FROM provider_spend "
+                "WHERE period_key = %s AND provider = %s",
+                (period_key, provider),
+            )
+            row = cur.fetchone()
+        return float(row[0]) if row else 0.0
 
     # ----- pruning -----
 
