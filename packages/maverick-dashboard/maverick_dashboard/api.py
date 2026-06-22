@@ -91,6 +91,22 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
 
+# Shared-store channel for Idempotency-Key dedup on goal creation (see
+# create_goal). Distinct from the channel/webhook idempotency namespaces.
+_IDEMPOTENCY_CHANNEL = "idempotency:api:goals"
+
+
+def _shared_halt_backend() -> bool:
+    """Whether the cluster-wide (shared-store) halt is in play. Only on a shared
+    backend (Postgres); on single-host SQLite the local HALT file is the whole
+    mechanism and the killswitch never consults the shared row, so the dashboard
+    leaves it untouched (keeps single-host behavior unchanged)."""
+    try:
+        from maverick.world_model_backends import is_postgres_configured
+        return bool(is_postgres_configured())
+    except Exception:
+        return False
+
 _PERF_SLA_CACHE_TTL_SECONDS = 60.0
 _PERF_SLA_LOCK = asyncio.Lock()
 _PERF_SLA_CACHE: tuple[float, list[dict], str | None] | None = None
@@ -287,7 +303,33 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
     w = _world()
+    # Idempotency-Key (optional, RFC-style): a client whose POST times out at the
+    # LB and retries must not double-create / double-bill a paid run -- and on a
+    # multi-replica deployment the retry can land on a different replica, so the
+    # dedup must be in the shared store (reusing the backend-agnostic
+    # mark/lookup_processed_message primitive). The key is scoped to the caller so
+    # it can't collide across principals. A replay returns the ORIGINAL goal and
+    # dispatches no second run.
+    idem_key = (request.headers.get("Idempotency-Key") or "").strip()
+    idem_ext = ""
+    if idem_key:
+        if len(idem_key) > 255:
+            raise HTTPException(status_code=400, detail="Idempotency-Key too long (max 255)")
+        idem_ext = f"{caller_principal(request) or ''}:{idem_key}"
+        prior = w.lookup_processed_message(_IDEMPOTENCY_CHANNEL, idem_ext)
+        if prior is not None:
+            g0 = w.get_goal(prior)
+            if g0 is not None:
+                return _to_goal_out(g0)  # replay: original goal, no new run
     goal_id = w.create_goal(title[:200], description, owner=caller_principal(request) or "")
+    if idem_key and not w.mark_message_processed(
+        _IDEMPOTENCY_CHANNEL, idem_ext, goal_id=goal_id
+    ):
+        # Lost a concurrent race on the same key: return the winner's goal and do
+        # NOT dispatch a run for this (now-orphaned, never-run) goal row.
+        prior = w.lookup_processed_message(_IDEMPOTENCY_CHANNEL, idem_ext)
+        g0 = w.get_goal(prior) if prior is not None else None
+        return _to_goal_out(g0 or w.get_goal(goal_id))
     from maverick.runner import run_goal_in_thread
     # Enforce server-side execution caps even when callers request larger values.
     max_dollars = min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
@@ -1119,6 +1161,20 @@ async def halt_status() -> dict:
             out["armed_at"] = p.stat().st_mtime
         except OSError:
             pass
+    # Reflect the cluster-wide halt too: on a shared backend it may be armed by
+    # another replica with no local file here. Postgres only; best-effort.
+    shared = None
+    if _shared_halt_backend():
+        try:
+            shared = _world().active_halt()
+        except Exception:
+            shared = None
+    if shared:
+        out["active"] = True
+        out["cluster_halt"] = True
+        out["reason"] = out["reason"] or (shared.get("reason") or None)
+        out["armed_at"] = out["armed_at"] or shared.get("armed_at")
+        out["armed_by"] = shared.get("armed_by") or None
     return out
 
 
@@ -1131,12 +1187,25 @@ async def halt_set(request: Request, payload: HaltIn) -> None:
     """
     require_permission(request, "operate")
     from maverick.killswitch import _halt_file_path
+    reason = payload.reason or "manual via dashboard"
     p = _halt_file_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text((payload.reason or "manual via dashboard") + "\n")
+        p.write_text(reason + "\n")
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"cannot write halt file: {e}") from e
+    # Also arm the cluster-wide halt in the shared store so the stop propagates
+    # to every replica (the file only halts this one). Only on a shared backend
+    # (Postgres): on single-host SQLite the file halt is the whole mechanism and
+    # the killswitch doesn't consult the shared row. Best-effort -- a shared-store
+    # error must not fail the local arm, which already took effect above.
+    if _shared_halt_backend():
+        try:
+            _world().arm_halt(reason, source="dashboard",
+                              armed_by=caller_principal(request) or "")
+        except Exception:
+            log.warning("cluster-wide halt arm failed (local file halt still set)",
+                        exc_info=True)
 
 
 @router.delete("/halt", status_code=204)
@@ -1151,6 +1220,13 @@ async def halt_clear(request: Request) -> None:
         except OSError as e:
             raise HTTPException(status_code=500, detail=f"cannot remove halt file: {e}") from e
     clear()
+    # Clear the cluster-wide halt too (Postgres only; see halt_set). Best-effort
+    # so a shared-store error doesn't block clearing the local halt.
+    if _shared_halt_backend():
+        try:
+            _world().disarm_halt()
+        except Exception:
+            log.warning("cluster-wide halt clear failed", exc_info=True)
 
 
 @router.post("/goals/{goal_id}/cancel", status_code=204)

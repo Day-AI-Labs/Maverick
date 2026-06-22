@@ -817,6 +817,41 @@ async def extension_cors(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def tenant_pinning(request: Request, call_next):
+    """Pin the active tenant from the authenticated principal for the request.
+
+    Council #6: the world model's tenant scoping (the app-layer ``_tenant_scope``
+    predicate AND the Postgres RLS ``maverick.tenant`` GUC) only engages when a
+    tenant is pinned, but no dashboard request ever pinned one -- isolation rested
+    on each call site remembering to, with no central enforcement. This pins the
+    tenant from the verified principal for the request's duration (ContextVar,
+    reset on exit so it never leaks across requests/tasks).
+
+    No-op unless per-user tenancy is enabled (``[tenancy] by_user`` /
+    ``MAVERICK_TENANT_BY_USER``) -- the single-tenant default is unchanged -- and
+    only when a principal resolves (an authenticated request). Fail-open: a
+    resolution error never blocks the request."""
+    token = None
+    try:
+        from maverick.paths import set_tenant, tenant_by_user_enabled
+        if tenant_by_user_enabled():
+            principal = caller_principal(request)
+            if principal:
+                token = set_tenant(f"api:{principal}")
+    except Exception:  # pragma: no cover -- pinning never blocks a request
+        token = None
+    try:
+        return await call_next(request)
+    finally:
+        if token is not None:
+            try:
+                from maverick.paths import reset_tenant
+                reset_tenant(token)
+            except Exception:  # pragma: no cover
+                pass
+
+
 # ----- goal-creation rate limit -----
 # Council safety-seat (round 1): nothing throttled /chat/send or
 # POST /api/v1/goals. A runaway loop or a flood of same-origin posts

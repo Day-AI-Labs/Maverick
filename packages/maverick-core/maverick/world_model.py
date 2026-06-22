@@ -30,7 +30,7 @@ from .paths import data_dir
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = data_dir("world.db")
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 23
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -308,6 +308,31 @@ CREATE TABLE IF NOT EXISTS processed_messages (
     UNIQUE(channel, external_id)
 );
 
+-- v22 cluster-wide killswitch: a shared halt the dashboard arms and every
+-- replica's killswitch.check() consults, so an emergency stop propagates across
+-- the fleet (the in-process flag + local HALT file only stop the replica that
+-- served the request). Untenanted on purpose -- a global emergency stop is not
+-- per-tenant; ``scope=''`` is the global row.
+CREATE TABLE IF NOT EXISTS halt (
+    scope    TEXT PRIMARY KEY,
+    reason   TEXT,
+    source   TEXT,
+    armed_by TEXT,
+    armed_at REAL NOT NULL
+);
+
+-- v23 cluster-wide provider spend ledger: a shared per-(period, provider) total
+-- so the provider_cost_cap ceiling is enforced across the fleet, not per-host.
+-- The host-local JSON ledger (provider_spend.json) is per-host and lets N
+-- replicas each spend up to the cap; on a shared backend this row is the single
+-- authoritative total.
+CREATE TABLE IF NOT EXISTS provider_spend (
+    period_key TEXT NOT NULL,
+    provider   TEXT NOT NULL,
+    dollars    REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (period_key, provider)
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     content, content='messages', content_rowid='id'
 );
@@ -458,6 +483,12 @@ MIGRATIONS: dict[int, list[str]] = {
         " decision TEXT NOT NULL, decided_at REAL NOT NULL, note TEXT,"
         " PRIMARY KEY (approval_id, approver))",
     ],
+    # v22 cluster-wide killswitch: the halt table is in SCHEMA (idempotent
+    # CREATE); listed here so existing DBs bump the version on next open.
+    22: [],
+    # v23 cluster-wide provider spend ledger: the provider_spend table is in
+    # SCHEMA (idempotent CREATE); listed here so existing DBs bump the version.
+    23: [],
 }
 
 
@@ -2414,6 +2445,68 @@ class WorldModel:
             (channel, external_id),
         )
         return row is not None
+
+    # ----- cluster-wide killswitch (v22) -----
+    # Untenanted, single-row global emergency stop. On a shared backend
+    # (Postgres) every replica's killswitch.check() consults this, so a halt
+    # armed via the dashboard stops the whole fleet rather than just the replica
+    # that served the request.
+    def arm_halt(self, reason: str = "", source: str = "manual",
+                 armed_by: str = "") -> None:
+        with self._writing() as conn:
+            conn.execute(
+                "INSERT INTO halt(scope, reason, source, armed_by, armed_at) "
+                "VALUES('', ?, ?, ?, ?) "
+                "ON CONFLICT(scope) DO UPDATE SET reason=excluded.reason, "
+                "source=excluded.source, armed_by=excluded.armed_by, "
+                "armed_at=excluded.armed_at",
+                (reason or "", source or "manual", armed_by or "", time.time()),
+            )
+
+    def disarm_halt(self) -> None:
+        with self._writing() as conn:
+            conn.execute("DELETE FROM halt WHERE scope = ''")
+
+    def active_halt(self) -> dict | None:
+        """The shared global halt state, or ``None`` when not armed."""
+        row = self._read_one(
+            "SELECT reason, source, armed_by, armed_at FROM halt WHERE scope = ''",
+            (),
+        )
+        if row is None:
+            return None
+        return {"reason": row[0] or "", "source": row[1] or "",
+                "armed_by": row[2] or "", "armed_at": row[3]}
+
+    # ----- cluster-wide provider spend ledger (v23) -----
+    def add_provider_spend(self, period_key: str, provider: str,
+                           amount: float) -> float:
+        """Atomically add ``amount`` to ``(period_key, provider)``; return the new
+        running total. The single authoritative spend total when this world is the
+        shared (Postgres) backend, so N replicas can't each spend up to the cap."""
+        amt = max(0.0, float(amount or 0.0))
+        with self._writing() as conn:
+            conn.execute(
+                "INSERT INTO provider_spend(period_key, provider, dollars) "
+                "VALUES(?, ?, ?) ON CONFLICT(period_key, provider) "
+                "DO UPDATE SET dollars = dollars + ?",
+                (period_key, provider, amt, amt),
+            )
+            row = conn.execute(
+                "SELECT dollars FROM provider_spend "
+                "WHERE period_key = ? AND provider = ?",
+                (period_key, provider),
+            ).fetchone()
+        return float(row[0]) if row else amt
+
+    def get_provider_spend(self, period_key: str, provider: str) -> float:
+        """The running spend total for ``(period_key, provider)`` (0.0 if none)."""
+        row = self._read_one(
+            "SELECT dollars FROM provider_spend "
+            "WHERE period_key = ? AND provider = ?",
+            (period_key, provider),
+        )
+        return float(row[0]) if row else 0.0
 
     # ----- attachments -----
     def add_attachment(
