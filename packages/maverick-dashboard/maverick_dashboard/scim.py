@@ -62,7 +62,11 @@ def _authorize(request: Request) -> JSONResponse | None:
         return _scim_error(404, "SCIM is not enabled")
     auth = request.headers.get("authorization", "")
     token = auth[7:] if auth.startswith("Bearer ") else ""
-    if not (token and hmac.compare_digest(token, expected)):
+    # Compare on bytes: hmac.compare_digest(str, str) raises TypeError on any
+    # non-ASCII (>U+007F) codepoint, which would 500 this auth gate (the sole
+    # gate for the IdP provisioning surface) on a crafted bearer -- a DoS /
+    # info-leak amplifier. The channel verifiers were fixed the same way.
+    if not (token and hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8"))):
         return _scim_error(401, "invalid or missing SCIM bearer token")
     return None
 

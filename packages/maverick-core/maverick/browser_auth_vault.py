@@ -77,7 +77,19 @@ class Vault:
 
     def _write(self, blob: dict[str, str]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        data = json.dumps(blob, indent=2).encode("utf-8")
+        # 0600 + atomic replace: the file holds sealed credential blobs; match
+        # the key file's restrictive perms so entry names/sizes/timing aren't
+        # readable by any other local user (the bare write_text inherited the
+        # umask, typically 0644). os.open sets mode only on creation, so write
+        # to a fresh temp then rename over the target.
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, data)
+        finally:
+            os.close(fd)
+        os.replace(tmp, self.path)
 
     def store(self, name: str, data: dict) -> None:
         blob = self._read()

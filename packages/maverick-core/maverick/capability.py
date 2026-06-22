@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass
 from fnmatch import fnmatch
 
-from .safety.tool_risk import risk_rank, tool_risk
+from .safety.tool_risk import RISK_LEVELS, risk_rank, tool_risk
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,16 @@ class Capability:
     allow_paths: frozenset[str] = frozenset()
     allow_hosts: frozenset[str] = frozenset()
     ancestors: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        # Fail closed at the trust boundary: an unknown max_risk string -- e.g.
+        # an operator who writes "none"/"readonly" in a role/domain TOML
+        # intending the *tightest* ceiling -- must not silently rank as "medium"
+        # (risk_rank's default for unknown levels) and thereby PERMIT medium-risk
+        # tools (the default class for any unclassified/MCP-adjacent tool).
+        # Coerce any unrecognized ceiling to the most restrictive level.
+        if self.max_risk is not None and self.max_risk not in RISK_LEVELS:
+            object.__setattr__(self, "max_risk", RISK_LEVELS[0])
 
     def revocation_principals(self) -> tuple[str, ...]:
         """Principals whose revocation invalidates this grant.

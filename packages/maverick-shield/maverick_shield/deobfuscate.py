@@ -27,9 +27,13 @@ import unicodedata
 from urllib.parse import unquote
 
 # Bounds: a hostile input must not be able to amplify into unbounded work.
+# _MAX_LEN matches builtin_rules' own scan cap (256 KB) so the pre-pass does not
+# silently *stop decoding* on inputs the detectors still scan -- the prior 20k
+# bail let `"a"*20001 + base64(payload)` slip an encoded attack past the decode
+# step. Total work stays bounded by _MAX_VARIANTS regardless of input size.
 _MAX_VARIANTS = 16
-_MAX_LEN = 20_000
-_MAX_DEPTH = 2
+_MAX_LEN = 262_144
+_MAX_DEPTH = 3  # tolerate triple-nested encodings (still bounded by _MAX_VARIANTS)
 
 # Zero-width / bidi / tag chars (mirrors cascade; combining marks added so a
 # "zalgo"-stacked payload collapses to its base letters). Written with \\uXXXX

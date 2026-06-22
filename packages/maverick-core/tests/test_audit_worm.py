@@ -156,3 +156,25 @@ def test_worm_enabled_env_and_config(monkeypatch):
     assert worm.worm_enabled() is True
     monkeypatch.setenv("MAVERICK_AUDIT_WORM", "0")
     assert worm.worm_enabled() is False   # env wins
+
+
+def test_push_refuses_unsealed_plaintext_when_sealing_active(tmp_path, monkeypatch):
+    # Council H3: WORM must never lock PLAINTEXT audit data under a multi-year
+    # immutable retention. When sealing is active (at-rest on + key present) an
+    # unsealed closed day-file is refused until `audit seal` runs.
+    ad = _audit_dir(tmp_path, {"2020-01-01.ndjson": "plaintext event\n"})
+    monkeypatch.setattr(worm, "_at_rest_sealing_active", lambda: True)
+    sink = FakeSink()
+    rep = worm.push_closed_dayfiles(audit_dir=ad, today="2025-01-01", sink=sink)
+    assert "refused: unsealed plaintext" in rep["2020-01-01.ndjson"]
+    assert sink.puts == []   # nothing shipped
+
+
+def test_push_allows_when_sealing_inactive(tmp_path, monkeypatch):
+    # Inert when sealing can't run (no key / CI): we can't expect sealed files.
+    ad = _audit_dir(tmp_path, {"2020-01-01.ndjson": "plaintext event\n"})
+    monkeypatch.setattr(worm, "_at_rest_sealing_active", lambda: False)
+    sink = FakeSink()
+    rep = worm.push_closed_dayfiles(audit_dir=ad, today="2025-01-01", sink=sink)
+    assert rep["2020-01-01.ndjson"] == "pushed"
+    assert len(sink.puts) == 1

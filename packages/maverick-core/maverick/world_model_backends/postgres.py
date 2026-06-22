@@ -1166,13 +1166,30 @@ class PostgresWorldModel:
                 (int(goal_id), title or ""),
             )
             version = int(cur.fetchone()[0]) + 1
-            cur.execute(
-                "INSERT INTO artifacts(goal_id, kind, title, content, version, "
-                "created_at) VALUES(%s, %s, %s, %s, %s, %s) RETURNING id",
-                (int(goal_id), str(kind or "text"), title or "", _seal(content),
-                 version, time.time()),
-            )
-            return int(cur.fetchone()[0])
+            # Gate the write on the parent goal being in the active tenant (see
+            # start_episode) so a write against another tenant's goal_id can't
+            # plant a deliverable. Single-tenant (empty frag) keeps the direct
+            # insert.
+            frag, fparams = _tenant_scope()
+            if frag:
+                cur.execute(
+                    "INSERT INTO artifacts(goal_id, kind, title, content, version, "
+                    "created_at) SELECT %s, %s, %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") RETURNING id",
+                    (int(goal_id), str(kind or "text"), title or "", _seal(content),
+                     version, time.time(), int(goal_id), *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO artifacts(goal_id, kind, title, content, version, "
+                    "created_at) VALUES(%s, %s, %s, %s, %s, %s) RETURNING id",
+                    (int(goal_id), str(kind or "text"), title or "", _seal(content),
+                     version, time.time()),
+                )
+            row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"unknown goal_id {goal_id!r} for the active tenant")
+        return int(row[0])
 
     def artifacts_for_goal(self, goal_id: int) -> list[dict]:
         """Every artifact version for a goal, ordered by title then version."""
@@ -1214,26 +1231,48 @@ class PostgresWorldModel:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         now = time.time()
         exp = now + float(ttl_seconds) if ttl_seconds else None
+        # Gate the write on the parent goal being in the active tenant (see
+        # start_episode): a tenant must not mint a share link over another
+        # tenant's goal_id. Single-tenant (empty frag) keeps the direct insert.
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO share_links(goal_id, token_sha256, created_by, "
-                "created_at, expires_at) VALUES(%s, %s, %s, %s, %s) RETURNING id",
-                (int(goal_id), token_hash, created_by or "", now, exp),
-            )
-            return int(cur.fetchone()[0]), token
+            if frag:
+                cur.execute(
+                    "INSERT INTO share_links(goal_id, token_sha256, created_by, "
+                    "created_at, expires_at) SELECT %s, %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") RETURNING id",
+                    (int(goal_id), token_hash, created_by or "", now, exp,
+                     int(goal_id), *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO share_links(goal_id, token_sha256, created_by, "
+                    "created_at, expires_at) VALUES(%s, %s, %s, %s, %s) RETURNING id",
+                    (int(goal_id), token_hash, created_by or "", now, exp),
+                )
+            row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"unknown goal_id {goal_id!r} for the active tenant")
+        return int(row[0]), token
 
     def resolve_share_link(self, token: str) -> int | None:
         """The goal_id a token grants read access to, or None if unknown/revoked/
-        expired. Lookup is by hash -- the clear token is never stored."""
+        expired. Lookup is by hash -- the clear token is never stored.
+
+        Scoped to the active tenant's goals: a share link minted (or planted)
+        over another tenant's goal must not resolve cross-tenant."""
         if not token:
             return None
         token_hash = hashlib.sha256(token.encode()).hexdigest()
+        frag, fparams = _tenant_scope("g.tenant_id")
+        sql = ("SELECT s.goal_id, s.expires_at, s.revoked FROM share_links s "
+               "JOIN goals g ON g.id = s.goal_id WHERE s.token_sha256=%s")
+        params: list = [token_hash]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
         with self._tx() as cur:
-            cur.execute(
-                "SELECT goal_id, expires_at, revoked FROM share_links "
-                "WHERE token_sha256=%s",
-                (token_hash,),
-            )
+            cur.execute(sql, tuple(params))
             row = cur.fetchone()
         if not row or row[2]:
             return None
@@ -1269,15 +1308,25 @@ class PostgresWorldModel:
 
     def revoke_share_link(self, link_id: int, *, goal_id: int | None = None) -> bool:
         """Revoke a share link (optionally only if it belongs to ``goal_id``).
-        Returns whether a row was changed."""
+        Returns whether a row was changed.
+
+        Both branches are scoped to the active tenant's goals so a tenant can't
+        revoke (deny access to) another tenant's link by guessing a sequential
+        ``link_id``. Single-tenant (empty frag) keeps the direct update."""
+        frag, fparams = _tenant_scope("g.tenant_id")
+        tcond = ""
+        if frag:
+            tcond = (" AND goal_id IN (SELECT g.id FROM goals g WHERE " + frag + ")")
         with self._tx() as cur:
             if goal_id is None:
                 cur.execute(
-                    "UPDATE share_links SET revoked=1 WHERE id=%s", (int(link_id),))
+                    "UPDATE share_links SET revoked=1 WHERE id=%s" + tcond,
+                    (int(link_id), *fparams))
             else:
                 cur.execute(
-                    "UPDATE share_links SET revoked=1 WHERE id=%s AND goal_id=%s",
-                    (int(link_id), int(goal_id)))
+                    "UPDATE share_links SET revoked=1 WHERE id=%s AND goal_id=%s"
+                    + tcond,
+                    (int(link_id), int(goal_id), *fparams))
             return cur.rowcount > 0
 
     # ---- Sign-offs (migration v17) ------------------------------------------
@@ -1287,17 +1336,34 @@ class PostgresWorldModel:
         note: str | None = None,
     ) -> None:
         """Record a human's certify/reject decision on a deliverable. One row per
-        goal (a later decision replaces an earlier one)."""
+        goal (a later decision replaces an earlier one).
+
+        Gated on the parent goal being in the active tenant (see start_episode):
+        a tenant must not forge a sign-off (``decided_by``) on another tenant's
+        goal. Single-tenant (empty frag) keeps the direct insert."""
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO signoffs(goal_id, decision, decided_by, note, "
-                "created_at) VALUES(%s, %s, %s, %s, %s) "
-                "ON CONFLICT (goal_id) DO UPDATE SET decision=EXCLUDED.decision, "
-                "decided_by=EXCLUDED.decided_by, note=EXCLUDED.note, "
-                "created_at=EXCLUDED.created_at",
-                (int(goal_id), str(decision), str(decided_by or ""), _seal(note),
-                 time.time()),
-            )
+            if frag:
+                cur.execute(
+                    "INSERT INTO signoffs(goal_id, decision, decided_by, note, "
+                    "created_at) SELECT %s, %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") "
+                    "ON CONFLICT (goal_id) DO UPDATE SET decision=EXCLUDED.decision, "
+                    "decided_by=EXCLUDED.decided_by, note=EXCLUDED.note, "
+                    "created_at=EXCLUDED.created_at",
+                    (int(goal_id), str(decision), str(decided_by or ""), _seal(note),
+                     time.time(), int(goal_id), *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO signoffs(goal_id, decision, decided_by, note, "
+                    "created_at) VALUES(%s, %s, %s, %s, %s) "
+                    "ON CONFLICT (goal_id) DO UPDATE SET decision=EXCLUDED.decision, "
+                    "decided_by=EXCLUDED.decided_by, note=EXCLUDED.note, "
+                    "created_at=EXCLUDED.created_at",
+                    (int(goal_id), str(decision), str(decided_by or ""), _seal(note),
+                     time.time()),
+                )
 
     def signoff_for(self, goal_id: int) -> dict | None:
         """The current sign-off on a goal's deliverable, or None if unreviewed."""
@@ -1333,26 +1399,54 @@ class PostgresWorldModel:
     # ---- Goal origins (migration v17) ---------------------------------------
 
     def record_goal_origin(self, goal_id: int, kind: str, ref: str) -> None:
-        """Record which automation spawned a goal (one row per goal)."""
+        """Record which automation spawned a goal (one row per goal).
+
+        Gated on the parent goal being in the active tenant (see start_episode)
+        so a write against another tenant's goal_id can't land. Single-tenant
+        (empty frag) keeps the direct insert."""
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO goal_origins(goal_id, kind, ref, created_at) "
-                "VALUES(%s, %s, %s, %s) "
-                "ON CONFLICT (goal_id) DO UPDATE SET kind=EXCLUDED.kind, "
-                "ref=EXCLUDED.ref, created_at=EXCLUDED.created_at",
-                (int(goal_id), str(kind), str(ref), time.time()),
-            )
+            if frag:
+                cur.execute(
+                    "INSERT INTO goal_origins(goal_id, kind, ref, created_at) "
+                    "SELECT %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") "
+                    "ON CONFLICT (goal_id) DO UPDATE SET kind=EXCLUDED.kind, "
+                    "ref=EXCLUDED.ref, created_at=EXCLUDED.created_at",
+                    (int(goal_id), str(kind), str(ref), time.time(),
+                     int(goal_id), *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO goal_origins(goal_id, kind, ref, created_at) "
+                    "VALUES(%s, %s, %s, %s) "
+                    "ON CONFLICT (goal_id) DO UPDATE SET kind=EXCLUDED.kind, "
+                    "ref=EXCLUDED.ref, created_at=EXCLUDED.created_at",
+                    (int(goal_id), str(kind), str(ref), time.time()),
+                )
 
     def goals_for_origin(self, kind: str, ref: str, *, limit: int = 20) -> list[PGGoal]:
-        """Goals an automation spawned, most-recent first."""
+        """Goals an automation spawned, most-recent first.
+
+        Scoped to the active tenant's goals: a trigger/schedule ``ref`` can
+        collide across tenants, so this row-returning read must not span them
+        (its sibling ``origin_status_counts`` is scoped the same way). Without
+        the predicate, a tenant could read another tenant's decrypted goal
+        content by guessing a colliding automation ``ref``.
+        """
+        frag, fparams = _tenant_scope("g.tenant_id")
+        sql = ("SELECT g.id, g.parent_id, g.title, g.description, g.status, "
+               "g.created_at, g.updated_at, g.deadline, g.result FROM goals g "
+               "JOIN goal_origins o ON o.goal_id = g.id "
+               "WHERE o.kind=%s AND o.ref=%s")
+        params: list = [str(kind), str(ref)]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " ORDER BY g.id DESC LIMIT %s"
+        params.append(max(1, int(limit)))
         with self._tx() as cur:
-            cur.execute(
-                "SELECT g.id, g.parent_id, g.title, g.description, g.status, "
-                "g.created_at, g.updated_at, g.deadline, g.result FROM goals g "
-                "JOIN goal_origins o ON o.goal_id = g.id "
-                "WHERE o.kind=%s AND o.ref=%s ORDER BY g.id DESC LIMIT %s",
-                (str(kind), str(ref), max(1, int(limit))),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return [_dec_goal_row(r) for r in rows]
 
