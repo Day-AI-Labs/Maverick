@@ -217,6 +217,14 @@ SCHEMA: list[str] = [
 # approvals/processed_messages), with v11 making their global UNIQUE constraints
 # tenant-aware so one tenant's upsert can't clobber another's row.
 _TENANT_TABLES = ("goals", "facts", "conversations", "approvals", "processed_messages")
+# Tables that carry their own ``tenant_id`` and so get a DB-enforced RLS policy.
+# Superset of _TENANT_TABLES (which also drives the v10 column-add migration):
+# ``projects`` (v15) and ``fact_history`` (v18) gained ``tenant_id`` in their own
+# later migrations, so they can't ride the v10 ALTER but MUST still be RLS-scoped
+# -- otherwise a PG deployment relying on "the database enforces the boundary"
+# leaves those two tables app-layer-only. Child tables (episodes/turns/...) carry
+# no tenant_id and remain FK-scoped through their parent goal.
+_RLS_TABLES = (*_TENANT_TABLES, "projects", "fact_history")
 _TENANT_MIGRATION: list[str] = [
     f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS tenant_id TEXT;" for t in _TENANT_TABLES
 ] + [
@@ -745,7 +753,7 @@ class PostgresWorldModel:
         fail-closed policy; otherwise RLS startup raises instead of silently
         running without database-enforced tenant isolation.
         """
-        for table in _TENANT_TABLES:
+        for table in _RLS_TABLES:
             try:
                 with self._tx() as cur:
                     cur.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")

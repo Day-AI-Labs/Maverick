@@ -91,6 +91,10 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
 
+# Shared-store channel for Idempotency-Key dedup on goal creation (see
+# create_goal). Distinct from the channel/webhook idempotency namespaces.
+_IDEMPOTENCY_CHANNEL = "idempotency:api:goals"
+
 _PERF_SLA_CACHE_TTL_SECONDS = 60.0
 _PERF_SLA_LOCK = asyncio.Lock()
 _PERF_SLA_CACHE: tuple[float, list[dict], str | None] | None = None
@@ -287,7 +291,33 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
     w = _world()
+    # Idempotency-Key (optional, RFC-style): a client whose POST times out at the
+    # LB and retries must not double-create / double-bill a paid run -- and on a
+    # multi-replica deployment the retry can land on a different replica, so the
+    # dedup must be in the shared store (reusing the backend-agnostic
+    # mark/lookup_processed_message primitive). The key is scoped to the caller so
+    # it can't collide across principals. A replay returns the ORIGINAL goal and
+    # dispatches no second run.
+    idem_key = (request.headers.get("Idempotency-Key") or "").strip()
+    idem_ext = ""
+    if idem_key:
+        if len(idem_key) > 255:
+            raise HTTPException(status_code=400, detail="Idempotency-Key too long (max 255)")
+        idem_ext = f"{caller_principal(request) or ''}:{idem_key}"
+        prior = w.lookup_processed_message(_IDEMPOTENCY_CHANNEL, idem_ext)
+        if prior is not None:
+            g0 = w.get_goal(prior)
+            if g0 is not None:
+                return _to_goal_out(g0)  # replay: original goal, no new run
     goal_id = w.create_goal(title[:200], description, owner=caller_principal(request) or "")
+    if idem_key and not w.mark_message_processed(
+        _IDEMPOTENCY_CHANNEL, idem_ext, goal_id=goal_id
+    ):
+        # Lost a concurrent race on the same key: return the winner's goal and do
+        # NOT dispatch a run for this (now-orphaned, never-run) goal row.
+        prior = w.lookup_processed_message(_IDEMPOTENCY_CHANNEL, idem_ext)
+        g0 = w.get_goal(prior) if prior is not None else None
+        return _to_goal_out(g0 or w.get_goal(goal_id))
     from maverick.runner import run_goal_in_thread
     # Enforce server-side execution caps even when callers request larger values.
     max_dollars = min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
