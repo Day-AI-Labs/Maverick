@@ -76,6 +76,26 @@ Thesis: **compete on governance + provable learning, never the commodity runtime
 - All "provable self-improvement" marketing until benchmarked (currently false: hardcoded `NOT_RUN`).
 
 ---
+# ROUND 2
+
+## ROUND 2 — ADVERSARIAL council verdict (KILLS the Round-1 insurance thesis)
+**Structural kill-shot: Maverick is INSIDE-OUT; every risk feed insurers pay for is OUTSIDE-IN.**
+4 independent lethal attacks:
+1. **[LETHAL] Inside-out vs outside-in INVERSION.** BitSight/SecurityScorecard work *because* external, consent-free, un-gameable scans — which also gave them a unilateral cold-start escape. Maverick = software the insured installs+configures = exactly the self-reported data insurers are moving AWAY from. Signed hash-chain proves no *post-write* tampering; proves NOTHING about whether enforcing mode ran, on which agents, or under-reporting. The cited precedent inverts the thesis. (Xceedance/Picus/UpGuard 2025.)
+2. **[LETHAL] Market too nascent:** "five AI-liability products worldwide," $25M total Armilla raise, **$4.7B is a 2032 projection**; carriers have no loss experience → no basis to pay for a signal. Channel gated 3–5 yrs.
+3. **[LETHAL] Incumbent absorption already shipping:** ServiceNow killswitches (May 2026), MS Agent 365 audit + Purview export live NOW. "Export signed attestation for your insurer" = a quarter of roadmap. "Fox guarding henhouse" is NOT structural — a Big-4/third-party auditor co-signing the incumbent's export dissolves the neutrality claim. **Neutrality you can rent is not a moat.**
+4. **[LETHAL] No MGA underwrites a 4-day-old, 0-customer vendor's feed:** BitSight took 2011→2021 to earn trust; carriers price off *validated predictive power vs. actual claims* — unbreakable chicken-and-egg in 12 mo. + Verisk analogy fails (no pooled loss-data flywheel; carriers won't hand loss data to a startup); two-sided cold-start with no first mover; R&D bet is a research money pit; unit economics cap < $20M ("win 100% of a market that doesn't exist yet").
+
+**Best precedent = both the proof and the kill-shot:** BitSight ($2.4B, Moody's, 7/10 cyber insurers) proves the category is real AND that it only works outside-in/consent-free — advantages Maverick structurally lacks.
+
+**VERDICT: insurance-loss-control-feed DIES as a $20M path → at most a future feature.**
+
+### NEW hardest question (drives Round 2 Idea-Gen)
+**"What OUTSIDE-IN, consent-optional, UN-GAMEABLE measurement of an enterprise's agent risk can Maverick produce WITHOUT the insured's cooperation — and if the honest answer is 'none,' why is this a company rather than an audit-log feature inside ServiceNow/Microsoft?"**
+Two candidate answers for Idea-Gen to fight out:
+- **(a) OUTSIDE-IN SCANNER ("BitSight for agents"):** A2A Agent Cards are public JSON at well-known URLs; MCP servers are network-exposed. Externally scan + adversarially red-team the public agent attack surface (declared auth, exposed capabilities, prompt-injection/jailbreak susceptibility) → an un-gameable score with its own consent-free cold-start escape. NOTE: this is a *pivot* (new build), not a repackaging of current assets.
+- **(b) TEE-ATTESTED INSIDE-OUT:** run enforcement inside a GPU/CPU TEE with remote attestation → hardware attests the exact enforcing config that executed, making inside-out telemetry un-gameable (directly rebuts Attack #1). Reuses Maverick's real enforcement assets, but adds confidential-computing.
+
 # ROUND LOG
 
 ## ROUND 1 — ADVERSARIAL council: FULL VERDICT (code-grounded, authoritative)
