@@ -95,6 +95,18 @@ router = APIRouter(prefix="/api/v1", tags=["v1"])
 # create_goal). Distinct from the channel/webhook idempotency namespaces.
 _IDEMPOTENCY_CHANNEL = "idempotency:api:goals"
 
+
+def _shared_halt_backend() -> bool:
+    """Whether the cluster-wide (shared-store) halt is in play. Only on a shared
+    backend (Postgres); on single-host SQLite the local HALT file is the whole
+    mechanism and the killswitch never consults the shared row, so the dashboard
+    leaves it untouched (keeps single-host behavior unchanged)."""
+    try:
+        from maverick.world_model_backends import is_postgres_configured
+        return bool(is_postgres_configured())
+    except Exception:
+        return False
+
 _PERF_SLA_CACHE_TTL_SECONDS = 60.0
 _PERF_SLA_LOCK = asyncio.Lock()
 _PERF_SLA_CACHE: tuple[float, list[dict], str | None] | None = None
@@ -1149,6 +1161,20 @@ async def halt_status() -> dict:
             out["armed_at"] = p.stat().st_mtime
         except OSError:
             pass
+    # Reflect the cluster-wide halt too: on a shared backend it may be armed by
+    # another replica with no local file here. Postgres only; best-effort.
+    shared = None
+    if _shared_halt_backend():
+        try:
+            shared = _world().active_halt()
+        except Exception:
+            shared = None
+    if shared:
+        out["active"] = True
+        out["cluster_halt"] = True
+        out["reason"] = out["reason"] or (shared.get("reason") or None)
+        out["armed_at"] = out["armed_at"] or shared.get("armed_at")
+        out["armed_by"] = shared.get("armed_by") or None
     return out
 
 
@@ -1161,12 +1187,25 @@ async def halt_set(request: Request, payload: HaltIn) -> None:
     """
     require_permission(request, "operate")
     from maverick.killswitch import _halt_file_path
+    reason = payload.reason or "manual via dashboard"
     p = _halt_file_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text((payload.reason or "manual via dashboard") + "\n")
+        p.write_text(reason + "\n")
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"cannot write halt file: {e}") from e
+    # Also arm the cluster-wide halt in the shared store so the stop propagates
+    # to every replica (the file only halts this one). Only on a shared backend
+    # (Postgres): on single-host SQLite the file halt is the whole mechanism and
+    # the killswitch doesn't consult the shared row. Best-effort -- a shared-store
+    # error must not fail the local arm, which already took effect above.
+    if _shared_halt_backend():
+        try:
+            _world().arm_halt(reason, source="dashboard",
+                              armed_by=caller_principal(request) or "")
+        except Exception:
+            log.warning("cluster-wide halt arm failed (local file halt still set)",
+                        exc_info=True)
 
 
 @router.delete("/halt", status_code=204)
@@ -1181,6 +1220,13 @@ async def halt_clear(request: Request) -> None:
         except OSError as e:
             raise HTTPException(status_code=500, detail=f"cannot remove halt file: {e}") from e
     clear()
+    # Clear the cluster-wide halt too (Postgres only; see halt_set). Best-effort
+    # so a shared-store error doesn't block clearing the local halt.
+    if _shared_halt_backend():
+        try:
+            _world().disarm_halt()
+        except Exception:
+            log.warning("cluster-wide halt clear failed", exc_info=True)
 
 
 @router.post("/goals/{goal_id}/cancel", status_code=204)

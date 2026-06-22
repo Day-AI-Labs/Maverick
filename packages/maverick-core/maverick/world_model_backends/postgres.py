@@ -439,6 +439,16 @@ _DUAL_CONTROL_MIGRATION: list[str] = [
 ]
 
 
+# v22 cluster-wide killswitch: an untenanted single-row global halt the
+# dashboard arms and every replica's killswitch consults (shared-Postgres
+# deployments). Not RLS-scoped on purpose -- a global emergency stop is not
+# per-tenant.
+_HALT_MIGRATION = [
+    "CREATE TABLE IF NOT EXISTS halt ("
+    " scope TEXT PRIMARY KEY, reason TEXT, source TEXT, armed_by TEXT,"
+    " armed_at DOUBLE PRECISION NOT NULL)",
+]
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
@@ -451,6 +461,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (18, _FACT_HISTORY_MIGRATION),
     (19, _RATE_EVENTS_MIGRATION),
     (21, _DUAL_CONTROL_MIGRATION),
+    (22, _HALT_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -2885,6 +2896,35 @@ class PostgresWorldModel:
         if row is None:
             return None
         return row[0] if row[0] is not None else 0
+
+    # ----- cluster-wide killswitch (v22) -----
+    # Untenanted single-row global emergency stop; on shared Postgres every
+    # replica's killswitch.check() consults this so a halt stops the whole fleet.
+    def arm_halt(self, reason: str = "", source: str = "manual",
+                 armed_by: str = "") -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO halt(scope, reason, source, armed_by, armed_at) "
+                "VALUES('', %s, %s, %s, %s) "
+                "ON CONFLICT(scope) DO UPDATE SET reason=EXCLUDED.reason, "
+                "source=EXCLUDED.source, armed_by=EXCLUDED.armed_by, "
+                "armed_at=EXCLUDED.armed_at",
+                (reason or "", source or "manual", armed_by or "", time.time()),
+            )
+
+    def disarm_halt(self) -> None:
+        with self._tx() as cur:
+            cur.execute("DELETE FROM halt WHERE scope = ''")
+
+    def active_halt(self) -> dict | None:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT reason, source, armed_by, armed_at FROM halt WHERE scope = ''")
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return {"reason": row[0] or "", "source": row[1] or "",
+                "armed_by": row[2] or "", "armed_at": row[3]}
 
     # ----- pruning -----
 
