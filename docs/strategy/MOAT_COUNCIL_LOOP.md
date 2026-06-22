@@ -59,7 +59,52 @@ _(none yet)_
 ---
 # ROUND LOG
 
-## ROUND 1 — ADVERSARIAL council verdict
+## ROUND 1 — ADVERSARIAL council: FULL VERDICT (code-grounded, authoritative)
+> The council independently AUDITED THE REPO. Its verdict supersedes the orchestrator's interim synthesis below. **Finding: the $20M thesis fails today; honest value ≈ low-single-digit-million acqui-hire (~90% below thesis).** This is the loop working — it injected ground truth.
+
+### ⚠️ CODE-AUDIT REALITY CHECK (the most important section in this doc)
+Hard truths the council found in the actual codebase — these define what must become REAL:
+- **Git history is 4 days old (2026-06-18→06-22), 361 commits, 214 by "Claude," 146 by one human.** AI-authored, pre-revenue, zero deployments, zero release tags. → replacement cost (the usual floor for code value) is LOW because it's largely reproducible by prompting.
+- **The crown jewel is NOT implemented.** The proof-pack's improvement section is hardcoded `NOT_RUN`/`INSUFFICIENT_DATA`; "dreaming/hindsight" is deterministic lexical clustering + templated strings; the promotion gate compares **caller-supplied opaque floats — it never computes a score**; the rigorous causal estimator has **zero non-test callers**; **no test runs an agent and asserts a measured capability delta**. The proof proves *governance invariants*, NOT improvement.
+- **The crypto is RFC-standard commodity:** Ed25519 (RFC 8032) + SHA-256 hash chains over NDJSON. No Merkle tree, no RFC-3161, no transparency log. Not novel, not patentable as art.
+- **"1,118 specialist packs" = 1,118 ~15-line TOML files (~945 bytes avg, ~1MB total)** through one ~30-line loader. Config inflation, not software. "26 suites" = name-prefix bucketing.
+- **RLS is OFF by default; the SQLite path has no RLS at all.** (Corroborated: PR #6 shipped tenant-pinning but left RLS opt-in.) Multi-tenant isolation is not default-on.
+- **gRPC federation has no live-wire test (grpcio not installed); the "agent identity" reuses the audit keypair — no PKI/CA.**
+- Defaults pin `claude-opus-4-8`; 132 files reference `anthropic`, 107 `openai` → intelligence is rented; value accrues to the model + distribution, not the wrapper.
+- *(Council possibly overstated one point: `shield_updates.py` signature-verification IS fail-closed; the fail-OPEN refers to the shield runtime per kernel rule 1. Minor.)*
+
+### External corroboration that hardens the attacks
+- Academic **"Proof-of-Learning" (Jia et al., IEEE S&P 2021, arXiv 2103.05633) was BROKEN by spoofing** — including by its own originators (EuroS&P 2023, arXiv 2208.03567). **zkML for real models = 10³–10⁴× proving overhead, impractical at GPT scale** (arXiv 2502.18535). → "provable self-improvement" is academically fraught + cryptographically impractical TODAY.
+- **AWS killed QLDB** (its verifiable-ledger product) for lack of demand, EOL Jul 2025 → weak market pull for "verifiable ledgers" as such.
+- **SOC2 = CPA attestation over 6–12 months; software cannot produce it.** **EU AI Act Art. 12 requires logging *capability*, NOT cryptographic signing/tamper-evidence.** HIPAA BAA = contract; GDPR ROPA/DPIA = controller judgments. → M4 "certified compliance" markets a legal category error; honest version = crowded audit-prep tooling (Vanta/Drata/Compliance Manager).
+- Governance/observability commoditizing to ~$39/seat (LangSmith) + OTel GenAI conventions.
+
+### The 10 attacks (ranked) — compressed
+1. **[LETHAL] The entire claimed moat is shipped by 5 companies worth $10B+** (Google Agent Identity+audit, MS Entra Agent ID+Agent365+Purview, Salesforce Command Center, ServiceNow AI Control Tower). Governance is where the giants are racing WITH Fortune-500 distribution. No whitespace.
+2. **[LETHAL] No proprietary tech** — commodity crypto; unpatentable.
+3. **[LETHAL] "Provable self-improvement" not implemented + academically broken + impractical at scale.** Remove it → "a competently-built fail-closed governance harness," substitutable by incumbents.
+4. **[HIGH] Inter-org agent PKI (M3) only has value as a STANDARD; A2A/MCP/Entra already own it.** No CA, no adoption, no live wire.
+5. **[HIGH] "Certified compliance" is a legal category error** (SOC2/EU-AI-Act don't recognize software-generated artifacts/signed logs as satisfying requirements).
+6. **[LETHAL] No customers, no revenue, 4-day AI-authored history** → prices at low-single-digit millions, not $20M.
+7. **[HIGH] A CISO won't pilot a pre-revenue, no-SOC2-attestation, RLS-off-by-default self-modifying agent platform** — buys the incumbent under existing EA.
+8. **[MED] The layer is commoditizing to ~$39/seat + open standards.**
+9. **[MED] "1,118 packs" is template inflation** — taints credibility on every other claim.
+10. **[MED] Total frontier-model dependence** caps margin + defensibility.
+
+### The 3 FATAL FLAWS
+- **A — No proprietary anything** (not data, model, crypto, or customer); only assembly quality, which is reproducible.
+- **B — The one true differentiator (provable self-improvement) is not real, is academically broken, and is impractical at scale.**
+- **C — Zero distribution against incumbents who own the buyer.**
+
+### Replicable in ≤6 months (per the audit): essentially the ENTIRE stack
+Signed audit (Ed25519+SHA-256 / or adopt Sigstore-Rekor), budget/killswitch (weeks), Postgres RLS (weeks), agent identity (or adopt Entra/A2A/MCP free), signed catalog federation (weeks), compliance scaffolds (Vanta/Drata already sell), the packs (bulk-template generation). **Only the disciplined fail-closed *integration* + honest in-code candor are non-trivial — and neither is defensible $20M IP.**
+
+### THE SINGLE HARDEST QUESTION (carried to all later councils)
+**"Name one enterprise buyer who will pay for Maverick's governance over what MS Entra Agent ID + Agent 365 + Purview (or Google Gemini Enterprise, or ServiceNow AI Control Tower) already give them inside an existing contract — AND show the measured, third-party-verifiable capability delta from the self-improvement loop that justifies the switch. If neither exists, what is the asset beyond a few-million-dollar acqui-hire?"**
+
+---
+
+### Orchestrator interim synthesis (preliminary — superseded by the council verdict above; competitive/market intel still valid)
 *Sources: live research (Google Gemini Enterprise Agent Platform deep-dive, Apr 2026 Cloud Next; A2A→Linux Foundation Jun 2025) + competitive knowledge of Salesforce Agentforce/Trust Layer, Microsoft Copilot Studio + Entra Agent ID + Purview, AWS Bedrock AgentCore, ServiceNow, Sierra, Writer, LangSmith, Credo AI/OneTrust.*
 
 ### Top attacks (ranked by severity to the $20M thesis)
