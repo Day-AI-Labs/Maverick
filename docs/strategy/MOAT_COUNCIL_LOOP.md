@@ -42,19 +42,38 @@ Thesis: **compete on governance + provable learning, never the commodity runtime
 - V1 Deterministic replay + counterfactual forensics · V2 Provable safety envelope · V3 Patent crypto-governance
 - D1 Killer demo (replay→evidence→killswitch→proof) · D2 OSS funnel + pack marketplace · D3 Publish research to recruit
 
-## Scoreboard
-| Idea | Moat | Replacement cost | Demand | Feasibility | Status |
-|---|---|---|---|---|---|
-| _(populated by Validator councils)_ | | | | | |
+## Scoreboard (after Round 1)
+| Idea | Feasibility (real code) | IP | Demand/WTP | Time-to-$ | Moat | Verdict |
+|---|---|---|---|---|---|---|
+| F. Verifiable Spend Ledger + killswitch | 5 | 1 | 3 | 5 | 2 | **GREENLIGHT (wedge/demo)** |
+| B. Underwriter-Grade Telemetry | 3 | 2 | 4 | 3 | 3 | **LEAD CANDIDATE** |
+| A. Proof-Pack for Model Risk | 4 | 2 | 3 | 3 | 2 | CONDITIONAL (fold into B) |
+| C. Confidential Proof-of-Learning | 1 | 2 | 2 | 1 | 5 | **KILL as product / the ONE R&D bet** |
+| E. Policy-as-Proof | 3 | 2 | 2 | 3 | 2 | KILL/FOLD (native to Agent365/ServiceNow) |
+| D. Fleet World Model + DP | 1 | 2 | 1 | 1 | 3 | **KILLED** (RLS off = liability) |
+| "The Verifier" (registry/standard) | 2 | 3 | 2 | 2 | 5 | **KILLED as business** (Sigstore=$0; salvage schema as free land-grab) |
 
-## Open adversarial attacks (unresolved)
-_(none yet)_
+## CONVERGED POSITION (end of Round 1)
+**Reposition: from "governance platform" → "the loss-control data layer for AI-agent insurance."** Channel = insurer, not CISO. Neutrality (not being the model vendor / not being the insured's own control plane) is the wedge.
+- **Build first (M0–4):** F+B as one artifact — a continuously-signed, replayable **agent control & spend record** (enforced caps + hash-chained actions + killswitch events + dollar-accurate ledger). Land **Armilla** (design partner) to accept it as an underwriting input on one pilot policy.
+- **12-mo proof points:** M4 MGA LOI → M6 2–3 insured customers + first measured loss-control claim → M9 carrier prices off the feed (premium delta) → M12 8–12 customers @ $60–150K/yr ≈ $1M ARR, insurer as the compounding channel.
+- **The ONE R&D bet (parallel, not productized):** C done *honestly* — a reproducible benchmark where the loop **measurably improves a held-out task AND emits an independently-verifiable proof** (TEE-attested property cards / optimistic verifiable training — NOT ZK). This is the only genuinely defensible $20M prize; until the benchmark exists, "provable self-improvement" is struck from all decks.
+- **Salvage:** give the attestation *schema* away as open source (land-grab) to feed the proprietary insurance data layer.
+
+## Open adversarial attacks (unresolved → drives Round 2)
+- **THE MOAT QUESTION:** once the agent-insurance market is proven, what stops the carrier demanding the same signed feed directly from MS Agent 365 / ServiceNow (richer telemetry + the enterprise relationship)? What survives an "export signed control attestation for your insurer" button? Quantify the 18-mo window + name the proprietary data / contractual lock-in that survives it.
+- Is the AI-agent-insurance market deep enough in 12 mo to anchor a company (vs. a feature)?
+- Can a 4-day-old, 0-customer vendor actually get an MGA to underwrite against its feed?
 
 ## Validated / greenlit
-_(none yet)_
+- **F (spend ledger + killswitch)** — real, shippable, the demo/wedge.
+- **The insurance-loss-control-feed reposition** — the one place neutrality is an asset and incumbents are structurally conflicted.
+- **C as the single funded R&D bet** — with a falsifiable benchmark milestone.
 
 ## Killed / parked
-_(none yet)_
+- "Governance platform" positioning (incumbents own it, inside existing contracts).
+- D (fleet/DP — liability), E (policy-as-proof — native to incumbents), standalone A, "The Verifier" as a business.
+- All "provable self-improvement" marketing until benchmarked (currently false: hardcoded `NOT_RUN`).
 
 ---
 # ROUND LOG
