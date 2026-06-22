@@ -220,6 +220,48 @@ def sign(manifest: dict) -> dict:
     return sign_cert(manifest)
 
 
+def verify(manifest: dict, *, trusted_pubkey_hex: str | None = None) -> tuple[bool, str]:
+    """Verify a proof-pack manifest's Ed25519 signature. Returns ``(ok, reason)``.
+
+    Council H6: PROOF.md tells a diligence team to "verify the signature field,"
+    but no verifier shipped. This is it. Fail-closed: an unsigned manifest or a
+    bad signature returns False.
+
+    Trust model: the signature is recomputed over the exact canonical payload the
+    signer used (every field except ``signature``, sorted, compact). When
+    ``trusted_pubkey_hex`` is supplied it is verified against THAT anchor and the
+    embedded pubkey must match it -- a real provenance check (an attacker who
+    re-signs embeds their own key, which won't match the publisher's known key).
+    With no anchor it falls back to the embedded key, which proves integrity only
+    (tamper-after-signing) and the reason says so.
+    """
+    sig = manifest.get("signature")
+    if not isinstance(sig, dict) or not sig.get("sig"):
+        return False, "manifest is unsigned (no signature to verify)"
+    embedded = str(sig.get("pubkey") or "").strip()
+    anchor = (trusted_pubkey_hex or "").strip()
+    if anchor and embedded and anchor.lower() != embedded.lower():
+        return False, "manifest pubkey does not match the trusted anchor (provenance fail)"
+    pub = anchor or embedded
+    if not pub:
+        return False, "no public key available to verify against"
+    payload = json.dumps(
+        {k: v for k, v in manifest.items() if k != "signature"},
+        sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    try:
+        from .audit.signing import verify_ed25519
+        ok = verify_ed25519(pub, str(sig.get("sig")), payload)
+    except Exception as e:  # pragma: no cover -- crypto absent / malformed sig
+        return False, f"verification error: {e}"
+    if not ok:
+        return False, "signature does not verify over the canonical payload"
+    if anchor:
+        return True, "signature verified against the trusted anchor"
+    return True, ("signature verifies against the embedded key (integrity only; "
+                  "pass a trusted pubkey for a provenance check)")
+
+
 _BADGE = {
     PASS: "PASS",
     FAIL: "FAIL",
@@ -267,8 +309,10 @@ def render_markdown(manifest: dict) -> str:
         "- `benchmarks` competitive scores require a provider key and are reported "
         "`NOT RUN` with the exact reproduce command — **no number is fabricated**.",
         "",
-        "Verify the bundle: `maverick audit verify` (the audit chain) and the "
-        "`signature` field of `proof_manifest.json` (Ed25519 over the canonical payload).",
+        "Verify the bundle: `maverick audit verify` (the audit chain) and "
+        "`python -m maverick.proof_pack --verify proof_manifest.json "
+        "--pubkey <publisher-ed25519-hex>` for the manifest signature (pass the "
+        "publisher's known key for a provenance check, not just tamper-evidence).",
         "",
     ]
     return "\n".join(lines)
@@ -288,7 +332,22 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
     p.add_argument("--ci", action="store_true", help="exit 1 if a hard section fails")
     p.add_argument("--human-cost", type=float, default=None,
                    help="fully-loaded human cost per deliverable (for the ROI line)")
+    p.add_argument("--verify", metavar="MANIFEST.json", default=None,
+                   help="verify an existing proof_manifest.json instead of building")
+    p.add_argument("--pubkey", default=None,
+                   help="trusted Ed25519 pubkey (hex) to verify --verify against "
+                        "(without it, only integrity is checked, not provenance)")
     args = p.parse_args(argv)
+
+    if args.verify:
+        try:
+            loaded = json.loads(Path(args.verify).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"cannot read manifest {args.verify!r}: {e}")
+            return 2
+        ok, reason = verify(loaded, trusted_pubkey_hex=args.pubkey)
+        print(f"proof manifest verify: {'OK' if ok else 'FAILED'} -- {reason}")
+        return 0 if ok else 1
 
     manifest = sign(build(human_cost=args.human_cost))
     out_dir = Path(args.out) if args.out else _default_out_dir()
@@ -305,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
     return 0
 
 
-__all__ = ["Evidence", "build", "sign", "render_markdown", "main",
+__all__ = ["Evidence", "build", "sign", "verify", "render_markdown", "main",
            "PASS", "FAIL", "SKIPPED", "NOT_RUN", "INSUFFICIENT_DATA"]
 
 
