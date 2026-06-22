@@ -104,6 +104,29 @@ Signed audit (Ed25519+SHA-256 / or adopt Sigstore-Rekor), budget/killswitch (wee
 
 ---
 
+## ROUND 1 — IDEA-GENERATOR council verdict (SOTA-grounded)
+**THE REFRAME / 10x insight:** giants own identity/observability/guardrails/marketplaces/certs; **none can own *independently-verifiable evidence*** — a trustless artifact an auditor/regulator/underwriter/opposing-counsel verifies WITHOUT trusting the vendor or seeing weights. **Hyperscalers/model-vendors are structurally barred** (it lets regulators/plaintiffs prove their own platform misbehaved, commoditizes their model, breaks lock-in). **Neutrality = the moat; it requires NOT being the model vendor.** ← Maverick's one durable structural edge.
+
+**SOTA reality (what's buildable NOW):** ❌ ZK-of-LLMs impractical (min–hrs) — reserve ZK for *small gate-models* (EZKL XGBoost/logistic, sub-sec). ✅ **GPU TEEs (H100/H200 confidential compute): production, 1–7% overhead, NVIDIA-signed attestation** = the practical substrate. ✅ **Optimistic verifiable training** (arXiv 2403.09603, GPT-2 scale, cheaper than ZK) = realistic proof-of-learning. ✅ **Sigstore/SLSA/in-toto/Rekor + C2PA** transparency logs — applied to model *artifacts* but NOT to agent *runtime decisions/learning* = the open gap. **Pull:** EU AI Act Art.12 "proof of integrity on demand," SR 11-7, ISO/IEC 24970 (draft); insurers (Lloyd's/Armilla $25M, Munich Re aiSure) demand controls-on-autonomous-action evidence; budget pain (ServiceNow "hazy spend," Uber burned 2026 AI budget by April, 85% miss AI cost forecasts).
+
+**6 candidate capabilities (mapped to whitespace #1 signed audit / #2 provable learning / #3 hard enforcement / #4 fleet world model):**
+- **A. Proof-Pack for Model Risk** — signed, examiner-replayable SR-11-7 / EU-AI-Act evidence per decision + learning update. *Fit: highest (re-target existing proof-pack to a named schema). Buyer: bank model-risk, EU high-risk deployers (Aug-2026).*
+- **B. Underwriter-Grade Telemetry** — "the SOC-2 of agent insurance": continuously-signed control feed (human-approval-before-irreversible, caps honored, no out-of-policy tools) an MGA underwrites against → insurer becomes the **sales channel**. *Fit: high.*
+- **C. Confidential Proof-of-Learning** — TEE-attested, approved-data-derived, eval-gated, non-regressing, bit-reproducible update proof (optimistic verifiable training + H100 CC). *Fit: med-high; defends known PoL spoofing. Buyer: pharma GxP, defense.*
+- **D. Fleet World Model + DP proofs** — cross-tenant agent learning with secure-aggregation + DP attestation proving no tenant data leaked. *Fit: med (hardest); buyer: bank fraud / insurer / hospital consortia who can't pool raw data.*
+- **E. Policy-as-Proof Runtime Bound** — every action carries a machine-checkable proof it stayed in the signed policy envelope (VeriGuard/AgentSpec/PRISM). *Buyer: critical infra/defense.*
+- **F. Verifiable Spend Ledger** — signed tamper-evident cost-of-agency record + hard kill-switch, auditable to the dollar. *Fit: highest (Budget already enforces); buyer: every CFO — fastest/broadest entry.*
+
+**THE BOLD BET — "The Verifier":** a vendor-neutral **Agent Evidence Registry + open verification standard** (Rekor-pattern append-only log + open verifier using TEE attestation / optimistic replication / DP proofs / ZK-for-gates). Become **the Certificate-Transparency / Sigstore of agentic AI.** If the attestation schema is what insurers price against + notified bodies accept → *the schema IS the asset*; Maverick sits at the verification chokepoint = standards-grade $20M+ position a hyperscaler is structurally barred from taking.
+
+**Sequencing proposed:** Verifiable Spend Ledger (F) + Proof-Pack (A) → fastest revenue; Underwriter-Grade Telemetry (B) → insurer-as-channel; The Verifier → the $20M+ standards position.
+
+**Rejected (honesty):** full ZK-of-LLM per decision (impractical, misses window); on-chain/blockchain settlement (repels bank/defense/pharma, no benefit over a permissioned Merkle log); becoming the MGA/insurer (capital+license-intensive, incumbents hold the paper — be the evidence layer they underwrite, not the risk-carrier).
+
+**Hardest risks for Validator:** Verifier = *cold-start trust* (worthless until one regulator/insurer blesses the schema → GTM sequencing, not crypto). A = *schema acceptance* by a real examiner/notified body. B = *coverage closure* (must prove EVERY irreversible action is gated). C = *spoofing resistance + bit-exact GPU determinism* (proven only to GPT-2 scale). F = *metering trust boundary* (ledger inherits trust of the model API's self-reported usage → needs independent metering attestation).
+
+---
+
 ### Orchestrator interim synthesis (preliminary — superseded by the council verdict above; competitive/market intel still valid)
 *Sources: live research (Google Gemini Enterprise Agent Platform deep-dive, Apr 2026 Cloud Next; A2A→Linux Foundation Jun 2025) + competitive knowledge of Salesforce Agentforce/Trust Layer, Microsoft Copilot Studio + Entra Agent ID + Purview, AWS Bedrock AgentCore, ServiceNow, Sierra, Writer, LangSmith, Credo AI/OneTrust.*
 
