@@ -1740,6 +1740,15 @@ tested without spawning py-spy.
   assign an issue to the bot, get a goal (`X-Gitlab-Token` constant-time
   verify, `X-Gitlab-Event-UUID` replay dedup), completing the
   Linear/Jira/GitHub/GitLab issue-trigger family (`issue_webhooks.py`).
+- **N-of-M dual control** (`safety/dual_control.py`, `WorldModel.decide_approval`
+  / `approval_signoffs`) — the **two-person rule** / segregation of duties: a
+  high/critical-risk action needs N **distinct** approvers before it's granted
+  (`[security] approvals_required`, flat or per-risk), and the requester can't
+  approve their own request (`allow_self_approval = false`). Each dashboard
+  approve is a vote by a verified principal; a single deny rejects; a repeat vote
+  counts once (enforced by the `(approval_id, approver)` PK); `GET
+  /approvals/{id}/state` shows quorum progress; a barred self-approval is 403.
+  Off by default (`required = 1` = legacy single approver); SQLite migration v21.
 - **Web dashboard** — run list, plan-tree, chat at `/chat`, approval queue with
   **collaborative supervision** (claim/release endpoints so two supervisors
   never double-handle a review — atomic claims, 409 on conflicts, claims

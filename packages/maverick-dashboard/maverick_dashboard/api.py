@@ -2136,24 +2136,54 @@ def _audit_approval_decision(approval_id: int, status: str, decided_by: str) -> 
         pass
 
 
+def _record_vote_or_raise(world, approval_id: int, status: str, who: str) -> None:
+    """Apply one approver's vote, mapping rejection to the right HTTP error.
+
+    Under N-of-M dual control a vote can be refused for segregation-of-duties
+    reasons (the requester can't self-approve, or an approver identity is needed)
+    -- distinguish that (403) from an unknown/already-decided approval (404)."""
+    if world.decide_approval(approval_id, status, decided_by=who):
+        return
+    st = world.approval_state(approval_id)
+    if st is None or st.get("status") != "pending":
+        raise HTTPException(status_code=404, detail="no such pending approval")
+    raise HTTPException(
+        status_code=403,
+        detail="vote not accepted: the requester can't approve their own request "
+               "(segregation of duties), or an approver identity is required for "
+               "multi-party approval",
+    )
+
+
 @router.post("/approvals/{approval_id}/approve", status_code=204)
 async def approve_approval(request: Request, approval_id: int) -> None:
-    """Approve a parked action; the polling consent path then proceeds."""
+    """Record an approval vote; once the required quorum of distinct approvers is
+    met the polling consent path proceeds (N-of-M dual control)."""
     require_permission(request, "operate")
     who = _supervisor(request)
-    if not _world().decide_approval(approval_id, "approved", decided_by=who):
-        raise HTTPException(status_code=404, detail="no such pending approval")
+    _record_vote_or_raise(_world(), approval_id, "approved", who)
     _audit_approval_decision(approval_id, "approved", who)
 
 
 @router.post("/approvals/{approval_id}/deny", status_code=204)
 async def deny_approval(request: Request, approval_id: int) -> None:
-    """Deny a parked action; the polling consent path then refuses it."""
+    """Deny a parked action (a single deny rejects it); the polling consent path
+    then refuses it."""
     require_permission(request, "operate")
     who = _supervisor(request)
-    if not _world().decide_approval(approval_id, "denied", decided_by=who):
-        raise HTTPException(status_code=404, detail="no such pending approval")
+    _record_vote_or_raise(_world(), approval_id, "denied", who)
     _audit_approval_decision(approval_id, "denied", who)
+
+
+@router.get("/approvals/{approval_id}/state")
+async def approval_state(request: Request, approval_id: int) -> dict:
+    """N-of-M quorum progress for an approval (status, approvers so far vs.
+    required) — the operator view of an in-flight multi-party decision."""
+    require_permission(request, "operate")
+    st = _world().approval_state(approval_id)
+    if st is None:
+        raise HTTPException(status_code=404, detail="no such approval")
+    return st
 
 
 @router.post("/approvals/{approval_id}/claim")

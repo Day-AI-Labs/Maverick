@@ -30,7 +30,7 @@ from .paths import data_dir
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = data_dir("world.db")
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -217,10 +217,23 @@ CREATE TABLE IF NOT EXISTS approvals (
     decided_at REAL,
     claimed_by TEXT,
     claimed_at REAL,
-    decided_by TEXT
+    decided_by TEXT,
+    approvals_required INTEGER NOT NULL DEFAULT 1,
+    requested_by TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, id);
+
+-- v21 N-of-M dual control: one row per (approval, approver), so the PK enforces
+-- a given approver counting once toward the quorum (segregation of duties).
+CREATE TABLE IF NOT EXISTS approval_signoffs (
+    approval_id INTEGER NOT NULL,
+    approver    TEXT NOT NULL,
+    decision    TEXT NOT NULL,
+    decided_at  REAL NOT NULL,
+    note        TEXT,
+    PRIMARY KEY (approval_id, approver)
+);
 
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -435,6 +448,16 @@ MIGRATIONS: dict[int, list[str]] = {
     # v20 share links: the share_links table is in SCHEMA (idempotent CREATE);
     # listed here so existing DBs bump the version on next open.
     20: [],
+    # v21 N-of-M dual control: quorum + requester columns on approvals, and the
+    # per-(approval, approver) signoff table (also in SCHEMA for fresh DBs).
+    21: [
+        "ALTER TABLE approvals ADD COLUMN approvals_required INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE approvals ADD COLUMN requested_by TEXT",
+        "CREATE TABLE IF NOT EXISTS approval_signoffs ("
+        " approval_id INTEGER NOT NULL, approver TEXT NOT NULL,"
+        " decision TEXT NOT NULL, decided_at REAL NOT NULL, note TEXT,"
+        " PRIMARY KEY (approval_id, approver))",
+    ],
 }
 
 
@@ -478,6 +501,8 @@ class Approval:
     claimed_by: str | None = None
     claimed_at: float | None = None
     decided_by: str | None = None
+    approvals_required: int = 1
+    requested_by: str | None = None
 
 
 @dataclass
@@ -2033,19 +2058,28 @@ class WorldModel:
         scope: str | None = None,
         detail: str | None = None,
         provenance: str | None = None,
+        approvals_required: int = 1,
+        requested_by: str | None = None,
     ) -> int:
         """Park a high-risk action for out-of-band (dashboard) approval.
 
         ``provenance`` is trusted caller-supplied metadata used by operator UIs;
         it must not be inferred from ``detail``, which may contain untrusted
         model, user, or remote-server text.
+
+        ``approvals_required`` is the quorum (N) of DISTINCT approvers needed
+        before the action is granted (segregation of duties; 1 = legacy single
+        approver). ``requested_by`` is the requesting principal, so a multi-party
+        approval can bar the requester from approving their own request.
         """
         with self._writing() as conn:
             cur = conn.execute(
-                "INSERT INTO approvals(action, risk, scope, detail, provenance, status, requested_at) "
-                "VALUES(?, ?, ?, ?, ?, 'pending', ?)",
+                "INSERT INTO approvals(action, risk, scope, detail, provenance, "
+                "status, requested_at, approvals_required, requested_by) "
+                "VALUES(?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
                 (_enc_field(action), risk, _enc_field(scope), _enc_field(detail),
-                 provenance, time.time()),
+                 provenance, time.time(), max(1, int(approvals_required)),
+                 (requested_by or None)),
             )
             return cur.lastrowid
 
@@ -2072,22 +2106,95 @@ class WorldModel:
 
     def decide_approval(self, approval_id: int, status: str,
                         decided_by: str | None = None) -> bool:
-        """Flip a pending approval to 'approved' or 'denied'.
+        """Record one approver's decision on a pending approval.
 
-        Returns True if a pending row was transitioned, False otherwise
-        (unknown id, or already decided — so a double-click is a no-op).
-        ``decided_by`` records WHICH supervisor decided (collaborative
-        supervision attribution); None keeps the legacy unattributed form.
+        Single-approver (``approvals_required <= 1``, the default): flips the row
+        to 'approved'/'denied' atomically, exactly as before.
+
+        N-of-M (``approvals_required > 1``): records this approver's sign-off and
+        applies **segregation of duties** — a ``denied`` vote rejects immediately;
+        an ``approved`` vote counts toward the quorum and the row flips to
+        'approved' only once N **distinct** approvers have approved. The requester
+        cannot approve their own request unless ``allow_self_approval`` is set.
+
+        Returns True when the vote was accepted (recorded and/or final), False on
+        an unknown/already-decided id, a self-approval that is barred, or a
+        multi-party vote with no ``decided_by`` (an approver identity is required
+        to enforce distinctness).
         """
         if status not in ("approved", "denied"):
             raise ValueError("status must be 'approved' or 'denied'")
+        appr = self.get_approval(approval_id)
+        if appr is None or appr.status != "pending":
+            return False
+        required = max(1, int(getattr(appr, "approvals_required", 1) or 1))
+        if required <= 1:
+            with self._writing() as conn:
+                cur = conn.execute(
+                    "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ? "
+                    "WHERE id = ? AND status = 'pending'",
+                    (status, time.time(), decided_by, approval_id),
+                )
+                return cur.rowcount > 0
+
+        approver = (decided_by or "").strip()
+        if not approver:
+            return False   # distinctness needs an attributed approver
+        if (status == "approved" and appr.requested_by
+                and approver == appr.requested_by):
+            from .safety.dual_control import allow_self_approval
+            if not allow_self_approval():
+                return False   # segregation of duties: no self-approval
+        now = time.time()
         with self._writing() as conn:
-            cur = conn.execute(
-                "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ? "
-                "WHERE id = ? AND status = 'pending'",
-                (status, time.time(), decided_by, approval_id),
+            # PK (approval_id, approver) makes a given approver count once; a
+            # repeat vote from the same approver updates their recorded decision.
+            conn.execute(
+                "INSERT INTO approval_signoffs(approval_id, approver, decision, "
+                "decided_at) VALUES(?, ?, ?, ?) "
+                "ON CONFLICT(approval_id, approver) DO UPDATE SET "
+                "decision = excluded.decision, decided_at = excluded.decided_at",
+                (approval_id, approver, status, now),
             )
-            return cur.rowcount > 0
+            if status == "denied":
+                conn.execute(
+                    "UPDATE approvals SET status = 'denied', decided_at = ?, "
+                    "decided_by = ? WHERE id = ? AND status = 'pending'",
+                    (now, approver, approval_id),
+                )
+                return True
+            approved = conn.execute(
+                "SELECT COUNT(*) FROM approval_signoffs "
+                "WHERE approval_id = ? AND decision = 'approved'",
+                (approval_id,),
+            ).fetchone()[0]
+            if approved >= required:
+                conn.execute(
+                    "UPDATE approvals SET status = 'approved', decided_at = ?, "
+                    "decided_by = ? WHERE id = ? AND status = 'pending'",
+                    (now, approver, approval_id),
+                )
+            return True
+
+    def approval_state(self, approval_id: int) -> dict | None:
+        """Quorum progress for an approval, or None if unknown. Shape:
+        ``{status, approvals_required, approved_count, approvers, requested_by}``
+        -- the operator/UI view of an in-flight N-of-M decision."""
+        appr = self.get_approval(approval_id)
+        if appr is None:
+            return None
+        rows = self._read_all(
+            "SELECT approver, decision FROM approval_signoffs "
+            "WHERE approval_id = ? ORDER BY decided_at", (approval_id,),
+        )
+        approvers = [r["approver"] for r in rows if r["decision"] == "approved"]
+        return {
+            "status": appr.status,
+            "approvals_required": max(1, int(appr.approvals_required or 1)),
+            "approved_count": len(approvers),
+            "approvers": approvers,
+            "requested_by": appr.requested_by,
+        }
 
     def claim_approval(self, approval_id: int, principal: str) -> bool:
         """Atomically claim a pending approval for one supervisor.

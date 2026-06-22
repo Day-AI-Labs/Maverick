@@ -1515,6 +1515,14 @@ def pick_advanced() -> dict[str, Any]:
             "is audited and reversible.",
             default=False,
         ),
+        "dual_approval": _q_confirm(
+            "Require two-person approval for risky actions (N-of-M dual control)? "
+            "A high/critical-risk action then needs 2 DISTINCT approvers in the "
+            "dashboard queue, and the requester can't approve their own request — "
+            "the segregation-of-duties control SOX / SOC 2 / HIPAA auditors test. "
+            "Writes [security] approvals_required = 2. Off by default.",
+            default=False,
+        ),
         "deferred_tools": _q_confirm(
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
@@ -3129,12 +3137,20 @@ def _cfg_plugins(
     return lines
 
 
-def _cfg_security(tool_acl: dict[str, Any] | None, autofix: bool) -> list[str]:
-    if not (tool_acl or autofix):
+def _cfg_security(tool_acl: dict[str, Any] | None, autofix: bool,
+                  dual_approval: bool = False) -> list[str]:
+    if not (tool_acl or autofix or dual_approval):
         return []
     lines = ["", "[security]"]
     if autofix:
         lines.append("auto_fix = true")
+    if dual_approval:
+        # N-of-M dual control (two-person rule): high/critical-risk actions need
+        # 2 distinct approvers and the requester can't self-approve. See
+        # docs/security-hardening.md. Use a [security.approvals_required] table
+        # to vary N per risk band.
+        lines.append("approvals_required = 2")
+        lines.append("allow_self_approval = false")
     for k, v in (tool_acl or {}).items():
         if k == "channels":
             continue
@@ -3316,7 +3332,8 @@ def write_config(
     lines += _cfg_registries("mcp_registries", mcp_registries)
     lines += _cfg_registries("template_registries", template_registries)
     lines += _cfg_plugins(plugins, plugin_grant, plugin_enforce, ts_plugins)
-    lines += _cfg_security(tool_acl, bool((advanced or {}).get("security_autofix")))
+    lines += _cfg_security(tool_acl, bool((advanced or {}).get("security_autofix")),
+                           dual_approval=bool((advanced or {}).get("dual_approval")))
     lines += _cfg_rate_limits(rate_limits)
     lines += _cfg_table("retention", retention)
     lines += _cfg_table("analytics", analytics)
@@ -3720,6 +3737,7 @@ def _regulated_deployment(advanced: dict[str, Any]) -> bool:
         or advanced.get("encrypt_at_rest")
         or advanced.get("audit_sign")
         or advanced.get("audit_worm")
+        or advanced.get("dual_approval")
         or advanced.get("saml")
         or advanced.get("security_autofix")
     )

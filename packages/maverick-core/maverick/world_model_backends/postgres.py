@@ -128,6 +128,20 @@ SCHEMA: list[str] = [
     "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_by TEXT;",
     "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_at DOUBLE PRECISION;",
     "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS decided_by TEXT;",
+    # N-of-M dual control (mirrors SQLite v21).
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approvals_required "
+    "INTEGER NOT NULL DEFAULT 1;",
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS requested_by TEXT;",
+    """
+    CREATE TABLE IF NOT EXISTS approval_signoffs (
+      approval_id INTEGER NOT NULL,
+      approver    TEXT NOT NULL,
+      decision    TEXT NOT NULL,
+      decided_at  DOUBLE PRECISION NOT NULL,
+      note        TEXT,
+      PRIMARY KEY (approval_id, approver)
+    );
+    """,
     "CREATE INDEX IF NOT EXISTS idx_pg_approvals_status ON approvals(status, id);",
     """
     CREATE TABLE IF NOT EXISTS conversations (
@@ -398,6 +412,25 @@ _RATE_EVENTS_MIGRATION: list[str] = [
 ]
 
 
+# v21 N-of-M dual control: quorum + requester columns on approvals, and the
+# per-(approval, approver) signoff table. Mirrors the SQLite v21 migration.
+_DUAL_CONTROL_MIGRATION: list[str] = [
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approvals_required "
+    "INTEGER NOT NULL DEFAULT 1;",
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS requested_by TEXT;",
+    """
+    CREATE TABLE IF NOT EXISTS approval_signoffs (
+      approval_id INTEGER NOT NULL,
+      approver    TEXT NOT NULL,
+      decision    TEXT NOT NULL,
+      decided_at  DOUBLE PRECISION NOT NULL,
+      note        TEXT,
+      PRIMARY KEY (approval_id, approver)
+    );
+    """,
+]
+
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
@@ -409,6 +442,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (17, _SHARE_SIGNOFF_ORIGIN_MIGRATION),
     (18, _FACT_HISTORY_MIGRATION),
     (19, _RATE_EVENTS_MIGRATION),
+    (21, _DUAL_CONTROL_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -568,10 +602,12 @@ def _dec_approval_row(r):
     """Build an Approval, unsealing action/scope/detail (provenance is trusted
     plaintext metadata, sealed neither here nor in SQLite). Row order: id,
     action, risk, scope, detail, provenance, status, requested_at, decided_at,
-    claimed_by, claimed_at, decided_by."""
+    claimed_by, claimed_at, decided_by, approvals_required, requested_by."""
     from ..world_model import Approval
     return Approval(r[0], _unseal(r[1]), r[2], _unseal(r[3]), _unseal(r[4]),
-                    r[5], r[6], r[7], r[8], r[9], r[10], r[11])
+                    r[5], r[6], r[7], r[8], r[9], r[10], r[11],
+                    int(r[12]) if len(r) > 12 and r[12] is not None else 1,
+                    r[13] if len(r) > 13 else None)
 
 
 def _dec_question_row(r):
@@ -948,7 +984,8 @@ class PostgresWorldModel:
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
-            "requested_at, decided_at, claimed_by, claimed_at, decided_by "
+            "requested_at, decided_at, claimed_by, claimed_at, decided_by, "
+            "approvals_required, requested_by "
             "FROM approvals"
         )
         p: list = list(params) if frag else []
@@ -2163,18 +2200,23 @@ class PostgresWorldModel:
         scope: str | None = None,
         detail: str | None = None,
         provenance: str | None = None,
+        approvals_required: int = 1,
+        requested_by: str | None = None,
     ) -> int:
         """Park a high-risk action for out-of-band (dashboard) approval.
 
         ``provenance`` is trusted caller-supplied metadata for operator UIs; it
-        is not inferred from ``detail`` (which may carry untrusted text)."""
+        is not inferred from ``detail`` (which may carry untrusted text).
+        ``approvals_required`` is the N-of-M quorum; ``requested_by`` the
+        requester (so a multi-party approval can bar self-approval)."""
         with self._tx() as cur:
             cur.execute(
                 "INSERT INTO approvals(action, risk, scope, detail, provenance, status, "
-                "requested_at, tenant_id) VALUES(%s, %s, %s, %s, %s, 'pending', %s, %s) "
-                "RETURNING id",
+                "requested_at, tenant_id, approvals_required, requested_by) "
+                "VALUES(%s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s) RETURNING id",
                 (_seal(action), risk, _seal(scope), _seal(detail), provenance,
-                 time.time(), _active_tenant()),
+                 time.time(), _active_tenant(), max(1, int(approvals_required)),
+                 (requested_by or None)),
             )
             row = cur.fetchone()
         return int(row[0])
@@ -2183,7 +2225,8 @@ class PostgresWorldModel:
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
-            "requested_at, decided_at, claimed_by, claimed_at, decided_by "
+            "requested_at, decided_at, claimed_by, claimed_at, decided_by, "
+            "approvals_required, requested_by "
             "FROM approvals WHERE id = %s"
         )
         p: list = [approval_id]
@@ -2199,7 +2242,8 @@ class PostgresWorldModel:
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
-            "requested_at, decided_at, claimed_by, claimed_at, decided_by "
+            "requested_at, decided_at, claimed_by, claimed_at, decided_by, "
+            "approvals_required, requested_by "
             "FROM approvals WHERE status = 'pending'"
         )
         if frag:
@@ -2212,29 +2256,91 @@ class PostgresWorldModel:
 
     def decide_approval(self, approval_id: int, status: str,
                         decided_by: str | None = None) -> bool:
-        """Flip a pending approval to 'approved'/'denied'. Returns True only if a
-        pending row transitioned (unknown id or already-decided -> False, so a
-        double-click is a no-op). ``decided_by`` records which supervisor
-        decided (collaborative supervision); None = legacy unattributed."""
+        """Record one approver's decision (N-of-M dual control; mirrors SQLite).
+
+        Single-approver (``approvals_required <= 1``): flips the row atomically.
+        N-of-M: records a distinct sign-off, denies on the first deny, bars the
+        requester from self-approving (unless allowed), and flips to 'approved'
+        only at quorum. Tenant-scoped like get_approval. Returns True when the
+        vote was accepted, False on unknown/decided id, a barred self-approval,
+        or a multi-party vote with no approver identity."""
         if status not in ("approved", "denied"):
             raise ValueError("status must be 'approved' or 'denied'")
-        # Tenant-scope the write like get_approval/pending_approvals: the
-        # dashboard approve/deny endpoints pass a raw URL id with no ownership
-        # gate, so without this a tenant could decide another tenant's parked
-        # high-risk action by enumerating ids it can't even see.
+        appr = self.get_approval(approval_id)   # already tenant-scoped
+        if appr is None or appr.status != "pending":
+            return False
+        required = max(1, int(getattr(appr, "approvals_required", 1) or 1))
+        # Tenant-scope the write so a tenant can't decide another's parked action
+        # by enumerating ids it can't see.
         frag, params = _tenant_scope()
-        sql = (
-            "UPDATE approvals SET status = %s, decided_at = %s, decided_by = %s "
-            "WHERE id = %s AND status = 'pending'"
-        )
-        p: list = [status, time.time(), decided_by, approval_id]
+        if required <= 1:
+            sql = ("UPDATE approvals SET status = %s, decided_at = %s, "
+                   "decided_by = %s WHERE id = %s AND status = 'pending'")
+            p: list = [status, time.time(), decided_by, approval_id]
+            if frag:
+                sql += " AND " + frag
+                p += params
+            with self._tx() as cur:
+                cur.execute(sql, tuple(p))
+                return cur.rowcount > 0
+
+        approver = (decided_by or "").strip()
+        if not approver:
+            return False
+        if (status == "approved" and appr.requested_by
+                and approver == appr.requested_by):
+            from ..safety.dual_control import allow_self_approval
+            if not allow_self_approval():
+                return False
+        now = time.time()
+        upd = ("UPDATE approvals SET status = %s, decided_at = %s, decided_by = %s "
+               "WHERE id = %s AND status = 'pending'")
+        up: list = [None, now, approver, approval_id]   # status filled below
         if frag:
-            sql += " AND " + frag
-            p += params
+            upd += " AND " + frag
         with self._tx() as cur:
-            cur.execute(sql, tuple(p))
-            affected = cur.rowcount
-        return affected > 0
+            cur.execute(
+                "INSERT INTO approval_signoffs(approval_id, approver, decision, "
+                "decided_at) VALUES(%s, %s, %s, %s) "
+                "ON CONFLICT (approval_id, approver) DO UPDATE SET "
+                "decision = EXCLUDED.decision, decided_at = EXCLUDED.decided_at",
+                (approval_id, approver, status, now),
+            )
+            if status == "denied":
+                up[0] = "denied"
+                cur.execute(upd, tuple(up + (params if frag else [])))
+                return True
+            cur.execute(
+                "SELECT COUNT(*) FROM approval_signoffs "
+                "WHERE approval_id = %s AND decision = 'approved'",
+                (approval_id,),
+            )
+            approved = int(cur.fetchone()[0])
+            if approved >= required:
+                up[0] = "approved"
+                cur.execute(upd, tuple(up + (params if frag else [])))
+            return True
+
+    def approval_state(self, approval_id: int) -> dict | None:
+        """Quorum progress for an approval (tenant-scoped), or None if unknown.
+        Mirrors the SQLite backend's shape."""
+        appr = self.get_approval(approval_id)
+        if appr is None:
+            return None
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT approver, decision FROM approval_signoffs "
+                "WHERE approval_id = %s ORDER BY decided_at", (approval_id,),
+            )
+            rows = cur.fetchall()
+        approvers = [r[0] for r in rows if r[1] == "approved"]
+        return {
+            "status": appr.status,
+            "approvals_required": max(1, int(appr.approvals_required or 1)),
+            "approved_count": len(approvers),
+            "approvers": approvers,
+            "requested_by": appr.requested_by,
+        }
 
     def claim_approval(self, approval_id: int, principal: str) -> bool:
         """Atomically claim a pending approval (collaborative supervision).

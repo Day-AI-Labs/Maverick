@@ -619,6 +619,24 @@ def test_audit_worm_off_writes_no_worm_section(tmp_path, monkeypatch):
     assert "[audit.worm]" not in cfg
 
 
+def test_dual_approval_writes_security_quorum(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"dual_approval": True})
+    assert "[security]" in cfg
+    assert "approvals_required = 2" in cfg
+    assert "allow_self_approval = false" in cfg
+    parsed = tomllib.loads(cfg)
+    assert parsed["security"]["approvals_required"] == 2
+    from maverick.safety.dual_control import required_approvals
+    monkeypatch.setattr("maverick.safety.dual_control._security_cfg",
+                        lambda: parsed["security"])
+    assert required_approvals("high") == 2   # rule-6: the kernel reads it back
+
+
+def test_dual_approval_off_writes_no_quorum(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"dual_approval": False})
+    assert "approvals_required" not in cfg
+
+
 def test_saml_writes_auth_saml_template(tmp_path, monkeypatch):
     cfg = _write(tmp_path, monkeypatch, {"saml": True})
     assert "[auth.saml]" in cfg

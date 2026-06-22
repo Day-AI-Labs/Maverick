@@ -38,6 +38,7 @@ and how to confirm it's actually on.
 - [Risk-proportional verification](#risk-proportional-verification)
 - [Audit-log signing (tamper-evidence)](#audit-log-signing-tamper-evidence)
 - [WORM audit export (immutable retention)](#worm-audit-export-immutable-retention)
+- [Two-person approval (N-of-M dual control)](#two-person-approval-n-of-m-dual-control)
 - [Compliance commands](#compliance-commands)
 - [Verifying your posture](#verifying-your-posture)
 - [Recommended enterprise baseline](#recommended-enterprise-baseline)
@@ -860,6 +861,56 @@ maverick audit worm verify            # closed files all durably shipped? (non-z
 
 **Verify it's on:** `maverick audit worm verify` (exits non-zero if any closed
 day-file isn't in the WORM store).
+
+---
+
+## Two-person approval (N-of-M dual control)
+
+**What it does.** Requires **N distinct approvers** to release a parked
+high-/critical-risk action, and (by default) **bars the requester from approving
+their own request** — the segregation-of-duties / "two-person rule" auditors test
+under SOX, SOC 2 CC, and HIPAA. The [consent](#always-on-safety-not-opt-in) gate
+already parks risky actions in the dashboard approvals queue; this sets how many
+sign-offs that queue needs before the action proceeds. Opt-in (default
+`approvals_required = 1` → the legacy single approver).
+
+**config.toml**
+
+```toml
+[security]
+approvals_required = 2          # 2 distinct approvers for every parked action
+allow_self_approval = false     # default: the requester can't approve their own
+
+# ...or vary N by risk band instead of a flat number:
+[security.approvals_required]
+high = 2
+critical = 3
+default = 1
+```
+
+- env: `MAVERICK_APPROVALS_REQUIRED=2` (global), `MAVERICK_ALLOW_SELF_APPROVAL=1`.
+- **Wizard toggle:** yes — "Require two-person approval for risky actions?"
+
+**How it works.** Each dashboard approve is a **vote** by the approver's verified
+principal (`POST /api/v1/approvals/{id}/approve`); the action flips to `approved`
+only once N *distinct* principals approve. A single `deny` rejects immediately. A
+repeat vote from the same approver counts once (enforced by the
+`approval_signoffs` primary key). `GET /api/v1/approvals/{id}/state` shows quorum
+progress (`approved_count` vs `approvals_required`). A barred self-approval
+returns **403** (vs **404** for an unknown approval).
+
+**Gotchas**
+
+- **Needs attributed approvers.** Distinctness requires each approver to have an
+  identity, so run the dashboard with [OIDC](#oidc-sso-authentication) /
+  [SAML](#oidc-browser-login-built-in) / reverse-proxy SSO; an unauthenticated
+  (single-user) dashboard can't supply two distinct principals.
+- The self-approval bar only bites when the approval records a `requested_by`
+  principal; the quorum (N distinct approvers) is enforced regardless.
+
+**Verify it's on:** park a high-risk action, then confirm one approval leaves it
+`pending` and a second *distinct* approver flips it to `approved` (watch
+`/approvals/{id}/state`).
 
 ---
 
