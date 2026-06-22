@@ -96,6 +96,22 @@ Two candidate answers for Idea-Gen to fight out:
 - **(a) OUTSIDE-IN SCANNER ("BitSight for agents"):** A2A Agent Cards are public JSON at well-known URLs; MCP servers are network-exposed. Externally scan + adversarially red-team the public agent attack surface (declared auth, exposed capabilities, prompt-injection/jailbreak susceptibility) → an un-gameable score with its own consent-free cold-start escape. NOTE: this is a *pivot* (new build), not a repackaging of current assets.
 - **(b) TEE-ATTESTED INSIDE-OUT:** run enforcement inside a GPU/CPU TEE with remote attestation → hardware attests the exact enforcing config that executed, making inside-out telemetry un-gameable (directly rebuts Attack #1). Reuses Maverick's real enforcement assets, but adds confidential-computing.
 
+## ROUND 2 — IDEA-GENERATOR council verdict (the pivot: Article 12 Independent Evidence Custodian)
+**Code discovery (changes everything):** Maverick ALREADY ships `rust/maverick-verify-audit` — a standalone Rust verifier with a `--pubkey` flag explicitly "for true third-party tamper-evidence … verdict does not depend on any key file next to the log" — plus S3 Object-Lock COMPLIANCE-mode WORM (`audit/worm.py`) + off-host/KMS signing + hash-chained log. **~70% of an independent-custody product is already built.**
+
+**THE UNLOCK — EU AI Act Article 12:** high-risk logging is read by the compliance market to require each event be made **immutable by a third party INDEPENDENT of both the provider AND the deployer** (eIDAS qualified timestamp; penalty €15M / 3% turnover). **That independence = the un-gameable wedge the insurance thesis lacked** (the insured is legally barred from self-certifying) AND a **legal moat that disqualifies incumbents by construction** (ServiceNow/MS/Google ARE the deployer's platform → read out as "independent").
+
+**Candidate products:**
+- **P1 ★ "Article 12 Notary" / Independent AI Evidence Custodian** — neutral 3rd-party SaaS ingests the signed hash-chain tip, anchors intervals with a partner **QTSP** eIDAS timestamp, holds the verification key off-host, issues a verifier-binary verdict no deployer can forge. *Un-gameable:* insured can't hold the key, backdate (QTSP clock), or rewrite (COMPLIANCE-mode lock). *Buyer today:* Annex-III high-risk deployers (credit/hiring/health/insurance-pricing); deadline slipped to **Dec 2027** = tailwind (budget forming now). *Why not an incumbent feature:* Article 12 independence excludes the deployer's own platform. *Build:* 6–9 mo; hardest new piece = QTSP partnership + hosted custody (integration, not research). Comp: TrueScreen/CertifyWebContent already sell generic Art-12 notarization but **don't sit at the agent's enforcement point.**
+- **P3 "Proof-of-Enforcement" receipt for AI-liability insurers** — same mechanism, **key custody moves to the insurer** (the independent verifier) → solves Round 1's inside-out gaming problem. Secondary buyer/channel (Armilla requires AI-system certification before binding; market still tiny).
+- **P2 TEE-attested enforcement — DEMOTED:** OPAQUE already ships it ($24M Series B / $300M val, Feb 2026); use TEE as an *attestation input to P1*, not the product.
+- **P4 outside-in public scanner — REJECTED:** no Maverick asset; crowded (BitSight extending into agentic; 30+ AI-SPM players — Noma/Zenity/Straiker/Lakera/Defender). A from-scratch knife-fight.
+
+**Honest verdict:** cautiously YES to a **$5–20M compliance-tooling outcome** (a re-skin of the audit/enforcement core as evidence-custody) — defensible via the Article-12 independence moat, fundable, buildable on real assets. NOT category-defining; the only true 10x prize (verifiable self-improvement) remains unbuilt R&D. Take P1 as the **bridge that funds the self-improvement R&D.**
+
+**LOAD-BEARING RISK (Validator must resolve FIRST):** the "independent third-party custody" requirement may be **vendor-manufactured** (TrueScreen/CertifyWebContent marketing), NOT in the Article 12 text or a harmonized standard. If the forthcoming **CEN/CENELEC** standard / Commission guidance permits **self-hosted** tamper-evident logs (which Maverick's own WORM+hash-chain already satisfies in-house), the wedge collapses into an in-house feature → back to the inside-out problem. **Validator: verify the actual legal text + draft harmonized standard, not the compliance-vendor blogs.**
+
+---
 # ROUND LOG
 
 ## ROUND 1 — ADVERSARIAL council: FULL VERDICT (code-grounded, authoritative)
