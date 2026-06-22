@@ -323,3 +323,36 @@ Is "financial-services agent conduct data" actually a defensible moat vs. entren
 
 ### THE decisive question → Round 4
 **Is the OEM-under-an-incumbent path real — would Smarsh/Global Relay/Theta Lake co-sell or buy the record-time-enforcement + independent-verifier layer rather than build it (3–6 mo of work for them)? Is there a warm path to that conversation, and what's the minimum proof (SOC2 + 1 design partner) to open it?** This separates a $5–15M outcome from a doomed head-on company.
+
+---
+# ROUND 4 + ROUND 5 — FINAL SYNTHESIS (the founder's decision memo)
+
+## ROUND 4 — ADVERSARIAL (closes the OEM thesis)
+- **OEM/tuck-in = optimistic; real number $1–4M.** Smarsh buys scaled revenue companies (Actiance/Entreda/Digital Reasoning), not 2-quarter feature teams; Global Relay is bootstrapped, ~no M&A (wrong acquirer). **WORM + tamper-evident audit = commodity table stakes** (SEC 17a-4(f); every archiver ships it). Maverick's Ed25519 chain is a competent implementation of what buyers already have.
+- **AWS AgentCore Policy (GA Mar 3 2026) guts the enforcement moat:** intercepts every action "outside agent code," Cedar allow/deny/forbid pre-execution, auto-logged. Residual differentiation = turnkey budget caps + cloud-independent verifier = thin wrapper, **lowers** incumbent WTP.
+- **"Buy for speed" window CLOSED** (Smarsh Intelligent Agent in production; Theta Lake aiComms shipping). Incumbents are ahead, not panic-buying.
+- **DEFINITIVE: no $20M path in any configuration. Honest = $1–4M acqui-hire; ~$5M with 1 paying design partner + SOC 2.**
+
+## THE VERDICT (unanimous across 5 rounds / 14 council passes)
+**There is no $20M standalone value in the Maverick codebase as it exists, and no wedge tested reaches it. Honest current value: $1–4M acqui-hire (≈$5M with revenue + SOC 2).** Killed with sourced evidence, in order: governance platform (commoditized) → insurance feed (inside-out/un-gameable) → outside-in scanner (no asset/crowded) → TEE (OPAQUE owns it) → Article-12 custody (legal premise vendor-manufactured) → third-party-verification mandate (SEC 17a-4 D3P deregulated; AP2/FIDO/NIST standardize it free) → vertical data moat (owned by Verafin + legally un-poolable) → OEM tuck-in (incumbents build, not buy; AgentCore commoditizes it).
+
+## WHY (the structural truth)
+The whole category Maverick competes in — agent governance, identity, audit, enforcement, compliance — **commoditized in 2025–2026**: hyperscalers bundle it (AWS AgentCore Policy, MS Agent 365/Purview, Google Agent Identity, ServiceNow Control Tower), the standards went to the Linux Foundation (A2A, MCP), and signed hash-chained audit became table stakes (even Microsoft ships an Agent Governance Toolkit). The one genuinely novel prize — **verifiable self-improvement** — is unbuilt (`NOT_RUN`), the need is *inverted* (regulated buyers require LOCKED models), and it's prior-art-walled + cryptographically impractical. The data moat is owned by 20-year incumbents and legally un-poolable.
+
+## WHAT IS GENUINELY REAL AND GOOD (don't lose this)
+- The team shipped a **coherent, ~213k-LOC, tested, governed-agent stack in days.** That velocity is itself the most valuable asset in the room.
+- The **audit + record-time enforcement layer is real** (3,354 LOC, Ed25519 hash-chain, WORM, a standalone cloud-independent Rust verifier, record-time budget caps, killswitch) — the cloud-independent verifier is the one thing incumbents don't have natively.
+
+## THE DECISION (the founder's actual choice — clock is quarters, not years)
+- **A) MAXIMIZE THE EXIT (recommended for near-term liquidity):** 60–90-day sprint to ONE paying financial-services design partner + start SOC 2 Type II, then run a tuck-in process (Smarsh-type buyers / agent-platform vendors) while the theme is hot and before AgentCore fully commoditizes. Target **$4–5M**.
+- **B) BET ON THE TEAM, RAISE VENTURE, OWN ONE VERTICAL (the only real $20M+ path — but a hard race):** the code is NOT the moat — the team is. Raise a seed on velocity + a real customer; accept you're racing Smarsh/Theta Lake/AWS; build proprietary *outcome* data + distribution in ONE narrow regulated vertical (how t54/Nava/Norm Ai/Bretton are doing it). $20M is reachable over ~3 yrs IF you land customers — a bet on execution, not on the current code.
+- **C) STOP THE BLEED:** if neither appeals, the team+asset is a $1–4M soft landing; don't burn more runway.
+
+## STOP DOING (high-value subtractions)
+Stop building verifier/crypto code; stop chasing EU AI Act / DoD "mandates" (none compel a buyer); drop the "1,118 packs" narrative (it reads as padding); **strike "provable self-improvement" from every deck — it is false today (`NOT_RUN`) and the #1 credibility-killer with any sophisticated buyer/acquirer.**
+
+## DO MONDAY (the move that dominates every path)
+**Land ONE paying design partner in a regulated vertical (financial services first).** A signed paying customer is the single highest-value action whether you maximize an exit OR raise venture — it converts "commodity code nobody's mandated to buy" into "revenue + proprietary data + a reference." Everything else is secondary.
+
+## THE META-TRUTH
+The original goal — "make THIS codebase worth $20M, customers banging the door down" — conflated two things. **A codebase is almost never worth $20M as a moat; companies reach $20M via customers + proprietary data + distribution + team.** The loop's real deliverable is redirecting effort from polishing un-defensible code toward the only thing that creates that value: a customer. The $20M isn't in the repo. It's in who you sell it to and the data that relationship generates.
