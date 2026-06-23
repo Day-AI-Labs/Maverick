@@ -176,6 +176,62 @@ product items (outbound voice, connector marketplace)**, and start the **ISO
 27001 / trust-center track**. Do that and we are clearly better on every axis a
 serious buyer cares about, while no longer ceding the demo and the funnel.
 
+## Packaging playbook
+
+Beyond the persona layer, these are the highest-leverage ways to re-present
+depth we already ship in the language buyers shop in. Each is grounded in a
+shipped capability — this is presentation/SKU work, not new platform.
+
+### 1. Sell outcomes, not seats
+
+Their copy is visceral: *"qualified 47 leads, booked 12 calls by Friday — no
+human touched the process."* We meter tokens and credits; that's billing, not a
+value story. Package every worker with a **headline outcome + a live counter**
+sourced from the **Operating Record** (`operating_record.py`) — "leads
+qualified this week," "tickets resolved," "reports shipped." Same data we
+already log, reframed from *usage* to *delivery*. Put the counter on the worker
+card and on an exec "what your workforce did this week" digest.
+
+### 2. "Department in a box" bundles
+
+They bundle marketing + dev + design + support into an "AI workforce." We have
+**26 suites / 1,118 packs** and a real fleet orchestrator (`fleet.py`,
+`fleet_memory.py`) — more depth, presented as parts. Package suites as **buyable
+teams** ("Finance Department," "RevOps Team," "Legal Desk") with a pre-wired org
+chart, shared fleet memory, and one-click deploy of the whole unit. Turns our
+breadth advantage into a single SKU instead of 1,118 line items.
+
+### 3. Governance as a visible product surface
+
+The move they structurally cannot copy — make the audit/learning moat
+*customer-facing* instead of a backend feature:
+
+- **Proof Pack as a deliverable** (`proof_pack.py`, `proof_guarantees.py`) — a
+  shareable "exactly what this worker did and why it was safe" artifact to hand
+  a regulator or a skeptical exec. Position it as the thing no hosted black-box
+  worker can produce.
+- **Performance reviews** — reuse dreaming/hindsight (`dreaming.py`,
+  `hindsight.py`) as a worker's recurring "review": what it learned, what
+  regressed, what we rolled back (`test_learning_rollback_full_revert.py`).
+  Mirrors their human "technical interview" hiring metaphor — but ours keeps
+  evaluating *after* the hire, with receipts.
+- **Trust Center page** surfacing the signed + WORM audit (`audit/` —
+  `signing.py`, `sealing.py`, `worm.py`), compliance-regime packs
+  (SOX/GAAP/PCI/GLBA), DSAR, and DPIA. A buyer self-serves the evidence instead
+  of opening a security questionnaire.
+
+### 6. Two marketplaces
+
+Match their "3000+ tools" perception with named, discoverable surfaces:
+
+- **Pack / suite marketplace** — the 1,118 packs plus partner-built and
+  **operator/intake-generated packs** (we already synthesize packs from customer
+  SOPs). Browsable, deployable, with the persona layer on top.
+- **Connector marketplace** — the 289 tool modules + `enterprise_connectors.py`
+  + `oauth_helper.py`, presented as a catalog with categories and one-click
+  OAuth, so integration breadth is *countable and discoverable* rather than
+  buried in code.
+
 > Caveat worth flagging to GTM: part of Workers Delos is a **human-freelancer
 > marketplace** ("our freelancers earn 23% more"). Their "AI worker" claims are
 > partly human-in-the-loop today — a credible point of differentiation for our
