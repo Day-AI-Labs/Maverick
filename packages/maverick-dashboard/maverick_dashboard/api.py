@@ -3305,3 +3305,75 @@ async def resume_goal(goal_id: int, request: Request, bg: BackgroundTasks) -> No
         bg.add_task(run_goal_in_thread, goal_id, channel="api", user_id=user_id)
     else:
         bg.add_task(run_goal_in_thread, goal_id)
+
+
+# ---------------------------------------------------------------------------
+# Workforce packaging: departments, outcomes, marketplace, reviews.
+#
+# Read-only JSON over capabilities that already ship (maverick.departments /
+# .outcomes / .worker_review / .marketplace.storefront). These present the
+# 1,000+ specialist packs as buyable teams with delivery and a governed review
+# — the buyer-facing surfaces, not new platform. No mutation, so no extra
+# permission gate beyond the dashboard's read access (cf. /overview).
+# ---------------------------------------------------------------------------
+@router.get("/departments")
+async def list_departments_api(request: Request) -> list[dict]:
+    """Departments (suites) as deployable teams: title, charter, headcount."""
+    from maverick.departments import list_departments
+    return [d.to_dict() for d in list_departments()]
+
+
+@router.get("/departments/{key}")
+async def get_department_api(request: Request, key: str) -> dict:
+    """One department with its specialist roster (name + description + risk)."""
+    from maverick.departments import get_department, roster
+    dept = get_department(key)
+    if dept is None:
+        raise HTTPException(status_code=404, detail="no such department")
+    out = dept.to_dict()
+    out["roster"] = [
+        {"name": p.name, "description": p.description or "",
+         "max_risk": p.max_risk or "low"}
+        for p in roster(key)
+    ]
+    return out
+
+
+@router.get("/departments/{key}/review")
+async def department_review_api(request: Request, key: str) -> dict:
+    """A governed performance review: delivery + authority + learning."""
+    from maverick.worker_review import review
+    r = review(_world(), key)
+    if r is None:
+        raise HTTPException(status_code=404, detail="no such department")
+    return r
+
+
+@router.get("/outcomes")
+async def outcomes_api(request: Request, top: int = 0) -> dict:
+    """Per-worker delivery cards + a firm-wide rollup, from the Operating Record."""
+    from maverick.operating_record import assemble
+    from maverick.outcomes import firm_totals, worker_cards
+    w = _world()
+    cards = worker_cards(w, top=(int(top) or None))
+    return {
+        "firm": firm_totals(assemble(w)).to_dict(),
+        "workers": [c.to_dict() for c in cards],
+    }
+
+
+@router.get("/marketplace/packs")
+async def marketplace_packs_api(request: Request, q: str = "") -> dict:
+    """Pack marketplace grouped by department, or a flat search when ``q`` set."""
+    from maverick.marketplace.storefront import pack_marketplace, search_packs
+    query = (q or "").strip()
+    if query:
+        return {"query": query, "results": search_packs(query)}
+    return {"departments": pack_marketplace()}
+
+
+@router.get("/marketplace/connectors")
+async def marketplace_connectors_api(request: Request, q: str = "") -> dict:
+    """Connector marketplace: honest total + optional substring search."""
+    from maverick.marketplace.storefront import connector_marketplace
+    return connector_marketplace(q or None)

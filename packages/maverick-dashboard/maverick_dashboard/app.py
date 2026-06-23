@@ -1124,6 +1124,35 @@ async def redact_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "redact.html", {})
 
 
+@app.get("/workforce", response_class=HTMLResponse)
+async def workforce_page(request: Request) -> HTMLResponse:
+    """The workforce: specialist packs as departments, with delivery outcomes.
+
+    Presents the 1,000+ packs as buyable teams (charter + headcount), a
+    firm-wide delivery rollup from the Operating Record, and the catalog counts.
+    Per-department governed reviews load from /api/v1/departments/{key}/review.
+    """
+    from maverick.departments import list_departments
+    from maverick.marketplace.storefront import connector_marketplace
+    from maverick.operating_record import assemble
+    from maverick.outcomes import firm_totals, worker_cards
+
+    w = _world()
+    depts = list_departments()
+    firm = firm_totals(assemble(w)).to_dict()
+    leaders = [c.to_dict() for c in worker_cards(w, top=5)]
+    return templates.TemplateResponse(
+        request, "workforce.html",
+        {
+            "departments": depts,
+            "firm": firm,
+            "leaders": leaders,
+            "pack_total": sum(d.headcount for d in depts),
+            "connector_total": connector_marketplace()["total"],
+        },
+    )
+
+
 @app.get("/perf", response_class=HTMLResponse)
 async def perf_page(request: Request) -> HTMLResponse:
     """Public perf dashboard: SLA + benchmark history (data via /api/v1/perf)."""
