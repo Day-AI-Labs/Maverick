@@ -61,10 +61,19 @@
       <article class="card" data-key="{{ d.key }}">
         <h4>{{ d.title }}</h4>
         <p class="muted">{{ d.charter }}</p>
-        <p><span class="badge">{{ d.headcount }} specialists</span></p>
+        <p>
+          <span class="badge">{{ d.headcount }} specialists</span>
+          {% if not entitlements.get(d.key) %}<span class="badge">Add-on required</span>{% endif %}
+        </p>
         <p>
           <button type="button" class="btn btn--ghost" data-key="{{ d.key }}" data-act="team">View team</button>
-          <button type="button" class="btn btn--primary" data-key="{{ d.key }}" data-act="review">Performance review</button>
+          <button type="button" class="btn btn--ghost" data-key="{{ d.key }}" data-act="review">Performance review</button>
+          {% if entitlements.get(d.key) %}
+          <button type="button" class="btn btn--primary" data-key="{{ d.key }}" data-act="deploy">Deploy team</button>
+          {% else %}
+          <button type="button" class="btn btn--primary" data-key="{{ d.key }}" data-act="deploy" aria-describedby="addon-note-{{ d.key }}">Deploy team</button>
+          <span id="addon-note-{{ d.key }}" class="muted">paid add-on</span>
+          {% endif %}
         </p>
         <div class="dept-detail" hidden></div>
       </article>
@@ -113,6 +122,29 @@
         var box = btn.closest(".card").querySelector(".dept-detail");
         box.hidden = false;
         box.textContent = "Loading…";
+
+        if (act === "deploy") {
+          fetch("/api/v1/departments/" + encodeURIComponent(key) + "/deploy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+          }).then(function (r) {
+            return r.json().then(function (d) { return { ok: r.ok, status: r.status, body: d }; });
+          }).then(function (res) {
+            if (res.ok) {
+              var f = res.body.fleet || {};
+              box.innerHTML = "<p>Deployed <strong>" + esc(f.name) + "</strong> — " +
+                esc((f.agents || []).length) + " specialists. " +
+                "Run them from <a href=\"/fleets\">Fleets</a>.</p>";
+            } else if (res.status === 402) {
+              box.innerHTML = "<p class=\"muted\">This department is a paid add-on. " +
+                esc(res.body.detail || "Contact your administrator to enable it.") + "</p>";
+            } else {
+              box.textContent = esc(res.body.detail || "Could not deploy.");
+            }
+          }).catch(function () { box.textContent = "Could not deploy."; });
+          return;
+        }
+
         var url = act === "review"
           ? "/api/v1/departments/" + encodeURIComponent(key) + "/review"
           : "/api/v1/departments/" + encodeURIComponent(key);
