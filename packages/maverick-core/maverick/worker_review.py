@@ -74,16 +74,25 @@ def _delivery(world, member_set: set[str], *, limit: int) -> dict:
     }
 
 
+# Coverage is computed per goal (reflexion + insight + skill recall each), so a
+# department with hundreds of goals would make the review endpoint slow. Evaluate
+# only the most recent N (assemble() is newest-first) — a representative sample,
+# reported honestly as the count evaluated.
+_LEARNING_SAMPLE = 50
+
+
 def _learning(world, member_set: set[str], *, limit: int) -> dict:
     """How much of the department's recent work the live learned state covers.
 
     Uses :func:`maverick.hindsight.coverage_under` (reflexions + insights +
-    learned skills) against the live store. Never raises; honest when there is
-    nothing to evaluate yet."""
+    learned skills) against the live store over the most recent
+    ``_LEARNING_SAMPLE`` goals. Never raises; honest when there is nothing to
+    evaluate yet."""
     from . import hindsight
 
     goals = [r for r in assemble(world, limit=limit)
              if r.kind == "goal" and r.department in member_set and r.subject]
+    goals = goals[:_LEARNING_SAMPLE]
     if not goals:
         return {"status": "insufficient_data", "goals_evaluated": 0,
                 "covered": 0, "coverage_rate": 0.0}

@@ -65,6 +65,31 @@ def test_fleet_from_department_maps_packs_to_agents():
     # Every agent is scoped to the department's role and carries its charter line.
     assert all(a.role == "finance" for a in fleet.agents)
     assert any(a.description for a in fleet.agents)
+    # Each agent is bound to its specialist pack (domain) for run-time capability.
+    assert all(a.domain == a.name for a in fleet.agents)
+
+
+def test_fleet_agent_domain_survives_serialization():
+    from maverick.fleet import FleetAgent
+    a = FleetAgent("finance_sox", "finance", "Reconcile", domain="finance_sox")
+    assert FleetAgent.from_dict(a.to_dict()).domain == "finance_sox"
+    # Backward compatible: a legacy agent dict with no domain reads as "".
+    assert FleetAgent.from_dict({"name": "x", "role": "r"}).domain == ""
+
+
+def test_deployed_agent_domain_narrows_capability():
+    # The deployed agent's pack capability must only restrict the base grant.
+    from maverick.capability import capability_from_config
+    from maverick.domain import available_domains, domain_capability
+    d = dept.get_department("finance")
+    fleet = dept.fleet_from_department(d, "user:alice")
+    agent = fleet.agents[0]
+    prof = available_domains()[agent.domain]
+    base = capability_from_config("agent:test", user_id="agent:test")
+    bound = domain_capability(prof, base, "agent:test")
+    # Bound grant can never permit a tool the pack denies.
+    for denied in prof.deny_tools:
+        assert denied in bound.deny_tools
 
 
 def test_deploy_is_blocked_without_the_addon(monkeypatch):

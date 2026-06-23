@@ -256,7 +256,8 @@ def fleet_from_department(dept: Department, owner: str, *,
     domains = enabled_domains(cfg)
     agents = tuple(
         FleetAgent(name=m, role=dept.key,
-                   description=(domains[m].description or "")[:200])
+                   description=(domains[m].description or "")[:200],
+                   domain=m)
         for m in dept.members
         if m in domains and valid_name(m)
     )

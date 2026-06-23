@@ -38,9 +38,14 @@ class FleetAgent:
     name: str
     role: str
     description: str = ""
+    domain: str = ""   # optional specialist pack; binds the agent to that
+    #                    pack's capability envelope at run time (department deploys)
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "role": self.role, "description": self.description}
+        d = {"name": self.name, "role": self.role, "description": self.description}
+        if self.domain:
+            d["domain"] = self.domain
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> FleetAgent:
@@ -50,6 +55,7 @@ class FleetAgent:
             name=str(d.get("name", "")),
             role=str(d.get("role", "")),
             description=str(d.get("description", "") or ""),
+            domain=str(d.get("domain", "") or ""),
         )
 
 
