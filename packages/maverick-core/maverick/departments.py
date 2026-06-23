@@ -205,3 +205,79 @@ def roster(key: str, cfg: dict | None = None) -> list[DomainProfile]:
         return []
     domains = enabled_domains(cfg)
     return [domains[name] for name in dept.members if name in domains]
+
+
+# ---------------------------------------------------------------------------
+# Deploy a department as a fleet — a PAID ADD-ON.
+#
+# Departments are not bundled with the base product: a tenant deploys one only
+# when its plan carries the ``departments`` add-on (or a per-department
+# ``department:<key>`` grant). The gate is :func:`maverick.billing.feature_allowed`,
+# which fails OPEN for self-host / single-tenant / unprovisioned deployments and
+# closed only for a tenant an operator has explicitly put on a limited plan —
+# so this never breaks a self-hoster, and always bills a managed tenant.
+# ---------------------------------------------------------------------------
+DEPARTMENTS_FEATURE = "departments"
+
+
+class EntitlementError(RuntimeError):
+    """The active tenant's plan does not include the departments add-on."""
+
+    def __init__(self, key: str, *, feature: str = DEPARTMENTS_FEATURE) -> None:
+        self.department = key
+        self.feature = feature
+        super().__init__(
+            f"the {key!r} department is a paid add-on; the active plan does not "
+            f"include the {feature!r} entitlement"
+        )
+
+
+def department_entitled(key: str, *, tenant: str | None = None) -> bool:
+    """Whether the active (or given) tenant may deploy department ``key``.
+
+    Granted by the whole-catalog ``departments`` add-on OR a per-department
+    ``department:<key>`` feature. Fail-open for self-host/unprovisioned tenants
+    (see :func:`maverick.billing.feature_allowed`)."""
+    from .billing import feature_allowed
+    return (feature_allowed(DEPARTMENTS_FEATURE, tenant=tenant)
+            or feature_allowed(f"department:{key}", tenant=tenant))
+
+
+def fleet_from_department(dept: Department, owner: str, *,
+                          cfg: dict | None = None, name: str | None = None):
+    """Build (but do not save or entitle) a :class:`~maverick.fleet.Fleet` whose
+    agents are the department's specialists.
+
+    Each pack becomes one agent: ``name`` = pack name (its run principal),
+    ``role`` = the department key (so an operator scopes the whole team with one
+    ``[roles.<key>]`` block), ``description`` = the pack's charter line. Packs
+    with a name that is not a valid fleet-agent identifier are skipped."""
+    from .fleet import Fleet, FleetAgent, valid_name
+    domains = enabled_domains(cfg)
+    agents = tuple(
+        FleetAgent(name=m, role=dept.key,
+                   description=(domains[m].description or "")[:200])
+        for m in dept.members
+        if m in domains and valid_name(m)
+    )
+    return Fleet(name=name or f"dept-{dept.key}", owner=owner, agents=agents)
+
+
+def deploy_department(key: str, owner: str, *, cfg: dict | None = None,
+                      tenant: str | None = None, name: str | None = None,
+                      save: bool = True):
+    """Deploy a department as a fleet of its specialists.
+
+    Entitlement-gated: raises :class:`EntitlementError` when the tenant's plan
+    lacks the ``departments`` add-on. Returns ``None`` if the department has no
+    enabled packs; otherwise the saved :class:`~maverick.fleet.Fleet`."""
+    dept = get_department(key, cfg)
+    if dept is None:
+        return None
+    if not department_entitled(key, tenant=tenant):
+        raise EntitlementError(key)
+    fleet = fleet_from_department(dept, owner, cfg=cfg, name=name)
+    if save:
+        from .fleet import save_fleet
+        save_fleet(fleet, tenant=tenant or "__active__")
+    return fleet

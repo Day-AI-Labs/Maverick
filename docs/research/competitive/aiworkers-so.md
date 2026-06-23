@@ -65,7 +65,7 @@
 ## Verdict: are we better?
 
 **Yes — on substance and defensibility. They beat us on packaging and
-go-to-market polish.** Maverick is a deeper, self-hostable, governance-first
+go-to-market polish.** Lightwork is a deeper, self-hostable, governance-first
 *platform*; Workers Delos is a slicker, hosted, role-marketplace *product* with
 a sharper consumer-grade story and a lower-friction funnel. We win the
 enterprise/regulated buyer who must own and audit the runtime; they win the SMB
@@ -77,7 +77,7 @@ Per the kernel rule, this is the right competitive frame: compete on
 
 ## Head-to-head
 
-| Dimension | Maverick | Workers Delos (aiworkers.so) |
+| Dimension | Lightwork | Workers Delos (aiworkers.so) |
 |---|---|---|
 | Form factor | Self-hostable platform + CLI + dashboard + MCP | Hosted SaaS only |
 | Prebuilt specialists | **1,118 packs across 26 suites** (lint-audited) | ~50 worker profiles |
@@ -96,7 +96,7 @@ Per the kernel rule, this is the right competitive frame: compete on
 | Pricing legibility | Enterprise/seat oriented | **Clear, public, self-serve $0→$2.5k** |
 | GTM polish | Engineering-led | **Strong** — role-marketplace, personas, free funnel |
 
-## Where Maverick wins (defensible moats)
+## Where Lightwork wins (defensible moats)
 
 1. **Provable, governed self-improvement.** dreaming → hindsight → proof, with
    snapshot + full rollback and a *signed* learning audit

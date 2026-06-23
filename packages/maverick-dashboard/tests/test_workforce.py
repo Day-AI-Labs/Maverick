@@ -82,3 +82,39 @@ def test_workforce_page_renders():
     assert "Finance" in r.text
     # The nav link is wired in.
     assert "/workforce" in r.text
+
+
+# --- deploy a department as a fleet (paid add-on) ---
+
+def test_departments_list_reports_entitlement():
+    rows = client.get("/api/v1/departments").json()
+    assert all("entitled" in r for r in rows)
+
+
+def test_deploy_department_creates_a_fleet(tmp_path, monkeypatch):
+    # Self-host (no tenant) is entitled by fail-open; isolate the fleets dir.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    r = client.post("/api/v1/departments/finance/deploy")
+    assert r.status_code == 201
+    fleet = r.json()["fleet"]
+    assert fleet["name"] == "dept-finance"
+    assert fleet["agents"]
+    # It is now a real, runnable fleet.
+    assert any(f["name"] == "dept-finance" for f in client.get("/api/v1/fleets").json()["fleets"])
+
+
+def test_deploy_blocked_without_addon_returns_402(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    import maverick.billing as billing
+    monkeypatch.setattr(billing, "feature_allowed", lambda feature, **kw: False)
+    r = client.post("/api/v1/departments/finance/deploy")
+    assert r.status_code == 402
+    assert "add-on" in r.json()["detail"]
+
+
+def test_deploy_unknown_department_404(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    r = client.post("/api/v1/departments/not_a_dept/deploy")
+    assert r.status_code == 404

@@ -3318,25 +3318,72 @@ async def resume_goal(goal_id: int, request: Request, bg: BackgroundTasks) -> No
 # ---------------------------------------------------------------------------
 @router.get("/departments")
 async def list_departments_api(request: Request) -> list[dict]:
-    """Departments (suites) as deployable teams: title, charter, headcount."""
-    from maverick.departments import list_departments
-    return [d.to_dict() for d in list_departments()]
+    """Departments (suites) as deployable teams: title, charter, headcount.
+
+    Each entry carries ``entitled`` — whether the active tenant's plan includes
+    the paid ``departments`` add-on, so the UI shows Deploy vs. Add-on-required.
+    """
+    from maverick.departments import department_entitled, list_departments
+    out = []
+    for d in list_departments():
+        row = d.to_dict()
+        row["entitled"] = department_entitled(d.key)
+        out.append(row)
+    return out
 
 
 @router.get("/departments/{key}")
 async def get_department_api(request: Request, key: str) -> dict:
     """One department with its specialist roster (name + description + risk)."""
-    from maverick.departments import get_department, roster
+    from maverick.departments import department_entitled, get_department, roster
     dept = get_department(key)
     if dept is None:
         raise HTTPException(status_code=404, detail="no such department")
     out = dept.to_dict()
+    out["entitled"] = department_entitled(key)
     out["roster"] = [
         {"name": p.name, "description": p.description or "",
          "max_risk": p.max_risk or "low"}
         for p in roster(key)
     ]
     return out
+
+
+@router.post("/departments/{key}/deploy", status_code=201)
+async def deploy_department_api(request: Request, key: str) -> dict:
+    """Deploy a department as a fleet of its specialists — a PAID ADD-ON.
+
+    Gated three ways: ``operate`` RBAC (a viewer is 403'd), owner-scoping (you
+    cannot clobber another owner's fleet — that 404s), and the ``departments``
+    entitlement (a tenant without the add-on is 402'd). Mirrors
+    ``maverick.departments.deploy_department`` so the CLI enforces the same gate.
+    """
+    require_permission(request, "operate")
+    from maverick.departments import (
+        EntitlementError,
+        deploy_department,
+        get_department,
+    )
+    from maverick.fleet import load_fleet
+
+    if get_department(key) is None:
+        raise HTTPException(status_code=404, detail="no such department")
+
+    principal = caller_principal(request)
+    owner = principal or ""
+    fleet_name = f"dept-{key}"
+    existing = load_fleet(fleet_name)
+    if (
+        existing is not None and existing.owner != owner
+        and principal is not None and not is_dashboard_admin(principal)
+    ):
+        raise HTTPException(status_code=404, detail="no such fleet")
+
+    try:
+        fleet = deploy_department(key, owner)
+    except EntitlementError as e:
+        raise HTTPException(status_code=402, detail=str(e)) from e
+    return {"fleet": fleet.to_dict()}
 
 
 @router.get("/departments/{key}/review")

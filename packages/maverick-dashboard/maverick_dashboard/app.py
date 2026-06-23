@@ -1132,7 +1132,7 @@ async def workforce_page(request: Request) -> HTMLResponse:
     firm-wide delivery rollup from the Operating Record, and the catalog counts.
     Per-department governed reviews load from /api/v1/departments/{key}/review.
     """
-    from maverick.departments import list_departments
+    from maverick.departments import department_entitled, list_departments
     from maverick.marketplace.storefront import connector_marketplace
     from maverick.operating_record import assemble
     from maverick.outcomes import firm_totals, worker_cards
@@ -1145,6 +1145,7 @@ async def workforce_page(request: Request) -> HTMLResponse:
         request, "workforce.html",
         {
             "departments": depts,
+            "entitlements": {d.key: department_entitled(d.key) for d in depts},
             "firm": firm,
             "leaders": leaders,
             "pack_total": sum(d.headcount for d in depts),
