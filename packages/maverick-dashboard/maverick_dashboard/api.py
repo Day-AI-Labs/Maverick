@@ -3371,6 +3371,7 @@ async def deploy_department_api(request: Request, key: str) -> dict:
     from maverick.departments import (
         EntitlementError,
         deploy_department,
+        fleet_name_for,
         get_department,
     )
     from maverick.fleet import load_fleet
@@ -3380,7 +3381,7 @@ async def deploy_department_api(request: Request, key: str) -> dict:
 
     principal = caller_principal(request)
     owner = principal or ""
-    fleet_name = f"dept-{key}"
+    fleet_name = fleet_name_for(key, owner)
     existing = load_fleet(fleet_name)
     if (
         existing is not None and existing.owner != owner
