@@ -31,6 +31,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
+from ._envparse import is_truthy
 from .budget import Budget, BudgetExceeded
 from .llm import LLM, model_for_role
 
@@ -373,15 +374,12 @@ async def verify_proposal_ensemble(
     return _combine(verdicts, weighted=weighted)
 
 
-_TRUE_VALUES = {"1", "true", "yes", "on"}
-
-
 def _explicit_true(value: object) -> bool:
     """Return True only for explicit verifier-ensemble opt-in values."""
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
-        return value.strip().lower() in _TRUE_VALUES
+        return is_truthy(value)
     return False
 
 

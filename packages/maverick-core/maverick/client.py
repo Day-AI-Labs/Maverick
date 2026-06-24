@@ -29,6 +29,8 @@ import logging
 import os
 import re
 
+from ._envparse import coerce_bool, is_truthy
+
 log = logging.getLogger(__name__)
 
 # A client id becomes the tenant path segment, so it must satisfy the tenant
@@ -38,7 +40,6 @@ log = logging.getLogger(__name__)
 # directory, so allowing mixed case would let two distinct client ids collide
 # onto one data root — the one thing the per-client binding must prevent.
 _CLIENT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
-_TRUE = {"1", "true", "yes", "on"}
 
 # Resolved once per process (the binding is immutable for a deployment). Tests
 # reset via reset_client_cache().
@@ -103,7 +104,7 @@ def client_binding_enforced() -> bool:
     be provably bound to that client). Off by default."""
     env = os.environ.get("MAVERICK_CLIENT_ENFORCE")
     if env is not None and env.strip() != "":
-        return env.strip().lower() in _TRUE
+        return is_truthy(env)
     try:
         from .enterprise import enterprise_enabled
         if enterprise_enabled():
@@ -112,7 +113,7 @@ def client_binding_enforced() -> bool:
         pass
     try:
         from .config import load_config
-        return str(((load_config() or {}).get("client") or {}).get("enforce") or "").strip().lower() in _TRUE
+        return coerce_bool(((load_config() or {}).get("client") or {}).get("enforce"))
     except Exception:
         return False
 
