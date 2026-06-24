@@ -61,10 +61,13 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install maverick-core
+      - name: Install maverick-core (with audit-signing crypto)
         # The soc2 collector + CLI live entirely in maverick-core; no sibling
-        # packages are needed to evaluate posture.
-        run: pip install -e ./packages/maverick-core
+        # packages are needed to evaluate posture. The [audit-signing] extra
+        # pulls `cryptography` so the signed audit chain is real -- without it the
+        # chain writes UNSIGNED (audit_log: no_crypto) and the gate fails, which
+        # is exactly what a compliant deployment must avoid.
+        run: pip install -e './packages/maverick-core[audit-signing]'
       - name: Apply the hardened compliant config
         run: |
           mkdir -p ~/.maverick
