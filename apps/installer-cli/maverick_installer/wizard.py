@@ -1257,6 +1257,13 @@ def pick_advanced() -> dict[str, Any]:
             "date X, and why' for the Operating Record. OFF by default.",
             default=False,
         ),
+        "fairness_monitor": _q_confirm(
+            "Continuous fairness monitoring (ISO 42001 A.6.2.6)? Watch decision "
+            "outcomes over a rolling window and raise a signed FAIRNESS_ALERT when "
+            "the four-fifths rule is breached or fairness drifts below baseline. A "
+            "deployment opts in by feeding the monitor its outcomes. OFF by default.",
+            default=False,
+        ),
         "specialist_discipline": _q_confirm(
             "Specialist operating discipline? Append each business suite's "
             "professional guardrails (finance maker-checker, legal privilege, "
@@ -2983,6 +2990,10 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[memory]")
         lines.append("temporal = true")
+    if advanced.get("fairness_monitor"):
+        lines.append("")
+        lines.append("[fairness_monitor]")
+        lines.append("enable = true")
     # Discipline defaults ON; only an explicit decline is written.
     if advanced.get("specialist_discipline") is False:
         lines.append("")

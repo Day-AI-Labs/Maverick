@@ -67,8 +67,13 @@ right-to-explanation, bias/fairness metrics, Agent Shield.
    `maverick/retirement.py` provides a governed, fail-safe retirement flow with
    an explicit data disposition (retain/archive/erase) and a signed
    `AI_SYSTEM_RETIRED` audit record. → R-24 closed.
-3. **Continuous fairness monitoring** (A.6.2.6) — bias metrics are on-demand, not
-   continuous. → R-22 (the one remaining AI build gap).
+3. ~~Continuous fairness monitoring (A.6.2.6)~~ — **Closed.** `fairness_monitor.py`
+   adds a rolling-window monitor over decision outcomes that recomputes the
+   group-fairness metrics continuously and raises a signed `FAIRNESS_ALERT` on a
+   four-fifths breach or a drift below baseline. → R-22 closed.
+
+All three former AI build gaps are now implemented; the remaining ISO 42001 work
+is the shared management-system documentation and process controls.
 
 **Process gaps:** shared with ISO 27001 (AI roles/competence, supplier
 management, AI-incident communication procedure).
@@ -80,8 +85,9 @@ Per `docs/research/commercialization/07-trust-certifications-roadmap.md`:
 
 1. **Stack on the ISMS:** reuse the certified management system, risk
    methodology, and shared policies.
-2. **Close the AI build gaps** — model-card metadata export and the retirement
-   procedure are **done**; continuous fairness monitoring (R-22) remains.
+2. **Close the AI build gaps** — model-card metadata export, the retirement
+   procedure, and continuous fairness monitoring are all **done** (R-22, R-24,
+   R-25 closed).
 3. **Run AI system impact assessments** (A.5) for in-scope deployment contexts.
 4. **Stage 1 + Stage 2 audit** with an accredited certification body.
 5. **Surveillance + recertification** as with ISO 27001.

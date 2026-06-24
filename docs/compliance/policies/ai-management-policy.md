@@ -31,7 +31,7 @@ This policy applies to all AI systems designed, developed, deployed, operated, o
 8. **Governed continuous learning.** Self-improvement shall occur only through the governed learning lifecycle: candidate generation, regression detection via snapshot-replay, calibration gating, staged rollout, and signed audit. No learning change reaches full production without passing these gates.
 9. **Record-keeping (EU AI Act Art. 12).** AI decisions, oversight actions, and learning changes shall be recorded in a tamper-evident, cryptographically signed audit chain.
 10. **Security of AI.** AI systems shall be defended against prompt injection, data exfiltration, and jailbreak attempts, and exercised against a red-team corpus.
-11. **AI system retirement.** Each AI system shall be retired through the governed retirement flow (`maverick/retirement.py`), recording the reason, the deciding party, an explicit data disposition (retain/archive/erase), and a signed `AI_SYSTEM_RETIRED` audit record. The per-system erasure wiring for the `erase` disposition is deployment-specific **[Process — Organization to operationalize]**.
+11. **AI system retirement.** Each AI system shall be retired through the governed retirement flow (`maverick/retirement.py`), recording the reason, the deciding party, an explicit data disposition (retain/archive/erase), and a signed `AI_SYSTEM_RETIRED` audit record. The `erase` disposition performs concrete subject-scoped deletion (audit `delete_user` + world `delete_facts_matching`) when an `erase_scope` names the subject(s); supplying that scope from the system→data map is **[Process — Organization to operationalize]**.
 
 ## 4. Roles & responsibilities
 
@@ -62,7 +62,8 @@ This policy applies to all AI systems designed, developed, deployed, operated, o
 | Learning: calibration-gated promotion | `packages/maverick-core/maverick/calibration.py` | Implemented |
 | Ed25519 signed learning audit (Art. 12 record-keeping) | `packages/maverick-core/maverick/audit/signing.py` | Implemented |
 | Governed shared memory with provenance | `packages/maverick-core/maverick/fleet_memory.py` | Implemented |
-| Bias / fairness evaluation (four-fifths, demographic parity) | `packages/maverick-core/maverick/tools/bias_eval.py` | Implemented |
+| Bias / fairness evaluation (four-fifths, demographic parity) — on-demand | `packages/maverick-core/maverick/tools/bias_eval.py` | Implemented |
+| Continuous fairness monitoring (rolling window; four-fifths breach + drift; signed `FAIRNESS_ALERT`) | `packages/maverick-core/maverick/fairness_monitor.py` | Implemented |
 | Right-to-explanation | `packages/maverick-core/maverick/tools/right_to_explanation.py` | Implemented |
 | Prompt-injection / exfil / jailbreak detection + red-team corpus | `maverick-shield` package | Implemented |
 | Model-card metadata export (intended use / limitations / oversight / eval results) | `packages/maverick-core/maverick/model_cards.py` | Implemented |
@@ -91,8 +92,14 @@ The two formerly-tracked AI build gaps are now **closed**:
 2. **AI-system retirement procedure** — `maverick/retirement.py` provides a
    governed, fail-safe retirement flow with an explicit data disposition
    (retain/archive/erase) and a signed `AI_SYSTEM_RETIRED` audit record. The
-   per-system erasure wiring for the `erase` disposition is deployment-specific
-   and **[Process — Organization to operationalize]** per the data map. (R-24 closed.)
+   `erase` disposition is wired to concrete subject-scoped deletion (audit
+   `delete_user` + world `delete_facts_matching`), gated on an explicit
+   `erase_scope` so retirement can never over-delete; supplying that scope from
+   the system→data map remains **[Process — Organization to operationalize]**. (R-24 closed.)
+
+A continuous fairness monitor (`maverick/fairness_monitor.py`) raises a signed
+`FAIRNESS_ALERT` on a four-fifths breach or drift, closing the former
+continuous-monitoring gap (R-22).
 
 Non-compliance may result in remediation, suspension of the affected AI
 capability, and disciplinary action.

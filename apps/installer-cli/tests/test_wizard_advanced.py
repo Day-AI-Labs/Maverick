@@ -190,6 +190,21 @@ def test_calibration_enforce_writes_and_is_read(tmp_path, monkeypatch):
     assert get_calibration()["enforce"] is True
 
 
+def test_fairness_monitor_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's fairness-monitor toggle writes [fairness_monitor]
+    enable, and the kernel's config reads it back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_FAIRNESS_MONITOR", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"fairness_monitor": True})
+    assert "[fairness_monitor]" in cfg
+    assert "enable = true" in cfg
+
+    from maverick.config import get_fairness_monitor
+    assert get_fairness_monitor()["enable"] is True
+
+
 def test_sota_loop_toggles_write_and_are_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's SOTA-loop toggles write their config sections,
     and the kernel reads each back."""

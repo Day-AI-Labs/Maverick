@@ -708,6 +708,28 @@ def get_memory_guard() -> dict:
     }
 
 
+def get_fairness_monitor() -> dict:
+    """Return the ``[fairness_monitor]`` section (continuous group-fairness
+    monitoring, ISO/IEC 42001 A.6.2.6). OFF by default: a deployment opts in by
+    feeding decision outcomes to :class:`maverick.fairness_monitor.FairnessMonitor`.
+    ``threshold`` is the four-fifths cutoff, ``window`` the rolling number of
+    outcomes retained, ``min_samples`` the noise floor before evaluating, and
+    ``drift_tolerance`` how far the minimum impact ratio may fall below baseline
+    before a drift alert. Also honored via ``MAVERICK_FAIRNESS_MONITOR=1``."""
+    cfg = load_config().get("fairness_monitor", {})
+    enabled = bool(cfg.get("enable", False))
+    flag = env_flag("MAVERICK_FAIRNESS_MONITOR")
+    if flag is not None:
+        enabled = flag
+    return {
+        "enable": enabled,
+        "threshold": float(cfg.get("threshold", 0.8)),
+        "window": int(cfg.get("window", 1000)),
+        "min_samples": int(cfg.get("min_samples", 30)),
+        "drift_tolerance": float(cfg.get("drift_tolerance", 0.1)),
+    }
+
+
 def get_domains() -> dict:
     """Return the ``[domains]`` section with defaults filled in.
 
