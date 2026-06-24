@@ -130,6 +130,16 @@ def clear_goal_context() -> None:
     _channel_var.set(None)
 
 
+def current_goal_id() -> int | None:
+    """The goal id bound to the current async/sync task, or None outside a goal.
+
+    Lets non-logging callers (e.g. the consent gate, which attributes a queued
+    approval to the requesting principal) identify the executing goal without
+    re-plumbing the id through every call site. Propagates across
+    ``asyncio.to_thread`` because that copies the context."""
+    return _goal_id_var.get()
+
+
 class _ContextFilter(logging.Filter):
     """Attach goal/conversation/channel context to every record."""
 
