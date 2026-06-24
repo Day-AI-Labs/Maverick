@@ -60,12 +60,21 @@ print(json.dumps(collect_soc2_evidence(), indent=2))"
 
 A SOC 2-ready snapshot shows `capability_enforcement`, `tenant_isolation`, and
 `usage_quotas` as `enabled`, `oidc_auth` and `encryption_at_rest` as `enabled`,
-`audit_log` as `ok`, and `audit_signing_key` present. Capture this snapshot
-periodically during the Type II window as design + operating evidence.
+`audit_log` as `ok`, and `audit_signing_key` present.
 
-> **Recommended follow-on (not yet built):** a `maverick soc2` CLI command that
-> prints this snapshot and exits non-zero if any required control is not
-> `enabled` — useful as a CI/deployment gate. Tracked in the program backlog.
+The **`maverick soc2`** CLI command does exactly this — it prints the evidence
+snapshot as JSON and **exits non-zero unless every required control is in a
+ready posture** (the `_soc2_posture_ready` gate: required controls `enabled`,
+`audit_log` `ok`, signing key present). Wire it into CI or a deploy gate the
+same way as `maverick compliance --strict`:
+
+```bash
+maverick soc2            # pretty JSON; exit 1 if not SOC 2-ready
+maverick soc2 --json     # compact single-line JSON for log capture
+```
+
+Capture this snapshot periodically during the Type II window as design +
+operating evidence.
 
 ## 5. Process gaps to close (NOT code)
 

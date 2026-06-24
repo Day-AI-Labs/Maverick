@@ -74,6 +74,69 @@ class ModelCard:
     notes: str = ""
 
 
+# Fields an operator may declare about how THIS deployment uses a model. These
+# are operator assertions about intended use / limitations / oversight, NOT
+# vendor benchmark claims — exactly the deployer-side documentation ISO/IEC
+# 42001 A.6.2.7 (technical documentation) and A.8.2 (information for users) ask
+# for. Kept separate from the ledger-derived ModelCard so the two never blur:
+# numbers come from our own usage, prose comes from the operator's config.
+_METADATA_FIELDS = (
+    "intended_use",
+    "out_of_scope_use",
+    "limitations",
+    "risk_classification",  # operator-declared EU AI Act tier, e.g. "limited"
+    "data_provenance",
+    "human_oversight",
+    "ethical_considerations",
+)
+
+
+@dataclass
+class ModelCardMetadata:
+    """Operator-declared metadata for one model (intended use, limits, oversight).
+
+    Every field is optional and free-text; ``evaluations`` is a ``{name: result}``
+    map of the deployment's own eval results. Empty by default so a card with no
+    declared metadata renders exactly as before. These are the Organization's
+    assertions about its own use of the model — never invented vendor facts.
+    """
+
+    intended_use: str = ""
+    out_of_scope_use: str = ""
+    limitations: str = ""
+    risk_classification: str = ""
+    data_provenance: str = ""
+    human_oversight: str = ""
+    ethical_considerations: str = ""
+    evaluations: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, raw) -> ModelCardMetadata:
+        """Build from a partial dict, tolerating junk/missing keys (fail-soft).
+
+        Unknown keys are ignored; string fields are stringified; ``evaluations``
+        is taken only when it is a dict, with values stringified. A non-dict
+        input yields an all-empty instance rather than raising.
+        """
+        if not isinstance(raw, dict):
+            return cls()
+        kwargs = {}
+        for name in _METADATA_FIELDS:
+            val = raw.get(name)
+            if val is not None and str(val).strip():
+                kwargs[name] = str(val).strip()
+        evals = raw.get("evaluations")
+        if isinstance(evals, dict):
+            kwargs["evaluations"] = {
+                str(k): str(v) for k, v in evals.items() if str(k).strip()
+            }
+        return cls(**kwargs)
+
+    def is_empty(self) -> bool:
+        """True when nothing has been declared (renders no metadata block)."""
+        return not any(getattr(self, n) for n in _METADATA_FIELDS) and not self.evaluations
+
+
 def _field(row, *names):
     """First non-None field among ``names``, from a dict or an object."""
     for name in names:
@@ -160,8 +223,37 @@ def _iso(ts: float | None) -> str:
         return "unknown"
 
 
-def render_card(card: ModelCard) -> str:
-    """One markdown section for one model."""
+def _render_metadata(meta: ModelCardMetadata) -> list[str]:
+    """Markdown lines for operator-declared metadata, or [] when nothing declared.
+
+    Rendered under an explicit "operator-declared" heading so an auditor never
+    confuses these assertions with the ledger-derived usage numbers above.
+    """
+    if meta is None or meta.is_empty():
+        return []
+    labels = {
+        "intended_use": "intended use",
+        "out_of_scope_use": "out-of-scope use",
+        "limitations": "limitations",
+        "risk_classification": "risk classification (operator-declared)",
+        "data_provenance": "data provenance",
+        "human_oversight": "human oversight",
+        "ethical_considerations": "ethical considerations",
+    }
+    lines = ["", "Operator-declared (this deployment's assertions, not vendor claims):"]
+    for name in _METADATA_FIELDS:
+        val = getattr(meta, name)
+        if val:
+            lines.append(f"- {labels[name]}: {val}")
+    if meta.evaluations:
+        lines.append("- evaluations:")
+        for name in sorted(meta.evaluations):
+            lines.append(f"  - {name}: {meta.evaluations[name]}")
+    return lines
+
+
+def render_card(card: ModelCard, metadata: ModelCardMetadata | None = None) -> str:
+    """One markdown section for one model (plus operator metadata when supplied)."""
     lines = [
         f"## {card.model_id}",
         "",
@@ -177,19 +269,67 @@ def render_card(card: ModelCard) -> str:
     ]
     if card.notes:
         lines.append(f"- notes: {card.notes}")
+    lines.extend(_render_metadata(metadata))
     return "\n".join(lines)
 
 
-def render_cards(cards: dict[str, ModelCard]) -> str:
-    """One markdown document: header + disclaimer + a section per model."""
+def render_cards(cards: dict[str, ModelCard],
+                 metadata: dict[str, ModelCardMetadata] | None = None) -> str:
+    """One markdown document: header + disclaimer + a section per model.
+
+    ``metadata`` maps ``model_id -> ModelCardMetadata`` (operator-declared);
+    models without an entry render usage-only, exactly as before.
+    """
+    metadata = metadata or {}
     doc = ["# Model cards", "", DISCLAIMER, ""]
     if not cards:
         doc.append("(no model usage recorded)")
         return "\n".join(doc) + "\n"
     for model_id in sorted(cards):
-        doc.append(render_card(cards[model_id]))
+        doc.append(render_card(cards[model_id], metadata.get(model_id)))
         doc.append("")
     return "\n".join(doc).rstrip("\n") + "\n"
+
+
+def load_declared_metadata(raw=None) -> dict[str, ModelCardMetadata]:
+    """Build ``{model_id: ModelCardMetadata}`` from a declared mapping, fail-soft.
+
+    ``raw`` is a ``{model_id: {intended_use: ..., ...}}`` mapping (the shape of a
+    ``[model_cards.<model_id>]`` config table). When ``raw`` is None it is read
+    from ``[model_cards]`` in the live config, importing :mod:`maverick.config`
+    lazily and degrading to ``{}`` on any error — model-card export must never be
+    able to break on a malformed config. Junk per-model values are skipped.
+    """
+    if raw is None:
+        try:
+            from . import config
+            raw = config.load_config().get("model_cards", {})
+        except Exception as e:  # fail-open: no declared metadata rather than crash
+            log.debug("model_cards: could not read declared metadata: %s", e)
+            raw = {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, ModelCardMetadata] = {}
+    for model_id, decl in raw.items():
+        if isinstance(decl, dict) and str(model_id).strip():
+            out[str(model_id)] = ModelCardMetadata.from_dict(decl)
+    return out
+
+
+def export_model_cards(world, *, metadata: dict[str, ModelCardMetadata] | None = None,
+                       limit: int = 5000) -> str:
+    """End-to-end export: gather usage from ``world``, merge operator metadata,
+    render the markdown document an auditor can file (ISO 42001 A.6.2.7 / A.8.2).
+
+    ``metadata`` defaults to the operator declarations in config
+    (:func:`load_declared_metadata`). Fail-open throughout: a world that yields
+    no attributed rows still produces a well-formed (disclaimer-carrying)
+    document, and a metadata read error degrades to usage-only cards.
+    """
+    cards = build_cards(gather_from_world(world, limit=limit))
+    if metadata is None:
+        metadata = load_declared_metadata()
+    return render_cards(cards, metadata)
 
 
 def gather_from_world(world, limit: int = 5000) -> list[dict]:
@@ -232,6 +372,7 @@ def gather_from_world(world, limit: int = 5000) -> list[dict]:
 
 
 __all__ = [
-    "ModelCard", "build_cards", "render_card", "render_cards",
+    "ModelCard", "ModelCardMetadata", "build_cards", "render_card", "render_cards",
+    "load_declared_metadata", "export_model_cards",
     "gather_from_world", "KNOWN_KNOWLEDGE_CUTOFFS", "DISCLAIMER",
 ]
