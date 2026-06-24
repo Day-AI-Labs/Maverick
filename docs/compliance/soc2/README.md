@@ -76,18 +76,19 @@ maverick soc2 --json     # compact single-line JSON for log capture
 Capture this snapshot periodically during the Type II window as design +
 operating evidence.
 
-## 5. Process gaps to close (NOT code)
+## 5. Process controls to operate (NOT code)
 
 A Type II report cannot pass on engineering controls alone. These are owned by
-the Organization (full detail in [`../soc2-controls.md`](../soc2-controls.md)
-§ "Process-only / Gap summary") and are the same gaps that block ISO 27001:
+the Organization. Each now has a **drafted operational procedure** (see the
+[operations index](../procedures/README.md)) — what remains is *operating* it to
+produce evidence over the observation window:
 
-- Change-management process (CC8) → [POL-05](../policies/change-management-policy.md)
-- Vendor / sub-processor management (CC9.2) → [POL-09](../policies/supplier-security-policy.md)
-- Incident-response program (CC7.4) → [POL-07](../policies/incident-response-policy.md)
-- HR controls (CC1.4) → [POL-10](../policies/human-resources-security-policy.md)
-- Risk-assessment program (CC3) → [methodology](../risk-management-methodology.md) + [register](../risk-register.md)
-- Vulnerability management / pen-test cadence (CC7.1) → [POL-06](../policies/secure-development-policy.md)
+- Change-management process (CC8) → [PROC-03](../procedures/change-management-procedure.md)
+- Vendor / sub-processor management (CC9.2) → [PROC-07](../procedures/vendor-management-procedure.md) + [REG-01](../registers/subprocessor-register.md)/[REG-04](../registers/vendor-register.md)
+- Incident-response program (CC7.4) → [PROC-01](../procedures/incident-response-runbook.md) + [TPL-01](../templates/incident-report-template.md)
+- HR controls (CC1.4) → [PROC-06](../procedures/hr-security-procedures.md) + [TPL-03](../templates/acceptable-use-policy.md)
+- Risk-assessment program (CC3) → [PROC-04](../procedures/risk-assessment-and-review-procedure.md) + [methodology](../risk-management-methodology.md)/[register](../risk-register.md)
+- Vulnerability management / pen-test cadence (CC7.1) → [PROC-02](../procedures/vulnerability-management-procedure.md) + [REG-02](../registers/remediation-tracker.md)
 - Physical/environmental security (CC6/A1) → cloud provider's own SOC 2/ISO report
 
 ## 6. Readiness checklist
