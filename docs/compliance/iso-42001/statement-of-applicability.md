@@ -16,9 +16,10 @@ are driven by the [risk register](../risk-register.md) (AI risks R-19…R-25) an
 
 **Status:** Implemented · Partial · Process · Gap. **Applicable:** Y / N.
 
-> Summary: all controls **Applicable**. Strengths concentrate in A.6 (lifecycle),
-> A.7 (data), and A.9 (human oversight). Two **Gaps**: model-card metadata export
-> and AI-system retirement.
+> Summary: all controls **Applicable**, none excluded. Strengths concentrate in
+> A.6 (lifecycle), A.7 (data), and A.9 (human oversight). The former build gaps —
+> model-card metadata export, AI-system retirement, and continuous fairness
+> monitoring — are now **Implemented**.
 
 ## A.2 Policies related to AI
 
@@ -64,7 +65,7 @@ are driven by the [risk register](../risk-register.md) (AI risks R-19…R-25) an
 | A.6.2.3 | Documentation of design & development | Y | Partial | `docs/`; invention disclosures `docs/patents/`; to consolidate per-system |
 | A.6.2.4 | Verification & validation | Y | Implemented | Snapshot-replay regression (`hindsight.py`); calibration gating (`calibration.py`); eval-gated CI |
 | A.6.2.5 | Deployment | Y | Implemented | Staged rollout 10/50/100% with signed audit (`learning_rollout.py`) |
-| A.6.2.6 | Operation & monitoring | Y | Implemented (partial fairness) | OpenTelemetry, health, circuit breakers; bias metrics on-demand (continuous = R-22) |
+| A.6.2.6 | Operation & monitoring | Y | Implemented | OpenTelemetry, health, circuit breakers; continuous fairness monitoring with signed `FAIRNESS_ALERT` (`fairness_monitor.py`) alongside on-demand `bias_eval` |
 | A.6.2.7 | Technical documentation | Y | Implemented | Usage cards + operator-declared metadata (intended use, limitations, oversight, evals) exported via `model_cards.py` (`ModelCardMetadata`, `export_model_cards`) |
 | A.6.2.8 | Recording of event logs | Y | Implemented | Signed, chained audit log (`audit/`); learning audit; `AI_SYSTEM_RETIRED` events |
 | A.6.2 (retirement) | AI system retirement / decommissioning | Y | Implemented | Governed retirement with data disposition + signed `AI_SYSTEM_RETIRED` audit record (`retirement.py`); procedure in [POL-12](../policies/ai-management-policy.md) |
@@ -108,9 +109,9 @@ are driven by the [risk register](../risk-register.md) (AI risks R-19…R-25) an
 
 ## Exclusions
 
-**None.** All ISO 42001:2023 Annex A controls are determined Applicable. The two
-former **Gap** items — A.6.2.7 model-card metadata export (R-25) and AI-system
-retirement (R-24) — are now **Implemented** (`model_cards.py`, `retirement.py`).
-The one remaining partial item is continuous fairness monitoring (R-22), tracked
-in the [risk register](../risk-register.md) and the [roadmap](README.md) for
-closure before the Stage 2 audit.
+**None.** All ISO 42001:2023 Annex A controls are determined Applicable. The
+former **Gap** items — A.6.2.7 model-card metadata export (R-25), AI-system
+retirement (R-24), and continuous fairness monitoring at A.6.2.6 (R-22) — are now
+all **Implemented** (`model_cards.py`, `retirement.py`, `fairness_monitor.py`).
+The remaining ISO 42001 work is management-system documentation and the shared
+organizational (Process) controls, not code.

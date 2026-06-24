@@ -127,8 +127,17 @@ class EventKind:
     # records the deliberate end-of-life the same way it records learning
     # promotions, so a system that stops appearing is provably retired, not
     # silently dropped. payload: system_id:str, reason:str, decided_by:str,
-    # data_disposition:str (retain|archive|erase), archived:bool.
+    # data_disposition:str (retain|archive|erase), archived:bool, erased:bool,
+    # disposal_detail:dict (counts of erased world facts / audit events).
     AI_SYSTEM_RETIRED = "ai_system_retired"
+    # Continuous group-fairness monitoring (ISO/IEC 42001 A.6.2.6): the rolling
+    # window breached the four-fifths rule or drifted below its baseline, so a
+    # fairness regression is anchored in the signed chain instead of passing
+    # silently. payload: reason:str (adverse_impact|drift|adverse_impact+drift),
+    # min_impact_ratio:float, demographic_parity_diff:float,
+    # equal_opportunity_diff:float|None, failing_groups:list[str], samples:int,
+    # threshold:float.
+    FAIRNESS_ALERT = "fairness_alert"
 
 
 @dataclass

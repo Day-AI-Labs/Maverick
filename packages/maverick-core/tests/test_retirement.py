@@ -44,6 +44,18 @@ class TestDisposition:
         assert rec.erased and not rec.archived
         assert rec.recorded
 
+    def test_erase_captures_disposal_detail_from_dispose(self):
+        rec = rt.retire_system(
+            "legacy", reason="eol", decided_by="bob", data_disposition="erase",
+            dispose=lambda sid: {"world_facts_deleted": 3, "audit_events_deleted": 7})
+        assert rec.erased
+        assert rec.disposal_detail == {"world_facts_deleted": 3, "audit_events_deleted": 7}
+
+    def test_erase_with_none_detail_leaves_empty_dict(self):
+        rec = rt.retire_system("legacy", reason="eol", decided_by="bob",
+                               data_disposition="erase", dispose=lambda sid: None)
+        assert rec.erased and rec.disposal_detail == {}
+
     def test_retain_path_neither_archives_nor_disposes(self):
         calls = []
         _seen, record_event = _recorder()

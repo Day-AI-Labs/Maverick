@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
 
@@ -45,12 +45,15 @@ class RetirementRecord:
     erased: bool = False
     recorded: bool = False
     notes: str = ""
+    # Concrete disposal details (e.g. counts of erased world facts / audit
+    # events), populated from the ``dispose`` callable's return value.
+    disposal_detail: dict = field(default_factory=dict)
 
 
 def retire_system(system_id: str, *, reason: str, decided_by: str,
                   data_disposition: str = "archive",
                   archive: Callable[[str], None] | None = None,
-                  dispose: Callable[[str], None] | None = None,
+                  dispose: Callable[[str], dict | None] | None = None,
                   record_event: Callable[[RetirementRecord], bool] | None = None,
                   now: Callable[[], float] | None = None) -> RetirementRecord:
     """Retire ``system_id`` deliberately, in order, fail-safe. Pure orchestration.
@@ -96,8 +99,10 @@ def retire_system(system_id: str, *, reason: str, decided_by: str,
 
     if disposition == "erase" and dispose is not None:
         try:
-            dispose(system_id)
+            details = dispose(system_id)
             record.erased = True
+            if isinstance(details, dict):
+                record.disposal_detail = dict(details)
         except Exception as e:
             log.warning("retire: disposal of %r failed (%s)", system_id, e)
             record.notes = (record.notes + "; " if record.notes else "") + f"erase failed: {e}"
@@ -111,14 +116,66 @@ def retire_system(system_id: str, *, reason: str, decided_by: str,
     return record
 
 
-def retire_system_live(system_id: str, *, reason: str, decided_by: str,
-                       data_disposition: str = "archive") -> RetirementRecord:  # pragma: no cover -- touches learned state / audit sink
-    """Live retirement: wire the real signed audit row and (for ``archive``) a
-    learning-state snapshot, then run the governed :func:`retire_system` flow.
+def _erase_system_data(system_id: str, erase_scope: dict | None) -> dict:  # pragma: no cover -- deletes real data
+    """Concretely erase a retired system's data, gated on an explicit scope.
 
-    Fail-safe: a missing audit sink or snapshot helper degrades the record (the
-    relevant flag stays False) but never raises -- retiring a system must not be
-    able to crash the host doing it.
+    The audit and world-model erasure primitives are **subject-scoped** (GDPR
+    Art. 17): ``audit.erase.delete_user(channel, user_id)`` and
+    ``world.delete_facts_matching(token)`` both key on a subject. Retiring an AI
+    *system* therefore erases concrete data only when ``erase_scope`` names the
+    subject(s) tied to that system -- e.g. retiring a per-tenant agent and
+    removing that tenant's records. Without a scope nothing is deleted (the act
+    is still recorded): retirement must never be able to over-delete by guessing
+    what "the system's data" is from a bare id. ``erase_scope`` keys:
+
+      - ``audit_subject``: ``(channel, user_id)`` -> ``delete_user`` (audit rows)
+      - ``world_subject``: ``token``               -> ``delete_facts_matching``
+
+    Returns a details dict of what was erased, for the audit payload.
+    """
+    details: dict = {}
+    scope = erase_scope or {}
+
+    subject = scope.get("audit_subject")
+    if subject:
+        try:
+            from .audit.erase import delete_user
+            channel, user_id = subject
+            deleted, scanned = delete_user(str(channel), str(user_id))
+            details["audit_events_deleted"] = deleted
+            details["audit_events_scanned"] = scanned
+        except Exception as e:
+            log.warning("retire: audit erase for %r failed (%s)", system_id, e)
+            details["audit_erase_error"] = str(e)
+
+    world_subject = scope.get("world_subject")
+    if world_subject:
+        try:
+            from .world_model import open_world
+            keys = open_world().delete_facts_matching(str(world_subject))
+            details["world_facts_deleted"] = len(keys)
+        except Exception as e:
+            log.warning("retire: world erase for %r failed (%s)", system_id, e)
+            details["world_erase_error"] = str(e)
+
+    if not subject and not world_subject:
+        details["note"] = "no erase_scope provided; no subject data deleted"
+        log.info("retire: disposition=erase for %r but no erase_scope given", system_id)
+    return details
+
+
+def retire_system_live(system_id: str, *, reason: str, decided_by: str,
+                       data_disposition: str = "archive",
+                       erase_scope: dict | None = None) -> RetirementRecord:  # pragma: no cover -- touches learned state / audit sink
+    """Live retirement: wire the real signed audit row, a learning-state snapshot
+    (for ``archive``) and concrete subject-scoped erasure (for ``erase``), then
+    run the governed :func:`retire_system` flow.
+
+    ``erase_scope`` (used only when ``data_disposition='erase'``) names the
+    subject(s) whose data to delete -- see :func:`_erase_system_data`. Fail-safe:
+    a missing audit sink, snapshot helper, or erase target degrades the record
+    (the relevant flag/detail reflects it) but never raises -- retiring a system
+    must not be able to crash the host doing it.
     """
     import time
 
@@ -126,11 +183,8 @@ def retire_system_live(system_id: str, *, reason: str, decided_by: str,
         from . import dreaming
         dreaming.snapshot_learning_state()
 
-    def dispose(_sid: str) -> None:
-        # Disposal of system-specific data is deployment-specific; the audited
-        # act is recorded regardless. Operators wire concrete erasure (e.g.
-        # maverick.audit.erase / world-model deletion) per their data map.
-        log.info("retire: disposition=erase for %r -- wire deployment-specific erasure", _sid)
+    def dispose(sid: str) -> dict:
+        return _erase_system_data(sid, erase_scope)
 
     def record_event(rec: RetirementRecord) -> bool:
         from .audit import EventKind, record
@@ -138,6 +192,7 @@ def retire_system_live(system_id: str, *, reason: str, decided_by: str,
             EventKind.AI_SYSTEM_RETIRED, agent="retirement",
             system_id=rec.system_id, reason=rec.reason, decided_by=rec.decided_by,
             data_disposition=rec.data_disposition, archived=rec.archived,
+            erased=rec.erased, disposal_detail=rec.disposal_detail,
         )
 
     return retire_system(

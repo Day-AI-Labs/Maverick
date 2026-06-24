@@ -127,7 +127,8 @@ Annex A (AI controls A.2–A.10).
 | AI system lifecycle | — | — | A.6.2 | Governed learning loop: dreaming, hindsight (snapshot-replay regression), staged rollout, calibration gating, atomic rollback | Implemented | `maverick/dreaming.py`, `hindsight.py`, `learning_rollout.py`, `calibration.py` |
 | Learning audit / provable change | CC2.1 | A.8.15 | A.6.2 | Ed25519 signed, cross-language-verifiable learning audit | Implemented | `maverick/audit/signing.py` |
 | Model selection & management | — | — | A.6.2 | Role-based model selection (never hard-coded); per-model usage cards | Implemented | `maverick/llm.py`; `maverick/config.py` (`get_role_model`); `maverick/model_cards.py` |
-| Bias / fairness evaluation | — | — | A.6.2, A.5.x | Group-fairness metrics (four-fifths, demographic parity); red-team corpus | Implemented | `maverick/tools/bias_eval.py`; `packages/maverick-shield/` (`redteam`) |
+| Bias / fairness evaluation | — | — | A.6.2, A.5.x | On-demand group-fairness metrics (four-fifths, demographic parity); red-team corpus | Implemented | `maverick/tools/bias_eval.py`; `packages/maverick-shield/` (`redteam`) |
+| Continuous fairness monitoring | — | — | A.6.2.6 | Rolling-window monitor: four-fifths breach + drift detection, signed `FAIRNESS_ALERT` audit row | Implemented | `maverick/fairness_monitor.py`; `maverick/audit/events.py` (`FAIRNESS_ALERT`) |
 | Model card metadata export | — | — | A.6.2, A.8.x | Operator-declared model-card metadata (intended use, limitations, oversight, eval results) merged into the usage cards | Implemented | `maverick/model_cards.py` (`ModelCardMetadata`, `export_model_cards`) |
 | AI system retirement / decommissioning | — | — | A.6.2 | Governed retirement with data disposition + signed `AI_SYSTEM_RETIRED` audit record | Implemented | `maverick/retirement.py`; `maverick/audit/events.py` (`AI_SYSTEM_RETIRED`) |
 
@@ -146,8 +147,9 @@ management & pen-test cadence · physical security (cloud-inherited).
 capabilities, tenant isolation, quotas, OIDC, encryption at rest, audit signing
 — for any compliant deployment. See [`soc2/README.md`](soc2/README.md).
 
-**ISO 42001-specific build gaps:** *closed.* (1) operator-declared model-card
-metadata export and (2) governed AI-system retirement with a signed audit record
-are now implemented (`maverick/model_cards.py`, `maverick/retirement.py`). The
-one remaining AI item is moving fairness/bias evaluation from on-demand to
-continuous monitoring (R-22). See [`iso-42001/README.md`](iso-42001/README.md).
+**ISO 42001-specific build gaps:** *all closed.* (1) operator-declared model-card
+metadata export, (2) governed AI-system retirement with a signed audit record
+(incl. concrete subject-scoped `erase`), and (3) continuous rolling-window
+fairness monitoring with four-fifths/drift alerts are now implemented
+(`maverick/model_cards.py`, `maverick/retirement.py`, `maverick/fairness_monitor.py`).
+See [`iso-42001/README.md`](iso-42001/README.md).

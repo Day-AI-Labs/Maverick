@@ -78,7 +78,7 @@ There is one shared control backbone. Write it once; it feeds all three tracks.
 | --- | --- | --- | --- | --- |
 | SOC 2 | Strong (see crosswalk) | Drafted | **Process gaps open** | Not started — readiness phase |
 | ISO 27001 | Strong | Drafted (SoA, policies, register) | **Process gaps open** | Not started — readiness phase |
-| ISO 42001 | Strong / differentiated (model-card export + governed retirement now implemented) | Drafted (SoA, AI policy) | Process gaps open; 1 AI gap (continuous fairness monitoring) | Not started — readiness phase |
+| ISO 42001 | Strong / differentiated (model-card export, governed retirement, continuous fairness monitoring all implemented) | Drafted (SoA, AI policy) | Process gaps open; AI build gaps closed | Not started — readiness phase |
 
 These documents are **Draft v0.1**. They are written to be auditor-legible and
 codebase-accurate, but they require management approval, the closing of the
