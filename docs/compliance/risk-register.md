@@ -56,8 +56,8 @@ cross-referenced to the [crosswalk](control-crosswalk.md) and SoA.
 | R-21 | **Memory poisoning** via external agent contributions to fleet memory | 3×4=12 | Mitigate: provenance tagging, schema validation, secret redaction, Shield scan, write-path scope gating (`fleet_memory.py`) | 2×3=6 | AI Lead | Treat |
 | R-22 | **Bias / unfair outcomes** in agent decisions | 3×4=12 | Mitigate: group-fairness metrics (four-fifths, demographic parity). **Gap**: continuous monitoring not automated | 2×4=8 | AI Lead | Treat — partial |
 | R-23 | **Missing transparency** to affected parties (undisclosed AI, no explanation) | 2×3=6 | Mitigate: Art.50 disclosure; right-to-explanation (`compliance.py`, `right_to_explanation.py`) | 1×3=3 | AI Lead | Accept |
-| R-24 | **No AI-system retirement/decommissioning procedure** | 2×3=6 | **Gap**: establish documented retirement process with audit record | 2×3=6 | AI Lead | **Open — Gap** |
-| R-25 | **No formal model-card metadata** (intended use, limits, eval results) | 2×3=6 | **Gap**: build model-card export atop existing usage cards (`model_cards.py`) | 2×3=6 | AI Lead | **Open — Gap** |
+| R-24 | **No AI-system retirement/decommissioning procedure** | 2×3=6 | Mitigate: governed retirement with data disposition + signed `AI_SYSTEM_RETIRED` audit record (`retirement.py`) | 1×3=3 | AI Lead | **Closed** |
+| R-25 | **No formal model-card metadata** (intended use, limits, eval results) | 2×3=6 | Mitigate: operator-declared metadata merged into model cards + export (`model_cards.py`) | 1×3=3 | AI Lead | **Closed** |
 
 ## Heat summary (residual)
 
@@ -65,8 +65,9 @@ cross-referenced to the [crosswalk](control-crosswalk.md) and SoA.
 | --- | --- | --- |
 | Critical (16–25) | 0 | — |
 | High (10–15) | 1 | R-01 |
-| Medium (5–9) | 18 | R-02–R-08, R-10, R-12–R-22, R-24, R-25 (subset) |
+| Medium (5–9) | 16 | R-02–R-08, R-10, R-12–R-22 (subset) |
 | Low (1–4) | 6 | R-09, R-11, R-16, R-17, R-23 (subset) |
+| Closed | 2 | R-24, R-25 (residual 3 each; controls now implemented) |
 
 > R-01 (sandbox escape) remains the single High residual risk and is the
 > headline target for the planned third-party penetration test. All Critical

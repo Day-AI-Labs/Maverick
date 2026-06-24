@@ -31,7 +31,7 @@ This policy applies to all AI systems designed, developed, deployed, operated, o
 8. **Governed continuous learning.** Self-improvement shall occur only through the governed learning lifecycle: candidate generation, regression detection via snapshot-replay, calibration gating, staged rollout, and signed audit. No learning change reaches full production without passing these gates.
 9. **Record-keeping (EU AI Act Art. 12).** AI decisions, oversight actions, and learning changes shall be recorded in a tamper-evident, cryptographically signed audit chain.
 10. **Security of AI.** AI systems shall be defended against prompt injection, data exfiltration, and jailbreak attempts, and exercised against a red-team corpus.
-11. **AI system retirement.** Each AI system shall have a defined retirement/decommissioning procedure covering shutdown, data handling, and record retention. **[Process — Organization to operationalize]** — see Section 7 gap.
+11. **AI system retirement.** Each AI system shall be retired through the governed retirement flow (`maverick/retirement.py`), recording the reason, the deciding party, an explicit data disposition (retain/archive/erase), and a signed `AI_SYSTEM_RETIRED` audit record. The per-system erasure wiring for the `erase` disposition is deployment-specific **[Process — Organization to operationalize]**.
 
 ## 4. Roles & responsibilities
 
@@ -55,7 +55,7 @@ This policy applies to all AI systems designed, developed, deployed, operated, o
 | Consent / HITL gating (high/critical fail-closed to ask in enterprise mode) | `packages/maverick-core/maverick/safety/consent.py` | Implemented |
 | Two-person approval | `packages/maverick-core/maverick/approval_delegation.py` | Implemented |
 | Role-based model selection (no hard-coded models; kernel rule 2) | `packages/maverick-core/maverick/llm.py`, `packages/maverick-core/maverick/config.py` (`get_role_model`) | Implemented |
-| Per-model usage cards | `packages/maverick-core/maverick/model_cards.py` | Implemented (metadata export gap — see §7) |
+| Per-model usage cards + operator-declared metadata export | `packages/maverick-core/maverick/model_cards.py` (`ModelCardMetadata`, `export_model_cards`) | Implemented |
 | Learning: candidate generation (dreaming) | `packages/maverick-core/maverick/dreaming.py` | Implemented |
 | Learning: snapshot-replay regression detection | `packages/maverick-core/maverick/hindsight.py` | Implemented |
 | Learning: staged 10%/50%/100% rollout with signed audit | `packages/maverick-core/maverick/learning_rollout.py` | Implemented |
@@ -65,14 +65,14 @@ This policy applies to all AI systems designed, developed, deployed, operated, o
 | Bias / fairness evaluation (four-fifths, demographic parity) | `packages/maverick-core/maverick/tools/bias_eval.py` | Implemented |
 | Right-to-explanation | `packages/maverick-core/maverick/tools/right_to_explanation.py` | Implemented |
 | Prompt-injection / exfil / jailbreak detection + red-team corpus | `maverick-shield` package | Implemented |
-| Model-card formal metadata export (intended use / limitations / eval results) | — | **Gap — to close (see §7)** |
-| AI-system retirement / decommissioning procedure | — | **Gap — to close (see §7); [Process — Organization to operationalize]** |
+| Model-card metadata export (intended use / limitations / oversight / eval results) | `packages/maverick-core/maverick/model_cards.py` | Implemented |
+| Governed AI-system retirement with signed `AI_SYSTEM_RETIRED` audit record | `packages/maverick-core/maverick/retirement.py`; `packages/maverick-core/maverick/audit/events.py` | Implemented |
 
 ## 6. Framework control mapping
 
 | Framework | Controls satisfied |
 | --- | --- |
-| ISO/IEC 42001:2023 | Clause 5.2, A.2.2, A.2.3 (AI policy — this document); A.5.x (impact assessment — `ai_act.py` risk classification + impact-assessment process); A.6.x (lifecycle — governed design→data→deploy→monitor→retire, retirement noted as gap); A.8.x (information for interested parties / transparency — Art. 50 disclosure, right-to-explanation, model cards); A.9.x (responsible use & human oversight — governance engine, consent/HITL, two-person approval) |
+| ISO/IEC 42001:2023 | Clause 5.2, A.2.2, A.2.3 (AI policy — this document); A.5.x (impact assessment — `ai_act.py` risk classification + impact-assessment process); A.6.x (lifecycle — governed design→data→deploy→monitor→retire, incl. governed retirement with signed audit record); A.8.x (information for interested parties / transparency — Art. 50 disclosure, right-to-explanation, model cards); A.9.x (responsible use & human oversight — governance engine, consent/HITL, two-person approval) |
 | EU AI Act | Art. 12 (record-keeping — signed audit chain); Art. 14 (human oversight — REQUIRE_HUMAN gate, fail-closed high/critical); Art. 50 (transparency — first-turn AI disclosure) |
 | SOC 2 | PI1.x (processing integrity — governed, gated, and audited learning lifecycle; regression detection; calibration gating) where relevant |
 
@@ -80,12 +80,22 @@ This policy applies to all AI systems designed, developed, deployed, operated, o
 
 Exceptions to this policy require a documented AI risk assessment and written approval from the AI Governance Lead and Management, with a defined expiry and compensating controls. Bypassing the human-oversight gate, the learning-lifecycle gates, or the signed audit is prohibited absent such an approved exception.
 
-Two known control gaps are tracked for closure:
+The two formerly-tracked AI build gaps are now **closed**:
 
-1. **Model-card metadata export.** `model_cards.py` does not yet export formal metadata (intended use, limitations, evaluation results). Until closed, model documentation completeness is a manual/partial control.
-2. **AI-system retirement procedure.** There is no documented decommissioning/retirement procedure for AI systems. Until closed, lifecycle coverage (A.6.x) is incomplete at the retire stage.
+1. **Model-card metadata export** — `model_cards.py` exports operator-declared
+   metadata (intended use, out-of-scope use, limitations, risk classification,
+   data provenance, human oversight, ethical considerations, eval results)
+   merged into the usage cards (`ModelCardMetadata`, `export_model_cards`). The
+   metadata content is operator-declared, so its accuracy remains an
+   organizational responsibility. (R-25 closed.)
+2. **AI-system retirement procedure** — `maverick/retirement.py` provides a
+   governed, fail-safe retirement flow with an explicit data disposition
+   (retain/archive/erase) and a signed `AI_SYSTEM_RETIRED` audit record. The
+   per-system erasure wiring for the `erase` disposition is deployment-specific
+   and **[Process — Organization to operationalize]** per the data map. (R-24 closed.)
 
-**[Process — Organization to operationalize]** remediation owners, target dates, and interim compensating controls for both gaps, recorded in the exception/risk register. Non-compliance may result in remediation, suspension of the affected AI capability, and disciplinary action.
+Non-compliance may result in remediation, suspension of the affected AI
+capability, and disciplinary action.
 
 ## 8. Review & maintenance
 

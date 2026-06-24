@@ -65,9 +65,9 @@ are driven by the [risk register](../risk-register.md) (AI risks R-19…R-25) an
 | A.6.2.4 | Verification & validation | Y | Implemented | Snapshot-replay regression (`hindsight.py`); calibration gating (`calibration.py`); eval-gated CI |
 | A.6.2.5 | Deployment | Y | Implemented | Staged rollout 10/50/100% with signed audit (`learning_rollout.py`) |
 | A.6.2.6 | Operation & monitoring | Y | Implemented (partial fairness) | OpenTelemetry, health, circuit breakers; bias metrics on-demand (continuous = R-22) |
-| A.6.2.7 | Technical documentation | Y | **Gap** (partial) | Usage cards exist (`model_cards.py`); formal model-card metadata export to build (R-25) |
-| A.6.2.8 | Recording of event logs | Y | Implemented | Signed, chained audit log (`audit/`); learning audit |
-| A.6.2 (retirement) | AI system retirement / decommissioning | Y | **Gap** | No documented retirement procedure with audit record (R-24) |
+| A.6.2.7 | Technical documentation | Y | Implemented | Usage cards + operator-declared metadata (intended use, limitations, oversight, evals) exported via `model_cards.py` (`ModelCardMetadata`, `export_model_cards`) |
+| A.6.2.8 | Recording of event logs | Y | Implemented | Signed, chained audit log (`audit/`); learning audit; `AI_SYSTEM_RETIRED` events |
+| A.6.2 (retirement) | AI system retirement / decommissioning | Y | Implemented | Governed retirement with data disposition + signed `AI_SYSTEM_RETIRED` audit record (`retirement.py`); procedure in [POL-12](../policies/ai-management-policy.md) |
 
 ## A.7 Data for AI systems
 
@@ -83,7 +83,7 @@ are driven by the [risk register](../risk-register.md) (AI risks R-19…R-25) an
 
 | Control | Title | Appl. | Status | Justification / evidence |
 | --- | --- | --- | --- | --- |
-| A.8.2 | System documentation & information for users | Y | Partial | User docs; right-to-explanation; model-card export pending (R-25) |
+| A.8.2 | System documentation & information for users | Y | Implemented | User docs; right-to-explanation; model-card metadata export (`export_model_cards`) |
 | A.8.3 | External reporting | Y | Implemented | Art.50 first-turn disclosure (`compliance.py`) |
 | A.8.4 | Communication of incidents | Y | Process | AI-incident communication procedure (POL-07) |
 | A.8.5 | Information for interested parties | Y | Implemented | Disclosure + DSAR + right-to-explanation/rectification |
@@ -109,7 +109,8 @@ are driven by the [risk register](../risk-register.md) (AI risks R-19…R-25) an
 ## Exclusions
 
 **None.** All ISO 42001:2023 Annex A controls are determined Applicable. The two
-**Gap** items (A.6.2.7 model-card metadata export; AI-system retirement
-procedure) and the partial continuous-fairness-monitoring item are tracked in
-the [risk register](../risk-register.md) (R-24, R-25, R-22) and the
-[iso-42001 roadmap](README.md) for closure before the Stage 2 audit.
+former **Gap** items — A.6.2.7 model-card metadata export (R-25) and AI-system
+retirement (R-24) — are now **Implemented** (`model_cards.py`, `retirement.py`).
+The one remaining partial item is continuous fairness monitoring (R-22), tracked
+in the [risk register](../risk-register.md) and the [roadmap](README.md) for
+closure before the Stage 2 audit.
