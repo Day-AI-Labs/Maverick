@@ -253,6 +253,32 @@ def _dashboard_timeout() -> float:
         return 300.0
 
 
+def _consent_requester(wm) -> str | None:
+    """The principal on whose behalf consent is being requested.
+
+    This is the owner of the goal currently executing (bound in the goal trace
+    context and copied across ``asyncio.to_thread`` into the tool/consent
+    worker). The goal owner shares the dashboard's approver namespace
+    (``caller_principal``), so recording it as ``requested_by`` lets the
+    dual-control self-approval bar in ``world_model.decide_approval`` fire:
+    under N-of-M dual control the requester cannot count as one of the distinct
+    approvers (segregation of duties).
+
+    Returns None when consent runs outside a goal, or for an unowned goal
+    (single-user / no-auth) -- the bar then stays inactive, which is the
+    unchanged single-approver behaviour."""
+    try:
+        from ..logging_config import current_goal_id
+        gid = current_goal_id()
+        if gid is None:
+            return None
+        goal = wm.get_goal(gid)
+        owner = (getattr(goal, "owner", "") or "").strip()
+        return owner or None
+    except Exception:  # pragma: no cover -- requester resolution never blocks consent
+        return None
+
+
 def _decide_via_dashboard(
     action: str,
     risk: str,
@@ -296,7 +322,7 @@ def _decide_via_dashboard(
     try:
         approval_id = wm.create_approval(
             action, risk=risk, scope=scope, detail=detail, provenance=provenance,
-            approvals_required=required,
+            approvals_required=required, requested_by=_consent_requester(wm),
         )
     except Exception as e:
         log.warning("consent: cannot queue approval, falling back: %s", e)

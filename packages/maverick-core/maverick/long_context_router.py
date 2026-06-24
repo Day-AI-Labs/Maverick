@@ -34,7 +34,7 @@ import os
 import re
 from dataclasses import dataclass
 
-_TRUE = {"1", "true", "yes", "on"}
+from ._envparse import env_bool
 
 # A 200k-token window is the current high-context default (Claude/GPT long
 # context). Above this a single payload is the router's problem to solve.
@@ -49,7 +49,7 @@ _MARKER = "[long-context router: {kept} of {total} shards retained by relevance]
 
 
 def _env_true(name: str) -> bool:
-    return (os.environ.get(name) or "").strip().lower() in _TRUE
+    return env_bool(name)
 
 
 def enabled() -> bool:

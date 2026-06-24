@@ -123,3 +123,59 @@ def test_decided_approval_is_terminal(wm):
 
 def test_approval_state_unknown_is_none(wm):
     assert wm.approval_state(99999) is None
+
+
+# --- requester wiring: consent attributes the request to the goal owner -----
+# The self-approval bar above is only reachable if `requested_by` is actually
+# set on production approvals. The consent gate resolves it from the executing
+# goal's owner (same namespace as the dashboard approver).
+
+def test_consent_requester_resolves_goal_owner(wm):
+    from maverick.logging_config import reset_goal_context, set_goal_context
+    from maverick.safety import consent
+
+    gid = wm.create_goal("ship", "d", owner="u:alice")
+    assert consent._consent_requester(wm) is None          # outside any goal
+    tokens = set_goal_context(goal_id=gid)
+    try:
+        assert consent._consent_requester(wm) == "u:alice"
+    finally:
+        reset_goal_context(tokens)
+    assert consent._consent_requester(wm) is None           # restored
+
+
+def test_consent_requester_unowned_goal_is_none(wm):
+    from maverick.logging_config import reset_goal_context, set_goal_context
+    from maverick.safety import consent
+
+    gid = wm.create_goal("ship", "d", owner="")             # single-user / no-auth
+    tokens = set_goal_context(goal_id=gid)
+    try:
+        assert consent._consent_requester(wm) is None
+    finally:
+        reset_goal_context(tokens)
+
+
+def test_dashboard_consent_attributes_requester(wm, monkeypatch):
+    import maverick.world_model as world_model
+    from maverick.logging_config import reset_goal_context, set_goal_context
+    from maverick.safety import consent
+
+    monkeypatch.setattr(world_model, "open_world", lambda *a, **k: wm)
+    monkeypatch.setenv("MAVERICK_CONSENT_DASHBOARD_TIMEOUT", "0")  # queue then time out
+    captured: dict = {}
+    real = wm.create_approval
+
+    def _spy(*a, **k):
+        captured.update(k)
+        return real(*a, **k)
+
+    monkeypatch.setattr(wm, "create_approval", _spy)
+    gid = wm.create_goal("rm -rf /tmp/x", "d", owner="u:alice")
+    tokens = set_goal_context(goal_id=gid)
+    try:
+        decision = consent._decide_via_dashboard("rm-rf", "high", "/tmp/x", "d", "test")
+    finally:
+        reset_goal_context(tokens)
+    assert decision is None                       # timed out: no human decision
+    assert captured.get("requested_by") == "u:alice"

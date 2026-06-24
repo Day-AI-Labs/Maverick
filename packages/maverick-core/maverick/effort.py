@@ -22,8 +22,9 @@ from __future__ import annotations
 
 import os
 
+from ._envparse import coerce_bool, env_bool
+
 _LEVELS = ("low", "medium", "high", "xhigh", "max")
-_TRUE = {"1", "true", "yes", "on"}
 
 # Built-in cost-optimized profile, activated by ``[effort] enabled = true``.
 # Intelligence-sensitive roles stay high; bulk/throwaway roles drop down.
@@ -101,8 +102,8 @@ def _configured_level(role: str) -> str | None:
     if isinstance(cfg.get("default"), str):
         return cfg["default"]
     enabled = cfg.get("enabled")
-    on = enabled in _TRUE if isinstance(enabled, str) else bool(enabled)
-    if on or os.environ.get("MAVERICK_EFFORT_ENABLED", "").strip().lower() in _TRUE:
+    on = coerce_bool(enabled)
+    if on or env_bool("MAVERICK_EFFORT_ENABLED"):
         return _ROLE_DEFAULTS.get(role_l)
     return None
 
