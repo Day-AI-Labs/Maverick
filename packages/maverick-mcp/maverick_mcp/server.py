@@ -531,8 +531,12 @@ class MCPServer:
 
     def handle_resources_read(self, params: dict) -> dict:
         uri = params.get("uri", "")
-        if not uri.startswith("maverick://"):
-            raise _ProtocolError(-32602, f"unsupported uri scheme: {uri}")
+        # A client can send a non-string `uri` (number/list, or `null` which
+        # overrides the "" default); `.startswith` then raises and escapes as a
+        # scrubbed -32603 instead of the correct -32602 invalid-params -- mirror
+        # the non-dict `arguments` guard in handle_tools_call.
+        if not isinstance(uri, str) or not uri.startswith("maverick://"):
+            raise _ProtocolError(-32602, f"unsupported uri scheme: {uri!r}")
         path = uri[len("maverick://"):]
         from maverick.world_model import DEFAULT_DB, WorldModel
         wm = WorldModel(DEFAULT_DB)
@@ -741,7 +745,10 @@ class MCPServer:
 
     def handle_tools_call(self, params: dict, *, task_owner: str | None = None) -> dict:
         name = params.get("name")
-        if name not in _TOOL_NAMES:
+        # A non-hashable `name` (list/dict) raises TypeError on the set-membership
+        # test below, escaping as a scrubbed -32603; coerce to -32602 like the
+        # `arguments` guard just below.
+        if not isinstance(name, str) or name not in _TOOL_NAMES:
             raise _ProtocolError(-32602, f"unknown tool: {name!r}")
         arguments = params.get("arguments", {}) or {}
         # A client can send `arguments` as a non-object (number/bool/string/
