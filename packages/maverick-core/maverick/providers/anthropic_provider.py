@@ -363,22 +363,26 @@ class AnthropicClient:
             # an empty response. Bump headroom for adaptive runs.
             kwargs["max_tokens"] = max(max_tokens, 16384)
         _ = is_modern_4x  # documented above; kept for future logic
-        # Wave 10 (D1): orchestrator best-of-N sets MAVERICK_TEMPERATURE
-        # per attempt to force candidate diversity. Wire it through here
-        # so the provider actually honours it -- before this fix the env
-        # var was set but read by nothing, and best-of-N produced
-        # N identical answers.
+        # Orchestrator best-of-N sets a per-attempt sampling temperature to
+        # force candidate diversity. It is read from a ContextVar (per goal
+        # task, race-free across concurrent goals); MAVERICK_TEMPERATURE remains
+        # honoured as a process-wide fallback for manual/CLI use.
         # Thinking models reject explicit temperature (400). Gate on whether
         # `thinking` actually ended up in the request -- not on thinking_budget,
         # which misses the adaptive-thinking auto-injected for Opus 4.7/4.8 just
         # above (that path set thinking_budget=None yet still sends thinking, so
         # the old gate let temperature through and the API 400'd).
-        temp_str = os.environ.get("MAVERICK_TEMPERATURE")
-        if temp_str and "thinking" not in kwargs:
-            try:
-                kwargs["temperature"] = float(temp_str)
-            except ValueError:
-                pass
+        from .base import sampling_temperature
+        temp = sampling_temperature()
+        if temp is None:
+            raw = os.environ.get("MAVERICK_TEMPERATURE")
+            if raw:
+                try:
+                    temp = float(raw)
+                except ValueError:
+                    temp = None
+        if temp is not None and "thinking" not in kwargs:
+            kwargs["temperature"] = temp
 
         # Per-role reasoning effort (output_config.effort) — the biggest
         # cost/latency lever on Opus 4.7/4.8. Caller usually resolves it via

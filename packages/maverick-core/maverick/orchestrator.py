@@ -1634,8 +1634,12 @@ async def run_goal_best_of_n(
             max_output_tokens=budget.max_output_tokens,
             max_tool_calls=budget.max_tool_calls,
         )
-        prior_temp = os.environ.get("MAVERICK_TEMPERATURE")
-        os.environ["MAVERICK_TEMPERATURE"] = str(per_temp)
+        # Per-attempt sampling temperature via a ContextVar, NOT a process-
+        # global env var: a concurrent goal on the same process must not inherit
+        # this attempt's temperature. The value propagates into the provider
+        # (incl. across asyncio.to_thread) for this goal task only.
+        from .providers.base import reset_sampling_temperature, set_sampling_temperature
+        _temp_token = set_sampling_temperature(float(per_temp))
         try:
             try:
                 # Wave 12 fix (council F14, biggest accuracy loss):
@@ -1673,11 +1677,8 @@ async def run_goal_best_of_n(
                     break
                 continue
         finally:
-            # Restore env so the next call site isn't surprised.
-            if prior_temp is None:
-                os.environ.pop("MAVERICK_TEMPERATURE", None)
-            else:
-                os.environ["MAVERICK_TEMPERATURE"] = prior_temp
+            # Restore the prior context temperature (None outside best-of-N).
+            reset_sampling_temperature(_temp_token)
 
         # Roll ALL of this attempt's spend into the parent (cache tokens +
         # tool_calls included, not just dollars/in/out) and note if the
