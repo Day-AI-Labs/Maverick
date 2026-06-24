@@ -48,6 +48,12 @@ per_tenant = true         # per-tenant envelope encryption (DEK+KEK; wire a clou
 # --- Tamper-evident audit log (CC2.1/PI1.5; A.8.15/A.8.24) ---
 [audit]
 sign = true               # Ed25519 Merkle hash-chain + cross-file anchors
+# IMPORTANT: with [enterprise] mode = true the signing key MUST be off-host —
+# Maverick refuses to generate-and-leave it on local disk. Provide a KMS /
+# secrets-manager-sourced 32-byte Ed25519 key in the service unit:
+#   MAVERICK_AUDIT_SIGNING_KEY=<hex/base64 raw key>   (or)
+#   MAVERICK_AUDIT_SIGNING_KEY_WRAPPED=<KMS-wrapped key>
+# Without it the chain writes UNSIGNED and `maverick soc2` reports audit_log != ok.
 # WORM export of closed day-files (regulator-grade immutability via S3 Object-Lock):
 # worm = true
 # worm_provider = "s3"

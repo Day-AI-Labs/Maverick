@@ -75,7 +75,7 @@ are off on a default profile and must be enabled for a compliant deployment.
 | ID | Class | Finding | Corrective action | Owner |
 | --- | --- | --- | --- | --- |
 | NC-01 | Minor NC | Opt-in access controls (capabilities, tenant isolation, quotas, OIDC) `disabled` on the assessed profile | Apply [`compliant-config.toml`](../deployment/compliant-config.toml); re-verify with [`verify-posture.sh`](../deployment/verify-posture.sh) until all `enabled` | Christopher Day |
-| NC-02 | Minor NC | Audit log unsigned / no signing key on the assessed profile | Enable `[audit] sign = true`; confirm `audit_log = ok` + signing key present | Christopher Day |
+| NC-02 | Minor NC | Audit log unsigned / no signing key on the assessed profile | Enable `[audit] sign = true` **and** provide an off-host `MAVERICK_AUDIT_SIGNING_KEY` from KMS (enterprise mode forbids a local-disk key); confirm `audit_log = ok` + `audit_signing_key = enabled` | Christopher Day |
 | NC-03 | Minor NC | Policy & procedure set is Draft, not management-approved | **Closed 2026-06-24** — POL-01…12 + procedures/registers/templates approved (v1.0, effective 2026-06-24) at the first management review | Christopher Day |
 | OBS-01 | Observation | Third-party penetration test not yet scheduled (R-01 sandbox escape is the single High residual) | Schedule annual third-party pen test per [PROC-02](../procedures/vulnerability-management-procedure.md) | Christopher Day |
 | OBS-02 | Observation | First management review not yet conducted | Conduct & ratify the [first management review](2026-06-24-management-review.md) | Christopher Day |
@@ -95,3 +95,16 @@ via the existing deployment artifacts and the first management review.
 **Recommendation:** proceed to management review, approve the documentation set,
 enable the opt-in controls on the target deployment, and schedule the pen test.
 Re-audit a fresh sample next quarter (Cycle 2) per [PROC-05](../procedures/internal-audit-plan.md).
+
+## 6. Control-tooling fix (found during the dry-run)
+
+Applying [`compliant-config.toml`](../deployment/compliant-config.toml) in a
+reference environment and driving `maverick soc2` to green surfaced a defect in
+the **evidence collector itself**: the `audit_signing_key` probe counted only a
+local `.key` file, so an **off-host (KMS) signing key** — which enterprise mode
+*requires* and which leaves a `.injected` marker + `.pub` rather than a local
+`.key` — was wrongly reported `absent`, failing the gate on the *most secure*
+key custody. Fixed: the probe now recognizes off-host keys (injected marker or
+`MAVERICK_AUDIT_SIGNING_KEY[_WRAPPED]`), with regression tests. After the fix the
+reference deployment passes `maverick soc2` (exit 0) with all required controls
+`enabled`, `audit_log = ok`, and `audit_signing_key = enabled (offhost)`.
