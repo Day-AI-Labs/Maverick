@@ -33,6 +33,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .._envparse import is_truthy
+
 _SESSION_PROVIDERS = {
     "chatgpt-session":  ("chatgpt", "openai-session"),
     "claude-session":   ("claude", "anthropic-session", "claude-ai"),
@@ -57,15 +59,12 @@ def is_session_provider(name: str) -> bool:
     return _canonical(name) in _SESSION_PROVIDERS
 
 
-_TRUE_VALUES = {"1", "true", "yes", "on"}
-
-
 def _explicit_opt_in(value: Any) -> bool:
     """Return True only for explicit session-provider opt-in values."""
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
-        return value.strip().lower() in _TRUE_VALUES
+        return is_truthy(value)
     if isinstance(value, int):
         return value == 1
     return False

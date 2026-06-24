@@ -39,6 +39,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from ._envparse import is_truthy
+
 # Asymmetric signature algorithms only. HMAC (HS*) and "none" are
 # deliberately absent and additionally hard-rejected below, regardless of
 # config, so a misconfigured `[auth.oidc].algorithms` can never reopen the
@@ -47,9 +49,6 @@ DEFAULT_ALGORITHMS = ["RS256", "ES256"]
 _ALLOWED_ASYMMETRIC = frozenset(
     {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512", "EdDSA"}
 )
-_TRUE_VALUES = {"1", "true", "yes", "on"}
-
-
 class OIDCError(Exception):
     """Raised on any OIDC verification or configuration failure.
 
@@ -111,7 +110,7 @@ def _env_flag(name: str) -> bool | None:
     raw = os.environ.get(name)
     if raw is None:
         return None
-    return raw.strip().lower() in _TRUE_VALUES
+    return is_truthy(raw)
 
 
 def _load_oidc_section() -> dict:

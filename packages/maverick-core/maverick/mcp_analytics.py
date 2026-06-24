@@ -18,9 +18,9 @@ import json
 import logging
 import os
 
-log = logging.getLogger(__name__)
+from ._envparse import coerce_bool, is_truthy
 
-_TRUE = {"1", "true", "yes", "on"}
+log = logging.getLogger(__name__)
 
 # Coarse language buckets keyed by characteristic User-Agent substrings. Order
 # matters: more specific tokens first.
@@ -41,13 +41,13 @@ def analytics_enabled() -> bool:
     ``[analytics] mcp_client_language``. Off by default."""
     env = os.environ.get("MAVERICK_MCP_ANALYTICS")
     if env is not None and env.strip() != "":
-        return env.strip().lower() in _TRUE
+        return is_truthy(env)
     try:
         from .config import load_config
         v = (load_config() or {}).get("analytics", {}).get("mcp_client_language")
     except Exception:  # pragma: no cover -- config never blocks a request
         return False
-    return str(v).strip().lower() in _TRUE if isinstance(v, str) else bool(v)
+    return coerce_bool(v)
 
 
 def classify_user_agent(user_agent: str | None) -> str:
