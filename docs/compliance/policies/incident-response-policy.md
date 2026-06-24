@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | POL-07 |
-| Owner | Security Lead / Incident Response Manager |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Effective date | TBD |

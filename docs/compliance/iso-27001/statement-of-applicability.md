@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ISMS-SOA-01 |
-| Owner | Security Lead / CISO |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Standard | ISO/IEC 27001:2022, Annex A (93 controls) |

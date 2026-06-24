@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | POL-08 |
-| Owner | Head of Operations / Business Continuity Manager |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Effective date | TBD |

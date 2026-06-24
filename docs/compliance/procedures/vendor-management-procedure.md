@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | PROC-07 |
-| Owner | Security Lead / Legal |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Review cycle | Annual |

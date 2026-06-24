@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | POL-01 |
-| Owner | CISO / Security Lead |
-| Approver | Management / CEO |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Effective date | TBD |

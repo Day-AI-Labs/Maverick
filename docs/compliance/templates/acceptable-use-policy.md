@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | TPL-03 |
-| Owner | People Ops / HR (with Security Lead) |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Review cycle | Annual |

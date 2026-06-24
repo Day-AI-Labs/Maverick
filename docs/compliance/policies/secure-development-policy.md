@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | POL-06 |
-| Owner | Head of Engineering |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Effective date | TBD |

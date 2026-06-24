@@ -19,6 +19,15 @@ SOC 1 is intentionally **out of scope** — Maverick is not a system of record
 for customers' financial statements (ICFR), so a SOC 1 report does not apply
 unless a customer pushes Maverick into their financial-reporting chain.
 
+> **Ownership.** All ISMS/AIMS roles and document owners currently resolve to a
+> single accountable individual, **Christopher Day**, who is the named Owner and
+> Approver throughout. This is the reality of a small/solo operation; where a
+> control assumes segregation of duties between an owner and an approver, that is
+> a recognized small-org situation handled by compensating controls (the
+> tamper-evident audit log, CI gates, and external assessor review). Functional
+> role names in the procedures (Security Lead, AI Lead, Incident Commander, …)
+> are hats worn by the same person until the team grows.
+
 ## How the frameworks relate
 
 There is one shared control backbone. Write it once; it feeds all three tracks.
@@ -59,6 +68,7 @@ There is one shared control backbone. Write it once; it feeds all three tracks.
 | [`registers/`](registers/) | 5 live registers (sub-processors, remediation, CAPA, vendors, assets). |
 | [`templates/`](templates/) | 4 fill-in templates (incident report, management-review minutes, AUP, vendor questionnaire). |
 | [`deployment/`](deployment/) | Hardened reference config + checklist + `verify-posture.sh` that operationalize "enable the opt-in controls." |
+| [`evidence/`](evidence/) | Dated operating records (first internal audit + management review) produced by running the procedures. |
 
 ## Policy set
 

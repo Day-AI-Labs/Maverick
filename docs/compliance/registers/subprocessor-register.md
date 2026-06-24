@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | REG-01 |
-| Owner | Security Lead / Legal |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — populate per deployment before customer disclosure |
 | Review cycle | On any sub-processor change + quarterly |

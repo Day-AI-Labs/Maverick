@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | REG-04 |
-| Owner | Security Lead / Legal |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Review cycle | Annual |
@@ -44,7 +44,7 @@ at least annually and on material change.
 | DPA signed | Y/N + date a DPA was executed (— if not applicable) |
 | Last review | Date of most recent assessment (TPL-04) |
 | Next review due | Date the next re-assessment is due |
-| Owner | Internal accountable owner |
+| Owner | Christopher Day |
 | Status | Active / Pending review / Offboarded / Risk-accepted |
 
 ## Register

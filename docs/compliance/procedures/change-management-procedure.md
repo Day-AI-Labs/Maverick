@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | PROC-03 |
-| Owner | Engineering Lead |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Review cycle | Annual |

@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | RM-METH-01 |
-| Owner | Security Lead / CISO |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Review cycle | Annual, and on significant change |

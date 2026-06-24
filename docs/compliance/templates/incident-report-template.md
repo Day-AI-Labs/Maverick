@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | TPL-01 |
-| Owner | Security Lead / Incident Commander |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Review cycle | Annual + after every SEV1/SEV2 |

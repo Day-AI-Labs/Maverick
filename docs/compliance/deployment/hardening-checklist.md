@@ -3,8 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Document ID | DEP-CHK-01 |
-| Owner | Security Lead / Platform Engineering |
-| Approver | Management |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
 | Version | 0.1 |
 | Status | Draft — pending management approval |
 | Review cycle | Per release + annual |
