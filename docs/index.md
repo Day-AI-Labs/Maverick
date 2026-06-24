@@ -76,4 +76,4 @@ platform remain proprietary.
 - [Features → Dreaming / Hindsight / Fleet memory](FEATURES.md) — the full learning lifecycle: consolidation, regression detection, value proof, and the cross-vendor memory plane
 - [Features](FEATURES.md) — everything Lightwork does today (shipped capabilities + tools)
 - [Roadmap](ROADMAP.md) — the forward backlog (what isn't built yet)
-- [Contributing](CONTRIBUTING.md) — how to send PRs
+- [Contributing](../CONTRIBUTING.md) — how to send PRs

@@ -69,6 +69,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
 ### Fixed
+- Dual control: the "requester cannot approve their own request" segregation-of
+  -duties rule now fires for real dashboard approvals. The consent gate records
+  the executing goal's owner as the approval's requester, so an N-of-M approval
+  can no longer be self-approved by its initiator (previously the requester was
+  never recorded, leaving the bar unreachable outside tests).
+- Best-of-N now sets each attempt's sampling temperature via a per-goal
+  ContextVar instead of a process-global `MAVERICK_TEMPERATURE` env var, so two
+  goals running concurrently in one process no longer read each other's
+  temperature. The env var is still honoured as a process-wide fallback.
+- Per-tenant RBAC role assignments are rejected (409) under per-user tenancy
+  (`MAVERICK_TENANT_BY_USER`), where every request is pinned to the caller's own
+  isolated tenant and a named-tenant role could never take effect — turning a
+  silent no-op into an explicit error. Named-tenant deployments are unaffected.
+- MCP server returns `-32602` (invalid params), not a scrubbed `-32603`, for a
+  non-string `uri` (`resources/read`) or a non-string/non-hashable tool `name`
+  (`tools/call`).
 - World model search now backfills the `messages_fts` full-text index on
   upgrade (schema v10). The FTS triggers only index future writes, so a
   database whose messages predated the index carried unindexed history that

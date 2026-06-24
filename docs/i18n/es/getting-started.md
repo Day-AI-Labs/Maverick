@@ -93,7 +93,7 @@ Vuelve a ejecutar el asistente en cualquier momento:
 maverick init
 ```
 
-O edita `~/.maverick/config.toml` directamente. La sección `[models]` asigna a cada rol de agente una cadena `provider:model-id`. Consulta [`configuration.md`](./configuration.md) para ver el esquema.
+O edita `~/.maverick/config.toml` directamente. La sección `[models]` asigna a cada rol de agente una cadena `provider:model-id`. Consulta [`configuration.md`](../../configuration.md) para ver el esquema.
 
 ## Dónde se guardan los datos
 
