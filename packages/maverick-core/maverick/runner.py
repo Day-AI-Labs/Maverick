@@ -29,10 +29,38 @@ from ._envparse import env_float, env_int
 
 log = logging.getLogger(__name__)
 
-# Process-wide concurrency cap. Override with MAVERICK_MAX_CONCURRENT_GOALS.
+# Two-level fair concurrency so people don't wait behind each other:
+#
+#   * a per-PRINCIPAL lane (MAX_CONCURRENT_GOALS_PER_PRINCIPAL) — one user can
+#     run several goals at once but cannot monopolise the host; and
+#   * a global ceiling (MAX_CONCURRENT_GOALS) that only protects the box from
+#     total overload. It is sized so normal multi-user load never reaches it,
+#     so one user's runs do not block another's — only a host-wide saturation
+#     queues anyone. Both are env-overridable.
+#
 # BoundedSemaphore(0) raises ValueError, so clamp to at least 1.
-MAX_CONCURRENT_GOALS = max(1, env_int("MAVERICK_MAX_CONCURRENT_GOALS", 3))
+MAX_CONCURRENT_GOALS = max(1, env_int("MAVERICK_MAX_CONCURRENT_GOALS", 16))
+MAX_CONCURRENT_GOALS_PER_PRINCIPAL = max(
+    1, env_int("MAVERICK_MAX_CONCURRENT_GOALS_PER_PRINCIPAL", 3))
 _run_semaphore = threading.BoundedSemaphore(MAX_CONCURRENT_GOALS)
+
+# Per-principal lanes, created on first use. Guarded by _principal_sems_lock.
+# The dict grows with the number of distinct principals seen this process — a
+# bounded, small set in practice (one per user/agent), so no eviction needed.
+_principal_sems: dict[str, threading.BoundedSemaphore] = {}
+_principal_sems_lock = threading.Lock()
+_ANON_PRINCIPAL = "_anonymous"
+
+
+def _principal_semaphore(principal: str | None) -> threading.BoundedSemaphore:
+    """The concurrency lane for ``principal`` (one shared lane for anon runs)."""
+    key = principal or _ANON_PRINCIPAL
+    with _principal_sems_lock:
+        sem = _principal_sems.get(key)
+        if sem is None:
+            sem = threading.BoundedSemaphore(MAX_CONCURRENT_GOALS_PER_PRINCIPAL)
+            _principal_sems[key] = sem
+        return sem
 
 # Cap how long a caller will block waiting for a concurrency slot. Without
 # this, a single wedged goal holding a permit blocks the worker's loop
@@ -98,9 +126,21 @@ def run_goal_in_thread(
     handles the concurrency), and always closes the WorldModel so the
     per-goal connection + WAL handle don't leak for the process lifetime.
     """
-    if not _run_semaphore.acquire(timeout=_ACQUIRE_TIMEOUT):
+    # Per-user lane first: bounds one principal's own fan-out without ever
+    # blocking on another principal's runs.
+    principal_sem = _principal_semaphore(user_id)
+    if not principal_sem.acquire(timeout=_ACQUIRE_TIMEOUT):
         log.error(
-            "run_goal_in_thread: no concurrency slot within %.0fs "
+            "run_goal_in_thread: per-user concurrency cap (%d) reached within "
+            "%.0fs (goal_id=%s, principal=%s); refusing run",
+            MAX_CONCURRENT_GOALS_PER_PRINCIPAL, _ACQUIRE_TIMEOUT, goal_id, user_id,
+        )
+        return None
+    # Global ceiling next: only a host-wide saturation makes anyone wait here.
+    if not _run_semaphore.acquire(timeout=_ACQUIRE_TIMEOUT):
+        principal_sem.release()
+        log.error(
+            "run_goal_in_thread: no global concurrency slot within %.0fs "
             "(goal_id=%s); refusing run", _ACQUIRE_TIMEOUT, goal_id,
         )
         return None
@@ -174,7 +214,9 @@ def run_goal_in_thread(
                 world.close()
             except Exception:  # pragma: no cover
                 log.debug("run_goal_in_thread: world.close() failed", exc_info=True)
+        # Release in reverse acquire order: global ceiling, then the user lane.
         _run_semaphore.release()
+        principal_sem.release()
 
 
 class Dispatcher(Protocol):

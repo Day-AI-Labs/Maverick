@@ -243,6 +243,33 @@ def department_entitled(key: str, *, tenant: str | None = None) -> bool:
             or feature_allowed(f"department:{key}", tenant=tenant))
 
 
+def _owner_slug(owner: str) -> str:
+    """A fleet-name-safe, collision-resistant slug for an owner principal.
+
+    Owner principals (``user:alice``, OIDC subs, emails) contain characters a
+    fleet name forbids. We sanitize to ``[A-Za-z0-9_]`` and append a short hash
+    of the *full* owner so two owners that sanitize to the same prefix still get
+    distinct names. Empty owner (single-tenant / auth-off) -> empty slug."""
+    o = (owner or "").strip()
+    if not o:
+        return ""
+    import hashlib
+    import re
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", o).strip("_")[:24]
+    digest = hashlib.sha256(o.encode("utf-8")).hexdigest()[:6]
+    return f"{safe}_{digest}".strip("_")
+
+
+def fleet_name_for(key: str, owner: str) -> str:
+    """The deployed-fleet name for ``key`` owned by ``owner``.
+
+    Namespaced per owner so two users can each hold their own ``dept-<key>``
+    without colliding. Single-tenant / auth-off (empty owner) keeps the plain
+    ``dept-<key>`` name (unchanged behaviour)."""
+    slug = _owner_slug(owner)
+    return f"dept-{key}-{slug}" if slug else f"dept-{key}"
+
+
 def fleet_from_department(dept: Department, owner: str, *,
                           cfg: dict | None = None, name: str | None = None):
     """Build (but do not save or entitle) a :class:`~maverick.fleet.Fleet` whose
@@ -250,17 +277,21 @@ def fleet_from_department(dept: Department, owner: str, *,
 
     Each pack becomes one agent: ``name`` = pack name (its run principal),
     ``role`` = the department key (so an operator scopes the whole team with one
-    ``[roles.<key>]`` block), ``description`` = the pack's charter line. Packs
-    with a name that is not a valid fleet-agent identifier are skipped."""
+    ``[roles.<key>]`` block), ``description`` = the pack's charter line, ``domain``
+    = the pack (binds run-time capability). Packs whose name is not a valid
+    fleet-agent identifier are skipped. The fleet name is owner-namespaced unless
+    overridden via ``name``."""
     from .fleet import Fleet, FleetAgent, valid_name
     domains = enabled_domains(cfg)
     agents = tuple(
         FleetAgent(name=m, role=dept.key,
-                   description=(domains[m].description or "")[:200])
+                   description=(domains[m].description or "")[:200],
+                   domain=m)
         for m in dept.members
         if m in domains and valid_name(m)
     )
-    return Fleet(name=name or f"dept-{dept.key}", owner=owner, agents=agents)
+    return Fleet(name=name or fleet_name_for(dept.key, owner),
+                 owner=owner, agents=agents)
 
 
 def deploy_department(key: str, owner: str, *, cfg: dict | None = None,

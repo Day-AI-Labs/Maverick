@@ -2469,6 +2469,15 @@ async def run_fleet_agent(
             allow_paths=caller_cap.allow_paths or None,
             allow_hosts=caller_cap.allow_hosts or None,
         )
+    # Department-deployed agents carry their specialist pack: bind the run to
+    # that pack's capability envelope (least privilege per domain), on top of
+    # the role + caller grants. domain_capability only narrows (never broadens),
+    # and an unknown/disabled pack leaves the grant unchanged.
+    if agent.domain:
+        from maverick.domain import available_domains, domain_capability
+        prof = available_domains().get(agent.domain)
+        if prof is not None:
+            cap = domain_capability(prof, cap, agent_principal)
     max_dollars = (
         min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
         if payload.max_dollars is not None else DEFAULT_MAX_DOLLARS
@@ -3362,6 +3371,7 @@ async def deploy_department_api(request: Request, key: str) -> dict:
     from maverick.departments import (
         EntitlementError,
         deploy_department,
+        fleet_name_for,
         get_department,
     )
     from maverick.fleet import load_fleet
@@ -3371,7 +3381,7 @@ async def deploy_department_api(request: Request, key: str) -> dict:
 
     principal = caller_principal(request)
     owner = principal or ""
-    fleet_name = f"dept-{key}"
+    fleet_name = fleet_name_for(key, owner)
     existing = load_fleet(fleet_name)
     if (
         existing is not None and existing.owner != owner
@@ -3383,6 +3393,8 @@ async def deploy_department_api(request: Request, key: str) -> dict:
         fleet = deploy_department(key, owner)
     except EntitlementError as e:
         raise HTTPException(status_code=402, detail=str(e)) from e
+    if fleet is None:  # suite disabled between the check and the deploy
+        raise HTTPException(status_code=404, detail="no such department")
     return {"fleet": fleet.to_dict()}
 
 
@@ -3402,7 +3414,7 @@ async def outcomes_api(request: Request, top: int = 0) -> dict:
     from maverick.operating_record import assemble
     from maverick.outcomes import firm_totals, worker_cards
     w = _world()
-    cards = worker_cards(w, top=(int(top) or None))
+    cards = worker_cards(w, top=(max(0, int(top)) or None))
     return {
         "firm": firm_totals(assemble(w)).to_dict(),
         "workers": [c.to_dict() for c in cards],
