@@ -93,7 +93,7 @@ maverick resume
 maverick init
 ```
 
-또는 `~/.maverick/config.toml`을 직접 편집하세요. `[models]` 섹션은 각 에이전트 역할을 `provider:model-id` 문자열에 매핑합니다. 스키마는 [`configuration.md`](./configuration.md)를 참고하세요.
+또는 `~/.maverick/config.toml`을 직접 편집하세요. `[models]` 섹션은 각 에이전트 역할을 `provider:model-id` 문자열에 매핑합니다. 스키마는 [`configuration.md`](../../configuration.md)를 참고하세요.
 
 ## 데이터가 저장되는 위치
 

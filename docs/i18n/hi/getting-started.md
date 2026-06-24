@@ -93,7 +93,7 @@ maverick resume
 maverick init
 ```
 
-या `~/.maverick/config.toml` को सीधे संपादित करें। `[models]` सेक्शन हर एजेंट रोल को एक `provider:model-id` स्ट्रिंग से मैप करता है। स्कीमा के लिए [`configuration.md`](./configuration.md) देखें।
+या `~/.maverick/config.toml` को सीधे संपादित करें। `[models]` सेक्शन हर एजेंट रोल को एक `provider:model-id` स्ट्रिंग से मैप करता है। स्कीमा के लिए [`configuration.md`](../../configuration.md) देखें।
 
 ## डेटा कहाँ रहता है
 
