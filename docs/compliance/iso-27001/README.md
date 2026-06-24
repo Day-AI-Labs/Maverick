@@ -42,10 +42,10 @@ ISO 27001 requires specific documented information. Status:
 | 7.5 | Documented information control | This `docs/compliance/` tree + git | Implemented |
 | 8.1 | Operational planning & control | Policies POL-03…POL-12 | Draft |
 | 9.1 | Monitoring & measurement | `maverick/observability.py`; evidence collector | Partial |
-| 9.2 | Internal audit programme | Internal audit plan | **Process — Gap** |
-| 9.3 | Management review | Management review minutes | **Process — Gap** |
-| 10.1 | Nonconformity & corrective action | Corrective-action log | **Process — Gap** |
-| 10.2 | Continual improvement | Improvement backlog | Partial |
+| 9.2 | Internal audit programme | [PROC-05](../procedures/internal-audit-plan.md) | Drafted — pending first cycle |
+| 9.3 | Management review | [TPL-02](../templates/management-review-minutes-template.md) | Drafted — pending first review |
+| 10.1 | Nonconformity & corrective action | [REG-03](../registers/corrective-action-log.md) | Drafted |
+| 10.2 | Continual improvement | [PROC-04](../procedures/risk-assessment-and-review-procedure.md) + improvement backlog | Drafted |
 
 ## 3. Information security objectives (Clause 6.2)
 
@@ -80,10 +80,18 @@ supply-chain integrity, threat protection.
 **Must enable (Implemented, opt-in):** capabilities, tenant isolation, quotas,
 OIDC, encryption at rest, audit signing.
 
-**Process gaps (organizational):** HR security (A.6), physical security (A.7,
-cloud-inherited), supplier management (A.5.19–23), incident-response programme
-(A.5.24–28), and the management-system clauses 9.2 / 9.3 / 10.1 (internal audit,
-management review, corrective action).
+**Process controls (now drafted as operational procedures — operate to evidence):**
+HR security ([PROC-06](../procedures/hr-security-procedures.md)), supplier
+management ([PROC-07](../procedures/vendor-management-procedure.md)),
+incident-response programme ([PROC-01](../procedures/incident-response-runbook.md)),
+change management ([PROC-03](../procedures/change-management-procedure.md)),
+vulnerability management ([PROC-02](../procedures/vulnerability-management-procedure.md)),
+and the management-system clauses 9.2 / 9.3 / 10.1
+([PROC-05](../procedures/internal-audit-plan.md),
+[TPL-02](../templates/management-review-minutes-template.md),
+[REG-03](../registers/corrective-action-log.md)). Physical security (A.7) remains
+cloud-inherited. These now need **operating** (first audit cycle, first management
+review, real records), not authoring.
 
 ## 6. Certification roadmap
 
