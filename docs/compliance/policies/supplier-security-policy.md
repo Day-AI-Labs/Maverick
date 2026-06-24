@@ -5,9 +5,9 @@
 | Document ID | POL-09 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
-| Effective date | TBD |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
+| Effective date | 2026-06-24 |
 | Review cycle | Annual (or on significant change) |
 | Frameworks | ISO/IEC 27001:2022 A.5.19, A.5.20, A.5.21, A.5.22, A.5.23; ISO/IEC 42001:2023 A.10.2, A.10.3, A.7.x; SOC 2 CC9.2 |
 

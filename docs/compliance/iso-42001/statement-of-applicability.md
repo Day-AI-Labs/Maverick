@@ -5,8 +5,8 @@
 | Document ID | AIMS-SOA-01 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Standard | ISO/IEC 42001:2023, Annex A (controls A.2–A.10) |
 
 This SoA records, for each ISO 42001 Annex A control: **Applicability**,

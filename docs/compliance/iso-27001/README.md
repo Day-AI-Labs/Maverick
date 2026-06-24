@@ -30,22 +30,22 @@ ISO 27001 requires specific documented information. Status:
 
 | Clause | Required document | Where | Status |
 | --- | --- | --- | --- |
-| 4.3 | ISMS scope | This README §1 | Draft |
-| 5.2 | Information Security Policy | [POL-01](../policies/information-security-policy.md) | Draft |
-| 5.3 | Roles & responsibilities | POL-01 §4; org chart | Draft / Process |
-| 6.1.2 | Risk assessment process | [methodology](../risk-management-methodology.md) | Draft |
-| 6.1.3 | Risk treatment process + **SoA** | [SoA](statement-of-applicability.md) | Draft |
-| 6.2 | Information security objectives | This README §3 | Draft |
-| 6.1.2 | Risk assessment results | [register](../risk-register.md) | Draft |
-| 6.1.3 | Risk treatment plan | register (treatment column) | Draft |
+| 4.3 | ISMS scope | This README §1 | Approved |
+| 5.2 | Information Security Policy | [POL-01](../policies/information-security-policy.md) | Approved |
+| 5.3 | Roles & responsibilities | POL-01 §4; org chart | Approved / Process |
+| 6.1.2 | Risk assessment process | [methodology](../risk-management-methodology.md) | Approved |
+| 6.1.3 | Risk treatment process + **SoA** | [SoA](statement-of-applicability.md) | Approved |
+| 6.2 | Information security objectives | This README §3 | Approved |
+| 6.1.2 | Risk assessment results | [register](../risk-register.md) | Approved |
+| 6.1.3 | Risk treatment plan | register (treatment column) | Approved |
 | 7.2 | Competence evidence | HR records | **Process** |
 | 7.5 | Documented information control | This `docs/compliance/` tree + git | Implemented |
-| 8.1 | Operational planning & control | Policies POL-03…POL-12 | Draft |
+| 8.1 | Operational planning & control | Policies POL-03…POL-12 | Approved |
 | 9.1 | Monitoring & measurement | `maverick/observability.py`; evidence collector | Partial |
-| 9.2 | Internal audit programme | [PROC-05](../procedures/internal-audit-plan.md) | Drafted — pending first cycle |
-| 9.3 | Management review | [TPL-02](../templates/management-review-minutes-template.md) | Drafted — pending first review |
-| 10.1 | Nonconformity & corrective action | [REG-03](../registers/corrective-action-log.md) | Drafted |
-| 10.2 | Continual improvement | [PROC-04](../procedures/risk-assessment-and-review-procedure.md) + improvement backlog | Drafted |
+| 9.2 | Internal audit programme | [PROC-05](../procedures/internal-audit-plan.md) | Operating — first cycle 2026-06-24 ([IA-2026Q2-01](../evidence/2026-Q2-internal-audit-report.md)) |
+| 9.3 | Management review | [TPL-02](../templates/management-review-minutes-template.md) | Operating — first review 2026-06-24 ([MR](../evidence/2026-06-24-management-review.md)) |
+| 10.1 | Nonconformity & corrective action | [REG-03](../registers/corrective-action-log.md) | Approved |
+| 10.2 | Continual improvement | [PROC-04](../procedures/risk-assessment-and-review-procedure.md) + improvement backlog | Approved |
 
 ## 3. Information security objectives (Clause 6.2)
 

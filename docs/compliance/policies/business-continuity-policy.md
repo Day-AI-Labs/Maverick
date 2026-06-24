@@ -5,9 +5,9 @@
 | Document ID | POL-08 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
-| Effective date | TBD |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
+| Effective date | 2026-06-24 |
 | Review cycle | Annual (or on significant change) |
 | Frameworks | ISO/IEC 27001:2022 A.5.29, A.5.30, A.8.13, A.8.14; SOC 2 A1.1, A1.2, A1.3 |
 

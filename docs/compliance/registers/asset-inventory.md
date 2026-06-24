@@ -5,8 +5,8 @@
 | Document ID | REG-05 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | Annual + on significant change |
 | Frameworks | ISO 27001 A.5.9, A.5.12; ISO 42001 A.4.3; SOC 2 C1.1 |
 

@@ -5,8 +5,8 @@
 | Document ID | REG-01 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — populate per deployment before customer disclosure |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | On any sub-processor change + quarterly |
 | Frameworks | ISO 27001 A.5.19–A.5.23; ISO 42001 A.10.2/A.10.3; SOC 2 CC9.2; GDPR Art. 28/30 |
 

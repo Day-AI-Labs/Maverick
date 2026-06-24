@@ -5,8 +5,8 @@
 | Document ID | IA-2026Q2-01 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — prepared for review/ratification by the ISMS/AIMS owner |
+| Version | 1.0 |
+| Status | Reviewed & accepted 2026-06-24 (Christopher Day) |
 | Audit date | 2026-06-24 |
 | Procedure | [PROC-05 Internal Audit Plan](../procedures/internal-audit-plan.md) |
 
@@ -76,7 +76,7 @@ are off on a default profile and must be enabled for a compliant deployment.
 | --- | --- | --- | --- | --- |
 | NC-01 | Minor NC | Opt-in access controls (capabilities, tenant isolation, quotas, OIDC) `disabled` on the assessed profile | Apply [`compliant-config.toml`](../deployment/compliant-config.toml); re-verify with [`verify-posture.sh`](../deployment/verify-posture.sh) until all `enabled` | Christopher Day |
 | NC-02 | Minor NC | Audit log unsigned / no signing key on the assessed profile | Enable `[audit] sign = true`; confirm `audit_log = ok` + signing key present | Christopher Day |
-| NC-03 | Minor NC | Policy & procedure set is Draft, not management-approved | Approve POL-01…12 + procedures at first management review; set effective dates | Christopher Day |
+| NC-03 | Minor NC | Policy & procedure set is Draft, not management-approved | **Closed 2026-06-24** — POL-01…12 + procedures/registers/templates approved (v1.0, effective 2026-06-24) at the first management review | Christopher Day |
 | OBS-01 | Observation | Third-party penetration test not yet scheduled (R-01 sandbox escape is the single High residual) | Schedule annual third-party pen test per [PROC-02](../procedures/vulnerability-management-procedure.md) | Christopher Day |
 | OBS-02 | Observation | First management review not yet conducted | Conduct & ratify the [first management review](2026-06-24-management-review.md) | Christopher Day |
 | OBS-03 | Observation | Human-oversight gates implemented but not configured on the assessed env | Set `[governance] require_human_min_risk` / `deny_min_risk` in the deployment | Christopher Day |

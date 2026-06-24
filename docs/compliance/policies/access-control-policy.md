@@ -5,9 +5,9 @@
 | Document ID | POL-03 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
-| Effective date | TBD |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
+| Effective date | 2026-06-24 |
 | Review cycle | Annual (or on significant change) |
 | Frameworks | ISO 27001:2022 A.5.15, A.5.16, A.5.17, A.5.18, A.8.2, A.8.3, A.8.5; ISO 42001:2023 A.4.x; SOC 2 CC6.1–CC6.3 |
 

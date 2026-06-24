@@ -5,8 +5,8 @@
 | Document ID | RM-METH-01 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | Annual, and on significant change |
 | Frameworks | ISO 27001:2022 Cl. 6.1, 8.2, 8.3; ISO 42001:2023 Cl. 6.1, A.5.2–A.5.5; SOC 2 CC3.1–CC3.4 |
 

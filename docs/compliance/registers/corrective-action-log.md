@@ -5,8 +5,8 @@
 | Document ID | REG-03 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | Annual |
 | Frameworks | ISO/IEC 27001:2022 Cl. 10.1, 10.2; ISO/IEC 42001:2023 Cl. 10.1, 10.2; SOC 2 CC4.2 |
 

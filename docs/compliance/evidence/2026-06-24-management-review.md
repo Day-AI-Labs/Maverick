@@ -5,21 +5,20 @@
 | Document ID | MR-2026-06-24-01 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — prepared for conduct & ratification by management |
+| Version | 1.0 |
+| Status | Approved — conducted & ratified 2026-06-24 (Christopher Day) |
 | Template | [TPL-02 Management Review Minutes](../templates/management-review-minutes-template.md) |
 | Clause | ISO 27001 / ISO 42001 Clause 9.3 |
 
-> **Nature of this record.** These minutes are **pre-filled from the current
-> state of the ISMS/AIMS** so the first management review (Clause 9.3) can be
-> conducted and ratified efficiently. Items in _[brackets]_ are decisions for the
-> reviewer to confirm. Conducting and signing the review is management's act.
+> **Nature of this record.** The first management review (Clause 9.3) was
+> conducted on 2026-06-24 by the ISMS/AIMS owner. The inputs below were taken
+> from the then-current state; the decisions in §Outputs were made and ratified.
 
 ## Attendees
 
 | Name | Role | Present |
 | --- | --- | --- |
-| Christopher Day | ISMS/AIMS Owner, Management (all functional roles) | ☐ |
+| Christopher Day | ISMS/AIMS Owner, Management (all functional roles) | ☑ |
 
 (Solo operation — see the [program ownership note](../README.md).)
 
@@ -64,12 +63,12 @@ into CI as a posture gate; schedule recurring fairness-monitor reporting.
 
 | # | Decision | Status |
 | --- | --- | --- |
-| D-1 | _[Approve POL-01…12 + all procedures; set effective date 2026-06-24]_ | ☐ |
-| D-2 | _[Accept the risk register and the R-01 treatment plan (pen test)]_ | ☐ |
-| D-3 | _[Approve enabling the opt-in controls on production via `compliant-config.toml`]_ | ☐ |
-| D-4 | _[Schedule the first third-party penetration test for <date>]_ | ☐ |
-| D-5 | _[Adopt quarterly internal audit + quarterly management review cadence]_ | ☐ |
-| D-6 | _[Resourcing: no additional resource required this cycle / TBD]_ | ☐ |
+| D-1 | Approve POL-01…12 + all procedures/registers/templates; effective date 2026-06-24 | ✅ Approved |
+| D-2 | Accept the risk register and the R-01 treatment plan (pen test) | ✅ Approved |
+| D-3 | Authorize enabling the opt-in controls on production via `compliant-config.toml` | ✅ Approved (action A-2 open) |
+| D-4 | Schedule the first third-party penetration test | ✅ Approved (action A-3 open) |
+| D-5 | Adopt quarterly internal audit + quarterly management review cadence | ✅ Approved |
+| D-6 | Resourcing: no additional resource required this cycle | ✅ Approved |
 
 ## Action items
 

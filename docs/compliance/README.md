@@ -91,20 +91,25 @@ There is one shared control backbone. Write it once; it feeds all three tracks.
 
 | Track | Technical controls | Documentation | Organizational controls | Audit status |
 | --- | --- | --- | --- | --- |
-| SOC 2 | Strong (see crosswalk) | Drafted | Procedures drafted; operationalization + sign-off pending | Not started — readiness phase |
-| ISO 27001 | Strong | Drafted (SoA, policies, register, procedures) | Procedures drafted; operationalization + sign-off pending | Not started — readiness phase |
-| ISO 42001 | Strong / differentiated (model-card export, governed retirement, continuous fairness monitoring all implemented) | Drafted (SoA, AI policy, procedures) | Procedures drafted; AI build gaps closed | Not started — readiness phase |
+| SOC 2 | Strong (see crosswalk) | **Approved v1.0** | Procedures approved; operationalization in progress | Not started — readiness phase |
+| ISO 27001 | Strong | **Approved v1.0** (SoA, policies, register, procedures) | Procedures approved; operationalization in progress | Not started — readiness phase |
+| ISO 42001 | Strong / differentiated (model-card export, governed retirement, continuous fairness monitoring all implemented) | **Approved v1.0** (SoA, AI policy, procedures) | Procedures approved; AI build gaps closed | Not started — readiness phase |
 
-These documents are **Draft v0.1**. They are written to be auditor-legible and
-codebase-accurate, but they require management approval, **operating** the drafted
-[procedures](procedures/README.md) to produce evidence, and (for SOC 2 Type II /
-ISO certifications) an operating window before an external auditor is engaged.
+The documentation set was **approved v1.0, effective 2026-06-24** (Christopher
+Day), at the [first management review](evidence/2026-06-24-management-review.md),
+informed by the [first internal audit](evidence/2026-Q2-internal-audit-report.md).
+What remains is **operating** the approved [procedures](procedures/README.md) to
+produce evidence and (for SOC 2 Type II / ISO certifications) an operating window
+before an external auditor is engaged — see the open action items in the
+management review.
 
 ## Recommended sequence
 
-1. **Approve and operationalize** the policy set (POL-01…POL-12) and the
-   [operational procedures](procedures/README.md) — assign owners, set effective
-   dates, run the first management review ([TPL-02](templates/management-review-minutes-template.md)).
+1. ~~**Approve** the policy set (POL-01…POL-12) and the operational procedures —
+   assign owners, set effective dates, run the first management review.~~ **Done
+   2026-06-24** — approved v1.0; see the
+   [management review](evidence/2026-06-24-management-review.md) and
+   [internal audit](evidence/2026-Q2-internal-audit-report.md).
 2. **Operate the Process procedures** (now drafted) to generate evidence: change
    management ([PROC-03](procedures/change-management-procedure.md)), vendor
    management ([PROC-07](procedures/vendor-management-procedure.md)), incident

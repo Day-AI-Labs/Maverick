@@ -5,9 +5,9 @@
 | Document ID | POL-12 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
-| Effective date | TBD |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
+| Effective date | 2026-06-24 |
 | Review cycle | Annual (or on significant change) |
 | Frameworks | ISO/IEC 42001:2023 Clause 5.2, A.2.2, A.2.3, A.5.x, A.6.x, A.8.x, A.9.x; EU AI Act Art. 12, 14, 50; SOC 2 PI1.x |
 

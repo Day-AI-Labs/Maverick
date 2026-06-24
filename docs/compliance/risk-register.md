@@ -5,8 +5,8 @@
 | Document ID | RM-REG-01 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — initial population, pending management review |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | Quarterly, and on significant change |
 | Methodology | [`risk-management-methodology.md`](risk-management-methodology.md) |
 

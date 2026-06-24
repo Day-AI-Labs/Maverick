@@ -5,9 +5,9 @@
 | Document ID | POL-11 |
 | Owner | Christopher Day |
 | Approver | Christopher Day |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
-| Effective date | TBD |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
+| Effective date | 2026-06-24 |
 | Review cycle | Annual (or on significant change) |
 | Frameworks | ISO/IEC 27001:2022 A.5.33, A.5.34, A.8.10, A.8.11, A.8.12; ISO/IEC 42001:2023 A.7.x; SOC 2 C1.1, C1.2, Privacy P1–P8 |
 
