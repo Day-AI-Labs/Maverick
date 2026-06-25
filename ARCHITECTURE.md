@@ -40,9 +40,9 @@ The agent kernel. Ported from `cdayAI/research/maverick/` and evolved here.
 | `orchestrator.py` | Entry point `run_goal()` — wires SwarmContext, spawns external MCP clients, runs the root agent, distills the trajectory into a skill. |
 | `swarm.py` | `SwarmContext` shared by all agents in a run. |
 | `blackboard.py` | Append-only shared workspace for one run. Mirrors entries into `world.goal_events` when `attach_world()` is called so the dashboard can stream live progress. |
-| `world_model.py` | SQLite + FTS5: goals, episodes, facts, questions, messages, goal_events. WAL mode + `busy_timeout=5000` for safe concurrent dashboard+agent access. Forward-only schema migrations (v1 → v3). |
+| `world_model.py` | SQLite + FTS5: goals, episodes, facts, questions, messages, goal_events. WAL mode + `busy_timeout=5000` for safe concurrent dashboard+agent access. Forward-only schema migrations (v1 → v23). |
 | `budget.py` | Hard caps on tokens, $, wall-clock, tool calls. Raises `BudgetExceeded`. |
-| `llm.py` | Multi-provider adapter: Anthropic, OpenAI, OpenRouter, Ollama, Gemini. Per-role model routing via config. |
+| `llm.py` | Multi-provider adapter: Anthropic, OpenAI, Azure, Bedrock, Gemini, xAI, DeepSeek, Moonshot, OpenRouter, Ollama, TGI, vLLM (+ OpenAI-compatible). Per-role model routing via config. |
 | `providers/` | One adapter file per provider + a shared OpenAI ↔ Anthropic translator (`translator.py`). |
 | `config.py` | TOML config loader. Per-role model choice + persona + MCP server table. |
 | `skills.py` | Auto-distill successful trajectories into reusable SKILL.md files. Strict skill source validation (`gh:`, `https:`, `mvk:`); rejects bare paths, `file://`, etc. |
@@ -52,7 +52,7 @@ The agent kernel. Ported from `cdayAI/research/maverick/` and evolved here.
 | `runner.py` | `run_goal_in_thread(...)` — process-wide BoundedSemaphore-capped background runner shared by the dashboard, REST API, and MCP server. |
 | `health.py` | `maverick doctor` — every red/yellow row carries an actionable `fix=...` remediation. |
 | `cli.py` | `maverick start / status / answer / resume / fact / facts / skills / chat / dashboard / mcp / budget / template / doctor / version / config / logs`. |
-| `sandbox/` | Execution backends: `local.py` (subprocess), `docker.py` (`--network=none` default), `ssh.py` (uses user's `ssh` binary + keys). |
+| `sandbox/` | Execution backends: `local.py` (subprocess), `docker.py` (`--network=none` default), gVisor (`runsc` runtime), `podman.py`, `devcontainer.py`, `kubernetes.py`, `firecracker.py`, `ssh.py` (uses user's `ssh` binary + keys), `modal_backend.py` — nine selectable. |
 | `tools/` | `read_file`, `write_file`, `list_dir`, `shell`, `ask_user`, `spawn_subagent`, `spawn_swarm`. |
 
 ### `packages/maverick-shield/`
@@ -93,7 +93,7 @@ This is how phone-companion mode works: the swarm lives on Desktop or VPS, the u
 `maverick init` — the interactive wizard. The single source of truth for user-facing UX. Walks through:
 
 1. Deployment target (Desktop / Docker / VPS / Phone companion)
-2. AI providers (Anthropic / OpenAI / OpenRouter / Ollama / Gemini)
+2. AI providers (Anthropic / OpenAI / Azure / Bedrock / Gemini / xAI / DeepSeek / Moonshot / OpenRouter / Ollama / TGI / vLLM)
 3. Per-role model picks
 4. Safety profile (Strict / Balanced / Permissive / Off)
 5. Sandbox backend

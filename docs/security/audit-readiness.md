@@ -156,8 +156,10 @@ hardened config; an auditor should still try to escalate each.
   README"); a false-positive-tuning pass is outstanding.
 - **Audit tamper-evidence is opt-in.** Plain NDJSON unless `[audit] sign =
   true`; third-party attribution requires an externally-held pubkey.
-- **Plugin permissions are a soft signal.** The manifest is advisory; the
-  enforcement boundary is the default-deny allowlist, not the manifest.
+- **Plugin permissions are enforced by default.** A plugin requesting an
+  ungranted permission is skipped (not loaded) unless `enforce_permissions =
+  false` downgrades it to advisory; the default-deny load allowlist is a second,
+  independent gate.
 
 ---
 

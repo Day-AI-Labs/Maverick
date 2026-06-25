@@ -1498,7 +1498,7 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 The backend for running Lightwork as a governed, multi-tenant platform (each piece
 opt-in; single-tenant/self-hosted deployments are unaffected):
 
-- **Tenant lifecycle / provisioning** — `tenant_registry.py` + `maverick tenant
+- **Tenant lifecycle / provisioning** — `tenant/registry.py` + `maverick tenant
   create/list/suspend/resume/quota/delete`: a roster of tenants with status,
   plan, and per-tenant daily spend quota; `assert_tenant_active` refuses a
   suspended tenant.
@@ -1506,10 +1506,11 @@ opt-in; single-tenant/self-hosted deployments are unaffected):
   invoice/entitlements`: rate the usage ledger (pass-through+markup or
   token-priced) into per-period invoices; plan → feature/limit entitlements
   (`tenant_entitled`).
-- **Per-tenant envelope encryption** — `tenant_kms.py`: a DEK per tenant, wrapped
-  by a KMS KEK (LocalKMS default; cloud KMS is a drop-in `wrap`/`unwrap`); one
-  tenant's DEK can't open another's data; instant KEK rotation.
-- **Per-tenant egress plane** — `tenant_egress.py`: a per-tenant allow/deny
+- **Per-tenant envelope encryption** — `tenant/kms.py` (fleet KEK rotation in
+  `tenant/kms_fleet.py`): a DEK per tenant, wrapped by a KMS KEK (LocalKMS
+  default; cloud KMS is a drop-in `wrap`/`unwrap`); one tenant's DEK can't open
+  another's data; instant KEK rotation.
+- **Per-tenant egress plane** — `tenant/egress.py`: a per-tenant allow/deny
   egress policy composed (AND) with the per-tool policy at the egress chokepoint.
 - **Multi-tenant `maverick serve`** — the channel server enforces the tenant
   roster at the door: with per-user tenancy on and tenants provisioned, a

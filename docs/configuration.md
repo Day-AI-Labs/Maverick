@@ -70,6 +70,10 @@ role_editing = true  # allow editing the core roles (orchestrator, coder, ...)
                      #   system-prompt addendum + model/effort override per role
                      #   (winning over [models]/[effort]); false = read-only and
                      #   /api/v1/roles mutations 403.
+scheduling  = true   # allow arming recurring schedules (cron) from the dashboard;
+                     #   false = the scheduler editor + /api/v1 schedule routes 403.
+triggers    = true   # allow binding a saved template to an inbound webhook;
+                     #   false = the /api/v1/triggers editor + /webhook/run 404/403.
 
 [durable]
 # Crash-resume: checkpoint a goal's loop state each step so `maverick resume`
@@ -243,8 +247,12 @@ Useful for VPS deployments where you want the config under `/etc/`.
 For desktop installs the dashboard binds to `127.0.0.1:8765` and bearer
 auth is optional. For VPS deploys (reachable from the open internet)
 set `MAVERICK_DASHBOARD_TOKEN` — every request to `/api/v1/*` and every
-HTML page is then gated. Only `/healthz`, `/openapi.json`, `/docs`, and
-`/redoc` are exempt (so monitoring + API discovery still works).
+HTML page is then gated. The probe/discovery paths `/healthz`, `/livez`,
+`/readyz`, `/openapi.json`, `/docs`, `/redoc`, and the agent-card
+well-knowns are exempt (so monitoring + API discovery still works). The
+inbound webhook routes (`/webhook/start`, `/webhook/run`, issue webhooks)
+and the `/share/`, `/scim/`, `/saml/` prefixes authenticate by their own
+mechanism (HMAC signature / share token / SSO) rather than the bearer.
 
 Two ways to authenticate:
 
@@ -300,7 +308,8 @@ threads simultaneously. Override with:
 MAVERICK_MAX_CONCURRENT_GOALS=4 maverick dashboard
 ```
 
-Default is 2. Raise on a beefy machine; lower on a Raspberry Pi.
+Default is 16. Raise on a beefy machine; lower on a Raspberry Pi. (A
+separate per-principal cap also limits concurrent goals from any one caller.)
 
 ## Environment variables
 
