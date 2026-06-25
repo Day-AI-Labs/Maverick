@@ -192,6 +192,14 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "commit a feedstock or product sale — a qualified person authorizes; you "
         "prepare the package",
     ),
+    "food_beverage_cpg": (
+        "release or hold a product lot, close a recall, withdrawal, or food-safety "
+        "disposition, actuate production or processing equipment, or override a "
+        "food-safety or quality hold — a qualified food-safety authority decides; "
+        "you reconcile and draft",
+        "commit a trade-promotion, price, or purchase order — a human authorizes; "
+        "you prepare the package",
+    ),
 }
 
 
