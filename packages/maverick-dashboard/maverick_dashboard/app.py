@@ -261,6 +261,8 @@ async def _lifespan(app: FastAPI):
     """
     from maverick.deployment import require_enterprise_or_die
     require_enterprise_or_die()
+    from maverick.residency import require_residency_or_die
+    require_residency_or_die()  # strict region pin (#41); no-op unless opted in
     _assert_dashboard_auth_configured()
     await _reclaim_orphans()
     await _install_queue_dispatcher()
