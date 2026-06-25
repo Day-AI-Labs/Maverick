@@ -294,7 +294,7 @@ _STRICT_SUITES: frozenset[str] = frozenset({
     "it_grc", "public_sector", "government_contracting", "crypto_digital_assets",
     "private_equity_vc", "aerospace_defense", "oil_gas", "chemicals",
     "utilities", "water_utilities", "maritime", "mining_metals", "nuclear_power",
-    "executive_office",
+    "executive_office", "esg_sustainability", "enterprise_risk", "trust_safety",
 })
 
 

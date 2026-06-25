@@ -369,6 +369,11 @@ SUITE_PREFIXES: dict[str, str] = {
     "water_": "water_utilities",
     "clean_": "renewables_cleantech",
     "semi_": "semiconductors",
+    # New horizontal-function suites (2026 build-out).
+    "esg_": "esg_sustainability",
+    "risk_": "enterprise_risk",
+    "km_": "knowledge_management",
+    "tns_": "trust_safety",
 }
 
 
