@@ -352,17 +352,9 @@ def tenant_over_quota(tenant_id: str | None) -> str | None:
     tid = (tenant_id or "").strip()
     if not tid:
         return None
-    rec = _load().get(tid)
-    if rec is None:
+    if _load().get(tid) is None:
         return None
-    cap = rec.max_daily_dollars
-    if cap <= 0 and _enforce_plan_caps():
-        # No explicit registry cap -> fall back to the plan's entitlement cap.
-        try:
-            from ..billing import entitlements_for
-            cap = entitlements_for(rec.plan).max_daily_dollars
-        except Exception:  # pragma: no cover -- billing never blocks quota
-            cap = 0.0
+    cap = _tenant_daily_cap(tid)
     if cap <= 0:
         return None
     spent = tenant_spend_today(tid)
@@ -372,10 +364,46 @@ def tenant_over_quota(tenant_id: str | None) -> str | None:
     return None
 
 
+def _tenant_daily_cap(tenant_id: str) -> float:
+    """The effective daily spend cap (USD) for ``tenant_id``: the registry cap,
+    falling back to the plan entitlement cap when plan-cap enforcement is on.
+    ``0`` means no cap. Shared by :func:`tenant_over_quota` and
+    :func:`tenant_remaining_today` so both read the same ceiling."""
+    rec = _load().get((tenant_id or "").strip())
+    if rec is None:
+        return 0.0
+    cap = rec.max_daily_dollars
+    if cap <= 0 and _enforce_plan_caps():
+        try:
+            from ..billing import entitlements_for
+            cap = entitlements_for(rec.plan).max_daily_dollars
+        except Exception:  # pragma: no cover -- billing never blocks quota
+            cap = 0.0
+    return cap if cap > 0 else 0.0
+
+
+def tenant_remaining_today(tenant_id: str | None) -> float | None:
+    """Dollars a tenant may still spend today before hitting its daily cap.
+
+    Returns ``None`` when no cap applies (no tenant, unprovisioned, cap 0/unset,
+    enforcement off) so callers leave their own ceiling untouched. Otherwise the
+    non-negative remainder ``cap - spent_today`` -- which a per-run budget can
+    clamp to so a single run can't overshoot the tenant's aggregate ceiling
+    (#78). Coordinates the per-run cap with the per-tenant cap; without it the
+    over-quota gate only fires *between* runs, after the overshoot."""
+    tid = (tenant_id or "").strip()
+    if not tid:
+        return None
+    cap = _tenant_daily_cap(tid)
+    if cap <= 0:
+        return None
+    return max(0.0, cap - tenant_spend_today(tid))
+
+
 __all__ = [
     "ACTIVE", "SUSPENDED", "TenantRecord", "TenantSuspended", "UnknownTenant",
     "list_tenants", "get_tenant", "create_tenant", "suspend_tenant",
     "resume_tenant", "delete_tenant", "set_quota", "set_plan",
     "is_active", "assert_tenant_active", "tenant_spend_today",
-    "tenant_over_quota",
+    "tenant_over_quota", "tenant_remaining_today",
 ]

@@ -460,4 +460,29 @@ def budget_from_config(*, defaults: dict | None = None,
     for key, val in overrides.items():
         if val is not None and key in _BUDGET_KEY_TYPES:
             kwargs[key] = val
+    _clamp_to_tenant_remainder(kwargs)
     return Budget(**kwargs)
+
+
+def _clamp_to_tenant_remainder(kwargs: dict) -> None:
+    """Clamp ``kwargs['max_dollars']`` to the active tenant's remaining daily
+    allowance (#78), in place.
+
+    Highest precedence: the tenant's aggregate daily ceiling is a billing
+    guarantee, so it overrides even an explicit ``--max-dollars``. Without it the
+    over-quota gate only fires *between* runs, letting one run blow past the
+    tenant cap. No active tenant / no cap -> untouched (the default single-tenant
+    install is unchanged). Never *raises* a cap, only lowers it.
+    """
+    try:
+        from .paths import current_tenant
+        from .tenant.registry import tenant_remaining_today
+        remaining = tenant_remaining_today(current_tenant())
+    except Exception:  # pragma: no cover -- quota coordination never blocks a run
+        return
+    if remaining is None:
+        return
+    current = kwargs.get("max_dollars")
+    kwargs["max_dollars"] = (
+        remaining if current is None else min(float(current), remaining)
+    )
