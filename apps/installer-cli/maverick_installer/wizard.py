@@ -2539,6 +2539,7 @@ AGENT_SUITES: list[tuple[str, str]] = [
     ("chemicals", "Chemicals (Bulk / Specialty / Petrochemical)"),
     ("food_beverage_cpg", "Food, Beverage & CPG"),
     ("medical_devices", "Medical Devices & Diagnostics"),
+    ("private_equity_vc", "Private Equity & Venture Capital"),
 ]
 
 

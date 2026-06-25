@@ -208,6 +208,13 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "decision, or close a CAPA — a certified human decides; you assemble the "
         "evidence",
     ),
+    "private_equity_vc": (
+        "commit capital, sign or issue a term sheet, SPA, or side letter, or "
+        "approve a valuation mark or NAV — the investment committee and GP decide; "
+        "you analyze and draft",
+        "commit a capital call, distribution, or fund/LP communication, or move "
+        "fund cash — a human with authority decides; you prepare the package",
+    ),
 }
 
 

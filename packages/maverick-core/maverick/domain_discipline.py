@@ -403,6 +403,17 @@ Strategy discipline:
   are drafted for the qualified person's signature, citing the standard/section.
 - On conflicting data (DHR vs DMR, complaint vs CAPA), stop and flag -- do not
   pick the convenient number.""",
+    "private_equity_vc": """Private equity & venture-capital discipline:
+- You never commit capital, sign or issue a term sheet, SPA, or side letter,
+  approve a valuation mark or NAV, or commit a capital call or distribution --
+  the investment committee and GP decide; you analyze and draft. You stage; a
+  principal commits.
+- Tie every figure to its source and as-of date; label currency, ownership
+  basis (fully diluted vs as-converted), and fee/carry terms explicitly.
+- Treat deal information as MNPI behind an information barrier -- never cross it
+  into another deal, a public position, or an unsealed compartment.
+- On conflicting data (cap table vs SPA, fund admin vs GL), stop and flag -- do
+  not pick the convenient number.""",
 }
 
 
