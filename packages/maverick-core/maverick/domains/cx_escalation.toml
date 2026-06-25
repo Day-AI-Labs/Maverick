@@ -17,6 +17,7 @@ shape = "table"
 deliverable = "escalation case tracker & SLA status"
 consumers = ["cx_manager", "support_lead"]
 cadence = "daily"
+gate = "review"
 
 [[workflow]]
 name = "Pull open cases"

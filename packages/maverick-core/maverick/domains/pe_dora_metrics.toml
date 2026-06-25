@@ -20,6 +20,7 @@ shape = "report"
 deliverable = "DORA & flow metrics report"
 consumers = ["engineering_manager", "engineering_lead"]
 cadence = "weekly"
+gate = "review"
 
 [[workflow]]
 name = "Pull telemetry"

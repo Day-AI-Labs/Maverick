@@ -402,6 +402,9 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
 
 _VALID_RISKS = frozenset({"low", "medium", "high"})
 _VALID_GATES = frozenset({"approval", "review"})
+# Sign-off strength: a deliverable must not claim a lighter gate than the
+# human-handoff its own playbook ends on (approval > review > none).
+_GATE_RANK = {None: 0, "review": 1, "approval": 2}
 # Render archetypes the dashboard knows how to present a deliverable as. An
 # unknown shape is a warning, not an error: it falls back to prose rendering, so
 # a newer pack naming a future shape still loads on an older dashboard.
@@ -506,6 +509,15 @@ def lint_profile(profile: DomainProfile) -> tuple[list[str], list[str]]:
     wf_errors, wf_warnings = _lint_workflow(profile)
     errors.extend(wf_errors)
     warnings.extend(wf_warnings)
+    # The deliverable's sign-off must not be lighter than the human-handoff its
+    # own playbook ends on -- otherwise the contract under-states the gate.
+    if profile.output.deliverable and profile.workflow:
+        final_gate = profile.workflow[-1].gate
+        if _GATE_RANK.get(final_gate, 0) > _GATE_RANK.get(profile.output.gate, 0):
+            warnings.append(
+                f"output.gate {profile.output.gate!r} is lighter than the final "
+                f"workflow step's gate {final_gate!r}: raise output.gate so the "
+                "deliverable's sign-off matches its playbook")
     return errors, warnings
 
 

@@ -20,7 +20,7 @@ shape = "report"
 deliverable = "cadence design & A/B test plan"
 consumers = ["sdr_manager", "revops_lead"]
 cadence = "on-demand"
-gate = "review"
+gate = "approval"
 
 [[workflow]]
 name = "Pull current cadences"

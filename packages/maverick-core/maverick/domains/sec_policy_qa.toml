@@ -17,6 +17,7 @@ shape = "prose"
 deliverable = "cited policy answer"
 consumers = ["requesting_employee", "security_lead"]
 cadence = "on-demand"
+gate = "review"
 
 [[workflow]]
 name = "Frame question"

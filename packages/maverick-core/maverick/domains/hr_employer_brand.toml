@@ -20,7 +20,7 @@ shape = "prose"
 deliverable = "EEO-reviewed job posting & careers copy"
 consumers = ["recruiting_lead", "hiring_manager"]
 cadence = "on-demand"
-gate = "review"
+gate = "approval"
 
 [[workflow]]
 name = "Gather role inputs"

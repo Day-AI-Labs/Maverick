@@ -103,3 +103,34 @@ def test_build_intake_agent_assembles_interviewer(tmp_path):
     assert "shell" not in tool_names
     assert "read_file" not in tool_names
     assert "write_file" not in tool_names
+
+
+def _one_pack_per_suite():
+    # A representative built-in pack from each suite -- enough to exercise the
+    # spawn path (persona + discipline + workflow render + capability) for every
+    # suite without constructing 1,118 Agents.
+    from maverick.domain import builtin_dir, load_domains, suite_for
+    packs = load_domains(builtin_dir())
+    sample = {}
+    for name, p in sorted(packs.items()):
+        sample.setdefault(suite_for(name) or "generic", (name, p))
+    return [v for v in sample.values()]
+
+
+def test_every_suite_spawns_with_workflow_and_envelope(tmp_path):
+    # Smoke test: a pack from each suite spawns to a live Agent whose system
+    # prompt carries its persona and rendered playbook, under an enforced
+    # envelope. Catches a pack whose appended [[workflow]] breaks the spawn path.
+    ctx = _ctx(tmp_path)
+    sample = _one_pack_per_suite()
+    assert len(sample) >= 25, f"only {len(sample)} suites sampled"
+    for name, profile in sample:
+        agent = agent_from_profile(profile, ctx, "Do your job for the period.")
+        assert agent.role == name
+        if profile.workflow:
+            assert "Workflow" in agent.system, f"{name}: playbook not in system prompt"
+            assert profile.workflow[0].name in agent.system, f"{name}: step missing"
+        # Envelope still enforced regardless of the new content.
+        assert agent.capability.permits("read_file") is True, name
+        if "shell" not in profile.allow_tools:
+            assert agent.capability.permits("shell") is False, name

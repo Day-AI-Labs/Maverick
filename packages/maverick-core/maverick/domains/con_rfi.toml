@@ -17,6 +17,7 @@ shape = "table"
 deliverable = "RFI log with status & responses"
 consumers = ["project_manager", "design_team"]
 cadence = "weekly"
+gate = "review"
 
 [[workflow]]
 name = "Intake RFI"

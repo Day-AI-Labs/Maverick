@@ -20,7 +20,7 @@ shape = "report"
 deliverable = "reference and advocacy program brief"
 consumers = ["customer_success_manager", "advocacy_manager"]
 cadence = "monthly"
-gate = "review"
+gate = "approval"
 
 [[workflow]]
 name = "Pull health signals"
