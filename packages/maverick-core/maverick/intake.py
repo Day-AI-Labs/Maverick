@@ -24,7 +24,14 @@ import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .domain import DomainProfile, user_dir
+from .domain import (
+    DomainProfile,
+    OutputContract,
+    WorkflowStep,
+    _coerce_output,
+    _coerce_workflow,
+    user_dir,
+)
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +102,73 @@ def _safe_persona(persona: str, spec: IntakeSpec) -> str:
     return persona
 
 
+def _default_workflow() -> list[WorkflowStep]:
+    """A generic professional playbook for a generated pack -- the same shape the
+    built-in roster carries, so a synthesized specialist is first-class out of
+    the gate. A proposer may supply a tailored one; this is the safe fallback."""
+    return [
+        WorkflowStep("Gather inputs",
+                     "Collect the documents, data, and context the task needs and "
+                     "ask up front for anything missing."),
+        WorkflowStep("Verify against source",
+                     "Check names, numbers, dates, and claims against their source "
+                     "before relying on them."),
+        WorkflowStep("Draft the deliverable",
+                     "Produce the requested output grounded in the company's own "
+                     "documents, citing the source for each material claim."),
+        WorkflowStep("Flag gaps",
+                     "Call out anything unsupported, ambiguous, or out of scope "
+                     "rather than guessing."),
+        WorkflowStep("Route for review",
+                     "Hand the draft to the accountable human to review before it "
+                     "is acted on.", gate="review"),
+    ]
+
+
+def _default_output(description: str) -> OutputContract:
+    """A safe default consumption contract for a generated pack: a prose
+    deliverable, reviewed before use, routed to the person who requested it."""
+    label = (description or "").strip() or "specialist deliverable"
+    if len(label) > 60:
+        label = label[:57].rstrip() + "..."
+    return OutputContract(shape="prose", deliverable=label,
+                          consumers=["requester"], cadence="on-demand",
+                          gate="review")
+
+
+def _sanitize_consumption(profile: DomainProfile) -> None:
+    """Make a generated pack's playbook + output contract lint-clean: workflow
+    steps name only granted tools and unique names; the output uses valid
+    shape/gate. Runs after the envelope is clamped, so tool references match the
+    final allowlist."""
+    from .domain import _VALID_EFFORTS, _VALID_GATES, _VALID_SHAPES
+    allow = set(profile.allow_tools)
+    seen: set[str] = set()
+    clean: list[WorkflowStep] = []
+    for step in profile.workflow:
+        name = (step.name or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        clean.append(WorkflowStep(
+            name=name, instruction=step.instruction,
+            tools=[t for t in step.tools if t in allow],
+            gate=step.gate if step.gate in _VALID_GATES else None,
+        ))
+    profile.workflow = clean or _default_workflow()
+    o = profile.output
+    if o.deliverable:
+        profile.output = OutputContract(
+            shape=o.shape if o.shape in _VALID_SHAPES else "prose",
+            deliverable=o.deliverable,
+            consumers=o.consumers or ["requester"],
+            cadence=o.cadence or "on-demand",
+            gate=o.gate if o.gate in _VALID_GATES else None,
+        )
+    if profile.effort is not None and profile.effort not in _VALID_EFFORTS:
+        profile.effort = None
+
+
 def validate_profile(profile: DomainProfile) -> DomainProfile:
     """Clamp a generated pack to a safe envelope: union a baseline deny set,
     strip denied or over-ceiling tools out of allow, and cap ``max_risk``.
@@ -115,6 +189,7 @@ def validate_profile(profile: DomainProfile) -> DomainProfile:
     if not profile.compartment:
         profile.compartment = profile.name
     profile.authoring = "generated"
+    _sanitize_consumption(profile)
     return profile
 
 
@@ -134,16 +209,24 @@ def generate_profile(spec: IntakeSpec, propose=None) -> DomainProfile:
         except Exception as e:  # generation must fail soft to a safe default
             log.warning("intake: proposer failed (%s); using default pack", e)
 
+    description = str(proposed.get("description") or spec.description)
+    workflow = _coerce_workflow(proposed.get("workflow")) or _default_workflow()
+    output = (_coerce_output(proposed["output"])
+              if isinstance(proposed.get("output"), dict)
+              else _default_output(description))
     profile = DomainProfile(
         name=name,
         compartment=name,
-        description=str(proposed.get("description") or spec.description),
+        description=description,
         persona=str(proposed.get("persona") or _default_persona(spec)),
         allow_tools=list(proposed.get("allow_tools") or ["read_file", "web_search"]),
         deny_tools=list(proposed.get("deny_tools") or []),
         max_risk=proposed.get("max_risk"),
+        effort=proposed.get("effort"),
         knowledge_sources=[name],
         authoring="generated",
+        workflow=workflow,
+        output=output,
     )
     profile.persona = _safe_persona(profile.persona, spec)
     return validate_profile(profile)
@@ -173,10 +256,31 @@ def _to_toml(p: DomainProfile) -> str:
         f"allow_tools = {json.dumps(p.allow_tools)}",
         f"deny_tools = {json.dumps(p.deny_tools)}",
         f"max_risk = {json.dumps(p.max_risk)}" if p.max_risk else "",
+        f"effort = {json.dumps(p.effort)}" if p.effort else "",
         f"knowledge_sources = {json.dumps(p.knowledge_sources)}",
         f"authoring = {json.dumps(p.authoring)}",
     ]
-    return "\n".join(line for line in lines if line) + "\n"
+    body = "\n".join(line for line in lines if line) + "\n"
+    # The [output] table and [[workflow]] array-of-tables MUST follow all the
+    # top-level scalars (TOML rule), so they are appended last.
+    if p.output.deliverable:
+        out = ["", "[output]", f"shape = {json.dumps(p.output.shape)}",
+               f"deliverable = {json.dumps(p.output.deliverable)}",
+               f"consumers = {json.dumps(p.output.consumers)}",
+               f"cadence = {json.dumps(p.output.cadence)}"]
+        if p.output.gate:
+            out.append(f"gate = {json.dumps(p.output.gate)}")
+        body += "\n".join(out) + "\n"
+    for step in p.workflow:
+        blk = ["", "[[workflow]]", f"name = {json.dumps(step.name)}"]
+        if step.instruction:
+            blk.append(f"instruction = {json.dumps(step.instruction)}")
+        if step.tools:
+            blk.append(f"tools = {json.dumps(step.tools)}")
+        if step.gate:
+            blk.append(f"gate = {json.dumps(step.gate)}")
+        body += "\n".join(blk) + "\n"
+    return body
 
 
 def save_profile(profile: DomainProfile, *, approved: bool,
@@ -198,7 +302,12 @@ _PROPOSER_SYSTEM = (
     '  "persona": the agent\'s system instructions (string),\n'
     '  "description": a one-line summary (string),\n'
     '  "allow_tools": array of tool names it needs (e.g. read_file, web_search),\n'
-    '  "max_risk": "low" or "medium".\n'
+    '  "max_risk": "low" or "medium",\n'
+    '  "workflow": array of 3-6 steps, each {"name","instruction","gate"} where\n'
+    "      gate is null except the final human-handoff step (\"review\", or\n"
+    '      "approval" for anything irreversible),\n'
+    '  "output": {"shape","deliverable","consumers","cadence","gate"} describing\n'
+    "      the deliverable (shape = prose|report|table|forecast).\n"
     "Never include shell, code-execution, or file-writing tools. Output JSON only."
 )
 
@@ -230,13 +339,19 @@ def _parse_proposal(text: str) -> dict:
     if not isinstance(data, dict):
         return {}
     out: dict = {}
-    for key in ("persona", "description", "max_risk"):
+    for key in ("persona", "description", "max_risk", "effort"):
         if isinstance(data.get(key), str):
             out[key] = data[key]
     for key in ("allow_tools", "deny_tools"):
         v = data.get(key)
         if isinstance(v, list):
             out[key] = [str(x) for x in v if isinstance(x, str)]
+    # The playbook + consumption contract pass through as-is; generate_profile
+    # coerces and validate_profile sanitizes them, so junk can't break a pack.
+    if isinstance(data.get("workflow"), list):
+        out["workflow"] = data["workflow"]
+    if isinstance(data.get("output"), dict):
+        out["output"] = data["output"]
     return out
 
 
