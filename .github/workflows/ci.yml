@@ -150,6 +150,14 @@ jobs:
         # lock (`python -m maverick.migration_governance --regen`) so the change
         # is reviewed. Pure offline check, no DB. See migration_governance.py.
         run: python -m maverick.migration_governance --ci
+      - name: Control/data-plane e2e (goals provably run out-of-process)
+        # Drives the real QueueDispatcher -> SQLite JobQueue -> Worker ->
+        # shared WorldModel path end-to-end (no Redis/gRPC) and fails if the
+        # split doesn't hold: the control plane must only enqueue (goal stays
+        # pending), a separate worker must claim+execute, and the terminal
+        # status must flow back through the shared store. Agent execution is
+        # stubbed at the LLM boundary. See control_data_plane_e2e.py.
+        run: python -m maverick.control_data_plane_e2e --ci
 
   audit:
     runs-on: ubuntu-latest
