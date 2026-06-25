@@ -140,6 +140,7 @@ def emit_strategy_candidate(kind: str, summary: str, baseline: float, candidate:
 
 def run_self_harness_pass(
     reflexions=None, *, model_id: str | None = None,
+    held_in=None, held_out=None,
     score_with=None, score_without=None, propose_fn=None, controller=None,
     min_support: int = 3, limit: int = 500,
 ):
@@ -165,9 +166,9 @@ def run_self_harness_pass(
             from . import reflexion
             reflexions = [r.to_dict() for r in reflexion.list_recent(limit=limit)]
         return self_harness.run_self_harness(
-            reflexions, model_id=model_id, score_with=score_with,
-            score_without=score_without, propose_fn=propose_fn,
-            controller=controller, min_support=min_support)
+            reflexions, model_id=model_id, held_in=held_in, held_out=held_out,
+            score_with=score_with, score_without=score_without,
+            propose_fn=propose_fn, controller=controller, min_support=min_support)
     except Exception:  # pragma: no cover -- learning never perturbs a run
         log.debug("self-harness pass failed", exc_info=True)
         from . import self_harness
