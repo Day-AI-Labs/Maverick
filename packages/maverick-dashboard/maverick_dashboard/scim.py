@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import time
 import uuid
 from typing import Any
@@ -48,8 +47,12 @@ def _scim_secrets() -> list[str]:
     **comma-separated set** so a rotation can keep the old and new token both
     valid for a grace window. Each entry is either a literal token or a
     ``sha256:<hex>`` digest, so the plaintext secret need not sit in the process
-    environment. Order does not matter; all are checked constant-time."""
-    raw = os.environ.get("MAVERICK_SCIM_TOKEN", "")
+    environment. Order does not matter; all are checked constant-time.
+
+    Routed through the secret provider (#54) so a mounted vault file can supply
+    the token; default backend reads ``MAVERICK_SCIM_TOKEN`` from env as before."""
+    from maverick.secret_provider import get_secret
+    raw = get_secret("MAVERICK_SCIM_TOKEN", "") or ""
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
