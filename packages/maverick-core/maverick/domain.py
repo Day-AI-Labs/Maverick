@@ -359,6 +359,7 @@ SUITE_PREFIXES: dict[str, str] = {
     "crypto_": "crypto_digital_assets",
     "chem_": "chemicals",
     "fbcpg_": "food_beverage_cpg",
+    "meddev_": "medical_devices",
 }
 
 

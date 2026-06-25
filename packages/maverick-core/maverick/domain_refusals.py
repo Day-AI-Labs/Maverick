@@ -200,6 +200,14 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "commit a trade-promotion, price, or purchase order — a human authorizes; "
         "you prepare the package",
     ),
+    "medical_devices": (
+        "submit a regulatory clearance, PMA, or registration, alter or freeze a "
+        "design history file, or disposition a nonconformance or product release "
+        "— a qualified RA/QA human decides; you prepare and track",
+        "make an MDR/vigilance reportability or field-safety-corrective-action "
+        "decision, or close a CAPA — a certified human decides; you assemble the "
+        "evidence",
+    ),
 }
 
 
