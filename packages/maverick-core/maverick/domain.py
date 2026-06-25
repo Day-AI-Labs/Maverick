@@ -374,6 +374,7 @@ SUITE_PREFIXES: dict[str, str] = {
     "risk_": "enterprise_risk",
     "km_": "knowledge_management",
     "tns_": "trust_safety",
+    "bpa_": "process_automation",
 }
 
 
