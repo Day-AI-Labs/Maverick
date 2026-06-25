@@ -3,10 +3,10 @@
 | Field | Value |
 | --- | --- |
 | Document ID | DEP-CHK-01 |
-| Owner | Security Lead / Platform Engineering |
-| Approver | Management |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | Per release + annual |
 | Frameworks | SOC 2 CC5/CC6/CC7; ISO 27001 A.8.*; ISO 42001 A.6/A.9 |
 
@@ -37,7 +37,7 @@ deployment must turn them **on and show them on**. Apply
 - [ ] `compliant-config.toml` applied to `~/.maverick/config.toml`; placeholders filled.
 - [ ] OIDC issuer/audience point at the real IdP; a test login succeeds.
 - [ ] Encryption key is **externally managed** (`MAVERICK_ENCRYPTION_KEY` / KMS), not just the auto-generated on-disk key.
-- [ ] Audit signing key backed up to a separate trust store.
+- [ ] **Off-host audit signing key** set via `MAVERICK_AUDIT_SIGNING_KEY` (or `..._WRAPPED`) from your KMS/secrets manager — **required** under `[enterprise] mode = true` (Maverick refuses a local-disk key). Without it the chain writes unsigned and `audit_log != ok`. Back up the key in a separate trust store.
 - [ ] A provider API key is present (so `/healthz` is not degraded), or self-hosted inference configured.
 - [ ] Postgres backend + `maverick tenant rls-preflight` + `backfill` run if using DB-enforced isolation (`[world_model] rls = true`).
 - [ ] Cloud provider attestations (SOC 2 / ISO) collected for inherited physical controls (A.7).

@@ -3,10 +3,10 @@
 | Field | Value |
 | --- | --- |
 | Document ID | PROC-06 |
-| Owner | People Ops / HR (with Security Lead) |
-| Approver | Management |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | Annual |
 | Frameworks | ISO 27001 A.6.1, A.6.2, A.6.3, A.6.4, A.6.5, A.6.6; ISO 42001 A.3.2, A.4.6; SOC 2 CC1.4 |
 

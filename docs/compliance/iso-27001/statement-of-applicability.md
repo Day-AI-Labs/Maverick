@@ -3,10 +3,10 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ISMS-SOA-01 |
-| Owner | Security Lead / CISO |
-| Approver | Management |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Standard | ISO/IEC 27001:2022, Annex A (93 controls) |
 
 The SoA is a **mandatory** ISO 27001 document (Clause 6.1.3 d). It records, for

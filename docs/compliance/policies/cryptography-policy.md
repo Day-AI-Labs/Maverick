@@ -3,11 +3,11 @@
 | Field | Value |
 | --- | --- |
 | Document ID | POL-04 |
-| Owner | Security Lead / CISO |
-| Approver | Management |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
-| Effective date | TBD |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
+| Effective date | 2026-06-24 |
 | Review cycle | Annual (or on significant change) |
 | Frameworks | ISO 27001:2022 A.8.24, A.5.33; SOC 2 CC6.1, CC6.7, C1.1 |
 

@@ -3,11 +3,11 @@
 | Field | Value |
 | --- | --- |
 | Document ID | POL-07 |
-| Owner | Security Lead / Incident Response Manager |
-| Approver | Management |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
-| Effective date | TBD |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
+| Effective date | 2026-06-24 |
 | Review cycle | Annual (or on significant change) |
 | Frameworks | ISO/IEC 27001:2022 A.5.24, A.5.25, A.5.26, A.5.27, A.5.28, A.6.8; ISO/IEC 42001:2023 A.10.x; SOC 2 CC7.3, CC7.4 |
 

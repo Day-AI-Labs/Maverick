@@ -3,10 +3,10 @@
 | Field | Value |
 | --- | --- |
 | Document ID | PROC-03 |
-| Owner | Engineering Lead |
-| Approver | Management |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | Annual |
 | Frameworks | ISO 27001 A.8.31/A.8.32; ISO 42001 A.6.2; SOC 2 CC8.1 |
 

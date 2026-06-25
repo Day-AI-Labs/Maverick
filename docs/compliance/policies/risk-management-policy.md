@@ -3,11 +3,11 @@
 | Field | Value |
 | --- | --- |
 | Document ID | POL-02 |
-| Owner | CISO / Security Lead |
-| Approver | Management / CEO |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
-| Effective date | TBD |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
+| Effective date | 2026-06-24 |
 | Review cycle | Annual (or on significant change) |
 | Frameworks | ISO 27001:2022 Clause 6.1, 8.2, 8.3, A.5.* governance; ISO 42001:2023 Clause 6.1, A.5.2, A.5.3; SOC 2 CC3.1–CC3.4 |
 

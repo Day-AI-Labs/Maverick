@@ -3,10 +3,10 @@
 | Field | Value |
 | --- | --- |
 | Document ID | REG-04 |
-| Owner | Security Lead / Legal |
-| Approver | Management |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | Annual |
 | Frameworks | SOC 2 CC9.2; ISO/IEC 27001:2022 A.5.19, A.5.20, A.5.22, A.5.23; ISO/IEC 42001:2023 A.10.2, A.10.3 |
 
@@ -44,7 +44,7 @@ at least annually and on material change.
 | DPA signed | Y/N + date a DPA was executed (— if not applicable) |
 | Last review | Date of most recent assessment (TPL-04) |
 | Next review due | Date the next re-assessment is due |
-| Owner | Internal accountable owner |
+| Owner | Christopher Day |
 | Status | Active / Pending review / Offboarded / Risk-accepted |
 
 ## Register

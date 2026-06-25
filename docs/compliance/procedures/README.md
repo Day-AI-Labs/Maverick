@@ -53,6 +53,13 @@ The technical "enable the opt-in controls" step — operationalized:
 | [`hardening-checklist.md`](../deployment/hardening-checklist.md) | Pre/post-deploy checklist + evidence keys (`maverick soc2`) |
 | [`verify-posture.sh`](../deployment/verify-posture.sh) | Runs `maverick soc2` + `enterprise verify` + `compliance --strict` as a deploy gate |
 
+## Evidence (`evidence/`)
+
+Dated records produced by *operating* the procedures (Clause 9.2/9.3 outputs and
+posture snapshots) — see the [evidence index](../evidence/README.md). Initial
+records: the [2026-Q2 internal audit](../evidence/2026-Q2-internal-audit-report.md)
+and the [first management review](../evidence/2026-06-24-management-review.md).
+
 ## How it fits together
 
 ```

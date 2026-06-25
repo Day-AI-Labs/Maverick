@@ -3,10 +3,10 @@
 | Field | Value |
 | --- | --- |
 | Document ID | TPL-02 |
-| Owner | Security Lead / ISMS Manager |
-| Approver | Management |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | Annual |
 | Frameworks | ISO/IEC 27001:2022 Cl. 9.3; ISO/IEC 42001:2023 Cl. 9.3; SOC 2 CC4.1–CC4.2 |
 

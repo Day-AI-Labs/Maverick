@@ -3,10 +3,10 @@
 | Field | Value |
 | --- | --- |
 | Document ID | TPL-01 |
-| Owner | Security Lead / Incident Commander |
-| Approver | Management |
-| Version | 0.1 |
-| Status | Draft — pending management approval |
+| Owner | Christopher Day |
+| Approver | Christopher Day |
+| Version | 1.0 |
+| Status | Approved — effective 2026-06-24 (Christopher Day) |
 | Review cycle | Annual + after every SEV1/SEV2 |
 | Frameworks | SOC 2 CC7.3, CC7.4; ISO/IEC 27001:2022 A.5.24, A.5.25, A.5.26, A.5.27, A.5.28; ISO/IEC 42001:2023 A.10 (AI incidents) |
 
