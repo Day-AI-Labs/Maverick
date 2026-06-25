@@ -332,20 +332,32 @@ def levels_enabled() -> bool:
         return False
 
 
-def effective_profile(name: str, pack_profile: AutonomyProfile | None) -> AutonomyProfile:
+def effective_profile(
+    name: str,
+    pack_profile: AutonomyProfile | None,
+    *,
+    graduated: bool | None = None,
+) -> AutonomyProfile:
     """The effective authority for ``name``: the pack's explicit ``[autonomy]``
     block if it set one, else the suite-level default
     (:func:`default_profile_for`), with the client's ``[workforce.agents]``
-    override layered on top."""
+    override layered on top.
+
+    ``graduated=True`` lifts the onboarding clamp (the agent has earned trust).
+    The caller supplies the signal (from :func:`graduation_status`) so this stays
+    pure and cheap -- no approvals-history read on the hot path. Stays pure with
+    ``graduated=None`` (the default)."""
     base = pack_profile or default_profile_for(name)
     try:
         from .config import get_workforce
         override = get_workforce().get("agents", {}).get(name)
     except Exception:  # pragma: no cover
         override = None
-    if not override:
-        return base
-    return base.with_overrides(**override)
+    if override:
+        base = base.with_overrides(**override)
+    if graduated and base.onboarding:
+        base = replace(base, onboarding=False)
+    return base
 
 
 def decide(
@@ -363,6 +375,131 @@ def decide(
         action=action,
         risk=risk,
         levels_enabled=levels_enabled(),
+    )
+
+
+# -- graduation (onboarding -> trusted) ------------------------------------
+#
+# A hire starts supervised (onboarding, clamped one rung down). It graduates the
+# way a person does: a clean record. This reads the same approvals history
+# predictive_approvals learns from -- the human decisions on THIS agent's gated
+# actions -- and reports whether the agent has earned graduation. Advisory by
+# default (the client lifts onboarding in [workforce.agents], matching the
+# suggestion-only contract of predictive_approvals); opt-in auto-graduation
+# ([workforce] auto_graduate) lets it lift itself once the record is strong.
+
+# Earn graduation only after this many decided actions, at/above this approval
+# share -- mirrors predictive_approvals' _MIN_SAMPLE / _DOMINANCE philosophy but
+# tuned a touch stricter (graduating an employee is a bigger step than auto-ing
+# one action class).
+_GRAD_MIN_SAMPLE = 8
+_GRAD_DOMINANCE = 0.9
+
+
+@dataclass(frozen=True)
+class GraduationVerdict:
+    """Whether an agent has earned graduation from its supervised phase."""
+
+    name: str
+    graduated: bool
+    sample: int
+    approve_rate: float
+    confidence: float
+    reason: str
+
+
+def _agent_of(record: dict) -> str:
+    """The agent a history record belongs to (``requested_by`` principal).
+    Principals look like ``agent:<name>-<depth>``; we keep the raw value and
+    match by membership so ``fin_clerk`` matches ``agent:fin_clerk-0``."""
+    return str(record.get("requested_by") or record.get("agent") or record.get("role") or "")
+
+
+def graduation_status(
+    name: str,
+    history,
+    *,
+    min_sample: int = _GRAD_MIN_SAMPLE,
+    dominance: float = _GRAD_DOMINANCE,
+) -> GraduationVerdict:
+    """Has agent ``name`` earned graduation, per its approvals ``history``?
+
+    Pure: ``history`` is a list of approval records (or an object exposing
+    ``.list_approvals()`` / ``.records()``), filtered here to this agent and
+    aggregated into an approve/deny record. Graduates when there are at least
+    ``min_sample`` decided actions and the approval share is at/above
+    ``dominance``. Never raises.
+    """
+    from . import predictive_approvals as _pa
+    rows = _coerce_approvals(history)
+    approvals = denials = 0
+    for rec in rows:
+        if not isinstance(rec, dict) or name not in _agent_of(rec):
+            continue
+        d = _pa._decided(rec)
+        if d is True:
+            approvals += 1
+        elif d is False:
+            denials += 1
+    sample = approvals + denials
+    rate = round(approvals / sample, 4) if sample else 0.0
+    conf = _pa._confidence(approvals, denials)
+    if sample < min_sample:
+        return GraduationVerdict(
+            name, False, sample, rate, conf,
+            f"only {sample} decided action(s) (need {min_sample}) — stay supervised.")
+    if rate >= dominance:
+        return GraduationVerdict(
+            name, True, sample, rate, conf,
+            f"clean record: {approvals}/{sample} approved ({rate:.0%}) — ready to graduate.")
+    return GraduationVerdict(
+        name, False, sample, rate, conf,
+        f"record not clean enough: {approvals}/{sample} approved ({rate:.0%}).")
+
+
+def _coerce_approvals(history) -> list[dict]:
+    """Approvals history as a list of dict records (duck-typed source)."""
+    if history is None:
+        return []
+    rows = history
+    if not isinstance(history, list):
+        for attr in ("list_approvals", "records", "approvals", "history"):
+            fn = getattr(history, attr, None)
+            if callable(fn):
+                try:
+                    rows = list(fn() or [])
+                except Exception:  # pragma: no cover
+                    return []
+                break
+        else:
+            return []
+    out: list[dict] = []
+    for r in rows:
+        if isinstance(r, dict):
+            out.append(r)
+        elif hasattr(r, "__dict__"):
+            out.append(vars(r))
+    return out
+
+
+def auto_graduate_enabled() -> bool:
+    """Whether a strong clean record lifts onboarding automatically. Opt-in
+    (``[workforce] auto_graduate``); default off -- the client graduates."""
+    try:
+        from .config import get_workforce
+        return bool(get_workforce().get("auto_graduate", False))
+    except Exception:  # pragma: no cover
+        return False
+
+
+def graduation_candidates(history, names: list[str]) -> list[GraduationVerdict]:
+    """The agents in ``names`` that have earned graduation, most-confident
+    first -- the advisory list a CLI / dashboard surfaces to the client."""
+    rows = _coerce_approvals(history)
+    out = [graduation_status(n, rows) for n in names]
+    return sorted(
+        (v for v in out if v.graduated),
+        key=lambda v: (-v.confidence, v.name),
     )
 
 
@@ -421,4 +558,8 @@ __all__ = [
     "default_profile_for",
     "decide",
     "render_autonomy_prompt",
+    "GraduationVerdict",
+    "graduation_status",
+    "graduation_candidates",
+    "auto_graduate_enabled",
 ]

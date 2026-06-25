@@ -168,6 +168,40 @@ async def list_tenants(request: Request) -> list[TenantOut]:
     return [_to_tenant_out(r) for r in tenant_registry.list_tenants()]
 
 
+@router.get("/workforce/posture")
+async def workforce_posture(request: Request) -> dict:
+    """The workforce autonomy dial: fleet posture + graduation candidates.
+
+    Read-only surface for the dashboard -- whether per-agent autonomy levels are
+    on, the distribution of baseline authority rungs across the roster, how many
+    hires are still onboarding, and which have earned graduation from a clean
+    approval record (advisory; the client lifts onboarding to act on it).
+    """
+    require_permission(request, "view")
+    from maverick.agent_autonomy import graduation_candidates, levels_enabled
+    from maverick.domain_audit import audit_roster, summarize
+    s = summarize(audit_roster())
+    out: dict = {
+        "levels_enabled": levels_enabled(),
+        "autonomy_posture": s.get("autonomy_posture", {}),
+        "packs_onboarding": s.get("packs_onboarding", 0),
+        "graduation_candidates": [],
+    }
+    try:
+        from maverick.domain import available_domains
+        from maverick.world_model import DEFAULT_DB, WorldModel
+        wm = WorldModel(DEFAULT_DB)
+        cands = graduation_candidates(wm.list_approvals(limit=5000), sorted(available_domains()))
+        out["graduation_candidates"] = [
+            {"name": c.name, "sample": c.sample, "approve_rate": c.approve_rate,
+             "confidence": c.confidence, "reason": c.reason}
+            for c in cands
+        ]
+    except Exception:  # pragma: no cover -- no DB / empty install -> empty list
+        pass
+    return out
+
+
 @router.post("/admin/tenants", response_model=TenantOut, status_code=201)
 async def create_tenant(request: Request, body: TenantCreateIn) -> TenantOut:
     require_permission(request, "admin")

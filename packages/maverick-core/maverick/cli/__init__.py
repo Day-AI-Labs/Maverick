@@ -4824,6 +4824,39 @@ def domains_audit(json_out: str | None, suite: str | None) -> None:
             f"{len(flagged)} drafting pack(s) can reach a state-mutator")
 
 
+@main.command("workforce-graduation")
+@click.option("--db", "db_path", type=click.Path(), default=None,
+              help="World DB to read the approvals history from (default: the configured one).")
+def workforce_graduation(db_path: str | None) -> None:
+    """Which onboarding agents have earned graduation to more autonomy?
+
+    Reads the human approval decisions on each agent's gated actions (the same
+    record predictive-approvals learns from) and lists the hires with a clean
+    enough record to graduate -- the advisory signal a client acts on by setting
+    ``onboarding = false`` under ``[workforce.agents]`` (or by enabling
+    ``[workforce] auto_graduate``). Advisory only: it never changes a config.
+    """
+    from ..agent_autonomy import graduation_candidates
+    from ..domain import available_domains
+    try:
+        from ..world_model import DEFAULT_DB, WorldModel
+        wm = WorldModel(db_path or DEFAULT_DB)
+        approvals = wm.list_approvals(limit=5000)
+    except Exception as e:  # pragma: no cover -- no DB / empty install
+        raise click.ClickException(f"could not read approvals history: {e}") from e
+    names = sorted(available_domains())
+    cands = graduation_candidates(approvals, names)
+    if not cands:
+        click.echo("No agents have earned graduation yet "
+                   "(need a clean record of human-approved actions).")
+        return
+    click.echo(f"{len(cands)} agent(s) ready to graduate from onboarding:")
+    for v in cands:
+        click.echo(f"  {v.name}: {v.reason} (confidence {v.confidence:.2f})")
+    click.echo("\nGraduate one by adding to ~/.maverick/config.toml:")
+    click.echo("  [[workforce.agents]]\n  name = \"<agent>\"\n  onboarding = false")
+
+
 @main.command("domains-eval")
 @click.option("--check", "check_only", is_flag=True,
               help="Lint the eval suite against the roster and exit (no provider needed).")
