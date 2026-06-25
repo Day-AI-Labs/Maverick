@@ -366,6 +366,14 @@ SUITE_PREFIXES: dict[str, str] = {
     "fbcpg_": "food_beverage_cpg",
     "meddev_": "medical_devices",
     "pevc_": "private_equity_vc",
+    "water_": "water_utilities",
+    "clean_": "renewables_cleantech",
+    "semi_": "semiconductors",
+    # New horizontal-function suites (2026 build-out).
+    "esg_": "esg_sustainability",
+    "risk_": "enterprise_risk",
+    "km_": "knowledge_management",
+    "tns_": "trust_safety",
 }
 
 
@@ -407,6 +415,15 @@ def enabled_domains(cfg: dict | None = None) -> dict[str, DomainProfile]:
     }
 
 
+# Governed office actions a hire may EXECUTE once per-agent autonomy levels are
+# on -- comms and scheduling, every one classified high-risk so the autonomy
+# dial + governance gate hold them to the agent's authority (staged or approved
+# per rung; never raw). This is the dial-coupled grant that turns a read-only
+# specialist into one that can actually take governed actions. Domain-specific
+# governed writes (update a record, file a doc) are layered per suite on top.
+_GOVERNED_ACTION_BUNDLE = frozenset({"email", "notify", "calendar"})
+
+
 def domain_capability(profile: DomainProfile, parent_cap, principal: str):
     """The Capability a domain agent runs under.
 
@@ -414,17 +431,47 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
     broaden); otherwise mint the profile's own envelope. Empty profile fields
     pass ``None`` so they inherit the parent's scope rather than emptying it --
     an empty allow-set means "all", which would *broaden* the grant.
+
+    When the client has enabled per-agent autonomy levels (``[workforce]
+    levels``), a non-empty allowlist is expanded with the governed action bundle
+    so the hire can execute its job's output -- gated by its autonomy rung. Off
+    by default (kernel rule 1): no grant, the pack stays exactly read-only.
     """
-    allow = set(profile.allow_tools) or None
+    allow = set(profile.allow_tools)
+    max_risk = profile.max_risk
+    if allow:  # only a real allowlist is expanded (empty == inherit, untouched)
+        try:
+            from .agent_autonomy import levels_enabled
+            if levels_enabled():
+                allow = allow | _GOVERNED_ACTION_BUNDLE
+                # The dial now governs HOW consequential actions run (staged /
+                # approved / auto per rung). So lift the static risk ceiling to
+                # 'high' -- the bundle's actions are high-risk -- and let the
+                # autonomy gate, not a blanket ceiling, hold them. Reads stay
+                # low; only the governed bundle is high. Never lowers an existing
+                # ceiling, and leaves an uncapped (None) grant untouched.
+                if max_risk in ("low", "medium"):
+                    max_risk = "high"
+        except Exception:  # pragma: no cover -- never block capability build
+            pass
+    allow = allow or None
     deny = set(profile.deny_tools) or None
     paths = set(profile.allow_paths) or None
     hosts = set(profile.allow_hosts) or None
     if parent_cap is not None:
         return parent_cap.attenuate(
             principal=principal, allow=allow, deny=deny,
-            max_risk=profile.max_risk, allow_paths=paths, allow_hosts=hosts,
+            max_risk=max_risk, allow_paths=paths, allow_hosts=hosts,
         )
-    return profile.capability(principal)
+    from .capability import Capability
+    return Capability(
+        principal=principal,
+        allow_tools=frozenset(allow or ()),
+        deny_tools=frozenset(deny or ()),
+        max_risk=max_risk,
+        allow_paths=frozenset(paths or ()),
+        allow_hosts=frozenset(hosts or ()),
+    )
 
 
 _VALID_RISKS = frozenset({"low", "medium", "high"})

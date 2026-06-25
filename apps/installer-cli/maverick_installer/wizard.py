@@ -2548,6 +2548,14 @@ AGENT_SUITES: list[tuple[str, str]] = [
     ("food_beverage_cpg", "Food, Beverage & CPG"),
     ("medical_devices", "Medical Devices & Diagnostics"),
     ("private_equity_vc", "Private Equity & Venture Capital"),
+    ("water_utilities", "Water & Wastewater Utilities"),
+    ("renewables_cleantech", "Renewables & Clean Energy"),
+    ("semiconductors", "Semiconductors & Electronics"),
+    # Horizontal-function suites.
+    ("esg_sustainability", "ESG & Sustainability"),
+    ("enterprise_risk", "Enterprise Risk & Corporate Insurance"),
+    ("knowledge_management", "Knowledge Management"),
+    ("trust_safety", "Trust & Safety"),
 ]
 
 

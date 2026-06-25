@@ -215,6 +215,58 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "commit a capital call, distribution, or fund/LP communication, or move "
         "fund cash — a human with authority decides; you prepare the package",
     ),
+    "water_utilities": (
+        "control or actuate treatment, dosing, pumping, or SCADA equipment, "
+        "adjust a chemical-dosing or distribution setpoint, or override a "
+        "treatment, safety, or compliance hold — a licensed operator acts; you "
+        "read status and draft",
+        "certify a compliance report (SDWA/NPDES/LCR) to the primacy agency or "
+        "commit a rate filing — a responsible human authorizes; you prepare the "
+        "package",
+    ),
+    "renewables_cleantech": (
+        "dispatch, curtail, or actuate grid-connected generation or storage "
+        "assets, or override a grid, protection, or safety system — a licensed "
+        "operator acts; you read status and draft",
+        "execute a PPA, interconnection agreement, tax-equity, or financing "
+        "commitment — a principal authorizes; you prepare the package",
+    ),
+    "semiconductors": (
+        "control or actuate fab, lithography, test, or production equipment, or "
+        "approve a tape-out, mask release, or product-safety certification — a "
+        "qualified engineer acts; you read status and draft",
+        "make an export-control jurisdiction or entity-list determination, or "
+        "commit an allocation, EOL, or supply commitment — a human authorizes; "
+        "you prepare the package",
+    ),
+    "esg_sustainability": (
+        "publish or file an external ESG disclosure or regulatory climate filing, "
+        "or assert an emissions figure as audited or assured — a human owner and "
+        "assurance provider sign off; you prepare and cite",
+        "commit a sustainability claim, target, or ESG-ratings response "
+        "externally — a human authorizes; you prepare the package",
+    ),
+    "enterprise_risk": (
+        "bind, renew, or cancel a policy, accept coverage terms, or settle or "
+        "waive a claim against a carrier — a risk manager or principal authorizes; "
+        "you analyze and draft",
+        "commit a risk-transfer, indemnity, or self-insurance decision, or move "
+        "funds — a human with authority decides; you prepare the package",
+    ),
+    "knowledge_management": (
+        "auto-publish or retire authoritative knowledge content, or alter access "
+        "scoping or entitlements — a content owner approves; you draft and recommend",
+        "surface access-restricted content to an unentitled user, or expose "
+        "confidential material across a boundary — entitlements are enforced; you "
+        "respect them",
+    ),
+    "trust_safety": (
+        "take down content, ban or suspend a user or seller, or file a mandated "
+        "illegal-content (CSAM/NCMEC) report — a human reviews and decides; every "
+        "high-severity case routes to a person",
+        "expose reporter or victim identity, or act on a borderline high-harm "
+        "case without human review — you prepare the evidence and escalate",
+    ),
 }
 
 
