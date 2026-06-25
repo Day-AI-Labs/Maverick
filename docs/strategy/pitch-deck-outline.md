@@ -57,7 +57,7 @@ attenuating capabilities · pre-action simulation + replay · **externally verif
 **9 · Wedge & ICP**
 One buyer, one workflow. Lead with **governance + audit + containment** for a
 **regulated ops + security** buyer (fintech / insurance / healthcare ops / secops),
-packs as use-case proof — *not* "1,118 agents." The benchmark
+packs as use-case proof — *not* "1,734 agents." The benchmark
 ([`benchmark-plan.md`](./benchmark-plan.md)) is the proof artifact.
 
 **10 · GTM & milestones**

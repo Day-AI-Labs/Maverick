@@ -129,7 +129,7 @@ All verified locally green; each is a build-failer:
 
 Maverick = proprietary AGENTIC ENTERPRISE PLATFORM (kernel `maverick-core` +
 shield + channels + dashboard + mcp + evolve + knowledge): a governed,
-self-improving AI workforce — 1,118 lint-clean specialist packs across 26
+self-improving AI workforce — 1,734 lint-clean specialist packs across 52
 suites, a closed learning lifecycle (dreaming/hindsight/proof, snapshot +
 rollback, signed learning audit), fleet memory for external agents, and the
 Operating Record. Category note: free OS agent runtimes (OpenClaw etc.) are

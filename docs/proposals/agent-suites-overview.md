@@ -2,7 +2,7 @@
 
 At-a-glance index of the business-function agent suites designed for the platform.
 Full detail lives in the per-suite docs below; this is the summary to skim later.
-**Twenty-six suites, 1,118 shipped agents** — the original eight functional
+**Fifty-two suites, 1,734 shipped agents** — the original eight functional
 suites below plus customer experience, marketing, procurement, data &
 analytics, security ops, executive office, facilities/EHS, tax preparation
 (CPA firms), and ten industry verticals (healthcare, insurance, banking,
@@ -48,7 +48,7 @@ All build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
   `mcp_servers` + `knowledge_sources`, plus the consumption + governance surface:
   an `[output]` contract (deliverable/consumers/cadence/gate), an editable
   `[[workflow]]` playbook, an `effort` tier (right-sized reasoning), and a
-  `refuse` list of hard, no-approval-path prohibitions. All 1,118 carry these.
+  `refuse` list of hard, no-approval-path prohibitions. All 1,734 carry these.
 - **Tooling over the roster** — `maverick domains-lint` (well-formedness +
   envelope/gate/effort/deny-floor rules), `domains-audit` (governance-posture
   inventory: what's reachable, what's denied, refusals, sign-off — `--json` for
