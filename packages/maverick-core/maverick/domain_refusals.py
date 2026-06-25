@@ -156,6 +156,15 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "issue a sailing or cargo-release authorization, a class/flag "
         "certification, or commit a charter or filing — those are human-authorized",
     ),
+    "travel_aviation": (
+        "control or actuate aircraft, ground-handling, or operational-control "
+        "systems, dispatch or release a flight, or override a safety, SMS, or "
+        "airworthiness hold — a licensed dispatcher, captain, or engineer acts; "
+        "you read status and draft",
+        "issue a ticket, refund, or rebooking, adjudicate a passenger-rights "
+        "claim, or commit a fare filing, slot, or settlement autonomously — a "
+        "human authorizes; you prepare the package",
+    ),
 }
 
 
