@@ -75,6 +75,7 @@ for false unless noted otherwise.
 | `MAVERICK_TOT_CANDIDATES` | built-in | Number of candidate plans tree-of-thought forks. |
 | `MAVERICK_REFLEXION` | config `[reflexion] enable` (off) | Enable the reflexion self-critique loop. |
 | `MAVERICK_DREAMING` | config `[dreaming] enable` (off) | Enable offline experience consolidation (`maverick dream`). |
+| `MAVERICK_SELF_HARNESS` | config `[self_harness] enable` (off) | Enable the self-harness loop: learn a model-specific, regression-validated operating-guidance addendum from failure traces (`maverick self-harness`; promotion also needs `[self_improvement] enable`). |
 | `MAVERICK_DATA_ENGINE` | config `[data_engine] enable` (off) | Enable the Cognitive Data Engine flywheel: causal failure triage → guardrails → habits (`maverick flywheel`). |
 | `MAVERICK_OPERATIONS_SCIENTIST` | config `[operations_scientist] enable` (off) | Enable the Operations Scientist: propose + simulate a better process before a real experiment. |
 | `MAVERICK_CONSEQUENCE` | config `[consequence] enable` (off) | Ground learning in real downstream outcomes over the verifier proxy (`maverick record-outcome`). |
@@ -149,6 +150,7 @@ Config equivalents live under `[effort]` (`enabled`, `default`, `<role>`) and
 | Env var | Default | Description |
 | --- | --- | --- |
 | `MAVERICK_COMPACT_HISTORY` | config `[context] compact` (off) | Enable history compaction. |
+| `MAVERICK_COMPACT_TIKTOKEN` | `1` | Use a real local BPE tokenizer (tiktoken) for compaction token counts when installed; `0` forces the `len/4` heuristic. Fails open to the heuristic if tiktoken is absent. |
 | `MAVERICK_HISTORY_WINDOW` | config `[context]` | Max number of recent turns kept verbatim. |
 | `MAVERICK_HISTORY_TOKENS` | config `[context]` | Max history tokens before compaction triggers. |
 | `MAVERICK_COMPACT_KEEP_RECENT` | `4` | Recent turns always kept uncompacted. |

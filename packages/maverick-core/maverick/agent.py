@@ -879,6 +879,23 @@ class Agent:
             except Exception:  # pragma: no cover -- never block a run
                 pass
 
+        base = self._with_harness_addendum(base)
+        return base
+
+    def _with_harness_addendum(self, base: str) -> str:
+        """Append the self-harness addendum: model-specific operating guidance
+        the loop learned from THIS model's past failures, recalled like
+        skills/insights (never a kernel-template mutation). Keyed on the agent's
+        resolved model so a worker's lesson never bleeds into the orchestrator's.
+        Empty (no change) unless [self_harness] is enabled and an addendum
+        exists. Fully fail-safe."""
+        try:
+            from .self_harness import recall_addendum
+            addendum = recall_addendum(self.model)
+            if addendum:
+                return base + "\n\n" + addendum
+        except Exception:  # pragma: no cover -- never block a run
+            pass
         return base
 
     def _thinking_budget(self) -> int | None:

@@ -185,6 +185,11 @@ enable = true              # measure (never apply) the codec's token savings on
 [reflexion]                # cross-run failure lessons (default off)
 enable = true
 
+[self_harness]             # learn a model-specific operating-guidance addendum
+enable = false             # mine failures -> propose -> regression-validate ->
+                           #   gate. Promotion ALSO needs [self_improvement]
+                           #   enable; inspect with `maverick self-harness`.
+
 [domains]                  # specialist-pack behavior (defaults shown)
 discipline = true          # suite operating-discipline appended at spawn
 memory = true              # department lessons injected at spawn

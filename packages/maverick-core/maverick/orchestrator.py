@@ -422,6 +422,13 @@ def _maybe_record_reflexion(
         goal_text = f"{getattr(goal, 'title', '')}\n{getattr(goal, 'description', '') or ''}"
         goal_text = reflexion._sanitize_text(goal_text, shield=shield)
         tools_used = reflexion.tools_from_blackboard(blackboard)
+        # Tag the orchestrator model so the self-harness loop can mine weaknesses
+        # per model. Best-effort: resolution never blocks the failure path.
+        try:
+            from .llm import model_for_role
+            model_id = model_for_role("orchestrator")
+        except Exception:  # pragma: no cover -- model tag is optional
+            model_id = None
         reflexion.record(
             goal_text=goal_text,
             failure_class=failure_class,
@@ -433,6 +440,7 @@ def _maybe_record_reflexion(
             channel=channel,
             user_id=user_id,
             domain=domain,
+            model_id=model_id,
         )
 
 

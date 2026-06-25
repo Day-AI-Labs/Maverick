@@ -86,6 +86,19 @@ here.
   Reflexions also carry the recording run's department (`reflexion.py`
   `domain` field), and same-department lessons outrank equally-similar
   generic ones at recall time.
+- **Self-harness (model-specific harness learning)** — `maverick self-harness`
+  (`self_harness.py`, opt-in `[self_harness] enable`) mines one model's
+  recurring failure reflexions into weakness *signatures*, proposes a *minimal*
+  operating-guidance line for each, and regression-validates it on held-in AND
+  held-out cases (rejecting an edit that overfits its own examples). Survivors
+  are gated through the self-improvement ladder on the `prompt` rung — so
+  promotion inherits the evidence floor, the calibration-freeze interlock,
+  reversibility, and the signed audit, and **requires `[self_improvement]
+  enable`**. An accepted line is recalled into the system prompt for *that model
+  only* (`recall_addendum`, keyed on the agent's resolved model), never a
+  kernel-template mutation. Reflexions now carry a `model_id` for the per-model
+  mining. After *Self-Harness: Harnesses That Improve Themselves* (arXiv
+  2606.09498); design in [`docs/proposals/self-harness.md`](./proposals/self-harness.md).
 - **Shared generic insight promotion** — when explicitly enabled with
   `[dreaming] promote_shared`, only recurring *unscoped* failures can become
   shared insights. Department-scoped failures remain compartment-local and are
