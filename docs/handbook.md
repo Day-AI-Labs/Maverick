@@ -204,8 +204,8 @@ world DB; isolation is pinned by a dedicated test suite
 `maverick tenant create / list / suspend / resume / quota / delete`
 (roster + per-tenant daily spend caps), `maverick billing invoice /
 entitlements` (metering → invoices, plan entitlements), per-tenant
-envelope encryption with a KMS-wrapped key per tenant (`tenant_kms.py`),
-and a per-tenant egress policy (`tenant_egress.py`). The channel server
+envelope encryption with a KMS-wrapped key per tenant (`tenant/kms.py`),
+and a per-tenant egress policy (`tenant/egress.py`). The channel server
 enforces the roster at the door.
 
 ### Audit, compliance, retention

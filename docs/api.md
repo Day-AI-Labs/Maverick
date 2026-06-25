@@ -17,7 +17,8 @@ either:
   logs / browser history**, prefer the header).
 
 Exempt from auth (so external tooling and probes work without creds):
-`/healthz`, `/openapi.json`, `/docs`, `/redoc`.
+`/healthz`, `/livez`, `/readyz`, `/openapi.json`, `/docs`, `/redoc`, and the
+`/.well-known/agent-card.json` discovery endpoints.
 
 ## OpenAPI docs
 

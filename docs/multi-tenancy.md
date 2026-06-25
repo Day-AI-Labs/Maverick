@@ -25,7 +25,7 @@ single-tenant install and behaves exactly as before.
 | Cross-session memory | per-tenant dir | `tenants/<id>/memory/` |
 | Audit log | per-tenant, signed/hash-chained | `tenants/<id>/audit/` |
 | Knowledge store | per-tenant via Workspace | `tenants/<id>/knowledge.db` |
-| Encryption-at-rest key | distinct DEK per tenant (AEAD-bound); per-tenant BYOK + fleet KEK rotation | `tenant_kms`, `maverick tenant kms-rotate` |
+| Encryption-at-rest key | distinct DEK per tenant (AEAD-bound); per-tenant BYOK + fleet KEK rotation | `tenant/kms.py`, `tenant/kms_fleet.py`, `maverick tenant kms-rotate` |
 | **Config & credentials** | per-tenant overlay | `tenants/<id>/config.toml` |
 | **Calibration / learning-freeze** | per-tenant | `tenants/<id>/calibration*` |
 | **Concurrency ceiling** | per-tenant, from plan | `billing.entitlements` |
