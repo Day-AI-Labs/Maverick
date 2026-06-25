@@ -347,5 +347,49 @@ def test_coerce_approvals_from_objects():
     assert v.graduated is True
 
 
+# -- coordination floor (agents can always communicate) --------------------
+
+def test_capability_permits_coordination_despite_narrow_allowlist():
+    """A specialist with a narrow allowlist and a low risk ceiling still keeps
+    the workforce control-plane (spawn/bus/delegate), even under enforcement."""
+    from maverick.capability import COORDINATION_TOOLS, Capability
+
+    cap = Capability(
+        principal="agent:fin_clerk-0",
+        allow_tools=frozenset({"read_file", "sql_query"}),
+        max_risk="low",  # spawn_specialist is high-risk, yet must still pass
+    )
+    for t in COORDINATION_TOOLS:
+        assert cap.permits(t), f"{t} should be permitted (coordination floor)"
+    assert cap.permits("read_file")
+    assert not cap.permits("email")  # non-coordination, not in allowlist
+
+
+def test_coordination_floor_respects_deny():
+    """deny_tools still wins -- an operator can revoke a coordination tool."""
+    from maverick.capability import Capability
+
+    cap = Capability(
+        principal="x", allow_tools=frozenset({"read_file"}),
+        deny_tools=frozenset({"spawn_swarm"}),
+    )
+    assert not cap.permits("spawn_swarm")
+    assert cap.permits("spawn_specialist")  # others still permitted
+
+
+def test_domain_agent_coordinates_under_enforcement():
+    from pathlib import Path
+
+    import maverick.domain as d
+    from maverick.capability import COORDINATION_TOOLS
+    from maverick.domain import domain_capability, load_domains
+
+    packs = load_domains(Path(d.__file__).parent / "domains")
+    # any read-only specialist with a narrow allowlist
+    name = next(iter(packs))
+    cap = domain_capability(packs[name], None, f"agent:{name}-0")
+    assert all(cap.permits(t) for t in COORDINATION_TOOLS)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-q"])
