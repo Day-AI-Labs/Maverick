@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 from collections.abc import Callable
@@ -303,8 +304,18 @@ def validate_proposal(
     add = proposal.addendum_line
     in_with, in_without = score_with(add, held_in), score_without(add, held_in)
     out_with, out_without = score_with(add, held_out), score_without(add, held_out)
-    in_delta, out_delta = in_with - in_without, out_with - out_without
     n = len(held_in) + len(held_out)
+    # A score is a success RATE in [0,1]. A buggy/hostile scorer returning a
+    # non-finite (NaN/inf) or out-of-range value must NOT drive a promotion: an
+    # inf candidate would otherwise sail past the gate's "candidate >= baseline"
+    # evidence check. Reject up front. (Found by the 1000-round fuzz campaign.)
+    scores = (in_with, in_without, out_with, out_without)
+    if not all(isinstance(s, (int, float)) and math.isfinite(s) and 0.0 <= s <= 1.0
+               for s in scores):
+        return ValidationResult(False, 0.0, 0.0,
+                                "scorer returned a non-finite or out-of-range value",
+                                baseline_score=0.0, candidate_score=0.0, samples=n)
+    in_delta, out_delta = in_with - in_without, out_with - out_without
     # The gate sees the unseen split as the honest baseline/candidate evidence.
     base = dict(baseline_score=out_without, candidate_score=out_with, samples=n)
     # Non-negative on both, strictly positive on at least one.
