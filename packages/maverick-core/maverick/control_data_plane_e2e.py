@@ -134,6 +134,7 @@ def run_e2e(workdir: Path, *, execute=None) -> dict:
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
     import argparse
+    import os
     p = argparse.ArgumentParser(
         prog="maverick.control_data_plane_e2e",
         description="End-to-end proof that goals run out-of-process "
@@ -142,6 +143,12 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
                    help="exit 1 if the control/data-plane split does not hold")
     p.add_argument("--out", default=None, help="write the evidence JSON to PATH")
     args = p.parse_args(argv)
+
+    # The harness proves the dispatch plumbing, which is orthogonal to at-rest
+    # sealing — so as a standalone gate it must not require the optional
+    # 'cryptography' extra (the lint CI job runs without it). Default at-rest off
+    # for this run unless the operator explicitly set it.
+    os.environ.setdefault("MAVERICK_ENCRYPT_AT_REST", "0")
 
     with tempfile.TemporaryDirectory() as d:
         evidence = run_e2e(Path(d))
