@@ -407,6 +407,15 @@ def run_self_harness(
         sigs = mine_failures(reflexions, model_id=model_id, min_support=min_support)
         report.mined = len(sigs)
         for sig in sigs:
+            # The addendum block holds at most _MAX_LINES_PER_MODEL lines. Stop
+            # once this pass has filled them: signatures are sorted STRONGEST
+            # (highest support) first, so processing more would only let a weaker
+            # line evict a stronger one under the newest-wins cap -- and would
+            # gate + audit a promotion we'd immediately discard. Keep the
+            # strongest weaknesses; report the rest as deferred.
+            if report.promoted >= _MAX_LINES_PER_MODEL:
+                report.skipped.append(f"addendum at capacity: {sig.signature}")
+                continue
             proposal = propose_addendum(sig, propose_fn=propose_fn)
             if proposal is None:
                 report.skipped.append(f"no proposal: {sig.signature}")
