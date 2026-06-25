@@ -406,15 +406,30 @@ async def _reclaim_orphans() -> None:
 
 
 async def _install_queue_dispatcher() -> None:
-    """If ``[queue] backend`` selects a task queue, install the QueueDispatcher
-    so this (producer) process enqueues goals for the worker pool instead of
-    running them in-process. No-op for the default in-process install."""
+    """Install an out-of-process goal dispatcher if one is configured.
+
+    ``[queue] backend`` selects the arq/Redis QueueDispatcher; ``[grpc_dispatch]
+    target`` selects the gRPC remote-worker dispatcher. Both make this (producer)
+    process hand goals to a worker pool instead of running them in-process. The
+    queue takes precedence when both are set (they share the single dispatcher
+    slot); the gRPC dispatcher is only attempted when the queue didn't install.
+    No-op for the default in-process install."""
     try:
         from maverick.queue_dispatcher import install_from_config
         if install_from_config():
             log.info("queue dispatcher installed: goals run out-of-process")
+            return
     except Exception:
         log.exception("queue dispatcher install failed (running in-process)")
+    # gRPC dispatch had a complete install_from_config() that nothing called, so
+    # [grpc_dispatch] target was silently ignored and goals kept running
+    # in-process. Wire it in as the fallback out-of-process path.
+    try:
+        from maverick.grpc_dispatcher import install_from_config as install_grpc
+        if install_grpc():
+            log.info("gRPC dispatcher installed: goals run on a remote worker")
+    except Exception:
+        log.exception("gRPC dispatcher install failed (running in-process)")
 
 _AUTH_EXEMPT = {
     "/healthz", "/livez", "/readyz",
