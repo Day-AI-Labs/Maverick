@@ -235,7 +235,7 @@ here.
   maker-checker + SoD, legal privilege, HR PII-minimization, IT/GRC
   chain-of-custody, ops safety interlocks, engineering tests-first, GTM
   no-overpromising, strategy source-grounding). One implementation point
-  upgrades all 1,734 built-in packs AND operator/intake-generated packs;
+  upgrades all 1,902 built-in packs AND operator/intake-generated packs;
   prompts only — hard limits stay with capabilities/governance.
 - **Hard refusals** (`domain_refusals.py`, always on — a prohibited use is not
   an operator preference) — every pack's prompt carries a non-negotiable
@@ -248,7 +248,7 @@ here.
   Packs add their own via a `refuse = [...]` field; the rails (capability /
   governance / Shield) still enforce independently — this makes the agent
   refuse *before* a rail is tested.
-- **Pack consumption surface** — every one of the 1,734 packs now declares an
+- **Pack consumption surface** — every one of the 1,902 packs now declares an
   `[output]` contract (deliverable shape, consumers, cadence, sign-off gate) and
   an editable `[[workflow]]` playbook (the ordered procedure, each step naming
   only the pack's own tools and ending in the human gate). Rendered into the
@@ -269,7 +269,7 @@ here.
   = ALL tools, missing/unknown `max_risk`, invalid `effort` tier), warnings
   for quality gaps (thin persona, allow∩deny overlap, no knowledge sources, a
   read-only pack not explicitly denying the `shell`/`write_file` floor, an
-  `output.gate` lighter than the playbook's final sign-off). All 1,734 built-in
+  `output.gate` lighter than the playbook's final sign-off). All 1,902 built-in
   packs lint clean (0 errors, 0 warnings); every pack carries at least a
   suite-level `knowledge_sources` grounding fallback.
 - **Governance-posture audit** — `maverick domains-audit [--json <path>
@@ -287,7 +287,7 @@ here.
   runner; `--check` lints the suite against the roster (key-free CI gate) while
   `run_eval(cases, runner)` scores live when a provider key is present.
 - **Specialist routing** (`domain_router.py`, wired into `list_specialists
-  query=<task>`) — a pre-filter that ranks the whole 1,734-pack roster for a
+  query=<task>`) — a pre-filter that ranks the whole 1,902-pack roster for a
   task so the orchestrator picks from a shortlist, not a haystack: lexical
   TF-IDF blended with sentence-transformer cosine when `fastembed` is installed
   (paraphrase-aware), graceful lexical-only fallback otherwise. A 25-case
@@ -303,7 +303,7 @@ here.
   cost avoided + ROI, the capability improvement curve from the hindsight
   ledger, and governance evidence, per department (and per external vendor
   with `--fleet`). Read-only; the POC-closing artifact.
-- **1,734-agent specialist portfolio across 52 suites** — the original 8
+- **1,902-agent specialist portfolio across 53 suites** — the original 8
   business suites plus customer experience, marketing, procurement,
   data & analytics, security ops, executive office, facilities/EHS, tax
   preparation, and 30+ industry verticals (healthcare, insurance, banking,
@@ -312,7 +312,7 @@ here.
   (country employment law, GDPR/CCPA/PIPL/EU-AI-Act regimes, indirect-tax
   regimes). Quality gate: `maverick domains-lint [--ci]` — every pack has
   a bounded persona, least-privilege allow list, explicit deny list, and
-  risk ceiling; 0 errors, 0 warnings across all 1,734.
+  risk ceiling; 0 errors, 0 warnings across all 1,902.
 - **Tax preparation pipeline** (`tax_prep.py`, `maverick tax prepare
   <docs-dir>`; the 19-pack `tax_` suite) — a CPA firm's docs-to-draft
   workflow: uploaded client documents are classified and extracted
