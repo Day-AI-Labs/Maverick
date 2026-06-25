@@ -272,3 +272,25 @@ def test_vendor_connector_packs_scope_their_egress_hosts():
                     assert host in hosts, (
                         f"{name}: names {vendor} tool {tool!r} but {host} not in "
                         "allow_hosts -- the egress lock would block the connector")
+
+
+def test_every_hr_pack_refuses_eu_ai_act_art5():
+    # Every HR specialist carries the workplace emotion-inference + biometric
+    # prohibitions (EU AI Act Art. 5) -- the suite with refused, not gated, uses.
+    from maverick.domain_refusals import refusals_for
+    hr = {n: p for n, p in _BUILTIN.items() if n.startswith("hr_")}
+    assert hr
+    for name in hr:
+        items = refusals_for(name)
+        assert any("emotion" in r for r in items), f"{name}: no Art-5 emotion refusal"
+        assert any("biometric" in r for r in items), f"{name}: no biometric refusal"
+
+
+def test_physical_world_packs_refuse_safety_actuation():
+    from maverick.domain_refusals import refusals_for
+    for pre in ("ops_", "mfg_", "util_"):
+        packs = {n: p for n, p in _BUILTIN.items() if n.startswith(pre)}
+        assert packs, pre
+        for name in packs:
+            items = refusals_for(name)
+            assert any("interlock" in r or "safety-critical" in r for r in items), name

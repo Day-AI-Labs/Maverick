@@ -155,3 +155,18 @@ def test_pack_effort_tier_flows_to_agent(tmp_path, monkeypatch):
     monkeypatch.setattr(effort_mod, "_config_effort", lambda: {"enabled": True})
     a_on = agent_from_profile(profile, ctx, "Test the access controls.")
     assert a_on.effort == "high"
+
+
+def test_refusals_reach_the_agent_system_prompt(tmp_path):
+    # A spawned HR agent carries its hard refusals (Art-5) in the system prompt,
+    # independent of the model following persona prose.
+    ctx = _ctx(tmp_path)
+    profile = DomainProfile(
+        name="hr_screening", persona="You screen resumes against the rubric.",
+        allow_tools=["read_file"], deny_tools=["shell", "write_file"], max_risk="low",
+        refuse=["never rank candidates by a credit score"],
+    )
+    agent = agent_from_profile(profile, ctx, "Screen these five resumes.")
+    assert "Hard refusals" in agent.system
+    assert "emotion" in agent.system           # suite (Art-5) refusal injected
+    assert "credit score" in agent.system      # pack-specific refusal injected

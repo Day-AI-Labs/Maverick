@@ -223,6 +223,7 @@ def generate_profile(spec: IntakeSpec, propose=None) -> DomainProfile:
         deny_tools=list(proposed.get("deny_tools") or []),
         max_risk=proposed.get("max_risk"),
         effort=proposed.get("effort"),
+        refuse=[str(r) for r in (proposed.get("refuse") or []) if str(r).strip()],
         knowledge_sources=[name],
         authoring="generated",
         workflow=workflow,
@@ -257,6 +258,7 @@ def _to_toml(p: DomainProfile) -> str:
         f"deny_tools = {json.dumps(p.deny_tools)}",
         f"max_risk = {json.dumps(p.max_risk)}" if p.max_risk else "",
         f"effort = {json.dumps(p.effort)}" if p.effort else "",
+        f"refuse = {json.dumps(p.refuse)}" if p.refuse else "",
         f"knowledge_sources = {json.dumps(p.knowledge_sources)}",
         f"authoring = {json.dumps(p.authoring)}",
     ]
@@ -342,7 +344,7 @@ def _parse_proposal(text: str) -> dict:
     for key in ("persona", "description", "max_risk", "effort"):
         if isinstance(data.get(key), str):
             out[key] = data[key]
-    for key in ("allow_tools", "deny_tools"):
+    for key in ("allow_tools", "deny_tools", "refuse"):
         v = data.get(key)
         if isinstance(v, list):
             out[key] = [str(x) for x in v if isinstance(x, str)]
