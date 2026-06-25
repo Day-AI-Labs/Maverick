@@ -117,5 +117,5 @@ don't burn time typing.
   the boundary is real, not a slide.
 
 ## What NOT to lead with
-The 1,734 specialist packs, the channels, the IDE/mobile surfaces. They're proof
+The 1,902 specialist packs, the channels, the IDE/mobile surfaces. They're proof
 of platform maturity, not the demo. The demo is **govern → approve → prove**.

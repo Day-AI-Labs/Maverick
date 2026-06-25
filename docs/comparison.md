@@ -25,7 +25,7 @@ the deepest agent framework available.
 | | Lightwork | Devin | Hermes / OpenClaw | Cline / Aider |
 |---|---|---|---|---|
 | Primary form | Self-hosted platform + CLI | Hosted product | Coding agents | IDE / CLI coding agents |
-| Prebuilt business specialists | **1,734 across 52 suites** (lint-audited envelopes) | No | No | No |
+| Prebuilt business specialists | **1,902 across 53 suites** (lint-audited envelopes) | No | No | No |
 | Learns from use (governed) | **Yes** — consolidation, regression detection, rollback, signed learning audit | No | No | No |
 | Runs in your environment | **Yes** (9 sandbox backends) | Hosted | Varies | Yes (local) |
 | Multi-agent swarm | **Yes** (orchestrator + specialists) | Yes | Single-agent focus | Single-agent |
