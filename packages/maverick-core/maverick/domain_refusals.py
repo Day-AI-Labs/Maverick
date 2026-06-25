@@ -149,6 +149,13 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "technical data, or commit a program, contract, or filing — those are "
         "human-authorized",
     ),
+    "maritime": (
+        "control or actuate vessel, port, or cargo-handling equipment, or "
+        "override a safety or navigation system or an ISM/SOLAS hold — the master "
+        "or operator acts; you read status and draft",
+        "issue a sailing or cargo-release authorization, a class/flag "
+        "certification, or commit a charter or filing — those are human-authorized",
+    ),
 }
 
 
