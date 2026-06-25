@@ -1123,6 +1123,188 @@ _READ_CONNECTOR_RISKS.update({s["name"]: "low" for s in _PUBLIC_DATA_SPECS})
 # Names of just the primary-source data connectors, for docs/tests.
 PUBLIC_DATA_CONNECTOR_NAMES: list[str] = [s["name"] for s in _PUBLIC_DATA_SPECS]
 
+# The public host each data connector reaches (from its default base URL). Used
+# when an operator wants to widen a host-restricted pack's egress to admit a
+# granted data connector -- the grant itself (see domain.py) never loosens a
+# pack's allow_hosts automatically.
+from urllib.parse import urlsplit as _urlsplit  # noqa: E402
+
+PUBLIC_DATA_CONNECTOR_HOSTS: dict[str, str] = {
+    s["name"]: _urlsplit(s["default_base_url"]).netloc for s in _PUBLIC_DATA_SPECS
+}
+
+
+# --- Suite -> primary-source data connectors --------------------------------
+# Which public-data connectors each business suite's packs get in their
+# capability envelope, so an analyst pack reaches for FRED/SEC EDGAR/openFDA/etc.
+# by default instead of guessing. All are GET-only and LOW risk, so they sit
+# under a read-only pack's ceiling. Layered centrally in domain.domain_capability
+# (additive to allow_tools; deferred, so no context cost until find_tools).
+#
+# Reusable bundles, composed per suite below. Keep a suite's set curated -- the
+# few sources its work actually grounds in, not the whole catalogue.
+_MARKETS_CORE = frozenset({
+    "fred", "sec_edgar", "treasury_fiscaldata", "world_bank", "bls",
+    "alphavantage", "finnhub", "polygon", "openfigi",
+})
+_ENTITY = frozenset({"gleif", "opencorporates", "companies_house"})
+_REG_FED = frozenset({"federal_register", "ecfr", "regulations_gov", "govinfo"})
+_GOV_SPEND = frozenset({"usaspending", "sam_gov"})
+_HEALTH = frozenset({"openfda", "nppes", "clinicaltrials", "rxnorm", "pubmed"})
+_CLIMATE = frozenset({
+    "nws_weather", "noaa_climate", "openweather", "epa_envirofacts",
+    "climatiq", "carbon_interface",
+})
+_STATS = frozenset({"census", "bls", "fred", "world_bank"})
+
+SUITE_DATA_CONNECTORS: dict[str, frozenset[str]] = {
+    # --- Finance / capital / deals / banking / insurance / tax ---
+    "finance": _MARKETS_CORE | _ENTITY | frozenset({"bea"}),
+    "capital_markets": _MARKETS_CORE | frozenset({"imf", "bea", "gleif", "openfigi"}),
+    "private_equity_vc": _MARKETS_CORE | _ENTITY | frozenset({"sam_gov", "usaspending"}),
+    "banking": frozenset({
+        "fdic", "fred", "treasury_fiscaldata", "sec_edgar", "bls", "census",
+    }) | _ENTITY,
+    "insurance": frozenset({
+        "nws_weather", "noaa_climate", "fred", "treasury_fiscaldata", "sec_edgar",
+        "bls", "census", "fdic", "epa_envirofacts",
+    }),
+    "tax": _REG_FED | frozenset({"courtlistener", "sec_edgar", "bls", "census", "fred"}),
+    # --- Legal / GRC / risk / trust&safety / IP ---
+    "legal": frozenset({"courtlistener", "patentsview"}) | _REG_FED | _ENTITY
+             | frozenset({"sec_edgar", "sam_gov"}),
+    "it_grc": _REG_FED | frozenset({"sec_edgar"}),
+    "security_ops": frozenset({"federal_register", "regulations_gov"}),
+    "enterprise_risk": frozenset({
+        "fred", "world_bank", "imf", "sec_edgar", "nws_weather", "noaa_climate",
+    }) | _REG_FED | _ENTITY,
+    "trust_safety": frozenset({"federal_register", "regulations_gov", "courtlistener"}),
+    # --- Government / public sector / aero-defense / education ---
+    "government_contracting": _GOV_SPEND | _REG_FED | frozenset({"sec_edgar"}),
+    "public_sector": _GOV_SPEND | _REG_FED
+                     | frozenset({"openstates", "census", "bls"}),
+    "aerospace_defense": _GOV_SPEND | frozenset({
+        "sec_edgar", "federal_register", "patentsview", "world_bank", "bls",
+    }),
+    "education_nonprofit": frozenset({
+        "census", "bls", "fred", "federal_register", "world_bank",
+    }) | _GOV_SPEND,
+    # --- Health / life sciences / devices ---
+    "healthcare": _HEALTH | frozenset({"federal_register", "regulations_gov"}),
+    "medical_devices": frozenset({
+        "openfda", "clinicaltrials", "pubmed", "patentsview",
+        "federal_register", "regulations_gov",
+    }),
+    "pharma_lifesciences": frozenset({
+        "openfda", "clinicaltrials", "pubmed", "rxnorm", "patentsview",
+        "federal_register", "regulations_gov", "sec_edgar",
+    }),
+    # --- Energy / utilities / environment / ESG / ag ---
+    "utilities": frozenset({
+        "eia", "nws_weather", "noaa_climate", "epa_envirofacts",
+        "federal_register", "fred",
+    }),
+    "water_utilities": frozenset({
+        "epa_envirofacts", "nws_weather", "noaa_climate", "eia", "federal_register",
+    }),
+    "oil_gas": frozenset({
+        "eia", "epa_envirofacts", "nws_weather", "noaa_climate",
+        "federal_register", "sec_edgar", "world_bank",
+    }),
+    "renewables_cleantech": frozenset({
+        "eia", "climatiq", "carbon_interface", "epa_envirofacts",
+        "nws_weather", "noaa_climate", "fred",
+    }),
+    "esg_sustainability": _CLIMATE | frozenset({
+        "eia", "sec_edgar", "federal_register", "world_bank",
+    }),
+    "agriculture": frozenset({
+        "nws_weather", "noaa_climate", "epa_envirofacts", "eia",
+        "world_bank", "census", "fred", "climatiq",
+    }),
+    "facilities_ehs": frozenset({
+        "epa_envirofacts", "nws_weather", "noaa_climate", "eia",
+        "federal_register", "regulations_gov",
+    }),
+    # --- Industrials / materials / mobility ---
+    "manufacturing_vertical": frozenset({
+        "bls", "fred", "census", "eia", "epa_envirofacts", "world_bank", "patentsview",
+    }),
+    "chemicals": frozenset({
+        "epa_envirofacts", "federal_register", "regulations_gov", "eia",
+        "patentsview", "nws_weather",
+    }),
+    "mining_metals": frozenset({
+        "world_bank", "fred", "eia", "epa_envirofacts", "nws_weather", "sec_edgar",
+    }),
+    "automotive": frozenset({
+        "bls", "fred", "census", "epa_envirofacts", "patentsview", "world_bank",
+    }),
+    "semiconductors": frozenset({
+        "sec_edgar", "world_bank", "census", "bls", "patentsview", "fred", "finnhub",
+    }),
+    "construction": frozenset({
+        "bls", "fred", "census", "nws_weather", "epa_envirofacts", "eia", "world_bank",
+    }),
+    # --- Logistics / maritime / travel ---
+    "logistics": frozenset({
+        "nws_weather", "noaa_climate", "eia", "census", "world_bank",
+        "federal_register", "usaspending",
+    }),
+    "maritime": frozenset({
+        "nws_weather", "noaa_climate", "world_bank", "eia", "federal_register",
+    }),
+    "travel_aviation": frozenset({
+        "nws_weather", "noaa_climate", "bls", "fred", "world_bank",
+        "eia", "federal_register",
+    }),
+    # --- Consumer / retail / media ---
+    "retail": frozenset({
+        "census", "bls", "fred", "world_bank", "openfda", "epa_envirofacts",
+    }),
+    "food_beverage_cpg": frozenset({
+        "openfda", "epa_envirofacts", "census", "bls", "fred",
+        "nws_weather", "federal_register", "regulations_gov",
+    }),
+    "hospitality": frozenset({"bls", "fred", "census", "nws_weather", "world_bank"}),
+    "telecom_media": frozenset({
+        "federal_register", "regulations_gov", "sec_edgar",
+        "census", "bls", "fred", "patentsview",
+    }),
+    "crypto_digital_assets": frozenset({
+        "sec_edgar", "federal_register", "regulations_gov", "courtlistener",
+        "fred", "finnhub", "world_bank",
+    }),
+    "real_estate": frozenset({
+        "fred", "census", "fdic", "treasury_fiscaldata", "nws_weather",
+        "epa_envirofacts", "world_bank", "bls",
+    }),
+    # --- Cross-functional horizontals ---
+    "strategy": _MARKETS_CORE | _ENTITY | frozenset({
+        "imf", "census", "patentsview", "federal_register",
+    }),
+    "operations": frozenset({"bls", "fred", "census", "eia", "nws_weather", "world_bank"}),
+    "procurement": _GOV_SPEND | _ENTITY | frozenset({"sec_edgar", "fred", "bls"}),
+    "professional_services": frozenset({
+        "sec_edgar", "courtlistener", "federal_register", "fred", "bls",
+    }) | _ENTITY,
+    "hr": frozenset({"bls", "census", "fred", "federal_register", "regulations_gov"}),
+    "sales_gtm": frozenset({"sec_edgar", "fred", "bls"}) | _ENTITY,
+    "marketing": frozenset({"census", "bls", "fred", "world_bank"}),
+    "data_analytics": frozenset({"census", "bls", "fred", "world_bank", "eia", "sec_edgar"}),
+    "executive_office": frozenset({"sec_edgar", "fred", "world_bank", "bls", "federal_register"}),
+    "knowledge_management": frozenset({"pubmed", "patentsview", "federal_register", "sec_edgar"}),
+    "product_engineering": frozenset({"patentsview", "federal_register", "sec_edgar"}),
+}
+
+
+def data_connectors_for_suite(suite: str | None) -> frozenset[str]:
+    """The primary-source data connectors a suite's packs are granted (read-only,
+    low-risk). Empty for an unmapped/None suite."""
+    if not suite:
+        return frozenset()
+    return SUITE_DATA_CONNECTORS.get(suite, frozenset())
+
 READ_CONNECTOR_NAMES: list[str] = [s["name"] for s in _READ_SPECS]
 READ_CONNECTOR_RISKS: dict[str, str] = {
     name: _READ_CONNECTOR_RISKS.get(name, "high") for name in READ_CONNECTOR_NAMES

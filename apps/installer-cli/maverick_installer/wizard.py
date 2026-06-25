@@ -1330,6 +1330,14 @@ def pick_advanced() -> dict[str, Any]:
             "execution. Per-agent overrides go under [workforce.agents].",
             default=False,
         ),
+        "workforce_data_grounding": _q_confirm(
+            "Primary-source data grounding? Give each analyst pack its suite's "
+            "public/government data connectors (SEC EDGAR, FRED, openFDA, "
+            "USAspending, weather, ...) so it grounds work in primary sources. "
+            "GET-only, low-risk, deferred (no context cost), and inert without "
+            "each source's API key. On by default; turn off to withhold them.",
+            default=True,
+        ),
         "calibration_enforce": _q_confirm(
             "Calibration interlock? Freeze self-improvement (trajectory donation) "
             "if the verifier stops telling correct answers from incorrect ones on "
@@ -2819,10 +2827,16 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[actions]")
         lines.append("enable = true")
-    if advanced.get("workforce_levels"):
+    # data_grounding defaults ON, so emit the knob only to DISABLE it. Both keys
+    # share one [workforce] section.
+    _wf_disable_grounding = advanced.get("workforce_data_grounding") is False
+    if advanced.get("workforce_levels") or _wf_disable_grounding:
         lines.append("")
         lines.append("[workforce]")
-        lines.append("levels = true")
+        if advanced.get("workforce_levels"):
+            lines.append("levels = true")
+        if _wf_disable_grounding:
+            lines.append("data_grounding = false")
     if advanced.get("calibration_enforce"):
         lines.append("")
         lines.append("[calibration]")
