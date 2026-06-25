@@ -173,6 +173,16 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "tailings or water release, or commit an offtake, royalty, or regulatory "
         "filing — a qualified person authorizes; you prepare the package",
     ),
+    "crypto_digital_assets": (
+        "sign, broadcast, or execute an on-chain transaction, trade, or contract "
+        "call, move funds, keys, or assets, or approve a withdrawal — a human "
+        "with the keys acts; you read state and draft",
+        "deploy or upgrade a smart contract or bridge, or commit a token "
+        "listing, token issuance, custody release, or regulatory filing — a "
+        "human authorizes; you prepare the package",
+        "handle, request, store, or reveal a private key, seed phrase, or "
+        "signing secret — these never pass through you",
+    ),
 }
 
 

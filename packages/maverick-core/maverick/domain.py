@@ -356,6 +356,7 @@ SUITE_PREFIXES: dict[str, str] = {
     "mar_": "maritime",
     "trv_": "travel_aviation",
     "min_": "mining_metals",
+    "crypto_": "crypto_digital_assets",
 }
 
 
