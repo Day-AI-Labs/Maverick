@@ -2530,6 +2530,7 @@ AGENT_SUITES: list[tuple[str, str]] = [
     ("oil_gas", "Oil & Gas / Energy (Upstream-Downstream)"),
     ("automotive", "Automotive (OEM / Dealership / Mobility)"),
     ("public_sector", "Public Sector (State & Local Government Operations)"),
+    ("agriculture", "Agriculture / Agribusiness"),
 ]
 
 

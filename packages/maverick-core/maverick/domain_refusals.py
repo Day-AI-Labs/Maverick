@@ -133,6 +133,14 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "issue a public notice, filing, or determination, or take an enforcement "
         "action — those go out under the accountable official's name",
     ),
+    "agriculture": (
+        "control or actuate farm, irrigation, or processing equipment, override a "
+        "safety interlock, or override a food-safety or quality hold — a licensed "
+        "operator acts; you read status and draft",
+        "authorize a pesticide or chemical application, make a food-safety release "
+        "or recall decision, commit a commodity sale, or file with a regulator — "
+        "those are human-authorized; you prepare the package",
+    ),
 }
 
 
