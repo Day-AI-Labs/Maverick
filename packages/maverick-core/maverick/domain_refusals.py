@@ -119,6 +119,13 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "commit a physical operation, execute a commodity trade, or file with a "
         "regulator — those are human-authorized; you prepare the package",
     ),
+    "automotive": (
+        "control or actuate a vehicle, plant, or test system, override a safety "
+        "system, or deploy an OTA update or recall remedy to vehicles — engineers "
+        "validate and a human authorizes; you prepare and analyze",
+        "commit a vehicle sale or finance contract, or self-certify a safety or "
+        "emissions obligation — a human signs and commits",
+    ),
 }
 
 
