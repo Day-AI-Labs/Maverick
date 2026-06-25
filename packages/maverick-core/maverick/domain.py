@@ -94,7 +94,7 @@ class DomainProfile:
     extends: str = ""              # overlay base: inherit a pack, patch the rest
     workflow: list[WorkflowStep] = field(default_factory=list)  # editable playbook
     output: OutputContract = field(default_factory=OutputContract)  # the deliverable
-    autonomy: AutonomyProfile = field(default_factory=AutonomyProfile)  # authority dial
+    autonomy: AutonomyProfile | None = None  # explicit [autonomy] block; None -> suite default
 
     def __post_init__(self) -> None:
         if not self.compartment:

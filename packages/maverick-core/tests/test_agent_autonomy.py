@@ -137,14 +137,29 @@ def test_domain_profile_parses_autonomy_block(tmp_path):
     assert prof.autonomy.onboarding is False
 
 
-def test_domain_profile_default_autonomy_when_absent(tmp_path):
+def test_domain_profile_no_block_is_none_falls_to_suite_default(tmp_path):
+    from maverick.agent_autonomy import default_profile_for, effective_profile
     from maverick.domain import load_domain
 
     pack = tmp_path / "bare.toml"
     pack.write_text('name = "bare"\npersona = "x"\nallow_tools = ["read_file"]\n')
     prof = load_domain(pack)
-    assert prof.autonomy.default is AutonomyLevel.SUGGEST
-    assert prof.autonomy.onboarding is True
+    assert prof.autonomy is None  # no explicit block
+    # an unknown/legacy pack falls to STRICT (SUGGEST, supervised)
+    assert effective_profile("bare", prof.autonomy).default is AutonomyLevel.SUGGEST
+    assert default_profile_for("bare").default is AutonomyLevel.SUGGEST
+
+
+def test_suite_default_tiers():
+    """High-stakes suites -> STRICT (suggest); operational -> STANDARD (request)."""
+    from maverick.agent_autonomy import default_profile_for
+
+    assert default_profile_for("fin_ap_clerk").default is AutonomyLevel.SUGGEST  # finance
+    assert default_profile_for("legal_contract").default is AutonomyLevel.SUGGEST  # legal
+    ops = default_profile_for("cx_ticket_triage")  # customer_experience -> STANDARD
+    assert ops.default is AutonomyLevel.REQUEST
+    assert ops.low is AutonomyLevel.AUTO
+    assert ops.high is AutonomyLevel.SUGGEST
 
 
 # -- config override binding -----------------------------------------------
