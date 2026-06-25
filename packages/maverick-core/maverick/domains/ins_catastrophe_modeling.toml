@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "catastrophe exposure & PML analysis"
-consumers = ["chief_actuary", "risk_officer"]
+consumers = ["actuary", "risk_officer"]
 cadence = "monthly"
 gate = "review"
 

@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "model validation evidence package & SR 11-7 documentation review"
-consumers = ["model_validator", "model_risk_committee"]
+consumers = ["risk_officer", "internal_auditor"]
 cadence = "on-demand"
 gate = "review"
 

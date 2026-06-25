@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "board reporting package draft"
-consumers = ["controller", "cfo", "audit_committee_chair"]
+consumers = ["controller", "cfo", "cfo"]
 cadence = "monthly"
 gate = "review"
 

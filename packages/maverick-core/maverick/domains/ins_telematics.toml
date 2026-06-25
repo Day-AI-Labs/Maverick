@@ -14,7 +14,7 @@ authoring = "manual"
 [output]
 shape = "table"
 deliverable = "telematics-based UBI risk score & pricing input table"
-consumers = ["underwriting_manager", "pricing_analyst"]
+consumers = ["underwriter", "actuary"]
 cadence = "weekly"
 gate = "review"
 

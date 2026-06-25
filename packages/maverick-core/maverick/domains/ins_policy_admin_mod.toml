@@ -14,7 +14,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "endorsement change package"
-consumers = ["policy_administrator", "underwriting_lead"]
+consumers = ["underwriter", "compliance_officer"]
 cadence = "on-demand"
 gate = "approval"
 

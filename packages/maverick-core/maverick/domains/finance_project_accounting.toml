@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "project cost & WIP analysis report"
-consumers = ["project_controller", "finance_director"]
+consumers = ["controller", "fpa_analyst"]
 cadence = "monthly"
 gate = "review"
 

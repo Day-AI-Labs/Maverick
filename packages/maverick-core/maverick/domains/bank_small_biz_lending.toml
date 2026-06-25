@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "small-business credit package & SBA eligibility memo"
-consumers = ["lending_officer", "credit_committee"]
+consumers = ["loan_officer", "credit_officer"]
 cadence = "on-demand"
 gate = "approval"
 

@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "forecast"
 deliverable = "driver-based scenario & sensitivity model"
-consumers = ["fpa_lead", "cfo"]
+consumers = ["fpa_analyst", "cfo"]
 cadence = "on-demand"
 gate = "review"
 

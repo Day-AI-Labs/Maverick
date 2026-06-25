@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "claims fraud red-flag & SIU-referral analysis"
-consumers = ["claims_manager", "siu_lead"]
+consumers = ["claims_manager", "siu_investigator"]
 cadence = "weekly"
 gate = "review"
 

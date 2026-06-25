@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "forecast"
 deliverable = "capex plan & ROI analysis pack"
-consumers = ["fpa_director", "cfo"]
+consumers = ["fpa_analyst", "cfo"]
 cadence = "monthly"
 gate = "approval"
 

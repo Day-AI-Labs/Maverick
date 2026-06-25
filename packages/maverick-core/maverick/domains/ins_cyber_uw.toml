@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "cyber underwriting & accumulation assessment"
-consumers = ["cyber_underwriter", "portfolio_manager"]
+consumers = ["underwriter", "risk_officer"]
 cadence = "on-demand"
 gate = "review"
 

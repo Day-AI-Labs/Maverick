@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "letter-of-credit document examination & discrepancy report"
-consumers = ["trade_finance_officer", "operations_lead"]
+consumers = ["operations_manager", "compliance_officer"]
 cadence = "on-demand"
 gate = "approval"
 

@@ -14,7 +14,7 @@ authoring = "manual"
 [output]
 shape = "table"
 deliverable = "digital channel & enrollment health tracker"
-consumers = ["digital_banking_lead", "channel_operations_officer"]
+consumers = ["operations_manager", "compliance_officer"]
 cadence = "daily"
 gate = "review"
 

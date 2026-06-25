@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "standard cost & variance analysis report"
-consumers = ["plant_controller", "operations_manager"]
+consumers = ["controller", "fpa_analyst"]
 cadence = "monthly"
 gate = "review"
 

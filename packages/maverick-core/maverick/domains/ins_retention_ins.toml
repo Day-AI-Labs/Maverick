@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "table"
 deliverable = "renewal retention & lapse-risk tracker"
-consumers = ["renewal_underwriter", "distribution_manager"]
+consumers = ["underwriter", "agency_manager"]
 cadence = "weekly"
 gate = "review"
 

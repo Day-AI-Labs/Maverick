@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "rate indication & loss-cost analysis"
-consumers = ["pricing_actuary", "product_manager"]
+consumers = ["actuary", "underwriter"]
 cadence = "monthly"
 gate = "approval"
 

@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "borrower credit analysis memo"
-consumers = ["credit_officer", "lending_team_lead"]
+consumers = ["credit_officer", "risk_officer"]
 cadence = "on-demand"
 gate = "review"
 
