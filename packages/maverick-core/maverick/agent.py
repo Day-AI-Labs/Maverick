@@ -536,6 +536,7 @@ class Agent:
         persona: str | None = None,
         knowledge_sources: list[str] | None = None,
         domain_effort: str | None = None,
+        autonomy=None,
     ):
         self.ctx = ctx
         self.role = role
@@ -563,6 +564,11 @@ class Agent:
         # parent's domain so a Rung-2 sector seal catches the whole sub-tree.
         # None == unsectored (the orchestrator and ad-hoc agents).
         self.domain = domain if domain is not None else getattr(parent, "domain", None)
+        # Per-agent autonomy profile (the agent-as-employee authority dial,
+        # maverick.agent_autonomy). The factory's spawn-from-profile sets it from
+        # the pack's [autonomy] block; a child inherits its parent's so a sub-tree
+        # shares the hire's authority. None == the default SUGGEST profile.
+        self._autonomy = autonomy if autonomy is not None else getattr(parent, "_autonomy", None)
         # Optional domain-pack persona, appended to the system prompt below.
         self._domain_persona = persona
         # Domain knowledge collections this agent may query (the DomainProfile's
@@ -1397,6 +1403,36 @@ class Agent:
                     _GovDecision.DENY,
                     "governance evaluation error (failed closed)", "error",
                 )
+        # Per-agent autonomy level (the agent-as-employee authority dial):
+        # compose strictest-wins with the org governance verdict. Only
+        # consequential (non-low-risk) tools are gated -- reading/searching is
+        # always allowed regardless of the hire's rung. Independent of whether an
+        # [governance] policy is set; no-op unless [workforce] levels is enabled.
+        # Fail-open: a bug here must never wedge a tool.
+        try:
+            from . import agent_autonomy as _aa
+            from .governance import Decision as _GD
+            from .governance import Verdict as _GV
+            from .safety.tool_risk import risk_rank as _rr
+            from .safety.tool_risk import tool_risk as _tr
+            _risk = _tr(name)
+            # Disabled => the gate is a strict no-op (kernel rule 1: byte-for-byte
+            # historical behaviour). Low-risk tools (reads/searches) are never
+            # gated by the dial.
+            if _aa.levels_enabled() and _rr(_risk) > 0:
+                _al = _aa.decide(self.role, getattr(self, "_autonomy", None),
+                                 action=name, risk=_risk)
+                _amap = {"allow": _GD.ALLOW, "require_human": _GD.REQUIRE_HUMAN,
+                         "deny": _GD.DENY}
+                _adec = _amap.get(_al.decision, _GD.REQUIRE_HUMAN)
+                if _adec is not _GD.ALLOW:
+                    _rank = {_GD.ALLOW: 0, _GD.REQUIRE_HUMAN: 1, _GD.DENY: 2}
+                    if _gov is None or _rank[_adec] > _rank[_gov.decision]:
+                        _gov = _GV(_adec, f"autonomy level: {_al.reason}",
+                                   f"autonomy:{_al.level.value}")
+        except Exception:  # pragma: no cover -- autonomy gate must never break the loop
+            log.warning("autonomy: level evaluation failed for %r; skipping", name,
+                        exc_info=True)
         if _gov is None or _gov.decision is _GovDecision.ALLOW:
             return None
         from .audit import EventKind, record
@@ -1431,8 +1467,12 @@ class Agent:
                 allow_auto_approve=False,
                 # When the operator opts into per-action oversight, a prior
                 # persistent ledger grant must NOT silently satisfy the
-                # Art-14 gate -- demand a fresh human decision each time.
-                consult_ledger=not _gov_policy.require_fresh_human_approval,
+                # Art-14 gate -- demand a fresh human decision each time. The
+                # autonomy dial can drive REQUIRE_HUMAN with no [governance]
+                # policy set (_gov_policy None), so guard the attribute read.
+                consult_ledger=not (
+                    _gov_policy.require_fresh_human_approval if _gov_policy else False
+                ),
             )
             granted = bool(decision.granted)
         except Exception:  # pragma: no cover -- consent unavailable -> fail closed

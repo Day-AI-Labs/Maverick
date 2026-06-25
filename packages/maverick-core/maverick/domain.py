@@ -639,4 +639,5 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
         capability=cap,
         knowledge_sources=profile.knowledge_sources,
         domain_effort=profile.effort,
+        autonomy=profile.autonomy,
     )
