@@ -194,6 +194,18 @@ enable = false             # mine failures -> propose -> regression-validate ->
 discipline = true          # suite operating-discipline appended at spawn
 memory = true              # department lessons injected at spawn
 
+[workforce]                # treat each agent like a hire (defaults shown)
+levels = false             # per-agent autonomy levels (observe/suggest/request/
+                           #   auto). OFF -> every agent stages actions for human
+                           #   execution. Per-agent overrides: [workforce.agents].
+                           #   Env: MAVERICK_WORKFORCE_LEVELS.
+data_grounding = true      # auto-grant each analyst pack its suite's primary-
+                           #   source data connectors (SEC EDGAR, FRED, openFDA,
+                           #   USAspending, weather, ...). GET-only, low-risk,
+                           #   deferred (no context cost), inert without each
+                           #   source's API key. Set false to withhold them.
+                           #   Env: MAVERICK_WORKFORCE_DATA_GROUNDING.
+
 [fleet_memory]             # external agents read/write governed memory
 enable = false             # explicit trust decision; roster-gated
 

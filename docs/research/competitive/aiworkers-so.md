@@ -109,7 +109,7 @@ Per the kernel rule, this is the right competitive frame: compete on
 3. **Self-host + bring-your-own-model.** Regulated buyers (finance, health,
    gov, defense) cannot send data to a Paris SaaS. We run in their VPC, on
    their model keys, across 12 providers. Workers Delos has no self-host path.
-4. **Breadth on a governed core.** 2,020 specialists vs ~50; 289 tool modules;
+4. **Breadth on a governed core.** 2,020 specialists vs ~50; 286 tool modules;
    14+ channels; shield on every I/O boundary; per-principal budget caps.
 5. **Multi-tenant control plane.** Tenancy, KMS, egress policy, billing — we can
    *be* the platform a Workers-Delos-like product is built on.
@@ -142,7 +142,7 @@ are **packaging and GTM**, plus two real product items and one compliance item.
 ### P1 — Product
 
 5. **No-code connector breadth.** Match the "3000+ tools" perception with a
-   Zapier/Make/native-connector story surfaced in the UI. We have 289 tool
+   Zapier/Make/native-connector story surfaced in the UI. We have 286 tool
    modules + `enterprise_connectors.py` + `oauth_helper.py` — but the *count and
    discoverability* are the marketing gap. Consider a connector marketplace page.
 6. **Outbound voice/phone, productized.** They lead with "workers that call your
@@ -227,7 +227,7 @@ Match their "3000+ tools" perception with named, discoverable surfaces:
 - **Pack / suite marketplace** — the 2,020 packs plus partner-built and
   **operator/intake-generated packs** (we already synthesize packs from customer
   SOPs). Browsable, deployable, with the persona layer on top.
-- **Connector marketplace** — the 289 tool modules + `enterprise_connectors.py`
+- **Connector marketplace** — the 286 tool modules + `enterprise_connectors.py`
   + `oauth_helper.py`, presented as a catalog with categories and one-click
   OAuth, so integration breadth is *countable and discoverable* rather than
   buried in code.
