@@ -584,6 +584,45 @@ def get_autonomy() -> dict:
     }
 
 
+def get_workforce() -> dict:
+    """Return the ``[workforce]`` section: per-agent autonomy levels.
+
+    This is the client's control over how much rope each hired agent gets (see
+    :mod:`maverick.agent_autonomy`). OFF by default (kernel rule 1): when
+    ``levels`` is not enabled, every agent resolves to ``suggest`` (draft, a
+    human commits) -- the platform's historical behavior.
+
+    ``[workforce]
+       levels = true
+       [[workforce.agents]]
+       name = "fin_ap_clerk"
+       default = "auto"          # this hire acts autonomously by default
+       high = "human"            # ...but high-risk actions stay human-in-loop
+       onboarding = false        # graduated past the supervised phase``
+
+    Returns ``{"levels": bool, "agents": {name: {default, low, medium, high,
+    onboarding}}}`` with only the keys an operator set (the resolver layers them
+    over each pack's declared ``[autonomy]`` default). Never raises.
+    """
+    cfg = load_config().get("workforce", {})
+    if not isinstance(cfg, dict):
+        return {"levels": False, "agents": {}}
+    agents: dict[str, dict] = {}
+    raw = cfg.get("agents")
+    if isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            if not name:
+                continue
+            agents[name] = {
+                k: entry[k] for k in ("default", "low", "medium", "high", "onboarding")
+                if k in entry
+            }
+    return {"levels": bool(cfg.get("levels", False)), "agents": agents}
+
+
 def get_calibration() -> dict:
     """Return the ``[calibration]`` section with defaults filled in.
 

@@ -1,0 +1,374 @@
+"""Per-agent autonomy levels -- the "how much rope does this hire get" dial.
+
+Every specialist pack is a *hire* (see :mod:`maverick.departments`: "one
+specialist pack is a single hire"). A human employee is not given the same
+authority on day one as after a year of a clean record, and not the same
+authority for a $50 expense as for a $50k wire. This module gives each agent
+that same graduated, per-action authority -- the missing per-agent binding on
+top of primitives the platform already has:
+
+  * :mod:`maverick.governance` -- the ALLOW / DENY / REQUIRE_HUMAN decision point
+    (the EU AI Act Art. 14 human-oversight gate);
+  * :mod:`maverick.approval_delegation` -- route an approval to *one* delegate
+    (so not everyone is in the loop -- one person signs off);
+  * :mod:`maverick.predictive_approvals` -- "you approved this 20/20 times --
+    make it auto?" (the trust signal that justifies graduating an agent);
+  * :mod:`maverick.review_checkpoint` + consent modes -- the human heartbeat.
+
+Four rungs, lowest to highest authority:
+
+  ``OBSERVE``  -- read-only; never takes a consequential action.
+  ``SUGGEST``  -- prepares and *stages* the action; a human executes it. This is
+                  the platform's historical default (draft, a human commits).
+  ``REQUEST``  -- executes the action itself, but only after a human approves
+                  *this* action; once approved it proceeds (and a clean record
+                  can graduate the action class to ``AUTO`` via predictive
+                  approvals).
+  ``AUTO``     -- executes autonomously, within capability, budget, and the
+                  pack's hard refusals.
+
+A profile sets a ``default`` rung plus optional per-risk overrides (an agent can
+be ``auto`` for low-risk actions and ``human`` for high-risk ones -- the
+delegation-of-authority tier). An agent in its **onboarding** phase is clamped
+one rung down (the "training phase": supervised until it earns trust); the
+client graduates it by setting ``onboarding = false`` once the record is clean.
+
+Two hard floors this dial can never cross:
+
+  * **Refusals** (:mod:`maverick.domain_refusals`) are absolute -- a refused
+    action is never available at any rung, with or without approval.
+  * **Ungovernable raw tools** (shell, apply_patch, ...) bypass the governed
+    action layer, so they stay denied even at ``AUTO`` -- a high-autonomy agent
+    acts through *governed* connectors/Actions, not raw effectors.
+
+Off by default (kernel rule 1): when ``[workforce] levels`` is not enabled the
+resolver returns ``SUGGEST`` for every consequential action -- byte-for-byte the
+historical "draft, a human commits" behavior. Pure and fail-open: any error
+degrades to ``SUGGEST`` (more cautious), never to ``AUTO``.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, replace
+from enum import Enum
+
+from .safety.tool_risk import RISK_LEVELS, tool_risk
+
+log = logging.getLogger(__name__)
+
+
+class AutonomyLevel(str, Enum):
+    """The four authority rungs, ordered OBSERVE < SUGGEST < REQUEST < AUTO."""
+
+    OBSERVE = "observe"
+    SUGGEST = "suggest"
+    REQUEST = "request"
+    AUTO = "auto"
+
+    @property
+    def rank(self) -> int:
+        return _ORDER.index(self)
+
+
+_ORDER: tuple[AutonomyLevel, ...] = (
+    AutonomyLevel.OBSERVE,
+    AutonomyLevel.SUGGEST,
+    AutonomyLevel.REQUEST,
+    AutonomyLevel.AUTO,
+)
+
+# Words a pack/operator may use for a rung. "human"/"hitl"/"review" are friendly
+# aliases for SUGGEST (a human executes); "approve"/"ask" for REQUEST.
+_ALIASES: dict[str, AutonomyLevel] = {
+    "observe": AutonomyLevel.OBSERVE,
+    "read_only": AutonomyLevel.OBSERVE,
+    "readonly": AutonomyLevel.OBSERVE,
+    "suggest": AutonomyLevel.SUGGEST,
+    "human": AutonomyLevel.SUGGEST,
+    "hitl": AutonomyLevel.SUGGEST,
+    "human_in_loop": AutonomyLevel.SUGGEST,
+    "review": AutonomyLevel.SUGGEST,
+    "draft": AutonomyLevel.SUGGEST,
+    "request": AutonomyLevel.REQUEST,
+    "approve": AutonomyLevel.REQUEST,
+    "approval": AutonomyLevel.REQUEST,
+    "ask": AutonomyLevel.REQUEST,
+    "auto": AutonomyLevel.AUTO,
+    "autonomous": AutonomyLevel.AUTO,
+    "full": AutonomyLevel.AUTO,
+}
+
+
+def parse_level(value: object, default: AutonomyLevel | None = None) -> AutonomyLevel | None:
+    """Coerce a config/TOML value to an :class:`AutonomyLevel`.
+
+    Unknown / empty values return ``default`` (``None`` unless given) so a typo
+    falls through to the profile default rather than silently broadening
+    authority.
+    """
+    if isinstance(value, AutonomyLevel):
+        return value
+    if isinstance(value, str):
+        got = _ALIASES.get(value.strip().lower())
+        if got is not None:
+            return got
+    return default
+
+
+@dataclass(frozen=True)
+class AutonomyProfile:
+    """A hire's authority dial: a baseline rung + per-risk overrides + phase.
+
+    ``default`` applies to any action whose risk tier has no explicit override.
+    ``low`` / ``medium`` / ``high`` override per the action's classified risk
+    (:func:`maverick.safety.tool_risk.tool_risk`). ``onboarding`` True clamps the
+    resolved rung one step down until the client graduates the hire.
+    """
+
+    default: AutonomyLevel = AutonomyLevel.SUGGEST
+    low: AutonomyLevel | None = None
+    medium: AutonomyLevel | None = None
+    high: AutonomyLevel | None = None
+    onboarding: bool = True
+
+    def level_for(self, risk: str) -> AutonomyLevel:
+        """The configured rung for an action of ``risk`` tier (before clamp)."""
+        override = {"low": self.low, "medium": self.medium, "high": self.high}.get(risk)
+        return override or self.default
+
+    def with_overrides(
+        self,
+        *,
+        default: object = None,
+        low: object = None,
+        medium: object = None,
+        high: object = None,
+        onboarding: object = None,
+    ) -> AutonomyProfile:
+        """A copy with client overrides applied (each unset arg leaves the pack
+        value). Used to layer ``[workforce.agents]`` config over a pack default."""
+        return replace(
+            self,
+            default=parse_level(default, self.default),
+            low=parse_level(low, self.low),
+            medium=parse_level(medium, self.medium),
+            high=parse_level(high, self.high),
+            onboarding=self.onboarding if onboarding is None else bool(onboarding),
+        )
+
+    @classmethod
+    def from_toml(cls, raw: object) -> AutonomyProfile:
+        """Parse a pack's ``[autonomy]`` table. Forgiving: a missing/non-table
+        block yields the default (``SUGGEST``, onboarding) profile, never raises."""
+        if not isinstance(raw, dict):
+            return cls()
+        onboarding = raw.get("onboarding")
+        return cls(
+            default=parse_level(raw.get("default"), AutonomyLevel.SUGGEST) or AutonomyLevel.SUGGEST,
+            low=parse_level(raw.get("low")),
+            medium=parse_level(raw.get("medium")),
+            high=parse_level(raw.get("high")),
+            onboarding=True if onboarding is None else bool(onboarding),
+        )
+
+
+def clamp_down(level: AutonomyLevel, steps: int = 1) -> AutonomyLevel:
+    """Lower ``level`` by ``steps`` rungs (never below OBSERVE)."""
+    return _ORDER[max(0, level.rank - max(0, steps))]
+
+
+# Governance decisions this module speaks in (kept as strings so the pure
+# resolver does not import the governance module; callers compare to
+# governance.Decision values, which are these same strings).
+_DECISION_ALLOW = "allow"
+_DECISION_DENY = "deny"
+_DECISION_REQUIRE_HUMAN = "require_human"
+
+
+@dataclass(frozen=True)
+class AutonomyVerdict:
+    """How a hire may take one action, given its profile and the action's risk.
+
+    ``level`` is the effective rung after per-risk selection and onboarding
+    clamp. ``decision`` is the governance decision this rung implies
+    (``allow`` / ``require_human`` / ``deny``), composable strictest-wins with
+    :func:`maverick.governance.evaluate`. ``execute_by`` distinguishes the two
+    REQUIRE_HUMAN rungs: ``human`` (SUGGEST -- a person executes the staged
+    action) vs ``agent`` (REQUEST -- the agent executes after approval).
+    """
+
+    level: AutonomyLevel
+    decision: str
+    execute_by: str  # "agent" | "human" | "none"
+    reason: str
+    onboarding_clamped: bool = False
+
+    @property
+    def autonomous(self) -> bool:
+        return self.decision == _DECISION_ALLOW
+
+    @property
+    def needs_human(self) -> bool:
+        return self.decision == _DECISION_REQUIRE_HUMAN
+
+
+def _decision_for(level: AutonomyLevel) -> tuple[str, str]:
+    """(governance decision, execute_by) for an effective rung."""
+    if level is AutonomyLevel.AUTO:
+        return _DECISION_ALLOW, "agent"
+    if level is AutonomyLevel.REQUEST:
+        return _DECISION_REQUIRE_HUMAN, "agent"
+    if level is AutonomyLevel.SUGGEST:
+        return _DECISION_REQUIRE_HUMAN, "human"
+    return _DECISION_DENY, "none"  # OBSERVE: no consequential action
+
+
+def resolve(
+    profile: AutonomyProfile | None,
+    *,
+    action: str = "",
+    risk: str | None = None,
+    levels_enabled: bool = False,
+) -> AutonomyVerdict:
+    """The authority verdict for ``action`` under ``profile``.
+
+    ``risk`` may be given directly (a known tier) or classified from ``action``
+    via :func:`tool_risk`. When ``levels_enabled`` is False (the default, kernel
+    rule 1) every consequential action resolves to ``SUGGEST`` -- the historical
+    "draft, a human commits" behavior -- regardless of the profile, so enabling
+    the feature is what unlocks higher autonomy, never a silent default.
+
+    Fail-open: any internal error degrades to ``SUGGEST`` (more cautious).
+    """
+    try:
+        tier = risk if risk in RISK_LEVELS else None
+        if tier is None:
+            tier = tool_risk(action) if action else "medium"
+        if not levels_enabled or profile is None:
+            decision, execute_by = _decision_for(AutonomyLevel.SUGGEST)
+            return AutonomyVerdict(
+                AutonomyLevel.SUGGEST, decision, execute_by,
+                "autonomy levels disabled -- staging for human execution",
+            )
+        configured = profile.level_for(tier)
+        effective = clamp_down(configured, 1) if profile.onboarding else configured
+        clamped = profile.onboarding and effective is not configured
+        decision, execute_by = _decision_for(effective)
+        why = f"{effective.value} for {tier}-risk action"
+        if clamped:
+            why += f" (onboarding: clamped from {configured.value})"
+        return AutonomyVerdict(effective, decision, execute_by, why, onboarding_clamped=clamped)
+    except Exception:  # pragma: no cover -- resolver must never block a run
+        log.warning("agent_autonomy: resolve failed; defaulting to SUGGEST", exc_info=True)
+        decision, execute_by = _decision_for(AutonomyLevel.SUGGEST)
+        return AutonomyVerdict(AutonomyLevel.SUGGEST, decision, execute_by, "resolver error -- staged")
+
+
+# -- config binding (impure; fail-open) ------------------------------------
+
+def levels_enabled() -> bool:
+    """Whether the client has turned on per-agent autonomy levels.
+
+    Off by default (kernel rule 1); ``MAVERICK_WORKFORCE_LEVELS`` overrides the
+    ``[workforce] levels`` config either way. Never raises."""
+    import os
+    env = os.environ.get("MAVERICK_WORKFORCE_LEVELS", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    try:
+        from .config import get_workforce
+        return bool(get_workforce().get("levels", False))
+    except Exception:  # pragma: no cover -- config must never block a run
+        return False
+
+
+def effective_profile(name: str, pack_profile: AutonomyProfile | None) -> AutonomyProfile:
+    """The pack's declared profile with the client's ``[workforce.agents]``
+    override for ``name`` layered on top. Falls back to the pack profile (or a
+    default ``SUGGEST`` profile) when no override or config is present."""
+    base = pack_profile or AutonomyProfile()
+    try:
+        from .config import get_workforce
+        override = get_workforce().get("agents", {}).get(name)
+    except Exception:  # pragma: no cover
+        override = None
+    if not override:
+        return base
+    return base.with_overrides(**override)
+
+
+def decide(
+    name: str,
+    pack_profile: AutonomyProfile | None,
+    *,
+    action: str = "",
+    risk: str | None = None,
+) -> AutonomyVerdict:
+    """One-call resolution against live config: layer the client override on the
+    pack profile and resolve the verdict for ``action``. This is the seam a
+    runtime gate calls; pure :func:`resolve` stays test-friendly."""
+    return resolve(
+        effective_profile(name, pack_profile),
+        action=action,
+        risk=risk,
+        levels_enabled=levels_enabled(),
+    )
+
+
+# -- prompt rendering ------------------------------------------------------
+
+_RUNG_PROSE: dict[AutonomyLevel, str] = {
+    AutonomyLevel.OBSERVE: "observe only -- you do not take this action; you report",
+    AutonomyLevel.SUGGEST: "prepare and stage it for a human to execute",
+    AutonomyLevel.REQUEST: "execute it yourself, but only after a human approves this action",
+    AutonomyLevel.AUTO: "execute it autonomously, within your budget and refusals",
+}
+
+
+def render_autonomy_prompt(name: str, pack_profile: AutonomyProfile | None) -> str:
+    """The autonomy-posture block for a hire's system prompt.
+
+    Returns ``""`` when the feature is off (kernel rule 1) so the default spawn
+    path is byte-for-byte unchanged. When on, it tells the agent -- per action
+    risk tier -- whether to act, stage, request approval, or only observe, and
+    whether it is still in its supervised onboarding phase.
+    """
+    if not levels_enabled():
+        return ""
+    try:
+        prof = effective_profile(name, pack_profile)
+    except Exception:  # pragma: no cover
+        return ""
+    lines = [
+        "",
+        "",
+        "Your authority (autonomy level) for this role -- act within it and never "
+        "exceed it; a refused action is never available at any level:",
+    ]
+    for tier in RISK_LEVELS:
+        configured = prof.level_for(tier)
+        effective = clamp_down(configured) if prof.onboarding else configured
+        lines.append(f"- {tier}-risk actions: {_RUNG_PROSE[effective]}")
+    if prof.onboarding:
+        lines.append(
+            "- You are ONBOARDING (supervised/training): your authority is held one "
+            "rung lower until you are graduated on a clean record. When in doubt, "
+            "ask."
+        )
+    return "\n".join(lines)
+
+
+__all__ = [
+    "AutonomyLevel",
+    "AutonomyProfile",
+    "AutonomyVerdict",
+    "parse_level",
+    "clamp_down",
+    "resolve",
+    "levels_enabled",
+    "effective_profile",
+    "decide",
+    "render_autonomy_prompt",
+]

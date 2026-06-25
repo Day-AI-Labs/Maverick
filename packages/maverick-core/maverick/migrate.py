@@ -59,8 +59,8 @@ KNOWN_SECTIONS = frozenset({
     "sandbox", "screening", "search", "security", "self_learning",
     "session_providers", "sharing", "shield", "skill_synthesis", "skills",
     "system", "telemetry", "template_registries", "tenancy", "thinking",
-    "tools", "tui", "verification", "voice", "webhooks", "workspace",
-    "world_model",
+    "tools", "tui", "verification", "voice", "webhooks", "workforce",
+    "workspace", "world_model",
 })
 
 

@@ -27,13 +27,15 @@ try:
 except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib  # type: ignore[no-redef]
 
+from .agent_autonomy import AutonomyProfile
+
 # Keys we accept from a pack's TOML. Unknown keys are ignored so a newer pack
 # can't crash an older loader.
 _FIELDS = frozenset({
     "compartment", "description", "persona", "allow_tools", "deny_tools",
     "max_risk", "allow_paths", "allow_hosts", "mcp_servers", "models",
     "knowledge_sources", "authoring", "extends", "workflow", "output", "effort",
-    "refuse",
+    "refuse", "autonomy",
 })
 
 
@@ -92,6 +94,7 @@ class DomainProfile:
     extends: str = ""              # overlay base: inherit a pack, patch the rest
     workflow: list[WorkflowStep] = field(default_factory=list)  # editable playbook
     output: OutputContract = field(default_factory=OutputContract)  # the deliverable
+    autonomy: AutonomyProfile = field(default_factory=AutonomyProfile)  # authority dial
 
     def __post_init__(self) -> None:
         if not self.compartment:
@@ -163,6 +166,8 @@ def _coerce(name: str, data: dict) -> DomainProfile:
     if "refuse" in fields:
         raw = fields["refuse"]
         fields["refuse"] = ([str(r) for r in raw] if isinstance(raw, list) else [])
+    if "autonomy" in fields:
+        fields["autonomy"] = AutonomyProfile.from_toml(fields["autonomy"])
     return DomainProfile(name=name, **fields)
 
 
@@ -360,6 +365,7 @@ SUITE_PREFIXES: dict[str, str] = {
     "chem_": "chemicals",
     "fbcpg_": "food_beverage_cpg",
     "meddev_": "medical_devices",
+    "pevc_": "private_equity_vc",
 }
 
 
@@ -607,6 +613,7 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
     spawn depth, works like a professional with its department's memory.
     """
     from .agent import Agent
+    from .agent_autonomy import render_autonomy_prompt
     from .domain_discipline import augment_persona
     from .domain_refusals import render_refusals
     principal = principal or f"agent:{profile.name}-{depth}"
@@ -627,8 +634,10 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
         domain=profile.compartment,
         persona=(augment_persona(profile.name, profile.persona)
                  + render_refusals(profile.name, profile.refuse)
+                 + render_autonomy_prompt(profile.name, profile.autonomy)
                  + render_workflow_prompt(profile.workflow)),
         capability=cap,
         knowledge_sources=profile.knowledge_sources,
         domain_effort=profile.effort,
+        autonomy=profile.autonomy,
     )
