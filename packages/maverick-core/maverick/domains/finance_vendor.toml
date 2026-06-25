@@ -16,7 +16,7 @@ allow_tools = [
     "read_file", "knowledge_search",
     "screen_sanctions", "validate_bank_details", "run_assessment",
 ]
-deny_tools = ["vendor_master_change", "approve_vendor", "release_payment"]
+deny_tools = ["vendor_master_change", "approve_vendor", "release_payment", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.dowjones.com", "*.complyadvantage.com"]
 mcp_servers = ["Screening_ComplyAdvantage"]

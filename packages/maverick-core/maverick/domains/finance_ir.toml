@@ -15,7 +15,7 @@ allow_tools = [
     "read_file", "knowledge_search", "web_search",
     "gl_read_trial_balance", "draft_earnings_materials",
 ]
-deny_tools = ["file_with_sec", "email", "gmail", "slack_bot"]
+deny_tools = ["file_with_sec", "email", "gmail", "slack_bot", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
 knowledge_sources = ["finance_prior_filings", "finance_ir_materials"]
 authoring = "manual"

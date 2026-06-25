@@ -120,3 +120,49 @@ def test_suite_compartments_match_their_prefix():
                        ("strat_", _STRAT), ("pe_", _PE)):
         for name, p in packs.items():
             assert p.compartment.startswith(pre), f"{name}: compartment={p.compartment!r}"
+
+
+# Every built-in pack that is NOT a coding builder (no shell/code_exec in its
+# allowlist) is read-only by design. The per-suite tests above cover seven
+# suites by name; this covers the WHOLE roster -- finance and all the industry
+# verticals (banking, healthcare, retail, tax, ...) included -- so a future
+# edit anywhere that grants a drafting agent shell/write is caught.
+_BUILDERS = {n: p for n, p in _BUILTIN.items()
+             if "code_exec" in p.allow_tools or "shell" in p.allow_tools}
+_NON_BUILDERS = {n: p for n, p in _BUILTIN.items() if n not in _BUILDERS}
+
+
+def test_every_non_builder_pack_is_read_only_and_safe():
+    assert len(_NON_BUILDERS) > 1000, f"only {len(_NON_BUILDERS)} non-builders?"
+    for name, p in _NON_BUILDERS.items():
+        # A high ceiling is legitimate only for a spawn-router (it holds the
+        # privileged PARENT grant so children can attenuate down); everything
+        # else stays low/medium. Either way the mutators must be unreachable.
+        if p.max_risk == "high":
+            assert {"spawn_subagent", "spawn_swarm"} & set(p.allow_tools), (
+                f"{name}: high risk but not a spawn-router")
+        else:
+            assert p.max_risk in ("low", "medium"), f"{name}: risk={p.max_risk!r}"
+        cap = p.capability(f"agent:{name}")
+        # Mutating / host-control tools must be unreachable for a drafting agent.
+        for dangerous in ("shell", "write_file", "code_exec", "computer"):
+            assert cap.permits(dangerous) is False, f"{name}: {dangerous} reachable!"
+
+
+def test_every_non_builder_pack_denies_the_readonly_floor():
+    # Defense-in-depth: the allowlist already excludes shell/write_file, but an
+    # explicit deny is what survives a later allowlist edit. The whole roster
+    # carries it, not just the seven suites with bespoke tests.
+    for name, p in _NON_BUILDERS.items():
+        assert "shell" in p.deny_tools, f"{name}: must explicitly deny shell"
+        assert "write_file" in p.deny_tools, f"{name}: must explicitly deny write_file"
+
+
+def test_every_builder_denies_self_edit():
+    # The one floor a coding agent can never relax, asserted across ALL builders
+    # (not only the P&E suite): an agent may build, never edit its own runtime.
+    assert _BUILDERS, "no builder packs discovered"
+    for name, p in _BUILDERS.items():
+        cap = p.capability(f"agent:{name}")
+        assert "self_edit" in p.deny_tools, f"{name}: builder must deny self_edit"
+        assert cap.permits("self_edit") is False, f"{name}: self_edit reachable!"

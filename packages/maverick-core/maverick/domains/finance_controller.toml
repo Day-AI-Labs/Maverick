@@ -23,6 +23,7 @@ allow_tools = [
 deny_tools = [
     "post_journal_entry", "release_payment", "run_payroll", "wire_transfer",
     "ach_send", "place_trade", "file_return", "file_with_sec", "vendor_master_change",
+    "shell", "write_file", "apply_patch", "str_edit", "browser",
 ]
 # The controller holds the privileged PARENT capability so it can spawn tower
 # agents (spawn_* is high-risk); each child attenuates down to its pack envelope.

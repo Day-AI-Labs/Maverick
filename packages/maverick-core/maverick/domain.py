@@ -408,6 +408,11 @@ _VALID_GATES = frozenset({"approval", "review"})
 _VALID_SHAPES = frozenset({"prose", "report", "table", "forecast"})
 # Below this, a persona is a label, not a working instruction set.
 _MIN_PERSONA_CHARS = 200
+# The state-mutating tools a read-only specialist (one that doesn't allow
+# ``shell``/``code_exec``) must explicitly DENY, even though its tool allowlist
+# already excludes them: defense-in-depth, so a later edit that loosens the
+# allowlist can't silently hand a drafting agent a shell or a file writer.
+_READONLY_DENY_FLOOR = ("shell", "write_file")
 
 
 def _lint_output(out: OutputContract) -> list[str]:
@@ -486,6 +491,17 @@ def lint_profile(profile: DomainProfile) -> tuple[list[str], list[str]]:
     if not profile.deny_tools:
         warnings.append("no deny_tools: consider explicitly denying the "
                         "tools this role must never touch")
+    allow = set(profile.allow_tools)
+    if not (allow & {"shell", "code_exec"}):
+        # A read-only/drafting pack: it should pin the mutators shut.
+        deny = set(profile.deny_tools)
+        ungated = [t for t in _READONLY_DENY_FLOOR if t not in deny and t not in allow]
+        if ungated:
+            warnings.append(
+                "read-only pack doesn't explicitly deny "
+                f"{', '.join(ungated)}: add to deny_tools for defense-in-depth "
+                "(the allowlist already excludes them, but an explicit deny "
+                "survives a later allowlist change)")
     warnings.extend(_lint_output(profile.output))
     wf_errors, wf_warnings = _lint_workflow(profile)
     errors.extend(wf_errors)

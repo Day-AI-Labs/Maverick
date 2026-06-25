@@ -15,7 +15,7 @@ allow_tools = [
     "gl_read_subledger", "prepare_return", "validate_nexus",
     "avalara_read",   # read seat (low) -- pull vendor data
 ]
-deny_tools = ["file_return", "remit_tax", "file_tax_return"]
+deny_tools = ["file_return", "remit_tax", "file_tax_return", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.avalara.com", "*.vertexinc.com", "*.sovos.com"]
 mcp_servers = ["Tax_Avalara"]

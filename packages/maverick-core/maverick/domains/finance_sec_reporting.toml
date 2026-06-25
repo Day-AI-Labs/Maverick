@@ -16,7 +16,7 @@ allow_tools = [
     "gl_read_trial_balance", "draft_filing", "tag_xbrl", "run_disclosure_checklist",
     "workiva_read",   # read seat (low) -- pull vendor data
 ]
-deny_tools = ["file_with_sec"]
+deny_tools = ["file_with_sec", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.workiva.com", "*.sec.gov"]
 mcp_servers = ["SEC_Workiva"]

@@ -14,7 +14,7 @@ allow_tools = [
     "read_file", "knowledge_search", "currency",
     "gl_read_subledger", "get_price_snapshot", "propose_hedge",
 ]
-deny_tools = ["execute_fx_trade", "place_trade", "create_order_instruction"]
+deny_tools = ["execute_fx_trade", "place_trade", "create_order_instruction", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.interactivebrokers.com"]
 mcp_servers = ["Interactive_Brokers_IBKR"]

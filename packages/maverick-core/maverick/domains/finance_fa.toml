@@ -17,7 +17,7 @@ allow_tools = [
     "draft_depreciation_schedule", "stage_asset_entry", "reconcile_accounts",
     "netsuite_read",   # read seat (low) -- pull vendor data
 ]
-deny_tools = ["post_journal_entry", "dispose_asset"]
+deny_tools = ["post_journal_entry", "dispose_asset", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.netsuite.com", "*.sap.com"]
 mcp_servers = ["ERP_NetSuite"]

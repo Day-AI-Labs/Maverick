@@ -261,3 +261,35 @@ class TestLintWorkflow:
         p = self._ok_base(workflow=[WorkflowStep("a", tools=["shell"])])
         _, warnings = lint_profile(p)
         assert any("not in allow_tools" in w for w in warnings)
+
+
+class TestLintReadOnlyDenyFloor:
+    """A read-only pack must explicitly deny the state mutators its allowlist
+    already excludes, so a later allowlist change can't silently grant them."""
+
+    def _pack(self, allow, deny):
+        return DomainProfile(
+            name="x", persona="x" * 250, allow_tools=allow, deny_tools=deny,
+            max_risk="low", knowledge_sources=["x"], description="d",
+        )
+
+    def test_readonly_missing_write_file_deny_warns(self):
+        p = self._pack(["read_file"], ["shell"])
+        _, warnings = lint_profile(p)
+        assert any("write_file" in w and "defense-in-depth" in w for w in warnings)
+
+    def test_readonly_missing_shell_deny_warns(self):
+        p = self._pack(["read_file"], ["write_file"])
+        _, warnings = lint_profile(p)
+        assert any("shell" in w and "defense-in-depth" in w for w in warnings)
+
+    def test_readonly_denying_floor_has_no_floor_warning(self):
+        p = self._pack(["read_file"], ["shell", "write_file"])
+        _, warnings = lint_profile(p)
+        assert not any("defense-in-depth" in w for w in warnings)
+
+    def test_builder_pack_is_exempt_from_floor(self):
+        # A coding agent legitimately allows shell; the floor rule must not fire.
+        p = self._pack(["read_file", "shell"], ["self_edit"])
+        _, warnings = lint_profile(p)
+        assert not any("defense-in-depth" in w for w in warnings)
