@@ -7,6 +7,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Agent-pack quality & governance sweep across the 1,118-pack roster:
+  `[output]` contracts + editable `[[workflow]]` playbooks on every pack;
+  reasoning-effort right-sizing (`effort` tier, applied only when `[effort]` is
+  on); always-on hard refusals (`domain_refusals.py` — EU AI Act Art-5 for HR,
+  safety-critical actuation for the physical suites, autonomous adjudication for
+  finance/clinical, MNPI-crossing for strategy, with a `refuse` pack field);
+  `maverick domains-audit` (governance-posture inventory, `--json` export) and
+  `maverick domains-eval` (behavioral golden cases + deterministic rubric
+  scorer); query-based specialist routing (`list_specialists query=<task>`,
+  hybrid lexical + sentence-transformer when `fastembed` is installed) with a
+  recall@10 benchmark; factory-generated packs brought to parity (intake now
+  emits workflow/output/effort/refuse). New `domains-lint` rules: read-only
+  deny floor, output/playbook gate consistency, and `effort` validity.
 - Closed-loop self-improvement: offline experience consolidation
   (`maverick dream` — replay, consolidate, rehearse, forget, prune),
   department-scoped reflexion/memory, skill distillation with probation and

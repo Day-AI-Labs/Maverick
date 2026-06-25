@@ -224,6 +224,28 @@ here.
   no-overpromising, strategy source-grounding). One implementation point
   upgrades all 1,118 built-in packs AND operator/intake-generated packs;
   prompts only — hard limits stay with capabilities/governance.
+- **Hard refusals** (`domain_refusals.py`, always on — a prohibited use is not
+  an operator preference) — every pack's prompt carries a non-negotiable
+  refusal block with **no approval path**: the EU AI Act Art-5 prohibitions for
+  HR (workplace emotion inference, biometric categorization, social scoring),
+  safety-critical actuation/interlock-override refusals for ops/manufacturing/
+  utilities/logistics, autonomous clinical/insurance/banking adjudication,
+  MNPI-crossing for capital-markets/strategy, and counsel-of-record for legal,
+  plus a universal "never disable your own controls / impersonate a human".
+  Packs add their own via a `refuse = [...]` field; the rails (capability /
+  governance / Shield) still enforce independently — this makes the agent
+  refuse *before* a rail is tested.
+- **Pack consumption surface** — every one of the 1,118 packs now declares an
+  `[output]` contract (deliverable shape, consumers, cadence, sign-off gate) and
+  an editable `[[workflow]]` playbook (the ordered procedure, each step naming
+  only the pack's own tools and ending in the human gate). Rendered into the
+  spawn prompt and the dashboard; intake-generated packs get them too.
+- **Reasoning-effort right-sizing** (`effort` pack field, applied only when
+  `[effort]` is enabled) — high-stakes judgment packs (SOX, AML/SAR, valuation,
+  prior-auth, litigation, incident response, pharma) run deep; clerical
+  high-throughput packs (status pages, chasers, hygiene) run light; the rest
+  inherit the operator default. A pack tier beats the global default but defers
+  to any per-role/env override, and never turns the feature on.
 - **Department memory at every spawn depth** — `agent_from_profile` appends
   the department's recalled lessons (same-department reflexions + dream
   insights) to a specialist's brief, so a `spawn_specialist` child starts
@@ -231,10 +253,33 @@ here.
   no-op unless those loops are enabled).
 - **Pack quality gate** — `maverick domains-lint [--ci --warnings]`
   (`domain.lint_profile`): errors for envelope holes (empty tool allowlist
-  = ALL tools, missing/unknown `max_risk`), warnings for quality gaps
-  (thin persona, allow∩deny overlap, no knowledge sources, no deny list).
-  All built-in packs lint clean; every pack now carries at least a
+  = ALL tools, missing/unknown `max_risk`, invalid `effort` tier), warnings
+  for quality gaps (thin persona, allow∩deny overlap, no knowledge sources, a
+  read-only pack not explicitly denying the `shell`/`write_file` floor, an
+  `output.gate` lighter than the playbook's final sign-off). All 1,118 built-in
+  packs lint clean (0 errors, 0 warnings); every pack carries at least a
   suite-level `knowledge_sources` grounding fallback.
+- **Governance-posture audit** — `maverick domains-audit [--json <path>
+  --suite <name>]` (`domain_audit.py`): the auditable inventory of "what can
+  these agents do, and what stops them?" — per pack the compartment seal, risk
+  ceiling, whether any state-mutating tool is *reachable* (0 across the drafting
+  roster), which irreversible actions it denies (segregation of duties), its
+  refusals, and the human sign-off on its deliverable. Flags + exits non-zero if
+  a drafting pack could reach a mutator; `--json` exports for a GRC system.
+- **Per-pack behavioral evals** — `maverick domains-eval [--check]`
+  (`domain_eval.py`): golden cases that test a specialist's load-bearing
+  behavior (AP catches a duplicate and never pays; legal cites or marks
+  unverified; HR refuses emotion inference; ops refuses an interlock override).
+  A deterministic rubric scorer (include/exclude/refuse/cite) plus an injected
+  runner; `--check` lints the suite against the roster (key-free CI gate) while
+  `run_eval(cases, runner)` scores live when a provider key is present.
+- **Specialist routing** (`domain_router.py`, wired into `list_specialists
+  query=<task>`) — a pre-filter that ranks the whole 1,118-pack roster for a
+  task so the orchestrator picks from a shortlist, not a haystack: lexical
+  TF-IDF blended with sentence-transformer cosine when `fastembed` is installed
+  (paraphrase-aware), graceful lexical-only fallback otherwise. A 25-case
+  benchmark floors recall@10 ≥ 80% so a pack/persona edit can't silently degrade
+  routing.
 - **Hindsight engine** (`hindsight.py`, `maverick hindsight [--strict
   --ledger]`) — replays past goals against learned-state snapshots to detect
   when the forgetting loops silently cost coverage: gained / regressed /
