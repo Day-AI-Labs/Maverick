@@ -33,6 +33,7 @@ _FIELDS = frozenset({
     "compartment", "description", "persona", "allow_tools", "deny_tools",
     "max_risk", "allow_paths", "allow_hosts", "mcp_servers", "models",
     "knowledge_sources", "authoring", "extends", "workflow", "output", "effort",
+    "refuse",
 })
 
 
@@ -87,6 +88,7 @@ class DomainProfile:
     knowledge_sources: list[str] = field(default_factory=list)
     authoring: str = "manual"      # "manual" | "generated"
     effort: str | None = None      # reasoning tier (applied only when [effort] on)
+    refuse: list[str] = field(default_factory=list)  # pack-specific hard refusals
     extends: str = ""              # overlay base: inherit a pack, patch the rest
     workflow: list[WorkflowStep] = field(default_factory=list)  # editable playbook
     output: OutputContract = field(default_factory=OutputContract)  # the deliverable
@@ -158,6 +160,9 @@ def _coerce(name: str, data: dict) -> DomainProfile:
         fields["workflow"] = _coerce_workflow(fields["workflow"])
     if "output" in fields:
         fields["output"] = _coerce_output(fields["output"])
+    if "refuse" in fields:
+        raw = fields["refuse"]
+        fields["refuse"] = ([str(r) for r in raw] if isinstance(raw, list) else [])
     return DomainProfile(name=name, **fields)
 
 
@@ -254,6 +259,7 @@ def overlay_profile(base: DomainProfile, patch: dict) -> DomainProfile:
         "knowledge_sources": list(base.knowledge_sources),
         "authoring": base.authoring,
         "effort": base.effort,
+        "refuse": list(base.refuse),
         "workflow": list(base.workflow),
         "output": base.output,
     }
@@ -589,6 +595,7 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
     """
     from .agent import Agent
     from .domain_discipline import augment_persona
+    from .domain_refusals import render_refusals
     principal = principal or f"agent:{profile.name}-{depth}"
     if parent is not None and hasattr(parent, "_effective_capability"):
         parent_cap = parent._effective_capability("spawn_specialist")
@@ -606,6 +613,7 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
         depth=depth, parent=parent,
         domain=profile.compartment,
         persona=(augment_persona(profile.name, profile.persona)
+                 + render_refusals(profile.name, profile.refuse)
                  + render_workflow_prompt(profile.workflow)),
         capability=cap,
         knowledge_sources=profile.knowledge_sources,

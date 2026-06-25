@@ -296,3 +296,15 @@ class TestGeneratedPackParity:
         assert r.effort == "high"
         assert r.output.deliverable == "QBR deck" and r.output.gate == "review"
         assert [s.name for s in r.workflow] == [s.name for s in prof.workflow]
+
+
+class TestGeneratedPackRefusals:
+    def test_proposer_refusals_round_trip(self, tmp_path):
+        def propose(_s):
+            return {"persona": "x" * 220, "allow_tools": ["read_file"],
+                    "max_risk": "low",
+                    "refuse": ["never act on material non-public information"]}
+        prof = generate_profile(IntakeSpec(name="Omega Capital"), propose=propose)
+        assert prof.refuse == ["never act on material non-public information"]
+        r = load_domain(save_profile(prof, approved=True, dest_dir=tmp_path))
+        assert r.refuse == prof.refuse

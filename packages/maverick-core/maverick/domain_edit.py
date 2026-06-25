@@ -41,7 +41,7 @@ from .domain import (
 _SCALAR_KEYS = ("name", "extends", "compartment", "description", "persona",
                 "max_risk", "effort", "authoring")
 _ARRAY_KEYS = ("allow_tools", "deny_tools", "allow_paths", "allow_hosts",
-               "mcp_servers", "knowledge_sources")
+               "mcp_servers", "knowledge_sources", "refuse")
 
 
 def overlay_toml(patch: dict) -> str:

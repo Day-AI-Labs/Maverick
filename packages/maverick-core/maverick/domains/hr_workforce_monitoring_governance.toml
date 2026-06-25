@@ -12,6 +12,10 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+refuse = [
+    "permit covert, surreptitious, or undisclosed monitoring of workers under any justification",
+    "monitor an individual's behavior, keystrokes, screen, or location to infer their productivity or performance",
+]
 
 [output]
 shape = "report"
