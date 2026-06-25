@@ -59,7 +59,7 @@ it's credible rather than vaporware.
 
 | Capability | Module / surface | Status | Role in the factory |
 |---|---|---|---|
-| **Generated-profile authoring** | `domain.py` — `DomainProfile(authoring="generated")`, `agent_from_profile`, `load_domains` | **Shipped** | The output format: a synthesized agent *is* a generated pack |
+| **Generated-profile authoring** | `domain.py` — `DomainProfile(authoring="generated")`, `agent_from_profile`, `load_domains`; `intake.py` parity | **Shipped** | The output format: a synthesized agent *is* a generated pack — at parity with built-ins (intake emits `[output]`/`[[workflow]]`/`effort`/`refuse`, all sanitized lint-clean) |
 | **Customer intake** | `assessment.py` (`start`→`answer`→`finalize`) | **Shipped** | Produces the customer's Operating Profile (§6) |
 | **Skill distillation** | `skills.py` — `distill(trajectory)→SKILL.md`, `validate_skill_file`, `install`, Ed25519 `sig` + `trusted_pubkeys` | **Shipped** | The skill side of synthesis: author/validate/sign new skills |
 | **Performance signal (selection)** | `skill_stats.decay_weights`, `skill_embeddings` | **Shipped** | The fitness function — what's earning its keep vs decaying |
