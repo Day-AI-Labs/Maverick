@@ -1322,6 +1322,14 @@ def pick_advanced() -> dict[str, Any]:
             "agent action (writes, shell) so a run's actions are auditable end-to-end.",
             default=False,
         ),
+        "workforce_levels": _q_confirm(
+            "Per-agent autonomy levels? Treat each agent like a hire with a level of "
+            "authority you set -- observe / suggest / request-approval / autonomous, "
+            "per action risk -- starting supervised (onboarding) and graduating on a "
+            "clean record. Off by default, every agent stages actions for human "
+            "execution. Per-agent overrides go under [workforce.agents].",
+            default=False,
+        ),
         "calibration_enforce": _q_confirm(
             "Calibration interlock? Freeze self-improvement (trajectory donation) "
             "if the verifier stops telling correct answers from incorrect ones on "
@@ -2802,6 +2810,10 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[actions]")
         lines.append("enable = true")
+    if advanced.get("workforce_levels"):
+        lines.append("")
+        lines.append("[workforce]")
+        lines.append("levels = true")
     if advanced.get("calibration_enforce"):
         lines.append("")
         lines.append("[calibration]")
