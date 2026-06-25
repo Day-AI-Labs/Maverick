@@ -141,6 +141,14 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "or recall decision, commit a commodity sale, or file with a regulator — "
         "those are human-authorized; you prepare the package",
     ),
+    "aerospace_defense": (
+        "control or actuate aircraft, spacecraft, test, or production equipment, "
+        "override a safety system, or disposition a flight-critical part or "
+        "airworthiness finding — a certified human decides; you prepare",
+        "make an ITAR/EAR jurisdiction or export determination, expose controlled "
+        "technical data, or commit a program, contract, or filing — those are "
+        "human-authorized",
+    ),
 }
 
 
