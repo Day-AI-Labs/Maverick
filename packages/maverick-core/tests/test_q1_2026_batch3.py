@@ -163,6 +163,17 @@ def test_retry_classifier_terminal_zero_delay():
     assert next_delay(RuntimeError("401 Unauthorized"), attempts_so_far=0) == 0.0
 
 
+def test_retry_classifier_next_delay_is_jittered():
+    # No jitter -> every caller hitting the same class at once retries in
+    # lockstep (synchronized storm against a recovering provider). Delays must
+    # be decorrelated and bounded to (0.5*base, base].
+    from maverick.retry.classifier import next_delay
+    err = RuntimeError("429 rate limit")  # rate_limit: base 10s at attempt 0
+    samples = {next_delay(err, attempts_so_far=0) for _ in range(50)}
+    assert len(samples) > 1                 # not deterministic
+    assert all(5.0 <= d < 10.0 for d in samples)  # equal-jitter band of 10s
+
+
 # ---------- wizard --fast flag ----------
 
 def test_wizard_run_accepts_fast_flag(tmp_path, monkeypatch):

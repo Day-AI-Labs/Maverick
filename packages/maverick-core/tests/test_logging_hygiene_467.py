@@ -59,6 +59,49 @@ def test_benign_values_untouched():
     assert out["n"] == 3 and out["flag"] is True
 
 
+def test_nested_secret_in_extra_value_is_scrubbed():
+    # A secret buried in a dict/list extra (not a top-level string) used to slip
+    # past: the value isn't a string, so scrub passed it through verbatim.
+    out = _fmt(meta={"inner": {"note": "key sk-ant-abcdefghij1234567890XYZ x"}},
+               items=["clean", "tok sk-ant-abcdefghij1234567890XYZ"])
+    body = json.dumps(out)
+    assert "sk-ant-abcdefghij" not in body
+    assert out["meta"]["inner"]["note"].count("[REDACTED") == 1
+    assert out["items"][0] == "clean"  # structure + benign values preserved
+
+
+def test_secret_named_key_redacted_at_any_depth():
+    out = _fmt(payload={"ok": 1, "auth_token": "whatever", "sub": {"password": "p"}})
+    assert out["payload"]["auth_token"] == "[REDACTED]"
+    assert out["payload"]["sub"]["password"] == "[REDACTED]"
+    assert out["payload"]["ok"] == 1
+
+
+def test_message_interpolated_secret_is_scrubbed():
+    # logger.info("resp %s", body) where body carries a key: getMessage()
+    # interpolates it into msg, which must be scrubbed like the extras are.
+    rec = logging.LogRecord(
+        "t", logging.INFO, __file__, 1,
+        "resp %s", ("key=sk-ant-abcdefghij1234567890XYZ",), None)
+    out = json.loads(JsonFormatter().format(rec))
+    assert "sk-ant-abcdefghij" not in out["msg"]
+    assert "[REDACTED" in out["msg"]
+
+
+def test_exception_traceback_is_scrubbed():
+    # A provider exception's message routinely embeds the API key; the formatted
+    # traceback must be scrubbed, not shipped verbatim.
+    try:
+        raise RuntimeError("provider rejected key sk-ant-abcdefghij1234567890XYZ")
+    except RuntimeError:
+        import sys
+        rec = logging.LogRecord("t", logging.ERROR, __file__, 1,
+                                "boom", None, sys.exc_info())
+    out = json.loads(JsonFormatter().format(rec))
+    assert "sk-ant-abcdefghij" not in out["exc"]
+    assert "[REDACTED" in out["exc"]
+
+
 # ---------- goal-context contextvar reset ----------
 
 def test_nested_context_reset_restores_outer():
