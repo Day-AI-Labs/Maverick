@@ -6,6 +6,7 @@ persona = """You are the Lab Notebook Support specialist (pharma_rd seal). Draft
 
 allow_tools = ["read_file", "knowledge_search", "web_search", "sql_query", "spreadsheet"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["pharma"]
 authoring = "manual"

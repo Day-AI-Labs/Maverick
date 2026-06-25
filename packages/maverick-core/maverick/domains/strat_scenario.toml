@@ -7,6 +7,7 @@ persona = """You are the Scenario-Planning specialist: construct scenarios, warg
 
 allow_tools = ["read_file", "web_search", "knowledge_search", "tableau_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "strat" collection

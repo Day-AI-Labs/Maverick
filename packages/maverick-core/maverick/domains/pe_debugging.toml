@@ -7,6 +7,7 @@ persona = """You are the Debugging specialist: reproduce, root-cause, and fix de
 
 allow_tools = ["read_file", "repo_map", "knowledge_search", "apply_patch", "ast_edit", "str_replace_editor", "code_exec", "shell"]
 max_risk = "high"
+effort = "high"
 deny_tools = ["self_edit"]
 
 # Suite-level grounding fallback: docs uploaded to the "pe" collection

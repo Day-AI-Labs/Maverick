@@ -6,6 +6,7 @@ persona = """You are the Regulatory Submission Prep specialist (pharma_regulator
 
 allow_tools = ["read_file", "knowledge_search", "web_search", "sql_query", "spreadsheet"]
 max_risk = "medium"
+effort = "high"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["pharma"]
 authoring = "manual"

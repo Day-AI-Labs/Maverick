@@ -7,6 +7,7 @@ persona = """You are the CRM Data Hygiene specialist: dedup, enrich, validate, a
 
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
+effort = "low"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "gtm" collection

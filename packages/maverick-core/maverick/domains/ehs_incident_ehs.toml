@@ -7,6 +7,7 @@ persona = """You are the EHS Incident Recorder for this business -- a facilities
 allow_tools = ["read_file", "web_search", "knowledge_search", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "sql_query", "browser"]
 max_risk = "low"
+effort = "high"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ehs"]

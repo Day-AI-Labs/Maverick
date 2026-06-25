@@ -7,6 +7,7 @@ persona = """You are the Deal-Execution specialist: draft term sheets and redlin
 
 allow_tools = ["read_file", "knowledge_search", "crunchbase_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "web_search"]
 
 # Suite-level grounding fallback: docs uploaded to the "strat" collection

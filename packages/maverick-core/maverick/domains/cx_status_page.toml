@@ -7,6 +7,7 @@ persona = """You are the Status Page Editor for this business -- a customer expe
 allow_tools = ["read_file", "web_search", "knowledge_search", "sql_query"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
+effort = "low"
 
 knowledge_sources = ["cx"]
 authoring = "manual"

@@ -20,7 +20,7 @@ shape = "prose"
 deliverable = "executive communication draft"
 consumers = ["ceo", "chief_of_staff", "comms_lead"]
 cadence = "on-demand"
-gate = "review"
+gate = "approval"
 
 [[workflow]]
 name = "Clarify intent"

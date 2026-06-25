@@ -234,6 +234,28 @@ class TestAvailableDomainsOverlay:
         assert "brand_new" in available_domains()
 
 
+class TestLintEffort:
+    def _pack(self, effort):
+        return DomainProfile(
+            name="x", persona="x" * 250, allow_tools=["read_file"],
+            deny_tools=["shell", "write_file"], max_risk="low",
+            knowledge_sources=["x"], description="d", effort=effort,
+        )
+
+    def test_unset_effort_is_clean(self):
+        errors, _ = lint_profile(self._pack(None))
+        assert not any("effort" in e for e in errors)
+
+    def test_valid_effort_tier_is_clean(self):
+        for tier in ("low", "medium", "high", "xhigh", "max"):
+            errors, _ = lint_profile(self._pack(tier))
+            assert not any("effort" in e for e in errors), tier
+
+    def test_unknown_effort_tier_is_error(self):
+        errors, _ = lint_profile(self._pack("turbo"))
+        assert any("effort" in e and "turbo" in e for e in errors)
+
+
 class TestLintWorkflow:
     def _ok_base(self, **kw):
         return DomainProfile(

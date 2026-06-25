@@ -17,6 +17,7 @@ allow_tools = [
 ]
 deny_tools = ["email", "gmail", "send_payment", "post_journal_entry", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
+effort = "high"
 knowledge_sources = ["finance_rcm", "finance_pbc_list"]
 authoring = "manual"
 

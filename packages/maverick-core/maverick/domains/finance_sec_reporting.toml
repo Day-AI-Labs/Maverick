@@ -18,6 +18,7 @@ allow_tools = [
 ]
 deny_tools = ["file_with_sec", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
+effort = "high"
 allow_hosts = ["*.workiva.com", "*.sec.gov"]
 mcp_servers = ["SEC_Workiva"]
 knowledge_sources = ["finance_prior_filings", "finance_accounting_policy"]

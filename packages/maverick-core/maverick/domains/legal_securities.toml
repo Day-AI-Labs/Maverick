@@ -12,6 +12,7 @@ analysis, not legal advice."""
 
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 mcp_servers = ["CourtListener"]

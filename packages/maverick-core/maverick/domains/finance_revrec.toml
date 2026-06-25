@@ -19,6 +19,7 @@ allow_tools = [
 ]
 deny_tools = ["post_journal_entry", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
+effort = "high"
 allow_hosts = ["*.salesforce.com", "*.stripe.com", "*.chargebee.com"]
 mcp_servers = ["Billing_Stripe"]
 knowledge_sources = ["finance_revrec_policy", "finance_contracts"]

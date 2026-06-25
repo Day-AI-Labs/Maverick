@@ -11,6 +11,7 @@ deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "hr" collection
 # ground every hr specialist; replace with curated collections as they exist.
+allow_hosts = ["*.gusto.com"]   # egress scope for the connector seat
 knowledge_sources = ["hr"]
 
 authoring = "manual"

@@ -17,6 +17,7 @@ shape = "table"
 deliverable = "permit & inspection status log"
 consumers = ["project_manager", "superintendent"]
 cadence = "weekly"
+gate = "review"
 
 [[workflow]]
 name = "List permits"

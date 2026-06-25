@@ -20,6 +20,7 @@ shape = "prose"
 deliverable = "executive day brief"
 consumers = ["ceo", "chief_of_staff"]
 cadence = "daily"
+gate = "approval"
 
 [[workflow]]
 name = "Triage inbox"

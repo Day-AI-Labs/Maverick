@@ -12,6 +12,7 @@ tolerance. Research and analysis, not legal advice."""
 
 allow_tools = ["read_file", "web_search", "knowledge_search", "ironclad_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal", "legal_playbook"]

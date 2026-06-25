@@ -17,6 +17,7 @@ shape = "table"
 deliverable = "punch list by responsible party"
 consumers = ["superintendent", "project_manager"]
 cadence = "weekly"
+gate = "review"
 
 [[workflow]]
 name = "Compile items"

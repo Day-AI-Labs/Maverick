@@ -17,6 +17,7 @@ shape = "table"
 deliverable = "triaged alert queue"
 consumers = ["soc_lead", "incident_responder"]
 cadence = "daily"
+gate = "approval"
 
 [[workflow]]
 name = "Pull alerts"

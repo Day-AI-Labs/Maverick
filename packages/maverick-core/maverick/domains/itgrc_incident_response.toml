@@ -7,6 +7,7 @@ persona = """You are the Security Incident Response specialist: run the IR lifec
 
 allow_tools = ["read_file", "web_search", "knowledge_search", "crowdstrike_read", "splunk_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "itgrc" collection
