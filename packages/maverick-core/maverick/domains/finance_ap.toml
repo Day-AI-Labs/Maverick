@@ -17,7 +17,7 @@ allow_tools = [
     "stage_payment_batch", "screen_sanctions",
     "billdotcom_read", "coupa_read",   # read seat (low) -- pull vendor data
 ]
-deny_tools = ["release_payment", "vendor_master_change", "ach_send", "wire_transfer"]
+deny_tools = ["release_payment", "vendor_master_change", "ach_send", "wire_transfer", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.bill.com", "*.coupa.com", "*.tipalti.com"]
 mcp_servers = ["AP_BillCom"]

@@ -20,6 +20,7 @@ allow_tools = [
 deny_tools = [
     "post_journal_entry", "release_payment", "run_payroll",
     "stage_journal_entry", "edit_chart_of_accounts",
+    "shell", "write_file", "apply_patch", "str_edit", "browser",
 ]
 max_risk = "low"
 mcp_servers = ["GRC_AuditBoard"]

@@ -17,7 +17,7 @@ allow_tools = [
     "gl_read_journal", "ap_read_invoice", "payroll_read_register",
     "run_fraud_model", "open_case",
 ]
-deny_tools = ["post_journal_entry", "release_payment", "vendor_master_change"]
+deny_tools = ["post_journal_entry", "release_payment", "vendor_master_change", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
 mcp_servers = ["GRC_AuditBoard"]
 knowledge_sources = ["finance_fraud_policy", "finance_rcm"]

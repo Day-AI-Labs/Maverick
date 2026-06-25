@@ -13,7 +13,7 @@ allow_tools = [
     "read_file", "knowledge_search", "web_search",
     "gl_read_subledger", "tp_benchmark", "draft_tp_documentation",
 ]
-deny_tools = ["post_journal_entry"]
+deny_tools = ["post_journal_entry", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 knowledge_sources = ["finance_tp_policy", "finance_entity_structure"]
 authoring = "manual"

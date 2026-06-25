@@ -20,6 +20,7 @@ allow_tools = [
 deny_tools = [
     "run_payroll", "release_payroll_payment",
     "edit_employee_bank_details", "file_tax_return",
+    "shell", "write_file", "apply_patch", "str_edit", "browser",
 ]
 max_risk = "medium"
 allow_hosts = ["*.workday.com", "*.adp.com", "*.gusto.com"]

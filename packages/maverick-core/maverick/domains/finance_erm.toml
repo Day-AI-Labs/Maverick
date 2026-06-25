@@ -14,7 +14,7 @@ allow_tools = [
     "read_file", "knowledge_search", "web_search",
     "bank_read_balance", "ar_read_aging", "update_risk_register", "build_risk_report",
 ]
-deny_tools = ["post_journal_entry", "release_payment", "wire_transfer"]
+deny_tools = ["post_journal_entry", "release_payment", "wire_transfer", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
 knowledge_sources = ["finance_risk_register", "finance_treasury_policy"]
 authoring = "manual"

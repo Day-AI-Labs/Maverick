@@ -17,7 +17,7 @@ allow_tools = [
     "draft_revrec_schedule", "stage_deferred_revenue",
     "chargebee_read",   # read seat (low) -- pull vendor data
 ]
-deny_tools = ["post_journal_entry"]
+deny_tools = ["post_journal_entry", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.salesforce.com", "*.stripe.com", "*.chargebee.com"]
 mcp_servers = ["Billing_Stripe"]

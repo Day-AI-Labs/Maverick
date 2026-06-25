@@ -16,7 +16,7 @@ allow_tools = [
     "search_contracts", "get_price_snapshot", "get_price_history",
     "get_account_summary", "get_positions", "propose_trade", "covenant_check",
 ]
-deny_tools = ["create_order_instruction", "delete_order_instruction", "place_trade"]
+deny_tools = ["create_order_instruction", "delete_order_instruction", "place_trade", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.interactivebrokers.com"]
 mcp_servers = ["Interactive_Brokers_IBKR"]

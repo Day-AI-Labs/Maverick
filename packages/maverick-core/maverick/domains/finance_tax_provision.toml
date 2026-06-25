@@ -14,7 +14,7 @@ allow_tools = [
     "read_file", "knowledge_search",
     "gl_read_trial_balance", "compute_tax_provision", "draft_tax_footnote",
 ]
-deny_tools = ["post_journal_entry", "file_return", "file_tax_return"]
+deny_tools = ["post_journal_entry", "file_return", "file_tax_return", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.onesource.thomsonreuters.com", "*.corptax.com"]
 mcp_servers = ["Tax_ONESOURCE"]

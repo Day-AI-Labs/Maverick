@@ -16,7 +16,7 @@ allow_tools = [
     "flag_policy_violation", "draft_accrual", "reconcile_accounts",
     "concur_read", "ramp_read",   # read seat (low) -- pull vendor data
 ]
-deny_tools = ["approve_expense", "reimburse"]
+deny_tools = ["approve_expense", "reimburse", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.concur.com", "*.expensify.com", "*.ramp.com"]
 mcp_servers = ["Expense_Ramp"]

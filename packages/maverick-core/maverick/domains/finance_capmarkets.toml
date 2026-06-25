@@ -15,7 +15,7 @@ allow_tools = [
     "read_file", "knowledge_search", "web_search",
     "gl_read_subledger", "model_refinancing", "covenant_check",
 ]
-deny_tools = ["wire_transfer", "place_trade"]
+deny_tools = ["wire_transfer", "place_trade", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 knowledge_sources = ["finance_debt_schedule", "finance_treasury_policy"]
 authoring = "manual"

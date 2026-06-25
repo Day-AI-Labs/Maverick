@@ -15,7 +15,7 @@ allow_tools = [
     "gl_read_journal", "ap_read_invoice", "ar_read_invoice", "audit_log_read",
     "flag_anomaly",
 ]
-deny_tools = ["post_journal_entry", "release_payment"]
+deny_tools = ["post_journal_entry", "release_payment", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
 knowledge_sources = ["finance_rcm", "finance_accounting_policy"]
 authoring = "manual"

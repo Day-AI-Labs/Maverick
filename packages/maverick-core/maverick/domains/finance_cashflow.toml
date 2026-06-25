@@ -16,7 +16,7 @@ allow_tools = [
     "build_cashflow_forecast",
     "modern_treasury_read",   # GET-only banking reads (low) -- the executable read seat
 ]
-deny_tools = ["wire_transfer", "ach_send", "release_payment"]
+deny_tools = ["wire_transfer", "ach_send", "release_payment", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
 allow_hosts = ["*.moderntreasury.com", "*.plaid.com"]
 mcp_servers = ["Bank_Plaid"]
