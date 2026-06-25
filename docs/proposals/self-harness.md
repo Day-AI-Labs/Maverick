@@ -59,6 +59,16 @@ safety model as skills and insights.
 
 - **OFF by default** (`[self_harness] enable` / `MAVERICK_SELF_HARNESS=1`); when
   off, `recall_addendum` returns `""` and the prompt is byte-for-byte unchanged.
+- **Trace-poisoning is closed (two layers).** The addendum is recalled into
+  every future run of a model across all channels/tenants, so an attacker who
+  could plant text in a failure trace could otherwise poison it. (1) `mine_failures`
+  only considers **unscoped** failures — no `channel`, no `user_id` — i.e.
+  operator-local runs, never remote-user-driven ones (mirrors dreaming's
+  unscoped-only guard). (2) Every proposed line — deterministic *or* from an LLM
+  proposer — passes through `_sanitize_line`: control chars stripped, all
+  whitespace collapsed to single spaces (no multi-line break-out), secrets
+  scrubbed, length bounded. A corrupt/tampered store with non-string values is
+  rejected by `load_addenda` (no literal `"None"` reaching a prompt).
 - **Two gates, not one:** self-harness only proposes; promotion needs the
   self-improvement controller. A frozen verifier or a disabled controller leaves
   the store untouched.
