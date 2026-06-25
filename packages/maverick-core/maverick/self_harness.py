@@ -341,8 +341,13 @@ def _compose_addendum(model_id: str, existing: str, line: str) -> str:
         if ln.startswith("- "):
             ln = ln[2:].strip()
         lines.append(ln)
-    if line not in lines:
-        lines.append(line)
+    # Re-promoting an existing line REFRESHES it to newest (renewed relevance),
+    # rather than leaving it at an old position where this pass's other new
+    # lines would evict it under the newest-wins cap -- which left a promoted
+    # line absent from the store (found by the 100k soak).
+    if line in lines:
+        lines.remove(line)
+    lines.append(line)
     lines = lines[-_MAX_LINES_PER_MODEL:]
     block = header + "\n" + "\n".join(f"- {ln}" for ln in lines)
     return block[:_MAX_ADDENDUM_CHARS]
