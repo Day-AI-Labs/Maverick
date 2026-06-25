@@ -347,6 +347,8 @@ SUITE_PREFIXES: dict[str, str] = {
     "tmt_": "telecom_media",
     "hosp_": "hospitality",
     "cap_": "capital_markets",
+    # New industry suites (2026 build-out).
+    "oilgas_": "oil_gas",
 }
 
 
