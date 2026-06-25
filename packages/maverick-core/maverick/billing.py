@@ -99,12 +99,20 @@ class Invoice:
 
 def _invoice_id(tenant: str | None, period_start: str, period_end: str,
                 currency: str) -> str:
-    """Stable idempotency key for one tenant's billing period.
+    """Stable idempotency key for one tenant's **closed** billing period.
 
     Keyed on identity (tenant + period + currency), NOT on the amount, so the
     same logical invoice keeps the same id across re-runs -- that is exactly what
-    lets a payment integration dedup. Close the period before charging."""
-    key = json.dumps([tenant or "", period_start or "", period_end or "", currency],
+    lets a payment integration dedup.
+
+    Returns ``""`` for an **open-ended** period (a missing ``period_start`` or
+    ``period_end``): that invoice means "all usage so far", whose total grows as
+    usage accrues, so a deterministic key would let a deduping processor charge
+    the first (smaller) run and silently drop later, larger ones -- under-billing.
+    Pass both bounds (close the period) to get a safe dedup key."""
+    if not period_start or not period_end:
+        return ""
+    key = json.dumps([tenant or "", period_start, period_end, currency],
                      separators=(",", ":"))
     return "inv_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 

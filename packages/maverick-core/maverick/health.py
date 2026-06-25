@@ -82,6 +82,26 @@ def _check_config() -> dict:
     return load_config(p)
 
 
+def _check_config_lint(cfg: dict) -> None:
+    """Schema-lint the loaded config so a mistyped section/key -- e.g. a budget
+    cap typo (`[budget] max_dollarss`) that would otherwise silently run
+    UNCAPPED -- surfaces in `maverick doctor`, not only in the dedicated
+    `maverick config-lint`. Advisory: findings are warnings, never failures."""
+    if not cfg:
+        return  # no config / corrupt -- _check_config already reported it
+    try:
+        from .config_lint import lint_config
+        findings = lint_config(cfg)
+    except Exception:  # pragma: no cover -- linting must never break the doctor
+        return
+    if not findings:
+        _row(GREEN, "config-lint", "no unknown or mistyped keys")
+        return
+    for i, f in enumerate(findings[:8]):
+        _row(YELLOW, "config-lint", getattr(f, "message", str(f)),
+             fix="run `maverick config-lint` for the full report" if i == 0 else "")
+
+
 def _check_anthropic() -> None:
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not key:
@@ -558,6 +578,7 @@ def diagnose() -> int:
     _FAILURES.clear()
     click.echo(click.style("Maverick health check\n", bold=True))
     cfg = _check_config()
+    _check_config_lint(cfg)
     _check_config_perms()
     _check_profile()
     _check_data_residency(cfg)

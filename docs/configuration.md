@@ -218,8 +218,9 @@ Roles available:
 The installer keeps these separated automatically.
 
 > **Config typos are caught, not silently ignored.** `maverick config-lint`
-> (also run inside `maverick doctor`, and emitted as a one-line warning at
-> process startup) walks the loaded config against a known-section/key schema
+> (also surfaced as advisory `config-lint` rows by `maverick doctor`, and emitted
+> as a one-line warning at process startup) walks the loaded config against a
+> known-section/key schema
 > and flags a mistyped section or an unknown key in a fixed-key section (with
 > `difflib` "did you mean" suggestions), plus a few obvious type errors. This
 > catches the classic footgun where a typo like `[budget] max_dollarss` would
