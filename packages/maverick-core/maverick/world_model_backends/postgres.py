@@ -517,39 +517,83 @@ def _active_tenant() -> str | None:
         return None
 
 
-def _strict_tenant_isolation() -> bool:
-    """Strict per-tenant reads (default off). When on, a tenant sees **only** its
-    own rows -- legacy ``NULL`` rows are no longer visible. Enable only after the
-    legacy rows have been backfilled with a tenant_id. ``MAVERICK_STRICT_TENANT_
-    ISOLATION`` env wins over ``[world_model] strict_tenant_isolation``."""
-    env = os.environ.get("MAVERICK_STRICT_TENANT_ISOLATION")
+def _truthy(value: object) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _explicit_toggle(env_var: str, cfg_key: str) -> bool | None:
+    """Resolve an explicitly-set tenant-isolation toggle, or ``None`` if unset.
+
+    Env (``env_var``) wins over ``[world_model] <cfg_key>`` config. Returns
+    ``None`` only when neither the env var nor the config key is present, so the
+    caller can distinguish "operator chose off" from "operator said nothing" --
+    the distinction the enterprise auto-on + boot preflight rely on.
+    """
+    env = os.environ.get(env_var)
     if env is not None and env.strip() != "":
-        return env.strip().lower() in {"1", "true", "yes", "on"}
+        return _truthy(env)
     try:
         from ..config import load_config
-        v = (load_config() or {}).get("world_model", {}).get("strict_tenant_isolation")
-    except Exception:  # pragma: no cover -- config never blocks a query
+        cfg = (load_config() or {}).get("world_model") or {}
+    except Exception:  # pragma: no cover -- config never blocks construction
+        return None
+    if cfg_key in cfg:
+        v = cfg.get(cfg_key)
+        return _truthy(v) if isinstance(v, str) else bool(v)
+    return None
+
+
+def _enterprise_default() -> bool:
+    """Enterprise mode auto-enables tenant isolation (off otherwise).
+
+    Lazy + defensive: a missing/raising enterprise module never blocks
+    construction of a single-tenant store, it just means "not enterprise".
+    """
+    try:
+        from ..enterprise import enterprise_enabled
+        return bool(enterprise_enabled())
+    except Exception:  # pragma: no cover -- enterprise never blocks construction
         return False
-    return str(v).strip().lower() in {"1", "true", "yes", "on"} if isinstance(v, str) else bool(v)
+
+
+def _strict_tenant_isolation() -> bool:
+    """Strict per-tenant reads. When on, a tenant sees **only** its own rows --
+    legacy ``NULL`` rows are no longer visible; safe only after the legacy rows
+    have been backfilled with a tenant_id.
+
+    Resolution: ``MAVERICK_STRICT_TENANT_ISOLATION`` env wins over
+    ``[world_model] strict_tenant_isolation`` config, which wins over enterprise
+    mode (auto-on, #51/#57). Off for the default single-tenant install."""
+    explicit = _explicit_toggle("MAVERICK_STRICT_TENANT_ISOLATION", "strict_tenant_isolation")
+    if explicit is not None:
+        return explicit
+    return _enterprise_default()
 
 
 def _rls_enabled() -> bool:
-    """DB-native Row-Level Security (default off). When on, the tenant-scoped
-    tables get a Postgres RLS policy keyed on the ``maverick.tenant`` session
-    GUC, so the database enforces the tenant boundary even if an app-layer
-    predicate is ever missed — defense in depth over ``_tenant_scope``. Opt-in
-    because it implies the legacy ``NULL`` rows have been backfilled (RLS scopes
-    strictly to the active tenant). ``MAVERICK_PG_RLS`` env wins over
-    ``[world_model] rls``."""
-    env = os.environ.get("MAVERICK_PG_RLS")
-    if env is not None and env.strip() != "":
-        return env.strip().lower() in {"1", "true", "yes", "on"}
-    try:
-        from ..config import load_config
-        v = (load_config() or {}).get("world_model", {}).get("rls")
-    except Exception:  # pragma: no cover -- config never blocks construction
-        return False
-    return str(v).strip().lower() in {"1", "true", "yes", "on"} if isinstance(v, str) else bool(v)
+    """DB-native Row-Level Security. When on, the tenant-scoped tables get a
+    Postgres RLS policy keyed on the ``maverick.tenant`` session GUC, so the
+    database enforces the tenant boundary even if an app-layer predicate is ever
+    missed — defense in depth over ``_tenant_scope``. Implies the legacy
+    ``NULL`` rows have been backfilled (RLS scopes strictly to the active
+    tenant), which is why enterprise auto-on is gated by a boot preflight.
+
+    Resolution: ``MAVERICK_PG_RLS`` env wins over ``[world_model] rls`` config,
+    which wins over enterprise mode (auto-on, #51/#57). Off otherwise."""
+    explicit = _explicit_toggle("MAVERICK_PG_RLS", "rls")
+    if explicit is not None:
+        return explicit
+    return _enterprise_default()
+
+
+def _rls_explicitly_set() -> bool:
+    """True when the operator explicitly chose the RLS toggle (env or config).
+
+    The boot preflight only *refuses* to start on legacy ``NULL`` rows when RLS
+    was auto-enabled by enterprise mode; an operator who set ``MAVERICK_PG_RLS=1``
+    has opted into the strict boundary knowingly, so we keep the existing
+    fail-closed install path for them rather than blocking boot."""
+    return _explicit_toggle("MAVERICK_PG_RLS", "rls") is not None
 
 
 def _pool_size() -> int:
@@ -703,6 +747,7 @@ class PostgresWorldModel:
         self._lock = threading.RLock()
         self._migrate()
         if self._rls:
+            self._preflight_rls_or_die()
             self._apply_rls()
 
     def __enter__(self) -> PostgresWorldModel:
@@ -761,6 +806,49 @@ class PostgresWorldModel:
         # set_config(name, value, is_local=true) is the parameterizable form of
         # SET LOCAL — transaction-scoped, cleared at commit/rollback.
         cur.execute("SELECT set_config('maverick.tenant', %s, true)", (value,))
+
+    def _preflight_rls_or_die(self) -> None:
+        """Refuse to boot when enterprise auto-on RLS would silently hide rows.
+
+        When the operator explicitly enabled RLS (``MAVERICK_PG_RLS=1`` /
+        ``[world_model] rls = true``) they have knowingly opted into the strict
+        boundary, so we skip this gate and let ``_apply_rls`` install the
+        fail-closed policy as before. But when RLS was *auto-enabled* by
+        enterprise mode (#51/#57), forcing the policy on a store that still holds
+        legacy ``tenant_id IS NULL`` rows would freeze those rows invisibly --
+        data loss by side effect. So we run the read-only :func:`pg_rls.preflight`
+        and raise with a remediation pointer instead of booting.
+
+        Ownership problems are left to ``_apply_rls`` (it tolerates a non-owner
+        connection when the policy is already installed); this gate is strictly
+        about the NULL-tenant data-safety hazard.
+        """
+        if _rls_explicitly_set():
+            return
+        from . import pg_rls
+        try:
+            if self._pool is not None:
+                with self._pool.connection() as conn:
+                    report = pg_rls.preflight(conn)
+            else:
+                report = pg_rls.preflight(self.conn)
+        except Exception as e:  # pragma: no cover -- preflight never blocks an explicit opt-in
+            log.warning("RLS preflight could not run (%s); proceeding to _apply_rls", e)
+            return
+        offenders = {
+            t: info["null_tenant_rows"]
+            for t, info in report.get("tables", {}).items()
+            if info.get("null_tenant_rows")
+        }
+        if offenders:
+            detail = ", ".join(f"{t}={n}" for t, n in sorted(offenders.items()))
+            raise RuntimeError(
+                "Enterprise mode auto-enabled Postgres RLS, but legacy rows with "
+                f"tenant_id IS NULL would be hidden and frozen ({detail}). Assign "
+                "them to a tenant first: `maverick tenant backfill <tenant_id>` "
+                "(preview with `maverick tenant rls-preflight`). To opt into RLS "
+                "knowingly without backfilling, set MAVERICK_PG_RLS=1 explicitly."
+            )
 
     def _apply_rls(self) -> None:
         """Enable Postgres Row-Level Security on the tenant-scoped tables.
