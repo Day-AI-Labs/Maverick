@@ -366,9 +366,29 @@ class Budget:
         with self._lock:
             self._reserved = max(0.0, getattr(self, "_reserved", 0.0) - held)
 
+    def cache_hit_rate(self) -> float:
+        """Fraction of prompt-input tokens served from cache this run, across
+        ALL providers (Anthropic ephemeral, OpenAI/Gemini auto-cache).
+
+        ``cache_read / (cache_read + billable_input)`` — the consolidated
+        signal there was no single cross-provider view of before (each
+        provider's cache was its own ledger). 0.0 when nothing was sent."""
+        seen = self.input_tokens + self.cache_read_tokens
+        return (self.cache_read_tokens / seen) if seen else 0.0
+
+    def cache_stats(self) -> dict:
+        """Read-only cross-provider cache accounting for this run."""
+        return {
+            "cache_read_tokens": self.cache_read_tokens,
+            "cache_write_tokens": self.cache_write_tokens,
+            "billable_input_tokens": self.input_tokens,
+            "hit_rate": self.cache_hit_rate(),
+        }
+
     def summary(self) -> str:
         return (
             f"tokens in={self.input_tokens} out={self.output_tokens} "
+            f"cache_read={self.cache_read_tokens} hit_rate={self.cache_hit_rate():.0%} "
             f"$={self.dollars:.3f} tools={self.tool_calls} wall={self.elapsed():.0f}s"
         )
 
