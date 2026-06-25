@@ -594,9 +594,15 @@ class Agent:
         self.max_steps = env_int("MAVERICK_MAX_STEPS", max_steps)
         self.name = f"{role}-{depth}-{uuid.uuid4().hex[:6]}"
 
+        # Resolve the model BEFORE building the system prompt: the self-harness
+        # addendum layer (_with_harness_addendum) recalls guidance keyed on
+        # self.model, so self.model must exist when _build_system runs.
+        # Otherwise recall_addendum(self.model) raises AttributeError, the
+        # addendum's except swallows it, and the learned guidance is silently
+        # dropped from every prompt -- the feature becomes a no-op.
+        self.model = model_override or model_for_role(role)
         self.tools = self._build_tools()
         self.system = self._build_system()
-        self.model = model_override or model_for_role(role)
         # Per-role reasoning effort (opt-in; None unless configured). Resolved
         # once against this agent's role + model so the cost/latency lever rides
         # every LLM call this agent makes. Model-gated -> never 400s.
