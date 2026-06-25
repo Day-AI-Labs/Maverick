@@ -4805,6 +4805,12 @@ def domains_audit(json_out: str | None, suite: str | None) -> None:
     click.echo(f"  with suite/pack refusals:     {s['packs_with_refusals_beyond_universal']}")
     click.echo(f"  with a declared deliverable:  {s['packs_with_deliverable']}")
     click.echo(f"  with a reasoning-effort tier: {s['packs_with_effort_tier']}")
+    _ap = s.get("autonomy_posture", {})
+    click.echo(
+        "  autonomy posture (baseline rung): "
+        f"observe={_ap.get('observe', 0)} suggest={_ap.get('suggest', 0)} "
+        f"request={_ap.get('request', 0)} auto={_ap.get('auto', 0)}; "
+        f"onboarding={s.get('packs_onboarding', 0)}")
     flagged = [a for a in audits if a.reachable_dangerous and not a.is_builder]
     for a in flagged:
         click.echo(f"  FLAG {a.name}: reaches {', '.join(a.reachable_dangerous)}", err=True)

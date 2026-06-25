@@ -264,6 +264,54 @@ def resolve(
         return AutonomyVerdict(AutonomyLevel.SUGGEST, decision, execute_by, "resolver error -- staged")
 
 
+# -- suite-level defaults (the hire's starting authority by department) -----
+#
+# Like SUITE_DISCIPLINE / SUITE_REFUSALS, the baseline posture is keyed by suite
+# in code rather than copied into every pack TOML -- a pack may still override
+# with its own [autonomy] block, and the client overrides per agent via
+# [workforce.agents]. Two tiers:
+#
+#   STRICT   -- high-stakes / regulated work: every consequential action is
+#               staged for a human (default SUGGEST). Finance, legal, clinical,
+#               safety-critical, fund, and irreversible-filing suites.
+#   STANDARD -- operational / routine work: low-risk actions run autonomously,
+#               routine ones act after a one-time approval (REQUEST), high-risk
+#               stays human. Sales, CX, marketing, ops, logistics, etc.
+#
+# Both start in onboarding (one rung lower until graduated). Unknown / legacy
+# packs fall to STRICT -- the safe default.
+
+_STRICT = AutonomyProfile(default=AutonomyLevel.SUGGEST, onboarding=True)
+_STANDARD = AutonomyProfile(
+    default=AutonomyLevel.REQUEST, low=AutonomyLevel.AUTO,
+    high=AutonomyLevel.SUGGEST, onboarding=True,
+)
+
+# Suites whose work is high-stakes / regulated / irreversible -> STRICT.
+_STRICT_SUITES: frozenset[str] = frozenset({
+    "finance", "tax", "banking", "capital_markets", "insurance", "legal",
+    "healthcare", "pharma_lifesciences", "medical_devices", "security_ops",
+    "it_grc", "public_sector", "government_contracting", "crypto_digital_assets",
+    "private_equity_vc", "aerospace_defense", "oil_gas", "chemicals",
+    "utilities", "water_utilities", "maritime", "mining_metals", "nuclear_power",
+    "executive_office",
+})
+
+
+def default_profile_for(name: str) -> AutonomyProfile:
+    """The suite-level baseline authority for a pack with no explicit
+    ``[autonomy]`` block. Falls to STRICT for high-stakes suites and for
+    unknown / legacy packs; STANDARD for operational suites."""
+    try:
+        from .domain import suite_for
+        suite = suite_for(name)
+    except Exception:  # pragma: no cover -- never block resolution
+        suite = None
+    if suite is None or suite in _STRICT_SUITES:
+        return _STRICT
+    return _STANDARD
+
+
 # -- config binding (impure; fail-open) ------------------------------------
 
 def levels_enabled() -> bool:
@@ -285,10 +333,11 @@ def levels_enabled() -> bool:
 
 
 def effective_profile(name: str, pack_profile: AutonomyProfile | None) -> AutonomyProfile:
-    """The pack's declared profile with the client's ``[workforce.agents]``
-    override for ``name`` layered on top. Falls back to the pack profile (or a
-    default ``SUGGEST`` profile) when no override or config is present."""
-    base = pack_profile or AutonomyProfile()
+    """The effective authority for ``name``: the pack's explicit ``[autonomy]``
+    block if it set one, else the suite-level default
+    (:func:`default_profile_for`), with the client's ``[workforce.agents]``
+    override layered on top."""
+    base = pack_profile or default_profile_for(name)
     try:
         from .config import get_workforce
         override = get_workforce().get("agents", {}).get(name)
@@ -369,6 +418,7 @@ __all__ = [
     "resolve",
     "levels_enabled",
     "effective_profile",
+    "default_profile_for",
     "decide",
     "render_autonomy_prompt",
 ]

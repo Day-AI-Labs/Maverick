@@ -47,6 +47,8 @@ class PackAudit:
     deliverable: str = ""
     consumers: list[str] = field(default_factory=list)
     knowledge_sources: list[str] = field(default_factory=list)
+    autonomy: str = "suggest"              # baseline authority rung (pack block or suite default)
+    autonomy_onboarding: bool = True       # starts supervised until graduated
 
 
 def _human_gate(p: DomainProfile) -> str | None:
@@ -67,6 +69,8 @@ def audit_profile(profile: DomainProfile) -> PackAudit:
     reachable = [t for t in _DANGEROUS if cap.permits(t)]
     denied = [t for t in _IRREVERSIBLE if t in set(profile.deny_tools)]
     refusals = refusals_for(profile.name, profile.refuse)
+    from .agent_autonomy import default_profile_for
+    _auto = profile.autonomy or default_profile_for(profile.name)
     return PackAudit(
         name=profile.name,
         suite=suite_for(profile.name),
@@ -82,6 +86,8 @@ def audit_profile(profile: DomainProfile) -> PackAudit:
         deliverable=profile.output.deliverable,
         consumers=list(profile.output.consumers),
         knowledge_sources=list(profile.knowledge_sources),
+        autonomy=_auto.default.value,
+        autonomy_onboarding=_auto.onboarding,
     )
 
 
@@ -108,6 +114,13 @@ def summarize(audits: list[PackAudit]) -> dict:
             1 for a in audits if a.n_refusals > 2),
         "packs_with_effort_tier": sum(1 for a in audits if a.effort),
         "packs_with_deliverable": sum(1 for a in audits if a.deliverable),
+        # Per-agent authority posture (the agent-as-employee dial). Distribution
+        # of the baseline rung each hire starts at, and how many begin supervised.
+        "autonomy_posture": {
+            rung: sum(1 for a in audits if a.autonomy == rung)
+            for rung in ("observe", "suggest", "request", "auto")
+        },
+        "packs_onboarding": sum(1 for a in audits if a.autonomy_onboarding),
     }
 
 
