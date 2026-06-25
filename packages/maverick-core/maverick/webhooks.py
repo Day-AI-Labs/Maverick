@@ -361,7 +361,8 @@ def inbound_secret() -> str | None:
     environment takes precedence for deploys that prefer env over config.
     Returns None when no secret is configured (the receiver fails closed).
     """
-    env = os.environ.get("MAVERICK_WEBHOOK_SECRET")
+    from .secret_provider import get_secret  # vault-mountable secret (#54)
+    env = get_secret("MAVERICK_WEBHOOK_SECRET")
     if env:
         return env
     _, secret = _load_config_outbound()

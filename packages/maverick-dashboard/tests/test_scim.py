@@ -83,6 +83,17 @@ class TestAuth:
         assert c.get("/scim/v2/Users", headers=_auth(tok)).status_code == 200
         assert c.get("/scim/v2/Users", headers=_auth("wrong")).status_code == 401
 
+    def test_deprovision_revokes_live_sessions(self, client):
+        # Deprovisioning must end current access (#58), not just future logins:
+        # the SCIM user's identifiers get a revocation epoch so live sessions die.
+        from maverick_dashboard import session_revocation as sr
+        r = _make_user(client, externalId="okta-sub-123")
+        uid = r.json()["id"]
+        assert sr.revocation_epoch("okta-sub-123") == 0.0
+        client.delete(f"/scim/v2/Users/{uid}", headers=_auth())
+        assert sr.revocation_epoch("okta-sub-123") > 0.0   # externalId (= OIDC sub)
+        assert sr.revocation_epoch("alice@example.com") > 0.0  # userName too
+
 
 class TestDiscovery:
     def test_service_provider_config(self, client):
