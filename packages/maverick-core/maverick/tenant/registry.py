@@ -218,13 +218,34 @@ def resume_tenant(tenant_id: str) -> TenantRecord:
     return _mutate(tenant_id, status=ACTIVE)
 
 
+def _audit_billing_change(field: str, tenant_id: str, *, old, new) -> None:
+    """Record a tamper-evident audit row for a change to a tenant's billing
+    terms (plan / daily cap), so an upgrade or cap change is provable rather than
+    a silent edit. Fail-soft: an audit error never blocks the mutation."""
+    try:
+        from ..audit import EventKind, record
+        kind = (EventKind.TENANT_PLAN_CHANGED if field == "plan"
+                else EventKind.TENANT_QUOTA_CHANGED)
+        record(kind, agent="operator", tenant=tenant_id, field=field,
+               old=old, new=new)
+    except Exception:  # pragma: no cover -- audit must never break provisioning
+        pass
+
+
 def set_quota(tenant_id: str, max_daily_dollars: float) -> TenantRecord:
-    return _mutate(tenant_id, max_daily_dollars=max(0.0, float(max_daily_dollars or 0.0)))
+    old = get_tenant(tenant_id)
+    rec = _mutate(tenant_id, max_daily_dollars=max(0.0, float(max_daily_dollars or 0.0)))
+    _audit_billing_change("quota", rec.id, old=(old.max_daily_dollars if old else None),
+                          new=rec.max_daily_dollars)
+    return rec
 
 
 def set_plan(tenant_id: str, plan: str) -> TenantRecord:
     _warn_if_unknown_plan(plan)
-    return _mutate(tenant_id, plan=str(plan or "free"))
+    old = get_tenant(tenant_id)
+    rec = _mutate(tenant_id, plan=str(plan or "free"))
+    _audit_billing_change("plan", rec.id, old=(old.plan if old else None), new=rec.plan)
+    return rec
 
 
 def delete_tenant(tenant_id: str, *, purge: bool = False) -> bool:

@@ -96,6 +96,11 @@ class EventKind:
     RETENTION_PURGE = "retention_purge"
     HALT            = "halt"
     CONFIG_REMEDIATED = "config_remediated"
+    # A tenant's billing terms changed (plan or daily spend cap). One signed row
+    # per change so a plan upgrade / cap change is a provable control-plane act,
+    # not a silent edit. payload: tenant, field ("plan"|"quota"), old, new.
+    TENANT_PLAN_CHANGED = "tenant_plan_changed"
+    TENANT_QUOTA_CHANGED = "tenant_quota_changed"
     FEDERATION_DELEGATE = "federation_delegate"
     # Agent Trust Plane: an external agent was refused an inbound action or an
     # outbound dial because it is absent from the [agent_trust] registry, its

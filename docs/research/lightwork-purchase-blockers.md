@@ -105,7 +105,8 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 69/73. ◐ **No payment processor / no subscription automation** — by design for contract-sold tiers; `docs/billing.md` documents the meter→idempotent-invoice→AR model (#1799).
 70/72. ◐ **No license key; plans config-overridable** — entitlement plans gate features per tenant; collection is contract/AR. By design, documented.
 71. ◐🔧 **Entitlement fails open** — deliberately permissive so single-tenant/self-host is never gated; a strict multi-tenant enforcement mode remains an optional eng add.
-74/75/76/77/78/80/81. 🔧 **Quota soft-warn, off-by-default, concurrency fail-open, fail-soft reads, uncoordinated ceilings, no plan-change audit trail, plan-level cap unenforced** — small eng items; several are intentional single-tenant defaults.
+74/75/76/77/78/81. 🔧 **Quota soft-warn, off-by-default, concurrency fail-open, fail-soft reads, uncoordinated ceilings, plan-level cap unenforced** — small eng items; several are intentional single-tenant defaults.
+80. ✅ **No audit trail for plan/quota changes** — `set_plan`/`set_quota` now emit a tamper-evident audit row (`tenant_plan_changed` / `tenant_quota_changed`, with old→new values), covering the dashboard control-plane API and the CLI, so an upgrade or cap change is provable, not a silent edit (#1799).
 79. ✅ **Plan-name typo silently downgraded to `free`** — `billing.known_plan_names()` + registry/CLI warnings (#1799).
 82. ◐ **Stripe refunds env-gated** — reasonable guardrail; agents never create charges (by design).
 83. ✅ **Invoice double-bill risk** — deterministic `invoice_id` idempotency key (#1799).
@@ -145,7 +146,7 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
   isolation, SSO/OIDC by default, resource RBAC, secrets vault, SIEM/WORM export,
   control/data-plane split, Postgres+RLS (#48, #51–#65). This is the audit's
   ~30–40 person-week floor and the real gate on a hosted regulated offering.
-- **Engineering backlog (small):** #41, #55, #66, #76, #78, #80, #81, #90, #94 — each a
+- **Engineering backlog (small):** #41, #55, #66, #76, #78, #81, #94 — each a
   contained hardening task.
 - **Business / legal / founder:** certifications (#32–#40), contracts (#3–#5, #43–#46,
   #86), pricing decisions (#7, #11, #15–#21), entity/trademark/insurance/positioning
