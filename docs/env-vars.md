@@ -116,7 +116,8 @@ for false unless noted otherwise.
 
 | Env var | Default | Description |
 | --- | --- | --- |
-| `MAVERICK_STRICT_TENANT_ISOLATION` | config `[world_model] strict_tenant_isolation` (off) | Postgres reads return ONLY the active tenant's rows (drop NULL-legacy tolerance). Enable after backfilling `tenant_id`. |
+| `MAVERICK_STRICT_TENANT_ISOLATION` | config `[world_model] strict_tenant_isolation`; **auto-on under enterprise mode** | Postgres reads return ONLY the active tenant's rows (drop NULL-legacy tolerance). Enable after backfilling `tenant_id`. Env wins over config wins over enterprise default. |
+| `MAVERICK_PG_RLS` | config `[world_model] rls`; **auto-on under enterprise mode** | DB-native Postgres Row-Level Security on the tenant tables (defense-in-depth over the app predicate). When auto-enabled by enterprise mode, a boot preflight refuses to start on legacy `tenant_id IS NULL` rows (run `maverick tenant backfill`); explicit `=1` keeps the fail-closed opt-in path. |
 | `MAVERICK_KMS_KEK` | derived from the at-rest key | The per-tenant-DEK Key Encryption Key (32 bytes, hex/base64) for `tenant_kms`. |
 | `MAVERICK_MCP_ANALYTICS` | config `[analytics] mcp_client_language` (off) | Opt-in, consent-gated tally of MCP-client language (feeds the language-bindings gate). |
 | `IRC_ALLOWED_ACCOUNTS` | — | Comma-separated allowlist of authenticated IRC account names that may drive the agent over the IRC channel. Requires an IRC server that provides the IRCv3 `account-tag` capability. |
@@ -206,6 +207,18 @@ Config equivalents live under `[effort]` (`enabled`, `default`, `<role>`) and
 | `MAVERICK_ANON` | config `[privacy] anonymous` (off) | Enable anonymous mode (scrubs home paths and identifying data). |
 | `MAVERICK_AI_DISCLOSURE` | config `[compliance] disclosure_text` | AI-disclosure text appended to outputs; empty string opts out. |
 | `MAVERICK_STRIPE_ENABLE_REFUNDS` | unset (off) | Required to allow the Stripe tool to issue real refunds. |
+
+## Secrets, residency & audit forwarding
+
+| Env var | Default | Description |
+| --- | --- | --- |
+| `MAVERICK_SECRETS_BACKEND` | config `[secrets] backend` (`env`) | Where deployment secrets are read from. `env` = process environment (default, unchanged). `file` = mounted secret files (Vault Agent / Secrets Store CSI / Docker/podman secrets), one secret per file, with env fallback. Applies to OIDC client/session secrets, the inbound webhook secret, and the SCIM bearer. |
+| `MAVERICK_SECRETS_DIR` | config `[secrets] dir` | Directory the `file` backend reads (`<dir>/MAVERICK_OIDC_CLIENT_SECRET`, etc.; trailing newline trimmed). |
+| `MAVERICK_RESIDENCY_STRICT` | config `[residency] strict` (off) | Refuse to boot when the declared data region is missing or outside the allowed set (`require_residency_or_die`). Off = informational only. |
+| `MAVERICK_DATA_REGION` | config `[residency] region` | The deployment's declared data region (ISO code or group, e.g. `DE`, `EU`). |
+| `MAVERICK_RESIDENCY_ALLOWED` | config `[residency] allowed_regions` | Comma-separated permitted storage regions; `EU`/`EEA` groups expand to members. Empty = region unconstrained. |
+| `MAVERICK_SIEM_DEST` | config `[audit] siem_dest` | Destination for `maverick audit forward`: `tcp://host:port` / `udp://host:port` (syslog) or `http(s)://host/path` (Splunk HEC `/raw`, etc.). |
+| `MAVERICK_SIEM_TOKEN` | — | Bearer sent on HTTP(S) audit forwarding (read via the secret provider). |
 
 ## Observability
 

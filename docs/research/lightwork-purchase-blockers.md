@@ -27,10 +27,36 @@ false-positive + stale doc (#68), plan-name typo guard (#79), invoice idempotenc
 read-mostly (#82), self-host-only (#85), quotas/entitlement permissive defaults
 (#71/#72/#75/#77), MCP slug + package names (#101).
 
-**Engineering backlog (substantial — the audit's own ~30–40 person-week estimate):**
-multi-tenant isolation, SSO/OIDC-by-default, resource RBAC, secrets vault, SIEM
-export, control/data-plane split, Postgres+RLS hardening (#48, #51–#65), plus
-smaller items (#41, #55, #66, #76, #78, #80, #81, #90, #94).
+**Engineering backlog — re-scoped after a code-level re-audit.** The audit's
+~30–40 person-week estimate assumed these were greenfield. A file-by-file review
+found the regulated-SaaS substrate was *largely already built* (mature Postgres
+tenancy with fail-closed RLS, per-tenant flooring + KMS/DEK, OIDC/SAML/SCIM +
+RBAC + owner-row scoping, WORM export, an out-of-process dispatcher seam, a
+unified enterprise/REGULATED_PROFILE). The real remaining work was a set of
+*contained, opt-in* hardening tasks, now landed:
+
+- ✅ **#51/#57 enterprise-default isolation+RLS** — strict per-tenant reads and
+  Postgres RLS auto-enable under `MAVERICK_PROFILE=enterprise`, gated by a boot
+  preflight that refuses to start on legacy NULL-tenant rows.
+- ✅ **#52 guarded require-auth** — the dashboard refuses to boot if
+  `[dashboard] require_auth` is set with no token/OIDC/proxy (PR #1803, merged).
+- ✅ **#58 session/token revocation** — per-principal revocation epoch; logout-
+  everywhere + SCIM deprovision end live sessions/bearers.
+- ✅ **#54 secrets vault seam** — `secret_provider.get_secret()` with a `file`
+  backend (Vault/CSI/Docker-secret mounts), wired into OIDC/webhook/SCIM secrets.
+- ✅ **#56 SIEM forwarder** — `maverick audit forward` pushes the audit log to a
+  tcp/udp syslog or http(s) (Splunk HEC) collector (push counterpart of export).
+- ✅ **#62 control/data-plane** — the gRPC remote-worker dispatcher is now wired
+  into dashboard startup (it had a complete installer nothing called).
+- ✅ **#41 data residency** — strict region pin enforced at boot via
+  `require_residency_or_die()` + a `verify_deployment()` guarantee.
+- ✅ **#78 budget/cap coordination** — the per-run dollar cap is clamped to the
+  tenant's remaining daily allowance, so one run can't overshoot the tenant cap.
+
+Earlier-merged smaller items: #55, #68, #79, #80, #81, #83, #90, #92 (PRs #1798/
+#1799). Genuinely-large items still open as *roadmap*, not blockers: per-tenant
+KMS at fleet scale, Alembic-grade migration governance, and an automated
+control/data-plane e2e + evidence artifact.
 
 **Owner: business / legal / founder (not code):** certifications (#32–#40), legal
 contracts (#3–#5, #43–#46, #86), pricing decisions (#7, #11, #15–#21), entity /
@@ -81,7 +107,13 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 35. 👤 **No HIPAA BAA** — counsel-drafted, per-deal. (legal)
 36. 👤/🔧 **No FedRAMP path; no FIPS crypto** — FedRAMP correctly deferred (business); FIPS mode is eng backlog.
 37–40. 👤 **SIG/CAIQ kit, Trust Center, audit independence, open action items** — (business)
-41. 🔧 **No data-residency / region-pinning** — engineering backlog.
+41. ✅ **No data-residency / region-pinning** — `maverick.residency` declares the
+    deployment region + allowed set (EU/EEA groups expand) and, in strict mode
+    (`MAVERICK_RESIDENCY_STRICT` / `[residency] strict`), refuses to boot when the
+    region is missing or outside the allowlist (`require_residency_or_die`, wired
+    into the dashboard lifespan; also a `verify_deployment()` guarantee). Off by
+    default. Honest scope: it pins/validates the *declared* region, not the
+    physical location of every byte.
 42. 👤 **Vuln-disclosure program has no track record** — time + reports. (business)
 
 ## E. Legal contracts
@@ -94,8 +126,14 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 48. 🔧◐ **Default `local` sandbox runs host shell** — honest in `SECURITY.md`; the wizard already defaults real installs to a container when available, and enterprise mode upgrades `local`→container and fails closed. Making it fail-closed everywhere is a kernel-philosophy change (eng/decision).
 49. ◐ **Agent Shield optional / fails open** — kernel rule 1 (fail-open by design); documented as a floor, not a guarantee.
 50. 👤 **Residual risk R-01 (sandbox escape) → pen test** — schedule the pen test. (business)
-51–65. 🔧 **Multi-tenant isolation, SSO/OIDC-by-default, resource RBAC, secrets vault, SIEM export, single-writer/PG-prototype, thread isolation, control/data-plane split, fail-closed enforcement mode** — the substantial regulated-SaaS engineering track (the audit's ~30–40 pw floor). Not addressed here; tracked as the core eng backlog. OIDC/encryption/signing *do* exist as opt-in/секure-default; the gap is "enforced multi-tenant by default."
-55. 🔧 **Audit signing silently degrades to unsigned if `cryptography` missing** — small: make it warn loudly / refuse under a compliance floor.
+51–65. ✅◐ **Multi-tenant isolation, SSO/OIDC-by-default, resource RBAC, secrets vault, SIEM export, control/data-plane split, fail-closed enforcement** — a code-level re-audit found this substrate *largely already built* (Postgres tenancy + fail-closed RLS, per-tenant flooring + KMS/DEK, OIDC/SAML/SCIM + RBAC + owner-row scoping, WORM export, dispatcher seam, unified enterprise profile). The remaining opt-in gaps are now closed: **#51/#57** enterprise-default strict-isolation + RLS with a boot preflight; **#52** guarded require-auth (PR #1803); **#58** session/token revocation; **#54** `secret_provider` vault seam; **#56** `maverick audit forward` SIEM push; **#62** gRPC dispatcher wired into startup. Roadmap (not blockers): per-tenant KMS at fleet scale, migration governance, control/data-plane e2e.
+52. ✅ **Dashboard could boot with auth required but unconfigured** — `_assert_dashboard_auth_configured()` refuses startup when `[dashboard] require_auth` is set with no token/OIDC/proxy (PR #1803, merged).
+54. ✅ **No secrets vault** — `maverick.secret_provider.get_secret()` adds a `file` backend (Vault Agent / Secrets Store CSI / Docker-secret mounts), wired into the OIDC client/session secrets, the inbound webhook secret, and the SCIM bearer; default `env` backend keeps existing behavior.
+56. ✅ **SIEM export was pull-only** — `maverick audit forward` pushes the tamper-evident log (JSONL/CEF) to a tcp/udp syslog or http(s) collector (Splunk HEC), the push counterpart of `audit export`; same paid-tier entitlement gate.
+57. ✅ **Enforced multi-tenant by default** — see #51 (strict isolation + RLS auto-on under enterprise mode).
+58. ✅ **No way to revoke a session/bearer** — per-principal revocation epoch (`session_revocation.py`): logout-everywhere and SCIM deprovision (`active=false`/DELETE) end live cookies and OIDC bearers, not just future logins.
+62. ✅ **Control/data-plane split incomplete** — the gRPC remote-worker dispatcher (`grpc_dispatcher.install_from_config`) is now installed at dashboard startup as the out-of-process fallback after the arq queue; it had been complete but uncalled.
+55. ✅ **Audit signing silently degrades to unsigned if `cryptography` missing** — warns loudly and refuses under a compliance floor (earlier pass).
 66. 🔧 **Firecracker silently falls back to Docker** — small: alert on fallback.
 67. ◐ **Plugins run in-process** — load-time allowlist by design; syscall sandbox is eng backlog.
 68. ✅ **"Config not schema-validated"** — `config-lint` already existed (`maverick config-lint` + startup warning); fixed the `[budget] self_tuning` false-positive and the stale `configuration.md` claim (#1799). *Post-merge review:* `configuration.md` had claimed config-lint also runs inside `maverick doctor`, which it did not — now wired in (advisory `config-lint` rows), so the claim is true and `doctor` catches budget typos.
@@ -105,7 +143,8 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 69/73. ◐ **No payment processor / no subscription automation** — by design for contract-sold tiers; `docs/billing.md` documents the meter→idempotent-invoice→AR model (#1799).
 70/72. ◐ **No license key; plans config-overridable** — entitlement plans gate features per tenant; collection is contract/AR. By design, documented.
 71. ◐🔧 **Entitlement fails open** — deliberately permissive so single-tenant/self-host is never gated; a strict multi-tenant enforcement mode remains an optional eng add.
-74/75/76/77/78/81. 🔧 **Quota soft-warn, off-by-default, concurrency fail-open, fail-soft reads, uncoordinated ceilings, plan-level cap unenforced** — small eng items; several are intentional single-tenant defaults.
+74/75/76/77/81. ◐ **Quota soft-warn, off-by-default, concurrency fail-open, fail-soft reads, plan-level cap** — wired onto the core run path (#74), plan-cap fallback (#81, opt-in), loud fail-soft reads (#77); the remaining off-by-default behaviors are intentional single-tenant defaults.
+78. ✅ **Uncoordinated ceilings** — the per-run budget (`max_dollars`) is now clamped to the tenant's remaining daily allowance (`registry.tenant_remaining_today`), the highest-precedence budget layer, so a single run can't overshoot the per-tenant aggregate cap between over-quota checks.
 80. ✅ **No audit trail for plan/quota changes** — `set_plan`/`set_quota` now emit a tamper-evident audit row (`tenant_plan_changed` / `tenant_quota_changed`, with old→new values), covering the dashboard control-plane API and the CLI, so an upgrade or cap change is provable, not a silent edit (#1799).
 79. ✅ **Plan-name typo silently downgraded to `free`** — `billing.known_plan_names()` + registry/CLI warnings (#1799).
 82. ◐ **Stripe refunds env-gated** — reasonable guardrail; agents never create charges (by design).
@@ -123,7 +162,7 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 91. 👤 **Unsigned installers** — code-signing certs are an identity/cost step. (business)
 92. ✅ **VPS installer pulled mutable `main`** — now defaults to the latest published release, falls back to `main` with a warning (#1799).
 93/94/96/97. 🔧/👤 **Upgrade runbook, backup/DR, retention enforcement, IaC** — ops docs + small eng.
-95. 🔧 **Postgres RLS enable-on-live-data sharp edges** — documented in `multi-tenancy.md`; safer migration is eng backlog.
+95. ✅ **Postgres RLS enable-on-live-data sharp edges** — the enterprise auto-on path (#51/#57) now runs `_preflight_rls_or_die()`, which refuses to boot when legacy `tenant_id IS NULL` rows would be frozen and points the operator at `maverick tenant backfill`; explicit `MAVERICK_PG_RLS=1` keeps the documented opt-in path. Safe-on-ramp tooling (`rls-preflight`/`backfill`) documented in `multi-tenancy.md`.
 
 ## I. Branding (customer-facing)
 
@@ -142,12 +181,14 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 
 ## What remains, by owner
 
-- **Engineering backlog (large):** the regulated-SaaS substrate — enforced multi-tenant
-  isolation, SSO/OIDC by default, resource RBAC, secrets vault, SIEM/WORM export,
-  control/data-plane split, Postgres+RLS (#48, #51–#65). This is the audit's
-  ~30–40 person-week floor and the real gate on a hosted regulated offering.
-- **Engineering backlog (small):** #41, #55, #66, #76, #78, #81, #94 — each a
-  contained hardening task.
+- **Engineering backlog (the regulated-SaaS substrate, #48/#51–#65):** the code-level
+  re-audit found this *largely already built*, and the remaining opt-in gaps are now
+  closed (#51/#52/#54/#56/#57/#58/#62 — see the resolution summary). What is left is
+  **roadmap, not a purchase blocker**: per-tenant KMS at fleet scale, Alembic-grade
+  migration governance, and an automated control/data-plane e2e + evidence artifact.
+- **Engineering backlog (small):** #66, #76, #94 — each a contained hardening task
+  (Firecracker→Docker fallback alerting, concurrency default, IaC examples). #41,
+  #55, #78, #81, #95 are now resolved (above).
 - **Business / legal / founder:** certifications (#32–#40), contracts (#3–#5, #43–#46,
   #86), pricing decisions (#7, #11, #15–#21), entity/trademark/insurance/positioning
   (#22–#31), GA/signing/maintainer (#2, #84, #87, #91), market bets (#104–#110). None
