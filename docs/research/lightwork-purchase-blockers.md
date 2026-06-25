@@ -118,7 +118,7 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 87. 👤 **Single-maintainer / bus-factor** — hiring. (business)
 88. ◐ **Day-one requires an LLM provider key** — local-model (Ollama/vLLM) paths exist; a zero-key default-eval flow is an optional eng add.
 89. 🔧/👤 **Some channels are scaffolds** — the wizard already excludes them from the default checkbox; honest.
-90. 🔧 **Inbound webhooks 401 with no secret** — correct fail-closed; add onboarding guidance (small doc).
+90. ✅ **Inbound webhooks 401 with no secret** — correct fail-closed behavior; `env-vars.md` now states the consequence (was misleadingly "optional") so operators set the secret before relying on inbound channels (#1799).
 91. 👤 **Unsigned installers** — code-signing certs are an identity/cost step. (business)
 92. ✅ **VPS installer pulled mutable `main`** — now defaults to the latest published release, falls back to `main` with a warning (#1799).
 93/94/96/97. 🔧/👤 **Upgrade runbook, backup/DR, retention enforcement, IaC** — ops docs + small eng.
