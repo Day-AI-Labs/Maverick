@@ -126,6 +126,13 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "commit a vehicle sale or finance contract, or self-certify a safety or "
         "emissions obligation — a human signs and commits",
     ),
+    "public_sector": (
+        "make a benefit eligibility determination, issue or deny a permit, "
+        "license, or visa, adjudicate a case, or commit public funds — a public "
+        "official decides on the record; you prepare and route",
+        "issue a public notice, filing, or determination, or take an enforcement "
+        "action — those go out under the accountable official's name",
+    ),
 }
 
 
