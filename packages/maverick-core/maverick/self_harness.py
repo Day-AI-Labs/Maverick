@@ -341,8 +341,13 @@ def _compose_addendum(model_id: str, existing: str, line: str) -> str:
         if ln.startswith("- "):
             ln = ln[2:].strip()
         lines.append(ln)
-    if line not in lines:
-        lines.append(line)
+    # Re-promoting an existing line REFRESHES it to newest (renewed relevance),
+    # rather than leaving it at an old position where this pass's other new
+    # lines would evict it under the newest-wins cap -- which left a promoted
+    # line absent from the store (found by the 100k soak).
+    if line in lines:
+        lines.remove(line)
+    lines.append(line)
     lines = lines[-_MAX_LINES_PER_MODEL:]
     block = header + "\n" + "\n".join(f"- {ln}" for ln in lines)
     return block[:_MAX_ADDENDUM_CHARS]
@@ -407,6 +412,15 @@ def run_self_harness(
         sigs = mine_failures(reflexions, model_id=model_id, min_support=min_support)
         report.mined = len(sigs)
         for sig in sigs:
+            # The addendum block holds at most _MAX_LINES_PER_MODEL lines. Stop
+            # once this pass has filled them: signatures are sorted STRONGEST
+            # (highest support) first, so processing more would only let a weaker
+            # line evict a stronger one under the newest-wins cap -- and would
+            # gate + audit a promotion we'd immediately discard. Keep the
+            # strongest weaknesses; report the rest as deferred.
+            if report.promoted >= _MAX_LINES_PER_MODEL:
+                report.skipped.append(f"addendum at capacity: {sig.signature}")
+                continue
             proposal = propose_addendum(sig, propose_fn=propose_fn)
             if proposal is None:
                 report.skipped.append(f"no proposal: {sig.signature}")

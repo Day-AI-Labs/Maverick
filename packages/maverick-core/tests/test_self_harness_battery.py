@@ -421,13 +421,19 @@ def _mk_scorer(kind, seed):
 _NO_PROMOTE = {"noop", "regress", "nan", "inf", "raise"}
 
 
-def test_self_harness_fuzz_1000(monkeypatch, tmp_path):
-    """1000 deterministic generated scenarios through the real loop. Each mixes
+def test_self_harness_fuzz(monkeypatch, tmp_path):
+    """Deterministic generated scenarios through the real loop. Each mixes
     adversarial inputs and asserts the full invariant set -- a reproducible
     fuzz campaign, not a flake. The moat invariant: attacker/scoped text,
-    secrets, and control chars NEVER reach a recalled (prompt-bound) addendum."""
+    secrets, and control chars NEVER reach a recalled (prompt-bound) addendum.
+
+    Defaults to 1000 rounds so CI stays fast; a soak run can crank it with
+    ``MAVERICK_SELF_HARNESS_FUZZ_ROUNDS=100000`` (seeds are stable, so any
+    failure reproduces at that exact round)."""
+    import os
     import random as R
 
+    rounds = max(1, int(os.environ.get("MAVERICK_SELF_HARNESS_FUZZ_ROUNDS", "1000")))
     pool = ["A", "B", "C", "D", "E", "F"]
     stores = [tmp_path / f"st{i}.json" for i in range(8)]   # rotated -> reuse/accumulate
     viol: list[str] = []
@@ -437,7 +443,7 @@ def test_self_harness_fuzz_1000(monkeypatch, tmp_path):
         if not cond:
             viol.append(f"[r{n}] {msg}")
 
-    for n in range(1000):
+    for n in range(rounds):
         rng = R.Random(n)
         sh_on = rng.random() < 0.90
         si_on = rng.random() < 0.80
@@ -487,9 +493,10 @@ def test_self_harness_fuzz_1000(monkeypatch, tmp_path):
 
         ctrl = si.SelfImprovementController(frozen_fn=lambda f=frozen: f,
                                             ledger=si.PromotionLedger())
+        # When enabled, recall_addendum(m) == load_addenda(store).get(m, ""), so
+        # use the loaded dict for all checks -- avoids ~14 file reads/round, which
+        # is what makes a 100k-round soak feasible.
         before = sh.load_addenda(store)
-        before_recall = {m: (sh.recall_addendum(m, store) if sh_on else "")
-                         for m in pool}
 
         try:
             rep = sh.run_self_harness(
@@ -529,7 +536,7 @@ def test_self_harness_fuzz_1000(monkeypatch, tmp_path):
         if rep.promoted > 0:
             ck(n, si_on and not frozen and not dry, "promoted under a closed gate")
             ck(n, kind not in _NO_PROMOTE, f"promoted with no-promote scorer {kind!r}")
-            recalled = sh.recall_addendum(target, store)
+            recalled = after.get(target, "")
             ck(n, all(ln in recalled for ln in rep.applied_lines), "line not recalled")
         else:
             ck(n, after.get(target, "") == before.get(target, ""),
@@ -541,10 +548,9 @@ def test_self_harness_fuzz_1000(monkeypatch, tmp_path):
 
         # model isolation: every non-target model's addendum is unchanged
         for m in pool:
-            if m == target:
-                continue
-            ck(n, sh.recall_addendum(m, store) == before_recall[m],
-               f"model isolation broke for {m}")
+            if m != target:
+                ck(n, after.get(m, "") == before.get(m, ""),
+                   f"model isolation broke for {m}")
 
-    assert not viol, (f"{len(viol)} invariant violations across 1000 rounds "
+    assert not viol, (f"{len(viol)} invariant violations across {rounds} rounds "
                       f"(promoted {promoted_total} total):\n" + "\n".join(viol[:40]))

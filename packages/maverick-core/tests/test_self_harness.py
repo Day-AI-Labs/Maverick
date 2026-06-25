@@ -206,6 +206,33 @@ def _three(model="M", fclass="timeout"):
             for i in range(3)]
 
 
+def test_pass_caps_promotions_and_keeps_strongest(monkeypatch, store):
+    # A single pass must promote at most _MAX_LINES_PER_MODEL lines and never
+    # audit a line it would immediately evict under the newest-wins cap. Found
+    # by the 100k soak: with >8 distinct signatures, the cap was silently
+    # dropping the STRONGEST (highest-support, processed first) guidance.
+    ctrl = _enable(monkeypatch)
+    # 12 distinct failure classes for one model, each a 3-failure cluster, with
+    # decreasing support so the ordering (strongest first) is unambiguous.
+    recs = []
+    for k in range(12):
+        n = 14 - k                       # support 14, 13, ... -> strictly decreasing
+        recs += [{"model_id": "M", "failure_class": f"cls{k}",
+                  "goal_text": f"task alpha run {i}", "failure_msg": f"err{k}"}
+                 for i in range(n)]
+    rep = sh.run_self_harness(
+        recs, model_id="M", min_support=3, controller=ctrl, path=store,
+        held_in=["a", "b"], held_out=["c", "d", "e"],
+        score_with=lambda a, c: 0.95, score_without=lambda a, c: 0.4)
+    assert rep.promoted == sh._MAX_LINES_PER_MODEL          # capped, not 12
+    recalled = sh.recall_addendum("M", store)
+    # Every promoted line is actually live (no phantom promotion).
+    assert all(line in recalled for line in rep.applied_lines)
+    # The strongest weaknesses (cls0/cls1, highest support) were kept.
+    assert "cls0" in recalled and "cls1" in recalled
+    assert any("at capacity" in s for s in rep.skipped)
+
+
 def test_gate_reason_is_surfaced(monkeypatch, store):
     # Too few validation samples for the prompt rung (min 5): the refusal must
     # say WHY, not just "gate refused" (found by the 50-round stress campaign).
