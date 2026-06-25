@@ -196,6 +196,24 @@ def entitled(plan: str, feature: str) -> bool:
     return feature in entitlements_for(plan).features
 
 
+def known_plan_names() -> set[str]:
+    """Plan IDs an operator may legitimately assign: the built-in defaults plus
+    any defined in the ``[billing.plans]`` config section.
+
+    Used to catch a mistyped plan name -- ``entitlements_for`` silently falls
+    back to the ``free`` entitlements for an unknown plan, so a typo (``pr`` for
+    ``pro``) would otherwise leave a tenant under-entitled with no signal."""
+    names = set(DEFAULT_PLANS)
+    try:
+        from .config import load_config
+        plans = ((load_config() or {}).get("billing") or {}).get("plans") or {}
+        if isinstance(plans, dict):
+            names.update(str(k) for k in plans)
+    except Exception:  # pragma: no cover -- never block on config
+        pass
+    return names
+
+
 def tenant_entitled(tenant_id: str, feature: str) -> bool:
     """Whether the tenant's registered plan includes ``feature``. Unknown
     tenants get the ``free`` entitlements."""

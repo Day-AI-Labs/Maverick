@@ -217,13 +217,17 @@ Roles available:
 
 The installer keeps these separated automatically.
 
-> **Config is not schema-validated.** An unknown or **mis-typed** key is
-> silently ignored and the runtime uses the built-in default — so a typo like
-> `[budget] max_dollarss` runs **uncapped** rather than erroring. Until
-> schema validation lands, after editing `config.toml` by hand run
-> `maverick doctor` and confirm the security/cost-critical values
-> (`[budget]`, `[enterprise]`, `[encryption]`, `[audit]`, `[safety]`) read back
-> as you intend — e.g. via `maverick compliance` for the enterprise boundary.
+> **Config typos are caught, not silently ignored.** `maverick config-lint`
+> (also run inside `maverick doctor`, and emitted as a one-line warning at
+> process startup) walks the loaded config against a known-section/key schema
+> and flags a mistyped section or an unknown key in a fixed-key section (with
+> `difflib` "did you mean" suggestions), plus a few obvious type errors. This
+> catches the classic footgun where a typo like `[budget] max_dollarss` would
+> otherwise be silently ignored and the run go **uncapped**. The check is
+> advisory — the kernel still fails soft on a bad config — so after editing
+> `config.toml` by hand, run `maverick config-lint` (or `maverick doctor`) and
+> confirm the security/cost-critical values (`[budget]`, `[enterprise]`,
+> `[encryption]`, `[audit]`, `[safety]`) read back as you intend.
 
 ## Overriding the config path
 

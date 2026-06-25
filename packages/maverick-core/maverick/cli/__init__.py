@@ -2122,6 +2122,13 @@ def tenant_create(tenant_id: str, plan: str, display_name: str,
         click.echo(f"ERROR: {e}", err=True)
         sys.exit(2)
     click.echo(f"created tenant {rec.id!r} (plan {rec.plan}, status {rec.status})")
+    from ..billing import known_plan_names
+    if rec.plan not in known_plan_names():
+        click.echo(
+            f"  WARNING: plan {rec.plan!r} is not a known billing plan; its "
+            f"entitlements fall back to 'free' until defined in [billing.plans]",
+            err=True,
+        )
     # Tell the operator where to drop this tenant's own provider keys / models /
     # budget so each client can use its own credentials (overlays global config).
     from ..workspace import Workspace
