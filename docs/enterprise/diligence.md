@@ -50,10 +50,15 @@ enterprise profile, and the SOC 2 evidence collector. The whole regulated postur
 is selectable with one knob (`MAVERICK_PROFILE=enterprise`), each control still
 individually overridable.
 
-**Must be enabled for a compliant deployment (opt-in by design):** several
-controls (capabilities, tenant isolation, quotas, OIDC, encryption at rest,
-audit signing) ship off by default so single-tenant local use is unchanged. A
-regulated deployment turns them on — `maverick compliance --strict` gates on the
+**On by default (secure-by-default):** at-rest encryption and audit signing are
+**enabled out of the box** (`security_defaults.py`) and need no action unless
+explicitly disabled — so a fresh install already reports `encryption_at_rest =
+enabled` and writes a signed audit log.
+
+**Must be enabled for a compliant deployment (opt-in by design):** the
+deployment-specific controls — capabilities, tenant isolation, quotas, and OIDC —
+ship off by default so single-tenant local use is unchanged. A regulated
+deployment turns them on — `maverick compliance --strict` gates on the
 [`REGULATED_PROFILE`](../regulated-deployment.md), and the evidence snapshot must
 show `audit_log = ok` (signed), not `unsigned`.
 

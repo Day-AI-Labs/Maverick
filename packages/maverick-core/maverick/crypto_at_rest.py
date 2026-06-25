@@ -86,13 +86,16 @@ def _truthy(value: object) -> bool:
 
 
 def at_rest_enabled() -> bool:
-    """Opt-in unless required by an active compliance profile.
+    """On by default (secure-by-default), overridable per deployment.
 
     Compliance floors are mandatory and strictest-wins: HIPAA-mode at-rest
     encryption cannot be disabled by leaving or setting the standalone
     encryption knob false. With no such floor, ``MAVERICK_ENCRYPT_AT_REST`` env
     wins over ``[encryption] at_rest`` in config, which wins over enterprise
-    mode. Off by default.
+    mode, which falls back to
+    :func:`maverick.security_defaults.secure_by_default` -- ON unless explicitly
+    disabled (``MAVERICK_ENCRYPT_AT_REST=0`` / ``[encryption] at_rest = false``,
+    or the whole hardened cluster via ``MAVERICK_SECURE_DEFAULT=0``).
     """
     try:
         from .compliance_profiles import FLOOR_ENCRYPTION_AT_REST, requires_floor

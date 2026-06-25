@@ -120,8 +120,10 @@ def _resolve_signing(explicit: bool | None) -> bool:
     Compliance floors are mandatory and strictest-wins: HIPAA-mode audit logging
     requires signed/tamper-evident audit rows even if the standalone signing knob
     is absent or false. Otherwise, precedence is explicit arg >
-    MAVERICK_AUDIT_SIGN env > [audit] sign in config.toml > off. Resolved once
-    at construction so the hot record() path never re-reads config.
+    MAVERICK_AUDIT_SIGN env > [audit] sign in config.toml > secure-by-default
+    (ON unless explicitly disabled, via ``MAVERICK_SECURE_DEFAULT=0`` /
+    ``[security] secure_defaults = false``). Resolved once at construction so the
+    hot record() path never re-reads config.
     """
     try:
         from ..compliance_profiles import FLOOR_AUDIT_LOG, requires_floor

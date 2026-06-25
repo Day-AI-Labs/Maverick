@@ -25,7 +25,7 @@ This policy applies to:
 - Use of cryptography for integrity and tamper-evidence, including the audit hash-chain and sealing of closed audit files.
 - All deployments of Maverick operated by or on behalf of the Organization.
 
-**Critical deployment note:** At-rest encryption and audit signing are opt-in. A deployment is **not compliant** with this policy until they are enabled. The hardened security profile (`security_defaults.py`) turns both ON; the Organization shall deploy with the hardened profile or equivalent explicit configuration.
+**Critical deployment note:** At-rest encryption and audit signing are **on by default** under the secure-by-default profile (`security_defaults.py`). A deployment is **not compliant** with this policy if they are explicitly disabled (`MAVERICK_SECURE_DEFAULT=0`, or the per-control knobs `[encryption] at_rest = false` / `[audit] sign = false`). The Organization shall deploy with the hardened defaults or equivalent explicit configuration.
 
 ## 3. Policy statements
 
@@ -53,9 +53,9 @@ This policy applies to:
 
 | Control | Implementation (file/module) | Status |
 | --- | --- | --- |
-| AES-256-GCM at-rest encryption of world DB + memory; local key at `~/.maverick/keys/at_rest.key` (mode 0600); `MAVERICK_ENCRYPTION_KEY` for external KMS | `packages/maverick-core/maverick/crypto_at_rest.py` | **Opt-in — must enable** |
+| AES-256-GCM at-rest encryption of world DB + memory; local key at `~/.maverick/keys/at_rest.key` (mode 0600); `MAVERICK_ENCRYPTION_KEY` for external KMS | `packages/maverick-core/maverick/crypto_at_rest.py` | **On by default (secure-by-default) — keep enabled** |
 | Per-tenant envelope encryption (DEK + KEK; wrappers for AWS/GCP/Vault KMS) | `packages/maverick-core/maverick/tenant/kms.py` | Operational (multi-tenant) |
-| Ed25519 Merkle hash-chain for tamper-evident audit | `packages/maverick-core/maverick/audit/signing.py` | **Opt-in — must enable** |
+| Ed25519 Merkle hash-chain for tamper-evident audit | `packages/maverick-core/maverick/audit/signing.py` | **On by default (secure-by-default) — keep enabled** |
 | AES-256-GCM sealing of closed audit day-files | `packages/maverick-core/maverick/audit/sealing.py` | Operational |
 | Secret scrubbing | `packages/maverick-core/maverick/secrets.py` | Operational |
 | Hardened profile: at-rest encryption + audit signing ON by default | `packages/maverick-core/maverick/security_defaults.py` | Enable hardened profile |
