@@ -464,6 +464,22 @@ so OIDC does not 401 inbound webhooks.
 **Verify it's on:** `maverick soc2` → `controls.oidc_auth.status == "enabled"`
 (reports `absent` if the optional module/extra isn't installed).
 
+**Session/token revocation + SCIM deprovisioning.** A leaked session cookie or a
+still-valid bearer is force-invalidated by a per-principal **revocation epoch**
+(`session-revocations.json`): "log out everywhere" and SCIM deprovision
+(`active=false` / DELETE) bump it, and any credential whose `iat` predates it is
+rejected — across processes. The revocation check fails **closed**: a damaged
+revocation store is treated as "revoked", never silently un-revoked.
+
+Some IdPs (notably Entra/Azure AD) issue a **pairwise/per-app** OIDC `sub` that
+appears in no SCIM attribute. To still end such a user's live session on
+deprovision, a **subject directory** (`oidc-subjects.json`, 0600) records, at
+each login, the `sub` against the user's stable IdP identifiers (`email` /
+`preferred_username` / `oid` / `upn`). SCIM deprovision looks the `sub` up by the
+record's identifiers and revokes it. Privacy: the lookup keys are
+`sha256(identifier)` (raw emails never hit disk); the stored value is the opaque
+`sub`. The store is bounded (LRU) and purged on a hard SCIM delete.
+
 ---
 
 ## OIDC browser login (built-in)

@@ -433,6 +433,19 @@ async def auth_callback(request: Request):
     session_payload = {"sub": principal.sub, "iat": _now(), "exp": _now() + _SESSION_TTL}
     session_cookie = sign_session(session_payload, cfg.session_secret)
 
+    # Record this sub against the user's stable IdP identifiers so a later SCIM
+    # deprovision can revoke this session even if the IdP's sub is pairwise and
+    # appears in no SCIM attribute (Entra). Best-effort -- never blocks login.
+    try:
+        from .subject_directory import record_login
+        claims = principal.claims or {}
+        record_login(principal.sub, [
+            claims.get("email"), claims.get("preferred_username"),
+            claims.get("oid"), claims.get("upn"),
+        ])
+    except Exception:  # pragma: no cover -- directory never blocks login
+        pass
+
     response = RedirectResponse(return_to, status_code=303)
     _set_cookie(
         response, SESSION_COOKIE, session_cookie,
