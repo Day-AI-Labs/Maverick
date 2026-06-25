@@ -30,6 +30,28 @@ is plumbing *inside* Product 1, not a separate thing to sell.
 
 ---
 
+## Canonical naming, editions & SKU map
+
+> **This document is the single source of truth for product names, editions,
+> tiers, and SKUs.** Three *independent* axes describe what a customer gets — do
+> not conflate them:
+
+| Axis | Values | What it means | Defined in |
+|---|---|---|---|
+| **Edition** (distribution) | **Community** *(planned — not yet shipped)* · **Enterprise** *(available now)* | Open-core split: a future stripped-down community on-ramp vs. the licensed commercial build. | [`enterprise/editions.md`](./enterprise/editions.md) |
+| **Platform tier** (commercial pricing, within Enterprise) | **Basic · Gold · Platinum** | The good/better/best pricing tiers in this doc. | This doc (canonical) |
+| **Billing-plan key** (multi-tenant entitlement) | `free` · `pro` · `enterprise` | Technical plan IDs an operator assigns *per tenant* for feature gating + quotas (`maverick.billing.DEFAULT_PLANS`) — **not** the sales-tier names. | Code (`billing.py`) |
+
+Working tier labels (Basic/Gold/Platinum) are placeholders pending the
+[Naming worksheet](#naming-worksheet). The earlier exploration in
+[`research/commercialization/02-packaging-pricing-editions.md`](./research/commercialization/02-packaging-pricing-editions.md)
+used **Community / Team / Enterprise** and a **$120K** entry-enterprise floor;
+that teardown is **superseded by this document** for current naming and numbers
+(the Platinum floor here is **$200K**). All pricing remains a directional
+hypothesis — see the note at the top.
+
+---
+
 ## Product 1 — Lightwork Platform
 
 The governed agent platform itself. Each tier is a **superset** of the one below.

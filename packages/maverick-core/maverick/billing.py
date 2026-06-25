@@ -157,6 +157,10 @@ class Entitlements:
 
 
 # Last-resort defaults; operators override via ``[billing.plans]`` in config.
+# These keys (free/pro/enterprise) are the technical *billing-plan IDs* an operator
+# assigns per tenant for feature gating + quotas -- a different axis from the
+# Basic/Gold/Platinum sales tiers and the Community/Enterprise editions. Canonical
+# naming + SKU map: docs/product-portfolio.md ("Canonical naming, editions & SKU map").
 DEFAULT_PLANS: dict[str, Entitlements] = {
     "free": Entitlements("free", frozenset({"core"}), 5.0, 1),
     "pro": Entitlements("pro", frozenset({"core", "grpc", "channels"}), 100.0, 5),
