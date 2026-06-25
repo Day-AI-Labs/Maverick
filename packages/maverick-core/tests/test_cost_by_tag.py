@@ -2,6 +2,28 @@
 from __future__ import annotations
 
 from maverick.cost.by_tag import gather, render, split_by_tag
+from maverick.world_model import EpisodeSpend
+
+
+class _FakeWorld:
+    def __init__(self, episodes):
+        self._eps = episodes
+
+    def list_episodes(self, *, limit=500):
+        return self._eps[:limit]
+
+
+def test_gather_reads_real_episode_token_fields():
+    # Regression: gather() read in_tokens/out_tokens, but EpisodeSpend exposes
+    # input_tokens/output_tokens -- so every real episode reported 0 tokens in
+    # the chargeback export. It must read the real fields.
+    ep = EpisodeSpend(
+        id=1, goal_id=7, started_at=0.0, ended_at=1.0, outcome="done",
+        cost_dollars=2.5, input_tokens=1200, output_tokens=340, tool_calls=3,
+    )
+    ep.tag = "acme"
+    rows = gather(_FakeWorld([ep]))
+    assert rows == [{"tag": "acme", "cost": 2.5, "in_tok": 1200, "out_tok": 340}]
 
 
 def test_split_groups_and_sorts_by_cost():

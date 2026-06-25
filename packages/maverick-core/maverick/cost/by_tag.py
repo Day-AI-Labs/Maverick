@@ -75,8 +75,16 @@ def gather(
         rows.append({
             "tag": tag or "",
             "cost": cost,
-            "in_tok": _num(getattr(ep, "in_tokens", 0)),
-            "out_tok": _num(getattr(ep, "out_tokens", 0)),
+            # EpisodeSpend's fields are input_tokens/output_tokens; the
+            # in_tokens/out_tokens fallback only covers hand-built dicts, so it
+            # silently reported 0 tokens for every real episode in the
+            # chargeback export. Read the real field first.
+            "in_tok": _num(getattr(ep, "input_tokens", None)
+                           if getattr(ep, "input_tokens", None) is not None
+                           else getattr(ep, "in_tokens", 0)),
+            "out_tok": _num(getattr(ep, "output_tokens", None)
+                            if getattr(ep, "output_tokens", None) is not None
+                            else getattr(ep, "out_tokens", 0)),
         })
     return rows
 

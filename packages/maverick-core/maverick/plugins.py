@@ -340,6 +340,20 @@ def _plugin_signing_policy() -> tuple[str | None, bool, set[str]]:
             require = True
     except Exception:  # pragma: no cover
         pass
+    # Honor the CA's *signed* CRL (maverick plugin-ca revoke), not just the
+    # config list -- otherwise revoking a compromised publisher via the CA had
+    # zero effect at load time. A present-but-unverifiable CRL (tampered sig /
+    # bad JSON) is a security event: we can't prove a cert ISN'T revoked, so
+    # fail closed (revoked=None -> verify_artifact refuses every signed plugin).
+    # A genuinely-absent CRL just means "no CA revocations yet" -> config-only.
+    if root:
+        try:
+            from .plugin_ca import PluginCA
+            ca = PluginCA()
+            if ca._crl_path.exists():
+                revoked |= ca.revoked_serials(root_pub=root)
+        except Exception:
+            return (root or None, True, None)
     return (root or None, require or bool(root), revoked)
 
 
