@@ -91,6 +91,11 @@ class MatrixChannel(Channel):
         except Exception:  # pragma: no cover
             log.exception("handler error")
             reply = "⚠ An internal error occurred."
+        # An action-only goal returns "" (dispatch_text can drop a Reply to
+        # empty); room_send posts a blank m.text event the homeserver accepts,
+        # spamming the room. Guard like the other channels.
+        if not reply:
+            return
         await self.send(room.room_id, reply)
 
     async def start(self) -> None:
