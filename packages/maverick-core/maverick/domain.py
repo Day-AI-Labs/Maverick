@@ -425,6 +425,26 @@ def enabled_domains(cfg: dict | None = None) -> dict[str, DomainProfile]:
 _GOVERNED_ACTION_BUNDLE = frozenset({"email", "notify", "calendar"})
 
 
+def data_grounding_enabled() -> bool:
+    """Whether packs are granted their suite's primary-source data connectors.
+
+    ON by default (these are GET-only, LOW-risk public/government data readers,
+    deferred so they cost no context until ``find_tools`` surfaces them, and
+    inert without their env key). ``MAVERICK_WORKFORCE_DATA_GROUNDING`` overrides
+    the ``[workforce] data_grounding`` config either way. Never raises."""
+    import os
+    env = os.environ.get("MAVERICK_WORKFORCE_DATA_GROUNDING", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    try:
+        from .config import get_workforce
+        return bool(get_workforce().get("data_grounding", True))
+    except Exception:  # pragma: no cover -- config must never block a run
+        return True
+
+
 def domain_capability(profile: DomainProfile, parent_cap, principal: str):
     """The Capability a domain agent runs under.
 
@@ -453,6 +473,18 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
                 # ceiling, and leaves an uncapped (None) grant untouched.
                 if max_risk in ("low", "medium"):
                     max_risk = "high"
+        except Exception:  # pragma: no cover -- never block capability build
+            pass
+        # Grant the pack's suite its primary-source data connectors (GET-only,
+        # LOW risk, deferred) so the analyst reaches for FRED/SEC EDGAR/openFDA/
+        # etc. by default. Additive to the allowlist; the LOW risk keeps them
+        # under a read-only pack's ceiling. allow_hosts is deliberately NOT
+        # widened -- a host-restricted pack stays restricted (the connector
+        # returns a graceful egress error) until an operator opts the host in.
+        try:
+            if data_grounding_enabled():
+                from .tools.enterprise_connectors import data_connectors_for_suite
+                allow = allow | set(data_connectors_for_suite(suite_for(profile.name)))
         except Exception:  # pragma: no cover -- never block capability build
             pass
     allow = allow or None

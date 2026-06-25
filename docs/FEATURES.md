@@ -509,6 +509,14 @@ here.
   (a fixed public host, zero config); the rest take a free API key from env,
   delivered as a header or query param (never from the prompt). Built on three
   new `make_rest_tool` auth modes: `keyless`, `query_auth`, `default_base_url`.
+  **Auto-wired by suite** (`SUITE_DATA_CONNECTORS`): each analyst pack is granted
+  its suite's relevant sources in `domain_capability` (e.g. FDIC/FRED → banking,
+  openFDA/NPI → healthcare, USAspending/SAM.gov → gov-contracting, EIA/EPA →
+  utilities, NWS/NOAA → insurance & agriculture), so the agent reaches for the
+  right primary source by default. Additive and deferred (no context cost); a
+  host-restricted pack's egress is never silently widened. On by default with a
+  kill-switch — `[workforce] data_grounding = false` /
+  `MAVERICK_WORKFORCE_DATA_GROUNDING=off` (installer wizard step).
 - **System** — `shell` (sandbox-mediated), `wasm_run` (**WASM sandbox**:
   execute a WebAssembly/WASI module under wasmtime — capability-grant
   isolation where the module sees ONLY the preopened dirs/env/args given;
