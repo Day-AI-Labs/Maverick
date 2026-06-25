@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ops"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "CM commitment & clear-to-build status report"
+consumers = ["supply_planner", "operations_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull commitments"
+instruction = "Read contract-manufacturer commitments, yield reports, and build-status records grounded in the company's documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compute yields"
+instruction = "Calculate actual yields against commitments and flag CMs trending below plan."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Check clear-to-build"
+instruction = "Verify material availability, revisions, and traceability identifiers and confirm no quality holds or safety interlocks are bypassed."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Draft status"
+instruction = "Draft the clear-to-build status report stating commitments, yields, blockers, and assumptions plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to planning"
+instruction = "Hand the status report to supply planning and the operations manager for review before build commitments are confirmed."
+gate = "review"

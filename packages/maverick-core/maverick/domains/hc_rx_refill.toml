@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "refill triage worklist"
+consumers = ["prescribing_clinician", "pharmacy_tech"]
+cadence = "daily"
+gate = "approval"
+
+[[workflow]]
+name = "Pull requests"
+instruction = "Query pending refill requests with medication, last fill date, and refills remaining."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Check protocol"
+instruction = "Match each request against the refill protocol to separate protocol-eligible refills from exceptions."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag exceptions"
+instruction = "Identify controlled substances, lapsed orders, and missing-lab cases that require clinician judgment."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Assemble context"
+instruction = "Package each exception with the request history and protocol reference for the clinician."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Clinician approval"
+instruction = "Route protocol-eligible refills and exception worklist to the prescribing clinician for approval before any fill."
+gate = "approval"

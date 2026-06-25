@@ -29,3 +29,24 @@ deliverable = "10-K/10-Q draft & disclosures"
 consumers = ["ir_lead", "auditor"]
 cadence = "quarterly"
 gate = "approval"
+
+[[workflow]]
+name = "Tie to TB"
+instruction = "Pull the trial balance and tie the draft financial statements to it figure by figure."
+tools = ["gl_read_trial_balance", "read_file"]
+[[workflow]]
+name = "Draft filing"
+instruction = "Draft the statements, footnotes, and 10-K/10-Q sections including MD&A and risk factors."
+tools = ["draft_filing", "knowledge_search", "workiva_read"]
+[[workflow]]
+name = "Tag XBRL"
+instruction = "Apply XBRL tagging to the drafted filing and confirm each tag matches its source figure."
+tools = ["tag_xbrl"]
+[[workflow]]
+name = "Run checklist"
+instruction = "Run the disclosure checklist so every disclosure cites its standard and flag any missing or unsupported item."
+tools = ["run_disclosure_checklist", "knowledge_search"]
+[[workflow]]
+name = "IR sign-off"
+instruction = "Route the draft filing and disclosures to the IR lead for approval, leaving certification and SEC filing as human acts."
+gate = "approval"

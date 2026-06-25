@@ -21,3 +21,22 @@ deliverable = "Prepared-by-client package"
 consumers = ["compliance_officer", "internal_auditor"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Parse PBC list"
+instruction = "Read the auditor's prepared-by-client request list and break it into discrete evidence items with owners."
+tools = ["read_file"]
+[[workflow]]
+name = "Map evidence"
+instruction = "Match each PBC item to existing controls and source evidence already in the knowledge base."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Check completeness"
+instruction = "Verify every requested item is satisfied and flag gaps, redactions, or items needing owner follow-up."
+[[workflow]]
+name = "Package response"
+instruction = "Assemble the indexed prepared-by-client package cross-referenced to each PBC request number."
+[[workflow]]
+name = "Liaison review"
+instruction = "Route the package to the compliance owner for sign-off before release to the external auditor."
+gate = "review"

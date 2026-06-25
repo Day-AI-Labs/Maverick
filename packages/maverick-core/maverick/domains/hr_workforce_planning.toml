@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "headcount & workforce plan"
+consumers = ["hr_director", "finance_partner"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Gather baseline"
+instruction = "Read current org structure, headcount, attrition, and open requisitions to establish the planning baseline."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Model demand"
+instruction = "Project role-level demand against business plans and growth assumptions, stating each assumption explicitly."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Design org"
+instruction = "Draft the target org design and staffing plan, gap-checking demand against the current baseline."
+tools = ["read_file"]
+[[workflow]]
+name = "Cost the plan"
+instruction = "Lay out the headcount cost grid for finance, keeping the people plan free of protected-class proxies."
+[[workflow]]
+name = "Joint review"
+instruction = "Route the plan to the HR director and finance partner so HR owns the people plan and finance owns the cost."
+gate = "review"

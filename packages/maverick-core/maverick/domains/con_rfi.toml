@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "RFI log with status & responses"
+consumers = ["project_manager", "design_team"]
+cadence = "weekly"
+
+[[workflow]]
+name = "Intake RFI"
+instruction = "Read the incoming question and identify the affected drawings, spec sections, and contract references."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Log & number"
+instruction = "Assign an RFI number and record the question, originator, and drawing references in the RFI log."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route party"
+instruction = "Identify the correct design party to answer and capture the required-by date driven by the schedule."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Track aging"
+instruction = "Monitor open RFIs against due dates and flag overdue items that risk delaying field work."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Close answered"
+instruction = "Record the response, confirm the referenced drawings are attached, and route the updated log to the project manager."
+tools = ["read_file"]
+gate = "review"

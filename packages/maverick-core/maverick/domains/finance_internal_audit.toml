@@ -30,3 +30,24 @@ deliverable = "Internal-audit findings memo"
 consumers = ["internal_auditor", "risk_officer"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Scope risk"
+instruction = "Pull the risk-control matrix and audit plan to scope the engagement against the highest-rated risks."
+tools = ["knowledge_search", "run_assessment"]
+[[workflow]]
+name = "Gather evidence"
+instruction = "Read the relevant journals, subledgers, and audit logs that evidence the controls in scope."
+tools = ["gl_read_journal", "gl_read_subledger", "audit_log_read"]
+[[workflow]]
+name = "Test controls"
+instruction = "Document control tests and exceptions in workpapers, tying each conclusion to cited evidence."
+tools = ["draft_workpaper"]
+[[workflow]]
+name = "Risk-rank findings"
+instruction = "Log each finding with a risk rating, root cause, and recommendation referencing its supporting workpaper."
+tools = ["log_finding"]
+[[workflow]]
+name = "Issue memo"
+instruction = "Route the findings memo to the internal auditor and risk officer for sign-off before distribution."
+gate = "review"

@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "Change request & impact assessment"
+consumers = ["control_owner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather change scope"
+instruction = "Read the proposed change, affected configuration items, and prior related changes from the request and CMDB records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Assess impact"
+instruction = "Analyze blast radius, dependencies, and conflicting changes to classify risk and category per ITIL."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft change request"
+instruction = "Draft the change request with implementation plan, test plan, and durable-checkpoint rollback steps."
+[[workflow]]
+name = "Verify rollback"
+instruction = "Confirm a tested rollback or checkpoint exists and flag any change lacking a viable back-out path."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to CAB"
+instruction = "Submit the assessed change request for CAB review and human approval before scheduling."
+gate = "review"

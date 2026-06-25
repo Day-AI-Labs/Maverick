@@ -14,3 +14,27 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "benefits enrollment guidance memo"
+consumers = ["benefits_manager", "employee"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read elections"
+instruction = "Read the employee's current elections and eligibility from the HRIS without exposing protected health data."
+tools = ["rippling_read", "gusto_read"]
+[[workflow]]
+name = "Confirm rules"
+instruction = "Research the applicable ERISA, ACA, COBRA, and HIPAA rules for the enrollment event in question."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft guidance"
+instruction = "Draft plain-language enrollment guidance covering options, deadlines, and qualifying-event windows."
+tools = ["read_file"]
+[[workflow]]
+name = "Gate elections"
+instruction = "Confirm any election change is staged for human sign-off rather than executed automatically."
+gate = "review"

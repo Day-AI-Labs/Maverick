@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "architecture design & ADR"
+consumers = ["engineering_lead", "platform_architect"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame problem"
+instruction = "Read the initiative brief and existing system docs to state the problem, constraints, and quality attributes the design must satisfy."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Survey options"
+instruction = "Research candidate patterns and reference architectures relevant to the constraints before settling on options."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Model with C4"
+instruction = "Draft the C4 context and container views describing the chosen approach and its component boundaries."
+[[workflow]]
+name = "Analyze tradeoffs"
+instruction = "Document the tradeoff analysis and call out the risks and failure modes that could invalidate the design."
+[[workflow]]
+name = "Record decision"
+instruction = "Write the ADR and route the design package to the architect for review before adoption."
+gate = "review"

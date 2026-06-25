@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "incident status update post"
+consumers = ["incident_commander", "support_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Confirm incident facts"
+instruction = "Pull the current incident record and impacted systems from internal sources before writing anything public."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Verify scope"
+instruction = "Cross-check affected components, regions, and severity against monitoring and the incident timeline so the post matches reality."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Draft update"
+instruction = "Write a plain, dated status update stating impact, current state, and next-update time without promising remediation outcomes."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag commitments"
+instruction = "Strip or flag any refund, credit, or SLA-exception language that requires human authority before it can be posted."
+[[workflow]]
+name = "Route to commander"
+instruction = "Send the drafted status update to the incident commander for approval before it goes live on the public page."
+gate = "approval"

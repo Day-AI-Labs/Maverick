@@ -28,3 +28,24 @@ deliverable = "Driver-based forecast (scenarios)"
 consumers = ["fpa_analyst", "controller"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Read plan"
+instruction = "Read the plan of record, prior actuals, and the metric drivers for the forecast horizon."
+tools = ["epm_read_plan", "gl_read_actuals", "bi_read_metric"]
+[[workflow]]
+name = "Set drivers"
+instruction = "Identify the revenue, expense, and headcount drivers and their elasticities from policy and historical trend."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Build scenarios"
+instruction = "Build the base, upside, and downside scenarios with sensitivities, labeling each as an estimate."
+tools = ["build_forecast_scenario"]
+[[workflow]]
+name = "Backtest model"
+instruction = "Backtest the model against actuals and report the forecast error honestly with stated confidence."
+tools = ["gl_read_actuals"]
+[[workflow]]
+name = "Route review"
+instruction = "Hand the scenario forecast and methodology to the FP&A analyst for review."
+gate = "review"

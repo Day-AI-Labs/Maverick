@@ -10,3 +10,26 @@ max_risk = "low"
 
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "executive escalation daily update & root-cause note"
+consumers = ["executive_sponsor", "cx_director"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull exec case"
+instruction = "Query the executive-escalated case's full timeline, owner, and current status across systems."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Reconstruct root cause"
+instruction = "Ground the failure timeline in incident and policy docs to establish a defensible root cause and contributing factors."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft daily update"
+instruction = "Write the daily status update with progress, root-cause findings, and next steps, stating unknowns plainly."
+[[workflow]]
+name = "Route to director"
+instruction = "Submit the update and root-cause note to the CX director for sign-off before it reaches the executive sponsor."
+gate = "review"

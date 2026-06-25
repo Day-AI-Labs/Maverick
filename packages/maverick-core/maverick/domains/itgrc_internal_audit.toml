@@ -21,3 +21,23 @@ deliverable = "Internal-audit findings"
 consumers = ["internal_auditor", "risk_officer"]
 cadence = "quarterly"
 gate = "approval"
+
+[[workflow]]
+name = "Assess risk"
+instruction = "Read the risk register and prior audits to scope the engagement on the highest-risk areas."
+tools = ["read_file", "knowledge_search", "logicgate_read"]
+[[workflow]]
+name = "Plan tests"
+instruction = "Design the audit program, controls to test, and sampling approach per the IIA 2024 Standards."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Execute fieldwork"
+instruction = "Pull control evidence and document workpapers tying each test result back to its sample."
+tools = ["logicgate_read", "read_file"]
+[[workflow]]
+name = "Draft findings"
+instruction = "Write findings with condition, criteria, cause, and effect and rate residual risk."
+[[workflow]]
+name = "Owner approval"
+instruction = "Route the findings to the audit owner for approval before reporting to the risk committee."
+gate = "approval"

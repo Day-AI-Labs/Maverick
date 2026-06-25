@@ -9,3 +9,31 @@ max_risk = "medium"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["pharma"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "eCTD dossier package"
+consumers = ["regulatory_affairs", "submission_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Inventory modules"
+instruction = "Read the submission plan and pull all source documents mapped to each eCTD module."
+tools = ["read_file", "knowledge_search", "sql_query"]
+[[workflow]]
+name = "Assemble structure"
+instruction = "Place each document into its eCTD module and section, citing the source for every placement."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Check completeness"
+instruction = "Cross-check module and section coverage against FDA and EMA requirements and tabulate every gap."
+tools = ["knowledge_search", "web_search", "spreadsheet"]
+[[workflow]]
+name = "Draft cover material"
+instruction = "Write the cover letter and module summaries, flagging missing documents and assumptions plainly."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route to RA"
+instruction = "Hand the assembled dossier and gap report to regulatory affairs, who files with the health authority."
+gate = "approval"

@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "export-control license determination memo"
+consumers = ["empowered_official", "contracts_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Identify the data"
+instruction = "Read the technical-data exchange request to identify the item, the recipient, and the destination country."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Classify jurisdiction"
+instruction = "Determine whether the data is ITAR USML or EAR CCL controlled by checking the cited category or ECCN rather than from memory."
+tools = ["read_file", "web_search", "knowledge_search"]
+[[workflow]]
+name = "Screen parties"
+instruction = "Screen the recipient and destination against denied-party and country-of-concern lists and note any license exemption that applies."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Document determination"
+instruction = "Document the license determination with the cited control basis, required license or exemption, and any conditions."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Official approval"
+instruction = "Route the determination to the empowered official for approval before any technical data is released."
+gate = "approval"

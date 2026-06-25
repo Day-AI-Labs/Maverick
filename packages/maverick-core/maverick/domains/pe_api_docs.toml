@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["pe"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "API docs drift report & corrections"
+consumers = ["api_owner", "developer_relations"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull shipped behavior"
+instruction = "Read the current API source and schemas to establish the actual shipped request, response, and error shapes."
+tools = ["read_file"]
+[[workflow]]
+name = "Load published docs"
+instruction = "Retrieve the company's published API documentation to compare against the shipped behavior."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Diff for drift"
+instruction = "Cross-check endpoints, fields, and examples and reproduce any disputed call before recording it as drift."
+tools = ["sql_query", "web_search"]
+[[workflow]]
+name = "Draft corrections"
+instruction = "Draft the smallest documentation edits that resync each drifted section, citing the source it was verified against."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Send the drift report and proposed doc corrections to the API owner to review and publish."
+gate = "review"

@@ -15,3 +15,29 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_quality"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "NCR/RCA and CAPA plan package"
+consumers = ["quality_manager", "capa_owner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Open NCR"
+instruction = "Read the nonconformance evidence and draft the NCR capturing the defect, affected lots, and containment."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Root-cause"
+instruction = "Drive root-cause analysis using 5-why, fishbone, or 8D and document the verified root cause."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft CAPA"
+instruction = "Draft corrective and preventive actions tied explicitly to each identified root cause with owners and due dates."
+[[workflow]]
+name = "Plan verification"
+instruction = "Define the effectiveness check that must pass before closure rather than closing on action completion alone."
+[[workflow]]
+name = "Route to QA"
+instruction = "Hand the NCR, RCA, and CAPA plan to the quality manager and CAPA owner for sign-off and closure authorization."
+gate = "review"

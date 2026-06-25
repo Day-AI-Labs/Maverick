@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file", "web_search"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "valuation and accretion-dilution model"
+consumers = ["corp_dev_lead", "cfo"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Collect financials"
+instruction = "Read the target and acquirer financials and deal assumptions from the sealed deal compartment."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build DCF"
+instruction = "Build the discounted-cash-flow model with explicit projection and terminal-value assumptions."
+[[workflow]]
+name = "Benchmark comps"
+instruction = "Pull comparable-company and precedent-transaction multiples to triangulate the standalone value."
+tools = ["crunchbase_read"]
+[[workflow]]
+name = "Run synergies"
+instruction = "Layer synergy estimates and run accretion-dilution under a range of price and financing scenarios."
+[[workflow]]
+name = "Review valuation"
+instruction = "Hand the valuation range and accretion-dilution output to corp dev and the CFO for sign-off."
+gate = "review"

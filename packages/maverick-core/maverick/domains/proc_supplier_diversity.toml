@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "diverse-spend tier-2 report"
+consumers = ["procurement_manager", "compliance_officer"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull diverse spend"
+instruction = "Query the spend ledger for vendors flagged as diverse and pull spend totals for the reporting period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Verify certifications"
+instruction = "Verify each supplier's diversity certification status and expiration against the issuing registry or certificate on file."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Reconcile counts"
+instruction = "Reconcile certified diverse spend against total addressable spend and drop expired or unverifiable certifications."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Build report"
+instruction = "Compile the diverse-spend report by category and tier with certification evidence and percentage attainment."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route report"
+instruction = "Route the report and certification evidence to the procurement manager for review and external reporting."
+gate = "review"

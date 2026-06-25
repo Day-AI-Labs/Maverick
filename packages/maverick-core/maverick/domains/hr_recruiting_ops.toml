@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "recruiting funnel & adverse-impact report"
+consumers = ["talent_acquisition_lead", "hr_director"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull funnel"
+instruction = "Read application, screen, interview, and offer stage data from the ATS for the reporting period."
+tools = ["greenhouse_read", "lever_read"]
+[[workflow]]
+name = "Validate data"
+instruction = "Reconcile stage counts and dispositions against source records to catch double-counts and stale requisitions."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compute metrics"
+instruction = "Calculate pass-through, time-in-stage, and four-fifths selection rates on aggregate cohorts only."
+[[workflow]]
+name = "Flag impact"
+instruction = "Identify any stage where the four-fifths rule is breached without attributing it to individual decisions."
+[[workflow]]
+name = "Route findings"
+instruction = "Deliver the funnel and adverse-impact report to the TA lead and HR director for human review of any flag."
+gate = "review"

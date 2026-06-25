@@ -10,3 +10,28 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "required-training compliance tracker"
+consumers = ["compliance_owner", "people_manager"]
+cadence = "weekly"
+
+[[workflow]]
+name = "Read requirements"
+instruction = "Read the required-training matrix and applicable deadlines from the company's own documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Load completions"
+instruction = "Load current completion records into the tracking spreadsheet using the minimum personal data needed."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Compute status"
+instruction = "Compute each person's compliance status and overdue days against the requirements consistently."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Stage reminders"
+instruction = "Draft escalating reminders for at-risk and overdue learners, citing the source requirement."
+[[workflow]]
+name = "Route owners"
+instruction = "Route the compliance tracker and escalation list to the compliance owner and managers."

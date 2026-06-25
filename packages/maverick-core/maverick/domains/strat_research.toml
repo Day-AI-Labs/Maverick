@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "strategy research brief"
+consumers = ["executive_team", "board"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame question"
+instruction = "Clarify the strategic question and the framework (Porter, value chain, 3-horizons) that best fits it."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Research market"
+instruction = "Gather industry, competitor, and funding data from web and Crunchbase, date-stamping each source."
+tools = ["web_search", "crunchbase_read"]
+[[workflow]]
+name = "Apply framework"
+instruction = "Structure findings through the chosen framework and generate distinct strategic options with tradeoffs."
+[[workflow]]
+name = "Screen MNPI"
+instruction = "Verify no material non-public information leaves its sealed compartment and the brief clears the Reg-FD gate before sharing."
+[[workflow]]
+name = "Brief executives"
+instruction = "Route the cited research brief and option set to executives and the board, who decide."
+gate = "review"

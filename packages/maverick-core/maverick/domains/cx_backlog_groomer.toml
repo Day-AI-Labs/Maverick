@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "aging-case disposition list"
+consumers = ["support_manager", "queue_lead"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Pull aging cases"
+instruction = "Query open cases past their aging threshold and sort them by age and last activity."
+tools = ["sql_query"]
+[[workflow]]
+name = "Classify each case"
+instruction = "Read each case to classify it as resolved-but-open, stalled-on-customer, or genuinely stuck."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Draft dispositions"
+instruction = "Draft a closure note for resolved cases and a re-route target for stuck cases, citing the evidence for each decision."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Catch false closes"
+instruction = "Re-check any case flagged for closure against recent customer replies so an active conversation is never auto-closed."
+tools = ["sql_query"]
+[[workflow]]
+name = "Manager approval"
+instruction = "Route the closure-and-reroute list to the support manager for approval before any case is closed or moved."
+gate = "approval"

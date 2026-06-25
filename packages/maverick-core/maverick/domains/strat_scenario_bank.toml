@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["strat"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "versioned scenario bank update"
+consumers = ["strategy_lead", "executive_team"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull current bank"
+instruction = "Read the existing scenario bank and the assumption register to establish the current baseline version."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Refresh drivers"
+instruction = "Update market and competitor assumptions against current evidence, date-stamping every external data point."
+tools = ["web_search"]
+[[workflow]]
+name = "Version assumptions"
+instruction = "Record changed assumptions as a new version in the spreadsheet with a clear changelog and rationale."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag staleness"
+instruction = "Identify scenarios whose assumptions are now stale or contradicted and mark what evidence would retire them."
+[[workflow]]
+name = "Publish update"
+instruction = "Route the versioned scenario bank update to the strategy lead for sign-off before it becomes canonical."
+gate = "review"

@@ -17,3 +17,24 @@ deliverable = "Ceded premium & commission reconciliation"
 consumers = ["reinsurance_analyst", "controller"]
 cadence = "monthly"
 gate = "approval"
+
+[[workflow]]
+name = "Pull ledger"
+instruction = "Query the ceded premium and commission ledger entries for the cession period being reconciled."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load treaty terms"
+instruction = "Retrieve the governing treaty slips and commission schedules to establish the expected ceding rates."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Recompute cessions"
+instruction = "Recompute expected ceded premium and commission per treaty terms and compare against booked amounts in a worksheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag variances"
+instruction = "Isolate line-level variances and trace each to a missing bordereau, rate error, or timing difference with its supporting cite."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Assemble the reconciliation with documented variances and route to the controller for approval before booking adjustments."
+gate = "approval"

@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "contract closeout deliverable checklist"
+consumers = ["contracts_manager", "accounting_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull contract file"
+instruction = "Read the contract, mods, and FAR closeout clauses to list every required closeout deliverable and its due basis."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile finals"
+instruction = "Reconcile final invoice, incurred-cost, and funding figures against the contract ceiling and obligated amounts."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Track releases & property"
+instruction = "Track the release of claims and government property disposition status and identify any item not yet cleared."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Flag blockers"
+instruction = "Flag any unliquidated obligation, missing release, or undisposed property that prevents physical completion and closeout."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for signoff"
+instruction = "Hand the closeout checklist and final figures to the contracts manager for sign-off."
+gate = "review"

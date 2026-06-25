@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "new-business conflict check report"
+consumers = ["intake_partner", "general_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define parties"
+instruction = "Read the new-business request to identify the prospective client, adverse parties, and related entities to screen."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Search client base"
+instruction = "Query the full client and matter database for existing relationships involving any named or related party."
+tools = ["sql_query"]
+[[workflow]]
+name = "Assess conflicts"
+instruction = "Evaluate each hit for direct, positional, or business conflicts and grade its severity against firm policy."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Document results"
+instruction = "Compile the screened parties, hits, dispositions, and any waiver needs into a documented conflict report."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Partner clearance"
+instruction = "Route the conflict report to the intake partner for clearance before the engagement is opened."
+gate = "review"

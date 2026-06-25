@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "RFP response with compliance matrix"
+consumers = ["pursuit_lead", "engagement_partner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Parse RFP"
+instruction = "Read the client RFP and extract every mandatory requirement, question, and submission rule."
+tools = ["read_file"]
+[[workflow]]
+name = "Build matrix"
+instruction = "Construct a compliance matrix mapping each requirement to a planned response and owner."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Source responses"
+instruction = "Draft each response from the firm's approved qualifications and prior answers, citing the source."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Compliance check"
+instruction = "Verify no required item is unanswered and that the submission meets every stated format and page limit."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Partner review"
+instruction = "Route the complete response and compliance matrix to the engagement partner for sign-off before submission."
+gate = "review"

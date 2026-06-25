@@ -11,3 +11,32 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "scrap & rework cost-by-cause report"
+consumers = ["quality_manager", "production_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull scrap data"
+instruction = "Read scrap and rework transactions with quantities, cost, and cause codes for the period."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Cost by cause"
+instruction = "Aggregate scrap and rework cost by cause code, part, and work center."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Rank Pareto"
+instruction = "Rank causes by total cost to surface the few drivers carrying most of the loss."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify causes"
+instruction = "Cross-check top cause codes against quality records to confirm attribution rather than miscoded scrap."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft candidates"
+instruction = "Draft reduction candidates for the top causes and route the report to the quality manager for review."
+tools = ["spreadsheet"]
+gate = "review"

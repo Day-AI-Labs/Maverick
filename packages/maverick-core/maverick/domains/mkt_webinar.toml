@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "webinar run-of-show & follow-up plan"
+consumers = ["demand_gen_manager", "field_marketing_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope event"
+instruction = "Read the webinar brief and brand guidelines from company knowledge to confirm topic, speakers, and key dates."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build run-of-show"
+instruction = "Draft the prep timeline and run-of-show in the spreadsheet with owners for each milestone and dry run."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify readiness"
+instruction = "Check that registration, reminders, dry run, and tech checks are scheduled with no dropped step."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft follow-up"
+instruction = "Draft the post-webinar follow-up sequence grounded in approved messaging and segmented by attendance."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route plan"
+instruction = "Package the run-of-show and follow-up plan for the demand gen manager to approve before launch."
+gate = "review"

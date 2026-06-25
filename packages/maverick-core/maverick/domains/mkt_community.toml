@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "community moderation & signals digest"
+consumers = ["community_lead", "product_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Scan threads"
+instruction = "Read new community posts and replies and pull the moderation guidelines that govern acceptable responses."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Triage items"
+instruction = "Classify each item as routine reply, escalation, or guideline violation and note required actions."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft responses"
+instruction = "Draft on-brand replies for routine items grounded in approved sources, stating any unknowns plainly."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Capture signals"
+instruction = "Summarize recurring product complaints, requests, and sentiment trends to escalate inward to product."
+[[workflow]]
+name = "Route digest"
+instruction = "Route flagged escalations and the signals digest to the community lead and product manager for sign-off."
+gate = "review"

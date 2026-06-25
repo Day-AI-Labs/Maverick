@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "machine-readable file compliance package"
+consumers = ["compliance_officer", "revenue_cycle_manager"]
+cadence = "monthly"
+gate = "approval"
+
+[[workflow]]
+name = "Read federal rules"
+instruction = "Read the current federal machine-readable file schema and required data elements from the rules library."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull standard charges"
+instruction = "Query the chargemaster and negotiated-rate tables to source the current standard charges by item and payer."
+tools = ["sql_query"]
+[[workflow]]
+name = "Validate schema"
+instruction = "Check the assembled file against required fields, formats, and naming conventions and list each compliance gap."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Document drift"
+instruction = "Flag stale rates and items present in the chargemaster but missing from the file before publication."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to compliance"
+instruction = "Hand the compliance package to the compliance officer for approval before the file is published."
+gate = "approval"

@@ -11,3 +11,28 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "triage & routing decisions"
+consumers = ["support_lead", "queue_owner"]
+cadence = "daily"
+
+[[workflow]]
+name = "Read inbound"
+instruction = "Read each inbound request to extract the issue, product area, and stated urgency."
+tools = ["read_file"]
+[[workflow]]
+name = "Check entitlement"
+instruction = "Look up the customer's plan, SLA, and entitlement to set the correct priority and severity."
+tools = ["sql_query"]
+[[workflow]]
+name = "Classify and match"
+instruction = "Classify the issue and check the knowledge base for a documented FAQ that resolves it directly."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Resolve or route"
+instruction = "Answer documented FAQs in place and route everything else to the correct queue with a tagged rationale."
+[[workflow]]
+name = "Flag exceptions"
+instruction = "Hold any case requesting refunds, credits, or policy exceptions for human handling rather than resolving it."

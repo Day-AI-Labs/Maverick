@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "UTM taxonomy compliance audit"
+consumers = ["demand_gen_manager", "marketing_ops_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Load taxonomy"
+instruction = "Pull the approved UTM and campaign naming convention from company knowledge to set the rules."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Collect live tags"
+instruction = "Gather the current campaign URLs and UTM parameters in use across the tracking spreadsheet."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Validate values"
+instruction = "Check each source, medium, and campaign value against the approved taxonomy and flag malformed or non-conforming tags."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Catch attribution breaks"
+instruction = "Identify duplicates, case mismatches, and free-text values that would split or misattribute the same campaign."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route fixes"
+instruction = "Compile the violations and recommended corrections for the marketing ops lead to approve before relinking."
+gate = "review"

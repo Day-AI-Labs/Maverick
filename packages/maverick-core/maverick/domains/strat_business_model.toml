@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "build-buy-partner options brief"
+consumers = ["ceo", "corpdev_lead", "strategy_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame question"
+instruction = "Read the strategic objective and the portfolio scope to define the business-model decision being evaluated."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map current model"
+instruction = "Analyze the unit's existing business model, economics, and portfolio position from internal documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Scan options"
+instruction = "Research build, buy, and partner alternatives and comparable market moves to size the option space."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Frame trade-offs"
+instruction = "Model each build-buy-partner path's economics and risks and state the evidence that would change the recommendation."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route to strategy"
+instruction = "Deliver the options brief to the CEO and Corp Dev for the strategic decision."
+gate = "review"

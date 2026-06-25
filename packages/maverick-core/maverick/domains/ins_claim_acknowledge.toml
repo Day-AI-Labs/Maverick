@@ -17,3 +17,24 @@ deliverable = "Claim acknowledgment"
 consumers = ["claims_adjuster", "compliance_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Capture claim"
+instruction = "Read the first-notice-of-loss to capture claimant, jurisdiction, line of business, and date received."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Find statute"
+instruction = "Look up the jurisdiction's acknowledgment statute and required content to fix the deadline and mandatory language."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check window"
+instruction = "Compute the statutory due date from date received and flag claims at risk of breaching the acknowledgment window."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft acknowledgment"
+instruction = "Draft the jurisdiction-compliant acknowledgment with the required disclosures and adjuster contact details cited to source."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for review"
+instruction = "Route the draft acknowledgment to the claims adjuster for review and release."
+gate = "review"

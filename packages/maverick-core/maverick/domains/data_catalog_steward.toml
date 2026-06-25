@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "catalog update changelog"
+consumers = ["data_platform_team", "data_owner"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "List entries"
+instruction = "Read the current catalog entries to identify datasets due for review or missing ownership and lineage fields."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify against source"
+instruction = "Check each entry's described schema, owner, and freshness against the live dataset to find drift."
+tools = ["sql_query"]
+[[workflow]]
+name = "Confirm lineage"
+instruction = "Trace upstream and downstream dependencies to confirm the documented lineage matches reality."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Draft corrections"
+instruction = "Compile the proposed documentation, ownership, and lineage corrections with the evidence for each change."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Owner review"
+instruction = "Route the changelog to dataset owners to confirm corrections before the catalog is updated."
+gate = "review"

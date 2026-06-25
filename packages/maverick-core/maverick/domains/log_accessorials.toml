@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "accessorial charge compliance register"
+consumers = ["logistics_manager", "accounts_payable"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull charges"
+instruction = "Query accessorial charges billed in the period across carriers and lanes."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Load approval rules"
+instruction = "Retrieve the pre-approval policy and rate thresholds for each accessorial type from the knowledge base."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Test compliance"
+instruction = "Check each charge against the applicable pre-approval rule and flag unauthorized or out-of-policy items."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Quantify exceptions"
+instruction = "Total the non-compliant spend by carrier and accessorial type and note the missing approval evidence."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route review"
+instruction = "Hand the compliance register with cited rules to the logistics manager for sign-off before disputing charges."
+gate = "review"

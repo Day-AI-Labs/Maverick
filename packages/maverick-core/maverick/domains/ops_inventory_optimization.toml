@@ -16,3 +16,29 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_planning"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "reorder point & safety-stock plan"
+consumers = ["supply_planner", "operations_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull demand"
+instruction = "Read demand history, lead times, and current stocking parameters from ERP for the SKUs in scope."
+tools = ["read_file", "erp_read"]
+[[workflow]]
+name = "Segment SKUs"
+instruction = "Run ABC/XYZ classification to set target service levels by item criticality and variability."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compute stock"
+instruction = "Calculate safety stock and reorder points across echelons and show the service-vs-cash trade-off behind each number."
+[[workflow]]
+name = "Check floor"
+instruction = "Flag any recommendation exceeding the configured autonomous value or quantity floor as human-gated."
+[[workflow]]
+name = "Route to planner"
+instruction = "Submit the reorder and safety-stock recommendations to the human planner for approval."
+gate = "review"

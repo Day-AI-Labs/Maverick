@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "alumni engagement & referral brief"
+consumers = ["recruiting_lead", "practice_partner"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull alumni roster"
+instruction = "Query the alumni database for current contacts, roles, and last-touch dates across the network."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Map opportunities"
+instruction = "Cross-reference alumni firms and titles against open referral and recruiting needs to surface warm connections."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Verify confidentiality"
+instruction = "Confirm no engagement-confidential client detail is exposed in any outreach note before it leaves the network context."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft engagement brief"
+instruction = "Assemble a prioritized list of alumni to engage with suggested talking points and the referral or recruiting rationale."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Partner sign-off"
+instruction = "Route the engagement brief to the practice partner for approval before any outreach is initiated."
+gate = "review"

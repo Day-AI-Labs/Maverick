@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "border crossing readiness package"
+consumers = ["customs_broker", "logistics_coordinator"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather docs"
+instruction = "Read the shipment's commercial invoice, manifest, and required crossing documents for the planned border."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check requirements"
+instruction = "Verify the document set against the destination border's entry requirements and any permits or PARS/PAPS needs."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Identify missing or inconsistent documents that would cause dwell or a broker rejection and note the fix."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Sequence handoff"
+instruction = "Lay out the broker handoff timeline so paperwork reaches the broker ahead of the truck to avoid dwell."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route to broker"
+instruction = "Present the crossing readiness package to the customs broker for confirmation before dispatch."
+gate = "review"

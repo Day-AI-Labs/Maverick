@@ -15,3 +15,27 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_quality", "ops_procurement"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "supplier audit & SCAR package"
+consumers = ["quality_manager", "supplier_quality_engineer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull quality data"
+instruction = "Read incoming inspection results, nonconformance history, and the governing contract and standard for the supplier."
+tools = ["read_file", "coupa_read", "knowledge_search"]
+[[workflow]]
+name = "Assess conformance"
+instruction = "Evaluate incoming quality against PPAP/APQP requirements and quantify the nonconformance trend."
+[[workflow]]
+name = "Plan audit"
+instruction = "Build the supplier audit plan and SCAR scope tying each finding to the contract clause and the standard."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft SCAR"
+instruction = "Draft audit findings and SCARs with cited evidence and route them to the quality manager to issue."
+tools = ["read_file"]
+gate = "review"

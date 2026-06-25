@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "applicable wage determination mapping"
+consumers = ["contracts_manager", "payroll_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull contract terms"
+instruction = "Retrieve the contract's SCA/DBA coverage terms, work locations, and labor categories from company records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Identify correct WD"
+instruction = "Confirm the correct SCA or DBA wage determination number and revision for each locality against the authoritative source."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Map categories to rates"
+instruction = "Map each labor category to its required wage and fringe rate from the applicable determination in a worksheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag rate gaps"
+instruction = "Identify labor categories with no matching WD rate or paid below the determined wage and fringe."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route mapping"
+instruction = "Hand the wage determination mapping with cited revisions to the authorized human for review before payroll application."
+gate = "review"

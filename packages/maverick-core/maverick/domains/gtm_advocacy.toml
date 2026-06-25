@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "reference and advocacy program brief"
+consumers = ["customer_success_manager", "advocacy_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull health signals"
+instruction = "Read account health, NPS, and usage signals to surface candidate advocates."
+tools = ["gainsight_read", "read_file"]
+[[workflow]]
+name = "Verify consent"
+instruction = "Confirm each candidate's reference consent and suppression status, excluding any opted-out party."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Match references"
+instruction = "Match qualified advocates to open reference, case-study, and review needs by industry and use case."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft outreach"
+instruction = "Draft consented advocacy outreach and program notes with an AI-assistant disclosure."
+[[workflow]]
+name = "CSM sign-off"
+instruction = "Route the reference brief and draft outreach to the customer success manager for approval before any contact."
+gate = "approval"

@@ -18,3 +18,28 @@ deliverable = "Liquidity regulatory report (LCR/NSFR)"
 consumers = ["treasurer", "risk_officer"]
 cadence = "monthly"
 gate = "approval"
+
+[[workflow]]
+name = "Pull positions"
+instruction = "Query the bank's asset, funding, and cash-flow positions as of the reporting date."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Classify HQLA"
+instruction = "Classify assets into HQLA tiers and assign run-off and inflow factors, grounding each call in the controlling rule text via knowledge_search and citing it."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute ratios"
+instruction = "Compute the LCR and NSFR and reconcile the components back to the source position data."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Test triggers"
+instruction = "Run the internal liquidity stress scenarios and check the contingency-funding-plan triggers and counterbalancing capacity against the results."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft return"
+instruction = "Assemble the regulatory liquidity report with ratios, classifications, and stated assumptions for the treasurer to file."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to treasurer"
+instruction = "Submit the drafted return to the treasurer for approval before any regulatory filing."
+gate = "approval"

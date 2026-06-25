@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "open-items completeness list"
+consumers = ["tax_preparer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull documents"
+instruction = "Read every classified and unclassified document in the client file for the tax year being prepared."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map to forms"
+instruction = "Map each income and deduction document to its required schedule and flag W-2s without wages, self-employment income needing Schedule C, and K-1s needing Schedule E."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Detect gaps"
+instruction = "Identify missing supporting documents, unclassified items, and figures that invite an itemizing analysis such as mortgage interest."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Cite each item"
+instruction = "Cite the source document, box, and tax year for every figure and state assumptions rather than guessing on ambiguous items."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Deliver list"
+instruction = "Compile the precise open-items list the preparer can clear and route it for the credentialed preparer's review."
+gate = "review"

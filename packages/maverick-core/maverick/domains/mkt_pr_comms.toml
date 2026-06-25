@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "Press release / statement draft with fact-source log"
+consumers = ["comms_lead", "marketing_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Confirm brief"
+instruction = "Read the comms brief to confirm the announcement, audience, key messages, and timing."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify facts"
+instruction = "Verify every factual claim, name, figure, and quote against approved source documents and cite each one."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft statement"
+instruction = "Draft the release or statement in brand voice with each claim traceable to a verified source as a DRAFT."
+[[workflow]]
+name = "Compliance pass"
+instruction = "Check the draft against brand and regulatory guidelines and flag any unsupported or risky language."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Send the draft and fact-source log to the comms lead for sign-off before any external release."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "open PO confirmation tracker"
+consumers = ["procurement_manager", "planning_lead"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull open POs"
+instruction = "Query open purchase orders and flag those without supplier acknowledgement or a confirmed delivery date."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Score stockout risk"
+instruction = "Rank unconfirmed POs by lead time and on-hand cover to find which threaten a stockout first."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Verify supplier status"
+instruction = "Check knowledge and supplier records for any acknowledgement or shipment update already on file."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft chase list"
+instruction = "Build the prioritized chase tracker with the specific confirmation each supplier still owes."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to buyer"
+instruction = "Hand the confirmation tracker to the buyer who contacts suppliers and escalates at-risk orders."
+gate = "review"

@@ -11,3 +11,29 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "customer case study draft"
+consumers = ["marketing_director", "customer_reference_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Gather win"
+instruction = "Read the customer win record, deal notes, and any interview transcripts to identify the story and outcomes."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify metrics"
+instruction = "Verify every quoted metric against source data and confirm each customer quote has documented approval."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Draft narrative"
+instruction = "Draft the case study with challenge, solution, and verified results, citing the approved source for each claim."
+[[workflow]]
+name = "Flag unapproved"
+instruction = "Flag any quote, logo, or metric still lacking written customer or legal approval before handoff."
+[[workflow]]
+name = "Route for approval"
+instruction = "Route the draft to the marketing director and customer reference manager for approval before publication."
+gate = "approval"

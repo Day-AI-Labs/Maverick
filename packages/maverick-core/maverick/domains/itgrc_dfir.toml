@@ -21,3 +21,28 @@ deliverable = "Forensics timeline & findings"
 consumers = ["security_analyst", "ciso"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Scope incident"
+instruction = "Read the incident ticket and pull affected-host context from EDR to scope collection targets."
+tools = ["read_file", "crowdstrike_read", "sentinelone_read"]
+[[workflow]]
+name = "Triage collect"
+instruction = "Review triage and forensic artifacts preserving chain-of-custody and hashes per NIST 800-86."
+tools = ["read_file", "crowdstrike_read", "sentinelone_read"]
+[[workflow]]
+name = "Build timeline"
+instruction = "Correlate artifacts and detections into a unified timeline of attacker activity."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify custody"
+instruction = "Confirm every timeline event traces to a hashed, custody-intact artifact before drawing conclusions."
+tools = ["read_file"]
+[[workflow]]
+name = "Draft findings"
+instruction = "Draft the forensics findings with root cause, scope of compromise, and recommended response actions."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Route to CISO"
+instruction = "Hand the timeline and findings to the security analyst and CISO for sign-off."
+gate = "review"

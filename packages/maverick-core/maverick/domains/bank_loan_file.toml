@@ -18,3 +18,24 @@ deliverable = "Loan underwriting file"
 consumers = ["credit_officer", "loan_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Identify file type"
+instruction = "Determine the loan product and the required-document checklist that applies before underwriting and closing."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Inventory documents"
+instruction = "Query the loan file and list every document present against the required checklist for this product."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Mark each required document that is missing, expired, or unsigned and cite the requirement it fails."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Build completeness report"
+instruction = "Assemble a per-file completeness report listing present, missing, and deficient documents with the governing requirement for each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to credit"
+instruction = "Hand the completeness report to the credit officer to clear conditions before underwriting proceeds."
+gate = "review"

@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "competitive & win-loss intelligence brief"
+consumers = ["product_marketing", "sales_enablement"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Scan competitors"
+instruction = "Research competitor pricing, launches, positioning, and public signals for the tracked rival set."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Pull win-loss"
+instruction = "Read closed-deal notes and win-loss interviews to identify why deals were won or lost against each competitor."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify claims"
+instruction = "Corroborate each competitor claim against a primary source and discard anything unverifiable."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft battlecard"
+instruction = "Draft the competitive brief and battlecard updates with traps, objection handling, and market sizing."
+[[workflow]]
+name = "Route to PMM"
+instruction = "Send the intelligence brief to product marketing for review before it reaches the field."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "utilization & realization report"
+consumers = ["practice_leader", "managing_partner"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull hours"
+instruction = "Query billable and total hours by person and practice and the standard rates for the period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Confirm definitions"
+instruction = "Verify utilization and realization formulas and target benchmarks against the firm's reporting policy."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute metrics"
+instruction = "Calculate utilization and realization by person and practice and reconcile totals back to the source hours."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag outliers"
+instruction = "Surface under-utilized staff, low-realization engagements, and any figures that fail the reconciliation check."
+tools = ["sql_query"]
+[[workflow]]
+name = "Leader review"
+instruction = "Route the utilization and realization report with assumptions noted to the practice leader for review."
+gate = "review"

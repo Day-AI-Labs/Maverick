@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "partner recruitment and onboarding brief"
+consumers = ["channel_manager", "partner_account_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define profile"
+instruction = "Read the ideal partner profile and target segment to set sourcing criteria."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Source candidates"
+instruction = "Research prospective partners against the profile and assemble a shortlist with fit rationale."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Vet candidates"
+instruction = "Reuse vendor-risk checks to screen each candidate for conflicts, viability, and reputational red flags."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft onboarding"
+instruction = "Draft the recruitment recommendation and onboarding steps for vetted candidates, citing approved program terms."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route review"
+instruction = "Route the recruitment and onboarding brief to the channel manager for sign-off before partner outreach."
+gate = "review"

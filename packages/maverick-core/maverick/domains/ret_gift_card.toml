@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "gift-card liability & breakage reconciliation"
+consumers = ["accounting_manager", "controller"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull card ledger"
+instruction = "Query issued, redeemed, and outstanding gift-card balances for the close period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load breakage policy"
+instruction = "Retrieve the company gift-card breakage and liability policy to confirm the recognition method and aging rules."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute liability"
+instruction = "Reconcile outstanding balances and calculate breakage by aging band in a worksheet per the policy method."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Tie to GL"
+instruction = "Match the computed liability and breakage to the general-ledger balance and flag any variance for explanation."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Route reconciliation"
+instruction = "Deliver the reconciliation with cited policy and variance notes to the accounting manager for sign-off."
+gate = "review"

@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "OSS quarterly return package"
+consumers = ["tax_manager", "controller"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Confirm registrations"
+instruction = "Verify active OSS registrations and the member states in scope for the quarter via knowledge_search."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pull sales"
+instruction = "Query B2C cross-border sales by destination member state for the OSS period from the system of record."
+tools = ["sql_query"]
+[[workflow]]
+name = "Apply rates"
+instruction = "Apply each member state's VAT rate and reconcile totals, labeling period, currency, and regime per line."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Tie to source"
+instruction = "Reconcile the OSS return figures back to the source ledger and flag any unexplained variance."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Route for filing"
+instruction = "Hand the drafted OSS return to the human tax manager to post, pay, file, and certify."
+gate = "review"

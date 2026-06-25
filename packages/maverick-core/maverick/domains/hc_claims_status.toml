@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "claims status & denial worklist"
+consumers = ["billing_manager", "revenue_cycle_lead"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull open claims"
+instruction = "Query submitted claims and their current payer status across all payers."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile responses"
+instruction = "Read payer remittances and ERAs and match each to its claim to confirm paid, pending, or denied state."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Triage denials"
+instruction = "Group denials by reason code and look up the correct correction per the payer's denial-resolution rules."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Prep resubmissions"
+instruction = "Assemble clean corrected claims with the missing fields or documentation each denial requires."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Billing review"
+instruction = "Route the status worklist and prepared resubmissions to the billing manager to approve before filing."
+gate = "review"

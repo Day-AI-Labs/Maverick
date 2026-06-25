@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "incident record & regulatory notice draft"
+consumers = ["ehs_manager", "compliance_officer"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Capture facts"
+instruction = "Record the incident details, witnesses, and timeline verbatim from reports without softening."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Classify & clock"
+instruction = "Determine the incident class and the governing regulatory reporting deadline for it."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Identify notices"
+instruction = "List which agency notices and internal logs are required and confirm none are past due."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Draft notice"
+instruction = "Draft the required regulatory notice and incident record from the captured facts only."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Route to EHS"
+instruction = "Hand the incident record and notice draft to the EHS manager for approval before submission."
+gate = "approval"

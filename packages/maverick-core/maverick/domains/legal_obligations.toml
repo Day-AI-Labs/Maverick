@@ -16,3 +16,29 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "obligations & renewals tracker"
+consumers = ["legal_counsel", "contracts_manager", "finance_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull contracts"
+instruction = "Retrieve in-scope contracts and their executed documents from the CLM system."
+tools = ["ironclad_read", "read_file"]
+[[workflow]]
+name = "Extract terms"
+instruction = "Extract obligations, renewals, auto-renews, milestones, price escalators, and SLA penalties with their critical dates."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Track dates"
+instruction = "Compute upcoming renewal, notice, and milestone deadlines and surface those approaching first."
+[[workflow]]
+name = "Flag impact"
+instruction = "Flag the financial impact of each upcoming renewal or escalator for finance."
+[[workflow]]
+name = "Counsel review"
+instruction = "Route the renewals tracker and notice alerts to counsel and finance for review."
+gate = "review"

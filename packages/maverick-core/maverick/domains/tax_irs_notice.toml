@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "IRS notice response draft"
+consumers = ["tax_preparer", "tax_partner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read the notice"
+instruction = "Read the IRS or state notice to capture what the authority claims, the tax year, and the response deadline."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Tie to file"
+instruction = "Compare the claim against the filed return and its workpapers to determine what the firm's file actually shows."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Build support"
+instruction = "List the supporting documents that substantiate the firm's position, citing source document, box, and tax year for each figure."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Draft response"
+instruction = "Draft the response letter with the position, supporting exhibits, and deadline stated plainly for the preparer."
+[[workflow]]
+name = "Route for signature"
+instruction = "Hand the draft and exhibit list to the credentialed preparer to review and sign before any response is sent."
+gate = "review"

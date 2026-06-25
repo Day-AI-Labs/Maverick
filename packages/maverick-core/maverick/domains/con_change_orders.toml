@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "change order draft package"
+consumers = ["project_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather change basis"
+instruction = "Read the directive, RFI, or field condition that triggered the change along with the affected contract scope."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Assemble cost backup"
+instruction = "Compile labor, material, equipment, and markup cost backup for the change into a priced breakdown."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Assess schedule impact"
+instruction = "Determine the time impact of the change and document any extension or float consumption against the schedule."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Draft change order"
+instruction = "Draft the change order narrative with scope description, cost backup, and schedule impact tied to the governing contract clause."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "PM signature review"
+instruction = "Route the drafted change order package to the project manager for review and signature, never sending it yourself."
+gate = "review"

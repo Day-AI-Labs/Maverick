@@ -21,3 +21,23 @@ deliverable = "Control-test results"
 consumers = ["internal_auditor", "compliance_officer"]
 cadence = "quarterly"
 gate = "approval"
+
+[[workflow]]
+name = "Select sample"
+instruction = "Pull the control population and select a representative test sample from Vanta and Drata evidence."
+tools = ["vanta_read", "drata_read", "read_file"]
+[[workflow]]
+name = "Test effectiveness"
+instruction = "Evaluate each sampled item against the control objective and cite the supporting evidence."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Detect drift"
+instruction = "Compare current control operation against prior periods to identify control drift or degradation."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft results"
+instruction = "Draft the control-test results documenting pass/fail conclusions and evidence references per control."
+[[workflow]]
+name = "Route to audit"
+instruction = "Submit the control-test results to the internal auditor for independent human approval."
+gate = "approval"

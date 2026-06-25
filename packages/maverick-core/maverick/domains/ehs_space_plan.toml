@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "seating scenario package"
+consumers = ["facilities_manager", "workplace_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull occupancy"
+instruction = "Read current floor plans, headcount, and desk-assignment records from company documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Validate capacity"
+instruction = "Confirm each space's seat count against occupancy limits, egress, and any safety capacity constraints in the source records."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Model scenarios"
+instruction = "Build seating scenarios mapping teams to spaces and compute utilization and overflow for each option."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag conflicts"
+instruction = "Flag any scenario that exceeds capacity, breaches a safety limit, or strands a team without seating."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for review"
+instruction = "Present the scenario package with utilization and conflicts to the facilities manager for a seating decision."
+gate = "review"

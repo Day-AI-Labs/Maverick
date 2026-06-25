@@ -10,3 +10,29 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "reviewer-ready review notes"
+consumers = ["tax_reviewer", "tax_preparer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather draft"
+instruction = "Read the first-pass draft and its underlying source documents for the client and tax year."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Record computed"
+instruction = "Document what was computed and from which source documents, citing document, box, and tax year for each figure."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Log assumptions"
+instruction = "Capture every assumption made and the reason it was necessary so the reviewer need not re-derive it."
+[[workflow]]
+name = "List open items"
+instruction = "Enumerate each open item with its specific blocking question that must be resolved before filing."
+[[workflow]]
+name = "Hand off notes"
+instruction = "Assemble the top-to-bottom review notes and route them for the reviewing preparer's sign-off."
+gate = "review"

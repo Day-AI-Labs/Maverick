@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "executive day brief"
+consumers = ["ceo", "chief_of_staff"]
+cadence = "daily"
+
+[[workflow]]
+name = "Triage inbox"
+instruction = "Read incoming mail and the calendar to separate what needs the executive from what can be handled."
+tools = ["read_file"]
+[[workflow]]
+name = "Resolve scheduling"
+instruction = "Reconcile meeting requests, travel, and conflicts against the executive's priorities and stated constraints."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Prep meetings"
+instruction = "Pull background on attendees and agenda items so the executive walks in briefed."
+tools = ["web_search", "knowledge_search", "read_file"]
+[[workflow]]
+name = "Assemble day brief"
+instruction = "Compile the schedule, prep notes, and decisions needed into a single concise brief."
+[[workflow]]
+name = "Gate external sends"
+instruction = "Hold any outbound external message for the executive's approval before it leaves."
+gate = "approval"

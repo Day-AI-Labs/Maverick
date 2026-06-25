@@ -9,3 +9,31 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["tmt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "rights clearance evidence package"
+consumers = ["legal_reviewer", "rights_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Identify assets"
+instruction = "Read the asset list and intended usage and pull the governing rights and license documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map rights"
+instruction = "Query the rights records to map ownership, grants, territories, and expiry windows per asset."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Surface conflicts"
+instruction = "Surface usage conflicts, expired or expiring rights, and missing chain-of-title against the intended use."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Assemble package"
+instruction = "Assemble the clearance summary with each finding cited to its source document and gaps flagged."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Legal review"
+instruction = "Route the cited evidence package to the legal reviewer to make the clearance decision."
+gate = "review"

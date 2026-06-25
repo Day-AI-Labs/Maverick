@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "order status reply"
+consumers = ["customer", "support_agent"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Look up order"
+instruction = "Retrieve the order, shipment, and carrier tracking records for the customer's order number."
+tools = ["sql_query"]
+[[workflow]]
+name = "Verify carrier state"
+instruction = "Confirm the latest carrier scan and committed delivery window against the records, never inferring dates that are not present."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Flag exceptions"
+instruction = "Detect stalled, lost, or address-exception shipments that need a handoff rather than a routine status answer."
+tools = ["sql_query"]
+[[workflow]]
+name = "Draft reply"
+instruction = "Write a customer reply stating only the verified status and next checkpoint, citing the record used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route for review"
+instruction = "Send the drafted status reply to the support agent for sign-off before it goes to the customer."
+gate = "review"

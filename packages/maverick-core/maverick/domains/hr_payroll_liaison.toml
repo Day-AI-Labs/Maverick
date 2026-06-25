@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "payroll change & reconciliation file"
+consumers = ["payroll_manager", "controller"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Collect changes"
+instruction = "Read approved comp and status change records for the pay period from HR source documents."
+tools = ["read_file"]
+[[workflow]]
+name = "Pull payroll state"
+instruction = "Read the current employee records from the payroll system to capture the values finance has on file."
+tools = ["gusto_read", "adp_read", "paylocity_read", "paychex_read"]
+[[workflow]]
+name = "Reconcile deltas"
+instruction = "Match each HR-side change against the payroll record and flag mismatches, missing entries, or timing gaps."
+[[workflow]]
+name = "Confirm rules"
+instruction = "Check pay-cycle cutoff and change-coding rules against company payroll policy where a delta is ambiguous."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Route to payroll"
+instruction = "Hand the reconciled change file to the payroll manager, who owns running payroll, for approval before processing."
+gate = "approval"

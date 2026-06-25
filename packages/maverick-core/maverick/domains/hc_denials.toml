@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "payer appeal letter packet"
+consumers = ["denials_manager", "revenue_cycle_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull denials"
+instruction = "Query the denial worklist for the account and read the remittance, denial codes, and claim history."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Classify root cause"
+instruction = "Categorize each denial by root cause (eligibility, coding, authorization, medical necessity, timely filing) and tabulate counts by code."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Cite policy"
+instruction = "Retrieve the governing payer policy and contract language supporting the appealable denials and record the citations used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft appeal"
+instruction = "Draft the appeal letter referencing the cited policy and the specific denial reason without making any clinical determination."
+[[workflow]]
+name = "Route for review"
+instruction = "Route the drafted appeal packet to the denials manager for sign-off before submission."
+gate = "review"

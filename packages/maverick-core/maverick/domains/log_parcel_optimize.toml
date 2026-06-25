@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "parcel savings opportunity analysis"
+consumers = ["logistics_manager", "procurement_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull spend data"
+instruction = "Query parcel invoices and shipment records for the period broken out by service level, zone, and dimensional weight."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Load contract terms"
+instruction = "Retrieve the company's carrier agreements and rate cards to establish the baseline rates and accessorial terms in force."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Model alternatives"
+instruction = "Reclassify shipments by cheaper eligible service levels and corrected dim factors and quantify the savings against current spend."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Validate assumptions"
+instruction = "Check that proposed downgrades meet delivery-commitment and packaging constraints and flag any shipments where the savings would breach SLAs."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Brief for sign-off"
+instruction = "Summarize the quantified savings opportunities with assumptions and risks for the logistics manager to approve before any carrier change."
+gate = "review"

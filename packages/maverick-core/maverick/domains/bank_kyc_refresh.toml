@@ -18,3 +18,24 @@ deliverable = "KYC refresh queue"
 consumers = ["bsa_officer", "compliance_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull due customers"
+instruction = "Query customers whose KYC refresh is due based on risk tier and last-review date."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check documents"
+instruction = "Read each customer's file to identify expired or missing identification, beneficial-ownership, and source-of-funds documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Screen names"
+instruction = "Search sanctions, PEP, and adverse-media references for each customer and beneficial owner and record any hits."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Assemble files"
+instruction = "Compile the refresh queue with document gaps, screening results, and risk-tier changes into review files."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to BSA"
+instruction = "Hand the assembled review files to the BSA officer for the refresh decision."
+gate = "review"

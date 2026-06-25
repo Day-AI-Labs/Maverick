@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "business glossary entry set"
+consumers = ["data_governance_lead", "analytics_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather usage"
+instruction = "Search source documents and existing glossary entries to collect every competing usage of the disputed term."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Trace in data"
+instruction = "Inspect how the term maps to actual columns and values in production to ground each candidate definition."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile conflict"
+instruction = "Reconcile the competing definitions into one canonical entry and record rejected alternatives with rationale."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag ambiguity"
+instruction = "Flag any remaining ambiguity or stakeholder disagreement that the steward must resolve before adoption."
+[[workflow]]
+name = "Hand to steward"
+instruction = "Route the proposed canonical entry to the data governance lead for approval."
+gate = "review"

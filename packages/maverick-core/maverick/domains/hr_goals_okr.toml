@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "OKR alignment & progress report"
+consumers = ["people_team_lead", "department_head"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull current OKRs"
+instruction = "Read current goals and OKRs and their owners and status from the goals system and company documents."
+tools = ["lattice_read", "read_file", "knowledge_search"]
+[[workflow]]
+name = "Check alignment"
+instruction = "Trace each team OKR up to the parent company objective and reference good-practice OKR structure."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Assess progress"
+instruction = "Summarize progress and confidence per key result and draft proposed updates or new OKRs."
+tools = ["lattice_read"]
+[[workflow]]
+name = "Flag orphans"
+instruction = "Flag orphaned, duplicated, or stale OKRs with no parent or no recent update before the report ships."
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the alignment and progress report to the People team lead and department heads for sign-off."
+gate = "review"

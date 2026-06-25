@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "metric anomaly candidate report"
+consumers = ["analytics_lead", "metric_owner"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Load baselines"
+instruction = "Pull the key metrics and their expected ranges or historical baselines for the period under review."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Scan deviations"
+instruction = "Compare current values against baselines to surface statistically significant deviations worth investigating."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Triage causes"
+instruction = "For each candidate, check whether the deviation is a real movement or a pipeline-freshness or definition artifact before flagging it."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Assemble evidence"
+instruction = "Compile each surviving anomaly with its magnitude, supporting numbers, confidence, and the metric's definition and freshness."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Owner review"
+instruction = "Route the candidate report to the metric owner to confirm which anomalies warrant action."
+gate = "review"

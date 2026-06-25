@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "transcript request verification log"
+consumers = ["registrar", "records_clerk"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Read requests"
+instruction = "Pull the pending transcript requests with requester identity, consent, and destination details from the queue."
+tools = ["read_file"]
+[[workflow]]
+name = "Verify consent"
+instruction = "Confirm each request carries valid student consent and meets FERPA release rules before any record is touched."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check holds"
+instruction = "Verify the student record against documented financial or academic holds that would block release."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Log disposition"
+instruction = "Record each request's verification outcome and FERPA disclosure entry, flagging any that lack consent for denial."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Registrar review"
+instruction = "Route the verification log to the registrar for sign-off before transcripts are released."
+gate = "review"

@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "positioning & messaging brief"
+consumers = ["demand_gen", "sales_enablement", "product_marketing_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope launch"
+instruction = "Clarify the product, target audience, and the launch or campaign goal the positioning must support."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Research market"
+instruction = "Research competitors, category trends, and product usage signals to find the differentiated angle."
+tools = ["web_search", "knowledge_search", "pendo_read", "amplitude_read"]
+[[workflow]]
+name = "Draft positioning"
+instruction = "Write the positioning statement, core messaging pillars, and proof points grounded in approved claims."
+[[workflow]]
+name = "Build battlecard"
+instruction = "Draft the competitive battlecard and objection handling, flagging any claim not backed by an approved source."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the messaging brief and battlecard to the product-marketing lead for review before any external use."
+gate = "review"

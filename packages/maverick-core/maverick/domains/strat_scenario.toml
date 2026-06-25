@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "scenario wargame brief"
+consumers = ["executive_team", "board"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Set the question"
+instruction = "Define the strategic uncertainty and the time horizon the scenarios must illuminate."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build scenarios"
+instruction = "Construct distinct, internally-consistent scenarios from market drivers and competitor postures, date-stamping inputs."
+tools = ["web_search", "tableau_read"]
+[[workflow]]
+name = "Wargame moves"
+instruction = "Play competitor and market moves and counter-moves to test how each scenario unfolds."
+[[workflow]]
+name = "Sensitivity test"
+instruction = "Run sensitivity analysis to identify which assumptions most change outcomes and which signals to watch."
+tools = ["tableau_read"]
+[[workflow]]
+name = "Brief leadership"
+instruction = "Route the scenario wargame brief with assumptions and Reg-FD clearance to executives and the board."
+gate = "review"

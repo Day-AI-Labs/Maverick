@@ -18,3 +18,24 @@ deliverable = "Agent-fleet assurance findings"
 consumers = ["compliance_officer", "ciso"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Plan assurance"
+instruction = "Read the fleet inventory and prior findings to scope which hard floors, decision logs, and spawn chains this cycle covers."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Test hard floors"
+instruction = "Run read-only tests confirming each hard-floor control holds and record any case where a floor can be bypassed."
+tools = ["read_file"]
+[[workflow]]
+name = "Audit decision logs"
+instruction = "Audit agent decision logs for completeness and integrity and trace any actions taken without a logged justification."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Review attenuation"
+instruction = "Review spawn chains to verify capability attenuates correctly at each generation and flag any escalation."
+tools = ["read_file"]
+[[workflow]]
+name = "Report findings"
+instruction = "Compile the independent assurance findings for a human to act on, remediating nothing yourself."
+gate = "review"

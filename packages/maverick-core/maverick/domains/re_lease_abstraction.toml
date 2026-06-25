@@ -10,3 +10,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["re"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "lease obligations register"
+consumers = ["lease_administrator", "property_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull lease"
+instruction = "Read the executed lease and all amendments and exhibits from the document store."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Extract key dates"
+instruction = "Abstract commencement, expiry, renewal, and termination dates with the citing clause and page."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Abstract economics"
+instruction = "Capture rent escalations, CAM and recovery provisions, and key covenants into the register."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Flag ambiguities"
+instruction = "Mark ambiguous or conflicting language for legal review and never infer a term not in the document."
+[[workflow]]
+name = "Hand to administrator"
+instruction = "Route the abstracted register to the lease administrator to confirm interpretations before load."
+gate = "review"

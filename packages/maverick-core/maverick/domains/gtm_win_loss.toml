@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["gtm"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "win-loss analysis report"
+consumers = ["sales_leadership", "product_marketing", "competitive_intel"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Scope interviews"
+instruction = "Read the closed-deal list and select a balanced sample of won and lost opportunities to interview."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Run interviews"
+instruction = "Conduct structured win-loss interviews using a consistent guide that probes price, product, and competitor factors."
+[[workflow]]
+name = "Ground findings"
+instruction = "Cross-check interview claims against the company's own documents via knowledge search and cite what was used."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Synthesize unbiased"
+instruction = "Aggregate themes across interviews stating assumptions and unknowns plainly rather than overfitting single anecdotes."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for review"
+instruction = "Deliver the win-loss analysis report to sales leadership and product marketing for review."
+gate = "review"

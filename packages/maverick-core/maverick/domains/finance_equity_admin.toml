@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "Grant paperwork & cap-table update package"
+consumers = ["controller", "risk_officer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read cap table"
+instruction = "Pull current cap-table records and the pending grant requests from the equity system of record."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Verify terms"
+instruction = "Verify each grant's share count, vesting, and pricing against the board-approved equity plan documents."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft paperwork"
+instruction = "Draft the grant agreements and the cap-table entries, labeling each figure with its system of record."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for signoff"
+instruction = "Route the grant package and cap-table update to counsel and the equity administrator for approval before recording."
+gate = "review"

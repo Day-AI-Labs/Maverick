@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "subcontractor prequalification package"
+consumers = ["project_manager", "estimating_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Collect package"
+instruction = "Read the subcontractor's submitted prequal forms, financials, safety records, and references."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify credentials"
+instruction = "Verify licenses, bonding capacity, insurance limits, and EMR against issuing-authority sources."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Score capacity"
+instruction = "Tabulate financial strength, backlog, and capacity ratios against the company's prequal thresholds."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag missing documents, expired coverage, or threshold failures that disqualify or condition the sub."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route decision"
+instruction = "Route the scored prequal package with the recommendation to the project manager for approval."
+gate = "review"

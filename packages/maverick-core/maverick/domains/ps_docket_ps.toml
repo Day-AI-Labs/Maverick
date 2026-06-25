@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "court deadline calendar"
+consumers = ["case_attorney", "paralegal"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull filings"
+instruction = "Query the docket for new filings, orders, and triggering events since the last review."
+tools = ["sql_query"]
+[[workflow]]
+name = "Identify rules"
+instruction = "Look up the governing court rules and standing orders that set the deadline for each triggering event."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Calculate dates"
+instruction = "Apply rule-based date math including court holidays and service-method extensions to compute each response deadline."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Reconcile calendar"
+instruction = "Compare computed deadlines against the existing docket calendar and flag missing, conflicting, or near-due entries."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Attorney confirm"
+instruction = "Route the deadline calendar to the responsible attorney to confirm before any date is calendared."
+gate = "review"

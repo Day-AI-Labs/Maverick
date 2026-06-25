@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "loyalty adjustment register"
+consumers = ["loyalty_manager", "customer_service_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull account"
+instruction = "Query the member's points balance, tier, and transaction history for the case in scope."
+tools = ["sql_query"]
+[[workflow]]
+name = "Confirm terms"
+instruction = "Verify the requested adjustment against the published program terms and eligibility rules."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute adjustment"
+instruction = "Calculate the exact points, tier, or expiry change and the resulting member state."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check abuse"
+instruction = "Flag duplicate, out-of-policy, or threshold-exceeding adjustments that signal error or abuse."
+tools = ["sql_query"]
+[[workflow]]
+name = "Stage for approval"
+instruction = "Stage the proposed adjustment register for the loyalty manager to approve before posting."
+gate = "approval"

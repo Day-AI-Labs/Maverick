@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Government invoice package with cost-element backup"
+consumers = ["billing_manager", "contracting_officer"]
+cadence = "monthly"
+gate = "approval"
+
+[[workflow]]
+name = "Gather charges"
+instruction = "Read the period cost ledger and timecards for the contract and CLIN being billed."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build cost elements"
+instruction = "Roll up direct labor, materials, ODCs, and applied indirect rates into the required cost-element backup schedule."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Apply contract terms"
+instruction = "Verify billing format, withholdings, and allowable cost rules against the cited contract clause rather than from memory."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Reconcile to ceiling"
+instruction = "Confirm cumulative billings stay within the funded CLIN ceiling and flag any overrun before invoicing."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Approve & certify"
+instruction = "Route the invoice package to the billing manager for the authorized certification and submission."
+gate = "approval"

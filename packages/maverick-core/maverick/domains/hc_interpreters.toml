@@ -11,3 +11,32 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "interpreter scheduling & language-access compliance log"
+consumers = ["language_access_manager", "scheduling_coordinator"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull encounters"
+instruction = "Query upcoming encounters with a documented patient language preference requiring interpreter support."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check coverage rules"
+instruction = "Confirm language-access obligations and qualified-interpreter standards from compliance policy in knowledge."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Map availability"
+instruction = "Match each encounter to available interpreter modality and document the assignment in the log."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Identify encounters with no arranged interpreter as the language-access compliance gap."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to manager"
+instruction = "Deliver the compliance log with unfilled gaps to the language-access manager to resolve."
+tools = ["spreadsheet"]
+gate = "review"

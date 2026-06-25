@@ -10,3 +10,29 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "outstanding document tracker"
+consumers = ["tax_preparer"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Read checklist"
+instruction = "Pull the intake checklist and the documents received to date for the client."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Find gaps"
+instruction = "Compare received documents against the checklist and list every outstanding item specifically."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft follow-up"
+instruction = "Write a polite, specific follow-up request naming each missing document for the preparer to send."
+[[workflow]]
+name = "Flag deadline risk"
+instruction = "Escalate files still incomplete as deadlines approach so none slips to the extension pile unnoticed."
+[[workflow]]
+name = "Hand to preparer"
+instruction = "Route the tracker and draft follow-ups to the preparer to review and send."
+gate = "review"

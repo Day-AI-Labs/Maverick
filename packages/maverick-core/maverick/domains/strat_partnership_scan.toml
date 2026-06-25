@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["strat"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "partnership candidate fit matrix"
+consumers = ["corp_dev_lead", "strategy_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define criteria"
+instruction = "Read the partnership thesis and derive the strategic fit criteria from company documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Scan candidates"
+instruction = "Scan the market for candidate partners and gather profile evidence against each criterion."
+tools = ["web_search"]
+[[workflow]]
+name = "Score fit"
+instruction = "Score each candidate's strategic fit in the spreadsheet, citing the evidence and dating each data point."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag thin evidence"
+instruction = "Mark candidates whose fit rests on inference rather than sourced fact and state what would confirm it."
+[[workflow]]
+name = "Route shortlist"
+instruction = "Deliver the ranked fit matrix and shortlist to the corp dev lead for review."
+gate = "review"

@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "payer portal retrieval log"
+consumers = ["billing_specialist", "revenue_cycle_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Read worklist"
+instruction = "Read the worklist of claims, authorizations, and remittances that need data pulled from payer portals."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Identify payer reqs"
+instruction = "Look up each payer's portal location and required identifiers for the records being retrieved."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Record retrieved data"
+instruction = "Capture authorization, claim status, and remittance values into the structured retrieval sheet keyed by claim."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Reconcile to system"
+instruction = "Query the billing system and flag any retrieved value that does not match the posted record."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route discrepancies"
+instruction = "Hand mismatches to the billing specialist for correction sign-off."
+gate = "review"

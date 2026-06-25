@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "portfolio status & RAID review"
+consumers = ["pmo_lead", "executive_team"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull portfolio state"
+instruction = "Read program status reports and pull current portfolio metrics from Tableau."
+tools = ["read_file", "tableau_read", "knowledge_search"]
+[[workflow]]
+name = "Map dependencies"
+instruction = "Map cross-program dependencies and identify where a slip in one threatens another."
+tools = ["tableau_read"]
+[[workflow]]
+name = "Update RAID"
+instruction = "Refresh the RAID log and rank risks and issues by portfolio impact."
+tools = ["web_search"]
+[[workflow]]
+name = "Flag blockers"
+instruction = "Surface the dependencies and risks needing an executive decision this cycle."
+[[workflow]]
+name = "Brief PMO"
+instruction = "Package the portfolio status, dependency map, and RAID into a review for the PMO lead."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "AIA G702/G703 pay application package"
+consumers = ["project_manager", "owner_rep"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull SOV"
+instruction = "Read the contract schedule of values, prior pay applications, and approved change orders for this billing period."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Calc progress"
+instruction = "Enter percent-complete and stored-materials figures per line and compute work completed this period in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Apply retention"
+instruction = "Compute retention withheld and prior payments so the net amount due reconciles to the contract sum to date."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify totals"
+instruction = "Confirm line totals tie to the SOV and that change orders moved into the contract sum match the executed log, flagging any variance."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "PM sign-off"
+instruction = "Route the assembled G702/G703 package with backup to the project manager for certification and signature."
+gate = "review"

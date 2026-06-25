@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "endowment restriction compliance register"
+consumers = ["controller", "advancement_director"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "List funds"
+instruction = "Pull the roster of endowed funds with their balances and spending activity for the period."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Retrieve restrictions"
+instruction = "Retrieve each fund's gift agreement and donor restriction terms from the knowledge base."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Match spending"
+instruction = "Match each expenditure and spending-rate draw against the fund's purpose and any underwater or spending-policy limits."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag violations"
+instruction = "Flag any spending that breaches a donor restriction, exceeds the spending rate, or invades a donor-restricted corpus."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route exceptions"
+instruction = "Route the compliance register and flagged exceptions to the controller for review and remediation."
+gate = "review"

@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "UK GDPR obligations & ICO tracker"
+consumers = ["privacy_counsel", "data_protection_officer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Gather obligations"
+instruction = "Read the company's privacy documents to identify UK-specific obligations, DPIAs, and any open ICO interactions."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify provisions"
+instruction = "Research the current UK GDPR and DPA 2018 sources to verify the exact articles and ICO guidance that apply."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Map gaps"
+instruction = "Compare documented practice against the cited obligations to flag gaps and upcoming ICO deadlines."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag jurisdiction"
+instruction = "State jurisdiction assumptions and unknowns explicitly where UK divergence from EU GDPR is uncertain."
+[[workflow]]
+name = "Route to counsel"
+instruction = "Send the obligations tracker and ICO action items to privacy counsel for review."
+gate = "review"

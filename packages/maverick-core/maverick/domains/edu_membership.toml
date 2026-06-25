@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "membership renewal & benefits register"
+consumers = ["membership_manager", "finance_coordinator"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull member records"
+instruction = "Read the membership database for renewal dates, tiers, payment status, and benefits owed in the period."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Verify entitlements"
+instruction = "Cross-check each member's tier against documented benefit rules to confirm what they are owed and what they have received."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build renewal list"
+instruction = "Compile upcoming and lapsed renewals with amounts due and flag records with data discrepancies or duplicate entries."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Hand the renewal and benefits register to the membership manager to approve outreach and any record corrections."
+gate = "review"

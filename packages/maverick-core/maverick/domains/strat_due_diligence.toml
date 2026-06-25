@@ -14,3 +14,33 @@ deny_tools = ["shell", "write_file", "web_search"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "due-diligence red-flag report"
+consumers = ["corp_dev_lead", "ceo", "board"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Index data room"
+instruction = "Read the data room and map documents to the financial, legal, tech, and commercial workstreams."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify the target"
+instruction = "Cross-check ownership, funding history, and competitive position against external records."
+tools = ["crunchbase_read", "knowledge_search"]
+[[workflow]]
+name = "Test the numbers"
+instruction = "Trace key financial and commercial claims back to source documents and reconcile inconsistencies."
+tools = ["read_file"]
+[[workflow]]
+name = "Surface red flags"
+instruction = "Catalog every red flag with severity, supporting evidence, and the workstream it lands in."
+[[workflow]]
+name = "Wall off MNPI"
+instruction = "Confirm deal MNPI stays inside the sealed compartment and never crosses the wall."
+[[workflow]]
+name = "Route to deal lead"
+instruction = "Deliver the findings to the corp-dev lead for review before they shape the go/no-go."
+gate = "review"

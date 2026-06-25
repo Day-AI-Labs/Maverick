@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "scheduled report package"
+consumers = ["business_analyst", "operations_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Read report spec"
+instruction = "Read the report specification, expected layout, and source-table definitions from the spec docs."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull metrics"
+instruction = "Query the specified source tables to compute each metric exactly per the spec's definitions."
+tools = ["sql_query"]
+[[workflow]]
+name = "Assemble report"
+instruction = "Lay out the figures into the prescribed report format and label every metric with its source and freshness."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Reconcile prior"
+instruction = "Compare against the prior period to catch unexplained swings or broken joins before release."
+tools = ["sql_query"]
+[[workflow]]
+name = "Hand off package"
+instruction = "Deliver the completed report package to the business analyst for sign-off."
+gate = "review"

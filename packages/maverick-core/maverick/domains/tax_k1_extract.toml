@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "K-1 workpaper extract"
+consumers = ["tax_preparer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read K-1 package"
+instruction = "Read the Schedule K-1 package to capture entity, EIN, and the income character on each line."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Extract line items"
+instruction = "Transcribe each K-1 line into the workpaper with a citation to the source document, box, and tax year."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Note basis and at-risk"
+instruction = "Record basis and at-risk notes from the package and flag where figures are missing or unknown."
+tools = ["read_file"]
+[[workflow]]
+name = "Flag pass-through"
+instruction = "Mark Schedule E flow, basis limits, and state sourcing as preparer-must-complete items rather than resolving them."
+[[workflow]]
+name = "Hand to preparer"
+instruction = "Route the K-1 workpaper with flagged pass-through items to the preparer for review."
+gate = "review"

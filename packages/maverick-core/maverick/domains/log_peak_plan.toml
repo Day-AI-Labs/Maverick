@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "peak season capacity plan"
+consumers = ["operations_director", "logistics_manager"]
+cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Gather forecast"
+instruction = "Pull the demand forecast and prior-year peak volume actuals by week, lane, and facility."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Confirm capacity"
+instruction = "Retrieve current carrier commitments, facility throughput limits, and labor plans to establish available capacity."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build the plan"
+instruction = "Map forecast volume against capacity by week to size carrier allocations, staffing, and surge needs."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Stress the peaks"
+instruction = "Identify the weeks where forecast volume exceeds committed capacity and flag the shortfall and contingency options."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Present the staffed and carrier-allocated peak plan with shortfall risks to operations for approval before commitments are booked."
+gate = "approval"

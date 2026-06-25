@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "supplier performance scorecard"
+consumers = ["procurement_manager", "category_owner"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Gather metrics"
+instruction = "Pull delivery, quality, and service data for each tracked supplier over the scoring period."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Verify data"
+instruction = "Cross-check the raw metrics against source records and resolve gaps or anomalies before scoring."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compute scores"
+instruction = "Apply the weighted KPI model to calculate each supplier's overall and category scores."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag outliers"
+instruction = "Highlight suppliers breaching thresholds or trending down and note the driving metrics."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route scorecard"
+instruction = "Deliver the performance scorecard to the category owner for the supplier review."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "vendor contract & insurance compliance register"
+consumers = ["facilities_manager", "procurement_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull vendor records"
+instruction = "Read the facilities vendor contracts, insurance certificates, and service records from company documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify coverage"
+instruction = "Confirm each vendor's contract term and insurance certificate against required coverage limits and expiration dates."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Score performance"
+instruction = "Compile a register summarizing each vendor's contract status, insurance validity, and performance against SLAs."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag any vendor with an expired contract, lapsed or underinsured certificate, or unmet performance standard."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to manager"
+instruction = "Send the register and flagged gaps to the facilities manager for renewal or remediation decisions."
+gate = "review"

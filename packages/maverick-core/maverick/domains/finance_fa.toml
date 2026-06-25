@@ -30,3 +30,28 @@ deliverable = "Fixed-asset register & depreciation"
 consumers = ["accounting_manager", "auditor"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Read register"
+instruction = "Read the fixed-asset register and the GL sub-ledger for the period."
+tools = ["fa_read_register", "gl_read_subledger", "netsuite_read"]
+[[workflow]]
+name = "Apply policy"
+instruction = "Apply the capitalization threshold to additions and classify capitalize-vs-expense per policy."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compute depreciation"
+instruction = "Compute the depreciation and amortization schedules and stage additions, transfers, and disposals as drafts."
+tools = ["draft_depreciation_schedule", "stage_asset_entry"]
+[[workflow]]
+name = "Test impairment"
+instruction = "Run ASC 360 impairment indicators and raise any impaired asset as a finding."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Reconcile subledger"
+instruction = "Reconcile the FA sub-ledger to the GL and explain any variance before handoff."
+tools = ["reconcile_accounts"]
+[[workflow]]
+name = "Route post"
+instruction = "Hand the schedules and staged entries to the accounting manager to post."
+gate = "review"

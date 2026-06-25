@@ -17,3 +17,24 @@ deliverable = "DOI complaint response"
 consumers = ["compliance_officer", "claims_manager"]
 cadence = "on-demand"
 gate = "approval"
+
+[[workflow]]
+name = "Read complaint"
+instruction = "Read the DOI complaint, the regulator's questions, and the response deadline."
+tools = ["read_file"]
+[[workflow]]
+name = "Assemble file"
+instruction = "Pull the full claim file, correspondence, and payment history for the complained-of claim."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Cite handling"
+instruction = "Confirm the company's claim handling matched policy and statute via knowledge_search and cite each authority."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft response"
+instruction = "Draft a point-by-point response addressing every regulator question with documented support and stated unknowns."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route response"
+instruction = "Hand the DOI complaint response to the compliance officer and claims manager for approval before filing."
+gate = "approval"

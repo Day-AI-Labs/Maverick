@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "e-file status roster"
+consumers = ["tax_preparer", "tax_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull transmissions"
+instruction = "Read the firm's transmitted returns and pending acknowledgments from CCH Axcess and GoSystem for the current filing window."
+tools = ["cch_axcess_read", "gosystem_tax_read"]
+[[workflow]]
+name = "Reconcile acks"
+instruction = "Match each acknowledgment to its return and update the filed, accepted, or rejected state per client and tax year."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Decode rejects"
+instruction = "For every rejection, capture the reject code and translate it into a plain-language cause citing the source document and box."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag outstanding"
+instruction = "Surface returns still unacknowledged past their expected ack window so nothing sits silently unaccepted."
+tools = ["sql_query"]
+[[workflow]]
+name = "Hand to preparer"
+instruction = "Route the current status roster with rejects and outstanding items to the credentialed preparer for review."
+gate = "review"

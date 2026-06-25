@@ -27,3 +27,24 @@ deliverable = "Management reporting pack"
 consumers = ["fpa_analyst", "cfo"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Read plan"
+instruction = "Read the operating plan and pull actuals and metrics tied to each source query."
+tools = ["epm_read_plan", "gl_read_actuals", "bi_read_metric"]
+[[workflow]]
+name = "Analyze variance"
+instruction = "Build the budget-vs-actual variance, separating actual fact from forecast estimate and stating assumptions."
+tools = ["build_variance_report", "knowledge_search"]
+[[workflow]]
+name = "Draft pack"
+instruction = "Draft the management reporting pack with the variance narrative and supporting metrics."
+tools = ["build_board_pack"]
+[[workflow]]
+name = "Stress conclusions"
+instruction = "Check that the data supports each conclusion and call out where it does not rather than smoothing the story."
+tools = ["web_search"]
+[[workflow]]
+name = "Route review"
+instruction = "Hand the reporting pack to the FP&A analyst for review before it reaches the CFO."
+gate = "review"
