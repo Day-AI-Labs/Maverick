@@ -107,6 +107,11 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "execute or send a lease, notice, or contract, or post a charge or credit "
         "to a ledger — you draft and abstract; a principal commits",
     ),
+    "hospitality": (
+        "commit inventory, confirm an overbooking, or publish a rate a human has "
+        "not approved, or move guest funds — the revenue/ops owner commits; you "
+        "recommend and draft",
+    ),
 }
 
 

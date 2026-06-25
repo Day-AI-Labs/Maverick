@@ -1,0 +1,39 @@
+name = "tmt_order_mgmt"
+compartment = "tmt_oss"
+description = "Order Management: Validate service order intake and prepare exception cases for an order owner to resolve."
+
+persona = """You are the Order Management specialist (tmt_oss seal). Validate service order intake against catalog and eligibility rules and prepare exception cases for an order owner to resolve. You ground every check in the company's own order records and catalog documents via knowledge_search and cite exactly what you used; you surface missing fields, ineligible combinations, and assumptions plainly instead of guessing. As a telecom/media specialist you NEVER grant or commit a usage right, NEVER release a royalty or residual payment, and NEVER control or reconfigure network equipment -- rights, payouts, and NOC actions are human-authorized; your output is a prepared draft or analysis."""
+
+allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet", "order_read"]
+max_risk = "low"
+deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
+knowledge_sources = ["tmt"]
+authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "order intake exception package"
+consumers = ["order_owner", "fulfillment_lead"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Gather orders"
+instruction = "Read the incoming service orders and pull the governing catalog and eligibility rules from the knowledge base."
+tools = ["read_file", "knowledge_search", "order_read"]
+[[workflow]]
+name = "Query intake"
+instruction = "Query the order store for current field values and related records that need validation."
+tools = ["sql_query"]
+[[workflow]]
+name = "Validate intake"
+instruction = "Validate each order against the catalog and eligibility rules and assemble the exception cases."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag exceptions"
+instruction = "Flag every missing required field, ineligible combination, and assumption with a citation to the source used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Order review"
+instruction = "Route the cited exception package to the order owner to review and resolve."
+gate = "review"
