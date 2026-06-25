@@ -141,6 +141,15 @@ jobs:
         # reviewed for online/offline (hot-deploy) safety. Pure offline
         # SQL-shape check, no DB. See maverick/schema_migrations.py.
         run: python -m maverick.schema_migrations --ci
+      - name: Migration governance gate (released migrations are immutable)
+        # Fingerprints both backend ladders (SQLite + Postgres) and diffs them
+        # against the committed migrations.lock.json: editing/removing a
+        # released migration fails (it would diverge already-migrated DBs), a
+        # new destructive (DROP/RENAME) migration fails, and the two backends
+        # must stay at the same declared head. Add a migration -> regenerate the
+        # lock (`python -m maverick.migration_governance --regen`) so the change
+        # is reviewed. Pure offline check, no DB. See migration_governance.py.
+        run: python -m maverick.migration_governance --ci
 
   audit:
     runs-on: ubuntu-latest
