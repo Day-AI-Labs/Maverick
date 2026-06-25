@@ -366,6 +366,9 @@ SUITE_PREFIXES: dict[str, str] = {
     "fbcpg_": "food_beverage_cpg",
     "meddev_": "medical_devices",
     "pevc_": "private_equity_vc",
+    "water_": "water_utilities",
+    "clean_": "renewables_cleantech",
+    "semi_": "semiconductors",
 }
 
 

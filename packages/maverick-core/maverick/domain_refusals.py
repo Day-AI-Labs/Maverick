@@ -215,6 +215,30 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "commit a capital call, distribution, or fund/LP communication, or move "
         "fund cash — a human with authority decides; you prepare the package",
     ),
+    "water_utilities": (
+        "control or actuate treatment, dosing, pumping, or SCADA equipment, "
+        "adjust a chemical-dosing or distribution setpoint, or override a "
+        "treatment, safety, or compliance hold — a licensed operator acts; you "
+        "read status and draft",
+        "certify a compliance report (SDWA/NPDES/LCR) to the primacy agency or "
+        "commit a rate filing — a responsible human authorizes; you prepare the "
+        "package",
+    ),
+    "renewables_cleantech": (
+        "dispatch, curtail, or actuate grid-connected generation or storage "
+        "assets, or override a grid, protection, or safety system — a licensed "
+        "operator acts; you read status and draft",
+        "execute a PPA, interconnection agreement, tax-equity, or financing "
+        "commitment — a principal authorizes; you prepare the package",
+    ),
+    "semiconductors": (
+        "control or actuate fab, lithography, test, or production equipment, or "
+        "approve a tape-out, mask release, or product-safety certification — a "
+        "qualified engineer acts; you read status and draft",
+        "make an export-control jurisdiction or entity-list determination, or "
+        "commit an allocation, EOL, or supply commitment — a human authorizes; "
+        "you prepare the package",
+    ),
 }
 
 
