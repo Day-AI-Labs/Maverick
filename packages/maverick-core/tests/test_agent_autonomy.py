@@ -235,5 +235,42 @@ def test_render_flags_onboarding(monkeypatch):
     assert "after a human approves" in out
 
 
+# -- dial-coupled governed action grant ------------------------------------
+
+def _pack(tmp_path):
+    from maverick.domain import load_domain
+
+    p = tmp_path / "p.toml"
+    p.write_text(
+        'name = "fin_clerk"\npersona = "x"\n'
+        'allow_tools = ["read_file", "sql_query"]\nmax_risk = "medium"\n'
+    )
+    return load_domain(p)
+
+
+def test_action_grant_off_by_default(monkeypatch, tmp_path):
+    from maverick.domain import domain_capability
+
+    monkeypatch.delenv("MAVERICK_WORKFORCE_LEVELS", raising=False)
+    monkeypatch.setattr("maverick.config.get_workforce", lambda: {"levels": False, "agents": {}})
+    cap = domain_capability(_pack(tmp_path), None, "agent:fin_clerk")
+    assert not cap.permits("email")          # read-only: no action bundle
+    assert cap.max_risk == "medium"          # ceiling unchanged
+    assert cap.permits("read_file")
+
+
+def test_action_grant_when_levels_on(monkeypatch, tmp_path):
+    from maverick.domain import domain_capability
+
+    monkeypatch.setenv("MAVERICK_WORKFORCE_LEVELS", "1")
+    monkeypatch.setattr("maverick.config.get_workforce", lambda: {"levels": True, "agents": {}})
+    cap = domain_capability(_pack(tmp_path), None, "agent:fin_clerk")
+    assert cap.permits("email")              # governed action bundle granted
+    assert cap.permits("notify")
+    assert cap.permits("calendar")
+    assert cap.max_risk == "high"            # ceiling lifted; the dial now governs
+    assert cap.permits("read_file")          # reads still fine
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-q"])
