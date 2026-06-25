@@ -63,6 +63,26 @@ def test_forward_udp_one_datagram_per_event():
     assert got == {b"x\n", b"y\n"}
 
 
+def test_forward_udp_ipv6_destination():
+    # IPv6 collectors must work too (regression: family was hardcoded AF_INET).
+    import socket as _s
+    if not _s.has_ipv6:
+        pytest.skip("no IPv6 on this host")
+    try:
+        srv = _s.socket(_s.AF_INET6, _s.SOCK_DGRAM)
+        srv.bind(("::1", 0))
+    except OSError:
+        pytest.skip("IPv6 loopback unavailable in this environment")
+    try:
+        srv.settimeout(5)
+        port = srv.getsockname()[1]
+        n = forwarder.forward(["z"], f"udp://[::1]:{port}")
+        assert n == 1
+        assert srv.recvfrom(1024)[0] == b"z\n"
+    finally:
+        srv.close()
+
+
 def test_forward_http_posts_batch_with_token(monkeypatch):
     captured = {}
 

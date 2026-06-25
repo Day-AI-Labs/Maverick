@@ -4,6 +4,7 @@ The guard test (real ladders vs the committed lock) keeps migrations.lock.json
 honest; the rest exercise the logic on synthetic ladders."""
 from __future__ import annotations
 
+import pytest
 from maverick import migration_governance as mg
 
 # ---- checksum -------------------------------------------------------------
@@ -82,6 +83,35 @@ def test_new_destructive_version_is_rejected():
     lads["sqlite"][2] = ["ALTER TABLE goals DROP COLUMN z"]  # non-additive
     probs = mg.lock_problems(lock, lads)
     assert any("destructive" in p for p in probs)
+
+
+@pytest.mark.parametrize("stmt", [
+    "ALTER TABLE goals DROP CONSTRAINT fk_parent",     # constraint drop
+    'ALTER TABLE "my table" RENAME TO archived',       # quoted-identifier rename
+    "DROP INDEX idx_goals_status",                     # index drop
+    "DROP VIEW goal_summary",                           # view drop
+    "drop   table   goals",                            # lowercase + extra spaces
+])
+def test_destructive_variants_are_caught(stmt):
+    # Regression: these non-additive shapes slipped past the original regexes.
+    lads = {"sqlite": {1: []}, "postgres": {1: []}}
+    lock = _lock_from(lads)
+    lads["sqlite"][2] = [stmt]
+    probs = mg.lock_problems(lock, lads)
+    assert any("destructive" in p for p in probs), f"missed destructive: {stmt!r}"
+
+
+def test_additive_statements_are_not_false_positives():
+    # Additive shapes must NOT trip the destructive gate.
+    lads = {"sqlite": {1: []}, "postgres": {1: []}}
+    lock = _lock_from(lads)
+    lads["sqlite"][2] = [
+        "ALTER TABLE goals ADD COLUMN note TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_x ON goals(status)",
+        "CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY)",
+    ]
+    probs = mg.lock_problems(lock, lads)
+    assert not any("destructive" in p for p in probs)
 
 
 def test_clean_ladder_against_its_own_lock_has_no_problems():

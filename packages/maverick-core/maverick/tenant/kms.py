@@ -20,9 +20,11 @@ Opt-in and offline-testable. Requires the ``cryptography`` extra (AES-GCM).
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import secrets
+import tempfile
 import threading
 import time
 from typing import Protocol
@@ -152,15 +154,23 @@ def _kms_config_for(tenant_id: str | None) -> dict:
     from ..config import _deep_merge_config, _load_config_file, config_path, load_config
     if tenant_id is None:
         return dict((load_config() or {}).get("kms") or {})
+    base: dict = {}
+    try:
+        base = _load_config_file(config_path()) or {}
+    except Exception:  # pragma: no cover -- global config unreadable
+        base = {}
     try:
         from ..paths import _tenant_segment, maverick_home
-        base = _load_config_file(config_path())
         overlay_path = maverick_home() / "tenants" / _tenant_segment(tenant_id) / "config.toml"
         merged = (_deep_merge_config(base, _load_config_file(overlay_path))
                   if overlay_path.exists() else base)
         return dict((merged or {}).get("kms") or {})
-    except Exception:  # pragma: no cover -- never block key setup on config
-        return dict((load_config() or {}).get("kms") or {})
+    except Exception:
+        # A named tenant's overlay is unreadable/malformed: fall back to the
+        # GLOBAL config only -- never to the ambient load_config(), which would
+        # merge a DIFFERENT (active) tenant's [kms] and wrap this tenant's DEK
+        # under the wrong key / silently downgrade BYOK.
+        return dict(base.get("kms") or {})
 
 
 def get_kms(tenant_id: str | None = None) -> KMS:
@@ -222,8 +232,12 @@ def tenant_dek(tenant_id: str | None, *, kms: KMS | None = None) -> bytes:
     with _dek_lock:
         cached = _dek_cache.get(cache_key)
         if cached is not None:
-            dek, expiry = cached
-            if expiry is None or expiry > _now():
+            dek, cached_at = cached
+            # TTL is evaluated against the CURRENT setting on every read, not
+            # frozen at write -- so raising the TTL (or revoking a cloud KEK)
+            # bounds even a tenant that was warmed under TTL=0.
+            ttl = _dek_cache_ttl()
+            if ttl <= 0 or cached_at + ttl > _now():
                 return dek
             _dek_cache.pop(cache_key, None)  # lapsed -> re-unwrap below
         # Per-tenant BYOK: resolve THIS tenant's KMS unless one was injected.
@@ -235,15 +249,32 @@ def tenant_dek(tenant_id: str | None, *, kms: KMS | None = None) -> bytes:
             if len(dek) != _DEK_BYTES:
                 raise EncryptionUnavailable("unwrapped DEK is malformed")
         else:
-            dek = secrets.token_bytes(_DEK_BYTES)
-            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            wrapped = kms.wrap(dek, context=context)
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "wb") as f:
-                f.write(wrapped)
-        ttl = _dek_cache_ttl()
-        _dek_cache[cache_key] = (dek, (_now() + ttl) if ttl > 0 else None)
+            dek = _generate_and_persist_dek(path, context, kms)
+        _dek_cache[cache_key] = (dek, _now())
         return dek
+
+
+def _generate_and_persist_dek(path, context: bytes, kms: KMS) -> bytes:
+    """First-use DEK: generate, wrap, write atomically with O_EXCL.
+
+    The ``_dek_lock`` only serializes threads in ONE process; the on-disk
+    O_EXCL is the cross-process guard. If another process won the race
+    (FileExistsError), discard our just-generated key and adopt the winner's
+    persisted DEK -- otherwise the loser would seal data under a key that was
+    never written and is unreadable everywhere else."""
+    dek = secrets.token_bytes(_DEK_BYTES)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    wrapped = kms.wrap(dek, context=context)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        winner = kms.unwrap(path.read_bytes(), context=context)
+        if len(winner) != _DEK_BYTES:
+            raise EncryptionUnavailable("unwrapped DEK is malformed") from None
+        return winner
+    with os.fdopen(fd, "wb") as f:
+        f.write(wrapped)
+    return dek
 
 
 def seal_for_tenant(tenant_id: str | None, plaintext: bytes, *, kms: KMS | None = None) -> bytes:
@@ -277,11 +308,20 @@ def rotate_kek(tenant_id: str | None, *, old_kms: KMS, new_kms: KMS) -> None:
     if len(dek) != _DEK_BYTES:
         raise EncryptionUnavailable("unwrapped DEK is malformed")
     rewrapped = new_kms.wrap(dek, context=context)
-    tmp = path.with_suffix(".wrapped.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "wb") as f:
-        f.write(rewrapped)
-    os.replace(tmp, path)
+    # A UNIQUE temp (not a fixed ``dek.wrapped.tmp``) so two concurrent
+    # rotations of the same tenant can't interleave writes into one file and
+    # leave a torn blob that neither KEK can unwrap -- each writes its own temp
+    # and the last os.replace wins atomically.
+    fd, tmp = tempfile.mkstemp(prefix="dek.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(rewrapped)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
     with _dek_lock:
         _dek_cache.pop(tenant_id or "__default__", None)
 
@@ -289,11 +329,21 @@ def rotate_kek(tenant_id: str | None, *, old_kms: KMS, new_kms: KMS) -> None:
 def rotate_kek_fleet(*, old_kms_for, new_kms_for) -> dict[str, str]:
     """Rotate every provisioned tenant's wrapped DEK from its old KEK to its new
     KEK (fleet-wide key rotation). ``old_kms_for`` / ``new_kms_for`` are callables
-    ``tenant_id -> KMS`` so each tenant can resolve to its own BYOK provider (the
-    common forms: ``lambda t: get_kms(t)`` for the post-config-change KEK, or a
-    fixed ``lambda t: LocalKMS(old_kek)``). Best-effort and isolated: one tenant's
-    failure is recorded and does not abort the rest. Returns ``{tenant_id:
-    "rotated" | "error: <reason>"}``. Re-wrap only — no data is re-encrypted."""
+    ``tenant_id -> KMS`` resolving each tenant's OLD and NEW KEK respectively.
+
+    The two callables must resolve to the *different* key states explicitly --
+    do NOT use ``get_kms(t)`` for both: it reads the tenant's *current* config,
+    so once you've switched ``[kms]`` to the new provider it returns the new KEK
+    for both arms (the unwrap then fails, or the rotation is a silent no-op).
+    Build the old KMS from the prior key material directly, e.g.
+    ``old_kms_for=lambda t: LocalKMS(old_kek)`` and
+    ``new_kms_for=lambda t: get_kms(t)`` (new config already in place).
+
+    Best-effort and isolated: one tenant's failure is recorded and does not abort
+    the rest. **Check the report before retiring the old KEK** -- any
+    ``"error: ..."`` entry means that tenant is still wrapped under the old KEK
+    and would become unreadable if it is decommissioned. Returns ``{tenant_id:
+    "rotated" | "error: <reason>"}``. Re-wrap only -- no data is re-encrypted."""
     from .registry import list_tenants
     report: dict[str, str] = {}
     for rec in list_tenants():

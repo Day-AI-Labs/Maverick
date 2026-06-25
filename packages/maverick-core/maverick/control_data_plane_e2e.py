@@ -59,36 +59,40 @@ def run_e2e(workdir: Path, *, execute=None) -> dict:
     jobs_db = workdir / "jobs.db"
     execute = execute or _stub_execute
 
-    # Shared world (the control plane's handle).
+    # Shared world (the control plane's handle). try/finally so an exception
+    # anywhere in the harness still closes the SQLite connection instead of
+    # leaking it (and masking the real error behind a temp-dir cleanup failure).
     world = WorldModel(path=world_db)
-    goal_id = world.create_goal("e2e: prove control/data-plane split", "harness")
-    status_initial = world.get_goal(goal_id).status
+    try:
+        goal_id = world.create_goal("e2e: prove control/data-plane split", "harness")
+        status_initial = world.get_goal(goal_id).status
 
-    # --- Control plane: submit through the real QueueDispatcher --------------
-    # The broker bridge represents "the broker hands the job to a worker": in
-    # prod it's arq->Redis; here it writes to the SQLite JobQueue the Worker
-    # polls, mapping the dispatcher's job name to the worker's handler kind.
-    from .job_queue import JobQueue
-    queue = JobQueue(db_path=jobs_db)
+        # --- Control plane: submit through the real QueueDispatcher ----------
+        # The broker bridge represents "the broker hands the job to a worker":
+        # in prod it's arq->Redis; here it writes to the SQLite JobQueue the
+        # Worker polls, mapping the dispatcher's job name to the handler kind.
+        from .job_queue import JobQueue
+        queue = JobQueue(db_path=jobs_db)
 
-    def _broker(job_name: str, payload: dict) -> None:
-        queue.enqueue(_WORKER_KIND if job_name == JOB_NAME else job_name, payload)
+        def _broker(job_name: str, payload: dict) -> None:
+            queue.enqueue(_WORKER_KIND if job_name == JOB_NAME else job_name, payload)
 
-    dispatcher = QueueDispatcher(enqueue=_broker)
-    t_submit = time.time()
-    submit_returned = dispatcher.submit(
-        goal_id, max_dollars=1.0, channel="harness", user_id="e2e")
-    pending = queue.list(status="pending")
-    status_after_enqueue = world.get_goal(goal_id).status
+        dispatcher = QueueDispatcher(enqueue=_broker)
+        t_submit = time.time()
+        submit_returned = dispatcher.submit(
+            goal_id, max_dollars=1.0, channel="harness", user_id="e2e")
+        pending = queue.list(status="pending")
+        status_after_enqueue = world.get_goal(goal_id).status
 
-    # --- Data plane: a separate Worker claims and executes -------------------
-    worker = Worker(queue=queue)
-    worker.register(_WORKER_KIND, lambda job: execute(world_db, int(job.payload["goal_id"])))
-    t_claim = time.time()
-    claimed = worker.run_once()
-    done_jobs = queue.list(status="done")
-    status_after_run = world.get_goal(goal_id).status
-    world.conn.close()
+        # --- Data plane: a separate Worker claims and executes --------------
+        worker = Worker(queue=queue)
+        worker.register(_WORKER_KIND, lambda job: execute(world_db, int(job.payload["goal_id"])))
+        t_claim = time.time()
+        claimed = worker.run_once()
+        done_jobs = queue.list(status="done")
+        status_after_run = world.get_goal(goal_id).status
+    finally:
+        world.conn.close()
 
     # --- Proof ---------------------------------------------------------------
     control_did_not_execute = status_after_enqueue == status_initial == "pending"

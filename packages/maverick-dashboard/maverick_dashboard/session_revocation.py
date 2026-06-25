@@ -25,6 +25,12 @@ from maverick.paths import maverick_home
 _LOCK = threading.Lock()
 
 
+class RevocationStoreError(RuntimeError):
+    """The revocation store exists but can't be read/parsed. Callers fail
+    CLOSED (treat credentials as revoked) rather than silently un-revoking the
+    whole population by reading a damaged store as 'nothing revoked'."""
+
+
 def _path() -> Path:
     return maverick_home() / "session-revocations.json"
 
@@ -38,11 +44,20 @@ def _locked():
 
 
 def _load() -> dict:
+    """The epoch map. A genuinely-absent store is empty (no revocations yet);
+    a store that EXISTS but is unreadable/corrupt raises ``RevocationStoreError``
+    so the revocation check fails closed instead of fail-open."""
     try:
-        data = json.loads(_path().read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
+        raw = _path().read_text(encoding="utf-8")
+    except FileNotFoundError:
         return {}
+    except OSError as e:  # EIO / EACCES / ENFILE ... -- present but unreadable
+        raise RevocationStoreError(f"revocation store unreadable: {e}") from e
+    try:
+        data = json.loads(raw)
+    except ValueError as e:  # corrupt JSON
+        raise RevocationStoreError(f"revocation store corrupt: {e}") from e
+    return data if isinstance(data, dict) else {}
 
 
 def revoke_principal(principal: str, *, at: float | None = None) -> None:
@@ -69,8 +84,13 @@ def revocation_epoch(principal: str) -> float:
 def is_revoked(principal: str, issued_at: float | None) -> bool:
     """True when a credential's ``issued_at`` predates the principal's revocation
     epoch. A credential carrying no ``iat`` under an active epoch is treated as
-    revoked -- it can't prove it post-dates the revocation."""
-    floor = revocation_epoch(principal)
+    revoked -- it can't prove it post-dates the revocation. A damaged store also
+    fails CLOSED (revoked): never silently accept a credential because the
+    revocation record couldn't be read."""
+    try:
+        floor = revocation_epoch(principal)
+    except RevocationStoreError:
+        return True
     if floor <= 0:
         return False
     if issued_at is None:

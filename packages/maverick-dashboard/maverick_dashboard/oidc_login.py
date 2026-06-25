@@ -460,13 +460,33 @@ async def auth_logout(request: Request):
     if not login_enabled():
         raise HTTPException(status_code=404)
     if request.query_params.get("all"):
-        principal = _principal_from_request_session(request)
-        if principal is not None:
+        # Derive the sub from the verified session payload DIRECTLY, not via
+        # _principal_from_request_session -- that returns None for an
+        # already-revoked session, so "log out everywhere" on a session that was
+        # revoked once would silently skip and leave OTHER (newer) bearers alive.
+        # Re-bumping the epoch to now catches any credential minted since.
+        sub = _session_sub_unchecked(request)
+        if sub:
             from .session_revocation import revoke_principal
-            revoke_principal(principal.sub)
+            revoke_principal(sub)
     response = RedirectResponse("/", status_code=303)
     _clear_cookie(response, SESSION_COOKIE)
     return response
+
+
+def _session_sub_unchecked(request: Request) -> str | None:
+    """The ``sub`` from a validly-signed, unexpired session cookie, WITHOUT the
+    revocation check -- so "log out everywhere" can revoke even when the session
+    is already revoked. Returns None when the cookie is absent/tampered/expired."""
+    if not login_enabled():
+        return None
+    raw = request.cookies.get(SESSION_COOKIE)
+    cfg = load_oidc_config()
+    if not raw or not cfg.session_secret:
+        return None
+    payload = verify_session(raw, cfg.session_secret)
+    sub = payload.get("sub") if payload else None
+    return sub if isinstance(sub, str) and sub else None
 
 
 @router.get("/auth/error")

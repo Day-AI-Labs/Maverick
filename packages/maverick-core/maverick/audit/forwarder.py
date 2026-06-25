@@ -77,13 +77,16 @@ def _send_tcp(host: str, port: int, lines: Iterable[str], timeout: float) -> int
 
 
 def _send_udp(host: str, port: int, lines: Iterable[str], timeout: float) -> int:
+    # Resolve the family (AF_INET vs AF_INET6) instead of hardcoding IPv4, so an
+    # IPv6 syslog collector (udp://[::1]:514) works like the tcp/http paths do.
+    family, _, _, _, sockaddr = socket.getaddrinfo(
+        host, port, 0, socket.SOCK_DGRAM)[0]
     n = 0
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+    with socket.socket(family, socket.SOCK_DGRAM) as sock:
         sock.settimeout(timeout)
-        addr = (host, port)
         for line in lines:
             payload = (line + "\n").encode("utf-8")[:_UDP_MAX]
-            sock.sendto(payload, addr)
+            sock.sendto(payload, sockaddr)
             n += 1
     return n
 

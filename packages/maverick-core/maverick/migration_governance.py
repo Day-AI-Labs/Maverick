@@ -45,9 +45,15 @@ from pathlib import Path
 _BASE_VERSION = 1
 
 _DESTRUCTIVE = (
-    re.compile(r"\bDROP\s+TABLE\b", re.IGNORECASE),
-    re.compile(r"\bDROP\s+COLUMN\b", re.IGNORECASE),
-    re.compile(r"\bALTER\s+TABLE\s+\S+\s+RENAME\b", re.IGNORECASE),
+    # DROP of any schema object an old replica may still depend on. CONSTRAINT
+    # and the rebuildable objects (INDEX/VIEW/TRIGGER/SEQUENCE) are non-additive
+    # in a rolling deploy and were missed before.
+    re.compile(r"\bDROP\s+(TABLE|COLUMN|CONSTRAINT|INDEX|VIEW|TRIGGER|SEQUENCE)\b",
+               re.IGNORECASE),
+    # Any RENAME under ALTER TABLE. Match RENAME anywhere after ALTER TABLE
+    # (not `ALTER TABLE \S+ RENAME`) so a quoted/bracketed identifier containing
+    # a space -- ALTER TABLE "my table" RENAME TO y -- can't slip past \S+.
+    re.compile(r"\bALTER\s+TABLE\b[^;]*\bRENAME\b", re.IGNORECASE | re.DOTALL),
     re.compile(r"\bRENAME\s+COLUMN\b", re.IGNORECASE),
 )
 

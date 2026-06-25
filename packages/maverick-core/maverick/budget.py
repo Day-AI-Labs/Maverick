@@ -482,7 +482,11 @@ def _clamp_to_tenant_remainder(kwargs: dict) -> None:
         return
     if remaining is None:
         return
+    # The clamp must only ever LOWER the effective cap. When no max_dollars was
+    # set, the effective cap is Budget's own default (not "unbounded"), so clamp
+    # against that -- otherwise a tenant with a large remainder would silently
+    # RAISE an unset per-run cap above the default, contradicting the invariant.
     current = kwargs.get("max_dollars")
-    kwargs["max_dollars"] = (
-        remaining if current is None else min(float(current), remaining)
-    )
+    if current is None:
+        current = Budget.__dataclass_fields__["max_dollars"].default
+    kwargs["max_dollars"] = min(float(current), remaining)
