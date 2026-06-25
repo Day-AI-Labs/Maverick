@@ -183,6 +183,31 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "handle, request, store, or reveal a private key, seed phrase, or "
         "signing secret — these never pass through you",
     ),
+    "chemicals": (
+        "control or actuate process, reactor, or relief equipment, override a "
+        "safety interlock, emergency shutdown, or process-safety hold, or close "
+        "a HAZOP/LOPA action or safety case — a qualified PSM engineer acts; you "
+        "read status and draft",
+        "release a product lot, file a regulatory submission (REACH/TSCA/SDS), or "
+        "commit a feedstock or product sale — a qualified person authorizes; you "
+        "prepare the package",
+    ),
+    "food_beverage_cpg": (
+        "release or hold a product lot, close a recall, withdrawal, or food-safety "
+        "disposition, actuate production or processing equipment, or override a "
+        "food-safety or quality hold — a qualified food-safety authority decides; "
+        "you reconcile and draft",
+        "commit a trade-promotion, price, or purchase order — a human authorizes; "
+        "you prepare the package",
+    ),
+    "medical_devices": (
+        "submit a regulatory clearance, PMA, or registration, alter or freeze a "
+        "design history file, or disposition a nonconformance or product release "
+        "— a qualified RA/QA human decides; you prepare and track",
+        "make an MDR/vigilance reportability or field-safety-corrective-action "
+        "decision, or close a CAPA — a certified human decides; you assemble the "
+        "evidence",
+    ),
 }
 
 
