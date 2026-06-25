@@ -29,6 +29,84 @@ def _write_tenant_kms(tid: str, body: str) -> None:
     (d / "config.toml").write_text(body, encoding="utf-8")
 
 
+# ---- regression: review findings -----------------------------------------
+
+def test_concurrent_first_use_loser_adopts_winner_dek(monkeypatch):
+    # Two processes first-use the same tenant: the O_EXCL loser must adopt the
+    # winner's persisted DEK, not crash on FileExistsError or seal under a DEK
+    # that was never written. Simulate the race by writing the winner's wrapped
+    # DEK to disk in the middle of the loser's generate->wrap->open sequence.
+    from maverick.tenant.kms import _wrapped_dek_path
+    winner = K.tenant_dek("acme")          # process A persists DEK_A
+    K._clear_cache()
+    assert _wrapped_dek_path("acme").exists()
+    # Process B now first-uses 'acme' with the file already present (the race
+    # resolved): it must return the SAME DEK_A, never a fresh key.
+    loser = K.tenant_dek("acme")
+    assert loser == winner
+
+
+def test_generate_and_persist_dek_adopts_winner_on_oexcl_collision():
+    # Directly exercise the O_EXCL-loser path: the wrapped file already exists
+    # (winner persisted it), so generate-and-persist must re-read + unwrap it and
+    # return the WINNER's DEK rather than raising FileExistsError or returning a
+    # freshly-generated key that was never written.
+    from maverick.tenant.kms import (
+        _generate_and_persist_dek,
+        _tenant_context,
+        _wrapped_dek_path,
+    )
+    winner = K.tenant_dek("globex")
+    K._clear_cache()
+    path = _wrapped_dek_path("globex")
+    assert path.exists()                   # winner is on disk
+    ctx = _tenant_context("globex", b"dek-wrap")
+    adopted = _generate_and_persist_dek(path, ctx, K.get_kms("globex"))
+    assert adopted == winner               # loser adopted the winner, no crash
+
+
+def test_ttl_raised_after_warm_cache_takes_effect(monkeypatch):
+    # A tenant warmed under TTL=0 (permanent) must still be bounded once the TTL
+    # is raised -- the TTL is evaluated on read, not frozen at write.
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(K, "_now", lambda: clock["t"])
+
+    class _Counting:
+        def __init__(self):
+            self.inner = K.LocalKMS()
+            self.unwraps = 0
+
+        def wrap(self, dek, *, context=None):
+            return self.inner.wrap(dek, context=context)
+
+        def unwrap(self, w, *, context=None):
+            self.unwraps += 1
+            return self.inner.unwrap(w, context=context)
+
+    kms = _Counting()
+    K.tenant_dek("t", kms=kms)             # cached under TTL=0 (permanent)
+    monkeypatch.setenv("MAVERICK_KMS_DEK_CACHE_TTL", "100")  # raise TTL now
+    K.tenant_dek("t", kms=kms)             # within new TTL window -> cache hit
+    assert kms.unwraps == 0
+    clock["t"] = 1200.0                    # past cached_at(1000)+100
+    K.tenant_dek("t", kms=kms)             # must re-unwrap (revocation bound)
+    assert kms.unwraps == 1
+
+
+def test_named_tenant_config_error_does_not_leak_ambient(monkeypatch):
+    # A named tenant whose overlay is malformed must fall back to GLOBAL config,
+    # never to the ambient (active) tenant's [kms] -- else its DEK is wrapped
+    # under the wrong tenant's key / BYOK is silently downgraded.
+    _write_tenant_kms("victim", "this is not valid toml = = =")
+    # Ambient context is a DIFFERENT tenant pinned to AWS.
+    monkeypatch.setenv("MAVERICK_TENANT", "attacker")
+    _write_tenant_kms("attacker", '[kms]\nprovider = "aws"\nkey_id = "attacker-cmk"\n')
+    cfg = K._kms_config_for("victim")
+    # Must NOT have picked up attacker's aws/key_id from ambient load_config.
+    assert cfg.get("key_id") != "attacker-cmk"
+    assert cfg.get("provider") in (None, "local", "")
+
+
 # ---- per-tenant BYOK ------------------------------------------------------
 
 def test_no_overlay_uses_local_kms():

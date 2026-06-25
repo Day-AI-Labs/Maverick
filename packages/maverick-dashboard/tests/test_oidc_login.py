@@ -296,6 +296,30 @@ def test_logout_clears_session(login_env, client):
     assert ol.SESSION_COOKIE in set_cookie
 
 
+def test_logout_all_revokes_even_when_session_already_revoked(login_env, client):
+    # Regression: "log out everywhere" must bump the epoch even if THIS session
+    # was already revoked once -- otherwise other (newer) bearers survive.
+    import time
+
+    from maverick.web_session import sign_session
+    from maverick_dashboard import session_revocation as sr
+
+    now = int(time.time())
+    raw = sign_session(
+        {"sub": "user-123", "iat": now, "exp": now + 3600}, SESSION_SECRET)
+    # Pre-revoke the principal (epoch now) so the session is already revoked.
+    sr.revoke_principal("user-123")
+    epoch_before = sr.revocation_epoch("user-123")
+    assert epoch_before > 0
+
+    client.cookies.set(ol.SESSION_COOKIE, raw)
+    resp = client.get("/auth/logout?all=1", follow_redirects=False)
+    assert resp.status_code == 303
+    # The epoch was re-bumped (>=), proving revoke fired despite the prior
+    # revocation -- not silently skipped.
+    assert sr.revocation_epoch("user-123") >= epoch_before
+
+
 # ---- disabled: every route 404s -----------------------------------------------
 
 

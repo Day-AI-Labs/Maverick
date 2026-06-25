@@ -74,18 +74,20 @@ def allowed_regions() -> set[str]:
     return set(_expand(items))
 
 
-def _region_members(code: str) -> set[str]:
-    """A declared region plus every group it expands to / belongs to, so a
-    ``region = "DE"`` satisfies an ``allowed_regions = ["EU"]`` policy and a
-    ``region = "EU"`` satisfies an ``allowed_regions = ["DE", ...]`` listing all
-    its members."""
-    members = {code}
+def _region_permitted(code: str, allowed: set[str]) -> bool:
+    """Whether a declared storage region is admitted by ``allowed`` (already a
+    member-expanded set of codes).
+
+    A **point** region (``DE``) is permitted iff it is in the allowed set -- so
+    ``region = "DE"`` satisfies ``allowed_regions = ["EU"]`` (DE is one of the
+    expanded EU members). A **group** region (``EU``/``EEA``) is permitted iff
+    **every** member is allowed (subset), NOT on any-overlap: declaring the whole
+    ``EEA`` as your storage region must FAIL an ``EU``-only policy, because EEA
+    additionally spans Iceland/Liechtenstein/Norway. Any-overlap here was a
+    residency bypass."""
     if code in _GROUPS:
-        members |= _GROUPS[code]
-    for group, codes in _GROUPS.items():
-        if code in codes:
-            members.add(group)
-    return members
+        return _GROUPS[code] <= allowed
+    return code in allowed
 
 
 def check_residency() -> tuple[bool, str]:
@@ -108,9 +110,9 @@ def check_residency() -> tuple[bool, str]:
             "(set MAVERICK_DATA_REGION or [residency] region)"
         )
     allowed = allowed_regions()
-    if allowed and not (_region_members(region) & allowed):
+    if allowed and not _region_permitted(region, allowed):
         return False, (
-            f"declared region {region} is not in the allowed set "
+            f"declared region {region} is not fully within the allowed set "
             f"{sorted(allowed)} ([residency] allowed_regions)"
         )
     scope = f"within allowed {sorted(allowed)}" if allowed else "(no allowlist)"

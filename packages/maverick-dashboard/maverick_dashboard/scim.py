@@ -209,7 +209,14 @@ def _revoke_user_sessions(rec: dict) -> None:
     The OIDC session subject is IdP-specific, so revoke every plausible
     identifier: ``externalId`` is the usual OIDC ``sub`` for Okta/Entra, plus
     ``userName`` / ``email`` / our internal ``id``. revoke_principal is a no-op
-    for a blank value, so over-revoking spare identifiers is harmless."""
+    for a blank value, so over-revoking spare identifiers is harmless.
+
+    KNOWN LIMITATION: a session is keyed by the exact OIDC ``sub`` seen at login.
+    If the IdP issues a *pairwise/per-app* ``sub`` that equals none of the SCIM
+    identifiers above (some Entra/AAD configs), the live session is NOT caught
+    here and survives until natural expiry (<=12h). Closing that fully needs a
+    persisted ``sub``->user map recorded at login; until then, require the IdP's
+    SCIM ``externalId`` to equal its OIDC ``sub`` for immediate deprovisioning."""
     try:
         from .session_revocation import revoke_principal
         for key in ("externalId", "userName", "email", "id"):

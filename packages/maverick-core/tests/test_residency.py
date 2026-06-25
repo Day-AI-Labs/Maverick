@@ -44,7 +44,7 @@ def test_strict_region_outside_allowed_fails(monkeypatch):
     monkeypatch.setenv("MAVERICK_DATA_REGION", "US")
     monkeypatch.setenv("MAVERICK_RESIDENCY_ALLOWED", "EU")
     ok, detail = residency.check_residency()
-    assert ok is False and "not in the allowed set" in detail
+    assert ok is False and "not fully within the allowed set" in detail
     with pytest.raises(residency.ResidencyError):
         residency.require_residency_or_die()
 
@@ -57,13 +57,32 @@ def test_strict_region_no_allowlist_passes(monkeypatch):
     assert ok is True
 
 
-def test_group_region_satisfied_by_member_allowlist(monkeypatch):
-    # region EU is admitted when the allowlist names its members.
+def test_group_region_needs_all_members_allowed(monkeypatch):
+    # A declared GROUP region is admitted only when EVERY member is allowed.
     monkeypatch.setenv("MAVERICK_RESIDENCY_STRICT", "1")
     monkeypatch.setenv("MAVERICK_DATA_REGION", "EU")
+    # allowed=EU (or EEA superset) admits a declared EU region...
+    monkeypatch.setenv("MAVERICK_RESIDENCY_ALLOWED", "EU")
+    assert residency.check_residency()[0] is True
+    monkeypatch.setenv("MAVERICK_RESIDENCY_ALLOWED", "EEA")
+    assert residency.check_residency()[0] is True
+    # ...but a PARTIAL member list does NOT: declaring "EU" while only DE,FR are
+    # permitted would let data sit in the other 25 EU states. Must fail.
     monkeypatch.setenv("MAVERICK_RESIDENCY_ALLOWED", "DE,FR")
-    ok, _ = residency.check_residency()
-    assert ok is True
+    assert residency.check_residency()[0] is False
+
+
+def test_superset_group_region_does_not_bypass_subset_policy(monkeypatch):
+    # The residency bypass: declaring EEA (which includes non-EU IS/LI/NO) must
+    # NOT satisfy an EU-only allowlist on any-member-overlap.
+    monkeypatch.setenv("MAVERICK_RESIDENCY_STRICT", "1")
+    monkeypatch.setenv("MAVERICK_DATA_REGION", "EEA")
+    monkeypatch.setenv("MAVERICK_RESIDENCY_ALLOWED", "EU")
+    ok, detail = residency.check_residency()
+    assert ok is False
+    assert "not fully within" in detail
+    with pytest.raises(residency.ResidencyError):
+        residency.require_residency_or_die()
 
 
 def test_config_drives_when_env_absent(monkeypatch):
@@ -73,7 +92,7 @@ def test_config_drives_when_env_absent(monkeypatch):
             "strict": True, "region": "US", "allowed_regions": ["EU"]}},
     )
     ok, detail = residency.check_residency()
-    assert ok is False and "not in the allowed set" in detail
+    assert ok is False and "not fully within the allowed set" in detail
 
 
 def test_verify_deployment_includes_residency(monkeypatch):

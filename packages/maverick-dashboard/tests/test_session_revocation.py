@@ -40,3 +40,19 @@ def test_blank_principal_is_noop():
 def test_garbage_iat_treated_as_revoked():
     sr.revoke_principal("dave", at=100.0)
     assert sr.is_revoked("dave", issued_at="not-a-number") is True
+
+
+def test_absent_store_is_not_an_error():
+    # No revocations yet: a genuinely-absent store is empty, not corrupt.
+    assert sr.revocation_epoch("nobody") == 0.0
+    assert sr.is_revoked("nobody", issued_at=1.0) is False
+
+
+def test_corrupt_store_fails_closed():
+    # A store that EXISTS but is unreadable JSON must NOT silently un-revoke the
+    # whole population -- is_revoked fails CLOSED (revoked) on a damaged store.
+    sr._path().parent.mkdir(parents=True, exist_ok=True)
+    sr._path().write_text("{ this is not valid json", encoding="utf-8")
+    with pytest.raises(sr.RevocationStoreError):
+        sr.revocation_epoch("eve")
+    assert sr.is_revoked("eve", issued_at=2.0) is True

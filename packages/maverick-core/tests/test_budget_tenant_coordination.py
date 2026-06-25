@@ -68,3 +68,16 @@ def test_exhausted_tenant_clamps_to_zero(monkeypatch):
     record_usage("user:local", 8.0, 0, 0)                     # over cap
     b = budget_from_config(max_dollars=5.0)
     assert b.max_dollars == 0.0
+
+
+def test_clamp_never_raises_an_unset_cap_above_the_default(monkeypatch):
+    # No explicit max_dollars + a tenant with a LARGE remainder must NOT raise
+    # the per-run cap above Budget's default -- the clamp only ever lowers.
+    from maverick.budget import Budget
+    default = Budget.__dataclass_fields__["max_dollars"].default
+    monkeypatch.setenv("MAVERICK_TENANT", "acme")
+    registry.create_tenant("acme", plan="free")
+    registry.set_quota("acme", 1000.0)
+    record_usage("user:local", 1.0, 0, 0)                     # remainder ~999
+    b = budget_from_config()                                  # no max_dollars set
+    assert b.max_dollars == pytest.approx(default)            # not 999
