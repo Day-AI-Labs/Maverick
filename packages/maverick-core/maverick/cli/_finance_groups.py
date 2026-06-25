@@ -207,6 +207,47 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
                "now complete (verifier-scored).")
 
 
+@main.command("self-harness")
+@click.option("--model", "model_id", default=None,
+              help="Model to mine weaknesses for (default: the configured "
+                   "orchestrator model).")
+@click.option("--min-support", default=3, show_default=True,
+              help="Minimum recurring failures before a weakness is a pattern.")
+@click.option("--limit", default=500, show_default=True,
+              help="How many recent reflexions to scan.")
+def self_harness_cmd(model_id: str | None, min_support: int, limit: int) -> None:
+    """Inspect the harness weaknesses self-harness would target (dry run).
+
+    Mines this model's recurring failure reflexions into weakness signatures
+    and shows the minimal operating-guidance line it would PROPOSE for each --
+    it writes nothing. Promotion needs a live held-in/held-out A/B scorer and
+    the self-improvement gate ([self_improvement] enable); this command is the
+    operator's read-only view of what the loop sees. Requires [self_harness]
+    enable = true or MAVERICK_SELF_HARNESS=1.
+    """
+    from .. import reflexion, self_harness
+    if not self_harness.enabled():
+        raise click.ClickException(
+            "self-harness is off. Set [self_harness] enable = true or "
+            "MAVERICK_SELF_HARNESS=1.")
+    if not model_id:
+        from ..llm import model_for_role
+        model_id = model_for_role("orchestrator")
+    records = [r.to_dict() for r in reflexion.list_recent(limit=limit)]
+    sigs = self_harness.mine_failures(
+        records, model_id=model_id, min_support=min_support)
+    if not sigs:
+        click.echo(f"No recurring weaknesses for {model_id!r} "
+                   f"(scanned {len(records)} reflexions, min-support {min_support}).")
+        return
+    click.echo(f"Weaknesses for {model_id!r} ({len(sigs)} pattern(s)):")
+    for sig in sigs:
+        proposal = self_harness.propose_addendum(sig)
+        line = proposal.addendum_line if proposal else "(no minimal proposal)"
+        click.echo(f"\n  [{sig.support}x {sig.failure_class}] {sig.signature}")
+        click.echo(f"    would add: {line}")
+
+
 @main.command("demo")
 def demo_cmd() -> None:
     """The two-minute tour: watch the workforce learn, prove it, no API key.
