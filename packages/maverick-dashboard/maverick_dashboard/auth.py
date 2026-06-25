@@ -327,9 +327,13 @@ def require_principal(
         if not ws_token:
             raise HTTPException(status_code=401, detail="OIDC bearer token required")
         try:
-            return verify_oidc_token(ws_token)
+            ws_principal = verify_oidc_token(ws_token)
         except OIDCError as exc:
             raise HTTPException(status_code=401, detail="invalid OIDC token") from exc
+        from .session_revocation import is_revoked
+        if is_revoked(ws_principal.sub, ws_principal.claims.get("iat")):
+            raise HTTPException(status_code=401, detail="invalid OIDC token")
+        return ws_principal
 
     pp = _proxy_principal(request)
     if pp is not None:
@@ -390,6 +394,14 @@ def require_principal(
             detail="invalid OIDC token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    # Revocation: a bearer issued before the principal's revocation epoch
+    # ("log out everywhere" / SCIM deprovision) is rejected even if it verifies.
+    from .session_revocation import is_revoked
+    if is_revoked(principal.sub, principal.claims.get("iat")):
+        raise HTTPException(
+            status_code=401, detail="invalid OIDC token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
     request.state.principal = principal
     return principal
 

@@ -199,7 +199,25 @@ def _provision_tenant(uid: str, display_name: str) -> None:
         pass
 
 
-def _set_tenant_active(uid: str, active: bool) -> None:
+def _revoke_user_sessions(rec: dict) -> None:
+    """Kill any live dashboard session/bearer for a deprovisioned SCIM user, so
+    deprovisioning ends current access, not just future logins.
+
+    The OIDC session subject is IdP-specific, so revoke every plausible
+    identifier: ``externalId`` is the usual OIDC ``sub`` for Okta/Entra, plus
+    ``userName`` / ``email`` / our internal ``id``. revoke_principal is a no-op
+    for a blank value, so over-revoking spare identifiers is harmless."""
+    try:
+        from .session_revocation import revoke_principal
+        for key in ("externalId", "userName", "email", "id"):
+            revoke_principal(str(rec.get(key) or ""))
+    except Exception:  # pragma: no cover -- revocation never blocks SCIM
+        pass
+
+
+def _set_tenant_active(uid: str, active: bool, rec: dict | None = None) -> None:
+    if not active and rec is not None:
+        _revoke_user_sessions(rec)
     try:
         from maverick.tenant import registry
         if registry.get_tenant(uid) is None:
@@ -209,7 +227,9 @@ def _set_tenant_active(uid: str, active: bool) -> None:
         pass
 
 
-def _delete_tenant(uid: str) -> None:
+def _delete_tenant(uid: str, rec: dict | None = None) -> None:
+    if rec is not None:
+        _revoke_user_sessions(rec)
     try:
         from maverick.tenant import registry
         registry.delete_tenant(uid)
@@ -314,7 +334,7 @@ async def create_user(request: Request):
     _save(users)
     _provision_tenant(uid, rec["displayName"] or username)
     if not rec["active"]:
-        _set_tenant_active(uid, False)
+        _set_tenant_active(uid, False, rec)
     return JSONResponse(_to_scim(rec), status_code=201, media_type="application/scim+json")
 
 
@@ -345,7 +365,7 @@ async def replace_user(uid: str, request: Request):
     users[uid] = rec
     _save(users)
     if rec["active"] != was_active:
-        _set_tenant_active(uid, rec["active"])
+        _set_tenant_active(uid, rec["active"], rec)
     return JSONResponse(_to_scim(rec), media_type="application/scim+json")
 
 
@@ -366,7 +386,7 @@ async def patch_user(uid: str, request: Request):
     users[uid] = rec
     _save(users)
     if bool(rec.get("active", True)) != was_active:
-        _set_tenant_active(uid, bool(rec.get("active", True)))
+        _set_tenant_active(uid, bool(rec.get("active", True)), rec)
     return JSONResponse(_to_scim(rec), media_type="application/scim+json")
 
 
@@ -377,9 +397,10 @@ async def delete_user(uid: str, request: Request):
     users = _load()
     if uid not in users:
         return _scim_error(404, f"user {uid} not found")
+    rec = users.get(uid)
     del users[uid]
     _save(users)
-    _delete_tenant(uid)
+    _delete_tenant(uid, rec)
     return JSONResponse(None, status_code=204)
 
 

@@ -270,6 +270,12 @@ def _principal_from_request_session(request: Request):
     sub = payload.get("sub")
     if not isinstance(sub, str) or not sub:
         return None
+    # Revocation: a session minted before the principal's revocation epoch
+    # ("log out everywhere" / SCIM deprovision) is rejected even though its HMAC
+    # signature and exp are still valid.
+    from .session_revocation import is_revoked
+    if is_revoked(sub, payload.get("iat")):
+        return None
     return VerifiedPrincipal(
         sub=sub, issuer="oidc-session", audience="", claims={"via": "session"},
     )
@@ -424,7 +430,7 @@ async def auth_callback(request: Request):
 
     # (5) success: set the signed session cookie, clear the tx cookie, redirect.
     return_to = _safe_return_to(tx.get("return_to"))
-    session_payload = {"sub": principal.sub, "exp": _now() + _SESSION_TTL}
+    session_payload = {"sub": principal.sub, "iat": _now(), "exp": _now() + _SESSION_TTL}
     session_cookie = sign_session(session_payload, cfg.session_secret)
 
     response = RedirectResponse(return_to, status_code=303)
@@ -446,9 +452,18 @@ def _csrf_reject():
 
 @router.get("/auth/logout")
 async def auth_logout(request: Request):
-    """Clear the session cookie and return to ``/``."""
+    """Clear the session cookie and return to ``/``.
+
+    ``?all=1`` (log out everywhere) additionally bumps the principal's revocation
+    epoch, immediately invalidating every other session/bearer that principal
+    holds -- not just the cookie in this browser."""
     if not login_enabled():
         raise HTTPException(status_code=404)
+    if request.query_params.get("all"):
+        principal = _principal_from_request_session(request)
+        if principal is not None:
+            from .session_revocation import revoke_principal
+            revoke_principal(principal.sub)
     response = RedirectResponse("/", status_code=303)
     _clear_cookie(response, SESSION_COOKIE)
     return response
