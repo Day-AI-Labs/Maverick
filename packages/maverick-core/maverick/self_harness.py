@@ -158,6 +158,13 @@ def mine_failures(
             if isinstance(r, dict)
             and str(r.get("model_id") or "") == str(model_id)
             and r.get("channel") is None and r.get("user_id") is None]
+    # Canonicalize order so mining is DETERMINISTIC and permutation-invariant:
+    # the greedy clustering and the by-class grouping both depend on iteration
+    # order, so the same failures in a different log order would otherwise mine
+    # different weaknesses -- non-reproducible learning from identical evidence.
+    mine.sort(key=lambda r: (str(r.get("failure_class") or "error"),
+                             str(r.get("goal_text") or ""),
+                             str(r.get("failure_msg") or "")))
     by_class: dict[str, list[dict]] = {}
     for r in mine:
         by_class.setdefault(str(r.get("failure_class") or "error"), []).append(r)
@@ -198,7 +205,9 @@ def _summarize_signature(cluster: list[dict]) -> str:
     # Most common short failure message in the cluster, if any.
     msgs = [str(c.get("failure_msg") or "").strip() for c in cluster]
     msgs = [m for m in msgs if m]
-    common = max(set(msgs), key=msgs.count) if msgs else ""
+    # sorted() before max() so a tie in frequency breaks deterministically
+    # (alphabetically) instead of by set iteration order.
+    common = max(sorted(set(msgs)), key=msgs.count) if msgs else ""
     common = common.splitlines()[0][:120] if common else ""
     return f"{fclass}: {common}" if common else fclass
 
