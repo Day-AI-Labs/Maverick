@@ -5339,6 +5339,108 @@ def audit_export(
         click.echo("no audit events to export", err=True)
 
 
+@audit.command("forward")
+@click.option("--format", "fmt", type=click.Choice(["json", "cef"]), default="json",
+              help="Wire format for the SIEM (default: json).")
+@click.option("--to", "dest", default=None,
+              help="Destination URI: tcp://host:port, udp://host:port, or "
+                   "http(s)://host/path. Default: MAVERICK_SIEM_DEST / "
+                   "[audit] siem_dest.")
+@click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
+@click.option("--all", "all_days", is_flag=True,
+              help="Forward every YYYY-MM-DD.ndjson day-file in the audit dir.")
+@click.option("--since", default=None,
+              help="Start of an inclusive YYYY-MM-DD window (e.g. an incident).")
+@click.option("--until", default=None,
+              help="End of the inclusive YYYY-MM-DD window.")
+@click.option("--tenant", default=None,
+              help="Tenant whose audit dir to forward (default: active/none).")
+@click.option("--dry-run", is_flag=True,
+              help="Validate the destination and count events; send nothing.")
+def audit_forward(
+    fmt: str, dest: str | None, day: str | None, all_days: bool,
+    since: str | None, until: str | None, tenant: str | None, dry_run: bool,
+) -> None:
+    """Push the audit log to a SIEM collector over the network.
+
+    The push counterpart of ``audit export``: same read-only re-emission of the
+    tamper-evident NDJSON log, but shipped to ``--to`` (a tcp/udp syslog or
+    http(s) collector) instead of a file. A transport failure exits non-zero --
+    a SIEM gap is a compliance event, not something to swallow. An empty log
+    exits 0 with a note (cron never fails on a quiet day).
+    """
+    import datetime as _dt
+
+    _require_day_opt(day)
+    for _label, _val in (("--since", since), ("--until", until)):
+        if _val is not None:
+            try:
+                _parsed = _dt.datetime.strptime(_val, "%Y-%m-%d")
+            except ValueError:
+                click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
+                sys.exit(2)
+            if _parsed.strftime("%Y-%m-%d") != _val:
+                click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
+                sys.exit(2)
+
+    if not dest or not dest.strip():
+        import os as _os
+        dest = _os.environ.get("MAVERICK_SIEM_DEST")
+        if not dest:
+            try:
+                from ..config import load_config
+                dest = (load_config() or {}).get("audit", {}).get("siem_dest")
+            except Exception:
+                dest = None
+    if not dest or not str(dest).strip():
+        click.echo(
+            "ERROR: no SIEM destination (--to, MAVERICK_SIEM_DEST, or "
+            "[audit] siem_dest)", err=True,
+        )
+        sys.exit(2)
+
+    # Same paid-tier entitlement gate as export when a tenant is named.
+    if tenant:
+        from ..billing import feature_allowed
+        if not feature_allowed("audit_export", tenant=tenant):
+            click.echo(
+                f"ERROR: tenant '{tenant}' plan does not include SIEM audit "
+                "export (audit_export entitlement). Upgrade the tenant's plan.",
+                err=True,
+            )
+            sys.exit(2)
+
+    from ..audit import forwarder
+    from ..audit.export import iter_audit_events, to_cef, to_jsonl
+
+    # Validate the destination up front so a typo fails before we read the log.
+    try:
+        forwarder.parse_dest(str(dest))
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+
+    render = to_cef if fmt == "cef" else to_jsonl
+    lines = (render(ev) for ev in iter_audit_events(
+        day=day, all_days=all_days, since=since, until=until, tenant=tenant,
+    ))
+
+    if dry_run:
+        n = sum(1 for _ in lines)
+        click.echo(f"dry-run: {n} event(s) would ship to {dest}", err=True)
+        return
+
+    try:
+        sent = forwarder.forward(lines, str(dest))
+    except Exception as e:
+        click.echo(f"ERROR: SIEM forward failed: {e}", err=True)
+        sys.exit(1)
+    if sent == 0:
+        click.echo("no audit events to forward", err=True)
+    else:
+        click.echo(f"forwarded {sent} event(s) to {dest}", err=True)
+
+
 @audit.group("worm")
 def audit_worm() -> None:
     """Write-once (WORM) export of closed audit day-files (see docs/security-hardening.md)."""

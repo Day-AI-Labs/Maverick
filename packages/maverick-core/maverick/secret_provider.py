@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 # crafted name can never traverse out of the secrets dir. Matches the env-var
 # shapes we actually look up (UPPER_SNAKE plus a lowercase fallback).
 _SAFE_NAME = frozenset(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"  # pragma: allowlist secret
 )
 
 
