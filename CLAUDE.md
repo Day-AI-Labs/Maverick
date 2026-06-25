@@ -81,6 +81,13 @@ All verified locally green; each is a build-failer:
   editing a released version, removing one, a new DROP/RENAME, or a backend
   head mismatch all fail. `schema_migrations --ci` still gates online/offline
   hot-deploy safety; this is the integrity ratchet on top.
+- `python -m maverick.control_data_plane_e2e --ci` and `python -m
+  maverick.control_data_plane_soak --ci`: prove goals run out-of-process
+  (QueueDispatcher → SQLite JobQueue → Worker → shared world). The e2e gate is
+  one goal; the soak gate is many under concurrent workers (zero-loss +
+  exactly-once — a duplicate means `JobQueue.claim`'s `WHERE status='pending'`
+  guard broke). Both set `MAVERICK_ENCRYPT_AT_REST=0` so they need no crypto
+  extra; execution is stubbed at the LLM boundary (plumbing, not the agent loop).
 - Bugbear (B) is OFF on purpose: 127 latent findings (61 B904, 45 B905...).
   Do not fix or enable them in an unrelated PR. Complexity capped at 20 with
   30 grandfathered `# noqa: C901` — new code stays under the cap.

@@ -1389,6 +1389,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `active=false`/DELETE suspends/removes it. Carries its own static IdP bearer
   (`MAVERICK_SCIM_TOKEN`, constant-time compare), exempt from the dashboard-token
   middleware and OIDC gate; 404s when unset, so it's inert off by default.
+  Deprovision also **force-revokes live sessions**, not just future logins: a
+  per-principal revocation epoch (`session_revocation.py`, fail-closed on a
+  damaged store) rejects any credential issued before it, and a login-time
+  **subject directory** (`subject_directory.py`, sha256-keyed for privacy)
+  reaches a session even when the IdP issues a pairwise/per-app OIDC `sub`
+  (Entra) that's in no SCIM attribute. "Log out everywhere" bumps the same epoch.
 - **Tenant-aware persistence** — workspaces wall each tenant into
   `~/.maverick/tenants/<t>/` (`workspace.py`, `paths.py`), with a per-tenant
   world DB and `data_dir()`-routed audit / quotas / DSAR / fleets. The shared
@@ -1396,8 +1402,10 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   **versioned migration runner** (the world-model `MIGRATIONS` ledger), a
   `tenant_id` on every root table (write-stamped, read-scoped), **tenant-aware
   UNIQUE constraints**, a **strict-isolation mode** (`[world_model]
-  strict_tenant_isolation`), opt-in **database-native Row-Level Security**
-  (`[world_model] rls` / `MAVERICK_PG_RLS`: a FORCE-RLS policy on every
+  strict_tenant_isolation`), **database-native Row-Level Security**
+  (`[world_model] rls` / `MAVERICK_PG_RLS`, **auto-on under enterprise mode**
+  with a boot preflight that refuses to start on legacy NULL-tenant rows: a
+  FORCE-RLS policy on every
   tenant-scoped table keyed on a transaction-local `maverick.tenant` GUC, so
   the database — not just the app-layer predicate — enforces the boundary; the
   policy fails closed when the tenant GUC is unset/empty and startup fails if
@@ -1408,13 +1416,34 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `MAVERICK_PG_POOL_SIZE`) that hands each transaction its own pooled
   connection for horizontal scale (default 0 = the original single-connection
   model, unchanged).
-- **Online-migration preflight** — `schema_migrations.py` + `maverick
+- **Per-tenant KMS at fleet scale** — envelope encryption with a per-tenant DEK
+  wrapped by a KEK in a pluggable `KMS` (`tenant/kms.py`; LocalKMS or AWS/GCP/
+  Vault BYOK via `kms_backends.py`). **Deterministic per-tenant BYOK**:
+  `get_kms(tenant_id)` reads each tenant's own `[kms]` overlay independent of the
+  active context. A **DEK-cache TTL** (`MAVERICK_KMS_DEK_CACHE_TTL`) bounds how
+  long a revoked cloud key keeps opening data. **Fleet KEK rotation** is operable
+  and resumable: `maverick tenant kms-rotate --old-kek --new-kek [--dry-run]`
+  skips tenants already on the new KEK (re-run finishes an interrupted rotation)
+  and refuses success while any tenant is still on the old KEK (re-wrap only — no
+  data re-encrypted).
+- **Online-migration preflight + governance** — `schema_migrations.py` + `maverick
   schema-plan`: the *operations* view over that ledger. It classifies each
   pending statement `online` (cheap/non-blocking: `ADD COLUMN`, `CREATE INDEX IF
   NOT EXISTS`, FTS rebuild) or `offline` (table rewrite / long write lock),
   `plan(current, target)` lists the pending steps, and `online_only()` gates a
   hot deploy — failing **closed** on any unclassifiable statement so an unknown
-  migration is reviewed before it runs against a live, high-traffic world.
+  migration is reviewed before it runs against a live, high-traffic world. On top
+  of it, **`migration_governance.py`** is the integrity ratchet (CI-gated):
+  per-version sha256 checksums pinned in `migrations.lock.json` make released
+  migrations immutable, new ones must be additive (no `DROP`/`RENAME`), and both
+  backend ladders (SQLite + Postgres) must stay at the same declared head.
+- **Proven control/data-plane split** — the dispatcher seam hands goal execution
+  to a separate worker (`queue_dispatcher.py` arq/Redis, `grpc_dispatcher.py`
+  gRPC, both installed at startup). Two CI-gated proofs back the claim:
+  `control_data_plane_e2e.py` (one goal provably runs out-of-process, with a JSON
+  evidence artifact) and `control_data_plane_soak.py` (many goals under
+  concurrent workers reach `done` zero-loss and **exactly-once** — the contention
+  test of `JobQueue.claim`'s `WHERE status='pending'` guard).
 - **Process table** — `maverick ps` (unified view of runs/workers).
 - **Scheduling** — recurring autonomous goals from a prompt; `worker --once`
   cron-friendly drain (`scheduler.py`, `job_queue.py`, `worker.py`).

@@ -13,7 +13,15 @@
 > an out-of-process dispatcher seam (arq + gRPC). The remaining opt-in gaps —
 > enterprise-default RLS, session revocation, a secrets-vault seam, a SIEM
 > forwarder, residency pinning, budget/cap coordination, gRPC dispatcher startup
-> wiring — have since landed; see
+> wiring — have since landed, **as have the three formerly-"large" items**:
+> per-tenant KMS at fleet scale (BYOK + DEK-cache TTL + a resumable
+> `maverick tenant kms-rotate`), Alembic-grade migration governance (a
+> checksum-locked CI gate), and a proven control/data-plane split (an
+> out-of-process e2e harness + a concurrency soak asserting zero-loss /
+> exactly-once, both CI-gated). All of it was then **adversarially hardened**
+> (11 verified bugs fixed, incl. a fail-open revocation store and a residency
+> bypass), and SCIM deprovision was extended to revoke pairwise-`sub` (Entra)
+> sessions. SAML SSO (pysaml2) and SCIM also ship. See
 > [`docs/research/lightwork-purchase-blockers.md`](../lightwork-purchase-blockers.md)
 > (resolution summary). Read the teardown below as the *original cold-water
 > analysis*, not the current state.
