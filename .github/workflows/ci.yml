@@ -158,6 +158,14 @@ jobs:
         # status must flow back through the shared store. Agent execution is
         # stubbed at the LLM boundary. See control_data_plane_e2e.py.
         run: python -m maverick.control_data_plane_e2e --ci
+      - name: Control/data-plane soak (concurrent dispatch holds: zero-loss, exactly-once)
+        # Drives many goals through the real QueueDispatcher -> SQLite JobQueue
+        # -> a pool of concurrent Workers and fails if the substrate doesn't
+        # hold under contention: every goal must reach 'done' exactly once (a
+        # duplicate means JobQueue.claim's pending->running guard is broken =
+        # double work/spend), nothing lost, queue drained clean. No Redis/gRPC;
+        # execution stubbed at the LLM boundary. See control_data_plane_soak.py.
+        run: python -m maverick.control_data_plane_soak --ci
 
   audit:
     runs-on: ubuntu-latest

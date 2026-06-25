@@ -297,6 +297,27 @@ def unseal_text_for_tenant(tenant_id: str | None, blob: bytes, **kw) -> str:
     return unseal_for_tenant(tenant_id, blob, **kw).decode("utf-8", errors="replace")
 
 
+def _write_wrapped_dek(path, wrapped: bytes, tenant_id: str | None) -> None:
+    """Atomically replace a tenant's wrapped-DEK file and drop its cache entry.
+
+    A UNIQUE temp (not a fixed ``dek.wrapped.tmp``) so two concurrent rotations
+    of the same tenant can't interleave writes into one file and leave a torn
+    blob that neither KEK can unwrap -- each writes its own temp and the last
+    os.replace wins atomically."""
+    fd, tmp = tempfile.mkstemp(prefix="dek.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(wrapped)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+    with _dek_lock:
+        _dek_cache.pop(tenant_id or "__default__", None)
+
+
 def rotate_kek(tenant_id: str | None, *, old_kms: KMS, new_kms: KMS) -> None:
     """Re-wrap the tenant's existing DEK under a new KEK (instant; re-encrypts no
     data). The data-key is unchanged, so already-sealed data stays readable."""
@@ -307,23 +328,29 @@ def rotate_kek(tenant_id: str | None, *, old_kms: KMS, new_kms: KMS) -> None:
     dek = old_kms.unwrap(path.read_bytes(), context=context)
     if len(dek) != _DEK_BYTES:
         raise EncryptionUnavailable("unwrapped DEK is malformed")
-    rewrapped = new_kms.wrap(dek, context=context)
-    # A UNIQUE temp (not a fixed ``dek.wrapped.tmp``) so two concurrent
-    # rotations of the same tenant can't interleave writes into one file and
-    # leave a torn blob that neither KEK can unwrap -- each writes its own temp
-    # and the last os.replace wins atomically.
-    fd, tmp = tempfile.mkstemp(prefix="dek.", suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(rewrapped)
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
-        raise
-    with _dek_lock:
-        _dek_cache.pop(tenant_id or "__default__", None)
+    _write_wrapped_dek(path, new_kms.wrap(dek, context=context), tenant_id)
+
+
+def rotate_kek_idempotent(tenant_id: str | None, *, old_kms: KMS, new_kms: KMS) -> str:
+    """Resumable single-tenant rotation: re-wrap old->new, but SKIP a tenant
+    whose DEK already unwraps under ``new_kms`` (so a fleet rotation interrupted
+    midway finishes cleanly on re-run). Returns ``"rotated"`` or ``"skipped"``;
+    raises when neither KEK can open the wrapped DEK (corrupt / foreign key)."""
+    path = _wrapped_dek_path(tenant_id)
+    if not path.exists():
+        raise EncryptionUnavailable(f"no wrapped DEK for tenant {tenant_id!r} to rotate")
+    context = _tenant_context(tenant_id, b"dek-wrap")
+    wrapped = path.read_bytes()
+    try:  # already on the new KEK? -> idempotent skip, no write
+        if len(new_kms.unwrap(wrapped, context=context)) == _DEK_BYTES:
+            return "skipped"
+    except Exception:
+        pass  # not yet rotated (or new_kms can't open it) -> rotate below
+    dek = old_kms.unwrap(wrapped, context=context)
+    if len(dek) != _DEK_BYTES:
+        raise EncryptionUnavailable("unwrapped DEK is malformed")
+    _write_wrapped_dek(path, new_kms.wrap(dek, context=context), tenant_id)
+    return "rotated"
 
 
 def rotate_kek_fleet(*, old_kms_for, new_kms_for) -> dict[str, str]:
@@ -368,5 +395,5 @@ __all__ = [
     "KMS", "LocalKMS", "get_kms",
     "tenant_dek", "seal_for_tenant", "unseal_for_tenant",
     "seal_text_for_tenant", "unseal_text_for_tenant",
-    "rotate_kek", "rotate_kek_fleet",
+    "rotate_kek", "rotate_kek_idempotent", "rotate_kek_fleet",
 ]

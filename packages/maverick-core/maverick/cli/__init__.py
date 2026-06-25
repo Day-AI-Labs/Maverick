@@ -2322,6 +2322,42 @@ def tenant_backfill(tenant_id: str, dsn: str | None, dry_run: bool) -> None:
                + (" (dry run)" if dry_run else ""))
 
 
+@tenant.command("kms-rotate")
+@click.option("--old-kek", "old_kek", required=True,
+              help="Current KEK (hex or base64, 32 bytes) wrapping the DEKs.")
+@click.option("--new-kek", "new_kek", required=True,
+              help="New KEK (hex or base64, 32 bytes) to re-wrap under.")
+@click.option("--dry-run", is_flag=True,
+              help="Report what each tenant would do; write nothing.")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+def tenant_kms_rotate(old_kek: str, new_kek: str, dry_run: bool, yes: bool) -> None:
+    """Rotate every tenant's wrapped DEK from --old-kek to --new-kek (LocalKMS).
+
+    Use when rolling the at-rest master key / MAVERICK_KMS_KEK. Re-wrap only --
+    no tenant data is re-encrypted. Idempotent and resumable: a tenant already
+    on the new KEK is skipped, so a re-run finishes an interrupted rotation. Set
+    the new KEK live (MAVERICK_KMS_KEK=<new>) only AFTER this reports 0 failed.
+    """
+    from ..tenant.kms_fleet import rotate_local_fleet
+    if not dry_run and not yes:
+        click.confirm("Re-wrap every tenant's DEK to the new KEK?", abort=True)
+    try:
+        rep = rotate_local_fleet(old_kek, new_kek, dry_run=dry_run)
+    except Exception as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    tag = " (dry run)" if dry_run else ""
+    click.echo(f"fleet KEK rotation{tag}: {rep['total']} tenant(s) with a DEK")
+    click.echo(f"  rotated: {len(rep['rotated'])}  skipped (already new): "
+               f"{len(rep['skipped'])}  failed: {len(rep['failed'])}")
+    for tid, reason in sorted(rep["failed"].items()):
+        click.echo(f"  FAILED {tid}: {reason}", err=True)
+    if rep["failed"]:
+        click.echo("Do NOT retire the old KEK: some tenants are still wrapped "
+                   "under it. Resolve the failures and re-run.", err=True)
+        sys.exit(1)
+
+
 @main.group()
 def billing() -> None:
     """Rate metered usage into invoices and inspect plan entitlements."""
