@@ -165,6 +165,14 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "claim, or commit a fare filing, slot, or settlement autonomously — a "
         "human authorizes; you prepare the package",
     ),
+    "mining_metals": (
+        "control or actuate mining, processing, or hoisting equipment, authorize "
+        "a blast, or override a ground-control, ventilation, gas, or tailings "
+        "safety hold — a competent person acts; you read status and draft",
+        "sign off a JORC/NI 43-101/SK-1300 resource statement, authorize a "
+        "tailings or water release, or commit an offtake, royalty, or regulatory "
+        "filing — a qualified person authorizes; you prepare the package",
+    ),
 }
 
 

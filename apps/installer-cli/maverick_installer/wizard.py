@@ -2534,6 +2534,7 @@ AGENT_SUITES: list[tuple[str, str]] = [
     ("aerospace_defense", "Aerospace & Defense"),
     ("maritime", "Maritime / Shipping & Ports"),
     ("travel_aviation", "Travel / Airlines & Aviation"),
+    ("mining_metals", "Mining & Metals"),
 ]
 
 
