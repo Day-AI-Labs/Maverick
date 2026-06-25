@@ -116,12 +116,18 @@ def _rest_execute(
     config,
     headers,
     norm,
+    query_auth: str | None = None,
 ) -> str:
     """Perform the authenticated REST request and render the response."""
     params = args.get("params") if isinstance(args.get("params"), dict) else None
     body = args.get("body") if isinstance(args.get("body"), dict) else None
     try:
         base, tok = config()
+        # Query-param auth: the credential rides a query param (e.g. FRED's
+        # ``api_key``, Census's ``key``) rather than a header. Caller-supplied
+        # params win, so an agent can still override; missing -> we inject env.
+        if query_auth and tok:
+            params = {**(params or {}), query_auth: tok}
         url = f"{base}{norm(path)}"
         # Enterprise mode: a connector POSTs agent-supplied content to a
         # third-party SaaS host -- hold it to the egress boundary too.
@@ -168,6 +174,9 @@ def make_rest_tool(
     read_only: bool = False,
     allowed_read_paths: tuple[str, ...] | None = None,
     extra_headers_env: dict[str, str] | None = None,
+    keyless: bool = False,
+    query_auth: str | None = None,
+    default_base_url: str | None = None,
 ) -> Tool:
     """Build a thin authenticated-REST ``Tool``.
 
@@ -175,8 +184,19 @@ def make_rest_tool(
       - ``basic=True``  -> ``Authorization: Basic b64(token)`` (token is
         ``user:pass``; a bare token is treated as ``token:x``, the API-key
         convention used by Freshdesk / Greenhouse / Lever / BambooHR).
+      - ``keyless=True`` -> no credential is sent at all (public data APIs:
+        SEC EDGAR, the Federal Register, weather.gov, World Bank). Only the
+        base URL is required; ``token_env`` is ignored.
+      - ``query_auth="<param>"`` -> the credential rides a query parameter of
+        that name instead of a header (FRED ``api_key``, Census ``key``,
+        EIA ``api_key``). The key still comes from ``token_env``, never the
+        prompt, so it is not exposed to the model.
       - else ``{token_header}: {scheme} {token}`` (``scheme=""`` sends the raw
         token, e.g. Tableau's ``X-Tableau-Auth``).
+
+    ``default_base_url`` supplies a fixed public host so a keyless/public-data
+    connector works with zero config; an operator can still override it by
+    setting ``base_url_env``.
 
     ``extra_headers_env`` maps additional header names to env-var names for
     APIs that need a second credential alongside the token (Azure-APIM-style
@@ -194,9 +214,24 @@ def make_rest_tool(
     """
 
     def _config() -> tuple[str, str]:
-        return _env_config(name, base_url_env, token_env)
+        if not (keyless or query_auth or default_base_url):
+            return _env_config(name, base_url_env, token_env)
+        base = (os.environ.get(base_url_env, "").strip().rstrip("/")
+                or (default_base_url or ""))
+        if not base:
+            raise RuntimeError(f"{name} requires {base_url_env}.")
+        if keyless:
+            return base, ""
+        tok = os.environ.get(token_env, "").strip()
+        if not tok:
+            raise RuntimeError(f"{name} requires {token_env}.")
+        return base, tok
 
     def _headers(tok: str) -> dict[str, str]:
+        if keyless or query_auth:
+            # No auth header: the credential is either absent (public) or
+            # carried on the query string (query_auth), handled in _rest_execute.
+            return {"Accept": "application/json", "Content-Type": "application/json"}
         return _build_auth_headers(
             tok, basic=basic, token_header=token_header, scheme=scheme,
             extra_headers_env=extra_headers_env,
@@ -249,6 +284,7 @@ def make_rest_tool(
             config=_config,
             headers=_headers,
             norm=_norm,
+            query_auth=query_auth,
         )
 
     return Tool(name=name, description=description,

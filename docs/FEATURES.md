@@ -492,7 +492,23 @@ here.
   TrueLayer (EU/UK open banking),
   Twilio, Zoom, S3, DynamoDB, MongoDB, Redis, Elasticsearch, Datadog, Sentry,
   PagerDuty, Mixpanel, PostHog, Plausible, GA4, Home Assistant, Cloudflare,
-  Vercel, AWS Lambda/SES/SNS, Microsoft Graph, and more.
+  Vercel, AWS Lambda/SES/SNS, Microsoft Graph, and more — plus a 200+ long-tail
+  of token-authed REST/GraphQL connectors (`enterprise_connectors.py`, built on
+  `make_rest_tool`) covering CRM, ERP, ITSM, HRIS, security, and data systems.
+- **Primary-source data connectors (37, read-only, low-risk)** — authoritative
+  government and public data APIs that ground the analyst-style packs in
+  primary sources instead of model memory: SEC EDGAR, FRED, U.S. Treasury,
+  World Bank, IMF, FDIC, BEA, Census, BLS, EIA, Alpha Vantage, Finnhub,
+  Polygon, OpenFIGI (finance/markets); Federal Register, eCFR, Regulations.gov,
+  CourtListener, GovInfo, USAspending, SAM.gov, Open States, PatentsView
+  (legal/regulatory/gov); GLEIF, OpenCorporates, UK Companies House (entity
+  registries); openFDA, NPPES/NPI, ClinicalTrials.gov, RxNorm, PubMed (health);
+  NWS, NOAA Climate, OpenWeather, EPA Envirofacts, Climatiq, Carbon Interface
+  (weather/energy/ESG). All GET-only and confirm-free — they read public
+  reference data, mutate nothing, and carry no tenant secrets. Most are keyless
+  (a fixed public host, zero config); the rest take a free API key from env,
+  delivered as a header or query param (never from the prompt). Built on three
+  new `make_rest_tool` auth modes: `keyless`, `query_auth`, `default_base_url`.
 - **System** — `shell` (sandbox-mediated), `wasm_run` (**WASM sandbox**:
   execute a WebAssembly/WASI module under wasmtime — capability-grant
   isolation where the module sees ONLY the preopened dirs/env/args given;
