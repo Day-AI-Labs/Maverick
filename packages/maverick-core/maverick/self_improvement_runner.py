@@ -136,7 +136,45 @@ def emit_strategy_candidate(kind: str, summary: str, baseline: float, candidate:
                           rollback=rollback, capability_widens=False, controller=controller)
 
 
+# -- self-harness: learn a model-specific harness addendum (Phase 4 sibling) --
+
+def run_self_harness_pass(
+    reflexions=None, *, model_id: str | None = None,
+    score_with=None, score_without=None, propose_fn=None, controller=None,
+    min_support: int = 3, limit: int = 500,
+):
+    """The automatic entry point for the self-harness loop (mine -> propose ->
+    validate -> gate), to be called by a scheduler / the self-improvement loop.
+
+    Resolves ``model_id`` to the configured orchestrator model and loads recent
+    model-tagged reflexions when not supplied. ``score_with``/``score_without``
+    are the LIVE held-in/held-out A/B over the candidate prompt -- injected by
+    the caller because a real evaluation needs a real model; without them the
+    pass is a dry inspection that writes nothing (mirrors the rest of this
+    module: deterministic, offline-testable, no-op unless explicitly driven).
+    Never raises -- a learning pass must not perturb anything.
+    """
+    try:
+        from . import self_harness
+        if not self_harness.enabled():
+            return self_harness.SelfHarnessReport(model_id=str(model_id or ""))
+        if not model_id:
+            from .llm import model_for_role
+            model_id = model_for_role("orchestrator")
+        if reflexions is None:
+            from . import reflexion
+            reflexions = [r.to_dict() for r in reflexion.list_recent(limit=limit)]
+        return self_harness.run_self_harness(
+            reflexions, model_id=model_id, score_with=score_with,
+            score_without=score_without, propose_fn=propose_fn,
+            controller=controller, min_support=min_support)
+    except Exception:  # pragma: no cover -- learning never perturbs a run
+        log.debug("self-harness pass failed", exc_info=True)
+        from . import self_harness
+        return self_harness.SelfHarnessReport(model_id=str(model_id or ""))
+
+
 __all__ = [
     "collect_calibration", "should_retire", "review_generated_tools",
-    "build_prm_examples", "emit_strategy_candidate",
+    "build_prm_examples", "emit_strategy_candidate", "run_self_harness_pass",
 ]
