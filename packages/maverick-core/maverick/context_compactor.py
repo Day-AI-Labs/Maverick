@@ -17,9 +17,11 @@ Strategy:
      the rest. Insert a one-line ``[N turns compacted]`` marker so
      the model sees a continuity hint.
 
-We approximate token count as ``len(text) // 4`` (well-correlated
-with tiktoken for typical prose; off by ~20% for code) so we don't
-have to drag tiktoken or sentencepiece into the kernel.
+Token counting uses a real BPE tokenizer (tiktoken, a free local proxy)
+when it is installed, falling back to the ``len(text) // 4`` rule of thumb
+otherwise. The heuristic is off by ~20% (worse on code), which shifts WHEN
+compaction fires; the BPE count is far closer to the provider's real
+accounting. Force the heuristic with ``MAVERICK_COMPACT_TIKTOKEN=0``.
 
 Embedding-based ranking (cosine via :mod:`fastembed`) is opt-in and
 slower; turn it on with ``use_embeddings=True`` when the embeddings
@@ -84,10 +86,42 @@ def window(default: int = 50) -> int:
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+")
 
 
+# Resolved lazily: a callable(str)->int when a real tokenizer is available,
+# or False once we've confirmed none is (so we don't retry the import every
+# call). None means "not yet resolved".
+_token_counter: object = None
+
+
+def _resolve_token_counter():
+    """A real BPE token counter (local tiktoken) or False if unavailable.
+
+    Fail-open and cached: any import/build error pins False so callers drop to
+    the char heuristic. ``MAVERICK_COMPACT_TIKTOKEN=0`` forces the heuristic."""
+    global _token_counter
+    if _token_counter is not None:
+        return _token_counter
+    if os.environ.get("MAVERICK_COMPACT_TIKTOKEN", "1").strip().lower() in {
+            "0", "false", "no", "off"}:
+        _token_counter = False
+        return _token_counter
+    try:
+        from .codec_probe import tiktoken_counter
+        _token_counter = tiktoken_counter()  # local cl100k_base BPE
+    except Exception:  # pragma: no cover -- tiktoken not installed
+        _token_counter = False
+    return _token_counter
+
+
 def _approx_tokens(text: str) -> int:
     if not text:
         return 0
-    # 4 chars/token is the rule-of-thumb baseline; round up.
+    counter = _resolve_token_counter()
+    if counter:
+        try:
+            return counter(text)
+        except Exception:  # pragma: no cover -- never let counting break compaction
+            pass
+    # 4 chars/token is the rule-of-thumb fallback; round up.
     return (len(text) + 3) // 4
 
 
