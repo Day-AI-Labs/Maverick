@@ -571,6 +571,35 @@ def _check_tls_cert_expiry() -> None:
             _row(YELLOW, f"tls:{section}", f"cert unreadable: {type(e).__name__}")
 
 
+def _check_proxy_auth() -> None:
+    """Flag an insecure reverse-proxy-SSO config: proxy auth enabled, but no
+    `trusted_proxies` pin and the loopback fallback still active -- any
+    co-located loopback process (a sidecar, a pod-netns neighbour, an SSRF pivot
+    to 127.0.0.1) could then spoof the forwarded identity header. Advisory only;
+    off-by-default proxy auth and a pinned/enterprise config are silent."""
+    try:
+        from .proxy_auth import (
+            _section,
+            _trust_loopback_fallback,
+            proxy_auth_enabled,
+        )
+    except Exception:  # pragma: no cover -- never break the doctor
+        return
+    if not proxy_auth_enabled():
+        return  # off by default -> nothing to flag
+    trusted = _section().get("trusted_proxies")
+    if isinstance(trusted, (list, tuple)) and trusted:
+        _row(GREEN, "proxy-auth", "trusted_proxies pinned")
+    elif _trust_loopback_fallback():
+        _row(YELLOW, "proxy-auth",
+             "enabled with no trusted_proxies pin; any loopback process can spoof "
+             "the identity header",
+             fix="pin [auth.proxy] trusted_proxies, or set trust_loopback = false "
+                 "(enterprise mode disables the fallback automatically)")
+    else:
+        _row(GREEN, "proxy-auth", "loopback fallback disabled")
+
+
 def diagnose() -> int:
     """Run every health check, print the report, and return the number of
     failed (✗) checks. 0 == healthy. The CLI exits nonzero when this is
@@ -583,6 +612,7 @@ def diagnose() -> int:
     _check_profile()
     _check_data_residency(cfg)
     _check_client_binding()
+    _check_proxy_auth()
     _check_anthropic()
     _check_openai()
     _check_sandbox(cfg)

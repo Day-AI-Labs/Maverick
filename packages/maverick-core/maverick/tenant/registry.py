@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass, replace
@@ -313,8 +314,31 @@ def tenant_spend_today(tenant_id: str) -> float:
             float((days.get(day) or {}).get("dollars", 0.0))
             for days in data.values() if isinstance(days, dict)
         )
-    except Exception:  # pragma: no cover -- spend read never blocks serving
+    except Exception as e:
+        # Spend read never blocks serving, but it must not be SILENT: an
+        # unreadable ledger counts as 0 spend, which under-enforces the daily
+        # cap (a tenant at its limit looks unused). Surface it.
+        log.warning("tenant_spend_today: unreadable usage ledger for %r: %s; "
+                    "counting 0 spend (daily cap under-enforced)", tenant_id, e)
         return 0.0
+
+
+def _enforce_plan_caps() -> bool:
+    """Opt-in: when a tenant has no explicit registry spend cap, fall back to its
+    billing plan's entitlement-level daily cap so a config-defined plan cap is
+    actually enforced rather than decorative (audit #81).
+
+    Off by default: a registry cap of 0 means "unlimited" today, so enabling this
+    changes already-provisioned tenants. ``MAVERICK_ENFORCE_PLAN_CAPS`` env wins
+    over ``[billing] enforce_plan_caps``."""
+    env = os.environ.get("MAVERICK_ENFORCE_PLAN_CAPS")
+    if env is not None and env.strip() != "":
+        return env.strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        from ..config import load_config
+        return bool(((load_config() or {}).get("billing") or {}).get("enforce_plan_caps"))
+    except Exception:  # pragma: no cover -- config never blocks quota resolution
+        return False
 
 
 def tenant_over_quota(tenant_id: str | None) -> str | None:
@@ -329,13 +353,22 @@ def tenant_over_quota(tenant_id: str | None) -> str | None:
     if not tid:
         return None
     rec = _load().get(tid)
-    if rec is None or rec.max_daily_dollars <= 0:
+    if rec is None:
+        return None
+    cap = rec.max_daily_dollars
+    if cap <= 0 and _enforce_plan_caps():
+        # No explicit registry cap -> fall back to the plan's entitlement cap.
+        try:
+            from ..billing import entitlements_for
+            cap = entitlements_for(rec.plan).max_daily_dollars
+        except Exception:  # pragma: no cover -- billing never blocks quota
+            cap = 0.0
+    if cap <= 0:
         return None
     spent = tenant_spend_today(tid)
-    if spent >= rec.max_daily_dollars:
+    if spent >= cap:
         return (f"workspace {tid!r} is over its daily spend cap "
-                f"(${spent:.2f} >= ${rec.max_daily_dollars:.2f}); "
-                "resets at midnight UTC")
+                f"(${spent:.2f} >= ${cap:.2f}); resets at midnight UTC")
     return None
 
 

@@ -66,6 +66,23 @@ class TestAuth:
         r = client.get("/scim/v2/Users", headers=_auth("nope"))
         assert r.status_code == 401
 
+    def test_comma_separated_rotation_accepts_old_and_new(self, monkeypatch):
+        # During a rotation, old + new are both valid; a retired token is not.
+        monkeypatch.setenv("MAVERICK_SCIM_TOKEN", "old-tok,new-tok")  # pragma: allowlist secret
+        c = _client()
+        assert c.get("/scim/v2/Users", headers=_auth("old-tok")).status_code == 200
+        assert c.get("/scim/v2/Users", headers=_auth("new-tok")).status_code == 200
+        assert c.get("/scim/v2/Users", headers=_auth("retired")).status_code == 401
+
+    def test_sha256_hashed_secret_keeps_plaintext_out_of_env(self, monkeypatch):
+        import hashlib
+        tok = "plain-scim-token"  # pragma: allowlist secret
+        digest = hashlib.sha256(tok.encode()).hexdigest()
+        monkeypatch.setenv("MAVERICK_SCIM_TOKEN", f"sha256:{digest}")
+        c = _client()
+        assert c.get("/scim/v2/Users", headers=_auth(tok)).status_code == 200
+        assert c.get("/scim/v2/Users", headers=_auth("wrong")).status_code == 401
+
 
 class TestDiscovery:
     def test_service_provider_config(self, client):

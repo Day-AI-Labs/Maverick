@@ -292,7 +292,25 @@ class AuditLog:
                 self._signer = AuditSigner(path)
                 self._signer_path = path
             except ImportError:
-                log.warning(
+                # A compliance floor (e.g. HIPAA) that mandates signed,
+                # tamper-evident audit rows must NOT silently degrade to plaintext
+                # -- mirror crypto_at_rest's fail-closed posture and refuse rather
+                # than let an operator believe tamper-evidence is active when it
+                # isn't. Only the no-floor (secure-by-default) path degrades, and
+                # then loudly (error, not warning).
+                try:
+                    from ..compliance_profiles import FLOOR_AUDIT_LOG, requires_floor
+                    floored = requires_floor(FLOOR_AUDIT_LOG)
+                except Exception:  # pragma: no cover - floor lookup never blocks
+                    floored = False
+                if floored:
+                    raise RuntimeError(
+                        "audit: an active compliance profile requires signed, "
+                        "tamper-evident audit logs, but the 'cryptography' extra is "
+                        "not installed -- refusing to write UNSIGNED. Run: "
+                        "pip install 'maverick-agent[audit-signing]'"
+                    ) from None
+                log.error(
                     "audit: signing enabled but 'cryptography' not installed; "
                     "writing UNSIGNED. Run: pip install 'maverick-agent[audit-signing]'"
                 )
