@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "social post calendar & engagement queue"
+consumers = ["social_media_manager", "marketing_lead"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Scan signals"
+instruction = "Monitor mentions, comments, and trending topics in Sprinklr to surface what the community is reacting to."
+tools = ["sprinklr_read"]
+[[workflow]]
+name = "Ground messaging"
+instruction = "Pull approved brand voice, campaign briefs, and product facts so posts never promise anything outside approved sources."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft & schedule"
+instruction = "Write the post calendar and proposed engagement replies with channels and timing, disclosing the AI assistant where required."
+tools = ["web_search"]
+[[workflow]]
+name = "Flag sensitive threads"
+instruction = "Escalate complaints, crises, or off-brand interactions that need a human voice instead of a drafted reply."
+tools = ["sprinklr_read"]
+[[workflow]]
+name = "Submit for publish"
+instruction = "Route the post calendar and engagement queue to the social media manager to approve and publish."
+gate = "approval"

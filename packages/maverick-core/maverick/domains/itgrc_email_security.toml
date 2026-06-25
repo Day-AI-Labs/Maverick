@@ -21,3 +21,23 @@ deliverable = "Email-security & phishing findings"
 consumers = ["security_analyst", "ciso"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Pull signals"
+instruction = "Read the phishing/BEC reports and pull Proofpoint detection and quarantine telemetry for the period."
+tools = ["read_file", "proofpoint_read"]
+[[workflow]]
+name = "Triage threats"
+instruction = "Triage reported messages by intent and severity and correlate against insider-risk and UEBA signals."
+tools = ["knowledge_search", "proofpoint_read"]
+[[workflow]]
+name = "Check auth posture"
+instruction = "Evaluate DMARC, DKIM, and SPF alignment against current sending sources and recommend tuning."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Draft findings"
+instruction = "Draft the findings with recommended actions, flagging high-confidence campaigns that warrant urgent owner attention."
+[[workflow]]
+name = "Route findings"
+instruction = "Route the email-security findings to the security analyst for review since the agent never blocks senders or closes a finding itself."
+gate = "review"

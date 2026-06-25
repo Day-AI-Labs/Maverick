@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "funder grant report package"
+consumers = ["grants_manager", "program_director"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Gather award terms"
+instruction = "Read the award agreement, reporting template, and the reporting period's deliverables from company records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull expenditures"
+instruction = "Collect period expenditures and the approved budget for the award being reported."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Reconcile to award"
+instruction = "Reconcile expenditures line by line against the award budget and flag any overruns or unspent balances."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft narrative"
+instruction = "Draft the funder report narrative tying outcomes to spend and citing the source records used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route to grants manager"
+instruction = "Submit the reconciled report package to the grants manager for sign-off before it goes out under their name."
+gate = "review"

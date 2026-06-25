@@ -18,3 +18,28 @@ deliverable = "Loss & LAE reserve indication"
 consumers = ["actuary", "controller", "risk_officer"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Pull loss data"
+instruction = "Query paid and incurred loss, LAE, and earned-premium history by line and accident year and load prior reserve studies."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Build triangles"
+instruction = "Organize the loss and LAE data into paid and incurred development triangles in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Select factors"
+instruction = "Select age-to-age and tail development factors and document the rationale for each selection against the data."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Apply methods"
+instruction = "Run chain-ladder and Bornhuetter-Ferguson and reconcile the two indications to a recommended IBNR by line and accident year."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Test deficiency"
+instruction = "Test for premium deficiency and flag any line where the indicated ultimate exceeds unearned premium plus expected investment income."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Reserve memo"
+instruction = "Draft the reserve indication memo with assumptions and unknowns for actuary and controller sign-off before any carried estimate is booked."
+gate = "review"

@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["ops"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "MRP exception disposition log"
+consumers = ["production_planner", "buyer"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull messages"
+instruction = "Read the open MRP action messages and related order data via knowledge_search and SQL and cite the sources used."
+tools = ["read_file", "knowledge_search", "sql_query"]
+[[workflow]]
+name = "Triage exceptions"
+instruction = "Group exceptions by type and severity to prioritize reschedule-in, reschedule-out, and cancel signals."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Draft dispositions"
+instruction = "Document a recommended disposition for each message, stating assumptions and never bypassing quality holds."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to planner"
+instruction = "Submit the disposition log with traceability identifiers to the production planner for sign-off."
+gate = "review"

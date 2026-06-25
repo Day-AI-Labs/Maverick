@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["strat"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "board metrics pack"
+consumers = ["board_chair", "cfo", "ceo"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Define metrics"
+instruction = "Read the board reporting template to confirm which KPIs and definitions this cycle's metrics pack must carry."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull sources"
+instruction = "Gather the underlying financial and operational figures from the company's own documents and date-stamp any market data."
+tools = ["read_file", "knowledge_search", "web_search"]
+[[workflow]]
+name = "Reconcile values"
+instruction = "Compile the metrics in the spreadsheet and reconcile each number to its source, flagging any variance between systems."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Annotate movement"
+instruction = "State assumptions, period-over-period drivers, and unknowns plainly so the board reads facts separately from inference."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to CFO"
+instruction = "Deliver the reconciled board metrics pack to the CFO and Board Chair for sign-off."
+gate = "review"

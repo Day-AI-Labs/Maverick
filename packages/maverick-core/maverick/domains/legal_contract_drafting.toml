@@ -16,3 +16,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal", "legal_playbook"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "draft contract with deviation memo"
+consumers = ["attorney", "contracts_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture deal terms"
+instruction = "Read the deal request and counterparty inputs to fix the contract type and key commercial terms."
+tools = ["read_file", "ironclad_read", "docusign_read"]
+[[workflow]]
+name = "Select template"
+instruction = "Pull the approved template and matching playbook clauses for this contract type."
+tools = ["knowledge_search", "ironclad_read"]
+[[workflow]]
+name = "Draft from playbook"
+instruction = "Draft the contract using the approved clause library and fill in the negotiated terms."
+[[workflow]]
+name = "Flag deviations"
+instruction = "Flag every off-template or fallback clause in a deviation memo with the playbook rationale."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Route to attorney"
+instruction = "Hand the draft and deviation memo to the human attorney for review, negotiation, and execution."
+gate = "review"

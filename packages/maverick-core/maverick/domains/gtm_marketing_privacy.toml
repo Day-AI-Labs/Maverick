@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "consent & suppression compliance report"
+consumers = ["privacy_officer", "marketing_ops_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory signals"
+instruction = "Read the current CMP, Global Privacy Control, and CCPA do-not-sell/share configuration and the cookie consent records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Confirm legal basis"
+instruction = "Research applicable consent and do-not-sell obligations and confirm each processing purpose has a valid basis."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Reconcile suppression"
+instruction = "Cross-check opt-out and suppression lists against downstream systems and flag any party still reachable after opting out."
+[[workflow]]
+name = "Draft remediation"
+instruction = "Document consent gaps, GPC handling defects, and suppression-sync failures with proposed remediation steps."
+[[workflow]]
+name = "Route for review"
+instruction = "Submit the consent and suppression compliance report to the privacy officer for sign-off."
+gate = "review"

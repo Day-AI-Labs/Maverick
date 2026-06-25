@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "employee communication draft"
+consumers = ["hr_business_partner", "comms_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope message"
+instruction = "Read the request brief and confirm the audience, the decision already made, and the sensitivity tier of the communication."
+tools = ["read_file"]
+[[workflow]]
+name = "Ground in policy"
+instruction = "Search HR policy and prior announcements so the message is consistent with current guidance and approved messaging."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft comms"
+instruction = "Draft the announcement with clear what-changed, why, and who-to-ask sections, using no protected-class data or proxies."
+[[workflow]]
+name = "Flag sensitive"
+instruction = "Flag whether this is a sensitive comm (layoffs, policy change) requiring elevated approval and note any legal-review dependency."
+[[workflow]]
+name = "Route to comms"
+instruction = "Route the draft to the comms lead and HRBP for sign-off before any distribution."
+gate = "review"

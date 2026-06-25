@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "order exception resolution brief"
+consumers = ["store_operations_lead", "customer_service_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull order"
+instruction = "Query the BOPIS or ship-from-store order, its inventory holds, and fulfillment status."
+tools = ["sql_query"]
+[[workflow]]
+name = "Confirm policy"
+instruction = "Verify the exception type against fulfillment SLAs and substitution or cancellation policy."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pick resolution"
+instruction = "Determine reroute, substitute, or refund options that restore the order fastest within policy."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft customer update"
+instruction = "Write the customer-facing update explaining the resolution and any timing change."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the resolution brief and customer update to the store operations lead for review."
+gate = "review"

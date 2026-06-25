@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "permit & inspection status log"
+consumers = ["project_manager", "superintendent"]
+cadence = "weekly"
+
+[[workflow]]
+name = "List permits"
+instruction = "Read the project permit register and identify every required permit by jurisdiction and trade."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check status"
+instruction = "Look up current permit status, expiration dates, and posted inspection requirements for each jurisdiction."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Build schedule"
+instruction = "Lay out upcoming inspection milestones against the construction schedule in the spreadsheet log."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag expirations"
+instruction = "Flag permits nearing expiration, missing inspections, or unscheduled holds that would stop work."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Brief PM"
+instruction = "Route the status log with at-risk items to the project manager for action on renewals and scheduling."
+gate = "review"

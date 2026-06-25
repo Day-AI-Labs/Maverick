@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "data transfer mechanism register"
+consumers = ["privacy_counsel", "data_protection_officer"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Map data flows"
+instruction = "Identify each cross-border data flow, its source and destination jurisdictions, and the categories of personal data involved."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull mechanisms"
+instruction = "Retrieve the transfer mechanism and transfer impact assessment on file for each flow from the company's own documents."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check adequacy"
+instruction = "Confirm each mechanism's current validity against adequacy decisions and SCC requirements, citing the exact article or section."
+tools = ["web_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Mark flows with missing, expired, or invalidated mechanisms and state jurisdiction assumptions explicitly."
+[[workflow]]
+name = "Counsel sign-off"
+instruction = "Route the register and flagged gaps to privacy counsel for sign-off."
+gate = "review"

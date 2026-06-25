@@ -29,3 +29,24 @@ deliverable = "Fraud risk-ranked leads"
 consumers = ["internal_auditor", "risk_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Scope population"
+instruction = "Pull the AP, payroll, and journal population for the period and define the testable universe before scoring."
+tools = ["ap_read_invoice", "payroll_read_register", "gl_read_journal"]
+[[workflow]]
+name = "Run forensics"
+instruction = "Run Benford, Beneish, round-dollar, and just-under-threshold tests plus vendor-bank-change detection to surface anomalies."
+tools = ["run_fraud_model"]
+[[workflow]]
+name = "Establish base rate"
+instruction = "Look up the relevant policy and historical base rate so each anomaly carries its evidence and expected false-positive cost."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Rank leads"
+instruction = "Risk-rank the flagged anomalies into calibrated leads with cited evidence, never as accusations."
+[[workflow]]
+name = "Open cases"
+instruction = "Open a case per high-risk lead and route it to the human investigator for review."
+tools = ["open_case"]
+gate = "review"

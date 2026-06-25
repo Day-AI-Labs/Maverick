@@ -11,3 +11,27 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "pipeline hygiene exceptions list"
+consumers = ["sales_operations", "engagement_partner"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull pipeline"
+instruction = "Query open opportunities with their current stage, owner, amount, and close date from the CRM."
+tools = ["sql_query"]
+[[workflow]]
+name = "Verify stages"
+instruction = "Cross-check each opportunity stage and close date against engagement letters and meeting notes in the company documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag exceptions"
+instruction = "Compile records with stale close dates, missing amounts, or stages unsupported by source documents into an exceptions table."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Owner review"
+instruction = "Route the exceptions list to sales operations and the engagement owner to confirm corrections before any field is changed."
+gate = "review"

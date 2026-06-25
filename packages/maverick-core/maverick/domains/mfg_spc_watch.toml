@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "SPC out-of-control exception report"
+consumers = ["quality_engineer", "process_engineer"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull measurements"
+instruction = "Read the latest subgroup measurements and control limits for the monitored characteristics."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Apply rules"
+instruction = "Evaluate each control chart against the Western Electric/Nelson rules to detect out-of-control conditions."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Cite violations"
+instruction = "For each signal, name the specific rule violated and the points and characteristic involved."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Confirm not false"
+instruction = "Verify limits are current and confirm the signal is not from a known limit recalculation or gauge issue before escalating."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Alert engineer"
+instruction = "Route the rule-cited exception report to the quality engineer for review and disposition."
+gate = "review"

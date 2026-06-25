@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "price-compliance discrepancy report"
+consumers = ["pricing_manager", "store_operations_lead"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Load approved promos"
+instruction = "Pull the approved promotion calendar with SKUs, promo prices, and effective dates from knowledge."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pull live prices"
+instruction = "Query current shelf and site prices for every SKU on active promotion."
+tools = ["sql_query"]
+[[workflow]]
+name = "Spot-check site"
+instruction = "Verify a sample of online listings against the approved promo price to catch publishing lags or overrides."
+tools = ["web_search"]
+[[workflow]]
+name = "Flag mismatches"
+instruction = "Compute every shelf or site price that does not exactly equal the approved promo price and rank by margin impact."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route discrepancies"
+instruction = "Submit the discrepancy report to the pricing manager for correction approval."
+gate = "review"

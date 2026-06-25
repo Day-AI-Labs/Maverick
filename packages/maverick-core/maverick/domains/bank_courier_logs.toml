@@ -10,3 +10,28 @@ max_risk = "low"
 
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Courier bag reconciliation log"
+consumers = ["operations_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull schedules"
+instruction = "Read the day's courier run schedule and expected pickup and delivery stops for each branch and vault."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Match bag logs"
+instruction = "Reconcile each sealed-bag serial and declared amount against the courier manifest and receiving log entry."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag discrepancies"
+instruction = "Isolate missed stops, bag count mismatches, and amount variances and cite the source log line for each one."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Compile evidence"
+instruction = "Assemble the reconciliation log with discrepancies and supporting citations for the operations manager to review."
+tools = ["spreadsheet"]
+gate = "review"

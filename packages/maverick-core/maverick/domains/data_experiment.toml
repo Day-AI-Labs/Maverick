@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "A/B test readout"
+consumers = ["product_manager", "experiment_owner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Load preregistration"
+instruction = "Read the experiment's pre-registered hypothesis, primary metric, and analysis plan before touching any data."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Validate assignment"
+instruction = "Query assignment and exposure logs to confirm balanced randomization and check for sample-ratio mismatch."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute effects"
+instruction = "Compute the pre-registered metrics with effect sizes, confidence intervals, and honest p-values, avoiding cherry-picked segments."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "State decision"
+instruction = "Write the readout stating significance, practical impact, and caveats including any peeking or guardrail concerns."
+[[workflow]]
+name = "PM review"
+instruction = "Route the readout to the product manager for the ship or no-ship decision."
+gate = "review"

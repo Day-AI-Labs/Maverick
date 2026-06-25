@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "structured interview kit and scorecard"
+consumers = ["hiring_manager", "recruiter"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read role"
+instruction = "Read the job description, leveling guide, and target competencies for the role being staffed."
+tools = ["read_file", "greenhouse_read"]
+[[workflow]]
+name = "Map competencies"
+instruction = "Map each required competency to job-related, behaviorally anchored evaluation criteria."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft kit"
+instruction = "Draft the structured question set and an anchored scorecard with consistent rating dimensions across all candidates."
+[[workflow]]
+name = "Bias check"
+instruction = "Audit every question and rubric line to remove protected-class proxies and questions not job-related."
+[[workflow]]
+name = "Route to panel"
+instruction = "Route the interview kit to the hiring manager and recruiter for sign-off before use."
+gate = "review"

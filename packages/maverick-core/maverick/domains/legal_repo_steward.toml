@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "contract obligation & tagging register"
+consumers = ["contract_manager", "legal_operations"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory repo"
+instruction = "Identify new, untagged, or incompletely catalogued contracts in the repository against the expected set."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Read agreements"
+instruction = "Read each contract to capture parties, term, renewal, and governing-law metadata for tagging."
+tools = ["read_file"]
+[[workflow]]
+name = "Extract obligations"
+instruction = "Extract each binding obligation and deadline, citing the exact clause without altering the original document."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag missing executed copies, ambiguous terms, and any tag that cannot be confirmed from the document."
+[[workflow]]
+name = "Ops review"
+instruction = "Route the obligation and tagging register to the contract manager and legal operations for confirmation."
+gate = "review"

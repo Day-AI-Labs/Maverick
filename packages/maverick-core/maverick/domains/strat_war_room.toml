@@ -10,3 +10,28 @@ max_risk = "low"
 
 knowledge_sources = ["strat"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "diligence tracker and Q&A log"
+consumers = ["corp_dev_lead", "deal_team"]
+cadence = "daily"
+
+[[workflow]]
+name = "Open workstreams"
+instruction = "Read the diligence plan and workstream list to set up trackers and the document index."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Update trackers"
+instruction = "Update the request and issue trackers in the spreadsheet as items move and owners respond."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Log Q&A"
+instruction = "Record each diligence question and answer, citing the source document and date-stamping market data."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Control documents"
+instruction = "Verify document access and version control so the right materials reach the right reviewers without leakage."
+[[workflow]]
+name = "Brief deal team"
+instruction = "Circulate the daily status with open items and blockers to the corp dev lead and deal team."

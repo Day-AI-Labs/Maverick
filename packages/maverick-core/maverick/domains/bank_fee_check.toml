@@ -18,3 +18,24 @@ deliverable = "Fee accuracy exceptions"
 consumers = ["operations_manager", "compliance_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull fee terms"
+instruction = "Read the published fee schedule and account-disclosure terms for the products under review."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Extract charged fees"
+instruction = "Query fees actually charged on accounts over the period with amount, type, and date."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile to terms"
+instruction = "Compare each charged fee to the disclosed amount and regulatory limit and flag overcharges, missing waivers, and undisclosed fees."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Cite the rule"
+instruction = "For each exception note the specific disclosure or regulation it violates so the finding is defensible."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route exceptions"
+instruction = "Submit the exception list to the compliance officer for sign-off on remediation and refunds."
+gate = "review"

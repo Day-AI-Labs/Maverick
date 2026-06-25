@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "pipeline health digest"
+consumers = ["data_engineer", "platform_oncall"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Check run status"
+instruction = "Query the pipeline run history to list recent failed, late, and stalled jobs for the window."
+tools = ["sql_query"]
+[[workflow]]
+name = "Read failure logs"
+instruction = "Read the logs for each failed run to extract the error signature and likely root cause."
+tools = ["read_file"]
+[[workflow]]
+name = "Match runbooks"
+instruction = "Cross-reference each failure against known-issue runbooks to attach a recommended remediation."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Filter noise"
+instruction = "Suppress transient retries and self-healed runs so only actionable failures surface as alerts."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route alerts"
+instruction = "Hand the deduplicated actionable failures to the on-call data engineer for triage."
+gate = "review"

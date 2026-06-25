@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "OAC meeting minutes with action log"
+consumers = ["project_manager", "owner", "architect"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull prior actions"
+instruction = "Read the previous OAC minutes to carry forward every open action item and its owner and due date."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Capture discussion"
+instruction = "Organize the meeting notes into decisions, open items, and new action items attributed to owner, architect, or contractor."
+tools = ["read_file"]
+[[workflow]]
+name = "Update action log"
+instruction = "Update the running action log, marking closed items and assigning owner and due date to each new action."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Reconcile accuracy"
+instruction = "Cross-check drafted minutes against the notes so no decision is misattributed or missing before distribution."
+tools = ["read_file"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the draft minutes and action log to the project manager for review before issuing to the owner and architect."
+gate = "review"

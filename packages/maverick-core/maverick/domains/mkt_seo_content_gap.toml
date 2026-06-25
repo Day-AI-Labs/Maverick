@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "prioritized editorial backlog"
+consumers = ["content_marketing_manager", "editorial_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Map demand"
+instruction = "Gather target keywords, search volumes, and competitor coverage for the topic area from approved sources."
+tools = ["web_search", "knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Inventory content"
+instruction = "Catalog existing published pages and the queries they already cover from the company's own documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Find gaps"
+instruction = "Diff demand against the content inventory to surface uncovered or underserved topics and intents."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Rank backlog"
+instruction = "Score each gap by demand, business relevance, and difficulty to produce a prioritized editorial backlog."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand to editor"
+instruction = "Route the prioritized backlog to the editorial lead for sign-off before briefs are assigned."
+gate = "review"

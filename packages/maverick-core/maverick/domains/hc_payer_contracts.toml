@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "contract reimbursement variance report"
+consumers = ["revenue_cycle_manager", "cfo"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull contract terms"
+instruction = "Read the executed payer contracts and their fee schedules for the lines of business in scope."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Extract expected rates"
+instruction = "Build the expected allowed-amount per CPT and payer from the contracted fee schedule into a working sheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Query actual paid"
+instruction = "Query actual remittance lines to get paid amounts by claim, CPT, and payer for the period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute variance"
+instruction = "Reconcile actual paid against expected contract rate and flag underpayments beyond a materiality threshold."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to RCM"
+instruction = "Hand the variance report to the revenue cycle manager for underpayment dispute sign-off."
+gate = "review"

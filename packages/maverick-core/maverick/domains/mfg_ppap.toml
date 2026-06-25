@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "PPAP submission package"
+consumers = ["customer_quality", "supplier_quality_engineer"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Read requirements"
+instruction = "Read the customer PPAP submission level and the required element list for this part."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Collect elements"
+instruction = "Gather the design records, PFMEA, control plan, MSA, dimensional results, and PSW evidence for each element."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Check completeness"
+instruction = "Verify every element required at the submission level is present at the correct revision and flag gaps."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Assemble package"
+instruction = "Compile the indexed PPAP package mapped to the customer element checklist."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Submit for approval"
+instruction = "Route the assembled package to customer quality for PSW approval."
+gate = "approval"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "appointment & waitlist worklist"
+consumers = ["front_desk_lead", "clinic_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull demand"
+instruction = "Query open appointment requests and the current waitlist with priority and requested visit type."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Match slots"
+instruction = "Map requests to available slots per the scheduling protocol, respecting provider and visit-type rules."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Work waitlist"
+instruction = "Promote waitlisted patients into freed slots by priority and flag any that breach access targets."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Prep confirmations"
+instruction = "Draft confirmation and prep-instruction text for each booked slot citing the relevant visit protocol."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Front-desk review"
+instruction = "Route the worklist and confirmations to the front-desk lead to finalize and send."
+gate = "review"

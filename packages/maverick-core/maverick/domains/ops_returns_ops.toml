@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["ops"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "returns disposition log"
+consumers = ["quality_manager", "warehouse_supervisor"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull returns"
+instruction = "Query the returned-goods queue for units awaiting disposition with their RMA, part, revision, and traceability identifiers."
+tools = ["sql_query"]
+[[workflow]]
+name = "Verify policy"
+instruction = "Look up the disposition and quality-hold policy for each part and confirm warranty, recall, and safety-hold status against company documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Decide disposition"
+instruction = "Assign each unit a disposition code (restock, repair, scrap, return-to-vendor) with the documented rationale and cite the policy used."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag holds"
+instruction = "Segregate any unit under a quality hold or safety interlock and never route it to restock without explicit clearance."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Route the completed disposition log to the quality manager for review before any unit moves."
+gate = "review"

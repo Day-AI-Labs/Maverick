@@ -11,3 +11,34 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "meeting minutes & action register"
+consumers = ["executive", "chief_of_staff"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull source record"
+instruction = "Read the meeting recording transcript, agenda, and prior minutes for the session being documented."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Draft minutes"
+instruction = "Write neutral minutes capturing decisions, owners, and rationale grounded in the transcript with no inferred conclusions."
+[[workflow]]
+name = "Extract actions"
+instruction = "List every action item with a named owner and due date and log them in the tracking spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify quotes"
+instruction = "Check that each decision and attributed statement matches the source transcript and flag anything unconfirmed."
+tools = ["read_file"]
+[[workflow]]
+name = "Chase open items"
+instruction = "Cross-check carried-over actions from prior minutes and mark which remain open or overdue."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Executive sign-off"
+instruction = "Route the minutes and action register to the executive for confirmation before circulation to the approved circle."
+gate = "review"

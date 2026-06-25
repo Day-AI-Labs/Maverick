@@ -30,3 +30,25 @@ deliverable = "Revenue-recognition schedule (ASC 606)"
 consumers = ["accounting_manager", "auditor"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Read contract"
+instruction = "Read the customer contract and related invoices to identify the contract and its performance obligations."
+tools = ["read_file", "ar_read_invoice", "knowledge_search"]
+[[workflow]]
+name = "Price and allocate"
+instruction = "Determine the transaction price including variable consideration and allocate it across obligations using SSP."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build schedule"
+instruction = "Draft the deferred-revenue and revenue-waterfall schedule applying the recognition pattern for each obligation."
+tools = ["draft_revrec_schedule", "gl_read_subledger", "chargebee_read"]
+[[workflow]]
+name = "Flag judgment"
+instruction = "Cite the contract clause behind each recognition decision and flag judgmental calls and contract mods for human review."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Stage entries"
+instruction = "Stage the deferred-revenue entries and route the schedule to the accounting manager for review before posting."
+tools = ["stage_deferred_revenue"]
+gate = "review"

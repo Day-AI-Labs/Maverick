@@ -14,3 +14,28 @@ deny_tools = ["shell", "write_file", "web_search"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "deal tax structuring memo"
+consumers = ["corp_dev_lead", "tax_director", "cfo"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather deal facts"
+instruction = "Read the deal structure, target tax attributes, and entity details from sealed deal documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map structures"
+instruction = "Evaluate 338(h)(10), tax-free reorg, and asset-vs-stock alternatives against the deal facts."
+[[workflow]]
+name = "Test NOL limits"
+instruction = "Model Section 382 limitation and step-up basis effects to quantify the tax impact of each structure."
+[[workflow]]
+name = "Draft memo"
+instruction = "Draft the structuring memo recommending an approach with assumptions and open tax questions stated plainly."
+[[workflow]]
+name = "Route to tax"
+instruction = "Route the memo to the tax director and CFO for review before it informs the deal."
+gate = "review"

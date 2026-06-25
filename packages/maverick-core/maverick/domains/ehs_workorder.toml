@@ -11,3 +11,32 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "facilities work-order tracker"
+consumers = ["facilities_manager", "ehs_coordinator"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Intake request"
+instruction = "Read the incoming facilities request and capture location, issue, requester, and any safety hazard verbatim."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Triage priority"
+instruction = "Classify urgency and trade against company SLA and safety policy, escalating any hazard that affects life safety or compliance."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Match vendor"
+instruction = "Identify the qualified vendor or internal trade for the work from the approved-vendor list and check coverage scope."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Log work order"
+instruction = "Record the triaged work order with priority, assigned vendor, and target completion date in the tracker."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify completion"
+instruction = "Confirm completion evidence against the original request and present the closeout for human sign-off before marking it done."
+tools = ["read_file", "spreadsheet"]
+gate = "review"

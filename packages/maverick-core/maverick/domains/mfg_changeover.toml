@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "changeover analysis & SMED candidate list"
+consumers = ["production_manager", "continuous_improvement_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull changeover data"
+instruction = "Retrieve recorded changeover durations by line, part, and shift from the knowledge base."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Analyze durations"
+instruction = "Compute average, best, and variance of changeover times and rank the longest by line and part pair."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Split internal external"
+instruction = "Read changeover step logs to separate internal versus external tasks and confirm the data is reliable."
+tools = ["read_file"]
+[[workflow]]
+name = "Propose SMED"
+instruction = "Identify SMED candidates where converting or parallelizing tasks yields the largest validated time savings."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to CI"
+instruction = "Submit the changeover analysis and SMED candidate list to production and continuous improvement for review."
+gate = "review"

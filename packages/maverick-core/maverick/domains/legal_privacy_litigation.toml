@@ -12,3 +12,28 @@ deny_tools = ["shell", "write_file", "web_search"]
 knowledge_sources = ["legal_matter"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "privacy class-action exposure analysis"
+consumers = ["litigation_attorney"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope theory"
+instruction = "Identify which privacy class-action theory — VPPA, BIPA, pixel-tracking, or CIPA — and which facts of the sealed matter are at issue."
+[[workflow]]
+name = "Pull matter file"
+instruction = "Retrieve the privileged matter documents, pleadings, and data-practice facts from the sealed compartment."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Analyze exposure"
+instruction = "Assess liability, standing, and arbitration posture under the theory, citing each authority as CourtListener-verified or [UNVERIFIED]."
+[[workflow]]
+name = "Verify citations"
+instruction = "Confirm every case and holding cited is verified and mark any unconfirmed authority so no fabricated citation reaches the attorney."
+[[workflow]]
+name = "Attorney review"
+instruction = "Route the privileged exposure analysis to the litigation attorney who owns strategy and every position."
+gate = "review"

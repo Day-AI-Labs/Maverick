@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "technology evaluation & recommendation"
+consumers = ["engineering_manager", "architecture_lead", "procurement_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame criteria"
+instruction = "Define the build-vs-buy question and weighted evaluation criteria from the requirement and constraints."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Survey options"
+instruction = "Research candidate libraries, frameworks, and vendors and their maturity, support, and fit."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Screen licenses"
+instruction = "Check each option's license and obligations for compatibility with our distribution and policy."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Score and compare"
+instruction = "Score each option against the criteria and surface the tradeoffs and risks of each."
+tools = ["read_file"]
+[[workflow]]
+name = "Route recommendation"
+instruction = "Send the comparison and recommendation to the deciding human for sign-off."
+gate = "review"

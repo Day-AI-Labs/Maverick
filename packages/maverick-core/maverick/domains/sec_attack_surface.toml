@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "external attack surface inventory with new-exposure alerts"
+consumers = ["security_manager", "infra_owner"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull asset data"
+instruction = "Query the current external asset inventory of domains, IPs, and exposed services for the reporting period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Enrich exposures"
+instruction = "Enrich assets with external scan and registration data to confirm which services are live and reachable."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Diff inventory"
+instruction = "Compare against the prior baseline to surface newly exposed hosts, ports, and unsanctioned shadow assets."
+tools = ["sql_query"]
+[[workflow]]
+name = "Verify ownership"
+instruction = "Match each new exposure to an owning team and policy to confirm it is sanctioned or flag it as rogue."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Escalate alerts"
+instruction = "Compile the inventory delta with prioritized new-exposure alerts and route to the security manager for action."
+gate = "review"

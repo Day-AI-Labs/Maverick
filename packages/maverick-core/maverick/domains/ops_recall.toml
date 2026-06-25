@@ -16,3 +16,31 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_quality", "ops_regulatory"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "recall scope & traceability package"
+consumers = ["quality_director", "regulatory_affairs"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Read complaint"
+instruction = "Read the defect report, affected part, and regulatory standard that triggered the scoping request."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Trace lots"
+instruction = "Trace the affected lots and serials forward and backward through production and distribution records."
+tools = ["read_file"]
+[[workflow]]
+name = "Assemble scope"
+instruction = "Define the recall scope and bound it conservatively so no affected unit is excluded."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compile evidence"
+instruction = "Package the traceability and ISO 9001 evidence supporting the scope determination."
+tools = ["read_file"]
+[[workflow]]
+name = "Hand to human"
+instruction = "Deliver the scope package to quality and regulatory leadership who initiate and communicate the recall."
+gate = "approval"

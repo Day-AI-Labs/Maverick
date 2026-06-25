@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "tax season pipeline status report"
+consumers = ["tax_manager", "tax_partner"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull pipeline"
+instruction = "Read per-client status from intake through filed across the firm's tax records."
+tools = ["read_file", "cch_axcess_read", "gosystem_tax_read"]
+[[workflow]]
+name = "Tally workload"
+instruction = "Aggregate workload distribution across preparers and compute files aging in each stage."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag bottlenecks"
+instruction = "Identify stalled files and raise early warning when the extension pile is growing faster than capacity."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Cite figures"
+instruction = "Cite the source document and tax year for every status figure and state any unknowns plainly."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Deliver report"
+instruction = "Compile the pipeline status report and route it to the tax manager for review."
+gate = "review"

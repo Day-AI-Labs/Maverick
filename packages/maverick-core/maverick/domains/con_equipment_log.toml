@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "equipment utilization & rental cutoff log"
+consumers = ["project_manager", "equipment_coordinator"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Collect hours"
+instruction = "Read daily reports and operator timesheets to gather run hours and idle hours for each piece of equipment on site."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile rentals"
+instruction = "Match logged equipment against active rental agreements to confirm rates, start dates, and contracted return dates."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Compute utilization"
+instruction = "Calculate utilization rates and idle-time totals to surface under-used units carrying daily rental cost."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag cutoffs"
+instruction = "Flag rentals approaching their cutoff date or sitting idle so they can be released or off-rented before another billing cycle."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the utilization log and off-rent recommendations to the project manager for the release decision."
+gate = "review"

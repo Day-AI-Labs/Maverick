@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "daily field report"
+consumers = ["project_manager", "superintendent"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Gather field inputs"
+instruction = "Read foreman notes, timesheets, and sign-in sheets to capture manpower counts and crews on site."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Record conditions"
+instruction = "Pull the day's weather and site conditions and note any impact on planned work."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Compile activities"
+instruction = "Summarize work performed by area, equipment used, and quantities installed for the day."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Note delays"
+instruction = "Document any delays, disruptions, or directives with enough detail to support a later claim."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Super review"
+instruction = "Route the compiled daily report to the superintendent for review before it becomes the official record."
+gate = "review"

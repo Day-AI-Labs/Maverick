@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "lane carrier recommendation"
+consumers = ["transportation_manager", "procurement_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define lane"
+instruction = "Read the origin-destination lane, equipment type, volume, and service window the shipment requires."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull rates"
+instruction = "Query historical rates, transit times, and on-time performance for carriers serving this lane."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Score carriers"
+instruction = "Rank candidate carriers by blended rate, transit reliability, and claims history and cite each data source."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Check capacity"
+instruction = "Verify current lane capacity and any embargoes or rate validity dates before recommending a primary and backup."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Route recommendation"
+instruction = "Present the ranked carrier recommendation with evidence to the transportation manager for booking sign-off."
+gate = "review"

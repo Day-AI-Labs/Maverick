@@ -17,3 +17,20 @@ deliverable = "Flood determination tracking"
 consumers = ["compliance_officer", "loan_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Pull secured loans"
+instruction = "Query active loans secured by real property along with their collateral addresses and origination dates."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check determinations"
+instruction = "Read each loan's flood determination to confirm it exists, covers the current collateral, and identifies special-flood-hazard status."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify coverage"
+instruction = "For loans in special flood hazard areas confirm flood insurance is in force at the required coverage amount and flag lapses or shortfalls."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Route gaps"
+instruction = "Hand the determination and coverage-gap tracking to the loan officer for force-placement and notice decisions."
+gate = "review"

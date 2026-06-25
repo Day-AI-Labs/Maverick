@@ -18,3 +18,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_safety", "osha_standards"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "OSHA recordkeeping & corrective-action package"
+consumers = ["ehs_lead", "plant_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Intake incident"
+instruction = "Read the incident or hazard report and gather witness statements, JSAs, and site conditions surrounding the event."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Determine recordability"
+instruction = "Apply 29 CFR 1904 criteria to classify the case for the OSHA 300/301 log and cite the standard behind the call."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Escalate serious"
+instruction = "Immediately flag any unsafe condition or serious injury to the EHS lead rather than waiting for the full package."
+[[workflow]]
+name = "Draft corrective actions"
+instruction = "Author corrective actions and the recordkeeping entry that prioritize worker safety over schedule and throughput."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Submit for filing"
+instruction = "Route the recordkeeping and corrective-action package to the EHS lead to review, sign off, and file with the regulator."
+gate = "approval"

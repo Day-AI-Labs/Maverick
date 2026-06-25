@@ -17,3 +17,30 @@ deny_tools = ["shell", "write_file", "web_search"]
 
 knowledge_sources = ["legal_board"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "draft board resolutions and minutes"
+consumers = ["corporate_secretary", "general_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather board record"
+instruction = "Read prior minutes, the agenda, and supporting materials inside the sealed compartment to scope the governance actions."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Confirm signatures"
+instruction = "Check execution status of prior resolutions and consents to confirm what remains outstanding."
+tools = ["docusign_read"]
+[[workflow]]
+name = "Draft materials"
+instruction = "Draft the resolutions and minutes precisely and neutrally and track the actions for officers and directors."
+tools = ["read_file"]
+[[workflow]]
+name = "Guard privilege"
+instruction = "Confirm no privileged board content is referenced outside the sealed compartment or to any agent outside the wall."
+[[workflow]]
+name = "Route to secretary"
+instruction = "Route the draft minutes and resolutions to the human corporate secretary and directors to review and approve."
+gate = "review"

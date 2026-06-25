@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Day-1/Day-100 integration plan"
+consumers = ["integration_lead", "corp_dev_lead", "executive_team"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Map workstreams"
+instruction = "Read the deal thesis and synergy targets and map the integration workstreams via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build Day-1 plan"
+instruction = "Sequence the Day-1 readiness actions and dependencies for each workstream."
+[[workflow]]
+name = "Build Day-100 plan"
+instruction = "Lay out the Day-100 milestones and tie each synergy to an owner and tracking metric."
+tools = ["web_search"]
+[[workflow]]
+name = "Pressure-test synergies"
+instruction = "Stress synergy assumptions against integration risk and flag any target unsupported by the deal model."
+[[workflow]]
+name = "Hand to integration lead"
+instruction = "Package the Day-1/Day-100 plan and synergy tracker for the integration lead's review."
+gate = "review"

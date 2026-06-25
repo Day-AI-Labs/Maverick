@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "executive scorecard"
+consumers = ["ceo", "chief_of_staff"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Gather KPIs"
+instruction = "Pull the current period's KPI values and the scorecard's prior baseline from company source documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile figures"
+instruction = "Reconcile each metric against its system-of-record number and tag any value that does not tie out."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Confirm owners"
+instruction = "Route each variance and unconfirmed metric to its accountable owner and capture their confirmation or correction."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Assemble scorecard"
+instruction = "Compile the reconciled, owner-confirmed metrics into the scorecard with trends, targets, and cited sources."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Executive review"
+instruction = "Submit the assembled scorecard to the executive for sign-off before distribution."
+gate = "review"

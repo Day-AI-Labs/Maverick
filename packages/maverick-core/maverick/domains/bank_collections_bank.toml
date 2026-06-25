@@ -18,3 +18,24 @@ deliverable = "Delinquency & collections queue"
 consumers = ["credit_officer", "operations_manager"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Pull delinquencies"
+instruction = "Query early-stage past-due accounts with days delinquent, balance, and prior contact history."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check restrictions"
+instruction = "Verify each account against FDCPA contact rules, do-not-call flags, and hardship or dispute holds before outreach."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Prioritize queue"
+instruction = "Rank eligible accounts by risk and roll-rate and draft the compliant outreach sequence for each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Document contacts"
+instruction = "Record planned and completed contacts with timestamps, channel, and disposition citing the governing policy."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Officer review"
+instruction = "Route the delinquency and collections queue to the credit officer for sign-off."
+gate = "review"

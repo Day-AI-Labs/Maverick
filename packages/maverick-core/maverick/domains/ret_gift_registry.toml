@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "loyalty & registry inquiry response"
+consumers = ["customer_service_rep", "loyalty_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read inquiry"
+instruction = "Read the customer's loyalty or registry question and pull their account and registry records."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Load program terms"
+instruction = "Retrieve the loyalty and registry program terms covering points, tiers, completion discounts, and eligibility."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify entitlement"
+instruction = "Check the account's balances and status against the program terms to confirm exactly what the customer is owed."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Draft response"
+instruction = "Write an accurate, policy-grounded response citing the specific program term applied and stating any unknowns."
+[[workflow]]
+name = "Route reply"
+instruction = "Hand the drafted response to the service rep to review before it is sent to the customer."
+gate = "review"

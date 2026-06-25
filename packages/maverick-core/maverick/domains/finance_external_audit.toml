@@ -26,3 +26,24 @@ deliverable = "Auditor PBC evidence package"
 consumers = ["auditor", "controller"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Read PBC"
+instruction = "Read the prepared-by-client list and identify each evidence item the auditors requested."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull evidence"
+instruction = "Pull the supporting journals and audit-log entries for each PBC item, taking only the minimum data needed."
+tools = ["gl_read_journal", "audit_log_read"]
+[[workflow]]
+name = "Package items"
+instruction = "Assemble the requested evidence into a labeled package and offer the signed audit chain as tamper-evidence."
+tools = ["assemble_evidence_package"]
+[[workflow]]
+name = "Track open"
+instruction = "Mark which PBC items are satisfied and which remain open or need clarification."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route release"
+instruction = "Hand the assembled package to the controller for human release to the external auditors."
+gate = "review"

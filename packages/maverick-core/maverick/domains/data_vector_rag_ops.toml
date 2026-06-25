@@ -11,3 +11,32 @@ deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "RAG retrieval quality & freshness report"
+consumers = ["data_platform_lead", "ml_engineer"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory index"
+instruction = "Read the current index config and query embedding metadata, source-doc counts, and last reindex timestamps to scope the pipeline state."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Measure recall@k"
+instruction = "Run the eval query set against the index and compute recall@k and retrieval precision per collection."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Check freshness"
+instruction = "Compare source-document update times to index timestamps to find stale partitions and quantify the reindex backlog."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Detect drift"
+instruction = "Ground a sample of failing queries with knowledge_search to confirm whether misses stem from embedding drift, missing docs, or chunking and cite the evidence."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Recommend reindex"
+instruction = "Summarize quality metrics, freshness gaps, and a prioritized reindex recommendation for the platform lead to approve before any gated production write."
+tools = ["spreadsheet"]
+gate = "review"

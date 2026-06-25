@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "leave balance & notice tracker"
+consumers = ["hr_business_partner", "payroll"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull balances"
+instruction = "Read current leave accruals, usage, and entitlement records from the company spreadsheet and source documents."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Apply policy"
+instruction = "Recompute eligibility and remaining balances by applying accrual and carryover criteria consistently per the leave policy."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag notices due"
+instruction = "Identify employees with required notices or recertifications coming due and list the deadlines."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route exceptions"
+instruction = "Route balance discrepancies and sensitive cases to the HR owner for review."
+gate = "review"

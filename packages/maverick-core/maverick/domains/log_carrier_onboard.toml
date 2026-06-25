@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "carrier onboarding clearance memo"
+consumers = ["logistics_manager", "carrier_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Collect packet"
+instruction = "Read the carrier's submitted authority, insurance, and contact documents for verification."
+tools = ["read_file"]
+[[workflow]]
+name = "Verify authority"
+instruction = "Check operating authority status and DOT safety scores against FMCSA and public regulatory sources."
+tools = ["web_search"]
+[[workflow]]
+name = "Validate insurance"
+instruction = "Confirm insurance limits and effective dates meet company minimums in the onboarding policy."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag disqualifiers"
+instruction = "Flag any expired authority, lapsed coverage, or out-of-tolerance safety scores that block onboarding."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route clearance"
+instruction = "Submit the clearance memo with cited evidence to the logistics manager to approve before the first load tenders."
+gate = "approval"

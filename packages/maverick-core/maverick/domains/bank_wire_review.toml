@@ -18,3 +18,24 @@ deliverable = "Wire review & release recommendation"
 consumers = ["operations_manager", "compliance_officer"]
 cadence = "daily"
 gate = "approval"
+
+[[workflow]]
+name = "Pull wire requests"
+instruction = "Query pending wire requests with originator, beneficiary, amount, and supporting documentation."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Verify callback"
+instruction = "Confirm callback authentication and authorization evidence is present and matches the request on file."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Screen sanctions"
+instruction = "Check originator and beneficiary parties against sanctions and high-risk criteria and flag any hits."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Assemble package"
+instruction = "Compile the review package with documentation status, screening results, and a release recommendation per wire."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Approver release"
+instruction = "Route the staged wires and recommendation to the operations and compliance officers for approval before any funds move."
+gate = "approval"

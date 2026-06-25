@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "zero-trust coverage tracker"
+consumers = ["security_lead", "program_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "List controls"
+instruction = "Pull the zero-trust control catalog and the in-scope asset and identity population from the knowledge base."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Query coverage"
+instruction = "Query configuration and enrollment data to measure actual rollout coverage for each control across the population."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile evidence"
+instruction = "Match reported coverage figures to supporting evidence and flag any control whose claimed status lacks backing."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build tracker"
+instruction = "Assemble the per-control coverage table showing percent complete, gaps, and the evidence source for each row."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to lead"
+instruction = "Send the coverage tracker to the security lead for review before it is reported to the program."
+gate = "review"

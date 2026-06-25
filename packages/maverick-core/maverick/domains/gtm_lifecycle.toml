@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "nurture sequence draft"
+consumers = ["lifecycle_manager", "email_marketer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define segment"
+instruction = "Read the target lifecycle stage, audience segment, and campaign goal from the brief and grounding docs."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check consent floor"
+instruction = "Verify every prospective recipient against consent and suppression lists and exclude any opted-out party."
+tools = ["marketo_read", "braze_read"]
+[[workflow]]
+name = "Draft sequence"
+instruction = "Draft the ordered nurture emails with timing, branching, and AI-disclosure language for the chosen segment."
+[[workflow]]
+name = "Protect deliverability"
+instruction = "Review send cadence, list hygiene, and spam-trigger risk so the sequence will not harm sender reputation."
+[[workflow]]
+name = "Route for review"
+instruction = "Submit the nurture sequence draft to the lifecycle manager for sign-off before any send."
+gate = "review"

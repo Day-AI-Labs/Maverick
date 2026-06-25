@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "executive communication draft"
+consumers = ["ceo", "chief_of_staff", "comms_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Clarify intent"
+instruction = "Read the brief and prior comms to nail down the audience, message, and tone the executive wants."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather context"
+instruction = "Pull the facts, decisions, and any external framing the message must reflect accurately."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft narrative"
+instruction = "Write the comms in the executive's voice with a clear through-line and call to action."
+[[workflow]]
+name = "Check sensitivity"
+instruction = "Verify nothing material or non-public surfaces externally without clearing the Reg-FD gate."
+[[workflow]]
+name = "Route for approval"
+instruction = "Hand sensitive or external comms to the executive for human approval before sending."
+gate = "approval"

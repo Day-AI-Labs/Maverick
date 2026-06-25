@@ -21,3 +21,23 @@ deliverable = "Patch-compliance & maintenance plan"
 consumers = ["control_owner", "security_analyst"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull posture"
+instruction = "Read current vulnerability and patch-state data from Qualys for the asset scope in question."
+tools = ["qualys_read", "read_file"]
+[[workflow]]
+name = "Map to SLA"
+instruction = "Compare missing patches and their severities against the company's patch-SLA policy to compute compliance per asset group."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Sequence windows"
+instruction = "Group outstanding patches into maintenance windows by criticality, dependency, and business-impact tolerance."
+[[workflow]]
+name = "Flag overdue"
+instruction = "Flag SLA-breaching and end-of-life systems that need exception or escalation rather than routine patching."
+tools = ["web_search"]
+[[workflow]]
+name = "Route to owner"
+instruction = "Hand the compliance summary and proposed window plan to the control owner for sign-off and authorization."
+gate = "review"

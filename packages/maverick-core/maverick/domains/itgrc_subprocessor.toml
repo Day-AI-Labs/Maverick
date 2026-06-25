@@ -21,3 +21,23 @@ deliverable = "Subprocessor registry"
 consumers = ["privacy_officer", "vendor_risk_manager"]
 cadence = "quarterly"
 gate = "approval"
+
+[[workflow]]
+name = "Pull registry"
+instruction = "Read the current subprocessor registry and the executed DPAs for each entry."
+tools = ["read_file"]
+[[workflow]]
+name = "Scan for changes"
+instruction = "Check vendor subprocessor pages and change-notification feeds for additions, removals, or location changes."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Verify Art 28 terms"
+instruction = "Confirm each DPA carries the GDPR Article 28 clauses and flag missing or expired terms."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft updates"
+instruction = "Prepare the proposed registry changes and the notification list of affected controllers without altering the source registry."
+[[workflow]]
+name = "Route for approval"
+instruction = "Submit the updated subprocessor registry to the privacy officer and vendor risk manager for approval before notification."
+gate = "approval"

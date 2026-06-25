@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "prior-year variance report"
+consumers = ["tax_preparer", "tax_reviewer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Load prior year"
+instruction = "Read the prior-year return and the current-year draft for the same client from the firm's records."
+tools = ["read_file", "cch_axcess_read", "gosystem_tax_read"]
+[[workflow]]
+name = "Line-by-line match"
+instruction = "Align current draft lines against prior-year lines to detect missing recurring documents such as a 1099 present last year but absent now."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Quantify swings"
+instruction = "Quantify large swings in income or withholding and flag changed filing status or dependent counts."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Cite variances"
+instruction = "Cite the source document, box, and tax year for every variance and state assumptions plainly where data is ambiguous."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Route review"
+instruction = "Surface the quantified variance set a reviewer would question and route it for the credentialed preparer's review."
+gate = "review"

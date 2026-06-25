@@ -11,3 +11,29 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "incident timeline & status update"
+consumers = ["incident_commander", "security_operations_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Collect events"
+instruction = "Pull the raw event records, alerts, and responder notes tied to the active incident."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Order timeline"
+instruction = "Place every confirmed event on a single timestamped timeline normalized to one timezone."
+[[workflow]]
+name = "Verify facts"
+instruction = "Cross-check each timeline entry against its source and mark unconfirmed items as assumptions, never guesses."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft update"
+instruction = "Draft a fact-based status update summarizing what is known, what is unconfirmed, and next steps."
+[[workflow]]
+name = "Route to commander"
+instruction = "Send the timeline and draft status update to the incident commander for sign-off before distribution."
+gate = "review"

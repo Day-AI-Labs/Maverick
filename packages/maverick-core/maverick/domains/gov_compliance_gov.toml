@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "per-award compliance matrix"
+consumers = ["contracts_manager", "program_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Extract clauses"
+instruction = "Read each active award's clause list and statement of work to enumerate every FAR/DFARS and reporting obligation."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map to evidence"
+instruction = "Map each obligation to its responsible owner, recurrence, and the company record that demonstrates compliance."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Verify clause text"
+instruction = "Verify each cited clause requirement against the current FAR/DFARS source rather than from memory."
+tools = ["web_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag any obligation with no owner, missing evidence, or an overdue recurring report on each award."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to PM"
+instruction = "Hand the updated compliance matrix to the program and contracts managers for review."
+gate = "review"

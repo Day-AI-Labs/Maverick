@@ -18,3 +18,24 @@ deliverable = "Litigation tracking"
 consumers = ["claims_manager", "underwriter"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull litigated"
+instruction = "Query claims currently in litigation with assigned counsel, venue, and reserve figures."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Verify dates"
+instruction = "Confirm key litigation dates and deadlines against counsel updates and case documents and cite them."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Track budgets"
+instruction = "Reconcile counsel budgets against billed-to-date and flag overruns or missing budget approvals."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build tracker"
+instruction = "Assemble the litigation tracking table with key dates, budget status, and reserve per matter."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Examiner review"
+instruction = "Route the tracker to the claims manager and underwriter for examiner sign-off."
+gate = "review"

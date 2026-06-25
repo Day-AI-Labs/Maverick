@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "UX research findings and journey map"
+consumers = ["product_manager", "ui_designer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define questions"
+instruction = "Read the study brief and prior research to frame the research questions and target segments."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Plan study"
+instruction = "Research established usability methods and screener criteria appropriate to the questions."
+tools = ["web_search"]
+[[workflow]]
+name = "Synthesize findings"
+instruction = "Cluster session observations into themes and tie each insight back to its source evidence."
+[[workflow]]
+name = "Build artifacts"
+instruction = "Draft the personas and journey map and flag where sample size is too thin to generalize."
+[[workflow]]
+name = "Findings review"
+instruction = "Present the research findings and journey map for product and design to act on."
+gate = "review"

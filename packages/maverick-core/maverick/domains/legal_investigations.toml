@@ -18,3 +18,30 @@ deny_tools = ["shell", "write_file", "web_search"]
 
 knowledge_sources = ["legal_investigations"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "investigation timeline & draft findings"
+consumers = ["investigating_counsel", "general_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Review the record"
+instruction = "Read the privileged evidence set within the sealed compartment and inventory documents, custodians, and gaps."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Plan interviews"
+instruction = "Build the interview plan and draft Upjohn warnings for each planned witness."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build timeline"
+instruction = "Construct a neutral chronological timeline citing each underlying document in the record."
+tools = ["read_file"]
+[[workflow]]
+name = "Draft findings"
+instruction = "Draft findings strictly from the record without reaching conclusions, assigning culpability, or recommending discipline."
+[[workflow]]
+name = "Route to counsel"
+instruction = "Route the privileged timeline and draft findings to investigating counsel, who decides."
+gate = "review"

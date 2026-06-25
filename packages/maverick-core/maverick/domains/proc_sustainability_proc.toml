@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "supplier ESG screening findings"
+consumers = ["procurement_manager", "sustainability_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Set ESG criteria"
+instruction = "Read the company's ESG commitments and supplier code of conduct to extract the screening criteria that apply."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather disclosures"
+instruction = "Collect the supplier's ESG disclosures, ratings, and any adverse media or violation history from internal and public sources."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Score against commitments"
+instruction = "Score the supplier against each ESG criterion and flag gaps, unverified claims, and disqualifying red flags."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Document findings"
+instruction = "Document the findings with cited evidence and distinguish substantiated facts from supplier self-reported assertions."
+tools = ["read_file"]
+[[workflow]]
+name = "Route findings"
+instruction = "Route the screening findings and evidence to the sustainability lead for the qualification decision."
+gate = "review"

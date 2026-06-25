@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "succession & 9-box talent review"
+consumers = ["chro", "hr_business_partner"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull talent data"
+instruction = "Read performance, role, and readiness data for the population under review from cornerstone and HR records."
+tools = ["read_file", "cornerstone_read"]
+[[workflow]]
+name = "Plot 9-box"
+instruction = "Plot incumbents on the 9-box using performance and potential evidence, never protected-class data or proxies."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Map successors"
+instruction = "Identify high-potentials and draft successor slates with readiness timelines for each critical role."
+tools = ["web_search"]
+[[workflow]]
+name = "Bias check"
+instruction = "Audit the slates for adverse impact and confidentiality before release, flagging any concerns."
+[[workflow]]
+name = "CHRO review"
+instruction = "Route the confidential succession and talent-review package to the CHRO for sign-off."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "schema-change impact notice"
+consumers = ["data_engineer", "downstream_owner"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Snapshot schemas"
+instruction = "Query information_schema for current upstream table columns, types, and constraints to capture the latest state."
+tools = ["sql_query"]
+[[workflow]]
+name = "Diff versions"
+instruction = "Compare the current snapshot against the prior baseline to detect added, dropped, renamed, or retyped columns."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Trace lineage"
+instruction = "Read lineage and dependency docs to map each changed object to its downstream consumers and owners."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Assess breakage"
+instruction = "Classify each change by breaking severity and flag the ones that will fail downstream pipelines or reports."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Notify owners"
+instruction = "Route the impact notice to affected downstream owners and data engineers for review before the change lands."
+gate = "review"

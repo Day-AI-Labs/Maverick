@@ -9,3 +9,31 @@ max_risk = "medium"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["pharma"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Triaged case evidence package"
+consumers = ["qualified_person", "safety_physician"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Intake report"
+instruction = "Read the incoming adverse-event report and pull any matching patient and product safety records."
+tools = ["read_file", "knowledge_search", "sql_query"]
+[[workflow]]
+name = "Structure case data"
+instruction = "Organize patient, product, event, and seriousness fields and cite each to its source document."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Triage severity"
+instruction = "Assess seriousness and expectedness signals against labeling and prior cases without adjudicating causality."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft narrative"
+instruction = "Write the case narrative from the structured evidence, flagging missing data and assumptions explicitly."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to QP"
+instruction = "Deliver the triaged evidence package to the qualified person who decides causality and safety actions."
+gate = "review"

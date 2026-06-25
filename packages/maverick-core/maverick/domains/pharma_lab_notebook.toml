@@ -9,3 +9,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["pharma"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "ELN entry draft"
+consumers = ["scientist", "lab_supervisor"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Collect results"
+instruction = "Gather the raw experiment results, methods, and applicable ELN template for the entry being drafted."
+tools = ["read_file", "knowledge_search", "sql_query"]
+[[workflow]]
+name = "Verify against source"
+instruction = "Check every recorded value and observation against the source R&D data and cite its origin."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Draft entry"
+instruction = "Write the structured ELN entry covering objective, method, results, and interpretation with citations."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Flag missing data"
+instruction = "Call out any absent result, assumption, or unverified observation rather than inferring a value."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the prepared entry to the qualified scientist to review, sign, and witness."
+gate = "review"

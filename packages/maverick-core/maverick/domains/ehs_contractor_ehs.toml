@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Contractor EHS qualification packet"
+consumers = ["ehs_manager", "procurement_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Collect submittals"
+instruction = "Read the contractor's insurance certificates, safety program, training records, and prior incident history."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify requirements"
+instruction = "Check each submittal against the site's EHS qualification checklist and applicable regulatory requirements."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Score & flag gaps"
+instruction = "Score the contractor against each requirement and flag any expired, missing, or below-threshold item as a disqualifier."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route decision"
+instruction = "Route the qualification packet with the pass/fail recommendation to the EHS manager for site-access approval."
+gate = "approval"

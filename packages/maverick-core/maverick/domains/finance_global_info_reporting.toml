@@ -11,3 +11,31 @@ deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "1042/1042-S & FATCA reporting package"
+consumers = ["tax_manager", "controller"]
+cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Pull payee data"
+instruction = "Query cross-border payees, payments, and on-file W-8/W-9/1099 documentation for the reporting period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Validate docs"
+instruction = "Validate each W-8, W-9, and 1099 against payee and payment data and flag missing or expired certifications."
+tools = ["read_file"]
+[[workflow]]
+name = "Classify accounts"
+instruction = "Apply FATCA and CRS entity and account classification and ground each rate in the controlling instructions."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft returns"
+instruction = "Assemble the 1042/1042-S, FBAR inventory, and withholding reconciliation, citing every source."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to filer"
+instruction = "Submit the reporting package to the tax manager to certify, file, and remit."
+gate = "approval"

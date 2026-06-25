@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "GTM data model spec"
+consumers = ["revenue_operations", "analytics_engineer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather requirements"
+instruction = "Read the funnel-metric request and existing dbt model definitions to scope the data engineering work."
+tools = ["read_file"]
+[[workflow]]
+name = "Profile sources"
+instruction = "Inspect warehouse and CDP source data via Segment to confirm schemas, identity keys, and reverse-ETL feasibility."
+tools = ["segment_read"]
+[[workflow]]
+name = "Verify definitions"
+instruction = "Reconcile proposed metric and identity-resolution logic against documented GTM definitions and cite the source."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft model spec"
+instruction = "Draft the dbt funnel model and reverse-ETL spec with lineage and tests, flagging assumptions and data-quality risks."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the model spec to revenue operations for review before any pipeline is built or synced."
+gate = "review"

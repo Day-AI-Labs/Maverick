@@ -18,3 +18,24 @@ deliverable = "Claims vendor performance"
 consumers = ["claims_manager", "compliance_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull assignments"
+instruction = "Query the period's vendor assignments by claim type, vendor, and adjuster from the claims system."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute cycle times"
+instruction = "Calculate assignment-to-completion cycle times and compare each vendor against panel service-level targets."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Score quality"
+instruction = "Aggregate quality signals such as re-inspections, complaints, and re-opens per vendor and cite the source records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag outliers"
+instruction = "Highlight vendors breaching cycle-time or quality thresholds and any overconcentration of assignments."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Submit scorecard"
+instruction = "Route the vendor performance scorecard to the claims manager for review before any panel action."
+gate = "review"

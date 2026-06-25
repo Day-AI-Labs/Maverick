@@ -10,3 +10,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["re"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "rent-roll reconciliation"
+consumers = ["property_accountant", "property_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull roll inputs"
+instruction = "Read the current rent roll, lease abstracts, and billed charges as of the period close."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Tie to leases"
+instruction = "Tie each unit and lease to its scheduled rent, escalations, and recoveries from the abstract."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Reconcile ledger"
+instruction = "Reconcile the roll against the general ledger and billed charges read-only and label each figure with its period and as-of date."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag variances"
+instruction = "Flag every variance or mismatch for human resolution instead of forcing the roll to tie."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Send the reconciliation to the property accountant, who alone approves any adjustment."
+gate = "review"

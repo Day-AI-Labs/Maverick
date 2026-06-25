@@ -17,3 +17,24 @@ deliverable = "MGA delegated-authority compliance"
 consumers = ["compliance_officer", "underwriter", "risk_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Load program terms"
+instruction = "Read the delegated-authority agreement to capture binding limits, classes, and reporting obligations for each MGA."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull bound book"
+instruction = "Query bound policies and bordereaux for the period and compare premiums and limits to delegated authority."
+tools = ["sql_query"]
+[[workflow]]
+name = "Test compliance"
+instruction = "Flag breaches of binding limits, late or missing bordereaux, and audit findings against each program's terms."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Compile tracker"
+instruction = "Build the oversight tracker summarizing exceptions, due reports, and open audit items cited to source."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route findings"
+instruction = "Hand the compliance tracker to the compliance officer and underwriter for review."
+gate = "review"

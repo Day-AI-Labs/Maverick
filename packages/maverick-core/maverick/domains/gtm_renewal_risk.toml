@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gtm"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "renewal risk watchlist"
+consumers = ["customer_success_manager", "renewals_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull account signals"
+instruction = "Read usage, engagement, and support history for the upcoming-renewal cohort from the spreadsheet and account files."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Ground in records"
+instruction = "Cross-check each signal against the company's own renewal and account documents and cite the source for every flag."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Score risk"
+instruction = "Rank accounts by renewal risk using declining usage, low engagement, and open escalations, stating assumptions and unknowns plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft save plays"
+instruction = "For each at-risk account write a concise risk rationale and recommended save play grounded only in approved sources."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to CSM"
+instruction = "Hand the ranked watchlist to the customer success manager for review before any customer outreach."
+gate = "review"

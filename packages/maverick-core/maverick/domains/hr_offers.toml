@@ -14,3 +14,27 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "offer letter & approval packet"
+consumers = ["hiring_manager", "compensation", "recruiter"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Gather candidate"
+instruction = "Read the candidate record, requisition, and stage from the ATS to confirm role, level, and location."
+tools = ["read_file", "greenhouse_read", "lever_read"]
+[[workflow]]
+name = "Verify comp band"
+instruction = "Confirm the proposed compensation sits within the approved band using policy and any market reference data."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft offer"
+instruction = "Draft the offer letter within the approved band, never using protected-class data or its proxies in the terms."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Approve & commit"
+instruction = "Route the offer and comp for human approval before any compensation is committed."
+gate = "approval"

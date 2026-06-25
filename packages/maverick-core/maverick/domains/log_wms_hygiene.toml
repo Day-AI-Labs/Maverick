@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "location & SKU data-error queue"
+consumers = ["inventory_control_lead", "warehouse_supervisor"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull master data"
+instruction = "Query location, SKU, and inventory master records from the WMS for the audit scope."
+tools = ["sql_query"]
+[[workflow]]
+name = "Detect anomalies"
+instruction = "Scan for missing dimensions, invalid location codes, duplicate SKUs, and unit-of-measure mismatches against the data standard."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify against rules"
+instruction = "Confirm each suspected error against the company's data-standard and slotting documents so true errors are separated from valid exceptions."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build correction queue"
+instruction = "Compile the confirmed errors into a prioritized correction queue with the proposed fix and supporting evidence for each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to control"
+instruction = "Hand the correction queue to the inventory control lead for review before any master-data change is applied."
+gate = "review"

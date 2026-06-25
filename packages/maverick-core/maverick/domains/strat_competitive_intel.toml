@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "competitor move & positioning brief"
+consumers = ["chief_strategy_officer", "ceo", "board"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Set watchlist"
+instruction = "Read the tracked competitor watchlist and prior intel briefs from the knowledge base to anchor what is new."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Collect signals"
+instruction = "Search press, filings, and Crunchbase for new launches, funding, hires, and pricing moves and date-stamp each signal."
+tools = ["web_search", "crunchbase_read"]
+[[workflow]]
+name = "Assess implications"
+instruction = "Separate confirmed facts from inference and map each move to its strategic implication for our position."
+[[workflow]]
+name = "Compartment check"
+instruction = "Verify no material non-public information leaves the sealed intel compartment in the brief."
+[[workflow]]
+name = "Brief strategy"
+instruction = "Deliver the positioning brief with recommended watch items to the strategy lead and executives."
+gate = "review"

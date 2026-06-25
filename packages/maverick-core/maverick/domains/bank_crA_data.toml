@@ -18,3 +18,25 @@ deliverable = "CRA community-lending data"
 consumers = ["compliance_officer", "risk_officer"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Pull lending data"
+instruction = "Extract HMDA and small-business loan records with geography and income fields for the assessment area and period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Validate fields"
+instruction = "Check each record for missing, malformed, or out-of-range census tract, income, and loan-amount values."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Geocode check"
+instruction = "Confirm each loan's census tract and assessment-area assignment against the bank's defined CRA geographies."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Reconcile totals"
+instruction = "Tie the validated record counts and dollar volumes back to the core lending ledger and flag any gaps."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Route to compliance"
+instruction = "Hand the validated community-lending dataset with exception notes to the compliance officer for review."
+tools = ["spreadsheet"]
+gate = "review"

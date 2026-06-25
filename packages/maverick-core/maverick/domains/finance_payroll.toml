@@ -27,3 +27,31 @@ allow_hosts = ["*.workday.com", "*.adp.com", "*.gusto.com"]
 mcp_servers = ["HCM_Workday"]
 knowledge_sources = ["finance_payroll_policy", "finance_tax_tables"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Staged payroll run & tax draft"
+consumers = ["payroll_manager", "controller"]
+cadence = "monthly"
+gate = "approval"
+
+[[workflow]]
+name = "Pull inputs"
+instruction = "Read employee records, timesheets, and the prior register without echoing SSNs or full bank numbers."
+tools = ["hcm_read_employee", "payroll_read_timesheet", "payroll_read_register", "adp_read", "gusto_read"]
+[[workflow]]
+name = "Compute net"
+instruction = "Compute gross-to-net citing the tax table or benefit rule behind every withholding and deduction."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Reconcile register"
+instruction = "Reconcile the payroll register to the ledger and resolve variances before staging."
+tools = ["reconcile_payroll"]
+[[workflow]]
+name = "Stage run"
+instruction = "Stage the payroll run and draft the corresponding payroll-tax filings."
+tools = ["stage_payroll_run", "draft_payroll_tax"]
+[[workflow]]
+name = "Route for release"
+instruction = "Route the staged run and tax drafts to the payroll manager to approve and release."
+gate = "approval"

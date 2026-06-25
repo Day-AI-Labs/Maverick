@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "approved-tone public reply & private-move plan"
+consumers = ["social_media_manager", "support_team_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Triage mention"
+instruction = "Read the public post and linked account history to classify severity and identify the underlying support issue."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Ground response"
+instruction = "Find the approved messaging, policy, and known fix for the issue and cite the source used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check exposure"
+instruction = "Scan the public thread for reach and escalation risk to size urgency without exposing other customers' data."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft reply & handoff"
+instruction = "Draft an on-brand public acknowledgement plus a plan to move the customer to a private channel, promising no refunds or exceptions."
+[[workflow]]
+name = "Approve before post"
+instruction = "Route the public reply to the social media manager for approval before it is posted."
+gate = "approval"

@@ -29,3 +29,24 @@ deliverable = "Cash-flow & liquidity runway"
 consumers = ["fpa_analyst", "treasurer"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Read balances"
+instruction = "Pull current bank balances and recent transactions plus AR aging to establish the starting cash position."
+tools = ["bank_read_balance", "bank_read_transactions", "ar_read_aging"]
+[[workflow]]
+name = "Working capital"
+instruction = "Compute DSO, DPO, DIO, and the cash-conversion cycle and bridge AR, AP, and payroll timing into a cash view."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build forecast"
+instruction = "Build the 13-week cash forecast and model liquidity runway and burn, stating every runway assumption explicitly."
+tools = ["build_cashflow_forecast"]
+[[workflow]]
+name = "Sanity check"
+instruction = "Reconcile forecast opening cash against the executable bank read to catch timing or balance drift before publishing."
+tools = ["modern_treasury_read", "bank_read_balance"]
+[[workflow]]
+name = "Treasury review"
+instruction = "Route the forecast and runway analysis to the FP&A analyst and treasurer for review since you never move money yourself."
+gate = "review"

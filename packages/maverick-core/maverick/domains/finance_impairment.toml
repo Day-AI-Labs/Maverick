@@ -18,3 +18,28 @@ deliverable = "Impairment-test memo"
 consumers = ["controller", "auditor"]
 cadence = "annual"
 gate = "approval"
+
+[[workflow]]
+name = "Scan triggers"
+instruction = "Read carrying values, forecasts, and prior conclusions to identify ASC 350 and ASC 360 triggering events by reporting unit and asset group."
+tools = ["knowledge_search", "read_file", "sql_query"]
+[[workflow]]
+name = "Pull carrying values"
+instruction = "Query carrying amounts, goodwill balances, and asset groupings for each reporting unit from the system of record."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Run quantitative test"
+instruction = "Walk each unit through the ASC 360 recoverability and measurement steps and the ASC 350 goodwill and indefinite-lived intangible tests."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify assumptions"
+instruction = "Tie discount rates, growth assumptions, and forecasts to sourced company support and state every assumption and unknown plainly."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft memo"
+instruction = "Draft the impairment finding and write-down memo with the conclusion left open for a human to book."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Route the draft impairment memo to the controller to review and conclude the charge."
+gate = "approval"

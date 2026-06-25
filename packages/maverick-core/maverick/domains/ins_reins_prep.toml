@@ -18,3 +18,24 @@ deliverable = "Reinsurance cession & recovery claim"
 consumers = ["reinsurance_analyst"]
 cadence = "on-demand"
 gate = "approval"
+
+[[workflow]]
+name = "Pull ceded losses"
+instruction = "Read the ceded loss and premium records for the cession period from the company records."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Apply treaty terms"
+instruction = "Apply the governing treaty retentions, limits, and ceding percentages and cite each clause via knowledge_search."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Compute cessions"
+instruction = "Compute ceded premium and recoverable amounts per treaty and reconcile totals to the ledger."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag treaty conflicts"
+instruction = "Flag any loss that breaches a treaty term or lacks supporting documentation and note the assumption."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand off cession"
+instruction = "Assemble the cession statement and recovery claim and route it to the reinsurance analyst for approval."
+gate = "approval"

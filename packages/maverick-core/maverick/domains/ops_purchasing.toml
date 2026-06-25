@@ -17,3 +17,28 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_procurement", "ops_price_agreements"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "3-way match & PO release queue"
+consumers = ["procurement_manager", "accounts_payable"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Verify requisition"
+instruction = "Read the approved requisition and confirm it is authorized and within the price agreement before any PO is built."
+tools = ["read_file", "erp_read", "coupa_read", "ariba_read"]
+[[workflow]]
+name = "Check bank change"
+instruction = "Confirm the vendor's bank and remittance details are unchanged and stop to route any change to a human for BEC review."
+tools = ["erp_read", "coupa_read", "ariba_read"]
+[[workflow]]
+name = "Three-way match"
+instruction = "Match PO against receipt and invoice and flag every quantity, price, or terms variance."
+tools = ["erp_read", "ariba_read"]
+[[workflow]]
+name = "Stage PO"
+instruction = "Draft and stage the PO for release within the delegation-of-authority tier for a buyer to commit."
+tools = ["coupa_read", "ariba_read"]
+gate = "approval"

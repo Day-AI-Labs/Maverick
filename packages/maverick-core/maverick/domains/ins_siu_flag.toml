@@ -18,3 +18,24 @@ deliverable = "SIU referral"
 consumers = ["claims_manager", "siu_investigator"]
 cadence = "on-demand"
 gate = "approval"
+
+[[workflow]]
+name = "Pull claim"
+instruction = "Read the claim file, loss notice, and prior claim history for the claim under review."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Load indicators"
+instruction = "Retrieve the company's SIU fraud-indicator criteria via knowledge_search and cite them."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Score indicators"
+instruction = "Map observed facts to each fraud indicator and tabulate matches with supporting evidence in a spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft rationale"
+instruction = "Write a neutral, factual referral rationale citing only documented indicators and noting unknowns."
+tools = ["read_file"]
+[[workflow]]
+name = "Route referral"
+instruction = "Submit the SIU referral to the claims manager and SIU investigator for approval."
+gate = "approval"

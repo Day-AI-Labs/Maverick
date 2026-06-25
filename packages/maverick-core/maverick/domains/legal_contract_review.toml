@@ -19,3 +19,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal", "legal_playbook"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "playbook redline memo"
+consumers = ["commercial_attorney", "contract_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read paper"
+instruction = "Read the third-party agreement in full and identify each governing clause and defined term."
+tools = ["read_file", "ironclad_read"]
+[[workflow]]
+name = "Load playbook"
+instruction = "Retrieve the company playbook positions for liability caps, indemnification, IP, DPA, insurance, assignment, and dispute resolution."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag deviations"
+instruction = "For every deviation cite the playbook position, explain the business risk, and propose fallback language."
+tools = ["web_search"]
+[[workflow]]
+name = "Route privacy"
+instruction = "Refer DPA and data-protection terms to the privacy desk and mark anything outside playbook as attorney review required."
+[[workflow]]
+name = "Deliver redline"
+instruction = "Compile the redline and risk memo for the attorney to negotiate and approve."
+gate = "review"

@@ -10,3 +10,32 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["platform"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "staged SKILL.md candidate with validation results"
+consumers = ["evolve_operator", "platform_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Mine trajectories"
+instruction = "Search recorded successful trajectories for a repeatable pattern worth distilling."
+tools = ["knowledge_search", "sql_query", "read_file"]
+[[workflow]]
+name = "Test generality"
+instruction = "Confirm the pattern recurs across enough trajectories and state plainly if it is too thin to generalize."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Extract procedure"
+instruction = "Distill the repeatable steps into a clean SKILL.md candidate citing the trajectories used."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Run validation"
+instruction = "Run the candidate's validation harness and record whether it passes against the library standard."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Stage candidate"
+instruction = "Stage the validated candidate for the human promotion gate and Shield scan without publishing it yourself."
+tools = ["spreadsheet"]
+gate = "approval"

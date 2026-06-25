@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "policy answer with cited clause"
+consumers = ["requester", "category_buyer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Parse question"
+instruction = "Read the buying-policy question and identify the specific scenario and dollar threshold in play."
+tools = ["read_file"]
+[[workflow]]
+name = "Locate clause"
+instruction = "Search the policy corpus for the exact governing clause rather than a paraphrase."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify applicability"
+instruction = "Confirm the clause version is current and actually applies to this requester, category, and amount."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft cited answer"
+instruction = "Write the answer quoting the verbatim clause with its citation and noting any unaddressed edge case."
+[[workflow]]
+name = "Route to buyer"
+instruction = "Hand the cited answer to the buyer or requester, flagging where a policy owner must interpret a gap."
+gate = "review"
