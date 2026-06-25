@@ -376,8 +376,12 @@ def run_self_harness(
                 continue
             report.validated += 1
 
-            if not _gate_and_apply(proposal, vr, controller=controller, path=path):
-                report.skipped.append(f"gate refused: {proposal.addendum_line}")
+            ok, why = _gate_and_apply(proposal, vr, controller=controller, path=path)
+            if not ok:
+                # Surface WHY the gate refused (e.g. "too few samples (3 < 5)",
+                # frozen verifier, disabled controller) so an operator with a
+                # small validation set or a drifting judge isn't left guessing.
+                report.skipped.append(f"gate refused ({why}): {proposal.addendum_line}")
                 continue
             report.promoted += 1
             report.applied_lines.append(proposal.addendum_line)
@@ -388,9 +392,10 @@ def run_self_harness(
 
 
 def _gate_and_apply(proposal: HarnessProposal, vr: ValidationResult, *,
-                    controller=None, path: Path | None = None) -> bool:
+                    controller=None, path: Path | None = None) -> tuple[bool, str]:
     """Judge the validated proposal through ``self_improvement.consider()`` on
-    the ``prompt`` rung and apply it ONLY on a promoting verdict.
+    the ``prompt`` rung and apply it ONLY on a promoting verdict. Returns
+    ``(ok, reason)`` -- ``reason`` names the blocking gate when refused.
 
     Promotion therefore requires the self-improvement controller to be engaged
     (``[self_improvement] enable``): self_harness mines/proposes/validates, but
@@ -412,7 +417,8 @@ def _gate_and_apply(proposal: HarnessProposal, vr: ValidationResult, *,
     )
     verdict = si.consider(cand, controller=controller)
     if not getattr(verdict, "ok", False):
-        return False  # gate refused -> nothing written
+        reason = getattr(verdict, "blocking_reason", "") or "refused"
+        return False, reason  # gate refused -> nothing written
     _apply_addendum(proposal, path=path)
     try:
         from .audit import EventKind, record
@@ -421,7 +427,7 @@ def _gate_and_apply(proposal: HarnessProposal, vr: ValidationResult, *,
                line=proposal.addendum_line, phase="apply")
     except Exception:  # pragma: no cover -- audit best-effort
         pass
-    return True
+    return True, "promoted"
 
 
 __all__ = [

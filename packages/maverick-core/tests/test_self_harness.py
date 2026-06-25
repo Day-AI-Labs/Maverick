@@ -196,3 +196,138 @@ def test_cli_reports_mined_weaknesses(monkeypatch, tmp_path):
     res = CliRunner().invoke(main, ["self-harness", "--model", "m", "--min-support", "3"])
     assert res.exit_code == 0
     assert "Weaknesses for 'm'" in res.output and "would add:" in res.output
+
+
+# ---------- gate reason surfaced + runner wiring ----------
+
+def _three(model="M", fclass="timeout"):
+    return [{"model_id": model, "failure_class": fclass,
+             "goal_text": f"export the ledger run {i}", "failure_msg": "t"}
+            for i in range(3)]
+
+
+def test_gate_reason_is_surfaced(monkeypatch, store):
+    # Too few validation samples for the prompt rung (min 5): the refusal must
+    # say WHY, not just "gate refused" (found by the 50-round stress campaign).
+    ctrl = _enable(monkeypatch)
+    rep = sh.run_self_harness(
+        _three(), model_id="M", min_support=3, controller=ctrl, path=store,
+        held_in=["a"], held_out=["b"],
+        score_with=lambda a, c: 0.9, score_without=lambda a, c: 0.4)
+    assert rep.promoted == 0
+    assert any("insufficient evidence" in s and "5 samples" in s for s in rep.skipped)
+    assert not store.exists()
+
+
+def test_runner_pass_disabled(monkeypatch):
+    from maverick import self_improvement_runner as runner
+    monkeypatch.setenv("MAVERICK_SELF_HARNESS", "0")
+    monkeypatch.setattr("maverick.config.load_config", dict)
+    rep = runner.run_self_harness_pass(_three(), model_id="M")
+    assert rep.promoted == 0 and rep.mined == 0      # no-op, never raises
+
+
+def test_runner_pass_driven_delegates_to_loop(monkeypatch):
+    from maverick import self_improvement_runner as runner
+    ctrl = _enable(monkeypatch)                       # sets SELF_HARNESS=1 + SI on
+    rep = runner.run_self_harness_pass(
+        _three(), model_id="M", controller=ctrl,
+        score_with=lambda a, c: 0.95, score_without=lambda a, c: 0.4)
+    # The runner loads/forwards to the real loop: the weakness is mined and a
+    # line proposed (promotion depends on sample count, exercised elsewhere).
+    assert rep.mined == 1 and rep.proposed == 1
+
+
+# ---------- 50-round stress campaign (CI regression guard) ----------
+
+def test_stress_50_rounds_invariants(monkeypatch, tmp_path):
+    """Run the real mine->propose->validate->gate loop across 50 seeded,
+    adversarial rounds + a 20-step accumulation stress, asserting the safety
+    invariants every round. Deterministic (seeded), so it's a guard, not a
+    flake."""
+    import random as _random
+
+    models = ["A", "B", "C"]
+    stems = ["export the ledger", "reconcile invoices", "audit the logs",
+             "deploy billing", "migrate db"]
+    classes = ["timeout", "auth", "tool_error", "shield"]
+    shared = tmp_path / "shared.json"
+    viol: list[str] = []
+
+    def ck(rd, cond, msg):
+        if not cond:
+            viol.append(f"[r{rd}] {msg}")
+
+    for n in range(1, 51):
+        rng = _random.Random(n)
+        ms = rng.sample(models, rng.randint(1, 3))
+        target = rng.choice(ms)
+        recs = []
+        for _ in range(rng.randint(1, 3)):
+            m, fc, st = rng.choice(ms), rng.choice(classes), rng.choice(stems)
+            recs += [{"model_id": m, "failure_class": fc,
+                      "goal_text": f"{st} run {i}", "failure_msg": fc}
+                     for i in range(rng.randint(2, 5))]
+        sh_on, si_on = rng.random() < 0.9, rng.random() < 0.8
+        frozen, dry = rng.random() < 0.2, rng.random() < 0.15
+        reuse = rng.random() < 0.5
+        path = shared if reuse else (tmp_path / f"s{n}.json")
+        monkeypatch.setenv("MAVERICK_SELF_HARNESS", "1" if sh_on else "0")
+        monkeypatch.setenv("MAVERICK_SELF_IMPROVEMENT", "1" if si_on else "0")
+        ctrl = si.SelfImprovementController(frozen_fn=lambda f=frozen: f,
+                                            ledger=si.PromotionLedger())
+        sw = (lambda a, c: 0.9) if not dry else None
+        wo = (lambda a, c: 0.4) if not dry else None
+        held_in = [f"{rng.choice(stems)} run {i}" for i in range(rng.randint(2, 3))]
+        held_out = [f"{rng.choice(stems)} unseen {i}" for i in range(rng.randint(3, 5))]
+
+        before = sh.load_addenda(path)
+        others = {m: (sh.recall_addendum(m, path) if sh_on else "")
+                  for m in models if m != target}
+        try:
+            rep = sh.run_self_harness(
+                recs, model_id=target, min_support=rng.randint(1, 4),
+                held_in=held_in, held_out=held_out, score_with=sw, score_without=wo,
+                controller=ctrl, path=path)
+        except Exception as e:
+            ck(n, False, f"RAISED {type(e).__name__}: {e}")
+            continue
+        after = sh.load_addenda(path)
+        ck(n, rep.promoted == len(rep.applied_lines), "promoted != applied_lines")
+        if not sh_on:
+            ck(n, rep.promoted == 0 and after == before, "disabled not a no-op")
+            continue
+        if rep.promoted > 0:
+            ck(n, si_on and not frozen and not dry, "promoted under a closed gate")
+            recalled = sh.recall_addendum(target, path)
+            ck(n, all(ln in recalled for ln in rep.applied_lines), "line not recalled")
+            ck(n, len(recalled) <= sh._MAX_ADDENDUM_CHARS, "addendum over char bound")
+        if rep.promoted == 0:
+            ck(n, after.get(target, "") == before.get(target, ""), "no-promote changed store")
+        for m, prev in others.items():
+            ck(n, sh.recall_addendum(m, path) == prev, f"model isolation broke for {m}")
+
+    # accumulation to the cap
+    monkeypatch.setenv("MAVERICK_SELF_HARNESS", "1")
+    monkeypatch.setenv("MAVERICK_SELF_IMPROVEMENT", "1")
+    ctrl = si.SelfImprovementController(frozen_fn=lambda: False, ledger=si.PromotionLedger())
+    acc = tmp_path / "acc.json"
+    for k in range(20):
+        recs = [{"model_id": "M", "failure_class": f"c{k}",
+                 "goal_text": f"task run {i}", "failure_msg": f"err{k}"} for i in range(3)]
+        rep = sh.run_self_harness(
+            recs, model_id="M", min_support=3,
+            held_in=["task run 0", "task run 1"],
+            held_out=["u0", "u1", "u2", "u3"],
+            score_with=lambda a, c: 0.95, score_without=lambda a, c: 0.4,
+            controller=ctrl, path=acc)
+        ck(100 + k, rep.promoted == 1, f"acc expected promote, got {rep.skipped}")
+        lines = [ln for ln in sh.recall_addendum("M", acc).splitlines()
+                 if ln.strip().startswith("- ")]
+        ck(100 + k, len(lines) <= sh._MAX_LINES_PER_MODEL, "over line cap")
+        ck(100 + k, len(lines) == len(set(lines)), "duplicate line in block")
+    final = [ln for ln in sh.recall_addendum("M", acc).splitlines()
+             if ln.strip().startswith("- ")]
+    ck(200, len(final) == sh._MAX_LINES_PER_MODEL, f"cap not reached: {len(final)}")
+
+    assert not viol, "invariant violations:\n" + "\n".join(viol)
