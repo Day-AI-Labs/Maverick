@@ -102,9 +102,15 @@ No hyperscaler dependency; Lightwork emits no telemetry of its own.
 
 ## Roadmap (not yet built)
 
-SCIM / SAML provisioning (OIDC ships today), hosted multi-tenant SaaS with
-data-plane RLS (self-host per-tenant ships today), and external SOC 2 Type II /
-penetration-test attestations.
+A **managed multi-tenant SaaS** offering (the self-host per-tenant substrate —
+Postgres tenancy with fail-closed RLS, per-tenant KMS/DEK, the out-of-process
+control/data-plane split — ships today), external **SOC 2 Type II /
+penetration-test** attestations, and a **live-IdP certification** of the built-in
+SAML SSO.
+
+OIDC SSO, **SAML SSO** (via pysaml2, off by default), and **SCIM 2.0**
+provisioning + deprovisioning all ship today; SCIM deprovision force-revokes live
+sessions, including pairwise-`sub` IdPs (Entra) via a login-time subject directory.
 
 > Licensing: Lightwork is proprietary, commercially licensed software
 > ([`../../LICENSE`](../../LICENSE)). Contact us for evaluation or enterprise access.

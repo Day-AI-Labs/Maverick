@@ -54,9 +54,30 @@ unified enterprise/REGULATED_PROFILE). The real remaining work was a set of
   tenant's remaining daily allowance, so one run can't overshoot the tenant cap.
 
 Earlier-merged smaller items: #55, #68, #79, #80, #81, #83, #90, #92 (PRs #1798/
-#1799). Genuinely-large items still open as *roadmap*, not blockers: per-tenant
-KMS at fleet scale, Alembic-grade migration governance, and an automated
-control/data-plane e2e + evidence artifact.
+#1799).
+
+**The three "genuinely-large" roadmap items are now built (PR #1807):**
+
+- ✅ **Per-tenant KMS at fleet scale** — deterministic per-tenant BYOK
+  (`get_kms(tenant_id)` reads each tenant's own `[kms]` overlay), a DEK-cache TTL
+  so a revoked cloud key takes effect, and fleet KEK rotation. Made *operable*
+  (PR #1813): an idempotent/resumable rotation + `maverick tenant kms-rotate`
+  that refuses to declare success while any tenant is still on the old KEK.
+- ✅ **Alembic-grade migration governance** — `maverick.migration_governance`:
+  per-version sha256 checksums pinned in `migrations.lock.json`, immutability of
+  released migrations, additive-only for new ones, cross-backend head parity;
+  CI-gated (`migration_governance --ci`).
+- ✅ **Control/data-plane split, proven** — an end-to-end harness
+  (`control_data_plane_e2e`) proving goals run out-of-process with a JSON
+  evidence artifact, plus a concurrency **soak** (`control_data_plane_soak`,
+  PR #1813) asserting zero-loss + exactly-once under load; both CI-gated.
+
+**Then hardened (PR #1809):** an adversarial self-review of all the above fixed
+11 verified bugs — incl. a fail-open revocation store (now fails closed), a
+data-residency group-region bypass (EEA no longer satisfies an EU-only policy),
+and a multi-worker KMS first-use crash. **And finished (PR #1810):** a
+login-time **subject directory** so SCIM deprovision revokes a session even when
+the IdP issues a pairwise/per-app OIDC `sub` (Entra).
 
 **Owner: business / legal / founder (not code):** certifications (#32–#40), legal
 contracts (#3–#5, #43–#46, #86), pricing decisions (#7, #11, #15–#21), entity /
@@ -126,7 +147,7 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 48. 🔧◐ **Default `local` sandbox runs host shell** — honest in `SECURITY.md`; the wizard already defaults real installs to a container when available, and enterprise mode upgrades `local`→container and fails closed. Making it fail-closed everywhere is a kernel-philosophy change (eng/decision).
 49. ◐ **Agent Shield optional / fails open** — kernel rule 1 (fail-open by design); documented as a floor, not a guarantee.
 50. 👤 **Residual risk R-01 (sandbox escape) → pen test** — schedule the pen test. (business)
-51–65. ✅◐ **Multi-tenant isolation, SSO/OIDC-by-default, resource RBAC, secrets vault, SIEM export, control/data-plane split, fail-closed enforcement** — a code-level re-audit found this substrate *largely already built* (Postgres tenancy + fail-closed RLS, per-tenant flooring + KMS/DEK, OIDC/SAML/SCIM + RBAC + owner-row scoping, WORM export, dispatcher seam, unified enterprise profile). The remaining opt-in gaps are now closed: **#51/#57** enterprise-default strict-isolation + RLS with a boot preflight; **#52** guarded require-auth (PR #1803); **#58** session/token revocation; **#54** `secret_provider` vault seam; **#56** `maverick audit forward` SIEM push; **#62** gRPC dispatcher wired into startup. Roadmap (not blockers): per-tenant KMS at fleet scale, migration governance, control/data-plane e2e.
+51–65. ✅◐ **Multi-tenant isolation, SSO/OIDC-by-default, resource RBAC, secrets vault, SIEM export, control/data-plane split, fail-closed enforcement** — a code-level re-audit found this substrate *largely already built* (Postgres tenancy + fail-closed RLS, per-tenant flooring + KMS/DEK, OIDC/SAML/SCIM + RBAC + owner-row scoping, WORM export, dispatcher seam, unified enterprise profile). The remaining opt-in gaps are now closed: **#51/#57** enterprise-default strict-isolation + RLS with a boot preflight; **#52** guarded require-auth (PR #1803); **#58** session/token revocation; **#54** `secret_provider` vault seam; **#56** `maverick audit forward` SIEM push; **#62** gRPC dispatcher wired into startup. The three formerly-roadmap large items — per-tenant KMS at fleet scale, migration governance, control/data-plane e2e+soak — are now built, hardened, and CI-gated (PRs #1807/#1809/#1810/#1813).
 52. ✅ **Dashboard could boot with auth required but unconfigured** — `_assert_dashboard_auth_configured()` refuses startup when `[dashboard] require_auth` is set with no token/OIDC/proxy (PR #1803, merged).
 54. ✅ **No secrets vault** — `maverick.secret_provider.get_secret()` adds a `file` backend (Vault Agent / Secrets Store CSI / Docker-secret mounts), wired into the OIDC client/session secrets, the inbound webhook secret, and the SCIM bearer; default `env` backend keeps existing behavior.
 56. ✅ **SIEM export was pull-only** — `maverick audit forward` pushes the tamper-evident log (JSONL/CEF) to a tcp/udp syslog or http(s) collector (Splunk HEC), the push counterpart of `audit export`; same paid-tier entitlement gate.
@@ -182,13 +203,20 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 ## What remains, by owner
 
 - **Engineering backlog (the regulated-SaaS substrate, #48/#51–#65):** the code-level
-  re-audit found this *largely already built*, and the remaining opt-in gaps are now
-  closed (#51/#52/#54/#56/#57/#58/#62 — see the resolution summary). What is left is
-  **roadmap, not a purchase blocker**: per-tenant KMS at fleet scale, Alembic-grade
-  migration governance, and an automated control/data-plane e2e + evidence artifact.
+  re-audit found this *largely already built*, and every opt-in gap is now closed
+  (#51/#52/#54/#56/#57/#58/#62). The three formerly-"roadmap" large items —
+  per-tenant KMS at fleet scale, Alembic-grade migration governance, and the
+  control/data-plane e2e — **are built, hardened, and CI-gated** (PRs #1807/#1809/
+  #1810/#1813). **No regulated-SaaS code item remains open.**
 - **Engineering backlog (small):** #66, #76, #94 — each a contained hardening task
   (Firecracker→Docker fallback alerting, concurrency default, IaC examples). #41,
   #55, #78, #81, #95 are now resolved (above).
+- **Not code (genuinely remaining):** a **managed multi-tenant SaaS** offering (the
+  self-host per-tenant substrate ships), external **SOC 2 Type II / pen-test**
+  attestations (auditor engagements), and a **live-IdP certification** of the
+  built-in SAML SSO (OIDC + SCIM + SAML all ship in code — SAML via pysaml2, off
+  by default; its pysaml2 round-trip is unit-tested with the client mocked but
+  not yet certified against a live Okta/Entra).
 - **Business / legal / founder:** certifications (#32–#40), contracts (#3–#5, #43–#46,
   #86), pricing decisions (#7, #11, #15–#21), entity/trademark/insurance/positioning
   (#22–#31), GA/signing/maintainer (#2, #84, #87, #91), market bets (#104–#110). None
