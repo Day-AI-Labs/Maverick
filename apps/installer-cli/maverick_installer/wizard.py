@@ -2556,6 +2556,7 @@ AGENT_SUITES: list[tuple[str, str]] = [
     ("enterprise_risk", "Enterprise Risk & Corporate Insurance"),
     ("knowledge_management", "Knowledge Management"),
     ("trust_safety", "Trust & Safety"),
+    ("process_automation", "Process Automation & Workflows"),
 ]
 
 

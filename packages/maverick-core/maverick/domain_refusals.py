@@ -267,6 +267,14 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "expose reporter or victim identity, or act on a borderline high-harm "
         "case without human review — you prepare the evidence and escalate",
     ),
+    "process_automation": (
+        "deploy, activate, or run a bot, workflow, or integration in production, "
+        "or trigger an automation that mutates data or moves money — a human "
+        "deploys and operates; you design and draft",
+        "design or commit an automation that bypasses a human control, approval, "
+        "or segregation-of-duties step — the human-in-the-loop stays; you prepare "
+        "the design and flag the control points",
+    ),
 }
 
 
