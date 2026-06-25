@@ -93,6 +93,70 @@ def test_bad_ids_and_kinds_rejected():
     assert not ok and "kind" in reason
 
 
+def test_unbound_caller_is_local_trust():
+    """No transport binding (stdio / in-process) -> body identity is trusted,
+    the pre-existing behavior all the other tests rely on."""
+    _register()
+    assert fleet_memory._caller.get() is None  # default: unbound
+    ok, reason = fleet_memory.ingest({
+        "agent_id": "order-bot", "vendor": "agentforce",
+        "kind": "lesson", "goal_text": "x"})
+    assert (ok, reason) == (True, "ok")
+
+
+def test_per_caller_caller_may_act_only_as_itself():
+    """A per-caller-authenticated agent acts AS itself, never AS another
+    rostered agent -- the fleet-impersonation fix."""
+    _register()  # order-bot / agentforce
+    assert fleet_memory.register_agent("helper", "copilot")
+    # Acting as itself: allowed.
+    with fleet_memory.bind_caller("order-bot"):
+        ok, reason = fleet_memory.ingest({
+            "agent_id": "order-bot", "vendor": "agentforce",
+            "kind": "lesson", "goal_text": "reconcile"})
+    assert (ok, reason) == (True, "ok")
+    # Claiming a DIFFERENT rostered agent: refused (no impersonation, no
+    # inheriting the other agent's trust scope), on both write and read.
+    with fleet_memory.bind_caller("order-bot"):
+        ok, reason = fleet_memory.ingest({
+            "agent_id": "helper", "vendor": "copilot",
+            "kind": "lesson", "goal_text": "x"})
+    assert not ok and "may not act as" in reason
+    with fleet_memory.bind_caller("order-bot"):
+        ctx, reason = fleet_memory.recall("x", agent_id="helper", vendor="copilot")
+    assert ctx == "" and "may not act as" in reason
+
+
+def test_shared_token_caller_refused_under_enforcement(monkeypatch):
+    """A shared-bearer caller carries no per-caller identity; once the trust
+    plane is engaged it may not bear a specific fleet identity."""
+    _register()
+    from maverick import agent_trust
+    monkeypatch.setattr(agent_trust, "load_trust_state", lambda: (True, {}))
+    with fleet_memory.bind_caller(""):
+        ok, reason = fleet_memory.ingest({
+            "agent_id": "order-bot", "vendor": "agentforce",
+            "kind": "lesson", "goal_text": "x"})
+    assert not ok and "shared-token" in reason
+    with fleet_memory.bind_caller(""):
+        ctx, reason = fleet_memory.recall("x", agent_id="order-bot",
+                                          vendor="agentforce")
+    assert ctx == "" and "shared-token" in reason
+
+
+def test_shared_token_caller_allowed_when_disengaged(monkeypatch):
+    """Default single-tenant deployment (trust plane off): the shared bearer is
+    the trusted admin path and is unaffected by the binding."""
+    _register()
+    from maverick import agent_trust
+    monkeypatch.setattr(agent_trust, "load_trust_state", lambda: (False, {}))
+    with fleet_memory.bind_caller(""):
+        ok, reason = fleet_memory.ingest({
+            "agent_id": "order-bot", "vendor": "agentforce",
+            "kind": "lesson", "goal_text": "x"})
+    assert (ok, reason) == (True, "ok")
+
+
 def test_ingest_rejects_path_injection_identifiers():
     """ingest builds an inbox filename from vendor/agent_id, so a '/' or '..'
     must be refused up front (defense-in-depth, not only via the roster match)."""
