@@ -287,6 +287,34 @@ def test_callback_verify_failure_sets_no_session(login_env, client, monkeypatch)
 # ---- logout -------------------------------------------------------------------
 
 
+def test_callback_records_pairwise_sub_in_subject_directory(
+    login_env, client, monkeypatch
+):
+    # Entra-shaped login: pairwise `sub` plus email/oid claims. The callback must
+    # record the sub against those identifiers so SCIM deprovision can reach it.
+    state, _ = _do_login(client)
+
+    async def _fake_exchange(url, *, cfg, code, code_verifier):
+        return {"id_token": "fake.id.token"}
+
+    monkeypatch.setattr(ol, "_exchange_code_for_tokens", _fake_exchange)
+    monkeypatch.setattr(
+        ol, "verify_oidc_token",
+        lambda token: VerifiedPrincipal(
+            sub="pairwise-zzz", issuer=ISSUER, audience="maverick",
+            claims={"sub": "pairwise-zzz", "email": "dana@example.com",
+                    "oid": "aad-oid-7"},
+        ),
+    )
+    resp = client.get(
+        f"/auth/callback?code=c&state={state}", follow_redirects=False)
+    assert resp.status_code == 303
+
+    from maverick_dashboard import subject_directory as sd
+    assert sd.subs_for(["dana@example.com"]) == {"pairwise-zzz"}
+    assert sd.subs_for(["aad-oid-7"]) == {"pairwise-zzz"}
+
+
 def test_logout_clears_session(login_env, client):
     resp = client.get("/auth/logout", follow_redirects=False)
     assert resp.status_code == 303

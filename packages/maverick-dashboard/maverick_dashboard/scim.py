@@ -211,16 +211,20 @@ def _revoke_user_sessions(rec: dict) -> None:
     ``userName`` / ``email`` / our internal ``id``. revoke_principal is a no-op
     for a blank value, so over-revoking spare identifiers is harmless.
 
-    KNOWN LIMITATION: a session is keyed by the exact OIDC ``sub`` seen at login.
-    If the IdP issues a *pairwise/per-app* ``sub`` that equals none of the SCIM
-    identifiers above (some Entra/AAD configs), the live session is NOT caught
-    here and survives until natural expiry (<=12h). Closing that fully needs a
-    persisted ``sub``->user map recorded at login; until then, require the IdP's
-    SCIM ``externalId`` to equal its OIDC ``sub`` for immediate deprovisioning."""
+    Pairwise-``sub`` IdPs (Entra) issue an OIDC ``sub`` that appears in no SCIM
+    attribute, so the direct revokes above can't reach the live session. The
+    subject directory closes that gap: it recorded this user's ``sub`` against
+    its stable identifiers at login, so we look the ``sub`` up by the SCIM
+    record's identifiers and revoke it too."""
+    ids = [str(rec.get(k) or "") for k in ("externalId", "userName", "email", "id")]
     try:
         from .session_revocation import revoke_principal
-        for key in ("externalId", "userName", "email", "id"):
-            revoke_principal(str(rec.get(key) or ""))
+        for value in ids:
+            revoke_principal(value)
+        # Reach a pairwise/per-app sub recorded at login under these identifiers.
+        from .subject_directory import subs_for
+        for sub in subs_for(ids):
+            revoke_principal(sub)
     except Exception:  # pragma: no cover -- revocation never blocks SCIM
         pass
 
@@ -240,6 +244,14 @@ def _set_tenant_active(uid: str, active: bool, rec: dict | None = None) -> None:
 def _delete_tenant(uid: str, rec: dict | None = None) -> None:
     if rec is not None:
         _revoke_user_sessions(rec)
+        # Hard delete: purge the user's subject-directory entries too (the
+        # mapping is no longer needed and shouldn't outlive the account).
+        try:
+            from .subject_directory import forget
+            forget([str(rec.get(k) or "") for k in
+                    ("externalId", "userName", "email", "id")])
+        except Exception:  # pragma: no cover -- cleanup never blocks SCIM
+            pass
     try:
         from maverick.tenant import registry
         registry.delete_tenant(uid)
