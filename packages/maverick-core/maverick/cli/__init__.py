@@ -4740,6 +4740,48 @@ def domains_lint(ci: bool, show_warnings: bool) -> None:
         raise click.ClickException(f"{n_err} pack error(s)")
 
 
+@main.command("domains-audit")
+@click.option("--json", "json_out", type=click.Path(),
+              help="Write the full machine-readable audit document to this path.")
+@click.option("--suite", default=None,
+              help="Limit the report to one suite (e.g. finance, hr, healthcare).")
+def domains_audit(json_out: str | None, suite: str | None) -> None:
+    """Governance-posture inventory of the specialist roster.
+
+    The auditable answer to "what can these agents do, and what stops them?":
+    per pack, the compartment seal, risk ceiling, whether any state-mutating
+    tool is reachable, the hard refusals it carries, and the human sign-off on
+    its deliverable. ``--json`` exports the full document for a GRC system;
+    ``domains-lint`` remains the pass/fail well-formedness gate.
+    """
+    from ..domain_audit import audit_roster, summarize, to_json
+    audits = audit_roster()
+    if suite:
+        audits = [a for a in audits if a.suite == suite]
+        if not audits:
+            raise click.ClickException(f"no packs in suite {suite!r}")
+    s = summarize(audits)
+    click.echo(f"{s['packs']} pack(s) across {s['suites']} suite(s); "
+               f"{s['builders']} builder(s)")
+    click.echo(f"  drafting agents that can reach a state-mutator: "
+               f"{s['drafting_agents_reaching_a_mutator']}  (must be 0)")
+    click.echo(f"  with a human sign-off gate:   {s['packs_with_human_gate']}")
+    click.echo(f"  with suite/pack refusals:     {s['packs_with_refusals_beyond_universal']}")
+    click.echo(f"  with a declared deliverable:  {s['packs_with_deliverable']}")
+    click.echo(f"  with a reasoning-effort tier: {s['packs_with_effort_tier']}")
+    flagged = [a for a in audits if a.reachable_dangerous and not a.is_builder]
+    for a in flagged:
+        click.echo(f"  FLAG {a.name}: reaches {', '.join(a.reachable_dangerous)}", err=True)
+    if json_out:
+        import json as _json
+        Path(json_out).write_text(_json.dumps(to_json(audits), indent=2),
+                                  encoding="utf-8")
+        click.echo(f"Wrote audit document -> {json_out}")
+    if flagged:
+        raise click.ClickException(
+            f"{len(flagged)} drafting pack(s) can reach a state-mutator")
+
+
 @main.command("insights-export")
 @click.argument("out", type=click.Path())
 @click.option("--max", "max_insights", default=50, show_default=True,
