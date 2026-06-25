@@ -80,7 +80,7 @@ Per the kernel rule, this is the right competitive frame: compete on
 | Dimension | Lightwork | Workers Delos (aiworkers.so) |
 |---|---|---|
 | Form factor | Self-hostable platform + CLI + dashboard + MCP | Hosted SaaS only |
-| Prebuilt specialists | **1,118 packs across 26 suites** (lint-audited) | ~50 worker profiles |
+| Prebuilt specialists | **1,734 packs across 52 suites** (lint-audited) | ~50 worker profiles |
 | Governed learning | **Yes** — dreaming/hindsight/proof, snapshot + **rollback**, **signed** learning audit | "Persistent memory" claim; no governed/auditable learning story |
 | Audit | **WORM, signed, sealed, federated, retention/erase** (`audit/`) | "Full audit log" (unspecified) |
 | Governance plane | **Yes** — `governance.py`, `access_policy.py`, RBAC, SCIM, DPIA, AI-Act pack, compliance regimes | RBAC + audit log only |
@@ -109,7 +109,7 @@ Per the kernel rule, this is the right competitive frame: compete on
 3. **Self-host + bring-your-own-model.** Regulated buyers (finance, health,
    gov, defense) cannot send data to a Paris SaaS. We run in their VPC, on
    their model keys, across 12 providers. Workers Delos has no self-host path.
-4. **Breadth on a governed core.** 1,118 specialists vs ~50; 289 tool modules;
+4. **Breadth on a governed core.** 1,734 specialists vs ~50; 289 tool modules;
    14+ channels; shield on every I/O boundary; per-principal budget caps.
 5. **Multi-tenant control plane.** Tenancy, KMS, egress policy, billing — we can
    *be* the platform a Workers-Delos-like product is built on.
@@ -121,7 +121,7 @@ are **packaging and GTM**, plus two real product items and one compliance item.
 
 ### P0 — Packaging / GTM (highest leverage, lowest engineering cost)
 
-1. **Ship a "Hire a worker" persona layer over the 1,118 packs.** Their entire
+1. **Ship a "Hire a worker" persona layer over the 1,734 packs.** Their entire
    advantage is that a buyer sees *"Victoria, SDR, her own email & phone"*
    instead of *"specialist pack envelope."* We have more and better specialists
    — we present them as infrastructure. Add: name, avatar, one-line persona,
@@ -195,11 +195,11 @@ card and on an exec "what your workforce did this week" digest.
 ### 2. "Department in a box" bundles
 
 They bundle marketing + dev + design + support into an "AI workforce." We have
-**26 suites / 1,118 packs** and a real fleet orchestrator (`fleet.py`,
+**52 suites / 1,734 packs** and a real fleet orchestrator (`fleet.py`,
 `fleet_memory.py`) — more depth, presented as parts. Package suites as **buyable
 teams** ("Finance Department," "RevOps Team," "Legal Desk") with a pre-wired org
 chart, shared fleet memory, and one-click deploy of the whole unit. Turns our
-breadth advantage into a single SKU instead of 1,118 line items.
+breadth advantage into a single SKU instead of 1,734 line items.
 
 ### 3. Governance as a visible product surface
 
@@ -224,7 +224,7 @@ The move they structurally cannot copy — make the audit/learning moat
 
 Match their "3000+ tools" perception with named, discoverable surfaces:
 
-- **Pack / suite marketplace** — the 1,118 packs plus partner-built and
+- **Pack / suite marketplace** — the 1,734 packs plus partner-built and
   **operator/intake-generated packs** (we already synthesize packs from customer
   SOPs). Browsable, deployable, with the persona layer on top.
 - **Connector marketplace** — the 289 tool modules + `enterprise_connectors.py`
