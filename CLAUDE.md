@@ -74,6 +74,13 @@ All verified locally green; each is a build-failer:
   --ci` (past-due deprecations fail), `python -m maverick.grpc_api.contract
   --check` (proto removals/renumbers fail; additive only), `python -m
   maverick.a11y_audit --ci` (dashboard templates).
+- `python -m maverick.migration_governance --ci`: world-model migrations are
+  immutable once released. Adding/editing a migration in `world_model.MIGRATIONS`
+  or postgres `MIGRATIONS` requires regenerating the checksum lock (`python -m
+  maverick.migration_governance --regen`) and committing `migrations.lock.json`;
+  editing a released version, removing one, a new DROP/RENAME, or a backend
+  head mismatch all fail. `schema_migrations --ci` still gates online/offline
+  hot-deploy safety; this is the integrity ratchet on top.
 - Bugbear (B) is OFF on purpose: 127 latent findings (61 B904, 45 B905...).
   Do not fix or enable them in an unrelated PR. Complexity capped at 20 with
   30 grandfathered `# noqa: C901` — new code stays under the cap.
