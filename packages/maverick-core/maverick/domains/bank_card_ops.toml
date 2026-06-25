@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "card dispute & exception evidence package"
-consumers = ["card_ops_officer", "disputes_lead"]
+consumers = ["operations_manager", "fraud_analyst"]
 cadence = "daily"
 gate = "approval"
 

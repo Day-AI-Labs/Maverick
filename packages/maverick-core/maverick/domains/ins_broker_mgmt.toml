@@ -14,7 +14,7 @@ authoring = "manual"
 [output]
 shape = "table"
 deliverable = "broker & MGA performance scorecard"
-consumers = ["distribution_manager", "underwriting_lead"]
+consumers = ["agency_manager", "underwriter"]
 cadence = "monthly"
 gate = "review"
 

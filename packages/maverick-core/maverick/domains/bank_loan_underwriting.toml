@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "commercial loan underwriting package"
-consumers = ["underwriting_officer", "credit_committee"]
+consumers = ["loan_officer", "credit_officer"]
 cadence = "on-demand"
 gate = "approval"
 

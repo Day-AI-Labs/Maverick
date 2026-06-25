@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "table"
 deliverable = "product & customer profitability analysis"
-consumers = ["commercial_finance_lead", "cfo"]
+consumers = ["fpa_analyst", "cfo"]
 cadence = "monthly"
 gate = "review"
 

@@ -14,7 +14,7 @@ authoring = "manual"
 [output]
 shape = "table"
 deliverable = "cash application & remittance matching worksheet"
-consumers = ["ar_manager", "controller"]
+consumers = ["accounting_manager", "controller"]
 cadence = "daily"
 gate = "review"
 

@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "table"
 deliverable = "deposit exception & reconciliation pack"
-consumers = ["deposit_ops_officer", "branch_operations_lead"]
+consumers = ["operations_manager", "controller"]
 cadence = "daily"
 gate = "approval"
 

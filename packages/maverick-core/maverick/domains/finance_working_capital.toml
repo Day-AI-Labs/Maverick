@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "working capital & cash-conversion analysis"
-consumers = ["treasury_lead", "cfo"]
+consumers = ["treasurer", "cfo"]
 cadence = "monthly"
 gate = "review"
 

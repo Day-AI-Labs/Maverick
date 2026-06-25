@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "grant compliance & fund reconciliation package"
-consumers = ["controller", "grants_manager"]
+consumers = ["controller", "auditor"]
 cadence = "monthly"
 gate = "review"
 

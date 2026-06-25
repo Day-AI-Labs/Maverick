@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "table"
 deliverable = "portfolio risk & covenant monitoring tracker"
-consumers = ["portfolio_manager", "risk_officer"]
+consumers = ["credit_officer", "risk_officer"]
 cadence = "weekly"
 gate = "review"
 

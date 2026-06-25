@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "reinsurance treaty structuring & submission package"
-consumers = ["chief_actuary", "reinsurance_manager"]
+consumers = ["actuary", "reinsurance_analyst"]
 cadence = "monthly"
 gate = "approval"
 

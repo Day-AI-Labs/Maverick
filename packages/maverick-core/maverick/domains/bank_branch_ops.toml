@@ -16,7 +16,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "branch operations & audit-readiness assessment"
-consumers = ["branch_operations_officer", "internal_audit_lead"]
+consumers = ["operations_manager", "internal_auditor"]
 cadence = "monthly"
 gate = "review"
 

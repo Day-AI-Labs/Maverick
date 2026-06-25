@@ -15,7 +15,7 @@ authoring = "manual"
 [output]
 shape = "report"
 deliverable = "predictive risk-scoring analysis"
-consumers = ["commercial_underwriter", "underwriting_manager"]
+consumers = ["underwriter", "actuary"]
 cadence = "on-demand"
 gate = "review"
 
