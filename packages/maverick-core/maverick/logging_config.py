@@ -48,6 +48,28 @@ def _scrub_value(value: Any) -> Any:
         return value
 
 
+def _scrub_deep(value: Any) -> Any:
+    """Recursively scrub a structured log value, preserving its shape.
+
+    The flat :func:`_scrub_value` only touches top-level strings, so a secret
+    nested in a dict/list ``extra=`` value (e.g. ``extra={"meta": {"token":
+    "sk-..."}}``) reached the aggregator verbatim -- the value isn't a string,
+    so scrub passed it through, and the top-level secret-key filter never saw
+    the nested key. Walk dicts/lists: redact secret-NAMED keys at every depth
+    and run every nested string through scrub. Never raises."""
+    try:
+        if isinstance(value, str):
+            return _scrub_value(value)
+        if isinstance(value, dict):
+            return {k: ("[REDACTED]" if _is_secret_key(str(k)) else _scrub_deep(x))
+                    for k, x in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_scrub_deep(x) for x in value]
+    except Exception:  # pragma: no cover -- scrubbing must never break logging
+        return value
+    return value
+
+
 def _anon_enabled() -> bool:
     try:
         from .privacy import anon_enabled
@@ -167,10 +189,15 @@ class JsonFormatter(logging.Formatter):
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created)),
             "level": record.levelname,
             "logger": record.name,
-            "msg": record.getMessage(),
+            # Scrub the message and the traceback too: an interpolated arg
+            # (`logger.info("resp %s", body)`) or a provider exception message
+            # routinely carries an API key / Bearer header, and only the extras
+            # were being redacted -- so the two fields most likely to hold a
+            # secret reached the aggregator verbatim.
+            "msg": _scrub_value(record.getMessage()),
         }
         if record.exc_info:
-            out["exc"] = self.formatException(record.exc_info)
+            out["exc"] = _scrub_value(self.formatException(record.exc_info))
         # Add filter-attached context + any caller-passed extras. Caller extras
         # are NOT trusted: a stray logger.info(..., extra={"api_key": k})
         # anywhere would otherwise ship a secret to the aggregator verbatim.
@@ -186,7 +213,11 @@ class JsonFormatter(logging.Formatter):
                 continue
             try:
                 json.dumps(v)
-                out[k] = _scrub_value(v)
+                # Scrub RECURSIVELY (and preserve shape): the old code probed
+                # serializability with json.dumps(v) but then scrubbed the
+                # original object -- and _scrub_value leaves non-strings
+                # untouched, so a secret inside a dict/list extra slipped past.
+                out[k] = _scrub_deep(v)
             except (TypeError, ValueError):
                 out[k] = _scrub_value(str(v))
         out = _anonymize_log_record(out)
