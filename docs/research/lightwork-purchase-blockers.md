@@ -90,7 +90,7 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 
 ## F. Security posture & engineering readiness
 
-47. ✅ **Contradictory security-default docs** — reconciled to the actual `secure_by_default()` behavior (at-rest encryption + audit signing default ON), verified via `collect_soc2_evidence` (#1798).
+47. ✅ **Contradictory security-default docs** — reconciled to the actual `secure_by_default()` behavior (at-rest encryption + audit signing default ON), verified via `collect_soc2_evidence` (#1798). *Post-merge review:* also fixed two stale "opt-in" rows in the `soc2-controls.md` control matrix that the prose pass had missed.
 48. 🔧◐ **Default `local` sandbox runs host shell** — honest in `SECURITY.md`; the wizard already defaults real installs to a container when available, and enterprise mode upgrades `local`→container and fails closed. Making it fail-closed everywhere is a kernel-philosophy change (eng/decision).
 49. ◐ **Agent Shield optional / fails open** — kernel rule 1 (fail-open by design); documented as a floor, not a guarantee.
 50. 👤 **Residual risk R-01 (sandbox escape) → pen test** — schedule the pen test. (business)
@@ -98,7 +98,7 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 55. 🔧 **Audit signing silently degrades to unsigned if `cryptography` missing** — small: make it warn loudly / refuse under a compliance floor.
 66. 🔧 **Firecracker silently falls back to Docker** — small: alert on fallback.
 67. ◐ **Plugins run in-process** — load-time allowlist by design; syscall sandbox is eng backlog.
-68. ✅ **"Config not schema-validated"** — `config-lint` already existed (wired into `doctor`, `maverick config-lint`, startup warning); fixed the `[budget] self_tuning` false-positive and the stale `configuration.md` claim (#1799).
+68. ✅ **"Config not schema-validated"** — `config-lint` already existed (`maverick config-lint` + startup warning); fixed the `[budget] self_tuning` false-positive and the stale `configuration.md` claim (#1799). *Post-merge review:* `configuration.md` had claimed config-lint also runs inside `maverick doctor`, which it did not — now wired in (advisory `config-lint` rows), so the claim is true and `doctor` catches budget typos.
 
 ## G. Billing, licensing & entitlement
 
@@ -109,7 +109,7 @@ trademark / insurance / positioning (#22–#31), GA status & signing & maintaine
 80. ✅ **No audit trail for plan/quota changes** — `set_plan`/`set_quota` now emit a tamper-evident audit row (`tenant_plan_changed` / `tenant_quota_changed`, with old→new values), covering the dashboard control-plane API and the CLI, so an upgrade or cap change is provable, not a silent edit (#1799).
 79. ✅ **Plan-name typo silently downgraded to `free`** — `billing.known_plan_names()` + registry/CLI warnings (#1799).
 82. ◐ **Stripe refunds env-gated** — reasonable guardrail; agents never create charges (by design).
-83. ✅ **Invoice double-bill risk** — deterministic `invoice_id` idempotency key (#1799).
+83. ✅ **Invoice double-bill risk** — deterministic `invoice_id` idempotency key (#1799). *Post-merge review:* open-ended invoices (no `--since/--until`) now get an **empty** id rather than a stable-but-unsafe key over a growing total, so a deduping processor can't under-bill; CLI + `billing.md` updated.
 
 ## H. Product GA, deployment, support & ops
 

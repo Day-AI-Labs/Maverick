@@ -85,7 +85,7 @@ This is Lightwork's strongest area.
 | CC6.3 Role-based access / modification | Capability attenuation (child ≤ parent); risk ceilings | Implemented (opt-in) | `maverick/capability.py` (`attenuate`); `controls.capability_enforcement` |
 | CC6.6 Boundary protection (external threats) | Agent Shield (prompt-injection/exfil); host-scope capability; network host allow-globs | Implemented | `maverick/safety/` (shield); `maverick/capability.py` (`allow_hosts`) |
 | CC6.7 Restricts data transmission/movement | Secret/PII redaction; exfil detection; capability path scopes | Implemented | `maverick/safety/secret_detector.py`; `maverick/capability.py` (`allow_paths`) |
-| CC6.7 Encryption at rest | AES-256-GCM authenticated encryption for sensitive local stores; opt-in, implied by enterprise mode | Implemented (opt-in) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
+| CC6.7 Encryption at rest | AES-256-GCM authenticated encryption for sensitive local stores; **on by default** (secure-by-default), forced by compliance floors | Implemented (on by default) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
 | CC6.8 Prevents/detects unauthorized software | Sandbox isolation backends; tool ACLs; plugin manifest | Partial | sandbox `exec()`; `maverick/plugin_manifest.py` |
 
 ### CC7 — System Operations
@@ -138,7 +138,7 @@ This is Lightwork's strongest area.
 | --- | --- | --- | --- |
 | C1.1 Identifies & protects confidential information | Multi-tenant isolation (per-tenant memory/audit/world.db); secret/PII redaction | Implemented (opt-in) | `maverick/paths.py` (`controls.tenant_isolation`); `maverick/safety/secret_detector.py` |
 | C1.1 Access boundaries for confidential data | Capability path/host scopes; tool ACLs | Implemented (opt-in) | `maverick/capability.py` (`allow_paths`/`allow_hosts`) |
-| C1.1 Encryption at rest | AES-256-GCM authenticated encryption of sensitive local stores (also CC6.7); opt-in, implied by enterprise mode | Implemented (opt-in) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
+| C1.1 Encryption at rest | AES-256-GCM authenticated encryption of sensitive local stores (also CC6.7); **on by default** (secure-by-default), forced by compliance floors | Implemented (on by default) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
 | C1.2 Disposes of confidential information | **GDPR erase** (scrub/delete user + re-sign chain); audit retention | Implemented | `maverick/audit/erase.py`, `retention.py` |
 
 ## P — Privacy

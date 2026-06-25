@@ -53,3 +53,17 @@ def test_generate_invoice_sets_id(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     inv = generate_invoice("acme", RateCard(), since="2026-06-01", until="2026-06-30")
     assert inv.invoice_id.startswith("inv_")
+
+
+def test_open_ended_invoice_has_no_idempotency_key(tmp_path, monkeypatch):
+    """An open-ended invoice ('all usage so far') has a growing total, so it must
+    NOT get a stable dedup key -- otherwise a deduping processor under-bills as
+    usage accrues. Both fully-open and one-sided periods are open-ended."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert generate_invoice("acme", RateCard()).invoice_id == ""
+    assert generate_invoice("acme", RateCard(), since="2026-06-01").invoice_id == ""
+    assert generate_invoice("acme", RateCard(), until="2026-06-30").invoice_id == ""
+    # closing the period (both bounds) restores a stable key
+    assert generate_invoice(
+        "acme", RateCard(), since="2026-06-01", until="2026-06-30"
+    ).invoice_id.startswith("inv_")

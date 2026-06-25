@@ -15,10 +15,14 @@ an invoice, not a Stripe "Buy now" button.
 - **Rating → invoice.** `maverick billing invoice <tenant> [--since --until]`
   (or `billing.generate_invoice`) rates the ledger through a `RateCard`
   (markup or token pricing, with a minimum charge) into an `Invoice`.
-- **Idempotency.** Every invoice carries a deterministic `invoice_id`
-  (`inv_…`, keyed on tenant + period + currency, **not** the amount). Re-running
-  billing for the same closed period yields the same id, so a downstream charge
-  step can dedup and **never double-bill** a period.
+- **Idempotency.** An invoice for a **closed** period (both `--since` and
+  `--until` given) carries a deterministic `invoice_id` (`inv_…`, keyed on
+  tenant + period + currency, **not** the amount), so re-running billing for that
+  period yields the same id and a downstream charge step can dedup and **never
+  double-bill**. An **open-ended** invoice (a missing bound — including the CLI
+  default with no `--since/--until`) has an **empty `invoice_id`**: its total
+  grows as usage accrues, so it is deliberately *not* a safe dedup key. Always
+  bill closed periods.
 - **Per-tenant spend caps.** `maverick tenant quota <id> <usd/day>` enforces a
   daily ceiling at the channel door (a tenant over its cap is refused), and
   per-tenant plans gate features (`maverick billing entitlements <id>`).

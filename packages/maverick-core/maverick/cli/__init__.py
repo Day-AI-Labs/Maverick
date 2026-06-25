@@ -2371,7 +2371,11 @@ def billing_invoice(tenant_id: str, since: str | None, until: str | None,
         click.echo(_json.dumps(inv.to_dict(), indent=2))
         return
     click.echo(f"Invoice for {tenant_id!r}  {inv.period_start or '…'} → {inv.period_end or '…'}")
-    click.echo(f"  id: {inv.invoice_id}  (idempotency key — charge this period once)")
+    if inv.invoice_id:
+        click.echo(f"  id: {inv.invoice_id}  (idempotency key — charge this period once)")
+    else:
+        click.echo("  id: (open-ended period — NOT a safe dedup key; pass --since and "
+                   "--until to close the period before charging)")
     for li in inv.line_items:
         click.echo(f"  {li.day}  {li.principal:<24} ${li.charge:.4f} "
                    f"({li.in_tokens}+{li.out_tokens} tok)")
