@@ -16,12 +16,37 @@ unprovisioned deployments are unchanged.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from dataclasses import dataclass, replace
 
 from ..file_lock import atomic_write_text, cross_process_lock
 from ..paths import _tenant_segment, maverick_home
+
+log = logging.getLogger(__name__)
+
+
+def _warn_if_unknown_plan(plan: str) -> str | None:
+    """Warn (and return the message) if ``plan`` is not a known billing plan.
+
+    ``billing.entitlements_for`` silently resolves an unknown plan to the
+    ``free`` entitlements, so an operator who typos ``--plan pro`` would think a
+    tenant is paid when it is not. We warn rather than raise so a plan can be
+    pre-assigned before it is defined in ``[billing.plans]``."""
+    p = str(plan or "free")
+    try:
+        from ..billing import known_plan_names
+        known = known_plan_names()
+    except Exception:  # pragma: no cover -- never block provisioning on billing
+        return None
+    if p in known:
+        return None
+    msg = (f"plan {p!r} is not a known billing plan "
+           f"({', '.join(sorted(known))}); its entitlements fall back to 'free' "
+           f"until it is defined in [billing.plans]")
+    log.warning("tenant registry: %s", msg)
+    return msg
 
 ACTIVE = "active"
 SUSPENDED = "suspended"
@@ -153,6 +178,7 @@ def create_tenant(
 ) -> TenantRecord:
     """Provision a tenant + its workspace dir. Raises ValueError if it exists."""
     tid = _validate_id(tenant_id)
+    _warn_if_unknown_plan(plan)
     with _locked():
         records = _load()
         if tid in records:
@@ -192,12 +218,34 @@ def resume_tenant(tenant_id: str) -> TenantRecord:
     return _mutate(tenant_id, status=ACTIVE)
 
 
+def _audit_billing_change(field: str, tenant_id: str, *, old, new) -> None:
+    """Record a tamper-evident audit row for a change to a tenant's billing
+    terms (plan / daily cap), so an upgrade or cap change is provable rather than
+    a silent edit. Fail-soft: an audit error never blocks the mutation."""
+    try:
+        from ..audit import EventKind, record
+        kind = (EventKind.TENANT_PLAN_CHANGED if field == "plan"
+                else EventKind.TENANT_QUOTA_CHANGED)
+        record(kind, agent="operator", tenant=tenant_id, field=field,
+               old=old, new=new)
+    except Exception:  # pragma: no cover -- audit must never break provisioning
+        pass
+
+
 def set_quota(tenant_id: str, max_daily_dollars: float) -> TenantRecord:
-    return _mutate(tenant_id, max_daily_dollars=max(0.0, float(max_daily_dollars or 0.0)))
+    old = get_tenant(tenant_id)
+    rec = _mutate(tenant_id, max_daily_dollars=max(0.0, float(max_daily_dollars or 0.0)))
+    _audit_billing_change("quota", rec.id, old=(old.max_daily_dollars if old else None),
+                          new=rec.max_daily_dollars)
+    return rec
 
 
 def set_plan(tenant_id: str, plan: str) -> TenantRecord:
-    return _mutate(tenant_id, plan=str(plan or "free"))
+    _warn_if_unknown_plan(plan)
+    old = get_tenant(tenant_id)
+    rec = _mutate(tenant_id, plan=str(plan or "free"))
+    _audit_billing_change("plan", rec.id, old=(old.plan if old else None), new=rec.plan)
+    return rec
 
 
 def delete_tenant(tenant_id: str, *, purge: bool = False) -> bool:

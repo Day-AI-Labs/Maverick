@@ -321,7 +321,7 @@ Honest, current state — what's now enforced in code vs. what genuinely remains
 | MCP | Shared bearer grants full tool access; per-tenant gating only via Agent Trust Plane (opt-in). | `[agent_trust] enforce=true` with per-agent tokens. |
 | Plugins | Granted plugins run **in-process** — no runtime syscall/network sandbox (load-time grants only). | Vet + code-review allowlisted plugins. |
 | Firecracker | Silently falls back to Docker if the VM layer is unavailable. | Monitor logs; alert on fallback. |
-| Billing | Metering + invoicing exist; **no payment integration** (Stripe). | Export usage; bill externally. |
+| Billing | Metering + idempotent invoicing exist; **no card-checkout by design** (enterprise contract + AR motion). See [`../billing.md`](../billing.md). | Export usage (`billing invoice --json`); bill via AR, or wire a processor keyed on `invoice_id`. |
 | Compliance | **DPA / sub-processor / SLA templates** now ship in `docs/enterprise/legal/`; **SOC 2 Type II + penetration test require external auditors** (not code). | Engage auditor/pen-test firm; complete the templates with counsel. |
 
 ---

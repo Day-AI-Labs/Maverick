@@ -232,7 +232,7 @@ Config equivalents live under `[effort]` (`enabled`, `default`, `<role>`) and
 
 | Env var | Default | Description |
 | --- | --- | --- |
-| `MAVERICK_WEBHOOK_SECRET` | unset | Optional HMAC signing key for inbound webhooks. |
+| `MAVERICK_WEBHOOK_SECRET` | unset | HMAC secret for inbound webhooks. **Inbound receivers fail closed (401) without it** — set it before relying on inbound webhook channels (e.g. Twilio SMS / WhatsApp), or they will reject every request. |
 | `MAVERICK_WEBHOOK_WORKERS` | config `[webhooks] workers` (4) | Outbound webhook dispatch thread-pool size. |
 | `MAVERICK_WEBHOOK_MAX_INFLIGHT` | config `[webhooks] max_inflight` (16×workers) | Cap on queued+running dispatches; excess is dropped + logged (bounds memory under a burst against a slow receiver). |
 | `MAVERICK_GRPC_MAX_WORKERS` | config `[grpc] max_workers` (8) | gRPC goal-API server thread-pool size. |

@@ -45,6 +45,10 @@ KNOWN_SCHEMA: dict[str, set[str] | None] = {
         "max_tool_calls",
         "max_input_tokens",
         "max_output_tokens",
+        # Opt-in per-task-class self-tuning of max_dollars (self_tuning_budget.py
+        # reads [budget] self_tuning; self_healing.py recommends it). Without it
+        # here, a client enabling the documented knob got a false "unknown key".
+        "self_tuning",
     },
     "safety": {
         "profile",
