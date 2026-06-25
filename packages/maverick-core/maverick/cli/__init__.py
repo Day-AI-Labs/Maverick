@@ -4818,6 +4818,43 @@ def domains_audit(json_out: str | None, suite: str | None) -> None:
             f"{len(flagged)} drafting pack(s) can reach a state-mutator")
 
 
+@main.command("domains-eval")
+@click.option("--check", "check_only", is_flag=True,
+              help="Lint the eval suite against the roster and exit (no provider needed).")
+def domains_eval(check_only: bool) -> None:
+    """Per-pack behavioral evals: does a specialist do its job?
+
+    The rubric scorer is deterministic, but running a case needs to spawn the
+    pack agent (a provider key). This command lints the golden suite -- every
+    case names a real pack and carries a non-empty rubric -- which is the
+    CI-safe, key-free gate; ``run_eval(cases, runner)`` in maverick.domain_eval
+    executes them live when a caller supplies an agent runner.
+    """
+    from ..domain_eval import GOLDEN_CASES, check_suite
+    problems = check_suite()
+    for p in problems:
+        click.echo(f"ERROR  {p}", err=True)
+    click.echo(f"{len(GOLDEN_CASES)} golden eval case(s) across "
+               f"{len({c.domain for c in GOLDEN_CASES})} pack(s); "
+               f"{len(problems)} problem(s)")
+    for c in GOLDEN_CASES:
+        dims = []
+        if c.expect_includes:
+            dims.append(f"includes={list(c.expect_includes)}")
+        if c.expect_excludes:
+            dims.append(f"excludes={list(c.expect_excludes)}")
+        if c.expect_refusal:
+            dims.append("refuses")
+        if c.expect_citation:
+            dims.append("cites")
+        click.echo(f"  {c.domain}: {', '.join(dims)}")
+    if not check_only:
+        click.echo("\nLive scoring needs a provider key; run via "
+                   "maverick.domain_eval.run_eval(cases, runner).")
+    if problems:
+        raise click.ClickException(f"{len(problems)} eval-suite problem(s)")
+
+
 @main.command("insights-export")
 @click.argument("out", type=click.Path())
 @click.option("--max", "max_insights", default=50, show_default=True,
