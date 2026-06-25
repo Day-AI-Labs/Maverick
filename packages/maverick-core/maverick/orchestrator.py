@@ -854,6 +854,21 @@ async def run_goal(  # noqa: C901  -- core goal-execution loop
         log.warning("goal #%s refused: %s", goal_id, _quota_reason)
         return _quota_reason
 
+    # Per-tenant daily-spend cap. The channel door already enforces this, but
+    # dashboard/CLI/gRPC-initiated runs bypass that door, so enforce here too.
+    # Opt-in: tenant_over_quota returns None unless a provisioned tenant has a
+    # cap (or [billing] enforce_plan_caps). Fail-soft; no-op for single-tenant.
+    try:
+        from .paths import current_tenant_id
+        from .tenant.registry import tenant_over_quota
+        _tenant_reason = tenant_over_quota(current_tenant_id())
+    except Exception:  # pragma: no cover -- tenant quota is fully fail-soft
+        _tenant_reason = None
+    if _tenant_reason:
+        world.set_goal_status(goal_id, "blocked", result=f"over quota: {_tenant_reason}")
+        log.warning("goal #%s refused: %s", goal_id, _tenant_reason)
+        return _tenant_reason
+
     _quota_usage_recorded = False
 
     def _record_quota_usage() -> None:
