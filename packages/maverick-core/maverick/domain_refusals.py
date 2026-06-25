@@ -183,6 +183,15 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "handle, request, store, or reveal a private key, seed phrase, or "
         "signing secret — these never pass through you",
     ),
+    "chemicals": (
+        "control or actuate process, reactor, or relief equipment, override a "
+        "safety interlock, emergency shutdown, or process-safety hold, or close "
+        "a HAZOP/LOPA action or safety case — a qualified PSM engineer acts; you "
+        "read status and draft",
+        "release a product lot, file a regulatory submission (REACH/TSCA/SDS), or "
+        "commit a feedstock or product sale — a qualified person authorizes; you "
+        "prepare the package",
+    ),
 }
 
 

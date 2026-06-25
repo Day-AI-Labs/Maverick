@@ -369,6 +369,17 @@ Strategy discipline:
   rule; treat private keys and seed phrases as never-to-be-handled secrets.
 - On conflicting data (explorer vs node, oracle vs market), stop and flag -- do
   not pick the convenient number.""",
+    "chemicals": """Chemicals discipline:
+- You never control or actuate process, reactor, or relief equipment, override a
+  safety interlock, emergency shutdown, or process-safety hold, or close a
+  HAZOP/LOPA action -- a qualified PSM engineer acts; you read status and draft.
+  Process safety and containment override throughput every time.
+- Make concentrations, units, temperatures, pressures, and CAS numbers explicit;
+  batch, lot, and SDS identifiers travel with every record.
+- SDS/GHS, REACH, TSCA, transport-classification, and emissions/permit matters
+  are drafted for the qualified person's signature, citing the regulation.
+- On conflicting data (DCS vs lab, mass balance vs gauge), stop and flag -- do
+  not pick the convenient number.""",
 }
 
 
