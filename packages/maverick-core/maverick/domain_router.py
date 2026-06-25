@@ -78,40 +78,133 @@ class DomainRouter:
         # ("escheatment") is high -- exactly the discriminative weighting we want.
         self._idf = {t: math.log((n_docs + 1) / (c + 1)) + 1.0 for t, c in df.items()}
 
-    def rank(self, query: str, k: int = 10) -> list[tuple[str, float]]:
-        """The top-``k`` packs for ``query`` as ``(name, score)``, best first.
-        Scoreless (all-zero) results are dropped, so an off-roster query returns
-        fewer than ``k`` rather than padding with noise."""
+    def score_all(self, query: str) -> dict[str, float]:
+        """Raw lexical score for every pack (0 for no overlap)."""
         q = _tokens(query)
         if not q:
-            return []
+            return {}
         qw = {t: self._idf.get(t, 0.0) for t in set(q)}
-        scored: list[tuple[str, float]] = []
+        out: dict[str, float] = {}
         for name in self.names:
             tf = self._docs[name]
             s = sum(tf.get(t, 0) * w * w for t, w in qw.items())  # tf * idf^2
             if s > 0:
-                scored.append((name, s))
-        scored.sort(key=lambda x: (-x[1], x[0]))
+                out[name] = s
+        return out
+
+    def rank(self, query: str, k: int = 10) -> list[tuple[str, float]]:
+        """The top-``k`` packs for ``query`` as ``(name, score)``, best first.
+        Scoreless (all-zero) results are dropped, so an off-roster query returns
+        fewer than ``k`` rather than padding with noise."""
+        scored = sorted(self.score_all(query).items(), key=lambda x: (-x[1], x[0]))
         return scored[:k]
 
 
-_INDEX: DomainRouter | None = None
-_INDEX_KEY: tuple | None = None
+def _cosine(a: list[float], b: list[float]) -> float:
+    if len(a) != len(b) or not a:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+class EmbeddingRouter:
+    """Semantic index over the roster: cosine similarity of a query to each
+    pack's embedded text. Mirrors maverick.skill.embeddings -- uses a real
+    sentence-transformer when one is installed, and is a no-op otherwise (so the
+    caller falls back to lexical). The embedder is injectable for testing."""
+
+    def __init__(self, domains: dict[str, DomainProfile], embed_fn=None):
+        if embed_fn is None:
+            from .skill.embeddings import embed as embed_fn  # lazy: optional dep
+        self.names = sorted(domains)
+        texts = [_doc_text(domains[n]) for n in self.names]
+        vecs = embed_fn(texts) if texts else None
+        # available iff the embedder produced a vector per pack.
+        self.vectors = (dict(zip(self.names, vecs, strict=False))
+                        if vecs and len(vecs) == len(self.names) else None)
+        self._embed_fn = embed_fn
+
+    @property
+    def available(self) -> bool:
+        return self.vectors is not None
+
+    def score_all(self, query: str) -> dict[str, float]:
+        if not self.available or not (query or "").strip():
+            return {}
+        qv = self._embed_fn([query])
+        if not qv:
+            return {}
+        q = qv[0]
+        return {n: c for n in self.names
+                if (c := _cosine(q, self.vectors[n])) > 0}
+
+
+def _doc_text(p: DomainProfile) -> str:
+    """The text embedded for a pack -- name, description, then persona."""
+    return f"{p.name.replace('_', ' ')}. {p.description} {p.persona}"
+
+
+def _blend(lexical: dict[str, float], semantic: dict[str, float],
+           alpha: float) -> dict[str, float]:
+    """Max-normalise each score set to [0,1] and blend: alpha*semantic +
+    (1-alpha)*lexical over the union of candidates. With no semantic scores this
+    returns the lexical ranking unchanged."""
+    if not semantic:
+        return lexical
+    lmax = max(lexical.values(), default=0.0) or 1.0
+    smax = max(semantic.values(), default=0.0) or 1.0
+    out: dict[str, float] = {}
+    for n in set(lexical) | set(semantic):
+        out[n] = alpha * (semantic.get(n, 0.0) / smax) + \
+            (1 - alpha) * (lexical.get(n, 0.0) / lmax)
+    return out
+
+
+# Default blend weight: semantic leads (paraphrase), lexical keeps exact
+# name/term matches influential.
+_ALPHA = 0.6
+
+_LEX: DomainRouter | None = None
+_EMB: EmbeddingRouter | None = None
+_KEY: tuple | None = None
+
+
+def _indexes(domains: dict[str, DomainProfile]):
+    """Build (and process-cache) the lexical + embedding indexes for a roster."""
+    global _LEX, _EMB, _KEY
+    key = tuple(sorted(domains))
+    if _LEX is None or key != _KEY:
+        _LEX = DomainRouter(domains)
+        try:
+            _EMB = EmbeddingRouter(domains)
+        except Exception:  # embeddings are best-effort; lexical always works
+            _EMB = None
+        _KEY = key
+    return _LEX, _EMB
 
 
 def rank_specialists(query: str, k: int = 10,
-                     domains: dict[str, DomainProfile] | None = None) -> list[tuple[str, float]]:
-    """Rank the enabled roster for ``query`` (cached index for the default roster)."""
-    global _INDEX, _INDEX_KEY
+                     domains: dict[str, DomainProfile] | None = None,
+                     *, alpha: float = _ALPHA) -> list[tuple[str, float]]:
+    """Rank the roster for ``query``, hybrid (semantic + lexical) when an
+    embedding model is installed, pure lexical otherwise. Cached per roster."""
     if domains is not None:
-        return DomainRouter(domains).rank(query, k)
-    doms = available_domains()
-    key = tuple(sorted(doms))
-    if _INDEX is None or key != _INDEX_KEY:
-        _INDEX = DomainRouter(doms)
-        _INDEX_KEY = key
-    return _INDEX.rank(query, k)
+        lex, emb = DomainRouter(domains), None
+        try:
+            emb = EmbeddingRouter(domains)
+        except Exception:
+            emb = None
+    else:
+        domains = available_domains()
+        lex, emb = _indexes(domains)
+    lexical = lex.score_all(query)
+    semantic = emb.score_all(query) if (emb and emb.available) else {}
+    blended = _blend(lexical, semantic, alpha)
+    scored = sorted(((n, s) for n, s in blended.items() if s > 0),
+                    key=lambda x: (-x[1], x[0]))
+    return scored[:k]
 
 
-__all__ = ["DomainRouter", "rank_specialists"]
+__all__ = ["DomainRouter", "EmbeddingRouter", "rank_specialists"]

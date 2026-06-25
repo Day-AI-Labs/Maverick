@@ -111,3 +111,81 @@ def test_module_level_cache_matches_fresh_index():
     ranked = rank_specialists("draft a press release", k=5, domains=_PACKS)
     assert [n for n, _ in ranked][:3] == [
         n for n, _ in _ROUTER.rank("draft a press release", k=5)][:3]
+
+
+# --- Embedding / hybrid path (validated with an injected fake embedder, since
+#     fastembed is optional and absent in CI's lightweight subset) -----------
+import re as _re  # noqa: E402
+
+from maverick.domain import DomainProfile  # noqa: E402
+from maverick.domain_router import EmbeddingRouter, _blend  # noqa: E402
+
+# A controllable "semantic" embedder: maps synonym sets to shared concept dims,
+# so paraphrases that share no surface tokens still embed close (what a real
+# sentence-transformer buys us over lexical).
+_CONCEPTS = {
+    "separation": {"terminate", "termination", "fire", "layoff", "offboard",
+                   "offboarding", "rif"},
+    "nda": {"nda", "confidentiality", "nondisclosure", "secrecy"},
+    "payable": {"invoice", "payable", "vendor", "bill"},
+}
+
+
+def _fake_embed(texts):
+    out = []
+    for t in texts:
+        toks = set(_re.findall(r"[a-z]+", (t or "").lower()))
+        out.append([1.0 if (syns & toks) else 0.0 for syns in _CONCEPTS.values()])
+    return out
+
+
+def _toy_domains():
+    return {
+        "hr_offboarding": DomainProfile(
+            name="hr_offboarding", description="employee offboarding and exit",
+            persona="You run offboarding and termination logistics for departing staff."),
+        "legal_nda_desk": DomainProfile(
+            name="legal_nda_desk", description="confidentiality agreements",
+            persona="You process NDAs and confidentiality and secrecy obligations."),
+        "finance_ap": DomainProfile(
+            name="finance_ap", description="accounts payable",
+            persona="You match each vendor invoice and stage the payable."),
+    }
+
+
+def test_embedding_router_ranks_paraphrase_without_shared_tokens():
+    r = EmbeddingRouter(_toy_domains(), embed_fn=_fake_embed)
+    assert r.available
+    # "let someone go" shares no surface tokens with the offboarding pack, but
+    # the synonym concept ("fire") makes it the top semantic match.
+    scores = r.score_all("we need to fire a staff member")
+    assert max(scores, key=scores.get) == "hr_offboarding"
+
+
+def test_embedding_router_unavailable_without_a_model():
+    r = EmbeddingRouter(_toy_domains(), embed_fn=lambda _t: None)
+    assert not r.available
+    assert r.score_all("anything") == {}
+
+
+def test_blend_reranks_toward_semantic():
+    lexical = {"a": 10.0, "b": 1.0}     # lexical loves a
+    semantic = {"a": 0.1, "b": 1.0}     # semantic loves b
+    blended = _blend(lexical, semantic, alpha=0.8)
+    assert blended["b"] > blended["a"]  # high alpha -> semantic wins
+
+
+def test_blend_with_no_semantic_is_lexical_unchanged():
+    lexical = {"a": 3.0, "b": 1.0}
+    assert _blend(lexical, {}, alpha=0.6) == lexical
+
+
+def test_rank_specialists_falls_back_to_lexical_when_no_embedder(monkeypatch):
+    # With the embedder forced unavailable, hybrid == the lexical ranking, so
+    # the benchmark still holds (no regression from adding the embedding path).
+    import maverick.domain_router as dr
+    monkeypatch.setattr(dr, "EmbeddingRouter",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no model")))
+    hybrid = [n for n, _ in rank_specialists("review an NDA", k=5, domains=_PACKS)]
+    lexical = [n for n, _ in _ROUTER.rank("review an NDA", k=5)]
+    assert hybrid == lexical
