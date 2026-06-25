@@ -196,6 +196,50 @@ def _set_theme_cookie(response, theme: str) -> None:
         )
 
 
+def _require_auth_enabled() -> bool:
+    """Opt-in guard: refuse to serve the dashboard with no auth configured.
+    ``MAVERICK_DASHBOARD_REQUIRE_AUTH`` env wins over ``[dashboard] require_auth``;
+    off by default so the single-tenant local flow is unchanged."""
+    env = os.environ.get("MAVERICK_DASHBOARD_REQUIRE_AUTH", "").strip().lower()
+    if env:
+        return env in {"1", "true", "yes", "on"}
+    try:
+        from maverick.config import load_config
+        return bool(((load_config() or {}).get("dashboard") or {}).get("require_auth"))
+    except Exception:  # pragma: no cover -- config never blocks startup
+        return False
+
+
+def _assert_dashboard_auth_configured() -> None:
+    """When ``require_auth`` is set, refuse to boot if NO auth mechanism is
+    configured (a dashboard token, OIDC, or reverse-proxy SSO), so an operator
+    who asked for auth can never accidentally serve the (loopback) control
+    surface unauthenticated. No-op unless ``require_auth`` is explicitly on, so
+    a fresh single-tenant install is never locked out."""
+    if not _require_auth_enabled():
+        return
+    if os.environ.get("MAVERICK_DASHBOARD_TOKEN"):
+        return
+    try:
+        from maverick.oidc import oidc_enabled
+        if oidc_enabled():
+            return
+    except Exception:  # pragma: no cover
+        pass
+    try:
+        from maverick.proxy_auth import proxy_auth_enabled
+        if proxy_auth_enabled():
+            return
+    except Exception:  # pragma: no cover
+        pass
+    raise RuntimeError(
+        "[dashboard] require_auth is set, but no auth mechanism is configured. "
+        "Set MAVERICK_DASHBOARD_TOKEN, enable OIDC ([auth.oidc]), or enable "
+        "reverse-proxy SSO ([auth.proxy]) -- refusing to serve the dashboard "
+        "unauthenticated."
+    )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Application lifespan: run startup tasks, then yield to serve.
@@ -217,6 +261,7 @@ async def _lifespan(app: FastAPI):
     """
     from maverick.deployment import require_enterprise_or_die
     require_enterprise_or_die()
+    _assert_dashboard_auth_configured()
     await _reclaim_orphans()
     await _install_queue_dispatcher()
     yield
