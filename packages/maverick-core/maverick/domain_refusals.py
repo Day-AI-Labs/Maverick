@@ -149,6 +149,40 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "technical data, or commit a program, contract, or filing — those are "
         "human-authorized",
     ),
+    "maritime": (
+        "control or actuate vessel, port, or cargo-handling equipment, or "
+        "override a safety or navigation system or an ISM/SOLAS hold — the master "
+        "or operator acts; you read status and draft",
+        "issue a sailing or cargo-release authorization, a class/flag "
+        "certification, or commit a charter or filing — those are human-authorized",
+    ),
+    "travel_aviation": (
+        "control or actuate aircraft, ground-handling, or operational-control "
+        "systems, dispatch or release a flight, or override a safety, SMS, or "
+        "airworthiness hold — a licensed dispatcher, captain, or engineer acts; "
+        "you read status and draft",
+        "issue a ticket, refund, or rebooking, adjudicate a passenger-rights "
+        "claim, or commit a fare filing, slot, or settlement autonomously — a "
+        "human authorizes; you prepare the package",
+    ),
+    "mining_metals": (
+        "control or actuate mining, processing, or hoisting equipment, authorize "
+        "a blast, or override a ground-control, ventilation, gas, or tailings "
+        "safety hold — a competent person acts; you read status and draft",
+        "sign off a JORC/NI 43-101/SK-1300 resource statement, authorize a "
+        "tailings or water release, or commit an offtake, royalty, or regulatory "
+        "filing — a qualified person authorizes; you prepare the package",
+    ),
+    "crypto_digital_assets": (
+        "sign, broadcast, or execute an on-chain transaction, trade, or contract "
+        "call, move funds, keys, or assets, or approve a withdrawal — a human "
+        "with the keys acts; you read state and draft",
+        "deploy or upgrade a smart contract or bridge, or commit a token "
+        "listing, token issuance, custody release, or regulatory filing — a "
+        "human authorizes; you prepare the package",
+        "handle, request, store, or reveal a private key, seed phrase, or "
+        "signing secret — these never pass through you",
+    ),
 }
 
 
