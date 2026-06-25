@@ -24,10 +24,14 @@ import hashlib
 import os
 import secrets
 import threading
+import time
 from typing import Protocol
 
 from ..crypto_at_rest import EncryptionUnavailable, _have_crypto
 from ..paths import data_dir
+
+# Monotonic clock for cache expiry (immune to wall-clock jumps).
+_now = time.monotonic
 
 _DEK_BYTES = 32
 _NONCE_BYTES = 12
@@ -136,13 +140,39 @@ class LocalKMS:
         return _gcm_open(self._kek, _WRAP_MAGIC, wrapped, context)
 
 
-def get_kms() -> KMS:
-    """The active KMS provider. ``[kms] provider`` selects it; default local."""
+def _kms_config_for(tenant_id: str | None) -> dict:
+    """The ``[kms]`` section governing ``tenant_id``, resolved deterministically.
+
+    Fleet BYOK: tenant A may pin AWS KMS and tenant B Vault, each in its own
+    ``tenants/<id>/config.toml``. ``load_config`` only merges the *active*
+    tenant's overlay, so a fleet operation (rotating tenant X while no context is
+    set) would read the wrong ``[kms]``. This merges the named tenant's overlay
+    explicitly over the global config, independent of the ambient context.
+    """
+    from ..config import _deep_merge_config, _load_config_file, config_path, load_config
+    if tenant_id is None:
+        return dict((load_config() or {}).get("kms") or {})
     try:
-        from ..config import load_config
-        provider = str((load_config() or {}).get("kms", {}).get("provider") or "local")
-    except Exception:
-        provider = "local"
+        from ..paths import _tenant_segment, maverick_home
+        base = _load_config_file(config_path())
+        overlay_path = maverick_home() / "tenants" / _tenant_segment(tenant_id) / "config.toml"
+        merged = (_deep_merge_config(base, _load_config_file(overlay_path))
+                  if overlay_path.exists() else base)
+        return dict((merged or {}).get("kms") or {})
+    except Exception:  # pragma: no cover -- never block key setup on config
+        return dict((load_config() or {}).get("kms") or {})
+
+
+def get_kms(tenant_id: str | None = None) -> KMS:
+    """The KMS provider for ``tenant_id``. ``[kms] provider`` selects it (per the
+    tenant's own config overlay when given); default local.
+
+    Passing ``tenant_id`` resolves that tenant's ``[kms]`` deterministically so
+    per-tenant BYOK works regardless of the active context. ``None`` uses the
+    ambient/global config (the single-tenant default, byte-for-byte unchanged).
+    """
+    cfg = _kms_config_for(tenant_id)
+    provider = str(cfg.get("provider") or "local")
     if provider not in ("", "local"):
         # Cloud KMS (aws/gcp/vault): the KEK stays in the customer's HSM (BYOK).
         # An unknown provider, or a missing SDK, raises EncryptionUnavailable
@@ -150,8 +180,9 @@ def get_kms() -> KMS:
         # HSM-backed provider must never be downgraded to in-process key material
         # (fail-closed, consistent with crypto_at_rest). Callers surface this
         # (doctor's at-rest check, the audit-seal CLI) rather than writing plaintext.
+        # The resolved cfg is passed so the backend uses THIS tenant's key_id.
         from ..kms_backends import build_cloud_kms
-        return build_cloud_kms(provider)
+        return build_cloud_kms(provider, cfg)
     return LocalKMS()
 
 
@@ -159,19 +190,44 @@ def _wrapped_dek_path(tenant_id: str | None):
     return data_dir("keys", "dek.wrapped", tenant=tenant_id)
 
 
-_dek_cache: dict[str, bytes] = {}
+# (dek, expiry_monotonic). expiry is None for a permanent cache entry.
+_dek_cache: dict[str, tuple[bytes, float | None]] = {}
 _dek_lock = threading.Lock()
+
+
+def _dek_cache_ttl() -> float:
+    """Seconds a tenant DEK stays cached before it must be re-unwrapped by the
+    KMS. ``0`` (default) = cache for the process lifetime, unchanged behavior. A
+    positive TTL bounds how long a *revoked* cloud-KMS key keeps opening data:
+    after it lapses the next access re-hits the KMS, which then fails closed.
+    ``MAVERICK_KMS_DEK_CACHE_TTL`` env wins over ``[kms] dek_cache_ttl``."""
+    raw = os.environ.get("MAVERICK_KMS_DEK_CACHE_TTL")
+    if raw is None or raw.strip() == "":
+        try:
+            from ..config import load_config
+            raw = (load_config() or {}).get("kms", {}).get("dek_cache_ttl")
+        except Exception:  # pragma: no cover -- config never blocks key setup
+            raw = None
+    try:
+        return max(0.0, float(raw)) if raw is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def tenant_dek(tenant_id: str | None, *, kms: KMS | None = None) -> bytes:
     """The tenant's Data Encryption Key (unwrapped). Loads the wrapped DEK, or
-    generates + wraps + persists one on first use. Cached per tenant id."""
+    generates + wraps + persists one on first use. Cached per tenant id (bounded
+    by ``[kms] dek_cache_ttl`` so a revoked KMS key takes effect)."""
     cache_key = tenant_id or "__default__"
     with _dek_lock:
         cached = _dek_cache.get(cache_key)
         if cached is not None:
-            return cached
-        kms = kms or get_kms()
+            dek, expiry = cached
+            if expiry is None or expiry > _now():
+                return dek
+            _dek_cache.pop(cache_key, None)  # lapsed -> re-unwrap below
+        # Per-tenant BYOK: resolve THIS tenant's KMS unless one was injected.
+        kms = kms or get_kms(tenant_id)
         path = _wrapped_dek_path(tenant_id)
         context = _tenant_context(tenant_id, b"dek-wrap")
         if path.exists():
@@ -185,7 +241,8 @@ def tenant_dek(tenant_id: str | None, *, kms: KMS | None = None) -> bytes:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "wb") as f:
                 f.write(wrapped)
-        _dek_cache[cache_key] = dek
+        ttl = _dek_cache_ttl()
+        _dek_cache[cache_key] = (dek, (_now() + ttl) if ttl > 0 else None)
         return dek
 
 
@@ -229,6 +286,28 @@ def rotate_kek(tenant_id: str | None, *, old_kms: KMS, new_kms: KMS) -> None:
         _dek_cache.pop(tenant_id or "__default__", None)
 
 
+def rotate_kek_fleet(*, old_kms_for, new_kms_for) -> dict[str, str]:
+    """Rotate every provisioned tenant's wrapped DEK from its old KEK to its new
+    KEK (fleet-wide key rotation). ``old_kms_for`` / ``new_kms_for`` are callables
+    ``tenant_id -> KMS`` so each tenant can resolve to its own BYOK provider (the
+    common forms: ``lambda t: get_kms(t)`` for the post-config-change KEK, or a
+    fixed ``lambda t: LocalKMS(old_kek)``). Best-effort and isolated: one tenant's
+    failure is recorded and does not abort the rest. Returns ``{tenant_id:
+    "rotated" | "error: <reason>"}``. Re-wrap only — no data is re-encrypted."""
+    from .registry import list_tenants
+    report: dict[str, str] = {}
+    for rec in list_tenants():
+        tid = rec.id
+        if not _wrapped_dek_path(tid).exists():
+            continue  # tenant never sealed anything yet -> no DEK to rotate
+        try:
+            rotate_kek(tid, old_kms=old_kms_for(tid), new_kms=new_kms_for(tid))
+            report[tid] = "rotated"
+        except Exception as e:
+            report[tid] = f"error: {e}"
+    return report
+
+
 def _clear_cache() -> None:
     """Drop the in-memory DEK cache (tests / after a rotation)."""
     with _dek_lock:
@@ -238,5 +317,6 @@ def _clear_cache() -> None:
 __all__ = [
     "KMS", "LocalKMS", "get_kms",
     "tenant_dek", "seal_for_tenant", "unseal_for_tenant",
-    "seal_text_for_tenant", "unseal_text_for_tenant", "rotate_kek",
+    "seal_text_for_tenant", "unseal_text_for_tenant",
+    "rotate_kek", "rotate_kek_fleet",
 ]
