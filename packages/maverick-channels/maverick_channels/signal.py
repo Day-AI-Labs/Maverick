@@ -98,6 +98,13 @@ class SignalChannel(Channel):
             text = envelope.get("dataMessage", {}).get("message")
             if not text or not source:
                 continue
+            # Loop guard: never react to our OWN outbound (signal-cli echoes
+            # sync messages back as receives). Without this, an operator who
+            # allow-lists the bot's own number (a self-DM / notes setup) gets an
+            # infinite reply loop + runaway spend. Defense-in-depth beyond the
+            # allowlist, matching discord/matrix/threads.
+            if source == self.phone_number:
+                continue
             if not is_allowed(source, self.allowed_user_ids):
                 log.warning("unauthorized signal access: source=%s", source)
                 continue
@@ -109,6 +116,8 @@ class SignalChannel(Channel):
             except Exception:  # pragma: no cover
                 log.exception("handler error")
                 reply = "⚠ An internal error occurred."
+            if not reply:  # action-only goal -> nothing to send
+                continue
             try:
                 await self.send(source, reply)
             except Exception:  # pragma: no cover
