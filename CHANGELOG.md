@@ -7,6 +7,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Roster & library growth: the specialist roster now stands at **2,020 packs
+  across 53 suites**, with a **514-skill** reusable `SKILL.md` library any pack
+  can activate by trigger.
+- **Primary-source data connectors (37, read-only, low-risk)** — authoritative
+  government/public data APIs (SEC EDGAR, FRED, Treasury, World Bank, FDIC,
+  Census, BLS, EIA, Alpha Vantage, Finnhub, Polygon, OpenFIGI, Federal Register,
+  eCFR, Regulations.gov, CourtListener, GovInfo, USAspending, SAM.gov, Open
+  States, PatentsView, GLEIF, OpenCorporates, Companies House, openFDA, NPPES,
+  ClinicalTrials, RxNorm, PubMed, NWS, NOAA Climate, OpenWeather, EPA Envirofacts,
+  Climatiq, Carbon Interface). Built on three new `make_rest_tool` auth modes:
+  `keyless`, `query_auth` (key on the query string), and `default_base_url`
+  (zero-config public hosts).
+- **Primary-source data grounding** — those connectors are auto-granted to each
+  analyst pack by suite (`SUITE_DATA_CONNECTORS`, layered in `domain_capability`),
+  so a pack reaches for the right source by default. Additive, low-risk, and
+  deferred (no context cost); a host-restricted pack's egress is never silently
+  widened. On by default with a kill-switch: `[workforce] data_grounding = false`
+  / `MAVERICK_WORKFORCE_DATA_GROUNDING=off`, plus an installer wizard step.
 - Agent-pack quality & governance sweep across the 1,118-pack roster:
   `[output]` contracts + editable `[[workflow]]` playbooks on every pack;
   reasoning-effort right-sizing (`effort` tier, applied only when `[effort]` is
