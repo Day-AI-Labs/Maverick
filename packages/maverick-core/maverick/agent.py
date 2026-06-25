@@ -1417,9 +1417,11 @@ class Agent:
             from .safety.tool_risk import tool_risk as _tr
             _risk = _tr(name)
             # Disabled => the gate is a strict no-op (kernel rule 1: byte-for-byte
-            # historical behaviour). Low-risk tools (reads/searches) are never
-            # gated by the dial.
-            if _aa.levels_enabled() and _rr(_risk) > 0:
+            # historical behaviour). Low-risk tools (reads/searches) and the
+            # coordination control-plane (spawn/bus/delegate -- how the workforce
+            # communicates) are never gated by the dial.
+            if (_aa.levels_enabled() and _rr(_risk) > 0
+                    and name not in _aa.COORDINATION_TOOLS):
                 _al = _aa.decide(self.role, getattr(self, "_autonomy", None),
                                  action=name, risk=_risk)
                 _amap = {"allow": _GD.ALLOW, "require_human": _GD.REQUIRE_HUMAN,

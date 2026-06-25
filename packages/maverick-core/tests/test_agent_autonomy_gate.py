@@ -118,5 +118,19 @@ async def test_client_override_grants_auto(monkeypatch, tmp_path, _high_risk_act
     assert "done" in out
 
 
+@pytest.mark.asyncio
+async def test_coordination_not_gated_by_dial(monkeypatch, tmp_path, _high_risk_act):
+    """Even an OBSERVE hire with levels on may spawn/message peers -- the
+    coordination control-plane is exempt from the autonomy dial."""
+    _enable(monkeypatch)
+    agent = _agent(tmp_path, AutonomyProfile(default=AutonomyLevel.OBSERVE, onboarding=False))
+    agent.tools.register(Tool(
+        name="spawn_specialist", description="spawn a peer", fn=lambda args: "spawned",
+        input_schema={"type": "object", "properties": {}},
+    ))
+    out = await agent._run_tool("spawn_specialist", {})
+    assert "spawned" in out  # not gated despite OBSERVE + high-risk classification
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-q"])

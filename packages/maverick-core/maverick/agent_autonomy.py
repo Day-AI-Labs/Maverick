@@ -57,6 +57,15 @@ from .safety.tool_risk import RISK_LEVELS, tool_risk
 log = logging.getLogger(__name__)
 
 
+# The control-plane tools that let a specialist participate in the workforce
+# (discover peers, spawn specialists, fan out a swarm, message/delegate across
+# the agent bus). Canonically defined in :mod:`maverick.capability` (it is the
+# capability FLOOR there); re-exported here because the autonomy dial also EXEMPTS
+# them -- coordinating is not a consequential external action, so it is never held
+# for human approval; the spawned children, budget, and depth limits govern it.
+from .capability import COORDINATION_TOOLS  # noqa: E402
+
+
 class AutonomyLevel(str, Enum):
     """The four authority rungs, ordered OBSERVE < SUGGEST < REQUEST < AUTO."""
 
@@ -562,4 +571,5 @@ __all__ = [
     "graduation_status",
     "graduation_candidates",
     "auto_graduate_enabled",
+    "COORDINATION_TOOLS",
 ]
