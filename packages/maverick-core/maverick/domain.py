@@ -32,7 +32,7 @@ except ModuleNotFoundError:  # Python 3.10
 _FIELDS = frozenset({
     "compartment", "description", "persona", "allow_tools", "deny_tools",
     "max_risk", "allow_paths", "allow_hosts", "mcp_servers", "models",
-    "knowledge_sources", "authoring", "extends", "workflow", "output",
+    "knowledge_sources", "authoring", "extends", "workflow", "output", "effort",
 })
 
 
@@ -86,6 +86,7 @@ class DomainProfile:
     models: dict[str, str] = field(default_factory=dict)
     knowledge_sources: list[str] = field(default_factory=list)
     authoring: str = "manual"      # "manual" | "generated"
+    effort: str | None = None      # reasoning tier (applied only when [effort] on)
     extends: str = ""              # overlay base: inherit a pack, patch the rest
     workflow: list[WorkflowStep] = field(default_factory=list)  # editable playbook
     output: OutputContract = field(default_factory=OutputContract)  # the deliverable
@@ -252,6 +253,7 @@ def overlay_profile(base: DomainProfile, patch: dict) -> DomainProfile:
         "models": dict(base.models),
         "knowledge_sources": list(base.knowledge_sources),
         "authoring": base.authoring,
+        "effort": base.effort,
         "workflow": list(base.workflow),
         "output": base.output,
     }
@@ -401,6 +403,8 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
 
 
 _VALID_RISKS = frozenset({"low", "medium", "high"})
+# Reasoning-effort tiers a pack may declare (mirrors maverick.effort._LEVELS).
+_VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 _VALID_GATES = frozenset({"approval", "review"})
 # Sign-off strength: a deliverable must not claim a lighter gate than the
 # human-handoff its own playbook ends on (approval > review > none).
@@ -478,6 +482,9 @@ def lint_profile(profile: DomainProfile) -> tuple[list[str], list[str]]:
     elif profile.max_risk not in _VALID_RISKS:
         errors.append(f"max_risk {profile.max_risk!r} is not one of "
                       f"{sorted(_VALID_RISKS)}")
+    if profile.effort is not None and profile.effort not in _VALID_EFFORTS:
+        errors.append(f"effort {profile.effort!r} is not one of "
+                      f"{sorted(_VALID_EFFORTS)}")
     overlap = set(profile.allow_tools) & set(profile.deny_tools)
     if overlap:
         warnings.append("tools both allowed and denied (deny wins): "
@@ -602,4 +609,5 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
                  + render_workflow_prompt(profile.workflow)),
         capability=cap,
         knowledge_sources=profile.knowledge_sources,
+        domain_effort=profile.effort,
     )

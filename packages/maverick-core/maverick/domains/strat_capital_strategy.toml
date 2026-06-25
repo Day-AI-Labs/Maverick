@@ -7,6 +7,7 @@ persona = """You are the Capital-Strategy specialist: model capital structure an
 
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "strat" collection

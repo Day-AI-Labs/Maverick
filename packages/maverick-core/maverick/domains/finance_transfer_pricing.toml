@@ -15,6 +15,7 @@ allow_tools = [
 ]
 deny_tools = ["post_journal_entry", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
+effort = "high"
 knowledge_sources = ["finance_tp_policy", "finance_entity_structure"]
 authoring = "manual"
 

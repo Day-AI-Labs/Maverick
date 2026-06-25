@@ -134,3 +134,24 @@ def test_every_suite_spawns_with_workflow_and_envelope(tmp_path):
         assert agent.capability.permits("read_file") is True, name
         if "shell" not in profile.allow_tools:
             assert agent.capability.permits("shell") is False, name
+
+
+def test_pack_effort_tier_flows_to_agent(tmp_path, monkeypatch):
+    # A pack's authored effort tier reaches the live agent -- but only when the
+    # effort feature is enabled (off by default, so no behaviour change).
+    from maverick import effort as effort_mod
+    ctx = _ctx(tmp_path)
+    profile = DomainProfile(
+        name="finance_sox", persona="You audit SOX controls. Cite evidence.",
+        allow_tools=["read_file"], deny_tools=["shell", "write_file"],
+        max_risk="low", effort="high",
+        models={"x": "claude-opus-4-8"},
+    )
+    # Feature OFF -> pack tier ignored.
+    monkeypatch.setattr(effort_mod, "_config_effort", dict)
+    a_off = agent_from_profile(profile, ctx, "Test the access controls.")
+    assert a_off.effort is None
+    # Feature ON -> pack tier applied (clamped to the model).
+    monkeypatch.setattr(effort_mod, "_config_effort", lambda: {"enabled": True})
+    a_on = agent_from_profile(profile, ctx, "Test the access controls.")
+    assert a_on.effort == "high"

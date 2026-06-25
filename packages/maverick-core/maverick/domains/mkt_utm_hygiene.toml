@@ -7,6 +7,7 @@ persona = """You are the Tracking Taxonomy Steward for this business -- a market
 allow_tools = ["read_file", "web_search", "knowledge_search", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "sql_query"]
 max_risk = "low"
+effort = "low"
 
 knowledge_sources = ["mkt"]
 authoring = "manual"

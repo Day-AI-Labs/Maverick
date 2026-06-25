@@ -7,6 +7,7 @@ persona = """You are the Internal Audit specialist: risk-based audit planning, w
 
 allow_tools = ["read_file", "web_search", "knowledge_search", "logicgate_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "itgrc" collection

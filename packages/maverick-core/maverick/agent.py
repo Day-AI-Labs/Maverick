@@ -535,6 +535,7 @@ class Agent:
         domain: str | None = None,
         persona: str | None = None,
         knowledge_sources: list[str] | None = None,
+        domain_effort: str | None = None,
     ):
         self.ctx = ctx
         self.role = role
@@ -594,7 +595,7 @@ class Agent:
         # once against this agent's role + model so the cost/latency lever rides
         # every LLM call this agent makes. Model-gated -> never 400s.
         from .effort import effort_for_role
-        self.effort = effort_for_role(role, self.model)
+        self.effort = effort_for_role(role, self.model, pack_default=domain_effort)
         # Tracks whether we've already given one LLM-verifier-driven
         # revision pass for this agent run. Separate from
         # `_already_verified` so revised FINALs can be re-verified once

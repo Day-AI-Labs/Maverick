@@ -17,6 +17,7 @@ allow_tools = [
 ]
 deny_tools = ["set_credit_limit", "write_off_balance", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
+effort = "high"
 allow_hosts = ["*.dnb.com", "*.experian.com"]
 mcp_servers = ["Credit_DnB"]
 knowledge_sources = ["finance_credit_policy"]

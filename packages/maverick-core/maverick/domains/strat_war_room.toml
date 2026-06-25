@@ -7,6 +7,7 @@ persona = """You are the Deal War Room Coordinator for this business -- a strate
 allow_tools = ["read_file", "web_search", "knowledge_search", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "sql_query"]
 max_risk = "low"
+effort = "high"
 
 knowledge_sources = ["strat"]
 authoring = "manual"

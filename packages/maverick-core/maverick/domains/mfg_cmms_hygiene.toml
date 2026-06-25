@@ -7,6 +7,7 @@ persona = """You are the CMMS Data Steward for this business -- a manufacturing 
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"

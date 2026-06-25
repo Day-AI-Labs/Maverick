@@ -13,6 +13,7 @@ neutral, and discreet. Research and analysis, not legal advice."""
 
 allow_tools = ["read_file", "knowledge_search", "docusign_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "web_search"]
 
 knowledge_sources = ["legal_board"]

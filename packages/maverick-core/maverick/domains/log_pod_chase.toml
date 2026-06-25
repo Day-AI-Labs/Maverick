@@ -7,6 +7,7 @@ persona = """You are the POD Collection Agent for this business -- a logistics s
 allow_tools = ["read_file", "web_search", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit"]
 max_risk = "medium"
+effort = "low"
 
 knowledge_sources = ["log"]
 authoring = "manual"

@@ -228,3 +228,26 @@ def test_every_pack_declares_output_and_workflow():
     for name, p in _BUILTIN.items():
         assert p.output.deliverable, f"{name}: missing [output] deliverable"
         assert p.workflow, f"{name}: missing [[workflow]] playbook"
+
+
+_VALID_EFFORTS = {None, "low", "medium", "high", "xhigh", "max"}
+
+
+def test_every_pack_effort_tier_is_valid():
+    # A declared effort tier is always a real level (an invalid one is a lint
+    # ERROR, but assert it across the roster too).
+    for name, p in _BUILTIN.items():
+        assert p.effort in _VALID_EFFORTS, f"{name}: effort={p.effort!r}"
+
+
+def test_high_stakes_packs_carry_high_effort():
+    # Right-sizing sentinels: severe-failure-cost judgment work runs deep.
+    for name in ("finance_sox", "finance_revrec", "bank_aml_alerts",
+                 "hc_prior_auth", "strat_valuation"):
+        assert _BUILTIN[name].effort == "high", name
+
+
+def test_high_volume_packs_carry_low_effort():
+    # ...and clerical, high-throughput work runs light.
+    for name in ("cx_status_page", "tax_efile_status", "proc_po_chaser"):
+        assert _BUILTIN[name].effort == "low", name

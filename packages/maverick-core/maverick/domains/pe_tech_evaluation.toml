@@ -7,6 +7,7 @@ persona = """You are the Technology-Evaluation specialist: evaluate libraries/fr
 
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "self_edit"]
 
 # Suite-level grounding fallback: docs uploaded to the "pe" collection

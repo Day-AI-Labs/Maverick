@@ -7,6 +7,7 @@ persona = """You are the Knowledge-Base specialist: author and maintain help con
 
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
+effort = "low"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "gtm" collection

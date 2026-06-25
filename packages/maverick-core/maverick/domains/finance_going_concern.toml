@@ -7,6 +7,7 @@ persona = """You are the Going-Concern specialist (finance_controllership seal).
 
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 max_risk = "medium"
+effort = "high"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["finance"]

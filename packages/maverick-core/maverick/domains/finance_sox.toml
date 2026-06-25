@@ -23,6 +23,7 @@ deny_tools = [
     "shell", "write_file", "apply_patch", "str_edit", "browser",
 ]
 max_risk = "low"
+effort = "high"
 mcp_servers = ["GRC_AuditBoard"]
 knowledge_sources = ["finance_rcm", "finance_coso_policy"]
 authoring = "manual"

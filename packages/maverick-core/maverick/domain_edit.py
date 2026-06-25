@@ -39,7 +39,7 @@ from .domain import (
 # Scalars vs arrays serialize the same way (json.dumps), but we emit them in a
 # stable, readable order; ``models`` and ``workflow`` become TOML tables.
 _SCALAR_KEYS = ("name", "extends", "compartment", "description", "persona",
-                "max_risk", "authoring")
+                "max_risk", "effort", "authoring")
 _ARRAY_KEYS = ("allow_tools", "deny_tools", "allow_paths", "allow_hosts",
                "mcp_servers", "knowledge_sources")
 

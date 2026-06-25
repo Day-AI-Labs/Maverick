@@ -7,6 +7,7 @@ persona = """You are the Breach Response specialist: assess a personal-data brea
 
 allow_tools = ["read_file", "web_search", "knowledge_search", "crowdstrike_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "itgrc" collection
