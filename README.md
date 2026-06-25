@@ -42,9 +42,9 @@ Alpha, but **installable today**: all eight packages are on [PyPI](https://pypi.
 |---|---|---|
 | Install | **Native installer (`.exe` / `.dmg` / `.AppImage`)**, one-line bootstrap (`install.ps1` / `install.sh`), pipx, or from source | Code-signed bundles + auto-update |
 | GUI | Native installer app + local web dashboard (`maverick dashboard`) + chat at `/chat` | Native Tauri shell for the agent itself + iOS/Android |
-| Sandbox | Local subprocess, Docker, SSH, Podman, devcontainer, Firecracker, Kubernetes | Modal, Daytona |
+| Sandbox | Local subprocess, Docker, gVisor, Podman, devcontainer, Firecracker, Kubernetes, SSH, Modal | Daytona |
 | AI providers | Anthropic (full), OpenAI, OpenRouter, Ollama, Gemini, DeepSeek, Bedrock, Azure, xAI, Moonshot, TGI, vLLM (per-role routable) | Cohere |
-| Channels | All 12 wired — Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon, Voice; WhatsApp/SMS (need Twilio), iMessage (macOS-only) | Push notifications |
+| Channels | All 17 wired — Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon, Voice, IRC, Threads, RCS, Glasses; WhatsApp (Cloud API + Twilio)/SMS (need Twilio), iMessage (macOS-only) | Push notifications |
 | Safety | Shield wired at 3 chokepoints; agent-shield SDK if installed, else a built-in rule set | Agent-shield full ~115 patterns |
 | Distribution | PyPI (8 packages), GHCR image, PyInstaller binaries, **native installers on Releases** | Code signing; Homebrew tap |
 | Tests | 2000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
@@ -138,13 +138,14 @@ maverick version                         # installed package versions
 ```
 packages/
   maverick-core/       Python agent kernel: recursive swarm, persistent world
-                       model (SQLite + FTS5, or Postgres; schema v20), 12 LLM providers, 7
+                       model (SQLite + FTS5, or Postgres; schema v23), 12 LLM providers, 9
                        sandboxes, MCP client, skills, templates, persona,
                        background runner, budget tracking
   maverick-shield/     Agent Shield integration + built-in fallback rule set
-  maverick-channels/   12 channel adapters: Telegram, Discord, Slack, Signal,
-                       Email, Matrix, Bluesky, Mastodon, Voice, WhatsApp, SMS,
-                       iMessage (WhatsApp/SMS need Twilio; iMessage is macOS-only)
+  maverick-channels/   17 channel adapters: Telegram, Discord, Slack, Signal,
+                       Email, Matrix, Bluesky, Mastodon, Voice, WhatsApp, WhatsApp
+                       Cloud, SMS, iMessage, IRC, Threads, RCS, Glasses
+                       (WhatsApp/SMS need Twilio; iMessage is macOS-only)
   maverick-dashboard/  Local FastAPI web UI + REST API at /api/v1 + OpenAPI
                        docs at /docs. Live progress streaming via short-poll.
   maverick-mcp/        MCP server (stdio JSON-RPC) -- exposes Lightwork to Claude
@@ -208,7 +209,7 @@ See [docs/github-action.md](./docs/github-action.md).
 | **Wedge** | Long-horizon depth + true multi-agent coordination |
 | **Safety** | First-class. Every input, tool call, and output passes through Agent Shield. |
 | **Control** | You pick the models. Per-role. Multi-provider. |
-| **Deploy** | Desktop / Docker / VPS / Phone (12 channels) |
+| **Deploy** | Desktop / Docker / VPS / Phone (17 channels) |
 | **Privacy** | All detection runs locally. Your data never leaves your machine unless you choose a cloud LLM. |
 
 ## License
