@@ -500,7 +500,7 @@ def show_browser_capture_timeout(provider: str) -> None:
 
 def welcome() -> None:
     console.print(Panel.fit(
-        "[bold]Maverick installer[/bold]\n\n"
+        "[bold]Lightwork installer[/bold]\n\n"
         "Next you'll pick a setup mode: a quick consumer flow (a few\n"
         "questions, safe defaults) or advanced (configure every model,\n"
         "channel, safety level, and budget). Re-run any time with\n"
@@ -511,12 +511,12 @@ def welcome() -> None:
 
 def pick_deployment() -> str:
     pick = _q_select(
-        "Where will Maverick run?",
+        "Where will Lightwork run?",
         [
             "desktop  - This computer (recommended for first-time users)",
             "docker   - Local Docker container (isolated, easy to remove)",
             "vps      - Remote server you own (always-on)",
-            "phone    - Phone companion (Maverick runs on desktop/VPS; phone is a frontend)",
+            "phone    - Phone companion (Lightwork runs on desktop/VPS; phone is a frontend)",
         ],
     )
     return pick.split()[0]

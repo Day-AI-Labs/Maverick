@@ -22,7 +22,7 @@ Hand Lightwork a goal. Its orchestrator decomposes it, spawns specialist sub-age
 - 🏢 **1,118 prebuilt specialists across 26 business suites.** Customer support, finance, legal, HR, ops, GTM, marketing, procurement, data, security ops, tax preparation for CPA firms, and 10 industry verticals (healthcare, insurance, banking, gov contracting, …) — every pack a real agent with a least-privilege tool envelope and risk ceiling. Run `maverick domains-lint` and check for yourself: 0 errors, 0 warnings.
 - 🧠 **Long-horizon multi-agent depth.** A recursive orchestrator spawns specialist sub-agents that work for hours under hard dollar / wall-clock / tool-call caps — frontier-agent depth, on the models *you* choose, with the governance and learning layers no coding-agent runtime ships.
 
-> **Proprietary software — not open source.** Lightwork is enterprise software; use, redistribution, and derivative works require a license. [Contact us](https://github.com/Day-AI-Labs/Lightwork) for evaluation or commercial access. See [`LICENSE`](./LICENSE) and [`TRADEMARK.md`](./TRADEMARK.md).
+> **Proprietary software — not open source.** Lightwork is enterprise software; use, redistribution, and derivative works require a license. [Contact us](https://github.com/Day-AI-Labs/Maverick) for evaluation or commercial access. See [`LICENSE`](./LICENSE) and [`TRADEMARK.md`](./TRADEMARK.md).
 
 ```bash
 pipx install 'maverick-agent[installer]'
@@ -55,7 +55,7 @@ Alpha, but **installable today**: all eight packages are on [PyPI](https://pypi.
 
 ### Download the app — no terminal needed (easiest)
 
-Grab the installer for your OS from the **[latest release ›](https://github.com/Day-AI-Labs/Lightwork/releases/latest)**, double-click it, then press **Install Lightwork**:
+Grab the installer for your OS from the **[latest release ›](https://github.com/Day-AI-Labs/Maverick/releases/latest)**, double-click it, then press **Install Lightwork**:
 
 | OS | File on the release |
 |---|---|

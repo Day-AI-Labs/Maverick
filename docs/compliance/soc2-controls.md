@@ -226,13 +226,24 @@ print(json.dumps(collect_soc2_evidence(), indent=2))"
 ```
 
 A SOC 2-ready deployment should show `capability_enforcement`,
-`tenant_isolation`, and `usage_quotas` as `enabled`, and `audit_log` as `ok`
-with `audit_signing_key` present. Note that `audit_log` is only `ok` when audit
-signing is turned on (`[audit] sign = true` / `MAVERICK_AUDIT_SIGN=1`) and the
-per-day chains plus cross-file anchor ledger verify cleanly; with
-signing off the log exists but is reported `unsigned` — append-only, but not
-cryptographically tamper-evident. So OIDC and audit signing both default off and
-must be enabled (alongside capabilities/tenancy/quotas) for a SOC 2 posture.
+`tenant_isolation`, `usage_quotas`, and `oidc_auth` as `enabled`,
+`encryption_at_rest` as `enabled`, and `audit_log` as `ok` with
+`audit_signing_key` present.
+
+At-rest encryption and audit signing **default ON** (secure-by-default —
+`maverick.security_defaults.secure_by_default`), unless explicitly disabled
+(`MAVERICK_SECURE_DEFAULT=0`, or the per-control knobs `[encryption] at_rest` /
+`[audit] sign`). So on a fresh install `encryption_at_rest` reports `enabled`, and
+once the audit log has rows they are signed and the per-day chains plus cross-file
+anchor ledger verify `ok` (the log reads `empty` only until the first write, and
+`audit_signing_key` becomes present once the first signed row is written). With
+signing explicitly off the log is reported `unsigned` — append-only, but not
+cryptographically tamper-evident.
+
+The deployment-specific controls that would break the zero-config happy path stay
+opt-in and must be turned on for a full SOC 2 posture: `capability_enforcement`,
+`tenant_isolation`, `usage_quotas`, and `oidc_auth` (OIDC would otherwise lock out
+the local single-user dashboard).
 
 > **Follow-on (not in this change):** a `maverick soc2` CLI command that prints
 > this snapshot (and exits non-zero if required controls are not `enabled`) is a
