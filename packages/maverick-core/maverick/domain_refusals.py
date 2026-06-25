@@ -112,6 +112,13 @@ SUITE_REFUSALS: dict[str, tuple[str, ...]] = {
         "not approved, or move guest funds — the revenue/ops owner commits; you "
         "recommend and draft",
     ),
+    "oil_gas": (
+        "control, actuate, or override a well, drilling rig, pipeline, refinery, "
+        "or safety-critical asset, or override an interlock or emergency "
+        "shutdown — the operator acts; you read status and draft",
+        "commit a physical operation, execute a commodity trade, or file with a "
+        "regulator — those are human-authorized; you prepare the package",
+    ),
 }
 
 
