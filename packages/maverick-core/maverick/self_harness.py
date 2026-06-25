@@ -78,7 +78,11 @@ def load_addenda(path: Path | None = None) -> dict[str, str]:
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
         if isinstance(data, dict):
-            return {str(k): str(v) for k, v in data.items() if str(v).strip()}
+            # Accept ONLY string values: a tampered/corrupt store with a numeric
+            # or null value must not coerce to "123"/"None" and get recalled into
+            # a prompt as literal garbage.
+            return {str(k): v for k, v in data.items()
+                    if isinstance(v, str) and v.strip()}
     except (FileNotFoundError, ValueError, OSError):
         pass
     return {}
@@ -137,10 +141,22 @@ def mine_failures(
     leaks into another's harness. Within a model, traces are grouped by
     ``failure_class`` then greedily clustered by goal-text Jaccard overlap; only
     clusters with ``>= min_support`` members survive (a one-off is noise, not a
-    pattern). ``min_support < 1`` disables mining (returns nothing)."""
+    pattern). ``min_support < 1`` disables mining (returns nothing).
+
+    SCOPE GUARD (trace-poisoning defense): only UNSCOPED failures -- ones with
+    no ``channel`` and no ``user_id`` -- are mined. A scoped reflexion came from
+    a remote user on some channel and may carry attacker-influenced goal/failure
+    text; the addendum is recalled into EVERY future run of this model (across
+    all channels/tenants), so admitting scoped text would let a hostile caller
+    poison the harness cross-channel. This mirrors dreaming's unscoped-only
+    promotion guard. A purely-local operator's runs are unscoped, so this costs
+    nothing in the intended single-operator case."""
     if min_support < 1:
         return []
-    mine = [r for r in (reflexions or []) if str(r.get("model_id") or "") == str(model_id)]
+    mine = [r for r in (reflexions or [])
+            if isinstance(r, dict)
+            and str(r.get("model_id") or "") == str(model_id)
+            and r.get("channel") is None and r.get("user_id") is None]
     by_class: dict[str, list[dict]] = {}
     for r in mine:
         by_class.setdefault(str(r.get("failure_class") or "error"), []).append(r)
@@ -201,6 +217,28 @@ class HarnessProposal:
 # (the model proposing how to avoid its OWN recurring failure). Pure/seam.
 ProposeFn = Callable[[FailureSignature], str]
 
+# Control characters (except none -- we drop them all): a guidance line is
+# plain prose. Newlines/tabs/escapes could break the line out of its framed
+# block or smuggle role/instruction markers, so they are removed.
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_line(text: str) -> str:
+    """Neutralize a proposed addendum line before it can enter a prompt.
+
+    Defense-in-depth on top of the unscoped-only mining guard: the line still
+    derives from trace text and (with an LLM proposer) from model output, so
+    strip control chars, collapse all whitespace to single spaces (no multi-line
+    break-out), and scrub secrets. The result is one bounded plain-prose line."""
+    line = _CTRL_RE.sub(" ", str(text or ""))
+    line = " ".join(line.split())  # collapse all whitespace incl. newlines
+    try:
+        from .secrets import scrub
+        line = scrub(line)
+    except Exception:  # pragma: no cover -- scrubbing must never break the loop
+        pass
+    return line.strip()
+
 
 def _default_propose(sig: FailureSignature) -> str:
     """Deterministic fallback proposer (no LLM): template a guidance line from
@@ -217,11 +255,11 @@ def propose_addendum(sig: FailureSignature, *, propose_fn: ProposeFn | None = No
     or too long to be 'minimal'."""
     fn = propose_fn or _default_propose
     try:
-        line = (fn(sig) or "").strip()
+        line = fn(sig) or ""
     except Exception as e:  # pragma: no cover -- a bad proposer can't crash the loop
         log.warning("self_harness: proposer failed for %s (%s)", sig.signature, e)
         return None
-    line = " ".join(line.split())  # collapse whitespace -> one line
+    line = _sanitize_line(line)  # control chars + multi-line + secrets neutralized
     if not line or len(line) > 280:
         return None
     return HarnessProposal(
