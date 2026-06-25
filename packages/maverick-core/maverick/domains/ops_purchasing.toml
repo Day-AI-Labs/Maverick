@@ -15,6 +15,7 @@ allow_tools = ["read_file", "web_search", "knowledge_search", "erp_read", "coupa
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 
+allow_hosts = ["*.coupa.com"]   # egress scope for the connector seat
 knowledge_sources = ["ops_procurement", "ops_price_agreements"]
 authoring = "manual"
 

@@ -251,3 +251,24 @@ def test_high_volume_packs_carry_low_effort():
     # ...and clerical, high-throughput work runs light.
     for name in ("cx_status_page", "tax_efile_status", "proc_po_chaser"):
         assert _BUILTIN[name].effort == "low", name
+
+
+# A pack that names a known SaaS-connector tool must scope the vendor's host in
+# allow_hosts, so the egress lock (enterprise.py) lets the connector seat reach
+# its system instead of blocking it. Guards the wired packs from drift.
+_VENDOR_HOSTS = {
+    "billdotcom": "*.bill.com", "coupa": "*.coupa.com", "tipalti": "*.tipalti.com",
+    "adp": "*.adp.com", "gusto": "*.gusto.com", "netsuite": "*.netsuite.com",
+    "workday": "*.workday.com",
+}
+
+
+def test_vendor_connector_packs_scope_their_egress_hosts():
+    for name, p in _BUILTIN.items():
+        hosts = set(p.allow_hosts)
+        for tool in p.allow_tools:
+            for vendor, host in _VENDOR_HOSTS.items():
+                if vendor in tool.lower():
+                    assert host in hosts, (
+                        f"{name}: names {vendor} tool {tool!r} but {host} not in "
+                        "allow_hosts -- the egress lock would block the connector")
