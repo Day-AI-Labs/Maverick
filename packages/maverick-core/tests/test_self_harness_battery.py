@@ -554,3 +554,112 @@ def test_self_harness_fuzz(monkeypatch, tmp_path):
 
     assert not viol, (f"{len(viol)} invariant violations across {rounds} rounds "
                       f"(promoted {promoted_total} total):\n" + "\n".join(viol[:40]))
+
+
+# ==========================================================================
+# H. MODEL-BASED (STATEFUL) — an EXACT oracle, not just invariant bounds
+# ==========================================================================
+
+def test_self_harness_model_based(monkeypatch, tmp_path):
+    """Stateful model-based test: drive sequential passes against persistent,
+    REUSED stores while maintaining an INDEPENDENT reference of the exact
+    expected addendum content, and assert the real store equals it byte-for-byte
+    after every pass.
+
+    Different oracle from the invariant fuzz: exact state, not safety bounds.
+    A `propose_fn` returns a KNOWN clean line so the promoted content is
+    deterministic -- this pins the dedup/refresh-to-newest/cap/eviction/model-
+    isolation state machine precisely (it reproduces both prior soak bugs by
+    construction). Scales with MAVERICK_SELF_HARNESS_FUZZ_ROUNDS (default 1000)."""
+    import os
+    import random as R
+
+    rounds = max(1, int(os.environ.get("MAVERICK_SELF_HARNESS_FUZZ_ROUNDS", "1000")))
+    MAX = sh._MAX_LINES_PER_MODEL
+    pool = ["A", "B", "C", "D", "E", "F"]
+    stores = [tmp_path / f"mb{i}.json" for i in range(4)]
+    # Independent oracle: store -> {model -> [clean lines, newest-last]}.
+    refs: dict = {str(p): {} for p in stores}
+    # Alphabet sized to force BOTH dedup (reuse) and eviction (> MAX distinct).
+    ALPHA = [f"guidance line {k}" for k in range(MAX + 5)]
+    viol: list[str] = []
+
+    def ck(n, cond, msg):
+        if not cond:
+            viol.append(f"[r{n}] {msg}")
+
+    def compose(cur, line):
+        # Independent reimplementation of _compose_addendum's semantics:
+        # dedup-refresh to newest, cap to MAX newest.
+        out = [x for x in cur if x != line]
+        out.append(line)
+        return out[-MAX:]
+
+    def bullets(block):
+        return [ln[2:] for ln in block.splitlines() if ln.startswith("- ")]
+
+    for n in range(rounds):
+        rng = R.Random(1_000_000 + n)        # disjoint seed space from the fuzz
+        store = rng.choice(stores)
+        ref = refs[str(store)]
+        target = rng.choice(pool)
+
+        si_on = rng.random() < 0.85
+        frozen = rng.random() < 0.15
+        reject = rng.random() < 0.15          # scorer that does not improve
+        monkeypatch.setenv("MAVERICK_SELF_HARNESS", "1")
+        monkeypatch.setenv("MAVERICK_SELF_IMPROVEMENT", "1" if si_on else "0")
+        ctrl = si.SelfImprovementController(frozen_fn=lambda f=frozen: f,
+                                            ledger=si.PromotionLedger())
+
+        # 1..N distinct failure classes for the target, each a cluster with a
+        # DISTINCT support (3,4,5,...) so mine's strongest-first order is
+        # unambiguous; map each class to a chosen alphabet line.
+        j = rng.choice([1, 1, 1, 2, 2, 3, 4, MAX + 3])  # mostly cheap; some cap-stress
+        classes = [f"c{k}" for k in range(j)]
+        line_for = {c: rng.choice(ALPHA) for c in classes}
+        recs = []
+        for k, c in enumerate(classes):
+            for i in range(3 + k):            # support 3,4,... distinct
+                recs.append({"model_id": target, "failure_class": c,
+                             "goal_text": f"task run {i}", "failure_msg": "x"})
+        # processing order = strongest (highest support) first = reverse of k
+        ordered_lines = [line_for[c] for c in reversed(classes)]
+
+        gate_open = si_on and (not frozen) and (not reject)
+
+        def sw(a, c, _r=reject):
+            return 0.4 if _r else 0.95
+
+        def wo(a, c):
+            return 0.4
+
+        rep = sh.run_self_harness(
+            recs, model_id=target, min_support=3,
+            held_in=["a", "b"], held_out=["c", "d", "e"],
+            score_with=sw, score_without=wo,
+            propose_fn=lambda sig, _lf=line_for: _lf[sig.failure_class],
+            controller=ctrl, path=store)
+
+        # Update the reference: if the gate is open, the first MAX promotions (in
+        # strongest-first order) are applied via compose; else nothing changes.
+        expected_promotions = min(len(ordered_lines), MAX) if gate_open else 0
+        if gate_open:
+            for line in ordered_lines[:MAX]:
+                ref[target] = compose(ref.get(target, []), line)
+            if not ref.get(target):
+                ref.pop(target, None)
+
+        ck(n, rep.promoted == expected_promotions,
+           f"promoted {rep.promoted} != expected {expected_promotions} "
+           f"(gate_open={gate_open}, j={j})")
+
+        # EXACT oracle: the real store equals the reference for EVERY model.
+        actual = sh.load_addenda(store)
+        for m in pool:
+            ck(n, bullets(actual.get(m, "")) == ref.get(m, []),
+               f"store!=ref for {m}: {bullets(actual.get(m, ''))} vs {ref.get(m, [])}")
+        ck(n, set(actual) <= set(ref) | {target}, f"unexpected models {set(actual) - set(ref)}")
+
+    assert not viol, (f"{len(viol)} model-based mismatches across {rounds} rounds:\n"
+                      + "\n".join(viol[:40]))
