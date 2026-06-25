@@ -2528,6 +2528,9 @@ AGENT_SUITES: list[tuple[str, str]] = [
     ("capital_markets", "Capital Markets / Asset Management"),
     # New industry suites (2026 build-out).
     ("oil_gas", "Oil & Gas / Energy (Upstream-Downstream)"),
+    ("automotive", "Automotive (OEM / Dealership / Mobility)"),
+    ("public_sector", "Public Sector (State & Local Government Operations)"),
+    ("agriculture", "Agriculture / Agribusiness"),
 ]
 
 
