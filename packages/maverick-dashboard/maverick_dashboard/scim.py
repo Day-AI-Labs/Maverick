@@ -18,6 +18,7 @@ with the IdP is faithful, and linking each user to a registry tenant.
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
 import time
@@ -40,9 +41,31 @@ _PATCH_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 # --------------------------------------------------------------------------
 # Enable / auth
 # --------------------------------------------------------------------------
+def _scim_secrets() -> list[str]:
+    """Configured SCIM bearer secret(s).
+
+    ``MAVERICK_SCIM_TOKEN`` may hold a single token (legacy) or a
+    **comma-separated set** so a rotation can keep the old and new token both
+    valid for a grace window. Each entry is either a literal token or a
+    ``sha256:<hex>`` digest, so the plaintext secret need not sit in the process
+    environment. Order does not matter; all are checked constant-time."""
+    raw = os.environ.get("MAVERICK_SCIM_TOKEN", "")
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
 def scim_enabled() -> bool:
-    """SCIM is active only when an IdP bearer is configured."""
-    return bool(os.environ.get("MAVERICK_SCIM_TOKEN", "").strip())
+    """SCIM is active only when at least one IdP bearer is configured."""
+    return bool(_scim_secrets())
+
+
+def _token_matches(token: str, secret: str) -> bool:
+    """Constant-time match of a presented bearer against one configured secret,
+    supporting a ``sha256:<hex>`` hashed secret."""
+    if secret.startswith("sha256:"):
+        want = secret[len("sha256:"):].strip().lower()
+        got = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        return hmac.compare_digest(got, want)
+    return hmac.compare_digest(token.encode("utf-8"), secret.encode("utf-8"))
 
 
 def _scim_error(status: int, detail: str, *, scim_type: str | None = None) -> JSONResponse:
@@ -57,8 +80,8 @@ def _authorize(request: Request) -> JSONResponse | None:
 
     Disabled (no token) -> 404 so the surface stays invisible until opted in.
     Wrong/absent bearer -> 401. Constant-time token compare."""
-    expected = os.environ.get("MAVERICK_SCIM_TOKEN", "").strip()
-    if not expected:
+    secrets = _scim_secrets()
+    if not secrets:
         return _scim_error(404, "SCIM is not enabled")
     auth = request.headers.get("authorization", "")
     token = auth[7:] if auth.startswith("Bearer ") else ""
@@ -66,7 +89,9 @@ def _authorize(request: Request) -> JSONResponse | None:
     # non-ASCII (>U+007F) codepoint, which would 500 this auth gate (the sole
     # gate for the IdP provisioning surface) on a crafted bearer -- a DoS /
     # info-leak amplifier. The channel verifiers were fixed the same way.
-    if not (token and hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8"))):
+    # Any configured secret may match (rotation grace window); each compare is
+    # constant-time.
+    if not (token and any(_token_matches(token, s) for s in secrets)):
         return _scim_error(401, "invalid or missing SCIM bearer token")
     return None
 
