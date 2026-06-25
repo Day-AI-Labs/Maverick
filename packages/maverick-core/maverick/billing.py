@@ -16,6 +16,8 @@ built-in defaults are the last-resort fallback.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 
 from .quotas import UsageLedger
@@ -79,15 +81,32 @@ class Invoice:
     subtotal: float = 0.0
     total: float = 0.0
     currency: str = "USD"
+    # Deterministic idempotency key for (tenant, period, currency). A downstream
+    # payment/AR step can use it to charge a given tenant-period at most once, so
+    # re-running generate_invoice never double-bills the same period.
+    invoice_id: str = ""
 
     def to_dict(self) -> dict:
         return {
             "tenant": self.tenant,
+            "invoice_id": self.invoice_id,
             "period_start": self.period_start, "period_end": self.period_end,
             "currency": self.currency,
             "subtotal": self.subtotal, "total": self.total,
             "line_items": [li.to_dict() for li in self.line_items],
         }
+
+
+def _invoice_id(tenant: str | None, period_start: str, period_end: str,
+                currency: str) -> str:
+    """Stable idempotency key for one tenant's billing period.
+
+    Keyed on identity (tenant + period + currency), NOT on the amount, so the
+    same logical invoice keeps the same id across re-runs -- that is exactly what
+    lets a payment integration dedup. Close the period before charging."""
+    key = json.dumps([tenant or "", period_start or "", period_end or "", currency],
+                     separators=(",", ":"))
+    return "inv_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
 
 def _in_period(day: str, since: str | None, until: str | None) -> bool:
@@ -130,9 +149,11 @@ def rate_ledger(
             ))
     subtotal = round(sum(li.charge for li in items), 6)
     total = round(max(subtotal, card.minimum_charge), 6)
+    period_start, period_end = since or "", until or ""
     return Invoice(
-        tenant=tenant, period_start=since or "", period_end=until or "",
+        tenant=tenant, period_start=period_start, period_end=period_end,
         line_items=items, subtotal=subtotal, total=total, currency=card.currency,
+        invoice_id=_invoice_id(tenant, period_start, period_end, card.currency),
     )
 
 
