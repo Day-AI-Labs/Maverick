@@ -146,6 +146,7 @@ class DreamReport:
     facts_pruned: int = 0
     user_notes_written: int = 0
     skills_quarantined: int = 0
+    learning_frozen: bool = False
     departments: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -1096,6 +1097,55 @@ def _quarantine_new_skills(paths: list[Path]) -> int:
     return moved
 
 
+def _consolidate_learning(report, by_domain_success, failures, *,
+                          skill_store, cfg, now) -> list[DreamInsight]:
+    """Distill skills + synthesize insights from this cycle's labeled
+    trajectories -- UNLESS the verifier is frozen.
+
+    Learning-freeze interlock (calibration): when the verifier has stopped
+    discriminating, the success/failure labels feeding this consolidation are
+    untrusted -- distilling skills/insights from them bakes the grader's drift
+    into live, recallable behavior (the reward-hacking the freeze exists to
+    prevent). rehearse() already refuses on a frozen verifier; the consolidation
+    path did not, so the headline interlock was a no-op here. Returns the new
+    insights to persist (empty when frozen)."""
+    try:
+        from .calibration import learning_frozen as _lf
+        report.learning_frozen = bool(_lf())
+    except Exception:  # pragma: no cover -- interlock absent = not frozen
+        report.learning_frozen = False
+    if report.learning_frozen:
+        return []
+
+    min_cluster = int(cfg.get("min_cluster", 2))
+    # CONSOLIDATE successes -> learned skills (evidence-gated + deduped).
+    new_skills = _distill_department_skills(
+        by_domain_success, skill_store=skill_store, min_cluster=min_cluster,
+    )
+    # Benchmark canary: while the tracked suite is regressing, this cycle's
+    # NEW skills are quarantined — never add learned behavior on red.
+    if new_skills and bool(cfg.get("benchmark_gate", True)) and benchmark_regressed():
+        report.skills_quarantined = _quarantine_new_skills(new_skills)
+        new_skills = []
+    report.skills_distilled = len(new_skills)
+
+    # CONSOLIDATE failures -> dream insights, clustered within each department.
+    new_insights: list[DreamInsight] = []
+    by_domain_failure: dict[str | None, list[dict]] = {}
+    for f in failures:
+        by_domain_failure.setdefault(f.get("domain"), []).append(f)
+    for dom, fs in by_domain_failure.items():
+        for cluster in cluster_failures(fs, min_cluster=min_cluster):
+            new_insights.append(synthesize_insight(cluster, domain=dom, now=now))
+    # Shared promotion is limited to generic, unscoped failures; department
+    # failures stay compartment-local and are consolidated only above.
+    if bool(cfg.get("promote_shared", False)):
+        new_insights.extend(promote_shared_insights(
+            failures, min_cluster=min_cluster, now=now,
+        ))
+    return new_insights
+
+
 def dream_cycle(
     world: Any | None = None, *, profiles: dict[str, Any] | None = None,
     max_goals: int = 50, reflexion_path: Path | str | None = None,
@@ -1169,32 +1219,10 @@ def dream_cycle(
         if not f.get("domain"):
             f["domain"] = assign_domain(str(f.get("goal_text", "")), signatures)
 
-    # CONSOLIDATE successes -> learned skills (evidence-gated + deduped).
-    _new_skills = _distill_department_skills(
-        by_domain_success, skill_store=skill_store,
-        min_cluster=int(cfg.get("min_cluster", 2)),
+    new_insights = _consolidate_learning(
+        report, by_domain_success, failures,
+        skill_store=skill_store, cfg=cfg, now=now,
     )
-    # Benchmark canary: while the tracked suite is regressing, this cycle's
-    # NEW skills are quarantined — never add learned behavior on red.
-    if _new_skills and bool(cfg.get("benchmark_gate", True)) and benchmark_regressed():
-        report.skills_quarantined = _quarantine_new_skills(_new_skills)
-        _new_skills = []
-    report.skills_distilled = len(_new_skills)
-
-    # REHEARSE failures -> dream insights, clustered within each department.
-    new_insights: list[DreamInsight] = []
-    by_domain_failure: dict[str | None, list[dict]] = {}
-    for f in failures:
-        by_domain_failure.setdefault(f.get("domain"), []).append(f)
-    for dom, fs in by_domain_failure.items():
-        for cluster in cluster_failures(fs, min_cluster=int(cfg.get("min_cluster", 2))):
-            new_insights.append(synthesize_insight(cluster, domain=dom, now=now))
-    # Shared promotion is limited to generic, unscoped failures; department
-    # failures stay compartment-local and are consolidated only above.
-    if bool(cfg.get("promote_shared", False)):
-        new_insights.extend(promote_shared_insights(
-            failures, min_cluster=int(cfg.get("min_cluster", 2)), now=now,
-        ))
     report.insights_written = append_insights(
         new_insights, path=insights_path,
         max_insights=int(cfg.get("max_insights", 100)),
