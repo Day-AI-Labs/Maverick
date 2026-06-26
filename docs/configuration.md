@@ -188,7 +188,10 @@ enable = true
 [self_harness]             # learn a model-specific operating-guidance addendum
 enable = false             # mine failures -> propose -> regression-validate ->
                            #   gate. Promotion ALSO needs [self_improvement]
-                           #   enable; inspect with `maverick self-harness`.
+                           #   enable. Operator commands: `maverick self-harness
+                           #   show` (what was learned), `preview` (dry-run of
+                           #   what it would propose), `log` (audit trail), and
+                           #   `forget` (roll a learned line back).
 
 [self_learning]            # local continuous learning (default off)
 enable = true

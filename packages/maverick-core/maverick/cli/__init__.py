@@ -1278,6 +1278,86 @@ def _governance_denied_counts(principals: set[str], *, limit: int = 500) -> dict
     return counts
 
 
+@main.group("self-harness")
+def harness() -> None:
+    """Inspect and roll back the self-harness learned operating guidance."""
+
+
+@harness.command("show")
+@click.option("--model", default=None, help="Only show this model's guidance.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def harness_show(model: str | None, as_json: bool) -> None:
+    """Show the operating-guidance the self-harness loop has learned, per model.
+
+    This is the operator's window into what gets recalled into each model's
+    system prompt. Read-only.
+    """
+    import json as _json
+
+    from ..self_harness import enabled, list_learned
+    learned = list_learned()
+    if model:
+        learned = {k: v for k, v in learned.items() if k == model}
+    if as_json:
+        click.echo(_json.dumps(learned, indent=2, sort_keys=True))
+        return
+    if not enabled():
+        click.echo("note: self-harness is OFF ([self_harness] enable=false) — "
+                   "stored guidance is NOT recalled into prompts until enabled.")
+    if not learned:
+        click.echo("no learned guidance yet.")
+        return
+    for m, lines in sorted(learned.items()):
+        click.echo(f"\n{m}  ({len(lines)} line{'s' if len(lines) != 1 else ''}):")
+        for ln in lines:
+            click.echo(f"  - {ln}")
+
+
+@harness.command("log")
+@click.option("--limit", default=20, show_default=True, help="Recent events to show.")
+def harness_log(limit: int) -> None:
+    """Show recent self-harness learning events — what was learned or forgotten,
+    for which model, and when (read from the signed audit trail). Read-only."""
+    from ..audit import EventKind, default_audit_log
+    rows: list[dict] = []
+    try:
+        for ev in default_audit_log().tail(2000):
+            if ev.get("kind") == EventKind.LEARNING_UPDATE and ev.get("agent") == "self_harness":
+                rows.append(ev)
+    except Exception:  # pragma: no cover -- inspection never blocks on audit
+        pass
+    rows = rows[-limit:]
+    if not rows:
+        click.echo("no self-harness learning events recorded.")
+        return
+    for ev in rows:
+        ts = ev.get("ts") or ev.get("time") or ""
+        click.echo(f"{ts}  {ev.get('phase', 'apply'):7} {ev.get('model_id', '?')}  "
+                   f"{ev.get('line', '')}")
+
+
+@harness.command("forget")
+@click.option("--model", required=True, help="Model whose guidance to remove.")
+@click.option("--line", default=None,
+              help="Remove just this one line (default: all guidance for the model).")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+def harness_forget(model: str, line: str | None, yes: bool) -> None:
+    """Roll back learned guidance for a model — the operator undo handle.
+
+    Removes the whole block for MODEL, or a single --line. The removal is atomic
+    and audited.
+    """
+    from ..self_harness import forget_addendum
+    what = f"the line {line!r}" if line else "ALL learned guidance"
+    if not yes and not click.confirm(f"Remove {what} for {model}?"):
+        click.echo("aborted.")
+        return
+    if forget_addendum(model, line=line):
+        click.echo("removed.")
+    else:
+        click.echo("nothing to remove.")
+
+
 @main.group()
 def fleet() -> None:
     """Manage per-employee agent fleets (enterprise)."""
