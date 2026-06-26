@@ -5,20 +5,41 @@
 # `.pem` (signing certificate). The signature is keyless: it was produced by the
 # release workflow's OIDC identity and logged to the public Rekor transparency
 # log, so verification proves the artifact was built by THIS repo's release
-# workflow -- no shared public key to distribute or trust on faith.
+# workflow for the expected release tag -- no shared public key to distribute or
+# trust on faith.
 #
-#   deploy/verify-release.sh maverick-linux-x86_64
-#   deploy/verify-release.sh maverick-linux-x86_64 maverick-linux-x86_64.sig maverick-linux-x86_64.pem
+#   deploy/verify-release.sh maverick-linux-x86_64 v1.2.3
+#   deploy/verify-release.sh maverick-linux-x86_64 v1.2.3 maverick-linux-x86_64.sig maverick-linux-x86_64.pem
 #
-# Override the expected signer with IDENTITY_REGEXP (e.g. to pin a tag).
+# Pass the release tag you intend to install (for example, v1.2.3). Verification
+# pins the signing certificate identity to that exact tag so older signed
+# artifacts cannot be replayed as a different release.
 set -euo pipefail
 
-ARTIFACT="${1:?usage: verify-release.sh <artifact> [sig] [cert]}"
-SIG="${2:-$ARTIFACT.sig}"
-CERT="${3:-$ARTIFACT.pem}"
+usage() {
+  echo "usage: verify-release.sh <artifact> <release-tag> [sig] [cert]" >&2
+}
 
-# The signer is the release workflow in this repo; the OIDC issuer is GitHub.
-IDENTITY_REGEXP="${IDENTITY_REGEXP:-^https://github.com/[Dd]ay-[Aa][Ii]-[Ll]abs/[Mm]averick/\.github/workflows/release\.yml@refs/tags/v.*}"
+if [ "$#" -lt 2 ] || [ "$#" -gt 4 ]; then
+  usage
+  exit 2
+fi
+
+ARTIFACT="$1"
+TAG="$2"
+SIG="${3:-$ARTIFACT.sig}"
+CERT="${4:-$ARTIFACT.pem}"
+
+case "$TAG" in
+  v*) ;;
+  *) echo "release tag must start with 'v' (got: $TAG)" >&2; exit 2 ;;
+esac
+
+# The signer is the release workflow in this repo for the exact release tag; the
+# OIDC issuer is GitHub. Escape regex metacharacters in the user-supplied tag so
+# the certificate identity is anchored to the literal tag value.
+ESCAPED_TAG="$(printf '%s' "$TAG" | sed -e 's/[.[\\*^$()+?{}|]/\\&/g')"
+IDENTITY_REGEXP="^https://github.com/[Dd]ay-[Aa][Ii]-[Ll]abs/[Mm]averick/\.github/workflows/release\.yml@refs/tags/${ESCAPED_TAG}$"
 OIDC_ISSUER="${OIDC_ISSUER:-https://token.actions.githubusercontent.com}"
 
 command -v cosign >/dev/null 2>&1 || {
@@ -30,6 +51,7 @@ for f in "$ARTIFACT" "$SIG" "$CERT"; do
 done
 
 echo "Verifying $ARTIFACT"
+echo "  release tag: $TAG"
 echo "  signature:   $SIG"
 echo "  certificate: $CERT"
 echo "  signer:      $IDENTITY_REGEXP"
@@ -41,4 +63,4 @@ cosign verify-blob \
   --certificate-oidc-issuer "$OIDC_ISSUER" \
   "$ARTIFACT"
 
-echo "OK: $ARTIFACT signature is valid and was produced by the release workflow."
+echo "OK: $ARTIFACT signature is valid and was produced by the release workflow for $TAG."
