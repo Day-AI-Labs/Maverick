@@ -267,7 +267,7 @@ there; the role personas aren't."*
 8. **Technical Research & Architecture** — design docs/ADRs · spikes · tech evaluation
 
 ### What's shipped (the most of any suite)
-The coding kernel, 7 sandbox backends (+ a network-policy egress layer), code review + the test-driven verifier + the
+The coding kernel, 9 sandbox backends (+ a network-policy egress layer), code review + the test-driven verifier + the
 SWE-bench eval harness, VCS/CI tools, the swarm/orchestrator — plus ~140 connectors incl.
 the full PM stack (Jira/Linear/Asana/ClickUp/Notion/Confluence), product analytics
 (GA4/Mixpanel/PostHog), DevOps (Datadog/Sentry/PagerDuty/Vercel/Cloudflare), Figma + a11y.

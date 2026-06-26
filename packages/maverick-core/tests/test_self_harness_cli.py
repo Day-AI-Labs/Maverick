@@ -1,0 +1,105 @@
+"""Operator CLI for the self-harness learned guidance: `maverick self-harness`.
+
+The loop was invisible from the command line -- an operator could not see what
+their agents had learned or roll any of it back. This pins the inspection/undo
+surface: ``harness show`` (what was learned, per model), ``harness log`` (the
+audit trail of learn/forget events), and ``harness forget`` (the rollback).
+
+Every store/audit path is redirected under a tmp ``MAVERICK_HOME`` so the tests
+never touch a real install.
+"""
+from __future__ import annotations
+
+import json
+
+import pytest
+from click.testing import CliRunner
+from maverick import self_harness as sh
+from maverick.cli import main
+
+
+@pytest.fixture
+def _home(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_SELF_HARNESS", "1")
+    return tmp_path
+
+
+def _seed(model="claude-x", lines=("verify the precondition", "check inputs first")):
+    block = "Operating guidance learned for this model:\n" + "\n".join(f"- {x}" for x in lines)
+    sh._write_addenda({model: block}, sh._store_path())
+
+
+def test_show_lists_learned_guidance(_home):
+    _seed()
+    r = CliRunner().invoke(main, ["self-harness", "show"])
+    assert r.exit_code == 0, r.output
+    assert "claude-x" in r.output
+    assert "verify the precondition" in r.output and "check inputs first" in r.output
+
+
+def test_show_json_is_machine_readable(_home):
+    _seed()
+    r = CliRunner().invoke(main, ["self-harness", "show", "--json"])
+    assert r.exit_code == 0, r.output
+    data = json.loads(r.output)
+    assert data == {"claude-x": ["verify the precondition", "check inputs first"]}
+
+
+def test_show_filters_by_model(_home):
+    _seed("model-a", ["line a"])
+    sh._write_addenda({**sh.load_addenda(sh._store_path()),
+                       "model-b": "Operating guidance learned for this model:\n- line b"},
+                      sh._store_path())
+    r = CliRunner().invoke(main, ["self-harness", "show", "--model", "model-a"])
+    assert "line a" in r.output and "line b" not in r.output
+
+
+def test_show_warns_when_disabled(_home, monkeypatch):
+    monkeypatch.delenv("MAVERICK_SELF_HARNESS")        # feature OFF
+    _seed()
+    r = CliRunner().invoke(main, ["self-harness", "show"])
+    assert r.exit_code == 0
+    assert "OFF" in r.output                            # operator is told it won't recall
+    assert "verify the precondition" in r.output        # but can still inspect it
+
+
+def test_show_empty(_home):
+    r = CliRunner().invoke(main, ["self-harness", "show"])
+    assert r.exit_code == 0 and "no learned guidance" in r.output
+
+
+def test_forget_removes_all_for_model(_home):
+    _seed()
+    r = CliRunner().invoke(main, ["self-harness", "forget", "--model", "claude-x", "--yes"])
+    assert r.exit_code == 0 and "removed" in r.output
+    assert sh.list_learned() == {}
+
+
+def test_forget_one_line_keeps_the_rest(_home):
+    _seed()
+    r = CliRunner().invoke(
+        main, ["self-harness", "forget", "--model", "claude-x",
+               "--line", "check inputs first", "--yes"])
+    assert r.exit_code == 0 and "removed" in r.output
+    assert sh.list_learned() == {"claude-x": ["verify the precondition"]}
+
+
+def test_forget_aborts_without_confirmation(_home):
+    _seed()
+    r = CliRunner().invoke(main, ["self-harness", "forget", "--model", "claude-x"], input="n\n")
+    assert "aborted" in r.output
+    assert sh.list_learned() == {"claude-x": ["verify the precondition", "check inputs first"]}
+
+
+def test_forget_nothing_to_remove(_home):
+    r = CliRunner().invoke(main, ["self-harness", "forget", "--model", "ghost", "--yes"])
+    assert r.exit_code == 0 and "nothing to remove" in r.output
+
+
+def test_log_smoke_and_records_forget(_home):
+    _seed()
+    # a forget is audited; the log surface should not error and ideally show it.
+    CliRunner().invoke(main, ["self-harness", "forget", "--model", "claude-x", "--yes"])
+    r = CliRunner().invoke(main, ["self-harness", "log"])
+    assert r.exit_code == 0, r.output

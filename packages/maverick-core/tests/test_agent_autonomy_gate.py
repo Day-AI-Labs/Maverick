@@ -119,6 +119,48 @@ async def test_client_override_grants_auto(monkeypatch, tmp_path, _high_risk_act
 
 
 @pytest.mark.asyncio
+async def test_spawned_child_role_cannot_broaden_inherited_autonomy(
+    monkeypatch, tmp_path, _high_risk_act
+):
+    """A model-selected child role must not re-anchor workforce overrides.
+
+    The child inherits the parent's low-authority profile; choosing a configured
+    high-authority role name during ad-hoc spawn must not layer that role's
+    override over the inherited profile.
+    """
+    from maverick.agent import Agent
+
+    _enable(
+        monkeypatch,
+        agents={"trusted_auto": {"default": "auto", "onboarding": False}},
+    )
+    parent = _agent(
+        tmp_path,
+        AutonomyProfile(default=AutonomyLevel.OBSERVE, onboarding=False),
+        role="low_parent",
+    )
+    child = Agent(
+        ctx=parent.ctx,
+        role="trusted_auto",
+        brief="child",
+        depth=parent.depth + 1,
+        parent=parent,
+    )
+    child.capability = None
+    child.tools.register(Tool(
+        name="act", description="a consequential action", fn=lambda args: "done",
+        input_schema={"type": "object", "properties": {}},
+    ))
+
+    out = await child._run_tool("act", {})
+
+    assert child._autonomy is parent._autonomy
+    assert child._autonomy_name == "low_parent"
+    assert "done" not in out
+    assert "DENIED" in out
+
+
+@pytest.mark.asyncio
 async def test_coordination_not_gated_by_dial(monkeypatch, tmp_path, _high_risk_act):
     """Even an OBSERVE hire with levels on may spawn/message peers -- the
     coordination control-plane is exempt from the autonomy dial."""

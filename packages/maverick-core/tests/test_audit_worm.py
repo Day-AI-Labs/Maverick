@@ -6,6 +6,7 @@ the way the rest of the audit suite avoids live infra.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import stat
 from pathlib import Path
 
@@ -16,10 +17,16 @@ from maverick.audit import worm
 class FakeSink:
     def __init__(self):
         self.puts = []
+        self._objects = {}
 
     def put(self, name, data, *, retain_until):
         self.puts.append((name, data, retain_until))
+        self._objects[name] = data
         return {"target": "fake", "name": name}
+
+    def verify(self, locator, expected_sha256):
+        data = self._objects.get(locator.get("name"))
+        return data is not None and worm._sha256(data) == expected_sha256
 
 
 def _audit_dir(tmp_path, files: dict[str, str]) -> Path:
@@ -88,7 +95,7 @@ def test_verify_reports_ok_changed_and_unpushed(tmp_path):
         "2020-01-01.ndjson": "a\n",
         "2020-01-02.ndjson": "b\n",
     })
-    sink = FakeSink()
+    sink = worm.LocalWormSink(ad / "worm" / "store")
     worm.push_closed_dayfiles(audit_dir=ad, today="2025-01-01", sink=sink)
     (ad / "2020-01-02.ndjson").write_text("b changed\n", encoding="utf-8")
     (ad / "2020-01-03.ndjson").write_text("c\n", encoding="utf-8")   # never pushed
@@ -96,6 +103,28 @@ def test_verify_reports_ok_changed_and_unpushed(tmp_path):
     assert rep["2020-01-01.ndjson"] == "ok"
     assert rep["2020-01-02.ndjson"] == "changed since push"
     assert rep["2020-01-03.ndjson"] == "NOT pushed"
+
+
+def test_forged_manifest_does_not_verify_or_suppress_push(tmp_path):
+    ad = _audit_dir(tmp_path, {"2020-01-01.ndjson": "a\n"})
+    digest = worm._sha256((ad / "2020-01-01.ndjson").read_bytes())
+    missing = ad / "worm" / "store" / "missing-copy"
+    (ad / "worm").mkdir()
+    (ad / "worm" / "manifest.ndjson").write_text(
+        json.dumps({
+            "name": "2020-01-01.ndjson",
+            "sha256": digest,
+            "locator": {"target": "local", "path": str(missing)},
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    assert worm.verify(audit_dir=ad) == {"2020-01-01.ndjson": "NOT durably present"}
+
+    sink = worm.LocalWormSink(ad / "worm" / "store")
+    rep = worm.push_closed_dayfiles(audit_dir=ad, today="2025-01-01", sink=sink)
+    assert rep == {"2020-01-01.ndjson": "re-pushed (changed)"}
+    assert worm.verify(audit_dir=ad) == {"2020-01-01.ndjson": "ok"}
 
 
 # --- local sink -------------------------------------------------------------
@@ -113,7 +142,7 @@ def test_local_sink_writes_readonly_versioned(tmp_path):
 
 def test_push_then_verify_through_local_sink(tmp_path):
     ad = _audit_dir(tmp_path, {"2020-01-01.ndjson": "a\n"})
-    sink = worm.LocalWormSink(tmp_path / "store")
+    sink = worm.LocalWormSink(ad / "worm" / "store")
     worm.push_closed_dayfiles(audit_dir=ad, today="2025-01-01", sink=sink)
     assert worm.verify(audit_dir=ad) == {"2020-01-01.ndjson": "ok"}
 

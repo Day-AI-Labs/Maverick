@@ -139,6 +139,31 @@ def _code_challenge_s256(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
+def _shared_release_tx(tx_id: str) -> None:
+    """Release a shared-store OIDC transaction claim after a failed login.
+
+    The shared replay guard claims a transaction before token exchange so
+    cross-replica replays cannot race that exchange. If the exchange or token
+    validation fails, no session was created, so keeping a durable claim only
+    creates unauthenticated database growth. Best-effort release preserves the
+    HA replay guard for successful logins while bounding failed-flow storage to
+    the lifetime of the failed request.
+    """
+    if not tx_id:
+        return
+    try:
+        from maverick.world_model_backends import is_postgres_configured
+
+        if not is_postgres_configured():
+            return
+        from ._shared import _world
+        world = _world()
+        release = getattr(world, "release_processed_message", None)
+        if callable(release):
+            release(_OIDC_TX_CHANNEL, tx_id)
+    except Exception:  # pragma: no cover - cleanup must never mask login failure
+        log.warning("OIDC replay guard: shared tx cleanup failed")
+
 def _shared_consume_tx(tx_id: str) -> bool | None:
     """Consume ``tx_id`` in the shared world-model store, if one is configured.
 
@@ -412,6 +437,9 @@ async def auth_callback(request: Request):
     except Exception:
         # Never log the exception payload: it can echo the code/secret back.
         log.warning("OIDC callback: token exchange failed")
+        await asyncio.get_running_loop().run_in_executor(
+            None, _shared_release_tx, tx_id
+        )
         return _fail()
 
     id_token = ""
@@ -419,6 +447,9 @@ async def auth_callback(request: Request):
         id_token = str(token_data.get("id_token") or "")
     if not id_token:
         log.warning("OIDC callback: token response had no id_token")
+        await asyncio.get_running_loop().run_in_executor(
+            None, _shared_release_tx, tx_id
+        )
         return _fail()
 
     # (4) verify the ID token — reuse the kernel verifier (no re-implementation).
@@ -426,6 +457,9 @@ async def auth_callback(request: Request):
         principal = verify_oidc_token(id_token)
     except OIDCError:
         log.warning("OIDC callback: id_token verification failed")
+        await asyncio.get_running_loop().run_in_executor(
+            None, _shared_release_tx, tx_id
+        )
         return _fail()
 
     # (5) success: set the signed session cookie, clear the tx cookie, redirect.

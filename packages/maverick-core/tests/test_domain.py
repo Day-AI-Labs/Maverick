@@ -100,6 +100,19 @@ class TestBuiltinPacks:
             assert prof.knowledge_sources, f"{name} should bind a knowledge collection"
             assert prof.capability(f"agent:{name}-0").permits("knowledge_search") is True
 
+    def test_healthcare_packs_deny_web_search(self):
+        domains = available_domains()
+        healthcare = {
+            name: prof for name, prof in domains.items()
+            if name.startswith("hc_")
+        }
+        assert healthcare
+        for name, prof in healthcare.items():
+            assert "web_search" not in prof.allow_tools, name
+            assert "web_search" in prof.deny_tools, name
+            for step in prof.workflow:
+                assert "web_search" not in step.tools, f"{name}: {step.name}"
+
 
 class TestDomainCapability:
     def test_mints_envelope_without_parent(self):

@@ -232,19 +232,18 @@ def verify(manifest: dict, *, trusted_pubkey_hex: str | None = None) -> tuple[bo
     ``trusted_pubkey_hex`` is supplied it is verified against THAT anchor and the
     embedded pubkey must match it -- a real provenance check (an attacker who
     re-signs embeds their own key, which won't match the publisher's known key).
-    With no anchor it falls back to the embedded key, which proves integrity only
-    (tamper-after-signing) and the reason says so.
+    Without a trusted anchor, verification fails closed: a manifest-embedded
+    key is attacker-controlled and cannot establish provenance.
     """
     sig = manifest.get("signature")
     if not isinstance(sig, dict) or not sig.get("sig"):
         return False, "manifest is unsigned (no signature to verify)"
     embedded = str(sig.get("pubkey") or "").strip()
-    anchor = (trusted_pubkey_hex or "").strip()
-    if anchor and embedded and anchor.lower() != embedded.lower():
-        return False, "manifest pubkey does not match the trusted anchor (provenance fail)"
-    pub = anchor or embedded
+    pub = (trusted_pubkey_hex or "").strip()
     if not pub:
-        return False, "no public key available to verify against"
+        return False, "trusted pubkey is required for provenance verification"
+    if embedded and pub.lower() != embedded.lower():
+        return False, "manifest pubkey does not match the trusted anchor (provenance fail)"
     payload = json.dumps(
         {k: v for k, v in manifest.items() if k != "signature"},
         sort_keys=True, separators=(",", ":"),
@@ -256,10 +255,7 @@ def verify(manifest: dict, *, trusted_pubkey_hex: str | None = None) -> tuple[bo
         return False, f"verification error: {e}"
     if not ok:
         return False, "signature does not verify over the canonical payload"
-    if anchor:
-        return True, "signature verified against the trusted anchor"
-    return True, ("signature verifies against the embedded key (integrity only; "
-                  "pass a trusted pubkey for a provenance check)")
+    return True, "signature verified against the trusted anchor"
 
 
 _BADGE = {
@@ -335,8 +331,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
     p.add_argument("--verify", metavar="MANIFEST.json", default=None,
                    help="verify an existing proof_manifest.json instead of building")
     p.add_argument("--pubkey", default=None,
-                   help="trusted Ed25519 pubkey (hex) to verify --verify against "
-                        "(without it, only integrity is checked, not provenance)")
+                   help="trusted Ed25519 pubkey (hex) required for --verify provenance checks")
     args = p.parse_args(argv)
 
     if args.verify:

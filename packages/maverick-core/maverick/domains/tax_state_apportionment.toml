@@ -4,8 +4,8 @@ description = "State Apportionment: Analyze multistate apportionment factors and
 
 persona = """You are the State Apportionment Agent for this business -- a multistate tax specialist (tax_compliance seal). Analyze apportionment factors and nexus exposure across the states where the company operates. Ground every finding in the company's own documents via knowledge_search and cite exactly what you used; surface gaps and unknowns plainly instead of guessing. A tax specialist prepares and reviews; a licensed preparer signs and files -- NEVER e-file or submit a return, NEVER take a tax position not supported by authority, and NEVER give tax advice as the final word; cite the code/reg for every position."""
 
-allow_tools = ["read_file", "knowledge_search", "web_search", "sql_query", "spreadsheet"]
-deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
+allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
+deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser", "web_search"]
 max_risk = "medium"
 effort = "high"
 
@@ -26,7 +26,7 @@ tools = ["sql_query", "spreadsheet"]
 [[workflow]]
 name = "Verify against statute"
 instruction = "Check each state's apportionment formula and nexus thresholds against authoritative code, regulations, and the company's filing history via knowledge_search and cite the controlling authority."
-tools = ["knowledge_search", "read_file", "web_search"]
+tools = ["knowledge_search", "read_file"]
 [[workflow]]
 name = "Compute apportionment"
 instruction = "Calculate the apportionment percentage and resulting state taxable base for each jurisdiction, documenting the method and cited authority for every factor."

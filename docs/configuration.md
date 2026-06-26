@@ -188,7 +188,31 @@ enable = true
 [self_harness]             # learn a model-specific operating-guidance addendum
 enable = false             # mine failures -> propose -> regression-validate ->
                            #   gate. Promotion ALSO needs [self_improvement]
-                           #   enable; inspect with `maverick self-harness`.
+                           #   enable. Operator commands: `maverick self-harness
+                           #   show` (what was learned), `preview` (dry-run of
+                           #   what it would propose), `log` (audit trail), and
+                           #   `forget` (roll a learned line back).
+
+[self_learning]            # local continuous learning (default off)
+enable = true
+provision_packs = true     # equip a freshly-approved pack with the skills + tools
+                           #   its workflow needs at creation time (capability
+                           #   provisioning at pack-birth). Default on once
+                           #   self-learning is enabled; the wizard sets it.
+                           #   Read-only analysis is always safe; applying it is
+                           #   gated on the same human approval `save_profile`
+                           #   requires and never widens the clamped envelope.
+                           #   Wired into `maverick onboard`. See FEATURES.md.
+
+[self_improvement]         # promotion ladder for learned guidance (default off)
+enable = true
+factory_learning = true    # close the loop onto generation quality: attribute
+                           #   provisioning/approval gaps to a pack's suite/signal,
+                           #   mine them into proposer corrections, promote on the
+                           #   `prompt` rung, and fold into future pack generation.
+                           #   Default on once self-improvement is enabled; the
+                           #   wizard sets it. Force-enable via MAVERICK_FACTORY_LEARNING.
+                           #   `maverick factory-learn [--dry-run]`. See FEATURES.md.
 
 [domains]                  # specialist-pack behavior (defaults shown)
 discipline = true          # suite operating-discipline appended at spawn

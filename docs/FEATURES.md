@@ -280,6 +280,23 @@ here.
   refusals, and the human sign-off on its deliverable. Flags + exits non-zero if
   a drafting pack could reach a mutator; `--json` exports for a GRC system.
 - **Per-pack behavioral evals** — `maverick domains-eval [--check]`
+- **Roster-wide governance invariant suite** (verified across ALL 2,020 packs,
+  fault-injected at 1,000,000 iterations) — six invariants proven non-vacuously
+  (each carries a fault-injection control that fails when the guarantee is
+  removed): (1) **tool-reachability** — no drafting/non-builder agent can reach
+  a state-mutating tool; (2) **autonomy dial** — an onboarding agent is never
+  autonomous, and a high-risk action is never autonomous even once a pack is
+  graduated; (3) **capability attenuation** — a spawned child can never exceed
+  its parent's grant (no privilege escalation); (4) **compartment isolation** —
+  a quarantine seal never bleeds across compartments/suites; (5) **hard
+  refusals** — the universal refusal floor is unstrippable; (6) **budget caps**
+  — no cap is ever silently exceeded. Plus hostile-argument fuzzing of every
+  connector and tool.
+- **Robustness hardening** (bugs found by the stress sweep and fixed) —
+  connectors no longer raise on a non-string op/path/query (they return an
+  ERROR string); `Skill.parse` raises `ValueError` (not `AttributeError`) on
+  malformed/untrusted frontmatter; `format_money` degrades gracefully on a
+  None/empty currency.
   (`domain_eval.py`): golden cases that test a specialist's load-bearing
   behavior (AP catches a duplicate and never pays; legal cites or marks
   unverified; HR refuses emotion inference; ops refuses an interlock override).
@@ -451,7 +468,7 @@ here.
 
 ## Tools
 
-100+ built-in tools. Highlights by group (all under `tools/`):
+286 built-in tool modules. Highlights by group (all under `tools/`):
 
 - **Code & files** — `fs`, `str_edit`, `ast_edit` (tree-sitter), `apply_patch`
   (atomic multi-file), `repo_map`, `dep_graph`, `test_impact` (coverage-guided),
@@ -492,9 +509,10 @@ here.
   TrueLayer (EU/UK open banking),
   Twilio, Zoom, S3, DynamoDB, MongoDB, Redis, Elasticsearch, Datadog, Sentry,
   PagerDuty, Mixpanel, PostHog, Plausible, GA4, Home Assistant, Cloudflare,
-  Vercel, AWS Lambda/SES/SNS, Microsoft Graph, and more — plus a 200+ long-tail
-  of token-authed REST/GraphQL connectors (`enterprise_connectors.py`, built on
-  `make_rest_tool`) covering CRM, ERP, ITSM, HRIS, security, and data systems.
+  Vercel, AWS Lambda/SES/SNS, Microsoft Graph, and more — plus a long-tail of
+  214 write-capable token-authed REST/GraphQL connectors
+  (`enterprise_connectors.py`, built on `make_rest_tool`) covering CRM, ERP,
+  ITSM, HRIS, security, and data systems.
 - **Primary-source data connectors (37, read-only, low-risk)** — authoritative
   government and public data APIs that ground the analyst-style packs in
   primary sources instead of model memory: SEC EDGAR, FRED, U.S. Treasury,
@@ -847,8 +865,9 @@ dispatch path so a v2 handler works everywhere unchanged.
 
 ## Sandboxes
 
-7 run-to-completion backends (`sandbox/`): local subprocess, Docker, SSH, Podman,
-devcontainer, Firecracker microVM, Kubernetes. Selected via `[sandbox] backend`.
+9 run-to-completion backends (`sandbox/`): local subprocess, Docker, gVisor, SSH,
+Podman, devcontainer, Firecracker microVM, Kubernetes, and Modal cloud (below).
+Selected via `[sandbox] backend`.
 **Modal sandbox backend** (`sandbox/modal_backend.py`, `[sandbox] backend =
 "modal"`, `[modal]` extra): run agent shell in ephemeral Modal cloud sandboxes
 (per-exec container, image/cpu/memory/timeout plumbed, torn down after the
@@ -1320,7 +1339,7 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 - **Capability provisioning** (`provision.py`) — the agent factory equips a
   pack *at birth*, not reactively mid-run: `analyze_profile` diffs a draft's
   workflow + declared `allow_tools` against the installed skills and live tool
-  registry (`tools.base_tool_names`) and surfaces the gaps at the approval gate;
+  registry (`tools.base_tool_names()`) and surfaces the gaps at the approval gate;
   on approval, `apply_plan` installs the matching catalog skills
   (`self_learning.acquire_skill`) and synthesizes any missing declared tools
   (`self_learning.write_generated_tool` — stdlib-only, import-validated
@@ -1333,7 +1352,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `Demonstration` is an ordered record of observed actions + narration (from any
   capture front-end), ingested by `parse_demonstration`/`load_demonstration`
   (JSONL or prefixed text like `ACTION[email]: send digest -> ops@`;
-  secret-redacted at the door). `induce_profile` turns it into a `DomainProfile`
+  secret-redacted at the door, byte/step-bounded, and fail-soft — a malformed
+  or oversized capture drops bad lines rather than raising).
+  `induce_profile` turns it into a `DomainProfile`
   by reusing the intake pipeline wholesale — it builds the same
   `propose(spec) -> dict` and routes through `generate_profile` →
   `validate_profile`, so a demonstrated pack inherits the identical envelope

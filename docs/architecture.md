@@ -26,8 +26,8 @@ the next section for scope.
 | OS primitive | Agent analog | Lightwork today (file) |
 |---|---|---|
 | Kernel / scheduler | dispatch and schedule agents | recursive swarm with shared context, per-call fan-out cap (`MAVERICK_MAX_SWARM_FANOUT`, default 8) and a total-spawn cap (`MAVERICK_MAX_TOTAL_SPAWNS`, default 64), parallel tool execution, plus a cron-style scheduler over a durable job queue (`swarm.py`, `tools/spawn.py`, `scheduler.py`, `job_queue.py`, `worker.py`) |
-| Processes / isolation | agents + execution sandboxing | 7 sandbox backends behind one `build_sandbox()` factory and a uniform `.exec()` interface — local subprocess, Docker, Podman, devcontainer, Kubernetes, Firecracker, SSH (`sandbox/`) |
-| Syscalls / drivers | tools, providers, channels | 286 built-in tool modules (`tools/`) — incl. 200+ token-authed REST/GraphQL connectors and 37 read-only primary-source data connectors — 12 LLM providers routable per role (`providers/`, `llm.py`), and MCP client over stdio **and** Streamable HTTP (`mcp_client.py`) |
+| Processes / isolation | agents + execution sandboxing | 9 sandbox backends behind one `build_sandbox()` factory and a uniform `.exec()` interface — local subprocess, Docker, gVisor, Podman, devcontainer, Kubernetes, Firecracker, SSH, and Modal cloud (`sandbox/`) |
+| Syscalls / drivers | tools, providers, channels | 286 built-in tool modules (`tools/`) — incl. 214 write-capable token-authed REST/GraphQL connectors and 37 read-only primary-source data connectors — 12 LLM providers routable per role (`providers/`, `llm.py`), and MCP client over stdio **and** Streamable HTTP (`mcp_client.py`) |
 | IPC | inter-agent communication | append-only blackboard, parent↔child spawn handoffs, and a peer message bus — **in-process today** (`blackboard.py`, `tools/spawn.py`, `agent_bus.py`) |
 | Memory management | context = RAM, long-term = disk | turn-list compaction (drop/summarize, opt-in digest RAG), a model-curated cross-session memory directory, and per-goal KV memory (`compaction.py`, `tools/memory.py`, `tools/kv_memory.py`) |
 | Permissions / capabilities | per-agent access control | tool allow/deny ACLs, per-identity risk ceilings, destructive-action consent gating, plus Ed25519-signable **attenuating** capabilities that can only narrow as they propagate to children (`safety/tool_acl.py`, `safety/tool_risk.py`, `safety/consent.py`, `capability.py`) |
@@ -42,11 +42,54 @@ The cryptographic substrate is shared on purpose: the same Ed25519 primitives
 sign the audit chain, signed skills, and capability grants, so per-agent
 identity is a *reuse* of existing crypto rather than a from-scratch build.
 
+## The agent factory: how a specialist comes to exist
+
+Most rows above describe how an *existing* agent runs under governance. A
+specialist also has to be *created*, and that path is a pipeline of its own —
+one that produces both the agent and the skills/tools its workflow needs, with
+the same clamp-then-approve discipline applied at birth rather than mid-run.
+
+A new pack enters through one of two front doors and converges on a single
+spine:
+
+1. **Describe** — conversational intake interviews the operator and proposes a
+   draft (`run_intake`); or
+2. **Demonstrate** — `maverick learn-demo <file>` watches a person do the job
+   and induces a draft from the captured transcript (`demonstration.py`:
+   `parse_demonstration` ingests JSONL or prefixed text, secret-redacted and
+   input-bounded at the door; `induce_profile` reuses the intake pipeline
+   wholesale).
+
+Both front doors then run the **same** spine: `generate_profile` →
+`validate_profile` (the envelope **clamp** + persona shield-scan — a
+demonstrated pack inherits the identical least-privilege envelope as a described
+one) → **human approval** (`save_profile`'s gate) → **provision** (`provision.py`:
+`analyze_profile` diffs the draft's workflow and declared `allow_tools` against
+installed skills and the live tool registry — `tools.base_tool_names()` — and
+surfaces the gaps at the approval gate; `apply_plan` then installs matching
+catalog skills via `self_learning.acquire_skill` and synthesizes missing
+declared tools via `self_learning.write_generated_tool`) → `agent_from_profile`
+spawns the specialist. Provisioning is consent-gated, off by default
+(`[self_learning] enable` + `provision_packs`), and **never widens the pack's
+already-clamped envelope** — it only fills capabilities the approved workflow
+already declares.
+
+Closing the loop, **`factory_learning.py`** feeds *generation quality* back into
+the front of the pipeline: provisioning/approval gaps are attributed to a pack's
+suite, mined into proposer **corrections**, and promoted through the existing
+`SelfImprovementController` on the `prompt` rung (guidance text widens no
+capability, so the evidence + calibration gates apply but no escalation proof or
+human sign-off is needed). Promoted guidance folds into future pack generation
+(`augment_system_prompt`, scope-matched per suite). It is OFF by default and
+byte-identical to before while off (`[self_improvement] enable` +
+`factory_learning`, or `MAVERICK_FACTORY_LEARNING=1`), and likewise never widens
+any pack's envelope.
+
 ## What's strong, what's deliberately scoped
 
 **Strong.** The primitives a canonical academic agent kernel leaves unowned are
 exactly where Lightwork is built out: a hard per-run budget the loop refuses to
-exceed (`budget.py`), seven real execution sandboxes (`sandbox/`), tamper-evident
+exceed (`budget.py`), nine real execution sandboxes (`sandbox/`), tamper-evident
 signed audit (`audit/signing.py`), and least-privilege attenuating capabilities
 (`capability.py`). Tenancy is namespaced on disk by a context-scoped `tenant_id`
 (`paths.py`), and content safety runs at three chokepoints via the shield (see

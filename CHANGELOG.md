@@ -25,6 +25,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deferred (no context cost); a host-restricted pack's egress is never silently
   widened. On by default with a kill-switch: `[workforce] data_grounding = false`
   / `MAVERICK_WORKFORCE_DATA_GROUNDING=off`, plus an installer wizard step.
+- **Roster-wide governance invariant test suite** — six load-bearing invariants,
+  each verified across all 2,020 packs and fault-injected at 1,000,000 iterations
+  with a non-vacuity control: (1) tool reachability — no drafting agent can reach
+  a state-mutating tool; (2) autonomy dial — an onboarding agent is never
+  autonomous and a high-risk action is never autonomous even when graduated;
+  (3) capability attenuation — a spawned child can never exceed its parent grant
+  (no privilege escalation through the spawn chain); (4) compartment isolation —
+  a quarantine seal never bleeds across compartments or suites; (5) hard refusals
+  — the universal refusal floor is unstrippable; (6) budget caps — no cap is ever
+  silently exceeded. Plus hostile-argument fuzzing of every connector and tool.
 - Agent-pack quality & governance sweep across the 1,118-pack roster:
   `[output]` contracts + editable `[[workflow]]` playbooks on every pack;
   reasoning-effort right-sizing (`effort` tier, applied only when `[effort]` is
@@ -100,6 +110,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
 ### Fixed
+- Robustness defects surfaced by the 1M-iteration stress sweep (each with a
+  regression test): connectors no longer raise on a non-string `op`/`path`/
+  `query` — a malformed value now returns an `ERROR:` string instead of an
+  `AttributeError` that crashed the call for all ~250 REST + GraphQL connectors;
+  `Skill.parse` raises `ValueError` (its documented failure mode), not
+  `AttributeError`, on malformed/untrusted frontmatter (a YAML list item under a
+  scalar key), so an `except ValueError` guard around skill loading holds;
+  `format_money` degrades gracefully on a `None`/empty currency instead of
+  crashing on `None.upper()`.
 - Dual control: the "requester cannot approve their own request" segregation-of
   -duties rule now fires for real dashboard approvals. The consent gate records
   the executing goal's owner as the approval's requester, so an N-of-M approval

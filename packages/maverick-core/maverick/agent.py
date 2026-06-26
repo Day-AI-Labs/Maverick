@@ -569,6 +569,15 @@ class Agent:
         # the pack's [autonomy] block; a child inherits its parent's so a sub-tree
         # shares the hire's authority. None == the default SUGGEST profile.
         self._autonomy = autonomy if autonomy is not None else getattr(parent, "_autonomy", None)
+        # Workforce overrides are tied to the profile's original hire, not to an
+        # ad-hoc child role. Otherwise a model-selected spawn_subagent role could
+        # layer a more permissive [workforce.agents.<role>] override over an
+        # inherited low-authority profile. Explicit profile spawns establish a new
+        # override anchor; inherited profiles keep their parent's anchor.
+        self._autonomy_name = (
+            role if autonomy is not None
+            else getattr(parent, "_autonomy_name", role)
+        )
         # Optional domain-pack persona, appended to the system prompt below.
         self._domain_persona = persona
         # Domain knowledge collections this agent may query (the DomainProfile's
@@ -1342,6 +1351,18 @@ class Agent:
             "The tool was not executed."
         )
 
+    @staticmethod
+    def _with_capability_host_scope(name: str, args: dict, cap) -> dict:
+        """Attach active host scope for tools that enforce it internally."""
+        if cap is None or not cap.allow_hosts or not isinstance(args, dict):
+            return args
+        scoped = dict(args)
+        if name == "browser":
+            scoped["_capability_allow_hosts"] = tuple(cap.allow_hosts)
+        else:
+            scoped.setdefault("_capability_allow_hosts", tuple(cap.allow_hosts))
+        return scoped
+
     def _autonomy_denial(self, name: str, cap) -> str | None:
         # Autonomy servo (Loop 2): tighten the leash with live trust. When the
         # run's trust is low -- a high-disagreement swarm fan-out or a low
@@ -1445,7 +1466,8 @@ class Agent:
             # communicates) are never gated by the dial.
             if (_aa.levels_enabled() and _rr(_risk) > 0
                     and name not in _aa.COORDINATION_TOOLS):
-                _al = _aa.decide(self.role, getattr(self, "_autonomy", None),
+                _al = _aa.decide(getattr(self, "_autonomy_name", self.role),
+                                 getattr(self, "_autonomy", None),
                                  action=name, risk=_risk)
                 _amap = {"allow": _GD.ALLOW, "require_human": _GD.REQUIRE_HUMAN,
                          "deny": _GD.DENY}
@@ -1615,9 +1637,7 @@ class Agent:
         # tool so it can gate the final/current page host before returning
         # content or continuing a restricted session. This must happen before
         # the host-scope check so the (possibly rewritten) args carry forward.
-        if cap is not None and name == "browser" and cap.allow_hosts and isinstance(args, dict):
-            args = dict(args)
-            args["_capability_allow_hosts"] = tuple(cap.allow_hosts)
+        args = self._with_capability_host_scope(name, args, cap)
         if (d := self._capability_host_denial(name, args, cap)) is not None:
             return d
 
