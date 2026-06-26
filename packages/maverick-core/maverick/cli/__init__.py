@@ -2312,6 +2312,8 @@ def mcp(use_http: bool, host: str, port: int) -> None:
     except ImportError:
         click.echo("Install: pip install maverick-mcp-server", err=True)
         sys.exit(2)
+    from ..deployment import require_enterprise_or_die
+    require_enterprise_or_die()
     if use_http:
         try:
             from maverick_mcp.http_transport import serve
