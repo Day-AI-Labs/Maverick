@@ -44,6 +44,7 @@ def materialize(
     Webhook/event triggers are returned as ``suggested_trigger`` for the caller
     to wire (the webhook trigger store is a dashboard concern).
     """
+    from ..catalog_trust import shield_scan
     from ..templates import save_user_template
 
     title, body = automation.render()
@@ -52,6 +53,7 @@ def materialize(
 
     created = False
     if save:
+        shield_scan(body, label=f"imported automation template {tname!r}")
         save_user_template(
             tname,
             title=title,
