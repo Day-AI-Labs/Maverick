@@ -1387,6 +1387,10 @@ async def run_goal(  # noqa: C901  -- core goal-execution loop
                 record = TrajectoryRecord(
                     task_brief_hash=hash_brief(goal.title + (goal.description or "")),
                     task_brief_text=(goal.title + "\n" + (goal.description or "")),
+                    # Local join key so ingest/export_texts can pull this goal's
+                    # goal_events back out of the world DB (PRM step labels + DPO
+                    # text sidecar). Omitting it left every trajectory step-less.
+                    goal_id=goal_id,
                     model_id=getattr(llm, "model", ""),
                     # by_kind() snapshots under the blackboard lock. _donate runs
                     # on a worker thread (asyncio.to_thread); reading the raw

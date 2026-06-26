@@ -56,6 +56,12 @@ class TrajectoryRecord:
     ts: float = field(default_factory=time.time)
     task_brief_hash: str = ""
     task_brief_text: str | None = None  # only when donate_text=true
+    # Local world-DB row id for this run. NOT meaningful off this machine; it's
+    # the join key `training.ingest` / `training.export_texts` use to pull this
+    # goal's `goal_events` back out of the local world DB (to label PRM steps and
+    # reconstruct the DPO text sidecar). Without it both lookups hit goal_id=0,
+    # fetch nothing, and every trajectory ends up with zero steps / no transcript.
+    goal_id: int = 0
     model_id: str = ""
     tools_used: list[str] = field(default_factory=list)
     action_sequence: list[str] = field(default_factory=list)
