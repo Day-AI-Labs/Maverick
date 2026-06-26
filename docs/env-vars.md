@@ -76,6 +76,7 @@ for false unless noted otherwise.
 | `MAVERICK_REFLEXION` | config `[reflexion] enable` (off) | Enable the reflexion self-critique loop. |
 | `MAVERICK_DREAMING` | config `[dreaming] enable` (off) | Enable offline experience consolidation (`maverick dream`). |
 | `MAVERICK_SELF_HARNESS` | config `[self_harness] enable` (off) | Enable the self-harness loop: learn a model-specific, regression-validated operating-guidance addendum from failure traces (`maverick self-harness`; promotion also needs `[self_improvement] enable`). |
+| `MAVERICK_FACTORY_LEARNING` | config `[self_improvement] factory_learning` (off) | Force-enable the self-improving-factory loop: mine provisioning/approval gaps into proposer corrections, promoted on the `prompt` rung and folded into future pack generation (`maverick factory-learn`; needs `[self_improvement] enable`). Overrides config. |
 | `MAVERICK_DATA_ENGINE` | config `[data_engine] enable` (off) | Enable the Cognitive Data Engine flywheel: causal failure triage → guardrails → habits (`maverick flywheel`). |
 | `MAVERICK_OPERATIONS_SCIENTIST` | config `[operations_scientist] enable` (off) | Enable the Operations Scientist: propose + simulate a better process before a real experiment. |
 | `MAVERICK_CONSEQUENCE` | config `[consequence] enable` (off) | Ground learning in real downstream outcomes over the verifier proxy (`maverick record-outcome`). |

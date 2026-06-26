@@ -1333,7 +1333,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `Demonstration` is an ordered record of observed actions + narration (from any
   capture front-end), ingested by `parse_demonstration`/`load_demonstration`
   (JSONL or prefixed text like `ACTION[email]: send digest -> ops@`;
-  secret-redacted at the door). `induce_profile` turns it into a `DomainProfile`
+  secret-redacted at the door, byte/step-bounded, and fail-soft — a malformed
+  or oversized capture drops bad lines rather than raising).
+  `induce_profile` turns it into a `DomainProfile`
   by reusing the intake pipeline wholesale — it builds the same
   `propose(spec) -> dict` and routes through `generate_profile` →
   `validate_profile`, so a demonstrated pack inherits the identical envelope
