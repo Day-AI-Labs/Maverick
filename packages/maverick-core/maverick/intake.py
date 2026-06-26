@@ -80,6 +80,18 @@ def _default_persona(_spec: IntakeSpec) -> str:
 
 
 _MAX_PERSONA_CHARS = 2000
+_MAX_REFUSAL_CHARS = 500
+_MAX_REFUSALS = 20
+
+
+def _scan_prompt_material(text: str) -> bool:
+    """Return True when optional Shield allows generated prompt material."""
+    try:
+        from maverick_shield import Shield
+        verdict = Shield.from_config(warn_if_missing=False).scan_output(text)
+        return bool(getattr(verdict, "allowed", True))
+    except Exception:  # shield optional -> fail-open
+        return True
 
 
 def _safe_persona(persona: str, spec: IntakeSpec) -> str:
@@ -90,16 +102,31 @@ def _safe_persona(persona: str, spec: IntakeSpec) -> str:
     persona = (persona or "").strip()[:_MAX_PERSONA_CHARS]
     if not persona:
         return _default_persona(spec)
-    try:
-        from maverick_shield import Shield
-        verdict = Shield.from_config(warn_if_missing=False).scan_output(persona)
-        if not getattr(verdict, "allowed", True):
-            log.warning("intake: generated persona tripped the shield; using the "
-                        "safe default persona")
-            return _default_persona(spec)
-    except Exception:  # shield optional -> fail-open
-        pass
+    if not _scan_prompt_material(persona):
+        log.warning("intake: generated persona tripped the shield; using the "
+                    "safe default persona")
+        return _default_persona(spec)
     return persona
+
+
+def _safe_refusals(refusals: list[str]) -> list[str]:
+    """Sanitize generated refusal text before it can become prompt material.
+
+    Pack-specific refusals are rendered into future specialists' system prompts,
+    just like personas. Treat proposer-supplied entries as untrusted model output:
+    trim and cap them, Shield-scan each entry, and drop entries that trip the
+    shield while preserving safe refusal functionality.
+    """
+    clean: list[str] = []
+    for raw in refusals[:_MAX_REFUSALS]:
+        item = str(raw or "").strip()[:_MAX_REFUSAL_CHARS]
+        if not item:
+            continue
+        if not _scan_prompt_material(item):
+            log.warning("intake: generated refusal tripped the shield; dropping it")
+            continue
+        clean.append(item)
+    return clean
 
 
 def _default_workflow() -> list[WorkflowStep]:
@@ -230,6 +257,7 @@ def generate_profile(spec: IntakeSpec, propose=None) -> DomainProfile:
         output=output,
     )
     profile.persona = _safe_persona(profile.persona, spec)
+    profile.refuse = _safe_refusals(profile.refuse)
     return validate_profile(profile)
 
 

@@ -675,6 +675,9 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
     click.echo(f"  allow_tools: {', '.join(profile.allow_tools) or '(none)'}")
     click.echo(f"  deny_tools:  {', '.join(profile.deny_tools) or '(none)'}")
     click.echo(f"  knowledge:   {', '.join(profile.knowledge_sources) or '(none)'}")
+    if profile.refuse:
+        preview = "; ".join(profile.refuse)[:400]
+        click.echo(f"  refusals:    {preview}")
     click.echo(f"  persona:     {profile.persona[:400]}")
 
     # Capability provisioning: surface (and, on approval, close) the skills/
