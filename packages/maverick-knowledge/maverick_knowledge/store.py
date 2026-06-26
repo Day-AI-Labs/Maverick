@@ -4,8 +4,10 @@
 for the per-business corpora the factory produces; pgvector is an opt-in backend
 for scale (``build_store`` selects it when configured).
 """
+
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import sqlite3
@@ -23,13 +25,9 @@ class Match:
 
 
 class VectorStore(Protocol):
-    def add(
-        self, collection: str, items: list[tuple[str, str, list[float], dict]]
-    ) -> None: ...
+    def add(self, collection: str, items: list[tuple[str, str, list[float], dict]]) -> None: ...
 
-    def search(
-        self, collection: str, vector: list[float], k: int = 5
-    ) -> list[Match]: ...
+    def search(self, collection: str, vector: list[float], k: int = 5) -> list[Match]: ...
 
     def delete_collection(self, collection: str) -> None: ...
 
@@ -155,18 +153,28 @@ class PgVectorStore:
     statement is serialized under a lock.
     """
 
-    def __init__(self, dsn: str | None = None, *, dim: int = 1024,
-                 table: str = "knowledge_chunks") -> None:
+    def __init__(
+        self,
+        dsn: str | None = None,
+        *,
+        dim: int = 1024,
+        table: str = "knowledge_chunks",
+        namespace: str = "default",
+    ) -> None:
         try:
             import psycopg
         except ImportError as e:  # pragma: no cover -- exercised only without psycopg
             raise ImportError(
-                "pgvector store needs psycopg. Run: "
-                "pip install 'maverick-knowledge[pgvector]'"
+                "pgvector store needs psycopg. Run: pip install 'maverick-knowledge[pgvector]'"
             ) from e
         import os
-        self._dsn = dsn or os.environ.get("MAVERICK_KNOWLEDGE_DSN") \
-            or os.environ.get("MAVERICK_PG_DSN") or ""
+
+        self._dsn = (
+            dsn
+            or os.environ.get("MAVERICK_KNOWLEDGE_DSN")
+            or os.environ.get("MAVERICK_PG_DSN")
+            or ""
+        )
         if not self._dsn:
             raise RuntimeError(
                 "pgvector store requires MAVERICK_KNOWLEDGE_DSN / MAVERICK_PG_DSN "
@@ -181,6 +189,7 @@ class PgVectorStore:
         if not table.replace("_", "").isalnum():
             raise ValueError(f"invalid table name {table!r}")
         self._table = table
+        self._namespace = str(namespace or "default")
         self._lock = threading.Lock()
         self._db = psycopg.connect(self._dsn, autocommit=True)
         try:
@@ -192,9 +201,9 @@ class PgVectorStore:
             ) from e
         self._db.execute(
             f"CREATE TABLE IF NOT EXISTS {self._table} ("
-            "collection TEXT, id TEXT, text TEXT, "
+            "namespace TEXT, collection TEXT, id TEXT, text TEXT, "
             f"embedding vector({self._dim}), meta JSONB, "
-            "PRIMARY KEY (collection, id))"
+            "PRIMARY KEY (namespace, collection, id))"
         )
         # Cosine IVFFlat index -- approximate but the point of the scale backend.
         self._db.execute(
@@ -208,13 +217,21 @@ class PgVectorStore:
             return
         with self._lock, self._db.cursor() as cur:
             cur.executemany(
-                f"INSERT INTO {self._table} (collection, id, text, embedding, meta) "
-                "VALUES (%s, %s, %s, %s::vector, %s::jsonb) "
-                "ON CONFLICT (collection, id) DO UPDATE SET "
+                f"INSERT INTO {self._table} "
+                "(namespace, collection, id, text, embedding, meta) "
+                "VALUES (%s, %s, %s, %s, %s::vector, %s::jsonb) "
+                "ON CONFLICT (namespace, collection, id) DO UPDATE SET "
                 "text = EXCLUDED.text, embedding = EXCLUDED.embedding, "
                 "meta = EXCLUDED.meta",
                 [
-                    (collection, cid, text, _to_pgvector(vec), json.dumps(meta))
+                    (
+                        self._namespace,
+                        collection,
+                        cid,
+                        text,
+                        _to_pgvector(vec),
+                        json.dumps(meta),
+                    )
                     for cid, text, vec, meta in items
                 ],
             )
@@ -233,27 +250,34 @@ class PgVectorStore:
         with self._lock, self._db.cursor() as cur:
             rows = cur.execute(
                 f"SELECT text, meta, 1 - (embedding <=> %s::vector) AS score "
-                f"FROM {self._table} WHERE collection = %s "
+                f"FROM {self._table} WHERE namespace = %s AND collection = %s "
                 "ORDER BY embedding <=> %s::vector LIMIT %s",
-                (_to_pgvector(vector), collection, _to_pgvector(vector), int(k)),
+                (
+                    _to_pgvector(vector),
+                    self._namespace,
+                    collection,
+                    _to_pgvector(vector),
+                    int(k),
+                ),
             ).fetchall()
         # psycopg adapts JSONB to a dict already; tolerate a str just in case.
         return [
-            Match(float(score), text,
-                  meta if isinstance(meta, dict) else json.loads(meta or "{}"))
+            Match(float(score), text, meta if isinstance(meta, dict) else json.loads(meta or "{}"))
             for text, meta, score in rows
         ]
 
     def delete_collection(self, collection: str) -> None:
         with self._lock:
             self._db.execute(
-                f"DELETE FROM {self._table} WHERE collection = %s", (collection,))
+                f"DELETE FROM {self._table} WHERE namespace = %s AND collection = %s",
+                (self._namespace, collection),
+            )
 
     def count(self, collection: str) -> int:
         with self._lock, self._db.cursor() as cur:
             (n,) = cur.execute(
-                f"SELECT COUNT(*) FROM {self._table} WHERE collection = %s",
-                (collection,),
+                f"SELECT COUNT(*) FROM {self._table} WHERE namespace = %s AND collection = %s",
+                (self._namespace, collection),
             ).fetchone()
         return int(n)
 
@@ -271,6 +295,14 @@ class PgVectorStore:
         self.close()
 
 
+def _namespace_from_cfg(cfg: dict) -> str:
+    """Stable pgvector namespace preserving per-workspace knowledge isolation."""
+    raw = cfg.get("namespace") or cfg.get("tenant") or cfg.get("path") or "default"
+    namespace = str(raw)
+    digest = hashlib.sha256(namespace.encode("utf-8")).hexdigest()[:16]
+    return f"workspace:{digest}"
+
+
 def build_store(cfg: dict | None = None):
     """Select a vector store from config. Defaults to embedded SQLite; pgvector
     (``[knowledge] store = "pgvector"``) is the opt-in scale backend.
@@ -284,5 +316,6 @@ def build_store(cfg: dict | None = None):
         return PgVectorStore(
             dsn=cfg.get("dsn") or None,
             dim=int(cfg.get("dim", 1024)),
+            namespace=_namespace_from_cfg(cfg),
         )
     return SqliteVectorStore(cfg.get("path") or ":memory:")
