@@ -2052,6 +2052,8 @@ def mcp(use_http: bool, host: str, port: int) -> None:
     except ImportError:
         click.echo("Install: pip install maverick-mcp-server", err=True)
         sys.exit(2)
+    from .deployment import require_enterprise_or_die
+    require_enterprise_or_die()
     if use_http:
         try:
             from maverick_mcp.http_transport import serve
@@ -3329,6 +3331,8 @@ def serve(max_depth: int, verbose: bool) -> None:
     # is a long-running server that wants its INFO/DEBUG logs. basicConfig is
     # a no-op once a handler exists, so set the level explicitly here.
     logging.getLogger().setLevel(logging.DEBUG if verbose else logging.INFO)
+    from .deployment import require_enterprise_or_die
+    require_enterprise_or_die()
     try:
         from .server import build_from_config
     except ImportError as e:

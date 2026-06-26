@@ -683,8 +683,11 @@ def _dispatch(
 
 def serve(host: str = "127.0.0.1", port: int = 8771) -> None:
     """Run the HTTP transport on host:port. Blocking."""
+    from maverick.deployment import require_enterprise_or_die
+
     from .server import MCPServer
 
+    require_enterprise_or_die()
     # build_app() raises a friendly "install maverick-mcp-server[http]" error
     # if fastapi is missing -- do it BEFORE importing uvicorn so the user
     # sees that hint, not a bare ModuleNotFoundError on uvicorn.

@@ -228,6 +228,9 @@ class Server:
             )
             world.append_turn(conversation.id, "user", msg.text)
 
+            from .deployment import require_enterprise_or_die
+            require_enterprise_or_die()
+
             title = msg.text[:80]
             goal_id = world.create_goal(title, msg.text)
 

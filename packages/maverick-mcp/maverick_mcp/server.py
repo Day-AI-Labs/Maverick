@@ -869,6 +869,8 @@ class MCPServer:
         return None
 
     def _tool_start(self, args: dict) -> str:
+        from maverick.deployment import require_enterprise_or_die
+        require_enterprise_or_die()
         from maverick.budget import Budget
         from maverick.llm import LLM
         from maverick.orchestrator import run_goal_sync
@@ -1481,6 +1483,8 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8771)
     args = ap.parse_args()
     _configure_mcp_logging()
+    from maverick.deployment import require_enterprise_or_die
+    require_enterprise_or_die()
     if args.http:
         from .http_transport import serve
         serve(host=args.host, port=args.port)
