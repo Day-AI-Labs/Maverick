@@ -1,6 +1,6 @@
-# Maverick Summit v1 (virtual) — run-of-show kit
+# Lightwork Summit v1 (virtual) — run-of-show kit
 
-**Roadmap ref:** 2027-H1 Distribution — "Maverick Summit v1 (virtual)".
+**Roadmap ref:** 2027-H1 Distribution — "Lightwork Summit v1 (virtual)".
 **Status:** kit complete; running the event is the remaining operational work.
 **Date, platform, and registration cap are founder decisions** — every such
 slot below is marked.
@@ -31,13 +31,13 @@ real feature it shows — do not demo anything that isn't in
 | Offset | Block | Content |
 |---|---|---|
 | −0:30 | Tech rehearsal | All speakers join, screen-share check, demo dry run |
-| 0:00 (15 min) | Welcome + state of Maverick | What shipped since the last public update — sourced from `FEATURES.md` and `CHANGELOG.md`, nothing aspirational |
+| 0:00 (15 min) | Welcome + state of Lightwork | What shipped since the last public update — sourced from `FEATURES.md` and `CHANGELOG.md`, nothing aspirational |
 | 0:15 (25 min) | Keynote: the governed agent runtime | The [`architecture.md`](../architecture.md) story: swarm + budget + sandbox + shield + audit; why governance is the differentiator |
 | 0:40 (20 min) | **Live demo 1 — long-horizon swarm** | `maverick start "<multi-step goal>"` in one terminal, `maverick monitor` (Rich plan-tree TUI) in another; show sub-agent spawn, the live cost meter, and `maverick status --cost` |
 | 1:00 (20 min) | **Live demo 2 — governance** | The dashboard oversight console (`maverick dashboard` → `/oversight`): approval queue, "why this action" drill-down; then `maverick halt` killing a live run and `maverick audit verify` proving the log chain |
 | 1:20 (10 min) | Break | Pre-recorded demo loop or holding slide |
 | 1:30 (20 min) | **Live demo 3 — safety floor** | A prompt-injection attempt caught at a shield chokepoint (the chokepoint model: [`docs/safety.md`](../safety.md)); show the red-team gate (`python -m maverick_shield.redteam`) and its `--calibrate` operating-curve sweep |
-| 1:50 (20 min) | Talk: extending Maverick | Skills (`maverick skill install`), plugins ([plugin API v2](../plugin-api-v2.md), TS SDK `sdks/plugin-ts/`), MCP (`maverick mcp`), channels — the extension surface from the [handbook](../handbook.md) |
+| 1:50 (20 min) | Talk: extending Lightwork | Skills (`maverick skill install`), plugins ([plugin API v2](../plugin-api-v2.md), TS SDK `sdks/plugin-ts/`), MCP (`maverick mcp`), channels — the extension surface from the [handbook](../handbook.md) |
 | 2:10 (20 min) | Guest / community talk | A real deployment story (showcase-wall standard of evidence: a replayable trace or run export, see [`showcase.md`](../showcase.md)). If no qualifying guest exists yet, run a second internal deep-dive instead — do not stage a fake customer story |
 | 2:30 (10 min) | Roadmap, honestly | What's planned vs. built, straight from [`ROADMAP.md`](../ROADMAP.md), including what was declined and why (e.g. the Redis world-model decision) |
 | 2:40 (40 min) | **Office hours / open Q&A** | Unrecorded. Triage live; park deep questions into GitHub issues in front of the audience |
@@ -53,7 +53,7 @@ One page per speaker, containing:
    `FEATURES.md`. Forward-looking statements must be labeled as roadmap and
    match `ROADMAP.md`. No invented benchmark numbers — measured rows in
    `benchmarks/RESULTS.md` are quotable; anything else is not.
-3. **License framing.** Maverick is proprietary, commercially licensed
+3. **License framing.** Lightwork is proprietary, commercially licensed
    software ([`LICENSE`](../../LICENSE)). Do not describe it as open source
    or imply open-source terms. The "lite" edition is a stated possibility on
    the roadmap, not a commitment — say exactly that if asked.

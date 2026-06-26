@@ -11,3 +11,29 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "CSAT trend & product-ask brief"
+consumers = ["cx_lead", "product_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull survey data"
+instruction = "Query CSAT scores, NPS, and ticket sentiment for the reporting window and segment by product area and channel."
+tools = ["sql_query"]
+[[workflow]]
+name = "Ground in docs"
+instruction = "Cross-reference emerging themes against known issues and policy docs so trends are explained, not just counted."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Cluster verbatims"
+instruction = "Group representative customer verbatims under each theme and attach the source quote so claims are auditable."
+[[workflow]]
+name = "Draft asks"
+instruction = "Translate the top themes into concrete prioritized product or process asks with the supporting evidence trail."
+[[workflow]]
+name = "Route to CX lead"
+instruction = "Hand the trend brief to the CX lead for sign-off before it goes to product."
+gate = "review"

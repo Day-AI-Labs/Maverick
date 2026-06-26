@@ -31,6 +31,7 @@ import logging
 import os
 from dataclasses import dataclass
 
+from .config import env_flag
 from .safety.tool_risk import RISK_LEVELS, risk_rank, tool_risk
 
 log = logging.getLogger(__name__)
@@ -85,11 +86,9 @@ def assume_when_headless() -> bool:
     of ``enable``: ``MAVERICK_AUTONOMOUS`` overrides ``[autonomy]
     headless_assume`` either way. Off by default; never raises (an unreadable
     config degrades to "block", the safe pre-existing behavior)."""
-    env = os.environ.get("MAVERICK_AUTONOMOUS", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_AUTONOMOUS")
+    if _v is not None:
+        return _v
     try:
         return bool(_resolve().get("headless_assume", False))
     except Exception:  # pragma: no cover -- config must never block a run

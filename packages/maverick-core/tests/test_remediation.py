@@ -171,3 +171,46 @@ def test_cli_remediate_reports_and_apply_is_gated_by_optin():
     applied = runner.invoke(main, ["remediate", "--apply"])
     assert applied.exit_code == 0
     assert "auto-fix disabled" in applied.output   # off by default
+
+
+def test_concurrent_applies_do_not_clobber_each_other(monkeypatch, tmp_path):
+    """apply_remediation reads config.toml, appends its section, and writes it
+    back. Without the cross-process lock two concurrent auto-fixes both read the
+    same base and the second write drops the first's appended section. Both must
+    survive."""
+    import threading
+
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setenv("MAVERICK_SECURITY_AUTOFIX", "1")
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[providers]\ndefault = "ollama"\n')
+    monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
+
+    import maverick.audit as audit
+    monkeypatch.setattr(audit, "record", lambda kind, **p: True)
+
+    items = [
+        RemediationItem("c1", "a1", True, "audit", {"sign": True}, "r", "d"),
+        RemediationItem("c2", "a2", True, "budget", {"max_dollars": 5}, "r", "d"),
+    ]
+    barrier = threading.Barrier(len(items))
+    results = []
+    lock = threading.Lock()
+
+    def apply(it):
+        barrier.wait()
+        r = apply_remediation(it, dry_run=False)
+        with lock:
+            results.append(r)
+
+    threads = [threading.Thread(target=apply, args=(it,)) for it in items]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert all(r.applied for r in results), [r.reason for r in results]
+    text = cfg.read_text()
+    # Both appended sections survive -- neither write clobbered the other.
+    assert "[audit]" in text and "[budget]" in text
+    assert '[providers]' in text  # and the pre-existing content is intact

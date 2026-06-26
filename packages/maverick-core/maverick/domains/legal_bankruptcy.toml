@@ -17,3 +17,30 @@ deny_tools = ["shell", "write_file"]
 mcp_servers = ["CourtListener"]
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "creditor exposure memo"
+consumers = ["general_counsel", "credit_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather claim facts"
+instruction = "Read the customer account, security agreements, and insolvency notices to scope the creditor position."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull statute and bar date"
+instruction = "Research the UCC Article 9 and Bankruptcy Code provisions and cite the statute, section, and bar date for every position."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Assess exposure"
+instruction = "Analyze perfection of the security interest plus preference and fraudulent-transfer exposure against the cited authority."
+tools = ["read_file"]
+[[workflow]]
+name = "Flag bar dates"
+instruction = "Flag any approaching proof-of-claim or objection deadline so no bar date is missed."
+[[workflow]]
+name = "Route to counsel"
+instruction = "Route the exposure memo to human counsel who files the proof of claim and commits the position."
+gate = "review"

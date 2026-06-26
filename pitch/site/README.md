@@ -1,6 +1,6 @@
-# Maverick — marketing site (Daybreak Labs)
+# Lightwork — marketing site (Daybreak Labs)
 
-A self-contained, premium marketing site for **Maverick**, built in plain HTML +
+A self-contained, premium marketing site for **Lightwork**, built in plain HTML +
 CSS — no build step, no framework. Design: editorial restraint (warm paper, an
 editorial serif for headlines, Inter for body, one accent, dark sections for the
 proof/security moments). Every claim is verifiable from this repo.
@@ -33,7 +33,18 @@ live automatically once the domain's nameservers point at Cloudflare
 Workspace** — preserve the `MX` (`aspmx.l.google.com`) and the SPF/verification
 `TXT` records through the switch.
 
+## Demo form delivery (Web3Forms)
+**Book a demo** / **Request access** submit to [Web3Forms](https://web3forms.com)
+when an access key is present, and otherwise fall back to a pre-filled `mailto:`
+(never a dead end). Set the key at deploy time **without editing `app.js`**, via
+either:
+- a `<meta name="web3forms-access-key" content="YOUR-KEY">` in each page `<head>`, or
+- `window.LIGHTWORK_ACCESS_KEY = "YOUR-KEY";` (e.g. an uncommitted `config.js`).
+
+The key is the only thing standing between the live form and direct-to-inbox
+delivery — get a free one at web3forms.com (sends to info@daybreakailabs.com).
+
 ## Finish before launch
 - Replace the founder-bio placeholder in `company.html` (marked with an HTML comment).
-- Wire **Book a demo** / **Request access** to a real form (they're `mailto:` today).
+- Set the Web3Forms access key (above) so demo requests reach the inbox directly.
 - Confirm the SOC 2 wording on `security.html` matches reality before publishing.

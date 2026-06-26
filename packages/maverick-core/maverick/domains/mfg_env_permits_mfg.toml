@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "permit limit & sampling compliance log"
+consumers = ["ehs_manager", "plant_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull permits"
+instruction = "Read the current air and water permits and their effective revisions via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "List limits"
+instruction = "Extract each permitted emission and discharge limit with its required sampling frequency into a tracking table."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Pull sample data"
+instruction = "Query recorded monitoring results and sample dates for the reporting period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compare to limits"
+instruction = "Compare measured values and sampling dates against permit limits and schedules to flag exceedances and missed samples."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "EHS review"
+instruction = "Route the compliance log with flagged exceedances and overdue samples to the EHS manager for sign-off."
+gate = "review"

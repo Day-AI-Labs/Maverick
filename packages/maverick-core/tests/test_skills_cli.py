@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 from click.testing import CliRunner
-from maverick import skill_stats
 from maverick.cli import main
+from maverick.skill import stats as skill_stats
 from maverick.skills import SKILLS_DIR
 
 SKILL_MD = (

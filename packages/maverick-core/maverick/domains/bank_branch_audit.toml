@@ -17,3 +17,24 @@ deliverable = "Branch audit findings"
 consumers = ["internal_auditor", "operations_manager"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Load checklist"
+instruction = "Retrieve the applicable branch self-audit checklist and prior-period findings for the branch and quarter."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pull evidence"
+instruction = "Query branch transaction, teller, and vault records and gather supporting documents for each checklist control."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Test controls"
+instruction = "Compare evidence against each control standard and record pass, fail, or exception with a citation to the source."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Track findings"
+instruction = "Log each exception as an open finding with severity and remediation owner and reconcile against prior unclosed items."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Auditor review"
+instruction = "Route the findings evidence package to the internal auditor for sign-off before any closure decision."
+gate = "review"

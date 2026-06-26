@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "ESG disclosure report"
+consumers = ["sustainability_lead", "cfo", "disclosure_committee"]
+cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Set the scope"
+instruction = "Read prior disclosures and current standards to fix the reporting boundary and applicable frameworks."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Run double materiality"
+instruction = "Assess impact and financial materiality under CSRD/ESRS to decide which topics must be disclosed."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Compile metrics"
+instruction = "Gather GHG Scope 1/2/3 figures and ISSB S1/S2 data points and trace each to its source."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Draft disclosure"
+instruction = "Write the disclosure against ESRS and ISSB requirements, flagging gaps and estimation methods."
+[[workflow]]
+name = "Route for approval"
+instruction = "Send the report to the sustainability lead and disclosure committee for approval since publication is gated."
+gate = "approval"

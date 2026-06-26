@@ -15,8 +15,9 @@ can't breach the fan-out / budget guards. Off by default + fail-open
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
+
+from .config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -32,11 +33,9 @@ def _settings() -> dict:
 
 
 def enabled() -> bool:
-    env = os.environ.get("MAVERICK_ADAPTIVE_COMPUTE", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_ADAPTIVE_COMPUTE")
+    if _v is not None:
+        return _v
     return bool(_settings()["enable"])
 
 

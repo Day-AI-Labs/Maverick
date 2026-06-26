@@ -1,8 +1,8 @@
 """Replay export to MP4: deterministic storyboard + manifest; best-effort encode."""
 from __future__ import annotations
 
-from maverick import replay_video as rv
-from maverick.replay_video import MAX_FRAME_SECONDS, MIN_FRAME_SECONDS, render, storyboard
+from maverick.replay import video as rv
+from maverick.replay.video import MAX_FRAME_SECONDS, MIN_FRAME_SECONDS, render, storyboard
 
 
 def _evs():

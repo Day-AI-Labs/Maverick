@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import os
 
-from .base import Channel, IncomingMessage
+from .base import Channel, IncomingMessage, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -46,25 +46,16 @@ class TelegramChannel(Channel):
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN not set")
         self._app: Application | None = None
-        self.allowed_user_ids = self._normalize_allowlist(
-            allowed_user_ids,
-            env_name="TELEGRAM_ALLOWED_USER_IDS",
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "TELEGRAM_ALLOWED_USER_IDS",
         )
-        self.allowed_chat_ids = self._normalize_allowlist(
-            allowed_chat_ids,
-            env_name="TELEGRAM_ALLOWED_CHAT_IDS",
+        self.allowed_chat_ids = normalize_allowlist(
+            allowed_chat_ids, "TELEGRAM_ALLOWED_CHAT_IDS",
         )
         if not self.allowed_user_ids and not self.allowed_chat_ids:
             raise ValueError(
                 "Set TELEGRAM_ALLOWED_USER_IDS or TELEGRAM_ALLOWED_CHAT_IDS to restrict access"
             )
-
-    @staticmethod
-    def _normalize_allowlist(values: set[str] | None, env_name: str) -> set[str]:
-        if values is not None:
-            return {str(v).strip() for v in values if str(v).strip()}
-        raw = os.environ.get(env_name, "")
-        return {item.strip() for item in raw.split(",") if item.strip()}
 
     def _is_authorized(self, update: Update) -> bool:
         user_id = str(update.effective_user.id) if update.effective_user else ""
@@ -96,22 +87,39 @@ class TelegramChannel(Channel):
                         getattr(update.effective_user, "id", None),
                         getattr(update.effective_chat, "id", None))
             return
+        # Per the IncomingMessage contract, user_id is the REPLY/SEND TARGET and
+        # sender_id is the human identity. For a room-based adapter that means
+        # the CHAT id is the target (so a proactive channel.send(msg.user_id, ...)
+        # reaches the group, not the sender's private chat -- which the bot often
+        # can't even open), and the user id is the sender. Matches the Slack
+        # adapter. In a 1:1 chat the two ids coincide, so phone-companion mode is
+        # unchanged, and principal_id (sender_id or user_id) stays the human in
+        # both cases -- so auth/history/tenant keying is identical to before.
         # effective_user is None for channel posts / anonymous admins;
-        # _is_authorized denies those (they can't be attributed to an
-        # allowlisted sender), but guard here too rather than AttributeError.
+        # _is_authorized denies those, but guard here too rather than
+        # AttributeError.
         msg = IncomingMessage(
-            user_id=str(update.effective_user.id) if update.effective_user else "",
+            user_id=str(update.effective_chat.id) if update.effective_chat else "",
             text=update.message.text,
             channel="telegram",
             raw=update,
+            sender_id=str(update.effective_user.id) if update.effective_user else None,
             message_id=str(update.message.message_id),
         )
         try:
             reply = await self.dispatch_text(msg)
-        except Exception as e:  # pragma: no cover
+        except Exception:  # pragma: no cover
+            # Don't reflect the raw exception text to the remote user -- it can
+            # carry a credential/internal path. The detail is logged above;
+            # the user gets a generic message (matches slack/signal).
             log.exception("handler error")
-            reply = f"⚠ error: {e}"
-        await update.message.reply_text(reply)
+            reply = "⚠ An internal error occurred."
+        # An empty reply (action-only goal, or a Reply whose text dispatch
+        # dropped) must not be sent: Telegram rejects reply_text("") with a 400
+        # "message text is empty", which raises out of the handler. Guard with
+        # `if reply:`, matching bluesky/whatsapp/mastodon and the other channels.
+        if reply:
+            await update.message.reply_text(reply)
 
     async def start(self) -> None:
         self._app = Application.builder().token(self.token).build()

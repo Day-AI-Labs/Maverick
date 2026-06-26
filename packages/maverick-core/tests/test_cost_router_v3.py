@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from random import Random
 
-from maverick.cost_router_v3 import ContextualBandit, context_key, pick
+from maverick.cost.router_v3 import ContextualBandit, context_key, pick
 
 
 def _bandit(seed=0, epsilon=0.0, path=None):
@@ -94,3 +94,28 @@ def test_pick_chooses_within_viable_arms(monkeypatch):
 def test_context_key():
     assert context_key("coder", 1) == "coder:t1"
     assert context_key("", 2) == "default:t2"
+
+
+def test_record_is_concurrency_safe(tmp_path):
+    """Separate bandit instances at one path (≈ separate processes) must
+    accumulate, not clobber: each record reloads under a cross-process lock
+    before applying its delta."""
+    import threading
+
+    p = tmp_path / "bandit.json"
+    n, per = 8, 25
+
+    def worker():
+        b = ContextualBandit(rng=Random(0), path=p)
+        for _ in range(per):
+            b.record("ctx", "arm", 1.0)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    final = ContextualBandit(rng=Random(0), path=p)
+    assert final.stats("ctx")["arm"]["pulls"] == n * per
+    assert list(tmp_path.glob("*.tmp")) == []

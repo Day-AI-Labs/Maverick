@@ -5,6 +5,29 @@ import pytest
 from maverick import retry
 
 
+def test_max_attempts_clamped_to_at_least_one(monkeypatch):
+    """A 0/negative MAVERICK_LLM_RETRY_ATTEMPTS must not make the wrapped fn
+    never run: range(0) leaves `last` None and dies on `assert last is not None`,
+    so the provider call silently never dispatches. The clamp guarantees >=1."""
+    import importlib
+
+    monkeypatch.setenv("MAVERICK_LLM_RETRY_ATTEMPTS", "0")
+    importlib.reload(retry)
+    try:
+        assert retry.MAX_ATTEMPTS == 1
+        calls = []
+
+        def ok():
+            calls.append(1)
+            return "done"
+
+        assert retry.sync_retry(ok) == "done"
+        assert calls == [1]
+    finally:
+        monkeypatch.delenv("MAVERICK_LLM_RETRY_ATTEMPTS", raising=False)
+        importlib.reload(retry)
+
+
 def test_sync_retry_succeeds_after_transient_errors(monkeypatch):
     """A retryable error followed by success returns the success value."""
     monkeypatch.setattr(retry, "BASE_DELAY", 0.001)

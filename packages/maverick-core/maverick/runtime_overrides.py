@@ -17,16 +17,38 @@ the next goal with no restart. config.toml is never touched.
 """
 from __future__ import annotations
 
+import functools
 import logging
 import math
-import os
 import re
-from pathlib import Path
+import threading
+
+from .paths import data_dir
 
 log = logging.getLogger(__name__)
 
-OVERRIDES_PATH = Path.home() / ".maverick" / "runtime-overrides.toml"
+OVERRIDES_PATH = data_dir("runtime-overrides.toml")
 _VALID_TOOL_NAME = re.compile(r"^[a-z0-9_-]+$")
+
+# One overlay file holds every surface (denied_tools, models, budget, plugins,
+# allowed_models, mcp, style); each mutator re-reads the whole overlay and
+# rewrites it. Two dashboard requests racing would otherwise lose one change --
+# e.g. a set_budget that read a stale denied_tools drops a just-applied
+# disable_tool, silently re-enabling a tool the operator just denied. Serialize
+# every mutator's read-modify-write in-process (RLock) and cross-process (flock).
+_OVERRIDE_LOCK = threading.RLock()
+
+
+def _serialized(fn):
+    """Serialize a mutator's whole read-modify-write of the overlay file. The
+    public mutators never call one another, so the non-reentrant flock can't
+    self-deadlock."""
+    @functools.wraps(fn)
+    def _wrap(*args, **kwargs):
+        from .file_lock import cross_process_lock
+        with _OVERRIDE_LOCK, cross_process_lock(OVERRIDES_PATH):
+            return fn(*args, **kwargs)
+    return _wrap
 
 
 def _tomllib():
@@ -259,15 +281,10 @@ def _write_state(denied: set[str], models: dict[str, str] | None,
     servers = mcp_overlay() if mcp is None else mcp
     if servers:
         body += _render_mcp(servers)
-    tmp_path = OVERRIDES_PATH.with_suffix(".toml.tmp")
-    fd = os.open(tmp_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(body)
-    os.replace(tmp_path, OVERRIDES_PATH)
-    try:
-        os.chmod(OVERRIDES_PATH, 0o600)
-    except OSError:
-        pass
+    # Unique temp + os.replace (0600): a fixed ".toml.tmp" collides under two
+    # concurrent writers -- one os.replace moves it out from under the other.
+    from .file_lock import atomic_write_text
+    atomic_write_text(OVERRIDES_PATH, body)
 
 
 def _toml_string(value: str) -> str:
@@ -297,6 +314,7 @@ def _validate_role(role: str) -> str:
     return r
 
 
+@_serialized
 def disable_tool(name: str) -> set[str]:
     """Add ``name`` to the overlay deny-list. Returns the new set."""
     current = denied_tools()
@@ -305,6 +323,7 @@ def disable_tool(name: str) -> set[str]:
     return current
 
 
+@_serialized
 def enable_tool(name: str) -> set[str]:
     """Remove ``name`` from the overlay deny-list. Returns the new set.
 
@@ -317,6 +336,7 @@ def enable_tool(name: str) -> set[str]:
     return current
 
 
+@_serialized
 def set_default_model(model: str) -> str:
     """Pin the dashboard's global default model. Returns the stored spec."""
     spec = _validate_model(model)
@@ -326,6 +346,7 @@ def set_default_model(model: str) -> str:
     return spec
 
 
+@_serialized
 def clear_default_model() -> None:
     """Drop the global default model pin (per-role pins are untouched)."""
     models = _models_overlay()
@@ -333,6 +354,7 @@ def clear_default_model() -> None:
     _write_state(denied_tools(), models or None, budget_override())
 
 
+@_serialized
 def set_role_models(updates: dict[str, str | None]) -> None:
     """Batch set/clear per-role model pins in one write. A falsy value clears
     that role. Invalid role/model ids raise ValueError before anything writes."""
@@ -347,6 +369,7 @@ def set_role_models(updates: dict[str, str | None]) -> None:
     _write_state(denied_tools(), models or None, budget_override())
 
 
+@_serialized
 def set_budget(max_dollars: float) -> float:
     """Set the dashboard's per-goal spend cap (USD). Returns the stored value."""
     try:
@@ -359,6 +382,7 @@ def set_budget(max_dollars: float) -> float:
     return v
 
 
+@_serialized
 def clear_budget() -> None:
     """Drop the dashboard spend cap, reverting to config.toml / defaults."""
     _write_state(denied_tools(), _models_overlay() or None, None)
@@ -371,6 +395,7 @@ def style_override() -> str | None:
     return name if isinstance(name, str) and name.strip() else None
 
 
+@_serialized
 def set_style(name: str) -> str:
     """Select the active output style (a name from ``styles.all_styles()``).
     Validated against the registry so a typo can't silently take effect."""
@@ -382,6 +407,7 @@ def set_style(name: str) -> str:
     return n
 
 
+@_serialized
 def clear_style() -> None:
     """Drop the output style, reverting to the default voice."""
     _write_state(denied_tools(), _models_overlay() or None, budget_override(), style="")
@@ -399,6 +425,7 @@ def _set_plugins(on: set[str], off: set[str]) -> None:
                  (on, off))
 
 
+@_serialized
 def enable_plugin(name: str) -> None:
     """Force-enable a plugin from the dashboard (adds it to the allowlist)."""
     n = _validate_plugin(name)
@@ -408,6 +435,7 @@ def enable_plugin(name: str) -> None:
     _set_plugins(on, off)
 
 
+@_serialized
 def disable_plugin(name: str) -> None:
     """Force-disable a plugin from the dashboard (removes it from the allowlist,
     even when config.toml enables it)."""
@@ -418,6 +446,7 @@ def disable_plugin(name: str) -> None:
     _set_plugins(on, off)
 
 
+@_serialized
 def reset_plugin(name: str) -> None:
     """Clear any dashboard plugin override, reverting to config.toml."""
     n = _validate_plugin(name)
@@ -427,6 +456,7 @@ def reset_plugin(name: str) -> None:
     _set_plugins(on, off)
 
 
+@_serialized
 def set_allowed_models(specs) -> set[str]:
     """Set the admin model allow-list (an empty list clears it). Validates each
     spec before writing; returns the stored set."""
@@ -443,6 +473,7 @@ def set_allowed_models(specs) -> set[str]:
     return allow
 
 
+@_serialized
 def add_mcp_server(name: str, spec: dict) -> dict:
     """Add (or replace) a dashboard-managed MCP server. Validates the spec the
     same way the kernel will at load time (``MCPServerSpec.from_config`` -- the
@@ -462,6 +493,7 @@ def add_mcp_server(name: str, spec: dict) -> dict:
     return stored
 
 
+@_serialized
 def remove_mcp_server(name: str) -> bool:
     """Remove a dashboard-managed MCP server. Returns True if one was removed.
     Only clears a dashboard-added server; a config.toml server is not touched."""

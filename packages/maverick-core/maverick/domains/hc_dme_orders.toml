@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "DME order documentation packet"
+consumers = ["dme_supervisor", "billing_specialist"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read order"
+instruction = "Read the incoming DME order, the prescribing note, and any attached clinical documentation for the patient."
+tools = ["read_file"]
+[[workflow]]
+name = "Check payer rules"
+instruction = "Retrieve the payer's coverage criteria and documentation requirements for the ordered equipment."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify completeness"
+instruction = "Compare the order against the payer checklist and list every missing or expiring document needed for authorization."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Assemble packet"
+instruction = "Assemble the complete documentation packet noting gaps the clinician must resolve, without supplying any clinical judgment."
+[[workflow]]
+name = "Route for review"
+instruction = "Route the assembled order packet to the DME supervisor for sign-off before submission to the payer."
+gate = "review"

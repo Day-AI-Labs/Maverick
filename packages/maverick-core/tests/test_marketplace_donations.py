@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from maverick.marketplace_donations import (
+from maverick.marketplace.donations import (
     MAX_URL_LENGTH,
     donation_info,
     validate_donation_url,
@@ -71,7 +71,7 @@ def test_donation_info_accepts_objects_with_attribute():
 
 def test_links_only_no_payment_processing():
     """The module must stay a validator: no HTTP client, no checkout flow."""
-    import maverick.marketplace_donations as mod
+    import maverick.marketplace.donations as mod
     doc = mod.__doc__ or ""
     assert "No payment processing" in doc
     src_names = set(dir(mod))

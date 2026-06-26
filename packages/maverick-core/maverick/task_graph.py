@@ -15,8 +15,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .paths import data_dir
+
 _STATUSES = ("pending", "running", "done", "failed", "blocked")
-_STORE = Path.home() / ".maverick" / "task_graphs"
+_STORE = data_dir("task_graphs")
+# Cap the node count of a single persisted graph. The graph is built by an
+# agent-callable tool and persisted, so without a bound an agent (steerable by
+# prompt-injection in tool output) could grow an arbitrarily large graph that
+# makes every later topo_order O(V^2) and bloats the on-disk file. Generous --
+# real decompositions are dozens of tasks.
+_MAX_TASKS = 10_000
 
 
 class TaskGraph:
@@ -31,6 +39,8 @@ class TaskGraph:
         deps = [str(d).strip() for d in deps if str(d).strip()]
         if task_id in deps:
             raise ValueError(f"task {task_id!r} cannot depend on itself")
+        if task_id not in self.tasks and len(self.tasks) >= _MAX_TASKS:
+            raise ValueError(f"task graph is full (max {_MAX_TASKS} tasks)")
         existing = self.tasks.get(task_id, {})
         self.tasks[task_id] = {
             "title": title or existing.get("title", ""),
@@ -106,22 +116,37 @@ class TaskGraph:
         return sorted(frontier, key=lambda tid: (-tail.get(tid, 0.0), tid))
 
     def has_cycle(self) -> bool:
+        # Iterative 3-colour DFS (explicit stack, NOT recursion): a deep linear
+        # chain -- which an agent can build via repeated `add` ops on this
+        # persisted, tool-callable graph -- would overflow the Python stack with
+        # a recursive visit (RecursionError ~1000 deep), and _run does not catch
+        # it, so the tool call tears down and every later op on the persisted
+        # graph re-crashes. The explicit stack has no such depth limit.
         WHITE, GRAY, BLACK = 0, 1, 2
         color = dict.fromkeys(self.tasks, WHITE)
-
-        def visit(node: str) -> bool:
-            color[node] = GRAY
-            for dep in self.tasks.get(node, {}).get("deps", []):
-                if dep not in color:
-                    continue  # unknown dep can't form a cycle within the graph
-                if color[dep] == GRAY:
-                    return True
-                if color[dep] == WHITE and visit(dep):
-                    return True
-            color[node] = BLACK
-            return False
-
-        return any(color[tid] == WHITE and visit(tid) for tid in self.tasks)
+        for root in self.tasks:
+            if color[root] != WHITE:
+                continue
+            color[root] = GRAY
+            stack = [(root, iter(self.tasks.get(root, {}).get("deps", [])))]
+            while stack:
+                _node, deps_it = stack[-1]
+                descended = False
+                for dep in deps_it:
+                    if dep not in color:
+                        continue  # unknown dep can't form a cycle within the graph
+                    if color[dep] == GRAY:
+                        return True  # back-edge to a node on the current path
+                    if color[dep] == WHITE:
+                        color[dep] = GRAY
+                        stack.append(
+                            (dep, iter(self.tasks.get(dep, {}).get("deps", []))))
+                        descended = True
+                        break  # resume deps_it later, where it left off
+                    # BLACK: fully explored already, no cycle through it
+                if not descended:
+                    color[stack.pop()[0]] = BLACK
+        return False
 
     def topo_order(self) -> list[str]:
         """A dependency-respecting order (deps before dependents).
@@ -200,9 +225,12 @@ class TaskGraph:
         return g
 
     def save(self, path: str | Path) -> None:
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        # Atomic temp+replace: a bare write_text truncates in place, so a
+        # concurrent reader's json.load would see a half-written file and the
+        # whole DAG would be lost. (Cross-process serialization of the
+        # load-modify-save is handled by the tool's _run via cross_process_lock.)
+        from .file_lock import atomic_write_text
+        atomic_write_text(path, json.dumps(self.to_dict(), indent=2))
 
     @classmethod
     def load(cls, path: str | Path) -> TaskGraph:
@@ -239,17 +267,24 @@ _SCHEMA = {
 def _run(args: dict) -> str:
     op = args.get("op")
     path = _graph_path(args.get("graph") or "default")
+    from .file_lock import cross_process_lock
     try:
+        # Mutating ops do a load-modify-save: hold a cross-process lock across
+        # the whole thing so two concurrent add/status ops (dashboard + serve +
+        # a swarm scheduler are separate processes) can't both load the same
+        # graph and have the second save clobber the first's status transition.
+        if op in ("add", "status"):
+            with cross_process_lock(path):
+                g = TaskGraph.load(path)
+                if op == "add":
+                    g.add_task(args.get("task") or "", args.get("title") or "",
+                               args.get("deps") or [])
+                    g.save(path)
+                    return f"added task {args.get('task')!r}"
+                g.set_status(args.get("task") or "", args.get("value") or "")
+                g.save(path)
+                return f"task {args.get('task')!r} -> {args.get('value')}"
         g = TaskGraph.load(path)
-        if op == "add":
-            g.add_task(args.get("task") or "", args.get("title") or "",
-                       args.get("deps") or [])
-            g.save(path)
-            return f"added task {args.get('task')!r}"
-        if op == "status":
-            g.set_status(args.get("task") or "", args.get("value") or "")
-            g.save(path)
-            return f"task {args.get('task')!r} -> {args.get('value')}"
         if op == "ready":
             r = g.ready()
             return "\n".join(r) if r else "(no ready tasks)"

@@ -82,9 +82,19 @@ def test_regulated_profile_passes_seals_data_and_is_compliant(monkeypatch, tmp_p
     monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
     monkeypatch.setenv("MAVERICK_AUDIT_SIGN", "1")
     monkeypatch.setenv("MAVERICK_ANON", "1")
+    # Enterprise mode requires the audit signing key to live OFF-HOST (council H5:
+    # a same-host on-disk key lets a local root rewrite + re-sign history). A
+    # regulated deployment injects a KMS / secrets-manager-sourced key, held in
+    # memory only -- model that here so the audit-chain guarantee can sign.
+    monkeypatch.setenv("MAVERICK_AUDIT_SIGNING_KEY", "11" * 32)
     monkeypatch.setattr(
         "maverick.config.load_config",
-        lambda *a, **k: {"retention": {"audit_days": 365}},
+        lambda *a, **k: {
+            "retention": {"audit_days": 365},
+            # A regulated deployment must run agent code in a container, not the
+            # unsandboxed 'local' backend (Sandbox isolation guarantee).
+            "sandbox": {"backend": "docker"},
+        },
     )
 
     # Every boundary guarantee holds (the dict comprehension surfaces details on
@@ -104,3 +114,34 @@ def test_regulated_profile_passes_seals_data_and_is_compliant(monkeypatch, tmp_p
 
     # The same profile makes `maverick compliance --strict` green.
     assert [c.control for c in compliance_report() if c.status == "action_needed"] == []
+
+
+requires_shield = pytest.mark.skipif(
+    importlib.util.find_spec("maverick_shield") is None,
+    reason="maverick-shield is not installed",
+)
+
+
+@requires_shield
+def test_shield_guarantee_passes_when_installed_and_enforcing():
+    # maverick-shield installed + default profile (balanced) => the threat shield
+    # is enforcing (built-in or SDK backend), so the guarantee holds.
+    from maverick.deployment import verify_deployment
+
+    checks = {c.name: c for c in verify_deployment()}
+    assert "Threat shield" in checks
+    assert checks["Threat shield"].passed is True
+
+
+@requires_shield
+def test_shield_guarantee_fails_when_profile_off(monkeypatch):
+    # An operator who turns the shield off ([safety] profile = off) fails the
+    # guarantee, so a required enterprise deployment refuses to start with the
+    # screen disabled.
+    monkeypatch.setattr(
+        "maverick.config.load_config", lambda *a, **k: {"safety": {"profile": "off"}}
+    )
+    from maverick.deployment import verify_deployment
+
+    checks = {c.name: c for c in verify_deployment()}
+    assert checks["Threat shield"].passed is False

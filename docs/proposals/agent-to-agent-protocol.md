@@ -14,7 +14,7 @@ suites ([`agent-suites-overview.md`](agent-suites-overview.md)). Builds on
 > replayable). Trust is *structural* — built from signed capabilities and compartment
 > seals — not assumed because a message arrived.
 
-Today Maverick agents are **hub-and-spoke**: "specialists never talk to each other
+Today Lightwork agents are **hub-and-spoke**: "specialists never talk to each other
 directly — they post to the blackboard; the orchestrator reads it" (`blackboard.py`). That
 is safe but limited. This protocol is the deliberate evolution to an **authorized,
 identity-verified agent society**, keeping the orchestrator/supervisor as the trust root.

@@ -1,6 +1,6 @@
 # Recipe: CSV cleanup
 
-Hand Maverick a messy CSV and get a clean, well-typed one back — with a note
+Hand Lightwork a messy CSV and get a clean, well-typed one back — with a note
 on every transformation it made.
 
 ## Goal text

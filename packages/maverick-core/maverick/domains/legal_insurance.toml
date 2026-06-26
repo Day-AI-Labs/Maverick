@@ -15,3 +15,31 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "coverage analysis & claim tender memo"
+consumers = ["general_counsel", "risk_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather policy facts"
+instruction = "Read the relevant D&O, cyber, or E&O policy and the underlying claim or loss notice from the knowledge base."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map coverage"
+instruction = "Match the claim's allegations to insuring agreements, exclusions, and conditions, citing the exact policy language for each position."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag notice deadlines"
+instruction = "Identify the policy's notice and tender deadlines and confirm current dates against carrier requirements."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Review ROR letter"
+instruction = "Analyze any reservation-of-rights letter and note each reserved exclusion against the policy text."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to counsel"
+instruction = "Draft the coverage memo and tender recommendation and route to counsel, who tenders or settles."
+gate = "review"

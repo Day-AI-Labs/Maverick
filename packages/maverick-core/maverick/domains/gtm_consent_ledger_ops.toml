@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "list suppression-clean certification"
+consumers = ["marketing_ops", "campaign_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull source lists"
+instruction = "Read the candidate send list alongside the suppression and consent ledgers from CRM, MAP, and each outbound channel."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile ledgers"
+instruction = "Reconcile every record across systems and surface conflicts, duplicates, and unverifiable provenance."
+[[workflow]]
+name = "Verify lawful basis"
+instruction = "Confirm a current lawful-basis and opt-in record exists for every remaining contact and halt on any stale entry."
+tools = ["read_file"]
+[[workflow]]
+name = "Quarantine opt-outs"
+instruction = "Strip suppressed and opted-out parties into a quarantine list that is excluded from the certified send."
+[[workflow]]
+name = "Certify or halt"
+instruction = "Route the suppression-clean certification to a human owner to approve or halt the campaign before any send."
+gate = "approval"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Schedule pricing compliance check"
+consumers = ["contracts_manager", "contracting_officer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull order lines"
+instruction = "Read the order or quote line items with SINs, quantities, and proposed unit prices to be verified."
+tools = ["read_file"]
+[[workflow]]
+name = "Load awarded pricelist"
+instruction = "Retrieve the awarded GSA schedule pricelist and current modifications for the matching SINs."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compare pricing"
+instruction = "Compare each proposed price against the awarded ceiling and any negotiated discounts and flag overcharges or unlisted items."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check price reduction"
+instruction = "Confirm the Price Reductions Clause and IFF treatment against the cited 552.238 clause rather than from memory."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Contracts review"
+instruction = "Route the pricing compliance findings to the contracts manager to confirm corrections before the order is honored."
+gate = "review"

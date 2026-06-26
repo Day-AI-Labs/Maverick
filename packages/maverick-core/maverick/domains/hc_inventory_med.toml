@@ -11,3 +11,32 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "clinical supply level & reorder report"
+consumers = ["materials_manager", "clinical_supervisor"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull stock"
+instruction = "Query current on-hand quantities, lot expiration dates, and par levels for clinical supplies."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check thresholds"
+instruction = "Confirm reorder points and minimum stock policy for each item in inventory documentation."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute shortfalls"
+instruction = "Calculate items below par and quantities to reorder against current usage."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag expirations"
+instruction = "Surface lots nearing or past expiration as the wasted-and-unusable-stock failure mode."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Route to materials"
+instruction = "Hand the reorder report with expiration flags to the materials manager to place orders."
+tools = ["spreadsheet"]
+gate = "review"

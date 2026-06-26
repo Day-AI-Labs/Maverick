@@ -11,3 +11,26 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "suggested chat reply with article links"
+consumers = ["chat_agent", "support_team_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read live context"
+instruction = "Pull the active chat transcript and the customer's case history to understand the current intent."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Find relevant articles"
+instruction = "Search the knowledge base for the help articles and policies that match the customer's question and cite them."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft next response"
+instruction = "Compose a suggested next reply grounded in the cited articles, never promising refunds or policy exceptions on the agent's behalf."
+[[workflow]]
+name = "Surface to agent"
+instruction = "Present the suggested reply, article links, and case context to the human chat agent to send or edit."
+gate = "review"

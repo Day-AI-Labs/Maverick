@@ -6,6 +6,34 @@ persona = """You are the GxP Quality Support specialist (pharma_quality seal). D
 
 allow_tools = ["read_file", "knowledge_search", "web_search", "sql_query", "spreadsheet"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["pharma"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "Deviation & CAPA draft"
+consumers = ["quality_unit", "qa_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull GxP records"
+instruction = "Read the relevant batch records, SOPs, and prior deviations for the event under review."
+tools = ["read_file", "knowledge_search", "sql_query"]
+[[workflow]]
+name = "Establish facts"
+instruction = "Trace the deviation timeline and affected lots against the source GxP documents and cite each finding."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Draft deviation and CAPA"
+instruction = "Write the deviation description, root-cause hypothesis, and proposed CAPA actions grounded in cited evidence."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Surface gaps"
+instruction = "Flag missing records, unverified assumptions, and any batch-record discrepancy the quality unit must resolve."
+[[workflow]]
+name = "Route to quality"
+instruction = "Deliver the prepared draft to the quality unit, which owns approval, release, and CAPA closure."
+gate = "review"

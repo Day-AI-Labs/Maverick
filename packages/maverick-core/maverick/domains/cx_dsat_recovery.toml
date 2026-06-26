@@ -11,3 +11,26 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "customer recovery outreach & remedy plan"
+consumers = ["cx_manager", "account_owner"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull DSAT case"
+instruction = "Query the dissatisfied customer's ticket history, survey verbatim, and account context to reconstruct what went wrong."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Check remedy policy"
+instruction = "Verify what credits, exceptions, or remedies are actually permitted for this case under documented policy."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft remedy plan"
+instruction = "Draft a concrete remedy plan and re-contact message scoped strictly to approved remedies, never promising refunds yourself."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Submit the recovery outreach and remedy plan for human approval before any contact or commitment is made."
+gate = "approval"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "independence attestation status report"
+consumers = ["compliance_partner", "general_counsel"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Scope requirements"
+instruction = "Identify the independence rules and attestation obligations that apply to the engagements and personnel in scope."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pull attestations"
+instruction = "Query the attestation records and engagement roster to find who owes an independence confirmation and who has filed."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Check conflicts"
+instruction = "Cross-reference disclosed interests and relationships against engagement clients to surface potential independence breaches."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag exceptions"
+instruction = "List overdue attestations and unresolved independence conflicts with the supporting citation for each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Partner sign-off"
+instruction = "Route the independence status report and exception list to the compliance partner for review and disposition."
+gate = "review"

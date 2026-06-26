@@ -18,7 +18,7 @@ maverick start --template trip-plan \
   --param destination="Lisbon" \
   --param duration="5 days"
 
-maverick start --template standup --param project="Maverick"
+maverick start --template standup --param project="Lightwork"
 ```
 
 ## Catalog

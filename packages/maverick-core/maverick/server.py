@@ -97,6 +97,49 @@ class Server:
         except ImportError:
             log.warning("maverick-shield not installed; running without safety scans")
 
+    def _tenant_door_refusal(self, tenant: str) -> str | None:
+        """Read-only admission check for a per-tenant message at the channel door.
+
+        Returns a user-facing refusal string, or None to admit. Covers the
+        roster (suspended), the provisioned daily-spend cap, and plan feature
+        gating (the ``channels`` entitlement). Registry read errors fail soft
+        (admit); a suspension/over-quota/plan denial is a deliberate refusal.
+        """
+        try:
+            from .tenant.registry import (
+                TenantSuspended,
+                assert_tenant_active,
+                tenant_over_quota,
+            )
+        except Exception:  # pragma: no cover -- registry module optional
+            TenantSuspended = None  # type: ignore[assignment]
+        if TenantSuspended is not None:
+            try:
+                assert_tenant_active(tenant)
+            except TenantSuspended:
+                log.warning("message refused: tenant %s suspended", tenant)
+                return "⚠ This workspace is suspended. Contact your administrator."
+            except Exception:  # pragma: no cover -- fail-soft on reads
+                log.exception("tenant roster check failed; allowing")
+            try:
+                quota_reason = tenant_over_quota(tenant)
+            except Exception:  # pragma: no cover -- fail-soft on reads
+                quota_reason = None
+            if quota_reason:
+                log.warning("message refused: %s", quota_reason)
+                return f"⚠ {quota_reason}"
+
+        # Plan feature gating: a registered tenant whose plan lacks the
+        # "channels" entitlement may not drive the agent over a channel. No-op
+        # for unprovisioned per-user tenant ids (feature_allowed admits anything
+        # not in the registry), so the default tenant_by_user path is unaffected.
+        from .billing import feature_allowed
+        if not feature_allowed("channels", tenant=tenant):
+            log.warning("message refused: tenant %s plan lacks channel access", tenant)
+            return ("⚠ This workspace's plan does not include channel access. "
+                    "Contact your administrator to upgrade.")
+        return None
+
     async def _handle_message(self, msg) -> str:
         if self._shield is not None:
             verdict = self._shield.scan_input(msg.text)
@@ -144,44 +187,20 @@ class Server:
             log.exception("tenant world resolution failed; rejecting message")
             return "⚠ Tenant isolation is unavailable for this message. Try again later."
 
-        # Multi-tenant serve: enforce the tenant roster at the channel door.
-        # No-op until an operator provisions tenants (`maverick tenant
-        # create`); with a roster, a suspended/unknown tenant is refused
-        # BEFORE any goal is created, and a tenant over its provisioned
-        # daily-spend cap is refused until the UTC day rolls. Registry read
-        # errors fail soft (never down the channel server); the suspension
-        # itself is a deliberate refusal, not an error.
+        # Multi-tenant serve: enforce the tenant roster + plan at the channel
+        # door BEFORE any goal is created. No-op until an operator provisions
+        # tenants. Read-only refusal reasons (suspended / over daily-spend cap /
+        # plan lacks channel access) are returned as a message; None = admit.
         if tenant is not None:
-            try:
-                from .tenant_registry import (
-                    TenantSuspended,
-                    assert_tenant_active,
-                    tenant_over_quota,
-                )
-            except Exception:  # pragma: no cover -- registry module optional
-                TenantSuspended = None  # type: ignore[assignment]
-            if TenantSuspended is not None:
-                try:
-                    assert_tenant_active(tenant)
-                except TenantSuspended:
-                    log.warning("message refused: tenant %s suspended", tenant)
-                    return ("⚠ This workspace is suspended. "
-                            "Contact your administrator.")
-                except Exception:  # pragma: no cover -- fail-soft on reads
-                    log.exception("tenant roster check failed; allowing")
-                try:
-                    quota_reason = tenant_over_quota(tenant)
-                except Exception:  # pragma: no cover -- fail-soft on reads
-                    quota_reason = None
-                if quota_reason:
-                    log.warning("message refused: %s", quota_reason)
-                    return f"⚠ {quota_reason}"
+            refusal = self._tenant_door_refusal(tenant)
+            if refusal:
+                return refusal
 
         # Per-tenant concurrency ceiling (noisy-neighbor protection). Derived
         # from the tenant's plan entitlement; no-op when tenant is None or the
         # plan is unlimited. Held across the whole goal run and released in the
         # finally below so a crash never leaks a slot.
-        from . import tenant_concurrency
+        from .tenant import concurrency as tenant_concurrency
         if not tenant_concurrency.acquire(tenant):
             log.warning("message refused: tenant %s at concurrency ceiling", tenant)
             return ("⚠ This workspace is at its concurrent-task limit. "
@@ -537,7 +556,7 @@ def _advise_channel_tenancy(server) -> None:
     """
     try:
         from .paths import tenant_by_user_enabled
-        from .tenant_registry import list_tenants
+        from .tenant.registry import list_tenants
         multi = tenant_by_user_enabled() or len(list_tenants()) > 1
         if multi and server._channels:
             log.warning(

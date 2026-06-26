@@ -15,7 +15,7 @@ tissue. ~50 agents (45 base + 5 council-added) across eight towers.
 > **outward-facing at scale**: they contact prospects, publish content, spend ad
 > budget, and quote prices. A wrong send is a **reputational, deliverability, and
 > regulatory** event (CAN-SPAM, GDPR/PECR, TCPA, FTC), not a mis-statement. So the
-> product is again the **governance wrapper** — and Maverick already owns the exact
+> product is again the **governance wrapper** — and Lightwork already owns the exact
 > chokepoint: the multi-channel engagement layer, AI/bot disclosure, the consent
 > gate, high-risk classification of every "send" tool, and rate/spend caps. GTM is
 > **rich substrate, greenfield workflow.**
@@ -33,7 +33,7 @@ money"):
 ## Contents
 
 1. [What's already shipped — the reuse map](#1-whats-already-shipped--the-reuse-map)
-2. [How a GTM agent maps onto Maverick](#2-how-a-gtm-agent-maps-onto-maverick)
+2. [How a GTM agent maps onto Lightwork](#2-how-a-gtm-agent-maps-onto-maverick)
 3. [The control model (cross-cutting)](#3-the-control-model-cross-cutting)
 4. [Per-client customization — the dials](#4-per-client-customization--the-dials)
 5. [The roster — eight towers](#5-the-roster--eight-towers)
@@ -85,7 +85,7 @@ churn/health models, partner/PRM, and win-loss. These are §9 connectors + new p
 
 ---
 
-## 2. How a GTM agent maps onto Maverick
+## 2. How a GTM agent maps onto Lightwork
 
 Same as the other suites: each agent is one
 [`DomainProfile`](../../packages/maverick-core/maverick/domain.py) pack (compartment
@@ -677,7 +677,7 @@ Built on the shipped `governance.py` + `safety/consent.py` + the channels layer 
 
 ## 7. Compliance-regime packs (Layer B)
 
-Strictest-wins union, same pluggable model. Several map to controls Maverick already
+Strictest-wins union, same pluggable model. Several map to controls Lightwork already
 enforces.
 
 | Regime pack | Covers | Status |

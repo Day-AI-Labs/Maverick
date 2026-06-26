@@ -170,7 +170,7 @@ def test_calibration_samples_and_freeze_are_per_tenant(monkeypatch):
 # ---- per-tenant KMS isolation ----
 
 def test_tenant_dek_distinct_and_non_transferable():
-    from maverick.tenant_kms import tenant_dek
+    from maverick.tenant.kms import tenant_dek
     dek_a = tenant_dek("acme")
     dek_b = tenant_dek("globex")
     assert dek_a != dek_b
@@ -182,7 +182,7 @@ def test_tenant_dek_distinct_and_non_transferable():
 
 def test_wrapped_dek_does_not_unwrap_cross_tenant():
     from maverick.crypto_at_rest import EncryptionUnavailable
-    from maverick.tenant_kms import LocalKMS, tenant_dek
+    from maverick.tenant.kms import LocalKMS, tenant_dek
     kms = LocalKMS()
     dek = tenant_dek("acme")
     wrapped = kms.wrap(dek, context=b"tenant:acme")
@@ -217,3 +217,45 @@ def test_encrypted_field_opaque_across_tenants(monkeypatch):
         reset_tenant(tok)
     # The ciphertext itself never contains the plaintext.
     assert "alice@example.com" not in (blob if isinstance(blob, str) else blob.decode("latin-1"))
+
+
+def test_tenant_world_cache_evicts_lru_not_raises(monkeypatch, tmp_path):
+    # M7: reaching MAX_TENANT_WORLDS evicts the least-recently-used tenant
+    # instead of hard-failing the next one. Shrink the cap for the test.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    from maverick import world_model
+    world_model._tenant_worlds.clear()
+    monkeypatch.setattr(world_model, "MAX_TENANT_WORLDS", 3)
+
+    w_a = world_model.world_for_tenant("a")
+    world_model.world_for_tenant("b")
+    world_model.world_for_tenant("c")          # cache full (3)
+    # Touch "a" so it is most-recently-used; "b" is now the LRU.
+    assert world_model.world_for_tenant("a") is w_a
+    world_model.world_for_tenant("d")          # over cap -> evict LRU ("b")
+
+    keys = list(world_model._tenant_worlds)
+    assert len(world_model._tenant_worlds) == 3
+    assert not any(k.endswith("b/world.db") for k in keys)   # b evicted
+    assert any(k.endswith("a/world.db") for k in keys)       # a kept (recently used)
+    assert any(k.endswith("d/world.db") for k in keys)       # d added
+    world_model._tenant_worlds.clear()
+
+
+def test_tenant_world_cache_never_evicts_shared(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    from maverick import world_model
+    world_model._tenant_worlds.clear()
+    monkeypatch.setattr(world_model, "MAX_TENANT_WORLDS", 2)
+
+    world_model.world_for_tenant(None)         # the shared world
+    world_model.world_for_tenant("t1")
+    world_model.world_for_tenant("t2")         # at cap; next evicts a TENANT
+    world_model.world_for_tenant("t3")
+
+    from maverick.paths import data_dir
+    shared_key = str(data_dir("world.db", tenant=None))
+    assert shared_key in world_model._tenant_worlds  # shared never evicted
+    world_model._tenant_worlds.clear()

@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["strat"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "company KPI tree with confirmed definitions"
+consumers = ["chief_strategy_officer", "metric_owner", "finance_lead"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Load tree"
+instruction = "Read the current KPI tree, metric definitions, and owner assignments to establish the working baseline."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map drivers"
+instruction = "Map each KPI to its parent outcome and driver metrics, building the decomposition in a structured sheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Confirm definitions"
+instruction = "Reconcile every definition and calculation against owner-confirmed source documents and cite what was used."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag orphaned, duplicated, or undefined KPIs and mark assumptions where an owner confirmation is still missing."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route tree"
+instruction = "Send the updated KPI tree to the strategy lead and metric owners for sign-off."
+gate = "review"

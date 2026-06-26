@@ -7,6 +7,7 @@ persona = """You are the Antitrust/Merger-Clearance specialist: flag HSR thresho
 
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "strat" collection
@@ -14,3 +15,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "merger clearance risk memo"
+consumers = ["general_counsel", "corpdev_lead", "ceo"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather deal terms"
+instruction = "Read the deal structure, parties, and relevant turnover and asset figures from the transaction file."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Test HSR thresholds"
+instruction = "Apply current HSR size-of-transaction and size-of-person thresholds and the 2024 rule to determine filing obligations."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Map global regimes"
+instruction = "Identify EU/UK merger control, CFIUS, and other foreign filings triggered and flag second-request and gun-jumping exposure."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Assess theory of harm"
+instruction = "Frame the substantive overlap against the 2023 Merger Guidelines and rate clearance risk with the evidence that would change it."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Brief counsel"
+instruction = "Deliver the clearance risk memo to counsel and Corp Dev for the filing decision."
+gate = "review"

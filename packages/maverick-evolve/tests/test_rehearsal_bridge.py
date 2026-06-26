@@ -15,8 +15,8 @@ def _write_queue(path, rows):
 def test_cases_carry_evidence_as_weight(tmp_path):
     q = tmp_path / "rehearsals.ndjson"
     _write_queue(q, [
-        {"prompt": "reconcile the ledger", "evidence": 2},
-        {"prompt": "fix the flaky export", "evidence": 5},
+        {"prompt": "reconcile the ledger", "evidence": 2, "scope": "local"},
+        {"prompt": "fix the flaky export", "evidence": 5, "scope": "local"},
     ])
     cases = cases_from_rehearsals(q)
     assert [c.prompt for c in cases] == [
@@ -38,5 +38,6 @@ def test_missing_or_empty_queue_is_empty(tmp_path):
 
 def test_max_cases_caps_the_queue(tmp_path):
     q = tmp_path / "rehearsals.ndjson"
-    _write_queue(q, [{"prompt": f"case {i}", "evidence": i} for i in range(1, 8)])
+    _write_queue(q, [{"prompt": f"case {i}", "evidence": i, "scope": "local"}
+                     for i in range(1, 8)])
     assert len(cases_from_rehearsals(q, max_cases=3)) == 3

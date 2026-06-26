@@ -12,7 +12,7 @@
 The meta-compliance trap is real and it is the single biggest non-engineering
 gate on the pivot: a seed-stage startup with zero certs **cannot** clear a
 bank's or hospital's vendor-security review, no matter how good the product is.
-But the trap has a documented escape, and Maverick is unusually well-positioned
+But the trap has a documented escape, and Lightwork is unusually well-positioned
 to take it. **Three moves de-risk deal #1 without waiting 12+ months for a
 Type II report: (1) lead with self-host so customer data never leaves their
 boundary — this deletes whole sections of the security questionnaire; (2) stand
@@ -67,7 +67,7 @@ poisons the artifact. Type I (point-in-time) is the bridge: it proves controls
 are *designed* correctly and ships in weeks, letting you tell a buyer "Type I
 today, Type II window underway, report by [month]."
 
-### What is easier *because* Maverick self-hosts
+### What is easier *because* Lightwork self-hosts
 
 Self-host is a genuine compliance moat, not just marketing — several artifacts
 shrink or partially disappear when customer data stays inside the customer's
@@ -140,7 +140,7 @@ HIPAA/GDPR posture cover the data plane.
 6. **Defer FedRAMP** until a sponsored, funded US-gov deal justifies the
    $350k–$2M+ and 12–24 months. Note FedRAMP 20x may compress timelines, but it
    is still a separate program, not seed-stage table stakes.
-7. **Dogfood publicly and turn the meta-problem into the demo.** Use Maverick to
+7. **Dogfood publicly and turn the meta-problem into the demo.** Use Lightwork to
    run our *own* questionnaire responses, evidence collection, and DPA/ROPA
    upkeep, and publish that as the reference customer story. The thing that
    threatens credibility (we must be compliant to sell compliance) becomes the

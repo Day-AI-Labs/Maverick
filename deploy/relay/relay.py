@@ -30,6 +30,7 @@ import hashlib
 import hmac
 import json
 import os
+import sys
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -103,8 +104,18 @@ class Handler(BaseHTTPRequestHandler):
         code, out = forward(payload)
         self._send(code, out)
 
-    def log_message(self, *args) -> None:  # quieter default logging
-        pass
+    def log_message(self, fmt: str, *args) -> None:
+        # Minimal access log: request line + status only. Never logs headers or
+        # body, so the caller bearer and the HMAC signing secret are not
+        # written out. On by default (an internet-adjacent forwarder with no
+        # request log has no audit trail); set MAVERICK_RELAY_ACCESS_LOG=0 to
+        # silence.
+        if os.environ.get("MAVERICK_RELAY_ACCESS_LOG", "1") == "0":
+            return
+        line = fmt % args if args else fmt
+        sys.stderr.write(
+            f"{self.address_string()} - - [{self.log_date_time_string()}] {line}\n"
+        )
 
 
 def main() -> int:

@@ -344,6 +344,41 @@ def _elicit_timeout() -> float:
     )
 
 
+def _elicit_allowed_hosts() -> frozenset[str]:
+    """Operator allowlist of hosts a URL-mode elicitation may point the user at.
+
+    From ``MAVERICK_MCP_ELICIT_ALLOWED_HOSTS`` (comma-separated, wins) or
+    ``[mcp] elicit_allowed_hosts`` in config. Empty -> no restriction (any
+    https, the documented residual risk that a prompt-injected model could aim
+    the user at an arbitrary site). Set it to pin elicitation to the providers
+    you actually use (e.g. accounts.google.com, github.com)."""
+    raw = os.environ.get("MAVERICK_MCP_ELICIT_ALLOWED_HOSTS")
+    hosts: list[str] = []
+    if raw and raw.strip():
+        hosts = [h.strip() for h in raw.split(",") if h.strip()]
+    else:
+        try:
+            from maverick.config import load_config
+            cfg = ((load_config() or {}).get("mcp") or {}).get("elicit_allowed_hosts") or []
+            hosts = [str(h).strip() for h in cfg if str(h).strip()]
+        except Exception:
+            hosts = []
+    return frozenset(h.lower().rstrip(".") for h in hosts)
+
+
+def _elicit_host_allowed(url: str, allowed: frozenset[str]) -> bool:
+    """True if ``url``'s host is in ``allowed`` (exact or a subdomain). An empty
+    allowlist means no restriction."""
+    if not allowed:
+        return True
+    from urllib.parse import urlparse
+    try:
+        host = (urlparse(url).hostname or "").lower().rstrip(".")
+    except Exception:
+        return False
+    return bool(host) and any(host == a or host.endswith("." + a) for a in allowed)
+
+
 def _tool_supports_tasks(tool_spec: dict) -> bool:
     """Whether a tool opted into task augmentation via execution.taskSupport."""
     return tool_spec.get("execution", {}).get("taskSupport") in ("optional", "required")
@@ -496,8 +531,12 @@ class MCPServer:
 
     def handle_resources_read(self, params: dict) -> dict:
         uri = params.get("uri", "")
-        if not uri.startswith("maverick://"):
-            raise _ProtocolError(-32602, f"unsupported uri scheme: {uri}")
+        # A client can send a non-string `uri` (number/list, or `null` which
+        # overrides the "" default); `.startswith` then raises and escapes as a
+        # scrubbed -32603 instead of the correct -32602 invalid-params -- mirror
+        # the non-dict `arguments` guard in handle_tools_call.
+        if not isinstance(uri, str) or not uri.startswith("maverick://"):
+            raise _ProtocolError(-32602, f"unsupported uri scheme: {uri!r}")
         path = uri[len("maverick://"):]
         from maverick.world_model import DEFAULT_DB, WorldModel
         wm = WorldModel(DEFAULT_DB)
@@ -686,9 +725,30 @@ class MCPServer:
             }],
         }
 
+    def _shield_block_or_none(self, payload: str) -> dict | None:
+        """Scan tool output through the Shield. Returns an isError response dict
+        if blocked, else None. Fails open (kernel rule 1) when the Shield raises
+        or is absent."""
+        if self._shield is None:
+            return None
+        try:
+            verdict = self._shield.scan_output(payload)
+        except Exception:  # pragma: no cover -- fail open (kernel rule 1)
+            return None
+        if getattr(verdict, "allowed", True):
+            return None
+        reasons = "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
+        return {
+            "isError": True,
+            "content": [{"type": "text", "text": f"⚠ Output blocked: {reasons}"}],
+        }
+
     def handle_tools_call(self, params: dict, *, task_owner: str | None = None) -> dict:
         name = params.get("name")
-        if name not in _TOOL_NAMES:
+        # A non-hashable `name` (list/dict) raises TypeError on the set-membership
+        # test below, escaping as a scrubbed -32603; coerce to -32602 like the
+        # `arguments` guard just below.
+        if not isinstance(name, str) or name not in _TOOL_NAMES:
             raise _ProtocolError(-32602, f"unknown tool: {name!r}")
         arguments = params.get("arguments", {}) or {}
         # A client can send `arguments` as a non-object (number/bool/string/
@@ -731,6 +791,16 @@ class MCPServer:
             pending.clear()
         try:
             result = self._dispatch_tool(name, arguments)
+        except (_ProtocolError, TaskError):
+            # Control-flow errors carry an explicit JSON-RPC (code, message) and
+            # MUST surface as a structured protocol error -- both transports
+            # convert them (stdio _dispatch_stdio_message, http _exception_to_
+            # error_response). Collapsing them into an isError envelope here (the
+            # blanket catch did) broke the documented -32602 contract for typed
+            # clients AND leaked the internal class name ("_ProtocolError: ...")
+            # into the tool-result text. Re-raise; only genuine tool crashes
+            # below become isError.
+            raise
         except Exception as e:
             return {
                 "isError": True,
@@ -746,17 +816,9 @@ class MCPServer:
             elicited = self._maybe_elicit_open_questions(arguments)
             if elicited is not None:
                 result = elicited
-        if self._shield is not None:
-            try:
-                verdict = self._shield.scan_output(result)
-                if not getattr(verdict, "allowed", True):
-                    reasons = "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
-                    return {
-                        "isError": True,
-                        "content": [{"type": "text", "text": f"⚠ Output blocked: {reasons}"}],
-                    }
-            except Exception:  # pragma: no cover -- fail open (kernel rule 1)
-                pass
+        blocked = self._shield_block_or_none(result)
+        if blocked is not None:
+            return blocked
         response: dict[str, Any] = {
             "isError": False,
             "content": [{"type": "text", "text": result}],
@@ -780,19 +842,11 @@ class MCPServer:
             except Exception:  # pragma: no cover -- structured form is best-effort
                 structured = None
             if structured is not None:
-                if self._shield is not None:
-                    try:
-                        verdict = self._shield.scan_output(
-                            json.dumps(structured, default=str, sort_keys=True)
-                        )
-                        if not getattr(verdict, "allowed", True):
-                            reasons = "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
-                            return {
-                                "isError": True,
-                                "content": [{"type": "text", "text": f"⚠ Output blocked: {reasons}"}],
-                            }
-                    except Exception:  # pragma: no cover -- fail open (kernel rule 1)
-                        pass
+                blocked = self._shield_block_or_none(
+                    json.dumps(structured, default=str, sort_keys=True)
+                )
+                if blocked is not None:
+                    return blocked
                 response["structuredContent"] = structured
         # A successful mutating tool dirties a resource; queue the update to
         # flush after the result is sent (run() calls _flush_resource_updates).
@@ -800,27 +854,24 @@ class MCPServer:
         return response
 
     def _dispatch_tool(self, name: str, args: dict) -> str:
-        if name == "maverick_start":
-            return self._tool_start(args)
-        if name == "maverick_status":
-            return self._tool_status()
-        if name == "maverick_resume":
-            return self._tool_resume(args)
-        if name == "maverick_answer":
-            return self._tool_answer(args)
-        if name == "maverick_skill_install":
-            return self._tool_skill_install(args)
-        if name == "maverick_skills_list":
-            return self._tool_skills_list()
-        if name == "maverick_fact_set":
-            return self._tool_fact_set(args)
-        if name == "maverick_facts_get":
-            return self._tool_facts_get()
-        if name == "maverick_fleet_ingest":
-            return self._tool_fleet_ingest(args)
-        if name == "maverick_fleet_recall":
-            return self._tool_fleet_recall(args)
-        raise _ProtocolError(-32602, f"unknown tool {name!r}")
+        # Single dispatch table (the no-arg query tools ignore `args`). Keeping
+        # one mapping prevents drift between this and _structured_result.
+        handlers = {
+            "maverick_start": lambda a: self._tool_start(a),
+            "maverick_status": lambda a: self._tool_status(),
+            "maverick_resume": lambda a: self._tool_resume(a),
+            "maverick_answer": lambda a: self._tool_answer(a),
+            "maverick_skill_install": lambda a: self._tool_skill_install(a),
+            "maverick_skills_list": lambda a: self._tool_skills_list(),
+            "maverick_fact_set": lambda a: self._tool_fact_set(a),
+            "maverick_facts_get": lambda a: self._tool_facts_get(),
+            "maverick_fleet_ingest": lambda a: self._tool_fleet_ingest(a),
+            "maverick_fleet_recall": lambda a: self._tool_fleet_recall(a),
+        }
+        handler = handlers.get(name)
+        if handler is None:
+            raise _ProtocolError(-32602, f"unknown tool {name!r}")
+        return handler(args)
 
     def _tool_fleet_ingest(self, args: dict) -> str:
         from maverick import fleet_memory
@@ -1120,6 +1171,14 @@ class MCPServer:
             return None
         if not isinstance(url, str) or not url.startswith("https://"):
             raise ValueError("URL-mode elicitation requires an https:// url")
+        # Host allowlist: the destination is model-influenced, so a prompt
+        # injection could otherwise aim the user at an attacker site to harvest
+        # the very credential this flow protects. When [mcp] elicit_allowed_hosts
+        # is configured, refuse a URL whose host isn't on it. No-op when unset.
+        if not _elicit_host_allowed(url, _elicit_allowed_hosts()):
+            raise ValueError(
+                "URL-mode elicitation host is not in [mcp] elicit_allowed_hosts"
+            )
         safe_message = self._screen_elicit_prompt(message)
         req_id = self._next_elicit_id()
         self._send({

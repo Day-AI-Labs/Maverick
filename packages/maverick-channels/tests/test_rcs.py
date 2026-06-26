@@ -229,9 +229,13 @@ def test_claim_released_on_handler_failure(monkeypatch):
 
     assert r.status_code == 200
     wm.release_processed_message.assert_called_once_with("rcs", "rbm-msg-1")
-    # The error report still goes back to the sender (whatsapp_cloud parity).
+    # An error report still goes back to the sender (whatsapp_cloud parity), but
+    # it's GENERIC -- the raw exception text ("boom") could carry a secret and
+    # must not be reflected to the remote user (it's logged server-side instead).
     ch.send.assert_awaited_once()
-    assert "boom" in ch.send.await_args.args[1]
+    sent = ch.send.await_args.args[1]
+    assert "boom" not in sent
+    assert "error" in sent.lower()
 
 
 # -- outbound ------------------------------------------------------------------

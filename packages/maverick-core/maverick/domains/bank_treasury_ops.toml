@@ -18,3 +18,24 @@ deliverable = "Treasury position & funding"
 consumers = ["treasurer"]
 cadence = "daily"
 gate = "review"
+
+[[workflow]]
+name = "Gather positions"
+instruction = "Pull current cash balances, nostro positions, and pending settlements across funding accounts for the day."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Project flows"
+instruction = "Lay out expected inflows and outflows against the liquidity policy floor to project the intraday and end-of-day position."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check policy limits"
+instruction = "Compare the projected position to internal liquidity and concentration limits and flag any breach or shortfall."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft funding plan"
+instruction = "Recommend specific funding or investment actions sized to close the gap while citing the source positions."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Treasurer review"
+instruction = "Route the position summary and funding recommendation to the treasurer for review before any funds are moved."
+gate = "review"

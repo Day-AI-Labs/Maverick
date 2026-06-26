@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gtm"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "champion movement signal log"
+consumers = ["account_executive", "revops_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull champion list"
+instruction = "Read the tracked champion roster and prior signal log from company documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Detect movements"
+instruction = "Scan for champions who changed roles or companies and verify each move against a real source."
+tools = ["web_search"]
+[[workflow]]
+name = "Score signals"
+instruction = "Score each confirmed movement as a fresh expansion or new-logo signal, stating assumptions and unknowns plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Compile log"
+instruction = "Compile the scored signals into the movement log, citing the document used for each entry."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to AE"
+instruction = "Route the signal log to the account executive for review before it is logged back to the CRM."
+gate = "review"

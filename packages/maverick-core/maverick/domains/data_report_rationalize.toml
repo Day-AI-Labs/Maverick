@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "report retirement proposal"
+consumers = ["analytics_lead", "data_governance_lead"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory reports"
+instruction = "Read the report catalog and ownership metadata to enumerate all active reports in scope."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull usage"
+instruction = "Query view and access logs to compute last-run dates and consumption counts per report."
+tools = ["sql_query"]
+[[workflow]]
+name = "Cluster duplicates"
+instruction = "Group reports by overlapping queries and metric definitions to identify near-duplicates in the spreadsheet."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Confirm unused"
+instruction = "Verify a low-usage report has no downstream dependency or scheduled distribution before proposing retirement."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Hand off proposal"
+instruction = "Compile the duplicate and unused findings into a retirement proposal for the analytics lead to approve."
+gate = "review"

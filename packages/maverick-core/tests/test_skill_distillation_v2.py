@@ -1,7 +1,7 @@
 """Auto-skill distillation v2: evidence gate + dedup against the store."""
 from __future__ import annotations
 
-from maverick import skill_distillation_v2 as v2
+from maverick.skill import distillation_v2 as v2
 
 
 def _traj(goal, t=1.0, success=True, tools=None):

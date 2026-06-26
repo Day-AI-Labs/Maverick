@@ -34,12 +34,13 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .paths import data_dir
 from .secrets import scrub
 
 log = logging.getLogger(__name__)
 
 
-DEFAULT_OUTBOX = Path.home() / ".maverick" / "outbox"
+DEFAULT_OUTBOX = data_dir("outbox")
 
 
 @dataclass

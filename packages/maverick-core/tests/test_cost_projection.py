@@ -4,8 +4,8 @@ unknown-model fallback, and render contents. Fully offline."""
 from __future__ import annotations
 
 import pytest
-from maverick import cost_projection as cp
 from maverick import llm as llm_mod
+from maverick.cost import projection as cp
 
 PRICES = {
     "m-coder":  (2.0, 10.0),

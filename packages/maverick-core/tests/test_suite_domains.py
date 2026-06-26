@@ -13,7 +13,12 @@ granting a dangerous tool.
 """
 from __future__ import annotations
 
-from maverick.domain import builtin_dir, load_domains
+from maverick.domain import (
+    builtin_dir,
+    lint_profile,
+    load_domains,
+    render_workflow_prompt,
+)
 
 _BUILTIN = load_domains(builtin_dir())
 
@@ -120,3 +125,172 @@ def test_suite_compartments_match_their_prefix():
                        ("strat_", _STRAT), ("pe_", _PE)):
         for name, p in packs.items():
             assert p.compartment.startswith(pre), f"{name}: compartment={p.compartment!r}"
+
+
+# Every built-in pack that is NOT a coding builder (no shell/code_exec in its
+# allowlist) is read-only by design. The per-suite tests above cover seven
+# suites by name; this covers the WHOLE roster -- finance and all the industry
+# verticals (banking, healthcare, retail, tax, ...) included -- so a future
+# edit anywhere that grants a drafting agent shell/write is caught.
+_BUILDERS = {n: p for n, p in _BUILTIN.items()
+             if "code_exec" in p.allow_tools or "shell" in p.allow_tools}
+_NON_BUILDERS = {n: p for n, p in _BUILTIN.items() if n not in _BUILDERS}
+
+
+def test_every_non_builder_pack_is_read_only_and_safe():
+    assert len(_NON_BUILDERS) > 1000, f"only {len(_NON_BUILDERS)} non-builders?"
+    for name, p in _NON_BUILDERS.items():
+        # A high ceiling is legitimate only for a spawn-router (it holds the
+        # privileged PARENT grant so children can attenuate down); everything
+        # else stays low/medium. Either way the mutators must be unreachable.
+        if p.max_risk == "high":
+            assert {"spawn_subagent", "spawn_swarm"} & set(p.allow_tools), (
+                f"{name}: high risk but not a spawn-router")
+        else:
+            assert p.max_risk in ("low", "medium"), f"{name}: risk={p.max_risk!r}"
+        cap = p.capability(f"agent:{name}")
+        # Mutating / host-control tools must be unreachable for a drafting agent.
+        for dangerous in ("shell", "write_file", "code_exec", "computer"):
+            assert cap.permits(dangerous) is False, f"{name}: {dangerous} reachable!"
+
+
+def test_every_non_builder_pack_denies_the_readonly_floor():
+    # Defense-in-depth: the allowlist already excludes shell/write_file, but an
+    # explicit deny is what survives a later allowlist edit. The whole roster
+    # carries it, not just the seven suites with bespoke tests.
+    for name, p in _NON_BUILDERS.items():
+        assert "shell" in p.deny_tools, f"{name}: must explicitly deny shell"
+        assert "write_file" in p.deny_tools, f"{name}: must explicitly deny write_file"
+
+
+def test_every_builder_denies_self_edit():
+    # The one floor a coding agent can never relax, asserted across ALL builders
+    # (not only the P&E suite): an agent may build, never edit its own runtime.
+    assert _BUILDERS, "no builder packs discovered"
+    for name, p in _BUILDERS.items():
+        cap = p.capability(f"agent:{name}")
+        assert "self_edit" in p.deny_tools, f"{name}: builder must deny self_edit"
+        assert cap.permits("self_edit") is False, f"{name}: self_edit reachable!"
+
+
+# --- Roster-wide quality harness (pure: render + lint, no spawn) -------------
+# These run over EVERY built-in pack so a future edit anywhere that breaks the
+# contract, the tool integrity, or the lint gate is caught immediately.
+
+_GATE_RANK = {None: 0, "review": 1, "approval": 2}
+
+
+def test_whole_roster_lints_error_free():
+    # The 1,118-pack roster carries zero lint ERRORs at all times (empty
+    # allowlist, bad max_risk, nameless/duplicate workflow steps would each fail).
+    for name, p in _BUILTIN.items():
+        errors, _ = lint_profile(p)
+        assert errors == [], (name, errors)
+
+
+def test_every_workflow_step_tool_is_in_allowlist():
+    # A playbook may only hint tools the pack actually grants -- a step naming a
+    # tool outside allow_tools is a dead reference (and a lint warning).
+    for name, p in _BUILTIN.items():
+        allow = set(p.allow_tools)
+        for step in p.workflow:
+            stray = [t for t in step.tools if t not in allow]
+            assert not stray, f"{name}: step {step.name!r} names non-allowed {stray}"
+
+
+def test_every_pack_renders_a_persona_and_playbook():
+    # Every pack must produce a non-empty persona and, where it has a workflow,
+    # render every step into the system prompt -- the spawn path depends on this.
+    from maverick.domain_discipline import augment_persona
+    for name, p in _BUILTIN.items():
+        persona = augment_persona(p.name, p.persona)
+        assert persona.strip(), f"{name}: empty persona after augmentation"
+        wf = render_workflow_prompt(p.workflow)
+        if p.workflow:
+            assert "Workflow" in wf, f"{name}: workflow did not render"
+            for step in p.workflow:
+                assert step.name in wf, f"{name}: step {step.name!r} missing from render"
+
+
+def test_deliverable_gate_not_lighter_than_playbook():
+    # The deliverable's sign-off is never lighter than the human-handoff its own
+    # playbook ends on (a 'review' deliverable from an 'approval' final step).
+    for name, p in _BUILTIN.items():
+        if p.output.deliverable and p.workflow:
+            final = p.workflow[-1].gate
+            assert _GATE_RANK.get(final, 0) <= _GATE_RANK.get(p.output.gate, 0), (
+                f"{name}: output.gate={p.output.gate!r} < final step gate={final!r}")
+
+
+def test_every_pack_declares_output_and_workflow():
+    # Coverage guard: the consumption surface stays complete -- every pack keeps
+    # a declared deliverable and a playbook (regression guard for the roster).
+    for name, p in _BUILTIN.items():
+        assert p.output.deliverable, f"{name}: missing [output] deliverable"
+        assert p.workflow, f"{name}: missing [[workflow]] playbook"
+
+
+_VALID_EFFORTS = {None, "low", "medium", "high", "xhigh", "max"}
+
+
+def test_every_pack_effort_tier_is_valid():
+    # A declared effort tier is always a real level (an invalid one is a lint
+    # ERROR, but assert it across the roster too).
+    for name, p in _BUILTIN.items():
+        assert p.effort in _VALID_EFFORTS, f"{name}: effort={p.effort!r}"
+
+
+def test_high_stakes_packs_carry_high_effort():
+    # Right-sizing sentinels: severe-failure-cost judgment work runs deep.
+    for name in ("finance_sox", "finance_revrec", "bank_aml_alerts",
+                 "hc_prior_auth", "strat_valuation"):
+        assert _BUILTIN[name].effort == "high", name
+
+
+def test_high_volume_packs_carry_low_effort():
+    # ...and clerical, high-throughput work runs light.
+    for name in ("cx_status_page", "tax_efile_status", "proc_po_chaser"):
+        assert _BUILTIN[name].effort == "low", name
+
+
+# A pack that names a known SaaS-connector tool must scope the vendor's host in
+# allow_hosts, so the egress lock (enterprise.py) lets the connector seat reach
+# its system instead of blocking it. Guards the wired packs from drift.
+_VENDOR_HOSTS = {
+    "billdotcom": "*.bill.com", "coupa": "*.coupa.com", "tipalti": "*.tipalti.com",
+    "adp": "*.adp.com", "gusto": "*.gusto.com", "netsuite": "*.netsuite.com",
+    "workday": "*.workday.com",
+}
+
+
+def test_vendor_connector_packs_scope_their_egress_hosts():
+    for name, p in _BUILTIN.items():
+        hosts = set(p.allow_hosts)
+        for tool in p.allow_tools:
+            for vendor, host in _VENDOR_HOSTS.items():
+                if vendor in tool.lower():
+                    assert host in hosts, (
+                        f"{name}: names {vendor} tool {tool!r} but {host} not in "
+                        "allow_hosts -- the egress lock would block the connector")
+
+
+def test_every_hr_pack_refuses_eu_ai_act_art5():
+    # Every HR specialist carries the workplace emotion-inference + biometric
+    # prohibitions (EU AI Act Art. 5) -- the suite with refused, not gated, uses.
+    from maverick.domain_refusals import refusals_for
+    hr = {n: p for n, p in _BUILTIN.items() if n.startswith("hr_")}
+    assert hr
+    for name in hr:
+        items = refusals_for(name)
+        assert any("emotion" in r for r in items), f"{name}: no Art-5 emotion refusal"
+        assert any("biometric" in r for r in items), f"{name}: no biometric refusal"
+
+
+def test_physical_world_packs_refuse_safety_actuation():
+    from maverick.domain_refusals import refusals_for
+    for pre in ("ops_", "mfg_", "util_"):
+        packs = {n: p for n, p in _BUILTIN.items() if n.startswith(pre)}
+        assert packs, pre
+        for name in packs:
+            items = refusals_for(name)
+            assert any("interlock" in r or "safety-critical" in r for r in items), name

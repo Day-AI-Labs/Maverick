@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["strat"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "initiative milestone status report"
+consumers = ["chief_strategy_officer", "initiative_owner"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull plan"
+instruction = "Read the initiative charters, milestone plans, and prior status reports to establish the baseline."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather actuals"
+instruction = "Collect current milestone dates, completion percentages, and spend from owner trackers into a working sheet."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Compute variance"
+instruction = "Compare actuals to plan, compute schedule and budget variance, and surface honest red and amber statuses."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Validate blockers"
+instruction = "Cross-check each claimed blocker against source evidence and reject status colors not supported by the documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route status"
+instruction = "Deliver the milestone status report with stated assumptions and unknowns to the strategy lead for sign-off."
+gate = "review"

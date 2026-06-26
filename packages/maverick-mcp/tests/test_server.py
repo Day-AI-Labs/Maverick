@@ -87,24 +87,43 @@ class TestProtocol:
         assert "question_id" in excinfo.value.message
         assert "answer" in excinfo.value.message
 
-    def test_tool_execution_failure_returns_isError_envelope(self):
-        """Tool that raises mid-execution -> isError (not protocol error).
+    def test_tool_execution_failure_returns_isError_envelope(self, monkeypatch):
+        """A GENUINE mid-execution tool crash -> isError envelope.
 
-        maverick_facts_get touches WorldModel and would normally succeed;
-        we'd need to mock it to force a raise. Skip the full path test and
-        just verify the contract via _dispatch_tool returning isError when
-        dispatch raises.
+        Force a non-protocol exception out of dispatch (monkeypatch _dispatch_tool
+        to raise a plain RuntimeError); the handler must wrap it in an isError
+        tool result, not a JSON-RPC protocol error.
         """
         s = MCPServer()
-        # All registered names dispatch normally. Force an exception
-        # by passing a name the dispatch can find but the tool raises on.
-        # maverick_answer with bad question_id type -> int() raises.
+
+        def _boom(name, arguments):
+            raise RuntimeError("tool blew up mid-run")
+
+        monkeypatch.setattr(s, "_dispatch_tool", _boom)
         out = s.handle_tools_call({
             "name": "maverick_answer",
-            "arguments": {"question_id": "not-a-number", "answer": "x"},
+            "arguments": {"question_id": "5", "answer": "x"},
         })
         assert out["isError"] is True
         assert "text" in out["content"][0]
+
+    def test_invalid_question_id_is_protocol_error_not_isError(self):
+        """A bad question_id is a PROTOCOL error (-32602), not an isError result.
+
+        maverick_answer with a non-int question_id raises _ProtocolError inside
+        dispatch. The handler must let it propagate so both transports emit a
+        structured JSON-RPC -32602 (typed clients distinguish it), instead of
+        collapsing it into an isError envelope that leaks the internal class name
+        ("_ProtocolError: ...") into the result text.
+        """
+        s = MCPServer()
+        with pytest.raises(_ProtocolError) as ei:
+            s.handle_tools_call({
+                "name": "maverick_answer",
+                "arguments": {"question_id": "not-a-number", "answer": "x"},
+            })
+        assert ei.value.code == -32602
+        assert "question_id" in ei.value.message
 
     def test_maverick_start_blocks_disallowed_input(self, monkeypatch):
         s = MCPServer()

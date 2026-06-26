@@ -17,3 +17,24 @@ deliverable = "Loan boarding & data integrity"
 consumers = ["loan_officer", "operations_manager"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Pull boarded loans"
+instruction = "Query the newly boarded loan records on the core for the batch under review."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Read executed terms"
+instruction = "Retrieve the executed note and loan documents for each boarded loan via knowledge_search and cite the source."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compare to core"
+instruction = "Compare rate, term, payment, maturity, and collateral on the core against the executed documents and flag every mismatch."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build QC table"
+instruction = "Compile a per-loan boarding QC table listing each field checked, the discrepancy, and the citation to the executed document."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to ops"
+instruction = "Hand the boarding exceptions package to the operations manager for correction without editing the core yourself."
+gate = "review"

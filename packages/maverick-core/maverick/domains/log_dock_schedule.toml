@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "dock appointment schedule"
+consumers = ["dock_supervisor", "logistics_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull demand"
+instruction = "Query inbound and outbound load volumes, carrier appointment requests, and door availability for the planning window."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Check dock rules"
+instruction = "Retrieve dock capacity, labor shift, and equipment constraints from company documents and cite the rules applied."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build slot grid"
+instruction = "Assign appointments across doors to level peak utilization and avoid double-booked or idle slots."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag conflicts"
+instruction = "Identify overbooked windows, carrier commitment clashes, and slots that exceed routine value for escalation."
+[[workflow]]
+name = "Hand to supervisor"
+instruction = "Route the proposed appointment schedule to the dock supervisor to confirm before carriers are notified."
+gate = "review"

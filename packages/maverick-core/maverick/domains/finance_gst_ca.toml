@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "GST/HST return worksheet"
+consumers = ["tax_manager", "controller"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull tax ledger"
+instruction = "Query GST/HST collected and input-tax-credit accounts by province and rate for the filing period from the ledger."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Verify ITC support"
+instruction = "Confirm input-tax-credit claims have complete supporting invoices and registration numbers via knowledge_search and cite each source."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Reconcile to ledger"
+instruction = "Reconcile net tax payable to the general ledger and label every figure with period, currency, and province."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag exposures"
+instruction = "Flag ITCs lacking documentation, place-of-supply errors, and rate mismatches as findings rather than claiming them blindly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand to filer"
+instruction = "Route the GST/HST return worksheet to the tax manager to review and file with the CRA."
+gate = "review"

@@ -7,6 +7,7 @@ persona = """You are the Breach Response specialist: assess a personal-data brea
 
 allow_tools = ["read_file", "web_search", "knowledge_search", "crowdstrike_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "itgrc" collection
@@ -20,4 +21,25 @@ shape = "report"
 deliverable = "Breach assessment & notice"
 consumers = ["privacy_officer", "compliance_officer", "ciso"]
 cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Confirm incident"
+instruction = "Pull endpoint and detection telemetry to confirm the breach scope and what personal data was affected."
+tools = ["crowdstrike_read", "read_file"]
+[[workflow]]
+name = "Start the clock"
+instruction = "Establish the awareness timestamp and map the 72-hour and sector deadlines under GDPR Art 33/34, HIPAA, and SEC 8-K."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Assess notifiability"
+instruction = "Assess risk to data subjects and determine which regulators and individuals must be notified, citing the governing rule."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft notices"
+instruction = "Draft the breach assessment and the regulator and subject notice text with the required facts and remediation."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Approve notice"
+instruction = "Route the assessment and notices to the privacy officer and CISO for approval before any regulator is notified."
 gate = "approval"

@@ -11,3 +11,32 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "operator certification matrix & gap list"
+consumers = ["production_supervisor", "quality_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull cert records"
+instruction = "Query current operator certifications, expiry dates, and station qualification requirements."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load station reqs"
+instruction = "Retrieve each station's required certifications and skill levels from controlled training documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build matrix"
+instruction = "Cross-reference operators against station requirements to build the qualification matrix."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps & expiries"
+instruction = "Identify unqualified operator-station pairings and certifications expiring within the window so unqualified staffing is blocked."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route to supervisor"
+instruction = "Deliver the matrix and gap list to the production supervisor to schedule retraining and staffing."
+tools = ["spreadsheet"]
+gate = "review"

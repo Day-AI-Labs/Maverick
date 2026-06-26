@@ -87,7 +87,7 @@ Revisit "close the loop" when **both** hold:
 1. **Volume:** a meaningful corpus of donated trajectories has accumulated from
    real usage (order hundreds+), enough that a learned PRM head or DPO pass could
    plausibly beat `HeuristicPRM`; **and**
-2. **An operator pull:** someone (a design partner, or Maverick itself with a GPU
+2. **An operator pull:** someone (a design partner, or Lightwork itself with a GPU
    budget) actually wants to run the offline trainer.
 
 At that point, sequence it as the map's "Option A": collect per-episode outcome

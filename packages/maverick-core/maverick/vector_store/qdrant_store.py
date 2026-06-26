@@ -20,10 +20,12 @@ import logging
 import os
 from pathlib import Path
 
+from ..paths import data_dir
+
 log = logging.getLogger(__name__)
 
 
-DEFAULT_PATH = Path.home() / ".maverick" / "qdrant"
+DEFAULT_PATH = data_dir("qdrant")
 
 
 def _active_tenant() -> str | None:

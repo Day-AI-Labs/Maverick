@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "key custody & rotation audit"
+consumers = ["security_lead", "compliance_officer"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Load key policy"
+instruction = "Retrieve the key management policy to capture required custody roles, rotation intervals, and escrow rules."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Inventory keys"
+instruction = "Query the key inventory for each key's owner, age, last rotation date, and escrow status."
+tools = ["sql_query"]
+[[workflow]]
+name = "Test against policy"
+instruction = "Flag overdue rotations, missing escrow, and split-custody violations by comparing inventory against policy thresholds."
+[[workflow]]
+name = "Cite evidence"
+instruction = "Attach the policy clause and source record for each finding and note any keys whose custody could not be confirmed."
+tools = ["read_file"]
+[[workflow]]
+name = "Submit findings"
+instruction = "Route the custody and rotation audit to the security lead for remediation sign-off."
+gate = "review"

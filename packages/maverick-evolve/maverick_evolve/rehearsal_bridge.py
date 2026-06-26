@@ -52,7 +52,14 @@ def cases_from_rehearsals(
                     d = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
-                if isinstance(d, dict) and str(d.get("prompt", "")).strip():
+                # Only replay LOCAL-scope rows, mirroring the kernel's own
+                # dreaming.load_rehearsals filter. These prompts are fed straight
+                # into live agent runs under the operator's identity; a legacy /
+                # hand-edited / fleet-synced queue could carry prompt text that
+                # originated from a remote channel or user, which must not be
+                # auto-replayed. Rows without an explicit local scope are refused.
+                if (isinstance(d, dict) and d.get("scope") == "local"
+                        and str(d.get("prompt", "")).strip()):
                     rows.append(d)
     except OSError:
         return []

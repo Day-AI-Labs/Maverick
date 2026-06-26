@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "nonconformance report with disposition"
+consumers = ["quality_engineer", "quality_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Capture defect"
+instruction = "Gather the part, lot, operation, and detected condition for the nonconformance from the source records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify against spec"
+instruction = "Compare the observed condition to the controlling drawing or spec revision and quantify the deviation."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Document NCR"
+instruction = "Write the precise NCR record with containment, affected quantity, and the proposed disposition."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Track to closure"
+instruction = "Link the disposition decision and corrective action so the NCR cannot close with open actions."
+tools = ["sql_query"]
+[[workflow]]
+name = "Quality sign-off"
+instruction = "Route the completed NCR to the quality engineer for disposition approval."
+gate = "approval"

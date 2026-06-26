@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "UX copy draft with localization notes"
+consumers = ["product_designer", "localization_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather context"
+instruction = "Read the screens, flows, and product requirements to understand the user moment the copy serves."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check voice"
+instruction = "Confirm tone, terminology, and style against the content-design guidelines and existing strings."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft microcopy"
+instruction = "Write the buttons, labels, errors, and empty states in clear, consistent voice."
+[[workflow]]
+name = "Prep localization"
+instruction = "Flag idioms, length limits, and variables that risk breaking translation and add string notes."
+[[workflow]]
+name = "Hand to design"
+instruction = "Route the copy draft to the product designer for review before it ships in the UI."
+gate = "review"

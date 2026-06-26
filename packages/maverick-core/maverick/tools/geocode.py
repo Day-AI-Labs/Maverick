@@ -46,13 +46,21 @@ def _ua() -> str:
 
 
 def _get(path: str, params: dict) -> tuple[int, Any]:
-    import httpx
+    # Route through the SSRF-safe client (resolve-once + IP-pin + redirects OFF),
+    # exactly like the sibling URL tools (currency._fetch). NOMINATIM_URL is
+    # operator-set, but a self-hosted/compromised Nominatim could 302 -> an
+    # internal address (e.g. cloud metadata at 169.254.169.254); a raw
+    # httpx.get(follow_redirects=True) would chase it with no per-hop check.
+    from ._ssrf import BlockedHost, safe_get
     params = {**params, "format": "json"}
-    r = httpx.get(
-        f"{_base()}{path}",
-        headers={"User-Agent": _ua(), "Accept": "application/json"},
-        params=params, timeout=20.0, follow_redirects=True,
-    )
+    try:
+        r = safe_get(
+            f"{_base()}{path}",
+            headers={"User-Agent": _ua(), "Accept": "application/json"},
+            params=params, timeout=20.0,
+        )
+    except BlockedHost as e:
+        return 0, f"blocked host (SSRF guard): {e}"
     try:
         return r.status_code, r.json()
     except ValueError:

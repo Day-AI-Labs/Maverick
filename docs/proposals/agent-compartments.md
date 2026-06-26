@@ -7,7 +7,7 @@ behind `[safety] compartments` (off by default). Rung 2 (latched *sector* seal)
 
 ## Vision
 
-Maverick is becoming an *agent factory*: domain agents (finance, legal, …) spun
+Lightwork is becoming an *agent factory*: domain agents (finance, legal, …) spun
 up from one kernel. The safety goal, in the user's words: when one agent finds
 something, we "close it off like a door on a submarine," and the rest of the
 agents become immune to the attack.

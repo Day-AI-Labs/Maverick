@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "export screening determination"
+consumers = ["trade_compliance_officer", "export_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull transaction"
+instruction = "Read the export transaction parties, destinations, and product details for the shipment to be screened."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Load screening lists"
+instruction = "Retrieve current restricted-party and denied-party list references and the company screening procedure, citing each source."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Run match check"
+instruction = "Compare each party and destination against the lists and record exact, fuzzy, and no-match results with evidence."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Resolve hits"
+instruction = "Investigate potential matches to confirm or clear them and flag any unresolved hit as a hold."
+[[workflow]]
+name = "Approve clearance"
+instruction = "Route the documented screening determination to the trade compliance officer to approve or block release."
+gate = "approval"

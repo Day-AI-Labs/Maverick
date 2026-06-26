@@ -10,7 +10,7 @@ backward-looking statement below is grounded in
 
 ## Where we stand (the part you can verify)
 
-Maverick set out to be a recursive multi-agent swarm for long-horizon
+Lightwork set out to be a recursive multi-agent swarm for long-horizon
 work. What's in the tree today is that, plus the thing we didn't fully
 appreciate we were building: a **governed agent platform** — oversight,
 compliance regimes, per-employee fleets, tenant walls, capability grants

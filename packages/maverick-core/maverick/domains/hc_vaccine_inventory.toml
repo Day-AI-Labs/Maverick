@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "vaccine lot & expiration register"
+consumers = ["clinic_manager", "immunization_coordinator"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull lot ledger"
+instruction = "Read current vaccine lot records, on-hand counts, and VFC versus private stock designations from the inventory system."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Reconcile storage logs"
+instruction = "Cross-check temperature and storage logs against each lot to confirm cold-chain compliance and flag excursions."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Build expiry register"
+instruction = "Compile a register of lots sorted by expiration date, marking those expiring within the rotation window and any short-dated stock."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag VFC variances"
+instruction = "Identify VFC borrowing, expired-on-hand, or excursion-affected lots that require quarantine or reporting before they are administered."
+[[workflow]]
+name = "Route to coordinator"
+instruction = "Send the lot and expiration register with flagged variances to the immunization coordinator for disposition."
+gate = "review"

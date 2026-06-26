@@ -53,17 +53,17 @@
 
 <main>
   <header>
-    <h1>Maverick</h1>
-    <p class="sub">Install the Maverick agent on this machine.</p>
+    <h1>Lightwork</h1>
+    <p class="sub">Install the Lightwork agent on this machine.</p>
   </header>
 
   {#if status === 'idle'}
     <section>
       <p>
-        This installs Python (if it isn't already) and Maverick, then you'll run a
+        This installs Python (if it isn't already) and Lightwork, then you'll run a
         quick one-time setup. It takes a couple of minutes.
       </p>
-      <button on:click={startInstall}>Install Maverick</button>
+      <button on:click={startInstall}>Install Lightwork</button>
     </section>
   {:else if status === 'installing'}
     <section>
@@ -73,7 +73,7 @@
     </section>
   {:else if status === 'done'}
     <section class="done">
-      <h2>Maverick is installed. 🎉</h2>
+      <h2>Lightwork is installed. 🎉</h2>
       <p>Open a terminal and run <code>maverick init</code> to finish setup.</p>
       <pre class="log">{lines.join('\n')}</pre>
     </section>

@@ -9,3 +9,29 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["hosp"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "service-recovery reply draft"
+consumers = ["host", "guest_relations_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read the complaint"
+instruction = "Read the guest's message and stay history to understand the issue and its context."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Ground in policy"
+instruction = "Find the relevant service-recovery and guest-relations policy in the company's own documents and cite what applies."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft the reply"
+instruction = "Draft an empathetic reply that addresses the issue without extending any compensation offer and carries clear AI disclosure."
+[[workflow]]
+name = "Check consent"
+instruction = "Confirm the draft honors guest consent and surfaces any assumption the host must verify."
+[[workflow]]
+name = "Route to host"
+instruction = "Hand the prepared reply draft to a host to review and send."
+gate = "review"

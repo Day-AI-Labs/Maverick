@@ -1,6 +1,6 @@
-# Maverick from Rust
+# Lightwork from Rust
 
-Drive a locally running Maverick swarm from Rust over the
+Drive a locally running Lightwork swarm from Rust over the
 [Model Context Protocol](https://modelcontextprotocol.io/). Same
 contract every IDE-side MCP client uses — you talk to `maverick mcp`
 over stdio JSON-RPC.
@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
         .await?;
 
     let tools = client.list_all_tools().await?;
-    println!("Maverick exposes {} tools", tools.len());
+    println!("Lightwork exposes {} tools", tools.len());
 
     // maverick_start runs the swarm and returns the final answer (long-running).
     let res = client

@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "candidate communication & interview schedule"
+consumers = ["recruiter", "hiring_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read pipeline"
+instruction = "Read the candidate's stage, availability, and prior correspondence from the ATS."
+tools = ["greenhouse_read", "workable_read"]
+[[workflow]]
+name = "Confirm slots"
+instruction = "Confirm interviewer availability and required panel against the role's interview plan."
+tools = ["read_file"]
+[[workflow]]
+name = "Draft outreach"
+instruction = "Draft the candidate communication with the AI-assistant disclosure and proposed interview times."
+tools = ["read_file"]
+[[workflow]]
+name = "Check tone"
+instruction = "Research and apply inclusive, non-discriminatory messaging standards before any candidate-facing send."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Route to recruiter"
+instruction = "Route the message and schedule to the recruiter for sign-off before it goes to the candidate."
+gate = "review"

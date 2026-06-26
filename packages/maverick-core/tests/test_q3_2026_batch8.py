@@ -301,9 +301,9 @@ def test_geocode_forward_renders(monkeypatch):
         "lat": "37.4220", "lon": "-122.0841",
         "display_name": "1600 Amphitheatre Parkway, Mountain View, CA",
     }])
-    fake_httpx = types.ModuleType("httpx")
-    fake_httpx.get = MagicMock(return_value=resp)
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    # geocode routes through the SSRF-safe client now; mock that seam.
+    import maverick.tools._ssrf as _ssrf
+    monkeypatch.setattr(_ssrf, "safe_get", lambda url, **kw: resp)
     from maverick.tools.geocode import geocode
     out = geocode().fn({"op": "forward", "query": "googleplex"})
     assert "37.4220" in out
@@ -317,9 +317,8 @@ def test_geocode_reverse_renders(monkeypatch):
         "display_name": "Liberty Island, Manhattan, NYC, NY",
         "address": {"city": "New York", "country": "USA"},
     })
-    fake_httpx = types.ModuleType("httpx")
-    fake_httpx.get = MagicMock(return_value=resp)
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    import maverick.tools._ssrf as _ssrf
+    monkeypatch.setattr(_ssrf, "safe_get", lambda url, **kw: resp)
     from maverick.tools.geocode import geocode
     out = geocode().fn({"op": "reverse", "lat": 40.6892, "lon": -74.0445})
     assert "Liberty Island" in out

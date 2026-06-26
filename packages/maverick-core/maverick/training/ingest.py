@@ -27,6 +27,7 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
+from ..paths import data_dir
 from ..prm import HeuristicPRM, StepContext
 from .schema import TrainingStep, TrainingTrajectory, to_klear_jsonl
 
@@ -129,7 +130,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--in", dest="in_dir", type=Path,
-        default=Path.home() / ".maverick" / "outbox",
+        default=data_dir("outbox"),
         help="Donation outbox dir (default ~/.maverick/outbox)",
     )
     ap.add_argument(

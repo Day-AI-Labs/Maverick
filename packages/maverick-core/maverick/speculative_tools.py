@@ -5,7 +5,7 @@ just edited, refreshes the same repo map, polls the same status endpoint.
 Each of those re-reads sits on the critical path of a paid model turn. This
 module executes *predicted* next calls concurrently, ahead of the model, so
 that when the model does ask, the result is already in the tool-output cache
-(:mod:`maverick.tool_cache`) and the turn doesn't wait on I/O. A wrong
+(:mod:`maverick.cache.tool`) and the turn doesn't wait on I/O. A wrong
 prediction costs only local work on a side-effect-free read -- never a paid
 API call, never a side effect.
 
@@ -43,7 +43,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import tool_cache
+from .cache import tool as tool_cache
 
 log = logging.getLogger(__name__)
 

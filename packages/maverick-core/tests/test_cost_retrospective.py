@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from click.testing import CliRunner
-from maverick import cost_retrospective as cr
 from maverick.cli import main
+from maverick.cost import retrospective as cr
 from maverick.world_model import WorldModel
 
 

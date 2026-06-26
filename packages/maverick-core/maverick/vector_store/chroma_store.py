@@ -16,10 +16,12 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ..paths import data_dir
+
 log = logging.getLogger(__name__)
 
 
-DEFAULT_PATH = Path.home() / ".maverick" / "vector_store"
+DEFAULT_PATH = data_dir("vector_store")
 
 
 class ChromaStore:
@@ -74,8 +76,14 @@ class ChromaStore:
         *,
         ids: list[str] | None = None,
         metadatas: list[dict] | None = None,
+        embeddings: list[list[float]] | None = None,
     ) -> None:
-        """Index a batch of documents. ids auto-generated if not provided."""
+        """Index a batch of documents. ids auto-generated if not provided.
+
+        When ``embeddings`` is given (precomputed client-side), Chroma stores
+        them as-is and does NOT run its own embedding function -- so the caller
+        can store a *sealed* document while the vector was computed from the
+        plaintext (at-rest mode)."""
         if not documents:
             return
         import uuid as _uuid
@@ -91,19 +99,36 @@ class ChromaStore:
             raise ValueError(
                 f"metadatas length {len(metadatas)} != documents length {len(documents)}"
             )
+        if embeddings is not None and len(embeddings) != len(documents):
+            raise ValueError(
+                f"embeddings length {len(embeddings)} != documents length {len(documents)}"
+            )
         kwargs: dict[str, Any] = {"documents": documents, "ids": ids}
         if metadatas:
             kwargs["metadatas"] = metadatas
+        if embeddings is not None:
+            kwargs["embeddings"] = embeddings
         self._collection.add(**kwargs)
 
-    def query(self, text: str, *, top_k: int = 5) -> list[dict]:
-        """Top-k similarity search. Returns list of {id, document, distance, metadata}."""
-        if not text:
+    def query(self, text: str | None = None, *, top_k: int = 5,
+              embedding: list[float] | None = None) -> list[dict]:
+        """Top-k similarity search. Returns list of {id, document, distance, metadata}.
+
+        Pass ``embedding`` (a precomputed query vector) to search by vector
+        rather than by ``text`` -- used in at-rest mode where stored documents
+        are sealed and the query is embedded client-side."""
+        if embedding is not None:
+            result = self._collection.query(
+                query_embeddings=[embedding],
+                n_results=max(1, min(top_k, 100)),
+            )
+        elif text:
+            result = self._collection.query(
+                query_texts=[text],
+                n_results=max(1, min(top_k, 100)),
+            )
+        else:
             return []
-        result = self._collection.query(
-            query_texts=[text],
-            n_results=max(1, min(top_k, 100)),
-        )
         out: list[dict] = []
         ids = (result.get("ids") or [[]])[0]
         docs = (result.get("documents") or [[]])[0]

@@ -5,17 +5,27 @@ routing, and that every spec'd connector registers.
 """
 from __future__ import annotations
 
-import sys
-import types
+from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 
 def _fake_httpx(monkeypatch, **methods):
-    mod = types.ModuleType("httpx")
+    # The REST/GraphQL connectors now fetch through ``_ssrf.safe_client`` (host
+    # resolve-once + IP-pin), not a bare ``httpx.request``/``httpx.post``. Patch
+    # at that boundary instead: ``safe_client(url)`` yields a client whose
+    # ``.request``/``.post`` are the supplied mocks, so the call shape the tests
+    # assert on (method/url args, headers kwargs) is unchanged.
+    client = MagicMock()
     for name, value in methods.items():
-        setattr(mod, name, value)
-    monkeypatch.setitem(sys.modules, "httpx", mod)
-    return mod
+        setattr(client, name, value)
+
+    @contextmanager
+    def _fake_safe_client(url, **kwargs):
+        yield client
+
+    from maverick.tools import _ssrf
+    monkeypatch.setattr(_ssrf, "safe_client", _fake_safe_client)
+    return client
 
 
 def _resp(status, body):

@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "carrier damage claim file"
+consumers = ["transportation_manager", "claims_specialist"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull damages"
+instruction = "Query damaged-receipt and OS&D records with carrier, shipment, and dollar value to identify claimable losses."
+tools = ["sql_query"]
+[[workflow]]
+name = "Gather docs"
+instruction = "Collect BOLs, delivery receipts, inspection photos, and invoices substantiating each damaged shipment."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build claim"
+instruction = "Assemble each claim packet with carrier liability rules, claimed amount, and supporting documentation."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Window check"
+instruction = "Verify every claim falls inside the carrier filing window and flag any nearing expiry."
+tools = ["sql_query"]
+[[workflow]]
+name = "File approval"
+instruction = "Route the carrier damage claim file to the transportation manager for approval before filing with the carrier."
+gate = "approval"

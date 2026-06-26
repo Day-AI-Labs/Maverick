@@ -265,3 +265,91 @@ def test_enforce_includes_usage_ledger(tmp_path: Path, monkeypatch):
     UsageLedger().record("alice", 1.0, 1, 1, day="2020-01-01")
     res = enforce(config={"usage_days": 30}, now=_NOW_2025_06_30)
     assert res["usage_ledger"]["removed_buckets"] == 1
+
+
+# ---- M13: signed retention marker in the audit chain --------------------------
+
+
+def _read_marker_rows(audit_dir: Path) -> list[dict]:
+    """All retention_purge rows across the live day-files in ``audit_dir``."""
+    import json
+    rows = []
+    for p in audit_dir.glob("*.ndjson"):
+        for line in p.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get("kind") == "retention_purge":
+                rows.append(row)
+    return rows
+
+
+def test_enforce_writes_retention_marker(tmp_path: Path):
+    from maverick.audit.retention import enforce
+    audit_dir = tmp_path / "audit"
+    db = tmp_path / "world.db"
+    _seed_world_db(db)
+    _make_audit_file(audit_dir, "2024-01-01")
+    now = time.mktime(time.strptime("2025-06-30", "%Y-%m-%d"))
+    _insert_episode(db, now - 200 * 86400)
+
+    res = enforce(
+        config={"audit_days": 30, "episodes_days": 30},
+        audit_dir=audit_dir, db_path=db, now=now,
+    )
+    # The report carries the marker, and a tamper-evident row was written.
+    assert res["marker"]["audit_files"] == ["2024-01-01.ndjson"]
+    assert res["marker"]["episodes_deleted"] == 1
+    rows = _read_marker_rows(audit_dir)
+    assert len(rows) == 1
+    payload = rows[0].get("payload", rows[0])
+    assert payload["audit_files_removed"] == 1
+    assert payload["audit_cutoff_day"]
+
+
+def test_dry_run_writes_no_marker(tmp_path: Path):
+    from maverick.audit.retention import enforce
+    audit_dir = tmp_path / "audit"
+    _make_audit_file(audit_dir, "2024-01-01")
+    now = time.mktime(time.strptime("2025-06-30", "%Y-%m-%d"))
+
+    res = enforce(
+        config={"audit_days": 30}, audit_dir=audit_dir, dry_run=True, now=now,
+    )
+    assert "marker" not in res
+    assert _read_marker_rows(audit_dir) == []
+
+
+def test_no_purge_writes_no_marker(tmp_path: Path):
+    # Nothing old enough to purge -> no marker noise.
+    from maverick.audit.retention import enforce
+    audit_dir = tmp_path / "audit"
+    _make_audit_file(audit_dir, "2025-06-29")
+    now = time.mktime(time.strptime("2025-06-30", "%Y-%m-%d"))
+    res = enforce(config={"audit_days": 30}, audit_dir=audit_dir, now=now)
+    assert "marker" not in res
+    assert _read_marker_rows(audit_dir) == []
+
+
+def test_retention_marker_is_signed_and_verifies(tmp_path: Path, monkeypatch):
+    pytest.importorskip("cryptography")
+    from maverick.audit import signing
+    from maverick.audit.retention import enforce
+    from maverick.audit.signing import verify_chain
+    monkeypatch.setattr(signing, "KEY_DIR", tmp_path / "keys")
+    monkeypatch.setenv("MAVERICK_AUDIT_SIGN", "1")
+
+    audit_dir = tmp_path / "audit"
+    _make_audit_file(audit_dir, "2024-01-01")
+    now = time.mktime(time.strptime("2025-06-30", "%Y-%m-%d"))
+    enforce(config={"audit_days": 30}, audit_dir=audit_dir, now=now)
+
+    # The marker file (today's day-file) is a clean signed chain.
+    marker_files = [
+        p for p in audit_dir.glob("*.ndjson") if p.stem != "2024-01-01"
+    ]
+    assert len(marker_files) == 1
+    assert verify_chain(marker_files[0]) == []

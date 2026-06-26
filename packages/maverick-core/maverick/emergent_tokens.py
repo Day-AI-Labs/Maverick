@@ -31,12 +31,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .config import env_flag
 from .emergent_protocol import learn as _learn_phrases
 
 log = logging.getLogger(__name__)
@@ -204,8 +204,18 @@ class TokenCodebookStore:
         if self.path is not None:
             self._load()
 
+    def _cplock(self):
+        # Cross-process lock ordering the full-codebook writes; no-op for a
+        # path-less store. (The codebook is recomputed and replaced wholesale by
+        # the caller, so this orders the writes rather than merging deltas.)
+        if self.path is None:
+            from contextlib import nullcontext
+            return nullcontext()
+        from .file_lock import cross_process_lock
+        return cross_process_lock(self.path)
+
     def update(self, book: TokenCodebook) -> None:
-        with self._lock:
+        with self._lock, self._cplock():
             self._book = book
             self._save()
 
@@ -228,15 +238,9 @@ class TokenCodebookStore:
         if self.path is None:
             return
         try:
-            p = Path(self.path)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            tmp = p.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self._book.to_dict(), sort_keys=True), encoding="utf-8")
-            os.replace(tmp, p)
-            try:
-                os.chmod(p, 0o600)
-            except OSError:
-                pass
+            # Unique temp + os.replace: a fixed ".tmp" collides between processes.
+            from .file_lock import atomic_write_text
+            atomic_write_text(self.path, json.dumps(self._book.to_dict(), sort_keys=True))
         except Exception:  # pragma: no cover -- best-effort
             log.debug("token codebook save failed", exc_info=True)
 
@@ -248,11 +252,9 @@ _shared_lock = threading.Lock()
 def enabled() -> bool:
     """Whether the live token-aware codec may measure on the coordination stream.
     OFF by default; env var overrides config."""
-    env = os.environ.get("MAVERICK_EMERGENT_CODEC", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_EMERGENT_CODEC")
+    if _v is not None:
+        return _v
     try:
         from .config import get_emergent_codec
 

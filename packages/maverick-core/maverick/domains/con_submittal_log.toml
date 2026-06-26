@@ -10,3 +10,29 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "procurement log with required-on-site dates"
+consumers = ["project_manager", "procurement_lead"]
+cadence = "weekly"
+
+[[workflow]]
+name = "Gather spec items"
+instruction = "Pull the spec sections, submittal register, and lead-time data for procured materials and equipment."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Back-calc dates"
+instruction = "Tie each submittal to its required-on-site date and back-calculate the latest approval and order-by dates from lead times."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify lead times"
+instruction = "Confirm supplier lead times against quotes or recent procurement records rather than relying on stale estimates."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Flag at-risk"
+instruction = "Highlight items whose current approval status puts the required-on-site date in jeopardy."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Issue to PM"
+instruction = "Deliver the updated procurement log to the project manager and procurement lead."

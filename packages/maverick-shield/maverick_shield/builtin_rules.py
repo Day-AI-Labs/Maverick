@@ -19,9 +19,33 @@ users via the "agent-shield not installed" warning.
 from __future__ import annotations
 
 import base64
+import os
 import re
 import unicodedata
 from dataclasses import dataclass
+
+
+def _max_scan_chars() -> int:
+    """Upper bound on the input length scan() de-obfuscates + regex-matches.
+
+    scan() builds ~6 full-size de-obfuscated variants of the input (NFKC,
+    invisible-strip/space-sub, casefold, homoglyph-fold, shell-deobfuscate) and
+    runs ~40 regexes over each, so cost is linear in input length. The MCP HTTP
+    transport accepts a 2 MB body and feeds it straight in: ~2.7s of CPU per
+    scan, a linear-amplification DoS at the default 600 req/min. Treat inputs
+    above this operator-tunable ceiling as unsafe instead of scanning only a
+    prefix; otherwise malicious content in an unscanned suffix could bypass the
+    fallback shield while still reaching downstream agents.
+    """
+    raw = os.environ.get("MAVERICK_SHIELD_MAX_SCAN_CHARS")
+    if raw:
+        try:
+            parsed = int(raw)
+            if parsed > 0:
+                return parsed
+        except ValueError:
+            pass
+    return 262_144
 
 
 @dataclass
@@ -105,23 +129,35 @@ def _decode_b64_blobs(text: str) -> list[str]:
         blob = m.group(0)
         window = _MAX_B64_DECODE_CHARS & ~3
         step = _B64_DECODE_STEP_CHARS & ~3
-        starts = range(0, len(blob), step) if step else (0,)
         blob_had_text = False
-        for window_idx, start in enumerate(starts):
-            if window_idx >= _MAX_B64_WINDOWS_PER_BLOB:
+        windows_used = 0
+        # Try all 4 phase alignments. _B64_BLOB greedily grabs any leading
+        # base64-alphabet chars, so an attacker can prepend 1-3 filler chars
+        # ("ABCignore..." base64'd) -- that shifts every 4-byte boundary and the
+        # real payload decodes to garbage, silently defeating this defense.
+        # Decoding from each of the 4 offsets re-aligns one of them. The window
+        # budget is shared across phases so the pre-pass stays bounded/linear.
+        for phase in range(4):
+            if windows_used >= _MAX_B64_WINDOWS_PER_BLOB:
                 break
-            chunk = blob[start:start + window]
-            if not chunk:
-                continue
-            try:
-                raw = base64.b64decode(chunk + "=" * (-len(chunk) % 4), validate=False)
-                decoded = raw.decode("utf-8", errors="ignore")
-            except (ValueError, UnicodeDecodeError):
-                continue
-            # Only keep decodes that look like text (the attack is in the words).
-            if decoded and any(c.isalpha() for c in decoded):
-                out.append(decoded)
-                blob_had_text = True
+            shifted = blob[phase:]
+            starts = range(0, len(shifted), step) if step else (0,)
+            for start in starts:
+                if windows_used >= _MAX_B64_WINDOWS_PER_BLOB:
+                    break
+                windows_used += 1
+                chunk = shifted[start:start + window]
+                if not chunk:
+                    continue
+                try:
+                    raw = base64.b64decode(chunk + "=" * (-len(chunk) % 4), validate=False)
+                    decoded = raw.decode("utf-8", errors="ignore")
+                except (ValueError, UnicodeDecodeError):
+                    continue
+                # Only keep decodes that look like text (the attack is in words).
+                if decoded and any(c.isalpha() for c in decoded):
+                    out.append(decoded)
+                    blob_had_text = True
         if blob_had_text:
             useful_blobs += 1
     return out
@@ -129,13 +165,31 @@ def _decode_b64_blobs(text: str) -> list[str]:
 
 def _candidates(text: str) -> list[str]:
     """Return the set of strings to scan: the original plus de-obfuscated and
-    base64-decoded variants. NFKC folds fullwidth/compatibility forms."""
-    norm = unicodedata.normalize("NFKC", text)
-    norm = _strip_invisible(norm).translate(_HOMOGLYPHS)
-    cands = {text, norm, _shell_deobfuscate(norm)}
+    base64-decoded variants. NFKC folds fullwidth/compatibility forms.
+
+    Invisible chars are handled BOTH ways: stripped (joiner-inside-a-word
+    evasion, ``ig​nore``) AND space-substituted (invisible-as-separator
+    evasion, ``ignore​all​previous`` -- deletion would collapse it to
+    ``ignoreallprevious`` and the ``\\s+`` rules would miss). Homoglyphs are
+    folded after a ``casefold()`` so an upper/mixed-case confusable (Cyrillic
+    capital ``І`` -> ``і``) maps onto the lowercase confusable table;
+    rules are IGNORECASE so the extra lowercasing is safe."""
+    norm0 = unicodedata.normalize("NFKC", text)
+    cands = {text}
+    # strip vs space-substitute invisibles; original-case vs casefolded.
+    for base in (_strip_invisible(norm0), _INVISIBLE.sub(" ", norm0)):
+        for variant in (base, base.casefold()):
+            folded = variant.translate(_HOMOGLYPHS)
+            cands.add(folded)
+            cands.add(_shell_deobfuscate(folded))
     for decoded in _decode_b64_blobs(text):
         cands.add(decoded)
-        cands.add(unicodedata.normalize("NFKC", decoded))
+        decoded_norm = unicodedata.normalize("NFKC", decoded)
+        cands.add(decoded_norm)
+        # A base64-wrapped command can still hide behind shell quoting/concat
+        # (e.g. rm -rf "$HOME"/). Apply the same deobfuscation to decoded blobs
+        # so rules like rm_rf_root fire on the unwrapped form.
+        cands.add(_shell_deobfuscate(decoded_norm))
     return [c for c in cands if c]
 
 
@@ -195,13 +249,44 @@ RULES: list[Rule] = [
     Rule("base64_url_exfil", "high",
          _compile(r"https?:\/\/[^\s]+\?[^=]*=[A-Za-z0-9+\/]{40,}={0,2}"),
          "URL parameter with base64 payload"),
+    # base64_url_exfil only catches a base64-shaped value; a PLAINTEXT provider
+    # credential in a URL (query, fragment, OR path) slipped past it and every
+    # other rule. Match well-known secret token shapes anywhere in a URL --
+    # distinctive prefixes keep the false-positive rate near zero (a benign
+    # ``?key=`` / ``?token=`` is NOT enough to fire; the value must look like a
+    # real credential). Catches the ``#fragment`` / path-segment placements the
+    # markdown rule's ``?``-only check misses.
+    Rule("credential_in_url", "high",
+         _compile(
+             r"https?:\/\/\S*(?:"
+             r"sk-ant-[A-Za-z0-9_-]{12,}"        # Anthropic
+             r"|sk-[A-Za-z0-9]{20,}"             # OpenAI-style
+             r"|gh[posru]_[A-Za-z0-9]{20,}"      # GitHub PAT/OAuth/refresh/server/user
+             r"|github_pat_[A-Za-z0-9_]{20,}"    # GitHub fine-grained PAT
+             r"|sk_live_[A-Za-z0-9]{16,}"        # Stripe live secret
+             r"|AKIA[0-9A-Z]{16}"                # AWS access key id
+             r"|AIza[A-Za-z0-9_-]{20,}"          # Google API key
+             r"|xox[baprs]-[A-Za-z0-9-]{10,}"    # Slack token
+             r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"  # JWT
+             r")"
+         ),
+         "Recognizable credential token embedded in a URL (exfiltration)"),
 
     # Tool abuse markers (these trigger on tool-call args, not free text).
     # The `_shell_deobfuscate` candidate strips quotes/$IFS, so quoted and
     # $IFS-split variants canonicalise into these patterns.
     Rule("rm_rf_root", "critical",
-         _compile(r"\brm\s+-[a-z]*(?:rf|fr)[a-z]*\s+(\/|~|\$HOME)(\*|\/|\s|$)"),
+         _compile(r"\brm\s+-[a-z]*(?:rf|fr)[a-z]*\s+(\/|~|\$HOME)(\*|\/|[\s;&|]|$)"),
          "rm -rf/-fr against /, ~, or $HOME"),
+    Rule("disk_overwrite", "critical",
+         _compile(r"\b(dd\s+[^\n]*\bof=\/dev\/(sd[a-z]|nvme\d|disk\d|hd[a-z])|mkfs(\.[a-z0-9]+)?\s+[^\n]*\/dev\/)"),
+         "Raw disk overwrite via dd/mkfs against a block device"),
+    Rule("recursive_chmod_chown_root", "critical",
+         _compile(r"\bch(mod|own)\s+-[a-z]*R[a-z]*\s+[^\n]*\s(\/|~|\$HOME)(\s|;|&|\||$)"),
+         "Recursive chmod/chown against /, ~, or $HOME"),
+    Rule("fork_bomb", "critical",
+         _compile(r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:"),
+         "Classic shell fork bomb :(){ :|:& };:"),
     Rule("sensitive_file_read", "high",
          _compile(r"(\/etc\/+(passwd|shadow|ssh|sudoers)|\bNOPASSWD\b|~?\/\.ssh\/|~?\/\.aws\/credentials|\.env\b)"),
          "Read of /etc/passwd, ssh keys, sudoers, AWS creds, or .env"),
@@ -342,6 +427,15 @@ def scan(
     Blocked = True iff any rule fired at or above the configured threshold.
     """
     threshold_idx = _threshold_to_min_severity(block_threshold)
+    # Bound the scanned length first: candidate generation + ~40 regexes are
+    # linear in input size, so an oversized body (the MCP transport allows 2 MB)
+    # is a linear-amplification CPU DoS. Do not scan a prefix and allow the
+    # original oversized text through: that turns the cap into a deterministic
+    # bypass for malicious suffixes. Oversized inputs are conservatively blocked
+    # before the expensive de-obfuscation.
+    max_chars = _max_scan_chars()
+    if len(text) > max_chars:
+        return True, "critical", ["input_too_large"]
     # Scan the original text AND its de-obfuscated / base64-decoded variants,
     # so an encoded or quoted payload still trips the rule it was hiding from.
     candidates = _candidates(text)

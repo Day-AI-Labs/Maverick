@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["strat"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "pricing study findings memo"
+consumers = ["pricing_committee", "cfo"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope study"
+instruction = "Define the pricing question, segments, and decision the study must inform from internal pricing and product docs."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Gather price data"
+instruction = "Pull internal price lists and current market and competitor price points, date-stamping every external observation."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Run analysis"
+instruction = "Build the price-sensitivity and willingness-to-pay model in the spreadsheet and document the methodology and assumptions."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Stress findings"
+instruction = "State which evidence would flip the recommendation and flag thin or stale data before concluding."
+[[workflow]]
+name = "Brief committee"
+instruction = "Route the findings memo with cited sources and assumptions to the pricing committee for sign-off."
+gate = "review"

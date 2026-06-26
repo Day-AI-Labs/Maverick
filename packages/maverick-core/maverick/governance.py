@@ -25,12 +25,28 @@ recording verdicts to the audit chain are separate, deliberate steps.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
 from .safety.tool_risk import risk_rank, tool_risk
 
+log = logging.getLogger(__name__)
+
 _RISK_LEVELS = ("low", "medium", "high")
+
+# Floors operators reach for that aren't in the 3-level scale. "critical" /
+# "severe" / "max" all name the most-dangerous tier, which here is "high".
+_RISK_ALIASES = {
+    "critical": "high",
+    "severe": "high",
+    "max": "high",
+    "maximum": "high",
+}
+
+# Explicit "no floor" sentinels so an operator can intentionally clear a floor
+# without it being read as a typo and clamped.
+_RISK_DISABLE = {"none", "off", "disabled", "never"}
 
 
 class Decision(str, Enum):
@@ -63,7 +79,48 @@ class Verdict:
 
 
 def _risk_level(value: object) -> str | None:
+    """Strict parse of a risk level: a known level or ``None``.
+
+    Used for the caller-supplied ``risk=`` override in :func:`evaluate`, where an
+    unrecognized value deliberately falls through to the tool classifier
+    (``_risk_level(risk) or tool_risk(action)``). For a *configured floor* use
+    :func:`_risk_floor`, which must never silently disable the gate.
+    """
     return value if isinstance(value, str) and value in _RISK_LEVELS else None
+
+
+def _risk_floor(value: object) -> str | None:
+    """Normalize a configured risk *floor* to a known level, or ``None`` if unset.
+
+    A floor (``deny_min_risk`` / ``require_human_min_risk``) only fires when it
+    resolves to a real level: ``policy.deny_min_risk and ...``. So a *present but
+    unrecognized* value that resolves to ``None`` silently disables the gate --
+    fail-OPEN. ``deny_min_risk = "critical"`` (a natural, stricter-sounding
+    choice) used to drop the deny floor entirely.
+
+    Resolution, fail-closed on misconfiguration:
+      - absent / empty / explicit disable sentinel ("none"/"off"/...) -> ``None``
+      - a known level (case/space-insensitive) -> that level
+      - a known alias ("critical"/"severe"/"max") -> "high" (the top tier)
+      - anything else -> clamp to "high" with a warning, never silently disable
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        log.warning("governance: ignoring non-string risk floor %r", value)
+        return None
+    norm = value.strip().lower()
+    if not norm or norm in _RISK_DISABLE:
+        return None
+    if norm in _RISK_LEVELS:
+        return norm
+    if norm in _RISK_ALIASES:
+        return _RISK_ALIASES[norm]
+    log.warning(
+        "governance: unrecognized risk floor %r; clamping to 'high' (the "
+        "strictest available level) rather than disabling the gate", value,
+    )
+    return "high"
 
 
 def _amount_table(value: object) -> dict[str, float]:
@@ -134,8 +191,8 @@ class Policy:
         base = cls(
             deny_actions=_names("deny_actions"),
             require_human_actions=_names("require_human_actions"),
-            deny_min_risk=_risk_level(cfg.get("deny_min_risk")),
-            require_human_min_risk=_risk_level(cfg.get("require_human_min_risk")),
+            deny_min_risk=_risk_floor(cfg.get("deny_min_risk")),
+            require_human_min_risk=_risk_floor(cfg.get("require_human_min_risk")),
             deny_above=_amount_table(cfg.get("deny_above")),
             require_human_above=_amount_table(cfg.get("require_human_above")),
             require_fresh_human_approval=bool(cfg.get("require_fresh_human_approval")),
@@ -160,10 +217,25 @@ class Policy:
 
 
 def _threshold_for(table: dict[str, float], action: str) -> float | None:
-    """The amount threshold for ``action`` (exact key, else the ``"*"`` default)."""
-    if action in table:
-        return table[action]
-    return table.get("*")
+    """The amount threshold for ``action``: the STRICTER (lower) of its exact
+    entry and the ``"*"`` catch-all.
+
+    The gate is ``amount > threshold``, so a LOWER threshold is stricter (more
+    amounts gated). A ``"*"`` entry is therefore a floor: a per-action key can
+    only TIGHTEN it, never loosen it. Without this, an org-wide
+    ``require_human_above = {"*": 5000}`` (or a ``deny_above`` ceiling) was
+    silently defeated for any action that carried its own higher threshold --
+    e.g. ``{"*": 5000, "wire_transfer": 50000}`` let a $20k wire auto-approve.
+    This also makes the composed/union case correct: ``union_policies`` keeps
+    both keys, and the floor is applied here at evaluation time (strictest-wins,
+    matching the documented "lowest threshold wins" contract)."""
+    exact = table.get(action)
+    star = table.get("*")
+    if exact is None:
+        return star
+    if star is None:
+        return exact
+    return min(exact, star)
 
 
 def _money(amount: float | None, currency: str) -> str:

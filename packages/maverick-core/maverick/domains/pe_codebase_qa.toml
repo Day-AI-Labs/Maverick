@@ -14,3 +14,25 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "codebase answer with source citations"
+consumers = ["developer", "new_hire"]
+cadence = "on-demand"
+
+[[workflow]]
+name = "Parse question"
+instruction = "Clarify what the developer is asking and which subsystem or symbol it concerns."
+[[workflow]]
+name = "Locate code"
+instruction = "Search and read the relevant files to find where the behavior or symbol is defined."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Trace behavior"
+instruction = "Follow call paths and dependencies to confirm how the feature actually works end to end."
+tools = ["read_file", "sonarqube_read"]
+[[workflow]]
+name = "Draft answer"
+instruction = "Write a concise explanation citing the exact files and lines that support each claim."
+tools = ["web_search"]

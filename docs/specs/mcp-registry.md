@@ -4,7 +4,7 @@
 
 ## 1. Problem
 
-Maverick can *consume* external MCP servers once they're in
+Lightwork can *consume* external MCP servers once they're in
 `[mcp_servers.<name>]` (stdio via `MCPClient`, remote HTTP via
 `StreamableHttpMCPClient`). What was missing (roadmap B2) is **discovery +
 install**: a user shouldn't have to hand-write a server's command/args/url. A
@@ -104,7 +104,7 @@ used to serialize a resolved spec into config.
 ## 6. CLI
 
 `maverick mcp-registry` (a group distinct from `maverick mcp`, which starts
-Maverick's *own* server):
+Lightwork's *own* server):
 
 - `browse` — list registry servers (name, version, transport, verified badge).
 - `add <name>` — resolve + validate + write `[mcp_servers.<name>]`; loads on the

@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "W-2 workpaper with provenance"
+consumers = ["tax_preparer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Locate W-2s"
+instruction = "Read every W-2 document in the client file for the tax year being prepared."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Extract boxes"
+instruction = "Extract wages, federal and state withholding, and employer EIN box by box into the standardized workpaper."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Record provenance"
+instruction = "Cite the source document for each extracted box value with document, box, and tax year provenance."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag anomalies"
+instruction = "Flag illegible boxes and employer or EIN mismatches rather than inferring any value."
+[[workflow]]
+name = "Submit workpaper"
+instruction = "Submit the completed W-2 workpaper for the credentialed preparer's review."
+gate = "review"

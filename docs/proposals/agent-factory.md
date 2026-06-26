@@ -2,8 +2,19 @@
 
 **Status:** living plan. The compartment safety substrate (Rungs 0–1) is merged
 / in review; this doc tracks the rest: domain packs, intake, knowledge upload,
-multi-tenancy, and the UX that turns Maverick into a factory that *spits out*
+multi-tenancy, and the UX that turns Lightwork into a factory that *spits out*
 tailored, sealed domain agents.
+
+> **Shipped since this proposal (on `main`):** the factory now equips a pack
+> with the skills + tools its workflow needs **at birth** (`provision.py`, wired
+> into `maverick onboard`), builds the agent **from a watched demonstration**
+> (`demonstration.py`, `maverick learn-demo <file>`), and **improves its own
+> generation quality** from provisioning/approval gaps (`factory_learning.py`,
+> `maverick factory-learn`). All three reuse the intake clamp + persona
+> shield-scan, preserve the human approval gate, never widen a pack's envelope,
+> and are off-by-default behind sub-knobs (`[self_learning] provision_packs`,
+> `[self_improvement] factory_learning`). See
+> [`FEATURES.md`](../FEATURES.md) for the full writeups.
 
 ## The product
 

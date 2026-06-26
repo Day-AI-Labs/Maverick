@@ -265,3 +265,33 @@ def test_main_returns_1_without_torch(tmp_path, monkeypatch):
         "--data", str(p), "--base-model", "dummy", "--out", str(tmp_path / "o"),
     ])
     assert rc == 1
+
+
+def test_main_reward_model_cross_check(tmp_path, capsys, monkeypatch):
+    # --reward-model runs the learned-reward cross-check (and downweights
+    # disagreements) before the torch-gated train step. Verify the agreement
+    # line prints; train still no-ops without torch.
+    import builtins
+
+    from maverick.training.reward_model import PreferenceRewardModel
+    p = tmp_path / "traj.jsonl"
+    with p.open("w", encoding="utf-8") as fh:
+        fh.write(json.dumps(_row("hi", "swe", 1.0)) + "\n")
+        fh.write(json.dumps(_row("lo", "swe", 0.0)) + "\n")
+    rm_path = tmp_path / "rm.json"
+    PreferenceRewardModel({"n_errors": -2.0}).save(rm_path)
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name == "torch" or name.startswith("torch.") or name == "transformers":
+            raise ImportError(name)
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    rc = rlaif.main([
+        "--data", str(p), "--base-model", "dummy", "--out", str(tmp_path / "o"),
+        "--reward-model", str(rm_path),
+    ])
+    assert rc == 1  # torch still missing
+    assert "reward-model cross-check" in capsys.readouterr().err

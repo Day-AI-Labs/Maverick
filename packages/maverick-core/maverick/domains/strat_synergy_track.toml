@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["strat"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "synergy capture tracker"
+consumers = ["integration_lead", "cfo"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Load deal model"
+instruction = "Read the deal synergy model and integration plan to establish committed targets and timelines."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Collect actuals"
+instruction = "Gather realized cost and revenue synergy actuals and supporting evidence from internal documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Reconcile capture"
+instruction = "Build the capture-versus-plan tracker in the spreadsheet, computing variance and run-rate by workstream."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag overclaim"
+instruction = "Honestly flag pulled-forward, double-counted, or at-risk synergies rather than dressing up the number."
+[[workflow]]
+name = "Report status"
+instruction = "Route the synergy capture tracker with variances and risks to the integration lead for sign-off."
+gate = "review"

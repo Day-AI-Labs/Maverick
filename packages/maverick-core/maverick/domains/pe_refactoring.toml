@@ -14,3 +14,31 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "refactoring PR with safety evidence"
+consumers = ["tech_lead", "reviewing_engineer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope debt"
+instruction = "Read the target module and use the repo map and SonarQube findings to scope the duplication and tech debt to address."
+tools = ["read_file", "repo_map", "sonarqube_read"]
+[[workflow]]
+name = "Capture baseline"
+instruction = "Run the existing tests in the sandbox to capture green baseline behavior before any change."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Refactor AST"
+instruction = "Apply structure-preserving AST-level edits to reduce duplication without changing observable behavior."
+tools = ["ast_edit", "str_replace_editor", "apply_patch"]
+[[workflow]]
+name = "Verify parity"
+instruction = "Re-run the full test suite and confirm behavior is unchanged, flagging any regression as a blocker."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Open PR"
+instruction = "Open a PR documenting the refactor and before/after metrics for a human engineer to review and merge."
+gate = "review"

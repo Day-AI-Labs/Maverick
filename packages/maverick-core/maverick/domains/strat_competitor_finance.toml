@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["strat"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "normalized competitor financials comparison"
+consumers = ["chief_strategy_officer", "cfo", "fp_a_lead"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Collect filings"
+instruction = "Pull the latest competitor filings and earnings releases via web search and cite each source and period."
+tools = ["web_search"]
+[[workflow]]
+name = "Ground internals"
+instruction = "Read our own segment definitions and prior comparisons so normalization matches how leadership reads the numbers."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Normalize metrics"
+instruction = "Build the spreadsheet normalizing revenue, margin, and growth across peers onto a comparable basis and flag adjustments."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "State evidence"
+instruction = "Date-stamp market data and note what evidence would change each conclusion before sign-off."
+[[workflow]]
+name = "Deliver comparison"
+instruction = "Hand the normalized peer comparison to the strategy and finance leads for review."
+gate = "review"

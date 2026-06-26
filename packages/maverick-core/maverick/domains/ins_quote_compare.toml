@@ -18,3 +18,24 @@ deliverable = "Coverage comparison"
 consumers = ["underwriter"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Collect quotes"
+instruction = "Read the competing quotes and bound policy forms for the same risk from the company records."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Build exposure grid"
+instruction = "Lay out each insuring agreement, limit, deductible, and exclusion exposure by exposure across the quotes."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Cite form terms"
+instruction = "Ground each form term and endorsement difference in the actual policy wording via knowledge_search and cite it."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Surface gaps"
+instruction = "Surface coverage gaps, sublimits, and exclusions plainly and state any term you could not verify."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand off comparison"
+instruction = "Assemble the coverage comparison and route it to the underwriter for review."
+gate = "review"

@@ -136,3 +136,49 @@ def test_temperature_applied_without_thinking() -> None:
     k = _kwargs("claude-haiku-4-5", thinking_budget=None, temp="0.9")
     assert "thinking" not in k
     assert k.get("temperature") == 0.9
+
+
+def _kwargs_ctx(model: str, *, thinking_budget, temp):
+    from maverick.providers.base import (
+        reset_sampling_temperature,
+        set_sampling_temperature,
+    )
+    tok = set_sampling_temperature(temp)
+    try:
+        return _client()._build_request(
+            system="s", messages=[{"role": "user", "content": "hi"}],
+            tools=None, max_tokens=1024, thinking_budget=thinking_budget, model=model,
+        )
+    finally:
+        reset_sampling_temperature(tok)
+
+
+def test_temperature_from_contextvar_applied_without_thinking() -> None:
+    # best-of-N now sets the per-attempt temperature via a ContextVar (race-free
+    # across concurrent goals), not os.environ.
+    k = _kwargs_ctx("claude-haiku-4-5", thinking_budget=None, temp=0.85)
+    assert "thinking" not in k
+    assert k.get("temperature") == 0.85
+
+
+def test_contextvar_temperature_takes_precedence_over_env(monkeypatch) -> None:
+    monkeypatch.setenv("MAVERICK_TEMPERATURE", "0.1")
+    from maverick.providers.base import (
+        reset_sampling_temperature,
+        set_sampling_temperature,
+    )
+    tok = set_sampling_temperature(0.85)
+    try:
+        k = _client()._build_request(
+            system="s", messages=[{"role": "user", "content": "hi"}],
+            tools=None, max_tokens=1024, thinking_budget=None, model="claude-haiku-4-5",
+        )
+    finally:
+        reset_sampling_temperature(tok)
+    assert k.get("temperature") == 0.85   # contextvar wins over the env fallback
+
+
+def test_contextvar_temperature_dropped_when_thinking_active() -> None:
+    k = _kwargs_ctx("claude-opus-4-8", thinking_budget=None, temp=0.9)
+    assert k.get("thinking") == {"type": "adaptive"}
+    assert "temperature" not in k

@@ -21,8 +21,10 @@ wired onto ``/a2a/v1`` by ``mount()`` below.
 """
 from __future__ import annotations
 
+import ipaddress
 import os
 from typing import Any
+from urllib.parse import urlparse
 
 A2A_PROTOCOL_VERSION = "1.0"
 
@@ -210,6 +212,72 @@ def mount(app: Any) -> None:
     _mount_task_endpoint(app)
 
 
+# DNS-rebinding defense for /a2a/v1, mirroring maverick_mcp.http_transport's
+# _is_origin_allowed. A2A co-mounts on the same loopback HTTP app as /mcp, but
+# (unlike /mcp) had no Origin check -- so a browser page on any site could POST
+# no-cors to http://127.0.0.1:<port>/a2a/v1 (DNS rebinding resolves the
+# attacker host to loopback) and drive A2A tasks, including registering
+# push-notification webhook URLs (an SSRF/exfil primitive). The bearer is the
+# primary gate, but when MAVERICK_A2A_ALLOW_UNAUTHENTICATED is set the bearer is
+# waived, leaving this Origin layer as the only browser defense. core can't
+# import the mcp helper (wrong dependency direction), so this mirrors it; the
+# allow-list env is shared with MCP so operators configure origins once.
+def _normalized_origin(origin: str) -> str | None:
+    parsed = urlparse(origin)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    if parsed.username or parsed.password:
+        return None
+    if parsed.path not in {"", "/"} or parsed.params or parsed.query or parsed.fragment:
+        return None
+    try:
+        parsed_port = parsed.port
+    except ValueError:
+        return None
+    host = parsed.hostname.lower().rstrip(".")
+    if ":" in host:
+        host = f"[{host}]"
+    port = f":{parsed_port}" if parsed_port is not None else ""
+    return f"{parsed.scheme}://{host}{port}"
+
+
+def _origin_is_loopback(normalized: str) -> bool:
+    hostname = (urlparse(normalized).hostname or "").lower().rstrip(".")
+    if hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _a2a_allowed_origins() -> set[str]:
+    # The Host header is intentionally NOT trusted -- DNS rebinding makes it
+    # attacker-controlled for this defense. Shared with the MCP allow-list.
+    raw = (os.environ.get("MAVERICK_A2A_ALLOWED_ORIGINS", "")
+           + "," + os.environ.get("MAVERICK_MCP_ALLOWED_ORIGINS", ""))
+    return {
+        normalized
+        for origin in raw.split(",")
+        if (normalized := _normalized_origin(origin.strip()))
+    }
+
+
+def _a2a_origin_allowed(request) -> bool:
+    """Reject browser-issued cross-origin requests to /a2a/v1. Requests with no
+    Origin header (native A2A clients, curl, server-to-server) are allowed and
+    gated by the bearer instead -- the Origin layer only constrains browsers."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    normalized = _normalized_origin(origin)
+    if not normalized:
+        return False
+    if _origin_is_loopback(normalized):
+        return True
+    return normalized in _a2a_allowed_origins()
+
+
 # A2A JSON-RPC bodies are small task envelopes. Cap them with the same
 # 256 KiB limit the dashboard webhooks use so an (optionally
 # unauthenticated) caller can't force the server to buffer an arbitrarily
@@ -289,6 +357,16 @@ def _mount_task_endpoint(app: Any) -> None:
     # stringized `from __future__` annotations against this module's globals
     # (where the locally-imported Request wouldn't be found -> 422).
     async def _a2a_rpc(request):
+        # DNS-rebinding defense, same posture as /mcp -- reject browser cross-
+        # origin requests before doing any work (this is the only browser gate
+        # when MAVERICK_A2A_ALLOW_UNAUTHENTICATED waives the bearer).
+        if not _a2a_origin_allowed(request):
+            return JSONResponse(
+                _rpc_error(None, -32600, "cross-origin request blocked "
+                           "(set MAVERICK_A2A_ALLOWED_ORIGINS / "
+                           "MAVERICK_MCP_ALLOWED_ORIGINS to allow)"),
+                status_code=403,
+            )
         authorization = request.headers.get("authorization")
         raw = await _read_limited_body(request)
         if raw is None:

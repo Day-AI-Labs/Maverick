@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "consent verification status list"
+consumers = ["front_desk_lead", "clinician"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull schedule"
+instruction = "Query patients scheduled for service in the verification window."
+tools = ["sql_query"]
+[[workflow]]
+name = "Identify required consents"
+instruction = "Look up which consent forms each scheduled service requires per company policy."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check on file"
+instruction = "Read each patient's filed consents to confirm the required forms are present, signed, and unexpired."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "List patients missing, expired, or incomplete consents that must be resolved before service."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Front-desk review"
+instruction = "Route the consent status list to the front-desk lead to collect signatures before check-in."
+gate = "review"

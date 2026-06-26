@@ -128,3 +128,66 @@ def test_cli_lock_and_verify(tmp_path, monkeypatch):
     _fake_eps(monkeypatch, [("t1", "acme-tools", "3.0.0")])
     r3 = CliRunner().invoke(cli_mod.main, ["plugin", "verify"])
     assert r3.exit_code == 1 and "DRIFT acme-tools" in r3.output
+
+
+# ---- content-integrity hashing (audit C9) ----
+
+def test_write_lock_records_content_hashes(tmp_path, monkeypatch):
+    _fake_eps(monkeypatch, [("t1", "acme-tools", "1.0.0")])
+    monkeypatch.setattr(pl, "_dist_content_hash", lambda d: "deadbeef")
+    lock = tmp_path / "plugins.lock.json"
+    pl.write_lock(lock)
+    assert pl.read_hashes(lock) == {"acme-tools": "deadbeef"}
+
+
+def test_enforce_refuses_on_content_drift_same_version(tmp_path, monkeypatch):
+    _fake_eps(monkeypatch, [("t1", "acme-tools", "1.0.0")])
+    lock = tmp_path / "plugins.lock.json"
+    monkeypatch.setattr(pl, "_dist_content_hash", lambda d: "AAAA")
+    pl.write_lock(lock)
+    monkeypatch.setattr(pl, "lock_path", lambda: lock)
+    monkeypatch.setenv("MAVERICK_PLUGIN_LOCK_POLICY", "enforce")
+
+    # Same version (1.0.0), but the recomputed content hash now differs.
+    pl.reset_warned()
+    monkeypatch.setattr(pl, "_dist_content_hash", lambda d: "BBBB")
+    assert pl.dist_allowed_by_lock("acme-tools") is False  # tampered build refused
+
+    # Matching hash -> allowed.
+    pl.reset_warned()
+    monkeypatch.setattr(pl, "_dist_content_hash", lambda d: "AAAA")
+    assert pl.dist_allowed_by_lock("acme-tools") is True
+
+
+def test_warn_policy_allows_content_drift(tmp_path, monkeypatch):
+    _fake_eps(monkeypatch, [("t1", "acme-tools", "1.0.0")])
+    lock = tmp_path / "plugins.lock.json"
+    monkeypatch.setattr(pl, "_dist_content_hash", lambda d: "AAAA")
+    pl.write_lock(lock)
+    monkeypatch.setattr(pl, "lock_path", lambda: lock)
+    monkeypatch.setenv("MAVERICK_PLUGIN_LOCK_POLICY", "warn")
+    pl.reset_warned()
+    monkeypatch.setattr(pl, "_dist_content_hash", lambda d: "BBBB")
+    assert pl.dist_allowed_by_lock("acme-tools") is True  # warns, loads anyway
+
+
+def test_legacy_lock_without_hashes_is_version_only(tmp_path, monkeypatch):
+    # A lockfile from before hashing has no "hashes" block -> no content check.
+    _fake_eps(monkeypatch, [("t1", "acme-tools", "1.0.0")])
+    lock = tmp_path / "plugins.lock.json"
+    import json
+    lock.write_text(json.dumps({"pins": {"acme-tools": "1.0.0"}}), encoding="utf-8")
+    assert pl.read_hashes(lock) == {}
+    monkeypatch.setattr(pl, "lock_path", lambda: lock)
+    monkeypatch.setenv("MAVERICK_PLUGIN_LOCK_POLICY", "enforce")
+    pl.reset_warned()
+    # Even if current content "differs", there's no pinned hash to compare -> allowed.
+    monkeypatch.setattr(pl, "_dist_content_hash", lambda d: "whatever")
+    assert pl.dist_allowed_by_lock("acme-tools") is True
+
+
+def test_write_lock_leaves_no_temp_residue(tmp_path):
+    lock = tmp_path / "plugins.lock.json"
+    pl.write_lock(lock)
+    assert lock.exists()
+    assert list(tmp_path.glob("*.tmp")) == []  # unique temp + replace, no leftover

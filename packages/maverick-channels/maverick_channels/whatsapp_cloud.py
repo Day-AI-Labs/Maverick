@@ -41,7 +41,13 @@ import hmac
 import logging
 import os
 
-from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
+from .base import (
+    Channel,
+    IncomingMessage,
+    add_webhook_body_limit,
+    is_allowed,
+    normalize_allowlist,
+)
 
 log = logging.getLogger(__name__)
 
@@ -99,6 +105,7 @@ class WhatsAppCloudChannel(Channel):
         self.bind_host = bind_host or os.environ.get("WHATSAPP_CLOUD_BIND_HOST", "127.0.0.1")
         self.api_version = api_version
         self._app = FastAPI()
+        add_webhook_body_limit(self._app)
         self._app.get("/webhook/whatsapp-cloud")(self._handle_verify)
         self._app.post("/webhook/whatsapp-cloud")(self._handle_webhook)
         self._uvicorn_server = None
@@ -213,14 +220,17 @@ class WhatsAppCloudChannel(Channel):
             )
             try:
                 reply = await self.dispatch_text(incoming)
-            except Exception as e:  # pragma: no cover
+            except Exception:  # pragma: no cover
                 log.exception("handler error")
                 if wm is not None and msg_id:
                     try:
                         wm.release_processed_message("whatsapp_cloud", msg_id)
                     except Exception:  # pragma: no cover
                         log.warning("whatsapp-cloud dedup release failed")
-                reply = f"⚠ error: {e}"
+                # Don't echo the raw exception to the external sender (it can
+                # carry internal paths/detail); the full error is logged above.
+                # Matches the generic reply sms.py / rcs.py already use.
+                reply = "⚠ An internal error occurred."
             if reply:
                 await self.send(sender, reply)
 

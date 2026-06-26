@@ -11,3 +11,35 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Paid media spend reconciliation & waste flags"
+consumers = ["marketing_manager", "finance_analyst"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull media plan"
+instruction = "Read the approved media plan, budgets, and channel allocations from the company knowledge base."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Load spend data"
+instruction = "Load actual platform spend and delivery metrics into a spreadsheet keyed by campaign and channel."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Reconcile to plan"
+instruction = "Compare actual spend against the plan and compute variance by campaign, channel, and date."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify tracking"
+instruction = "Check UTM and conversion-tag coverage against approved tracking specs to confirm attribution integrity."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Flag waste"
+instruction = "Flag overspend, pacing anomalies, and broken-tracking campaigns with the dollar impact of each finding."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route audit"
+instruction = "Hand the reconciliation and waste flags to the marketing manager for sign-off before any budget action."
+gate = "review"

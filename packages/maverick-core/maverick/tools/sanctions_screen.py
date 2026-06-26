@@ -20,9 +20,10 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ..paths import data_dir
 from . import Tool
 
-_DEFAULT_LIST = Path.home() / ".maverick" / "screening" / "sdn.txt"
+_DEFAULT_LIST = data_dir("screening", "sdn.txt")
 _PUNCT = re.compile(r"[^a-z0-9\s]")
 _WS = re.compile(r"\s+")
 

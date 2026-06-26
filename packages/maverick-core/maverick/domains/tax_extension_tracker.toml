@@ -10,3 +10,28 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "deadline and extension tracker"
+consumers = ["tax_preparer", "tax_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Build deadline grid"
+instruction = "Read each client's filing, extension, and estimated-payment dates by jurisdiction and tax year from the firm's records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Size lead time"
+instruction = "Estimate remaining work per client and set lead-time alerts sized to how long that work takes before each deadline."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag at-risk"
+instruction = "Surface clients whose remaining work cannot clear before the deadline and that need an extension prepared."
+tools = ["sql_query"]
+[[workflow]]
+name = "Stage extensions"
+instruction = "Prepare the extension entries for the preparer to authorize and file, never filing them yourself."
+tools = ["spreadsheet"]
+gate = "review"

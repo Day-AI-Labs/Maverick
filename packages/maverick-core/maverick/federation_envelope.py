@@ -133,6 +133,36 @@ def _digest(payload: dict) -> str:
     ).hexdigest()
 
 
+# Envelopes are flat field maps; the deepest legitimate shape is a marketplace
+# bundle (a list of flat listing dicts) — depth ~3. A hostile peer can otherwise
+# send a deeply-nested object whose canonical-JSON encoding (``_digest`` ->
+# ``json.dumps``) recurses until it raises ``RecursionError``, an unauthenticated
+# DoS reachable BEFORE signature verification (only the public pinned pubkey
+# gates it). Reject anything nested past this bound first.
+_MAX_ENVELOPE_DEPTH = 32
+
+
+def _within_depth(obj: object, limit: int) -> bool:
+    """True iff ``obj`` (a parsed JSON value) nests no deeper than ``limit``.
+
+    Iterative (explicit stack) so checking is itself recursion-safe — it can't
+    blow the stack on the very input it's meant to screen, and it lets us reject
+    a recursion bomb before ``json.dumps`` would hit it.
+    """
+    stack = [(obj, 0)]
+    while stack:
+        cur, depth = stack.pop()
+        if depth > limit:
+            return False
+        if isinstance(cur, dict):
+            for v in cur.values():
+                stack.append((v, depth + 1))
+        elif isinstance(cur, (list, tuple)):
+            for v in cur:
+                stack.append((v, depth + 1))
+    return True
+
+
 def sign_envelope(payload: dict) -> dict:
     """Return a signed copy of ``payload`` (adds ``pubkey``/``key_id``/``sig``).
 
@@ -171,6 +201,10 @@ def verify_envelope(
     """
     if not isinstance(envelope, dict):
         return False, "envelope is not an object"
+    # Reject a recursion-bomb envelope before _digest's json.dumps would recurse
+    # into a RecursionError (fail-closed: this function must never raise).
+    if not _within_depth(envelope, _MAX_ENVELOPE_DEPTH):
+        return False, "envelope nests too deeply"
     if envelope.get("schema") != expected_schema:
         return False, f"unexpected schema {envelope.get('schema')!r}"
     origin = envelope.get("origin")

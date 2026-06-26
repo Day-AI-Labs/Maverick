@@ -1,6 +1,6 @@
-# Maverick Summit v2 (hybrid) — delta kit
+# Lightwork Summit v2 (hybrid) — delta kit
 
-**Roadmap ref:** 2028-H1 "Maverick Summit v2 (hybrid)". This is a **delta
+**Roadmap ref:** 2028-H1 "Lightwork Summit v2 (hybrid)". This is a **delta
 over [summit-v1-virtual.md](./summit-v1-virtual.md)** — read that first;
 everything there (agenda template, speaker brief, streaming/Q&A checklists,
 metrics, artifact plan) still applies. Running the event is a maintainer

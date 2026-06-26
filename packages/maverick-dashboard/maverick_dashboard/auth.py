@@ -149,6 +149,29 @@ def caller_principal(request: Request) -> str | None:
     return name or None
 
 
+def _pin_tenant_from_principal(request: Request, principal: VerifiedPrincipal) -> None:
+    """Pin per-user tenant state once the verified principal is known.
+
+    HTTP middleware runs before FastAPI dependencies populate
+    ``request.state.principal``, so tenant pinning must happen here, in the
+    authentication dependency, immediately after a principal is established and
+    before route handlers choose tenant-scoped world state. The reset token is
+    stored on request state for the outer middleware to clean up after the
+    response. Pinning is best-effort and never blocks authentication.
+    """
+    try:
+        from maverick.paths import set_tenant, tenant_by_user_enabled
+
+        if not tenant_by_user_enabled():
+            return
+        name = str(getattr(principal, "principal", "") or "").strip()
+        if not name or getattr(request.state, "tenant_pin_token", None) is not None:
+            return
+        request.state.tenant_pin_token = set_tenant(f"api:{name}")
+    except Exception:  # pragma: no cover -- tenant pinning must fail open
+        return
+
+
 def is_dashboard_admin(principal: str) -> bool:
     """True iff ``principal`` is listed as a dashboard admin.
 
@@ -358,13 +381,18 @@ def require_principal(
         if not ws_token:
             raise HTTPException(status_code=401, detail="OIDC bearer token required")
         try:
-            return verify_oidc_token(ws_token)
+            ws_principal = verify_oidc_token(ws_token)
         except OIDCError as exc:
             raise HTTPException(status_code=401, detail="invalid OIDC token") from exc
+        from .session_revocation import is_revoked
+        if is_revoked(ws_principal.sub, ws_principal.claims.get("iat")):
+            raise HTTPException(status_code=401, detail="invalid OIDC token")
+        return ws_principal
 
     pp = _proxy_principal(request)
     if pp is not None:
         request.state.principal = pp
+        _pin_tenant_from_principal(request, pp)
         return pp
 
     if not oidc_enabled():
@@ -375,6 +403,7 @@ def require_principal(
     sp = _session_principal(request)
     if sp is not None:
         request.state.principal = sp
+        _pin_tenant_from_principal(request, sp)
         return sp
 
     if request.url.path in _OIDC_EXEMPT_PATHS or request.url.path == "/static/daybreak-logo.jpg":
@@ -383,6 +412,17 @@ def require_principal(
         # Public read-only share links carry their own revocable token (verified
         # in the route, which 404s an invalid one); an external recipient has no
         # OIDC session, like the webhook paths below.
+        return None
+    if request.url.path.startswith("/scim/"):
+        # SCIM clients (Okta/Azure AD) authenticate with a static IdP bearer
+        # (MAVERICK_SCIM_TOKEN), verified by the SCIM router itself; they have no
+        # OIDC session. The router 404s when SCIM is disabled.
+        return None
+    if request.url.path.startswith("/saml/"):
+        # SAML SSO endpoints (metadata / login / ACS) are how a browser obtains a
+        # session -- the IdP POSTs a signed assertion to the ACS with no existing
+        # session. They self-gate (404 when [auth.saml] is unset) and the ACS
+        # verifies the assertion itself, like the OIDC /auth/ login routes.
         return None
     # HMAC-signed webhooks (GitHub/Telegram/Linear/Jira/...) can't present an
     # OIDC ID token -- the external sender authenticates with a shared-secret
@@ -410,7 +450,16 @@ def require_principal(
             detail="invalid OIDC token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+    # Revocation: a bearer issued before the principal's revocation epoch
+    # ("log out everywhere" / SCIM deprovision) is rejected even if it verifies.
+    from .session_revocation import is_revoked
+    if is_revoked(principal.sub, principal.claims.get("iat")):
+        raise HTTPException(
+            status_code=401, detail="invalid OIDC token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
     request.state.principal = principal
+    _pin_tenant_from_principal(request, principal)
     return principal
 
 

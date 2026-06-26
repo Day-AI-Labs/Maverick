@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "funnel drop-off diagnosis"
+consumers = ["ecommerce_manager", "growth_analyst"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Define funnel"
+instruction = "Confirm the conversion stages and date window with the requester and locate the matching event tables."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pull stage rates"
+instruction = "Query step-by-step counts and conversion rates by stage, segment, and device for the window."
+tools = ["sql_query"]
+[[workflow]]
+name = "Find drop-offs"
+instruction = "Quantify each stage's drop and benchmark against prior periods in a worksheet to isolate the largest leaks."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Form hypotheses"
+instruction = "Write quantified, testable hypotheses for the top leaks grounded in cited internal data and any external pattern checks."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Route diagnosis"
+instruction = "Package the ranked drop-offs and test recommendations for the e-commerce manager to review."
+gate = "review"

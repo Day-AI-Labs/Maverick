@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .. import tool_cache
+from ..cache import tool as tool_cache
 from . import Tool
 
 

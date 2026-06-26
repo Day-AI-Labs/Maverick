@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def purge_audit_files(
         return {"removed": [], "kept": 0, "reason": "no audit dir"}
 
     cutoff_ts = _cutoff_for_days(days, now=now)
-    cutoff_day = datetime.utcfromtimestamp(cutoff_ts).date()
+    cutoff_day = datetime.fromtimestamp(cutoff_ts, tz=timezone.utc).date()
     removed: list[str] = []
     kept = 0
     for path in sorted(audit_dir.glob("*.ndjson")):
@@ -187,6 +187,61 @@ def purge_usage_ledger(
     return result
 
 
+def record_retention_marker(report: dict, *, audit_dir: Path | None = None) -> dict | None:
+    """Emit a signed audit event recording what a retention run purged.
+
+    Without this, an auditor seeing a gap in the day-files (or a shrunken
+    episodes/goal_events table) cannot tell policy-driven retention from
+    malicious deletion -- the cross-file anchor ledger even flags a removed
+    day-file as a chain break. The marker lands in the LIVE chain (today's
+    day-file, which is never itself old enough to be purged), signed by the same
+    Ed25519 chain when ``[audit] sign`` is on, so the deletion is itself
+    tamper-evidently recorded and reconcilable against the gap.
+
+    Returns the payload written, or None when nothing was actually purged (a
+    no-op / dry-run enforce leaves no audit noise). Never raises: a failure to
+    write the marker must not undo or block the retention that already ran.
+    """
+    audit = report.get("audit") or {}
+    removed_files = list(audit.get("removed") or [])
+    episodes = int((report.get("episodes") or {}).get("deleted") or 0)
+    events = int((report.get("goal_events") or {}).get("deleted") or 0)
+    usage_buckets = int((report.get("usage_ledger") or {}).get("removed_buckets") or 0)
+    if not (removed_files or episodes or events or usage_buckets):
+        return None
+
+    payload = {
+        "audit_files_removed": len(removed_files),
+        "audit_files": removed_files,
+        "audit_cutoff_day": audit.get("cutoff_day", ""),
+        "episodes_deleted": episodes,
+        "goal_events_deleted": events,
+        "usage_buckets_removed": usage_buckets,
+    }
+    try:
+        from .events import AuditEvent, EventKind
+        if audit_dir is not None:
+            # Write into the SAME chain being enforced (tests / explicit tenant
+            # dir), not whatever the ambient default resolves to.
+            from .writer import AuditLog
+            ok = AuditLog(audit_dir).record(
+                AuditEvent(
+                    ts=time.time(),
+                    kind=EventKind.RETENTION_PURGE,
+                    agent="system",
+                    goal_id=None,
+                    payload=payload,
+                )
+            )
+        else:
+            from .writer import record as _audit_record
+            ok = _audit_record(EventKind.RETENTION_PURGE, **payload)
+        return payload if ok else None
+    except Exception as e:  # pragma: no cover - marker must never break retention
+        log.warning("retention: could not record retention marker: %s", e)
+        return None
+
+
 def enforce(
     *,
     config: dict | None = None,
@@ -199,6 +254,11 @@ def enforce(
 
     ``audit_dir`` defaults to the writer's home/tenant-aware audit dir
     (resolved by :func:`purge_audit_files`), not a frozen path.
+
+    A non-dry-run that actually purged anything also writes a signed
+    ``retention_purge`` marker into the audit chain (see
+    :func:`record_retention_marker`) so the deletion is tamper-evidently
+    recorded.
     """
     cfg = config if config is not None else _config()
     if not cfg:
@@ -226,11 +286,17 @@ def enforce(
         report["usage_ledger"] = purge_usage_ledger(
             days=usage_days, dry_run=dry_run, now=now,
         )
+
+    if not dry_run:
+        marker = record_retention_marker(report, audit_dir=audit_dir)
+        if marker is not None:
+            report["marker"] = marker
     return report
 
 
 __all__ = [
     "enforce",
+    "record_retention_marker",
     "purge_audit_files",
     "purge_world_episodes",
     "purge_world_events",

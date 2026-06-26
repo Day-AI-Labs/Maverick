@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "versioned metric definition change"
+consumers = ["analytics_lead", "data_governance_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather definitions"
+instruction = "Collect the current definition and every conflicting usage of the metric from the dictionary and source documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Validate in data"
+instruction = "Validate each candidate definition against the actual production computation to confirm it is implementable."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile change"
+instruction = "Reconcile the conflict into one definition and record the version bump and impacted downstream metrics in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag breakage"
+instruction = "Flag any downstream report or metric that the redefinition would silently break or restate."
+[[workflow]]
+name = "Hand to lead"
+instruction = "Route the versioned definition change with impact list to the analytics lead for review."
+gate = "review"

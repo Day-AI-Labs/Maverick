@@ -181,6 +181,56 @@ def test_bluesky_dispatch_allows_member_and_shapes_reply(monkeypatch):
 # --- inbound cursor advancement --------------------------------------------
 
 @pytest.mark.skipif(not _have_deps(), reason="httpx not installed")
+def test_parse_indexed_at_handles_mixed_precision():
+    # AT-proto indexedAt arrives at varying fractional precision; the floor is
+    # seeded at 6-digit microseconds. Parsing must make the boundary second equal
+    # regardless of the fractional form (a raw string compare ranked "...:05Z"
+    # ABOVE "...:05.000000Z" because 'Z' > '.').
+    from maverick_channels.bluesky import _parse_indexed_at
+
+    no_frac = _parse_indexed_at("2026-01-01T00:00:05Z")
+    micros = _parse_indexed_at("2026-01-01T00:00:05.000000Z")
+    millis = _parse_indexed_at("2026-01-01T00:00:05.123Z")
+    nanos = _parse_indexed_at("2026-01-01T00:00:05.123456789Z")
+    assert no_frac == micros               # boundary second equal across forms
+    assert millis < nanos                  # .123000 < .123456 after clamp
+    assert no_frac < millis                # ordering preserved
+    assert _parse_indexed_at("") is None
+    assert _parse_indexed_at("not-a-timestamp") is None
+
+
+@pytest.mark.skipif(not _have_deps(), reason="httpx not installed")
+def test_bluesky_poll_skips_boundary_second_at_mixed_precision(monkeypatch):
+    """A notification stamped at exactly the startup second but in the
+    no-fractional 'Z' form must be treated as pre-startup (skipped), not
+    delivered. A raw string compare ranked '...:05Z' ABOVE the microsecond-seeded
+    floor '...:05.000000Z' and backfilled it -- duplicate replies + LLM spend."""
+    from maverick_channels.bluesky import BlueskyChannel
+
+    notifications = {"notifications": [
+        {"reason": "mention", "indexedAt": "2026-01-01T00:00:05Z",
+         "author": {"did": "did:plc:owner"}, "record": {"text": "pre-startup"},
+         "uri": "at://boundary", "cid": "c1"},
+    ]}
+
+    def _responder(method, url, body):
+        if "listNotifications" in url:
+            return _FakeResponse(json_data=notifications)
+        return _FakeResponse()
+
+    calls = []
+    _install_fake_httpx(monkeypatch, calls, _responder)
+
+    chan = BlueskyChannel(handler=_noop, handle="me.bsky.social",
+                          password="app-pw", allowed_user_ids={"did:plc:owner"})
+    chan._session = {"accessJwt": "tok", "did": "did:plc:me"}
+    # Floor seeded at the same second with microsecond precision, as start() does.
+    chan._last_seen_indexed_at = "2026-01-01T00:00:05.000000Z"
+
+    new = asyncio.run(chan._poll_once())
+    assert new == []  # boundary-second notification correctly treated as pre-history
+
+
 def test_bluesky_poll_filters_and_advances_cursor(monkeypatch):
     """_poll_once returns only new mention/reply notifications and moves the
     cursor to the newest indexedAt; a second poll over the same data yields
@@ -216,12 +266,53 @@ def test_bluesky_poll_filters_and_advances_cursor(monkeypatch):
     # The like is filtered out; the two mention/reply events come through.
     reasons = sorted(n["reason"] for n in new)
     assert reasons == ["mention", "reply"]
-    # Cursor advanced to the newest mention/reply indexedAt (not the like).
-    assert chan._last_seen_indexed_at == "2026-01-01T00:00:08Z"
+    # Dedup is by uri now (not a strict timestamp watermark): both uris recorded.
+    assert chan._seen_uris == {"at://1", "at://2"}
 
-    # Second poll over identical data: everything is now <= cursor -> empty.
+    # Second poll over identical data: both uris already seen -> empty.
     again = asyncio.run(chan._poll_once())
     assert again == []
+
+
+@pytest.mark.skipif(not _have_deps(), reason="httpx not installed")
+def test_bluesky_poll_delivers_out_of_order_notification(monkeypatch):
+    """A genuinely-new notification indexed BEFORE the newest one (AT-proto
+    indexedAt is not monotonic) must still be delivered -- a strict high-water-
+    mark on indexedAt used to silently drop it."""
+    from maverick_channels.bluesky import BlueskyChannel
+
+    state = {"notifs": [
+        {"reason": "mention", "indexedAt": "2026-01-01T00:00:08Z",
+         "author": {"did": "did:plc:owner"}, "record": {"text": "first"},
+         "uri": "at://newest", "cid": "c1"},
+    ]}
+
+    def _responder(method, url, body):
+        if "listNotifications" in url:
+            return _FakeResponse(json_data={"notifications": state["notifs"]})
+        return _FakeResponse()
+
+    calls = []
+    _install_fake_httpx(monkeypatch, calls, _responder)
+    chan = BlueskyChannel(handler=_noop, handle="me.bsky.social",
+                          password="app-pw", allowed_user_ids={"did:plc:owner"})
+    chan._session = {"accessJwt": "tok", "did": "did:plc:me"}
+
+    first = asyncio.run(chan._poll_once())
+    assert [n["uri"] for n in first] == ["at://newest"]
+
+    # Next poll: a NEW mention indexed a second EARLIER (late server indexing),
+    # alongside the already-seen one. The earlier-but-new uri must come through.
+    state["notifs"] = [
+        {"reason": "mention", "indexedAt": "2026-01-01T00:00:08Z",
+         "author": {"did": "did:plc:owner"}, "record": {"text": "first"},
+         "uri": "at://newest", "cid": "c1"},
+        {"reason": "mention", "indexedAt": "2026-01-01T00:00:06Z",
+         "author": {"did": "did:plc:owner"}, "record": {"text": "late"},
+         "uri": "at://late", "cid": "c2"},
+    ]
+    second = asyncio.run(chan._poll_once())
+    assert [n["uri"] for n in second] == ["at://late"]  # delivered, not dropped
 
 
 # --- send path payload shaping ---------------------------------------------

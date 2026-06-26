@@ -76,6 +76,49 @@ class TestDiagnoseBackendCoverage:
         assert "E2B_API_KEY unset" in "\n".join(d._check_sandbox())
 
 
+class TestE2BSandboxTeardown:
+    """The hosted E2B microVM must be torn down even when the process call
+    raises, or a transient network error orphans a *billable* sandbox until
+    E2B's idle TTL reaps it."""
+
+    def test_sandbox_deleted_even_when_process_raises(self, tmp_path, monkeypatch):
+        httpx = pytest.importorskip("httpx")
+        from maverick.sandbox.firecracker import FirecrackerBackend
+
+        created = []
+
+        class _FakeClient:
+            def __init__(self, *a, **k):
+                self.deleted = []
+                created.append(self)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def delete(self, url, headers=None):
+                self.deleted.append(url)
+
+        monkeypatch.setattr(httpx, "Client", _FakeClient)
+
+        be = FirecrackerBackend(workdir=tmp_path, provider="e2b", api_key="k")
+        monkeypatch.setattr(be, "_e2b_create", lambda client: ("sb-leak", 200))
+
+        def _boom(client, sb_id, cmd):
+            raise RuntimeError("transient network blip mid-exec")
+
+        monkeypatch.setattr(be, "_e2b_process", _boom)
+
+        res = be._exec_e2b("echo hi")
+        # The transient error surfaces as an e2b error result...
+        assert res.exit_code == 125
+        # ...but the microVM was still deleted (no billable leak).
+        assert created
+        assert created[0].deleted == ["https://api.e2b.dev/sandboxes/sb-leak"]
+
+
 class TestContainerResourceCaps:
     """Docker/Podman must bound host RAM by default (OOM is the catastrophic,
     non-recoverable host-DoS); CPU is opt-in since the per-exec timeout already

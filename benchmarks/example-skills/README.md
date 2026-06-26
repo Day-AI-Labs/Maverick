@@ -1,6 +1,6 @@
 # Example skills
 
-A curated set of `SKILL.md` files demonstrating common Maverick
+A curated set of `SKILL.md` files demonstrating common Lightwork
 patterns. Install any of them with:
 
 ```bash

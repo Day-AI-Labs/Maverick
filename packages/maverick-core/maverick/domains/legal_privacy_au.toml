@@ -10,3 +10,29 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "APP obligation & NDB assessment memo"
+consumers = ["privacy_officer", "privacy_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define trigger"
+instruction = "Identify the APP obligation or suspected eligible data breach to be assessed and the relevant data and entities."
+[[workflow]]
+name = "Pull evidence"
+instruction = "Retrieve the company's privacy policy, contracts, and incident facts from internal knowledge."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Assess obligations"
+instruction = "Map the facts against the Australian Privacy Principles and the NDB serious-harm test, citing each APP by number."
+tools = ["web_search"]
+[[workflow]]
+name = "Flag thresholds"
+instruction = "State assumptions and flag whether the NDB notification threshold is met, unmet, or undetermined on the facts available."
+[[workflow]]
+name = "Officer review"
+instruction = "Route the assessment memo to the privacy officer and counsel for the notification decision."
+gate = "review"

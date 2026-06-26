@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "LTI benchmarking & dilution analysis"
+consumers = ["total_rewards_lead", "cfo"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull grant data"
+instruction = "Read the current RSU, option, and ESPP grant schedules, cap table, and vesting terms for the population in scope."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Benchmark targets"
+instruction = "Benchmark grant values and equity mix against external market survey data for comparable roles and stages."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Model dilution"
+instruction = "Model burn-rate and dilution under the proposed grants and flag vesting and mobility-tax exposure that ties to finance SBC."
+tools = ["read_file"]
+[[workflow]]
+name = "Reconcile to cap table"
+instruction = "Reconcile modeled share counts back to the cap table and authorized pool to catch over-grant before it reaches a recommendation."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the benchmarking and dilution analysis to Total Rewards and the CFO for sign-off before any grant decision."
+gate = "review"

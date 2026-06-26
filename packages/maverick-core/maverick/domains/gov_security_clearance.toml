@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "clearance status and visit request tracker"
+consumers = ["facility_security_officer", "contracts_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull roster"
+instruction = "Retrieve the current personnel clearance roster and pending visit requests from company records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Check contract reqs"
+instruction = "Confirm the clearance levels and access requirements each contract mandates against the cited contract clauses."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Reconcile status"
+instruction = "Build the tracker reconciling each person's clearance level, eligibility date, and visit-request status and flag mismatches."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag expirations"
+instruction = "Identify clearances expiring or reinvestigations coming due and visit requests missing required approvals."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to FSO"
+instruction = "Hand the reconciled tracker with flagged items to the Facility Security Officer for review and action."
+gate = "review"

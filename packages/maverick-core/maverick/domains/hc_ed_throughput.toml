@@ -10,3 +10,29 @@ max_risk = "low"
 
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "ED throughput & boarding report"
+consumers = ["ed_nurse_manager", "operations_director"]
+cadence = "daily"
+
+[[workflow]]
+name = "Pull metrics"
+instruction = "Query the ED tracking data for arrival-to-disposition, boarding, and left-without-being-seen times over the reporting window."
+tools = ["sql_query"]
+[[workflow]]
+name = "Validate data"
+instruction = "Read the source feed and reconcile timestamps to flag missing or implausible entries before analysis."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Identify bottlenecks"
+instruction = "Compute throughput metrics against targets and isolate the stages driving boarding delays."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Cite thresholds"
+instruction = "Retrieve the facility's throughput targets and escalation thresholds to contextualize the documented bottlenecks."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compile report"
+instruction = "Compile the throughput report with documented bottlenecks for the ED nurse manager."

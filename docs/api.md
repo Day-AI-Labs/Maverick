@@ -1,6 +1,6 @@
 # REST API
 
-Maverick ships a JSON REST API at `/api/v1` on the dashboard server.
+Lightwork ships a JSON REST API at `/api/v1` on the dashboard server.
 Any HTTP client can drive the agent: create + run goals, poll for
 results, stream live progress, manage facts and skills, view spend.
 
@@ -17,7 +17,8 @@ either:
   logs / browser history**, prefer the header).
 
 Exempt from auth (so external tooling and probes work without creds):
-`/healthz`, `/openapi.json`, `/docs`, `/redoc`.
+`/healthz`, `/livez`, `/readyz`, `/openapi.json`, `/docs`, `/redoc`, and the
+`/.well-known/agent-card.json` discovery endpoints.
 
 ## OpenAPI docs
 
@@ -30,11 +31,15 @@ typed clients in any language.
 
 ## Concurrency
 
-The REST API uses a process-wide `BoundedSemaphore` to cap simultaneous
-background goal runs. Default is **3**; override via
-`MAVERICK_MAX_CONCURRENT_GOALS=N`. Goals beyond the cap queue (not
-rejected) in the threadpool. This prevents an attacker / runaway client
-from draining your Anthropic budget by firing 100 POSTs in 30 seconds.
+The REST API schedules background goal runs with **two-level fair
+concurrency**: each principal gets its own lane
+(`MAVERICK_MAX_CONCURRENT_GOALS_PER_PRINCIPAL`, default **3**) so one user's
+runs never block another's, under a global ceiling
+(`MAVERICK_MAX_CONCURRENT_GOALS`, default **16**) that only guards against
+host-wide overload. A run acquires its user lane, then the global ceiling;
+goals beyond a cap queue (not rejected) up to `MAVERICK_GOAL_ACQUIRE_TIMEOUT`.
+The per-user lane also prevents an attacker / runaway client from draining
+your Anthropic budget by firing 100 POSTs in 30 seconds.
 
 Individual goal budget caps are also bounded server-side:
 `max_dollars` clamped to [0, 100], `max_wall_seconds` to [1, 86400],
@@ -171,7 +176,7 @@ Designed for non-channel frontends:
 - React Native / SwiftUI iOS app -> bearer token + this API, agent on a VPS
 - Zapier / IFTTT -> create-goal webhook on schedule
 - Cron jobs -> a 6am goal to summarize overnight email + slack
-- GitHub Actions -> kick off a Maverick goal on PR open
+- GitHub Actions -> kick off a Lightwork goal on PR open
 
 Always set explicit `max_dollars` and `max_wall_seconds` from external
 callers -- defaults are conservative ($2, 30min) but every API has

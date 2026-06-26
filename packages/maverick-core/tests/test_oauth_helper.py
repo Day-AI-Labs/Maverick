@@ -71,6 +71,32 @@ def test_refresh(monkeypatch):
     assert "newtok" not in out and "expires_in: 60s" in out
 
 
+def test_exchange_seals_to_vault_when_enabled(monkeypatch, tmp_path):
+    import importlib.util
+
+    import pytest
+    if importlib.util.find_spec("cryptography") is None:
+        pytest.skip("cryptography extra not installed")
+    import maverick.tools.oauth_helper as mod
+    from maverick.tenant import kms
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_KMS_KEK", "cd" * 32)
+    monkeypatch.setenv("MAVERICK_OAUTH_VAULT", "1")
+    monkeypatch.delenv("MAVERICK_OAUTH_OUT", raising=False)
+    kms._clear_cache()
+    monkeypatch.setattr(mod, "_post_form",
+                        lambda url, data: {"access_token": "vaulted-secret",
+                                           "refresh_token": "rt", "expires_in": 3600})
+    out = _t().fn({"op": "exchange", "token_url": "https://x/t", "client_id": "c",
+                   "code": "k", "redirect_uri": "https://r", "provider": "notion"})
+    assert "vaulted-secret" not in out          # never echoed
+    assert "sealed in the per-tenant OAuth vault" in out
+    # Stored sealed and retrievable via the vault, not via a plaintext file.
+    from maverick.oauth_vault import get_vault
+    assert get_vault().get("notion")["access_token"] == "vaulted-secret"
+
+
 def test_errors_shaped(monkeypatch):
     import maverick.tools.oauth_helper as mod
     t = _t()
@@ -130,3 +156,42 @@ def test_registered():
 
     names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
     assert "oauth_helper" in names
+
+
+def test_vault_enabled_requires_provider_without_plaintext_fallback(monkeypatch, tmp_path):
+    import maverick.tools.oauth_helper as mod
+
+    out_file = tmp_path / "tokens.json"
+    monkeypatch.setenv("MAVERICK_OAUTH_VAULT", "1")
+    monkeypatch.setenv("MAVERICK_OAUTH_OUT", str(out_file))
+    monkeypatch.setattr(mod, "_post_form",
+                        lambda url, data: {"access_token": "no-plain-access",
+                                           "refresh_token": "no-plain-refresh"})
+
+    out = _t().fn({"op": "refresh", "token_url": "https://x/t",
+                   "client_id": "c", "refresh_token": "r1"})
+
+    assert out.startswith("ERROR: token persistence failed:")
+    assert "provider is required" in out
+    assert not out_file.exists()
+
+
+def test_vault_failure_does_not_plaintext_fallback(monkeypatch, tmp_path):
+    import maverick.oauth_vault as vault
+    import maverick.tools.oauth_helper as mod
+
+    out_file = tmp_path / "tokens.json"
+    monkeypatch.setenv("MAVERICK_OAUTH_VAULT", "1")
+    monkeypatch.setenv("MAVERICK_OAUTH_OUT", str(out_file))
+    monkeypatch.setattr(mod, "_post_form",
+                        lambda url, data: {"access_token": "no-plain-access",
+                                           "refresh_token": "no-plain-refresh"})
+    monkeypatch.setattr(vault, "get_vault",
+                        lambda: (_ for _ in ()).throw(RuntimeError("kms unavailable")))
+
+    out = _t().fn({"op": "exchange", "token_url": "https://x/t",
+                   "client_id": "c", "code": "k", "redirect_uri": "https://r",
+                   "provider": "github"})
+
+    assert out == "ERROR: token persistence failed: kms unavailable"
+    assert not out_file.exists()

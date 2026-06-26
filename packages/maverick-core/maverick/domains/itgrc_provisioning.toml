@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Joiner-mover-leaver access recommendation"
+consumers = ["iam_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull lifecycle event"
+instruction = "Read the HR-triggered joiner, mover, or leaver event and the affected user's role and department."
+tools = ["read_file"]
+[[workflow]]
+name = "Read current access"
+instruction = "Pull the user's existing entitlements and group memberships from Okta and SailPoint to establish the baseline."
+tools = ["okta_read", "sailpoint_read"]
+[[workflow]]
+name = "Derive target access"
+instruction = "Compare current entitlements against the role-based birthright policy to compute grants for joiners-movers and full revocation for leavers."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag SoD conflicts"
+instruction = "Check the recommended access set for segregation-of-duties and privileged-access toxic combinations before handing off."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route for authorization"
+instruction = "Submit the grant or revoke recommendation to the access owner for human authorization since provisioning is never executed by the agent."
+gate = "approval"

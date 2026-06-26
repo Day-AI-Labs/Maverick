@@ -44,11 +44,11 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 
+from ._envparse import env_bool
 from .capability import Capability
 
 _DEFAULT_TTL_SECONDS = 30.0
 _DEFAULT_REPLAY_CACHE = 4096
-_TRUE = {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -125,7 +125,7 @@ def tool_tokens_enabled() -> bool:
     """Opt-in, off by default. ``MAVERICK_TOOL_TOKENS=1`` or
     ``[capabilities] per_call_tokens = true`` turns on per-call token exchange
     at the tool chokepoint. Meaningful only with capability enforcement on."""
-    if os.environ.get("MAVERICK_TOOL_TOKENS", "").strip().lower() in _TRUE:
+    if env_bool("MAVERICK_TOOL_TOKENS"):
         return True
     try:
         from .config import load_config

@@ -11,3 +11,34 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Episode production package & publication checklist"
+consumers = ["podcast_host", "marketing_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Review pipeline"
+instruction = "Read the guest pipeline and confirm the booked guest, recording date, and episode theme."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Research guest"
+instruction = "Research the guest's background and recent work to ground the prep doc in verified, citable facts."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft prep doc"
+instruction = "Draft the host prep doc with talking points, bio, and question outline as a DRAFT for review."
+[[workflow]]
+name = "Compile show notes"
+instruction = "Draft episode show notes and the publication checklist covering titles, links, and asset readiness."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify checklist"
+instruction = "Confirm every publication checklist item is complete and links resolve before scheduling."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to host"
+instruction = "Hand the production package to the podcast host for review before the episode goes live."
+gate = "review"

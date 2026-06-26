@@ -94,3 +94,28 @@ def test_round_trip_fuzz_with_sentinel_alphabet():
     for _ in range(3000):
         s = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 30)))
         assert ep.decode(ep.encode(s, book), book) == s
+
+
+def test_store_concurrent_updates_stay_valid(tmp_path):
+    """Separate stores at one path updating the whole codebook concurrently
+    must leave a valid, fully-readable book and no stray temp."""
+    import threading
+
+    from maverick import emergent_protocol as ep
+
+    p = tmp_path / "codebook.json"
+    n = 12
+
+    def worker(i: int):
+        store = ep.CodebookStore(path=p)
+        store.update(ep.Codebook(forward={f"phrase{i}": f"c{i}"}))
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    final = ep.CodebookStore(path=p).book()
+    assert isinstance(final.forward, dict) and final.forward
+    assert list(tmp_path.glob("*.tmp")) == []

@@ -40,12 +40,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
 # Injected LLM seam: (prompt, model_spec) -> completion text.
 LLMCall = Callable[[str, str], str]
 
-DEFAULT_LEDGER_PATH = Path.home() / ".maverick" / "speculative_ledger.json"
+DEFAULT_LEDGER_PATH = data_dir("speculative_ledger.json")
 # Role defaults only — the ROLES are named here, never model ids. "summarizer"
 # is the kernel's established cheap tier; both resolve via config first.
 DEFAULT_DRAFT_ROLE = "summarizer"
@@ -113,8 +115,16 @@ class AcceptanceLedger:
     def _key(draft_model: str, target_model: str) -> str:
         return f"{draft_model} -> {target_model}"
 
+    def _cplock(self):
+        # Cross-process lock over the load-apply-save. Without it two processes
+        # each hold a stale cached _data and the second _save clobbers the
+        # first's accepted/total counts.
+        from .file_lock import cross_process_lock
+        return cross_process_lock(self.path)
+
     def record(self, draft_model: str, target_model: str, accepted: bool) -> None:
-        with self._lock:
+        with self._lock, self._cplock():
+            self._data = self._load()  # refresh from disk (other processes' writes)
             row = self._data.setdefault(
                 self._key(draft_model, target_model), {"accepted": 0, "total": 0},
             )
@@ -125,10 +135,9 @@ class AcceptanceLedger:
 
     def _save(self) -> None:
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_name(self.path.name + ".tmp")
-            tmp.write_text(json.dumps(self._data, sort_keys=True), encoding="utf-8")
-            os.replace(tmp, self.path)
+            # Unique temp + os.replace: a fixed ".tmp" collides between processes.
+            from .file_lock import atomic_write_text
+            atomic_write_text(self.path, json.dumps(self._data, sort_keys=True))
         except OSError as e:  # never let bookkeeping break a completion
             log.warning("speculative ledger save failed: %s", e)
 

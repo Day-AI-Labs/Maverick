@@ -11,3 +11,27 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Badge access reconciliation & residual-access exceptions"
+consumers = ["security_manager", "ehs_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull access list"
+instruction = "Read the current badge access export and the HR active-employee and termination roster."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile identities"
+instruction = "Match each badge holder to an HR record by employee ID and flag unmatched or duplicate badges."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag residual access"
+instruction = "Identify terminated or transferred personnel who still hold active badge access and rank by sensitivity of the door zone."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Route exceptions"
+instruction = "Route the residual-access exception list to the security manager for revocation sign-off."
+gate = "review"

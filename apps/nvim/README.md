@@ -1,6 +1,6 @@
 # maverick.nvim
 
-Drive the [Maverick](https://github.com/Day-AI-Labs/maverick) agent runtime
+Drive the [Lightwork](https://github.com/Day-AI-Labs/maverick) agent runtime
 from Neovim — a thin front end over the locally installed `maverick` CLI.
 
 ## Install
@@ -9,7 +9,7 @@ lazy.nvim:
 
 ```lua
 {
-  dir = "/path/to/Maverick/apps/nvim",  -- or your fork/checkout
+  dir = "/path/to/Lightwork/apps/nvim",  -- or your fork/checkout
   config = function()
     require("maverick").setup({
       cli = "maverick",   -- path to the CLI

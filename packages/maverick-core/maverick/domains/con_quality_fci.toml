@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "definable-feature QC checklist package"
+consumers = ["quality_manager", "project_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope feature"
+instruction = "Read the spec section and approved submittals for the definable feature of work to derive its acceptance criteria."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build checklist"
+instruction = "Assemble the preparatory, initial, and follow-up QC checklist items tied to each spec requirement."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Log evidence"
+instruction = "Record inspection results and confirm photo evidence is filed and referenced for every checklist item."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Catch gaps"
+instruction = "Flag any item lacking photo evidence or failing acceptance criteria as an open nonconformance."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "QC sign-off"
+instruction = "Route the completed checklist package with evidence to the quality manager for acceptance."
+gate = "review"

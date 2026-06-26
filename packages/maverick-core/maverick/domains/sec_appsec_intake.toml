@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "AppSec triage queue with SLA assignments"
+consumers = ["appsec_lead", "engineering_owner"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Collect findings"
+instruction = "Pull new application-security findings from scanners and intake queues for the triage window."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Dedup and confirm"
+instruction = "Deduplicate against known issues and confirm each finding is exploitable rather than a false positive."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Severity and SLA"
+instruction = "Assign severity using the rating policy and derive the remediation SLA from the matching tier."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route to owner"
+instruction = "Map each confirmed finding to the owning service team based on code ownership and asset records."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Confirm queue"
+instruction = "Present the assigned triage queue to the AppSec lead for sign-off before owners are notified."
+gate = "review"

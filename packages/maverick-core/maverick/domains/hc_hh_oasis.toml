@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "OASIS assessment documentation package"
+consumers = ["home_health_clinician", "clinical_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Identify assessment"
+instruction = "Read the visit record to identify the OASIS time point and the patient episode in scope."
+tools = ["read_file"]
+[[workflow]]
+name = "Gather supporting data"
+instruction = "Pull intake, medication, and prior-assessment data needed to populate the OASIS item set."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Check item completeness"
+instruction = "Verify every required OASIS item has supporting documentation and flag blanks or inconsistencies."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Assemble for clinician"
+instruction = "Compile the documentation package with citations, leaving clinical scoring decisions to the clinician."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Clinician review"
+instruction = "Route the prepared OASIS package to the home health clinician for review and submission."
+gate = "review"

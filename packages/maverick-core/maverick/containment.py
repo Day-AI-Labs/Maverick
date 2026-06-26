@@ -50,9 +50,9 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-log = logging.getLogger(__name__)
+from ._envparse import is_truthy
 
-_TRUE = {"1", "true", "yes", "on"}
+log = logging.getLogger(__name__)
 
 # An unroutable proxy sink: 127.0.0.1:9 ("discard") is refused on any sane
 # host, so proxy-honoring clients (curl, wget, pip, requests, httpx, git)
@@ -113,7 +113,7 @@ def enabled() -> bool:
     ``[containment] enabled = true``."""
     env = os.environ.get("MAVERICK_CONTAINMENT", "").strip().lower()
     if env:
-        return env in _TRUE
+        return is_truthy(env)
     return bool(_containment_cfg().get("enabled"))
 
 

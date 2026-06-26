@@ -15,7 +15,7 @@ security domains; finance is the next, and highest-stakes, tower.
 > agents** — competent finance models are commodity — it is the **governance
 > wrapper**: segregation of duties, maker-checker, dollar-threshold approvals,
 > and a tamper-evident book of record, all enforced by the platform rather than
-> trusted to the model. Maverick already owns those primitives. This suite is
+> trusted to the model. Lightwork already owns those primitives. This suite is
 > the proof that the control plane was built for exactly this.
 
 The cardinal rule, inherited verbatim from the existing
@@ -30,7 +30,7 @@ persona and applied to **every** agent below:
 
 ## Contents
 
-1. [How a finance agent maps onto Maverick](#1-how-a-finance-agent-maps-onto-maverick)
+1. [How a finance agent maps onto Lightwork](#1-how-a-finance-agent-maps-onto-maverick)
 2. [The finance control model (read this first)](#2-the-finance-control-model-read-this-first)
 3. [Per-client customization — the dials](#3-per-client-customization--the-dials)
 4. [The roster — seven towers of the CFO's office](#4-the-roster--seven-towers-of-the-cfos-office)
@@ -51,7 +51,7 @@ persona and applied to **every** agent below:
 
 ---
 
-## 1. How a finance agent maps onto Maverick
+## 1. How a finance agent maps onto Lightwork
 
 Every agent in this doc is **one domain pack** —
 a [`DomainProfile`](../../packages/maverick-core/maverick/domain.py) emitted by
@@ -749,7 +749,7 @@ domains they assure, never the ability to fix what they find (independence).
   samples, checks evidence), tracks **deficiencies/remediation**, and drafts
   §302/§404 support. Monitors **SoD conflicts** across the live roster (2.1) and
   **ITGCs** (access, change, ops) — directly relevant since the "users" are agents.
-- **Connects to:** GRC (AuditBoard, Workiva) `‹build›`; the **Maverick audit chain
+- **Connects to:** GRC (AuditBoard, Workiva) `‹build›`; the **Lightwork audit chain
   itself** (the agents' own activity is auditable evidence); RCM (knowledge).
 - **Capability:** **read-only** across all finance compartments + audit log;
   `test_control`, `log_deficiency`, `run_assessment` (SOX template, §7).
@@ -1050,7 +1050,7 @@ finance set — each becomes a `run_assessment` capability for the agent that ow
 |---|---|---|---|
 | `sox_control` | SOX (5.1) | SOX §404 / COSO | "Is this control's operating effectiveness evidenced for the period?" (no→high); "Is there an SoD conflict in the responsible roles?" (yes→high). |
 | `fraud_risk` | Fraud (5.4) | ACFE / SAS 99 | "Can one person both create and approve a vendor?" (yes→high); "Are vendor bank-detail changes reviewed?" (no→high). |
-| `itgc` | SOX (5.1) | COBIT / SOX ITGC | "Is access to the posting tool least-privileged and logged?" (no→high) — *maps directly onto Maverick's own capability + audit evidence.* |
+| `itgc` | SOX (5.1) | COBIT / SOX ITGC | "Is access to the posting tool least-privileged and logged?" (no→high) — *maps directly onto Lightwork's own capability + audit evidence.* |
 | `credit_risk` | Credit (5.7) | CECL / internal | "Is the customer past terms > 90 days?" (yes→high). |
 | `close_readiness` | GL/Close (1.1) | internal | "Are all balance-sheet accounts reconciled?" (no→high). |
 
@@ -1124,7 +1124,7 @@ Smallest safe loop first; controls before reach (the privacy/compliance order).
 
 ## 10. Honest caveats
 
-- **Maverick supplies the controls and the evidence; it does not certify the
+- **Lightwork supplies the controls and the evidence; it does not certify the
   books.** Agents *draft*; humans *post, pay, file, and certify*. No agent
   attests to ICFR, signs a §302 certification, or files with the SEC/IRS — those
   are human acts the suite supports and audit-trails. (Same liability line as the

@@ -1,13 +1,13 @@
-# "Built with Maverick" badge program — kit
+# "Built with Lightwork" badge program — kit
 
-**Roadmap ref:** 2028-H1 Distribution — '"Built with Maverick" badge
+**Roadmap ref:** 2028-H1 Distribution — '"Built with Lightwork" badge
 program'.
 **Status:** kit complete; producing the badge SVG (blocked on the logo
 assets, same gate as [`swag.md`](./swag.md)) and reviewing the first
 applications is the remaining operational work.
 
 A small, verifiable mark a project may display once it has demonstrated a
-real Maverick integration. The badge is worth something only if it's hard
+real Lightwork integration. The badge is worth something only if it's hard
 to get dishonestly — so issuance rides the existing evidence machinery
 (showcase wall + validator + moderation), and every badge links back to a
 public registry row anyone can check.
@@ -16,7 +16,7 @@ public registry row anyone can check.
 
 | Tier | Who | Verification |
 |---|---|---|
-| **Built with Maverick** | A project/deployment | Showcase-wall evidence standard (below) |
+| **Built with Lightwork** | A project/deployment | Showcase-wall evidence standard (below) |
 | **Validated integration** | Partner integrations | Already defined — the [integration-partnerships](./integration-partnerships.md) checklist; the badge is the visual for that listing |
 | **Award** | [Skill of the Year](./skill-of-the-year.md) winners | That kit's process |
 | **Ambassador** | Program members | [`ambassadors.md`](./ambassadors.md) |
@@ -25,21 +25,21 @@ public registry row anyone can check.
 
 - **SVG, two variants** (light/dark), shield-style two-segment layout in
   the style of the README's existing shields.io badges: left segment the
-  Maverick mark + name, right segment the tier text (`built with` /
+  Lightwork mark + name, right segment the tier text (`built with` /
   `validated vX.Y` / `skill of the year <year>` / `ambassador`).
 - Validated-integration badges **carry the version they validated
   against**; stale per the partnership re-validation cadence.
 - Each issued badge is delivered as the SVG + a canonical embed snippet
   whose link target is the project's **registry row** (below) — not the
-  Maverick homepage — so a click verifies rather than advertises.
+  Lightwork homepage — so a click verifies rather than advertises.
 - No "certified by" wording on the Built-with tier; it attests use, not
   endorsement.
 
 ## Verification step (what earns it)
 
-For the **Built with Maverick** tier, the application is a PR adding the
+For the **Built with Lightwork** tier, the application is a PR adding the
 project to the [showcase wall](../showcase.md), meeting its existing
-qualifying bar — Maverick load-bearing, inspectable setup, and **evidence
+qualifying bar — Lightwork load-bearing, inspectable setup, and **evidence
 of a real run** (a `MAVERICK_TRACE_DIR` trace replayable with
 `maverick diag replay`, or a `maverick export` of the run), secrets
 redacted.
@@ -79,15 +79,15 @@ project, subject to [`TRADEMARK.md`](../../TRADEMARK.md):
 - Implying endorsement, partnership (without a
   [partnership](./integration-partnerships.md)), or official status: not
   permitted.
-- The badge does **not** convey any license to the Maverick software
-  itself ([`LICENSE`](../../LICENSE)) — running Maverick still requires a
+- The badge does **not** convey any license to the Lightwork software
+  itself ([`LICENSE`](../../LICENSE)) — running Lightwork still requires a
   license; the badge attests that a verified project exists, nothing more.
 
 ## Revocation
 
 Revoked (registry row marked, embed link shows it) when: the evidence link
 breaks and isn't repaired after one notice, the project no longer runs on
-Maverick, the showcase entry is removed under its curation rules, a
+Lightwork, the showcase entry is removed under its curation rules, a
 moderation-relevant issue surfaces (e.g. the artifact starts failing the
 checks it passed), or trademark terms are violated. Stale (validated tier
 only) follows the partnership re-validation cadence automatically.

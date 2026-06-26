@@ -14,7 +14,9 @@ import json
 import time
 from pathlib import Path
 
-_STORE = Path.home() / ".maverick" / "benchmarks"
+from .paths import data_dir
+
+_STORE = data_dir("benchmarks")
 _DEFAULT_BASELINE = 5   # runs to average for the baseline
 _DEFAULT_THRESHOLD = 0.05  # 5% relative drop is a regression
 

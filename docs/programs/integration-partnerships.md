@@ -26,7 +26,7 @@ Two principles, non-negotiable:
 |---|---|---|---|
 | Who | Anyone | Vendor with a maintained integration | Vendor with a maintained integration + support commitment |
 | Agreement | None | Lightweight letter (validation + listing terms) | Signed partnership agreement |
-| Technical bar | Works for their users | Passes the validation checklist below, re-run per Maverick minor release | Tier 1 + signed artifacts + a named technical contact + the reliability drill |
+| Technical bar | Works for their users | Passes the validation checklist below, re-run per Lightwork minor release | Tier 1 + signed artifacts + a named technical contact + the reliability drill |
 | Listing | None implied | Row in the relevant integrations doc, "validated against vX.Y" | Row marked certified + entry in release-notes compatibility table |
 | Co-marketing | Nominative use only ([`TRADEMARK.md`](../../TRADEMARK.md)) | Joint blog post permitted (boundaries below) | Tier 1 + joint webinar/booth presence permitted |
 | Support | Community channels | Shared issue-triage expectations (below) | Cross-escalation path with response-time commitments |
@@ -47,12 +47,12 @@ no bespoke certification harness.
 
 - [ ] **Works against a tagged release** (not `main`), version recorded in
       the listing.
-- [ ] **No license violation**: the integration drives Maverick over public
+- [ ] **No license violation**: the integration drives Lightwork over public
       surfaces (MCP, gRPC, REST, plugin SDKs, `base_url`); it does not
-      redistribute, embed, or fork Maverick code — that requires a separate
+      redistribute, embed, or fork Lightwork code — that requires a separate
       commercial license from the Licensor ([`LICENSE`](../../LICENSE)).
 - [ ] **Honest claims**: the partner's own marketing describes only what the
-      integration does; Maverick capability claims must be grounded in
+      integration does; Lightwork capability claims must be grounded in
       [`FEATURES.md`](../FEATURES.md).
 
 ### Plugin-shaped integrations (tools, channels, sandbox backends)
@@ -90,12 +90,12 @@ no bespoke certification harness.
       against recorded fixtures (the `FakeLLM` pattern — never live keys in
       CI), per CONTRIBUTING "Adding a provider".
 - [ ] Observability: traces verified to carry the OTel GenAI
-      semantic-convention attributes Maverick emits (see Observability in
+      semantic-convention attributes Lightwork emits (see Observability in
       `FEATURES.md`) — the partner maps nothing custom.
 
 ### Re-validation cadence
 
-Per Maverick **minor** release, the partner re-runs the checklist within
+Per Lightwork **minor** release, the partner re-runs the checklist within
 30 days or the listing gains a "last validated: vX.Y" staleness note; two
 missed cycles delists. The deprecation registry (`python -m
 maverick.deprecations`) tells partners what's sunsetting and when.
@@ -108,14 +108,14 @@ application of it.
 
 **Any tier (including non-partners):**
 
-- May state factually: "works with Maverick", "integrates with Maverick" —
+- May state factually: "works with Lightwork", "integrates with Lightwork" —
   nominative use.
-- May **not** use the Maverick name/logo in their product name, domain,
+- May **not** use the Lightwork name/logo in their product name, domain,
   package name, or advertising; may not imply endorsement, affiliation, or
-  "official" status; may not publish Maverick benchmark claims that aren't
+  "official" status; may not publish Lightwork benchmark claims that aren't
   measured rows in `benchmarks/RESULTS.md`.
 
-**Tier 1 adds:** "validated for Maverick vX.Y" wording (exact phrase set by
+**Tier 1 adds:** "validated for Lightwork vX.Y" wording (exact phrase set by
 us), one joint blog post per validation cycle (we review claims before
 publication; review SLA: 5 business days), listing in our integrations docs.
 
@@ -125,9 +125,9 @@ exchange for press (subject to the press-kit claims policy in
 [`press-and-case-studies.md`](./press-and-case-studies.md)).
 
 **Never, at any tier:** logo placement implying co-ownership, "powered by
-Maverick" for products that merely connect to it, exclusivity claims,
+Lightwork" for products that merely connect to it, exclusivity claims,
 case-study claims without the evidence table from the case-study template,
-or any statement that Maverick is or will be open source.
+or any statement that Lightwork is or will be open source.
 
 ## Support & SLA expectations
 

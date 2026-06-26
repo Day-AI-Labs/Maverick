@@ -42,7 +42,11 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # without dashes), so we require an obvious AWS context word
     # within ~50 chars.
     ("aws_secret_access",  re.compile(
-        r"(?i)(?:aws_secret_access_key|aws_secret)[\s=:\"']{1,5}"
+        # Separator window widened from {1,5} to {1,16}: aligned/indented config
+        # (`aws_secret_access_key      = KEY`, YAML/INI with padding) routinely
+        # exceeds 5 separator chars, which silently left the 40-char key
+        # unredacted. Still bounded (ReDoS-safe) and the charset is unchanged.
+        r"(?i)(?:aws_secret_access_key|aws_secret)[\s=:\"']{1,16}"
         r"([A-Za-z0-9/+=]{40})"
     )),
     ("github_pat_classic", re.compile(r"\bghp_[A-Za-z0-9]{36,40}\b")),
@@ -111,7 +115,11 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
         # newline is already consumed by the `(?:^|\n)` anchor.
         r"(?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*"
         r"(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*"
-        r"(?P<val>[^\s\n]+)",
+        # Value: a quoted string (single OR double) captured WHOLE, else an
+        # unquoted run up to whitespace. The prior `[^\s\n]+` stopped at the
+        # first space, so `API_TOKEN="my secret value"` redacted only `"my` and
+        # leaked ` secret value"` to the audit log / model context.
+        r"(?P<val>\"[^\"\n]*\"|'[^'\n]*'|[^\s\n]+)",
         re.MULTILINE,
     )),
 ]

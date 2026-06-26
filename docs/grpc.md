@@ -1,8 +1,8 @@
 # gRPC API
 
-Maverick exposes a small gRPC surface for driving the agent runtime from any
+Lightwork exposes a small gRPC surface for driving the agent runtime from any
 language: start a goal, stream its episode events, cancel it, and read status.
-It is the cross-language complement to the [MCP server](./api.md) — pick gRPC
+It is the cross-language complement to the [REST API](./api.md) — pick gRPC
 when you want a typed, streaming RPC contract and your own client codegen.
 
 ## Install & run
@@ -21,12 +21,18 @@ proto to generate a client in Go, Rust, TypeScript, C#, Java, etc.
 
 ## Service
 
+The proto identifier is `service Maverick` in `package maverick.v1` — these
+wire names are STABLE and frozen by the contract gate, so they keep the
+original product name even though the docs are branded "Lightwork". Use them
+verbatim in your codegen.
+
 ```proto
 service Maverick {
   rpc StartGoal(StartGoalRequest) returns (StartGoalResponse);
   rpc StreamEpisode(StreamEpisodeRequest) returns (stream Event);
   rpc Cancel(CancelRequest) returns (CancelResponse);
   rpc GetStatus(GetStatusRequest) returns (GoalStatus);
+  rpc RunGoal(RunGoalRequest) returns (GoalStatus);
 }
 ```
 
@@ -40,6 +46,9 @@ service Maverick {
   boundary (in-flight cooperative cancellation rides the global killswitch the
   agent loop already checks).
 - **GetStatus** returns the point-in-time status + result.
+- **RunGoal** runs an *existing* goal row to completion and blocks until it
+  reaches a terminal status — the cross-host Dispatcher seam, where the caller
+  and the worker share the world DB.
 
 The full message definitions are in
 [`maverick.proto`](https://github.com/Day-AI-Labs/maverick/blob/main/packages/maverick-core/maverick/grpc_api/maverick.proto).

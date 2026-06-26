@@ -43,10 +43,21 @@ def test_advanced_all_on_writes_kernel_sections(tmp_path, monkeypatch):
 def test_advanced_all_off_writes_no_sections(tmp_path, monkeypatch):
     cfg = _write(tmp_path, monkeypatch, dict.fromkeys(
         ["cost_aware", "verify_ensemble", "tree_of_thought",
-         "compact_history", "reflexion", "enforce_quotas"], False,
+         "compact_history", "reflexion", "enforce_quotas", "pg_rls"], False,
     ))
-    for section in ("[routing]", "[planning]", "[context]", "[reflexion]", "[quotas]"):
+    for section in ("[routing]", "[planning]", "[context]", "[reflexion]",
+                    "[quotas]", "[world_model]"):
         assert section not in cfg
+
+
+def test_pg_rls_writes_world_model_section_with_prep_reminder(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"pg_rls": True})
+    assert "[world_model]" in cfg
+    assert "rls = true" in cfg
+    # The guided opt-in must point at the prep commands, or NULL-tenant rows vanish.
+    assert "rls-preflight" in cfg and "backfill" in cfg
+    parsed = tomllib.loads(cfg)
+    assert parsed["world_model"]["rls"] is True
 
 
 def test_kernel_modules_read_what_the_wizard_writes(tmp_path, monkeypatch):
@@ -67,6 +78,27 @@ def test_kernel_modules_read_what_the_wizard_writes(tmp_path, monkeypatch):
     assert tree_of_thought.enabled() is True
     assert context_compactor.enabled() is True
     assert reflexion.enabled() is True
+
+
+def test_self_harness_toggle_writes_and_reaches_the_kernel(tmp_path, monkeypatch):
+    """Rule-6: the self-harness wizard toggle writes [self_harness] and the
+    kernel module actually reads it (a capability needs a config knob AND a
+    wizard step -- this proves the step reaches the feature)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_SELF_HARNESS", raising=False)
+    monkeypatch.delenv("MAVERICK_CONFIG", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"self_harness": True})
+    assert "[self_harness]" in cfg and "enable = true" in cfg
+
+    from maverick import self_harness
+    assert self_harness.enabled() is True
+
+
+def test_self_harness_off_writes_no_section(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"self_harness": False})
+    assert "[self_harness]" not in cfg
 
 
 def test_effort_and_cache_prewarm_write_and_are_read(tmp_path, monkeypatch):
@@ -179,6 +211,21 @@ def test_calibration_enforce_writes_and_is_read(tmp_path, monkeypatch):
     assert get_calibration()["enforce"] is True
 
 
+def test_fairness_monitor_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's fairness-monitor toggle writes [fairness_monitor]
+    enable, and the kernel's config reads it back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_FAIRNESS_MONITOR", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"fairness_monitor": True})
+    assert "[fairness_monitor]" in cfg
+    assert "enable = true" in cfg
+
+    from maverick.config import get_fairness_monitor
+    assert get_fairness_monitor()["enable"] is True
+
+
 def test_sota_loop_toggles_write_and_are_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's SOTA-loop toggles write their config sections,
     and the kernel reads each back."""
@@ -195,7 +242,8 @@ def test_sota_loop_toggles_write_and_are_read(tmp_path, monkeypatch):
     for section in ("[adaptive_compute]", "[search]", "[skill_synthesis]", "[experience]"):
         assert section in cfg
 
-    from maverick import adaptive_compute, best_of_n, experience, skill_synthesis
+    from maverick import adaptive_compute, best_of_n, experience
+    from maverick.skill import synthesis as skill_synthesis
     assert adaptive_compute.enabled() is True
     assert best_of_n.enabled() is True
     assert skill_synthesis.enabled() is True
@@ -590,3 +638,49 @@ def test_both_editing_locks_share_one_features_table(tmp_path, monkeypatch):
     from maverick.config import get_features
     feats = get_features()
     assert feats["pack_editing"] is False and feats["role_editing"] is False
+
+
+def test_audit_worm_writes_worm_section(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"audit_worm": True})
+    assert "[audit.worm]" in cfg
+    assert 'provider = "local"' in cfg
+    assert "worm push" in cfg or "worm" in cfg  # points at the command/docs
+    parsed = tomllib.loads(cfg)
+    assert parsed["audit"]["worm"]["provider"] == "local"
+    assert parsed["audit"]["worm"]["retention_days"] == 2555
+
+
+def test_audit_worm_off_writes_no_worm_section(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"audit_worm": False})
+    assert "[audit.worm]" not in cfg
+
+
+def test_dual_approval_writes_security_quorum(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"dual_approval": True})
+    assert "[security]" in cfg
+    assert "approvals_required = 2" in cfg
+    assert "allow_self_approval = false" in cfg
+    parsed = tomllib.loads(cfg)
+    assert parsed["security"]["approvals_required"] == 2
+    from maverick.safety.dual_control import required_approvals
+    monkeypatch.setattr("maverick.safety.dual_control._security_cfg",
+                        lambda: parsed["security"])
+    assert required_approvals("high") == 2   # rule-6: the kernel reads it back
+
+
+def test_dual_approval_off_writes_no_quorum(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"dual_approval": False})
+    assert "approvals_required" not in cfg
+
+
+def test_saml_writes_auth_saml_template(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"saml": True})
+    assert "[auth.saml]" in cfg
+    assert "sp_entity_id" in cfg and "acs_url" in cfg and "idp_metadata_url" in cfg
+    parsed = tomllib.loads(cfg)
+    assert "saml" in parsed["auth"]
+
+
+def test_saml_off_writes_no_section(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"saml": False})
+    assert "[auth.saml]" not in cfg

@@ -40,17 +40,35 @@ _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off", ""})
 
 
+def is_truthy(value: str | None) -> bool:
+    """True iff ``value`` is a recognized truthy token (1/true/yes/on),
+    case-insensitively. The canonical string test so call sites stop
+    re-spelling the literal set (and disagreeing — some omitted ``on``).
+    Use for config values already read as strings."""
+    return (value or "").strip().lower() in _TRUE
+
+
+def coerce_bool(value: object, default: bool = False) -> bool:
+    """Coerce a value of unknown type (env/config string, bool, int, None)
+    to bool. Strings parse via the canonical truthy/falsy sets and fall back
+    to ``default`` when unrecognized; ``None`` is ``default``; anything else
+    uses Python truthiness. Covers the common
+    ``v in _TRUE if isinstance(v, str) else bool(v)`` pattern."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in _TRUE:
+            return True
+        if v in _FALSE:
+            return False
+        return default
+    return bool(value)
+
+
 def env_bool(name: str, default: bool = False) -> bool:
     """Read a boolean env var. Recognizes 1/true/yes/on and 0/false/no/off
     (case-insensitive). Anything unrecognized falls back to ``default``.
     One canonical truthy-set so call sites stop disagreeing (some omitted
     ``on``)."""
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    v = raw.strip().lower()
-    if v in _TRUE:
-        return True
-    if v in _FALSE:
-        return False
-    return default
+    return coerce_bool(os.environ.get(name), default)

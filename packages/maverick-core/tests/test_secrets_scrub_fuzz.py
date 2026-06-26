@@ -126,6 +126,10 @@ _SECRETS = [
     ("env",       "FOO_SECRET=my-Sup3r-secret-value\nnext",             "my-Sup3r-secret-value"),  # pragma: allowlist secret
     ("url_secret","GET /x?api_key=q1w2e3r4t5y6u7 HTTP",                 "q1w2e3r4t5y6u7"),  # pragma: allowlist secret
     ("pem",       "key:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKabc\n-----END RSA PRIVATE KEY-----\nrest", "MIIEpAIBAAKabc"),  # pragma: allowlist secret
+    # lowercase ~/.aws/credentials secret (the 40-char value, not the AKIA id)
+    ("aws_secret","creds aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY tail", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),  # pragma: allowlist secret
+    # colon-delimited (YAML / k8s / log) secret
+    ("env_colon", "DB_PASSWORD: hunter2pass123word\nnext",              "hunter2pass123word"),  # pragma: allowlist secret
 ]
 
 

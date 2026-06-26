@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "TAM/SAM/SOM sizing brief"
+consumers = ["strategy_lead", "executive_team"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame the market"
+instruction = "Read the business context and define the segment boundaries to be sized via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Top-down size"
+instruction = "Size TAM top-down from published market data and date-stamp every external figure used."
+tools = ["web_search", "crunchbase_read"]
+[[workflow]]
+name = "Bottom-up size"
+instruction = "Build the bottom-up SAM/SOM from unit economics and reconcile against the top-down estimate."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Reconcile gap"
+instruction = "Explain divergence between the two methods and flag inference versus sourced fact."
+[[workflow]]
+name = "Brief executives"
+instruction = "Package the TAM/SAM/SOM with trends and caveats into a brief for executive review."
+gate = "review"

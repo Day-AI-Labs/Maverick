@@ -7,7 +7,37 @@ persona = """You are the Business Combination specialist (finance_controllership
 
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 max_risk = "medium"
+effort = "high"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "purchase-price allocation memo"
+consumers = ["controller", "auditor"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read deal docs"
+instruction = "Read the purchase agreement and closing documents to capture consideration transferred and deal terms."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Ingest valuation"
+instruction = "Pull the third-party valuation specialist's fair values for identifiable assets and liabilities rather than inventing them."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build allocation"
+instruction = "Allocate the purchase price across net identifiable assets and compute the residual goodwill and non-controlling interest under ASC 805 and IFRS 3."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Reconcile and document"
+instruction = "Reconcile consideration to net identifiable assets and document every measurement-period adjustment and assumption."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft memo"
+instruction = "Draft the allocation and accounting memo for the human controller to review, never posting or finalizing the entry."
+tools = ["spreadsheet"]
+gate = "review"

@@ -35,9 +35,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-DEFAULT_DIR = Path.home() / ".maverick" / "dreams"
+DEFAULT_DIR = data_dir("dreams")
 DEFAULT_INSIGHTS = DEFAULT_DIR / "insights.ndjson"
 DEFAULT_REHEARSALS = DEFAULT_DIR / "rehearsals.ndjson"
 
@@ -144,6 +146,7 @@ class DreamReport:
     facts_pruned: int = 0
     user_notes_written: int = 0
     skills_quarantined: int = 0
+    learning_frozen: bool = False
     departments: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -358,6 +361,23 @@ def promote_shared_insights(
 
 # ---------- insight store ----------
 
+def _atomic_write_lines(path: Path, lines) -> None:
+    """Write pre-rendered lines (each incl. its trailing newline) to ``path``
+    atomically: a sibling ``.tmp`` is replaced into place and chmod 0600. The
+    tmp/replace/chmod scaffold was copy-pasted across the four NDJSON writers.
+    Raises OSError on failure; callers decide how to report it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for ln in lines:
+            f.write(ln)
+    os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 def load_insights(path: Path | str | None = None) -> list[DreamInsight]:
     p = Path(path) if path is not None else insights_path()
     if not p.exists():
@@ -429,16 +449,9 @@ def append_insights(
     keep = existing[-max(1, max_insights):]
     p = Path(path)
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for ins in keep:
-                f.write(json.dumps(ins.to_dict(), default=str) + "\n")
-        os.replace(tmp, p)
-        try:
-            os.chmod(p, 0o600)
-        except OSError:
-            pass
+        _atomic_write_lines(
+            p, (json.dumps(ins.to_dict(), default=str) + "\n" for ins in keep)
+        )
     except OSError as e:
         log.warning("dreaming: insight write failed: %s", e)
         return 0
@@ -544,15 +557,8 @@ def prune_reflexions(
     if dropped <= 0:
         return 0
     try:
-        tmp = p.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for _, _, ln in reversed(kept):  # restore chronological order
-                f.write(ln)
-        os.replace(tmp, p)
-        try:
-            os.chmod(p, 0o600)
-        except OSError:
-            pass
+        # restore chronological order
+        _atomic_write_lines(p, (ln for _, _, ln in reversed(kept)))
     except OSError as e:
         log.warning("dreaming: reflexion prune failed: %s", e)
         return 0
@@ -563,16 +569,11 @@ def _rewrite_insights(keep: list[DreamInsight], path: Path | str) -> bool:
     """Atomically replace the insight store with ``keep`` (chronological)."""
     p = Path(path)
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for ins in sorted(keep, key=lambda i: i.ts):
-                f.write(json.dumps(ins.to_dict(), default=str) + "\n")
-        os.replace(tmp, p)
-        try:
-            os.chmod(p, 0o600)
-        except OSError:
-            pass
+        _atomic_write_lines(
+            p,
+            (json.dumps(ins.to_dict(), default=str) + "\n"
+             for ins in sorted(keep, key=lambda i: i.ts)),
+        )
         return True
     except OSError as e:
         log.warning("dreaming: insight rewrite failed: %s", e)
@@ -693,8 +694,8 @@ def retire_stale_skills(
     ``retired.ndjson`` line recording when and why. Reversible by moving the
     file back. Returns the retired skill names.
     """
-    from . import skill_stats
-    from .skill_distillation_local import _STORE
+    from .skill import stats as skill_stats
+    from .skill.distillation_local import _STORE
     store_dir = Path(store) if store is not None else _STORE
     if not store_dir.is_dir():
         return []
@@ -784,16 +785,9 @@ def save_rehearsals(cases: list[dict], path: Path | str | None = None) -> int:
     """Replace the rehearsal queue with this cycle's cases (atomic)."""
     p = Path(path) if path is not None else rehearsals_path()
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for c in cases:
-                f.write(json.dumps(c, default=str) + "\n")
-        os.replace(tmp, p)
-        try:
-            os.chmod(p, 0o600)
-        except OSError:
-            pass
+        _atomic_write_lines(
+            p, (json.dumps(c, default=str) + "\n" for c in cases)
+        )
     except OSError as e:
         log.warning("dreaming: rehearsal write failed: %s", e)
         return 0
@@ -958,8 +952,6 @@ def _replay_critiques(
     reflexions. Empty unless trajectory donation is enabled and has records.
     """
     try:
-        import json as _json
-
         from .donation import list_pending
         paths = list_pending(Path(outbox) if outbox is not None else None)
     except Exception:  # pragma: no cover -- donations never block a dream
@@ -967,7 +959,7 @@ def _replay_critiques(
     out: list[dict] = []
     for p in paths[-limit:]:
         try:
-            d = _json.loads(Path(p).read_text(encoding="utf-8"))
+            d = json.loads(Path(p).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         critique = str(d.get("verifier_critique", "") or "").strip()
@@ -1059,7 +1051,7 @@ def _distill_department_skills(
 
     Returns the paths of the skills written THIS cycle (the benchmark canary
     gate quarantines exactly these when the tracked suite is regressing)."""
-    from . import skill_distillation_v2 as _v2
+    from .skill import distillation_v2 as _v2
     saved_paths: list[Path] = []
     for trajectories in by_domain.values():
         if len(trajectories) < max(1, min_cluster):
@@ -1103,6 +1095,55 @@ def _quarantine_new_skills(paths: list[Path]) -> int:
         except OSError as e:  # pragma: no cover
             log.warning("dreaming: quarantine failed for %s: %s", p, e)
     return moved
+
+
+def _consolidate_learning(report, by_domain_success, failures, *,
+                          skill_store, cfg, now) -> list[DreamInsight]:
+    """Distill skills + synthesize insights from this cycle's labeled
+    trajectories -- UNLESS the verifier is frozen.
+
+    Learning-freeze interlock (calibration): when the verifier has stopped
+    discriminating, the success/failure labels feeding this consolidation are
+    untrusted -- distilling skills/insights from them bakes the grader's drift
+    into live, recallable behavior (the reward-hacking the freeze exists to
+    prevent). rehearse() already refuses on a frozen verifier; the consolidation
+    path did not, so the headline interlock was a no-op here. Returns the new
+    insights to persist (empty when frozen)."""
+    try:
+        from .calibration import learning_frozen as _lf
+        report.learning_frozen = bool(_lf())
+    except Exception:  # pragma: no cover -- interlock absent = not frozen
+        report.learning_frozen = False
+    if report.learning_frozen:
+        return []
+
+    min_cluster = int(cfg.get("min_cluster", 2))
+    # CONSOLIDATE successes -> learned skills (evidence-gated + deduped).
+    new_skills = _distill_department_skills(
+        by_domain_success, skill_store=skill_store, min_cluster=min_cluster,
+    )
+    # Benchmark canary: while the tracked suite is regressing, this cycle's
+    # NEW skills are quarantined — never add learned behavior on red.
+    if new_skills and bool(cfg.get("benchmark_gate", True)) and benchmark_regressed():
+        report.skills_quarantined = _quarantine_new_skills(new_skills)
+        new_skills = []
+    report.skills_distilled = len(new_skills)
+
+    # CONSOLIDATE failures -> dream insights, clustered within each department.
+    new_insights: list[DreamInsight] = []
+    by_domain_failure: dict[str | None, list[dict]] = {}
+    for f in failures:
+        by_domain_failure.setdefault(f.get("domain"), []).append(f)
+    for dom, fs in by_domain_failure.items():
+        for cluster in cluster_failures(fs, min_cluster=min_cluster):
+            new_insights.append(synthesize_insight(cluster, domain=dom, now=now))
+    # Shared promotion is limited to generic, unscoped failures; department
+    # failures stay compartment-local and are consolidated only above.
+    if bool(cfg.get("promote_shared", False)):
+        new_insights.extend(promote_shared_insights(
+            failures, min_cluster=min_cluster, now=now,
+        ))
+    return new_insights
 
 
 def dream_cycle(
@@ -1178,32 +1219,10 @@ def dream_cycle(
         if not f.get("domain"):
             f["domain"] = assign_domain(str(f.get("goal_text", "")), signatures)
 
-    # CONSOLIDATE successes -> learned skills (evidence-gated + deduped).
-    _new_skills = _distill_department_skills(
-        by_domain_success, skill_store=skill_store,
-        min_cluster=int(cfg.get("min_cluster", 2)),
+    new_insights = _consolidate_learning(
+        report, by_domain_success, failures,
+        skill_store=skill_store, cfg=cfg, now=now,
     )
-    # Benchmark canary: while the tracked suite is regressing, this cycle's
-    # NEW skills are quarantined — never add learned behavior on red.
-    if _new_skills and bool(cfg.get("benchmark_gate", True)) and benchmark_regressed():
-        report.skills_quarantined = _quarantine_new_skills(_new_skills)
-        _new_skills = []
-    report.skills_distilled = len(_new_skills)
-
-    # REHEARSE failures -> dream insights, clustered within each department.
-    new_insights: list[DreamInsight] = []
-    by_domain_failure: dict[str | None, list[dict]] = {}
-    for f in failures:
-        by_domain_failure.setdefault(f.get("domain"), []).append(f)
-    for dom, fs in by_domain_failure.items():
-        for cluster in cluster_failures(fs, min_cluster=int(cfg.get("min_cluster", 2))):
-            new_insights.append(synthesize_insight(cluster, domain=dom, now=now))
-    # Shared promotion is limited to generic, unscoped failures; department
-    # failures stay compartment-local and are consolidated only above.
-    if bool(cfg.get("promote_shared", False)):
-        new_insights.extend(promote_shared_insights(
-            failures, min_cluster=int(cfg.get("min_cluster", 2)), now=now,
-        ))
     report.insights_written = append_insights(
         new_insights, path=insights_path,
         max_insights=int(cfg.get("max_insights", 100)),
@@ -1281,9 +1300,9 @@ def _audit_cycle(report: DreamReport) -> None:
 def _live_stores() -> dict[str, Path]:
     """The learned-state files/dirs a snapshot covers, resolved per tenant."""
     from . import reflexion as _r
-    from . import skill_stats as _ss
     from . import user_notes as _un
-    from .skill_distillation_local import _STORE
+    from .skill import stats as _ss
+    from .skill.distillation_local import _STORE
     return {
         "reflexions.ndjson": _r.default_path(),
         "insights.ndjson": Path(insights_path()),
@@ -1410,7 +1429,50 @@ def rollback_learning_state(
                     tmp.unlink()
             except OSError:
                 pass
+    # A store ABSENT from the snapshot but present live now was CREATED during
+    # the cycle being rolled back; remove it so the rollback is a FULL revert
+    # (see _remove_post_snapshot_stores).
+    restored.extend(_remove_post_snapshot_stores(src_dir, stores))
     return restored
+
+
+def _remove_post_snapshot_stores(
+    src_dir: Path, stores: dict[str, Path],
+) -> list[str]:
+    """Delete live stores absent from the snapshot (created during the cycle).
+
+    ``snapshot_learning_state`` skips stores that don't exist yet, so the
+    restore loop never touches a store created mid-cycle (e.g. the first-ever
+    ``insights.ndjson`` / ``learned-skills/`` on a fresh tenant). Without this a
+    newly-created store SURVIVES the rollback -- a partial revert that defeats
+    the "fully restored or unchanged" guarantee ``learning_rollout`` relies on
+    (a failed promotion would leave a just-distilled poisoned skill on disk).
+    Each is removed via rename-aside so a failure can't half-delete a dir store.
+    """
+    import shutil
+    removed: list[str] = []
+    for name, live in stores.items():
+        if (src_dir / name).exists():
+            continue  # in the snapshot -> handled by the restore loop
+        live = Path(live)
+        if not live.exists():
+            continue
+        tmp = live.with_name(live.name + ".rollbackdel")
+        try:
+            if tmp.is_dir():
+                shutil.rmtree(tmp, ignore_errors=True)
+            elif tmp.exists():
+                tmp.unlink()
+            os.replace(live, tmp)  # the live store vanishes in one atomic rename
+            if tmp.is_dir():
+                shutil.rmtree(tmp, ignore_errors=True)
+            else:
+                tmp.unlink(missing_ok=True)
+            removed.append(name)
+        except OSError as e:
+            log.warning(
+                "dreaming: rollback could not remove post-snapshot %s: %s", name, e)
+    return removed
 
 
 def dream_cycle_dry(world: Any | None = None, **kwargs) -> DreamReport:

@@ -65,7 +65,7 @@ def test_enabled_keeps_orchestrator_at_premium_tier(_clean, monkeypatch):
 
 
 def test_router_premium_prefers_opus_4_8_over_4_7():
-    from maverick import cost_router
+    from maverick.cost import router as cost_router
     # Both opus rows are premium at equal cost; 4-8 is listed first so it
     # wins the cost sort (stable). Confirms enabling routing doesn't
     # regress the flagship to the prior generation.
@@ -75,7 +75,7 @@ def test_router_premium_prefers_opus_4_8_over_4_7():
 
 
 def test_signal_for_role_tiers():
-    from maverick import cost_router
+    from maverick.cost import router as cost_router
     assert cost_router.signal_for_role("orchestrator").tier == cost_router.TIER_PREMIUM
     assert cost_router.signal_for_role("summarizer").tier == cost_router.TIER_CHEAP
     assert cost_router.signal_for_role("coder").tier == cost_router.TIER_BASE
@@ -103,7 +103,7 @@ def test_config_provider_key_is_passed_to_provider_client(_clean, monkeypatch, t
     class DummyClient:
         pass
 
-    def fake_get_provider_client(name, api_key=None, base_url=None):
+    def fake_get_provider_client(name, api_key=None, base_url=None, default_headers=None):
         calls.append((name, api_key))
         return DummyClient()
 

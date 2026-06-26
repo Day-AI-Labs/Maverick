@@ -77,6 +77,28 @@ def test_signed_message_drives_handler_and_replies(monkeypatch):
     ch.send.assert_awaited_once_with(SENDER, "the reply")
 
 
+def test_handler_exception_reply_is_redacted(monkeypatch):
+    # On a handler error the user must get a generic message, NOT the raw
+    # exception text -- it can carry a credential / internal path. Every other
+    # channel redacts; whatsapp_cloud used to forward f"error: {e}".
+    secret = "boom token=sk-SECRET path=/etc/passwd"  # pragma: allowlist secret
+    ch = _channel(handler=AsyncMock(side_effect=RuntimeError(secret)))
+    ch.send = AsyncMock()
+    monkeypatch.setattr(
+        "maverick.world_model.WorldModel",
+        MagicMock(side_effect=RuntimeError("no db")),
+    )
+    client = TestClient(ch._app)
+    body = json.dumps(_event()).encode()
+    r = client.post("/webhook/whatsapp-cloud", content=body,
+                    headers={"X-Hub-Signature-256": _sign(body)})
+    assert r.status_code == 200
+    ch.send.assert_awaited_once()
+    sent = ch.send.await_args.args[1]
+    assert secret not in sent and "sk-SECRET" not in sent
+    assert sent == "⚠ An internal error occurred."
+
+
 def test_bad_signature_403():
     ch = _channel()
     client = TestClient(ch._app)
@@ -235,3 +257,24 @@ def test_extract_messages_ignores_junk_keeps_valid():
     # Junk shapes flatten to nothing rather than raising.
     for junk in (None, "x", 5, [], {"entry": [None, "x", {"changes": [5]}]}):
         assert WhatsAppCloudChannel._extract_messages(junk) == []
+
+
+def test_handler_exception_returns_generic_reply(monkeypatch):
+    # A handler error must NOT echo the raw exception (paths/detail) to the
+    # external sender; a generic message goes out and the detail is only logged.
+    ch = _channel()
+    ch.send = AsyncMock()
+    ch.handler = AsyncMock(side_effect=RuntimeError("/srv/secret/path leaked!"))
+    monkeypatch.setattr(
+        "maverick.world_model.WorldModel",
+        MagicMock(side_effect=RuntimeError("no db")),
+    )
+    client = TestClient(ch._app)
+    body = json.dumps(_event()).encode()
+    r = client.post("/webhook/whatsapp-cloud", content=body,
+                    headers={"X-Hub-Signature-256": _sign(body)})
+    assert r.status_code == 200
+    ch.send.assert_awaited_once()
+    sent_text = ch.send.await_args.args[1]
+    assert sent_text == "⚠ An internal error occurred."
+    assert "secret" not in sent_text and "/srv" not in sent_text  # no leak

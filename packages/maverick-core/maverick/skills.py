@@ -20,10 +20,11 @@ from pathlib import Path
 from .blackboard import Blackboard
 from .budget import Budget
 from .llm import LLM, model_for_role
+from .paths import data_dir
 
 log = logging.getLogger(__name__)
 
-SKILLS_DIR = Path.home() / ".maverick" / "skills"
+SKILLS_DIR = data_dir("skills")
 # First-party skills shipped INSIDE the package (vs. user-installed skills under
 # SKILLS_DIR). Resolved via __file__ so it works from an installed wheel too.
 BUILTIN_SKILLS_DIR = Path(__file__).parent / "skills_builtin"
@@ -99,7 +100,17 @@ class Skill:
             if not line:
                 continue
             if line.startswith("  - ") and current_key:
-                meta.setdefault(current_key, []).append(line[4:].strip())
+                bucket = meta.setdefault(current_key, [])
+                # A list item under a key that already holds a scalar value is
+                # malformed YAML (a key is a scalar OR a list, not both). Raise
+                # ValueError -- the documented failure mode for this function --
+                # rather than leaking AttributeError from str.append(), which an
+                # ``except ValueError`` around skill loading would not catch.
+                if not isinstance(bucket, list):
+                    raise ValueError(
+                        f"malformed skill frontmatter: '{current_key}:' has both a "
+                        "scalar value and a list item")
+                bucket.append(line[4:].strip())
             elif ":" in line:
                 k, _, v = line.partition(":")
                 k = k.strip()
@@ -261,7 +272,24 @@ def available_skills(skills_dir: Path = SKILLS_DIR) -> list[Skill]:
     if _builtin_skills_enabled():
         for s in load_builtin_skills():
             by_name[s.name] = s
+    # Re-verify signatures at LOAD when [skills] require_signed is set: a skill
+    # file dropped directly into SKILLS_DIR (or with its sig stripped after
+    # install) is attacker-writable and its body lands in the system prompt at
+    # recall. Install-time verification doesn't cover that. No-op in the default
+    # config (require_signed off); builtin (shipped) skills are trusted by
+    # packaging and exempt.
+    require_signed = False
+    try:
+        from . import config as _config
+        require_signed = bool(_config.get_skills().get("require_signed"))
+    except Exception:  # pragma: no cover -- never block recall on config
+        require_signed = False
     for s in load_skills(skills_dir):  # user dir wins on a name collision
+        if require_signed:
+            try:
+                _verify_skill_signature(s, require_signature=True)
+            except Exception:
+                continue  # unsigned/untrusted under require_signed -> not recalled
         by_name[s.name] = s
     return list(by_name.values())
 
@@ -276,7 +304,7 @@ def _decay_weights(names: list[str]) -> dict[str, float]:
     1.0 and ranking is unchanged.
     """
     try:
-        from . import skill_stats
+        from .skill import stats as skill_stats
         return skill_stats.decay_weights(names)
     except Exception:  # pragma: no cover -- stats never block recall
         return dict.fromkeys(names, 1.0)
@@ -301,7 +329,9 @@ def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3,
         # never injected; decay only re-orders skills that already cleared it.
         if score > 0 and score >= min_score:
             scored.append((score * weights.get(s.name, 1.0), s))
-    scored.sort(key=lambda x: -x[0])
+    # Deterministic tie-break by name (matches the BM25 + embedding paths): equal
+    # scores must not resolve to nondeterministic input order.
+    scored.sort(key=lambda x: (-x[0], x[1].name))
     return [s for _, s in scored[:max_n]]
 
 
@@ -334,7 +364,7 @@ def relevant_skills(goal: str, all_skills: list[Skill], max_n: int = 3) -> list[
     except Exception:  # pragma: no cover -- config never blocks recall
         embed_threshold, lexical_min = 0.35, 0.0
     try:
-        from .skill_embeddings import relevant_skills_embed
+        from .skill.embeddings import relevant_skills_embed
         result = relevant_skills_embed(goal, all_skills, max_n=max_n, threshold=embed_threshold)
         if result is not None:
             return result

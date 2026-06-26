@@ -13,3 +13,28 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["ops"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "supply resilience & reshoring strategy"
+consumers = ["procurement_manager", "supply_chain_director"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Map dependency"
+instruction = "Read the sourcing footprint to map single-source nodes, geographic concentration, and lead-time exposure."
+tools = ["read_file", "knowledge_search", "sql_query"]
+[[workflow]]
+name = "Screen health"
+instruction = "Screen in-scope suppliers for financial-health and sanctions/forced-labor signals and route any hit to a human."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Model scenarios"
+instruction = "Model dual/multi-sourcing options and tariff and reshoring scenarios with their cost and lead-time deltas."
+tools = ["spreadsheet", "sql_query", "web_search"]
+[[workflow]]
+name = "Draft strategy"
+instruction = "Draft the resilience strategy with recommended options, stated assumptions, and cited sources, and route it to the director."
+tools = ["read_file", "knowledge_search"]
+gate = "review"

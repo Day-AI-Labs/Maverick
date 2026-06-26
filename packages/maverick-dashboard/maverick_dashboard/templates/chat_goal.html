@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}goal #{{ goal.id }} · Maverick{% endblock %}
+{% block title %}goal #{{ goal.id }} · Lightwork{% endblock %}
 {% block content %}
 <style>
   /* Goal as a conversation — same column + composer language as /chat, so
@@ -93,7 +93,7 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* The reply composer appears (sticky, at the bottom) only when the agent
-     needs an answer — Maverick goals run autonomously between asks. */
+     needs an answer — Lightwork goals run autonomously between asks. */
   .ask {
     position: sticky; bottom: var(--space-4); margin-top: var(--space-5);
     background: var(--surface-1); border: 1px solid var(--border);
@@ -147,7 +147,7 @@
         <rect x="1" y="1" width="20" height="20" rx="6.5" fill="var(--brand)"/>
         <circle cx="11" cy="11" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/>
       </svg>
-      Maverick
+      Lightwork
     </div>
     <p id="goal-action-msg" role="status" aria-live="polite" class="muted" style="min-height: 1em; margin: 0 0 0.75rem;"></p>
     <div class="worklog">
@@ -264,7 +264,7 @@
     <p id="question-text" class="ask__text"></p>
     <form id="answer-form" class="ask__row">
       <input type="text" id="answer-input" required
-             placeholder="Reply to Maverick…" aria-label="Your answer to the agent's question"
+             placeholder="Reply to Lightwork…" aria-label="Your answer to the agent's question"
              class="ask__field" />
       <button type="submit" class="ask__send" aria-label="Send reply">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">

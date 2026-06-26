@@ -42,7 +42,8 @@ def test_world_model_default_db_is_isolated():
 
 
 def test_import_frozen_path_constants_are_isolated():
-    from maverick import self_learning, skill_stats, skills
+    from maverick import self_learning, skills
+    from maverick.skill import stats as skill_stats
 
     real = str(_real_home())
     frozen = {

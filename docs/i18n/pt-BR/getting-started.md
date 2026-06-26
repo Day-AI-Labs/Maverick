@@ -93,7 +93,7 @@ Execute o assistente novamente a qualquer momento:
 maverick init
 ```
 
-Ou edite `~/.maverick/config.toml` diretamente. A seção `[models]` mapeia cada papel de agente para uma string `provider:model-id`. Consulte [`configuration.md`](./configuration.md) para ver o esquema.
+Ou edite `~/.maverick/config.toml` diretamente. A seção `[models]` mapeia cada papel de agente para uma string `provider:model-id`. Consulte [`configuration.md`](../../configuration.md) para ver o esquema.
 
 ## Onde os dados ficam
 

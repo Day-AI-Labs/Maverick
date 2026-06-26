@@ -1,0 +1,367 @@
+"""Skill-marketplace federation — signed listing bundles between instances.
+
+``export_listings`` packs this instance's marketplace listings (the real
+storage: :func:`maverick.catalog.load_catalog` entries — the merged, curated
+catalog indexes this host trusts) into a versioned, Ed25519-signed envelope::
+
+    {"schema": "maverick-marketplace-fed/1", "origin", "created_at",
+     "listings": [...], "pubkey", "key_id", "sig"}
+
+``import_listings`` applies a peer's envelope, **fail-closed**:
+
+  1. signature verified against the *pinned* key for the envelope's origin
+     (``[federation] marketplace_peers``); bad/missing signature, unknown
+     origin, or a missing ``cryptography`` library all reject the whole
+     envelope and persist nothing;
+  2. every listing is re-run through the LOCAL moderation gauntlet
+     (``maverick.tools.marketplace_moderation._scan`` — projected as
+     ``{title: name, description: summary, tags: [kind]}``, the closest
+     honest mapping of a catalog entry onto the gauntlet's fields); only
+     APPROVE becomes visible, REVIEW/REJECT are recorded with reasons;
+  3. a declared ``donation_url`` is re-validated
+     (``marketplace_donations.validate_donation_url``); invalid links are
+     stripped (the listing itself may still be fine — the link is the risk);
+  4. accepted listings are namespaced ``"<origin>/<name>"``. Origins are
+     restricted to ``[a-z0-9._-]`` (no ``/``), so an imported name can never
+     equal a plain local listing name — imports cannot shadow local entries.
+
+Imports persist to ``data_dir("marketplace_federation_imports.json")``
+(atomic, 0600), where one import *replaces* that origin's previous set (a
+re-sync, so renames/withdrawals propagate and the store stays bounded).
+Browse/install surfaces opt in by merging :func:`imported_listings`; nothing
+auto-installs.
+
+**Ratings do NOT federate.** Local ratings (``marketplace_ratings``) are the
+operator's own first-person stars; a peer's aggregates are self-asserted
+numbers whose provenance this protocol cannot verify (no per-rater identity
+or signature), so exports strip ``rating``/``ratings_count`` — along with
+``verified`` and ``install_count``, which are equally self-asserted display
+fields.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import re
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+from ..catalog import VALID_KINDS, CatalogEntry
+from ..federation_envelope import (
+    local_origin,
+    peer_allowlist,
+    sign_envelope,
+    verify_envelope,
+)
+from .donations import validate_donation_url
+
+log = logging.getLogger(__name__)
+
+SCHEMA = "maverick-marketplace-fed/1"
+MAX_LISTINGS_PER_ENVELOPE = 500
+# Reserved store key: {origin: last-applied envelope created_at, epoch seconds}.
+# Imports use re-sync semantics (each replaces the origin's previous set), so a
+# replayed OLDER envelope would roll the origin back — resurrecting a withdrawn
+# listing (e.g. one pulled because it was malicious) under a still-valid old
+# signature. We reject any envelope whose created_at isn't strictly newer than
+# the last one applied from that origin (this also blocks exact-replay of the
+# latest). Not a listing kind, so iterators skip it.
+_WATERMARK_KEY = "__watermarks__"
+
+# The identity/install fields a listing federates with. Self-asserted display
+# aggregates (rating, ratings_count, verified, install_count) are intentionally
+# absent — see module docstring. donation_url is carried when the raw listing
+# declares one (CatalogEntry does not model it, so entry-built exports won't).
+# Conservative listing-name shape: starts alphanumeric, then alnum/._@- only
+# (no `/`, no whitespace/control, no leading dot). Covers kebab/identifier/
+# dotted/scoped catalog names while blocking key-injection and traversal shapes.
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
+
+_EXPORT_KEYS = ("name", "version", "kind", "summary", "source", "sha256",
+                "author", "spec", "donation_url")
+
+
+def _iso(now: float) -> str:
+    return datetime.fromtimestamp(now, tz=timezone.utc).isoformat()
+
+
+def _parse_iso_epoch(value: object) -> float | None:
+    """Parse an ISO-8601 ``created_at`` to epoch seconds; None if unparseable.
+
+    A naive timestamp is treated as UTC (``export_listings`` always emits a
+    tz-aware UTC string, so this only matters for a malformed peer)."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def _listing_for_export(raw: object) -> dict | None:
+    if isinstance(raw, CatalogEntry):
+        raw = raw.to_dict()
+    if not isinstance(raw, dict):
+        return None
+    name = str(raw.get("name") or "").strip()
+    kind = raw.get("kind")
+    if not name or kind not in VALID_KINDS:
+        return None
+    # A peer controls `name`, and on import it becomes the dict key
+    # f"{origin}/{name}". Unlike `origin` (validated by _ORIGIN_RE), name was
+    # only stripped -- a `/` would inject extra path segments into the key and a
+    # leading `..`/control char yields confusing/unsafe display strings. Require
+    # a conservative identifier shape (no `/`, no leading dot, no whitespace/
+    # control); a hostile name is dropped as malformed.
+    if not _SAFE_NAME.match(name):
+        return None
+    out = {k: raw[k] for k in _EXPORT_KEYS if raw.get(k) not in (None, "", {}, [])}
+    out["name"] = name
+    return out
+
+
+def export_listings(
+    kinds: list[str] | tuple[str, ...] | None = None,
+    *,
+    entries: list | None = None,
+    origin: str | None = None,
+    now: float | None = None,
+) -> dict:
+    """Build a signed ``maverick-marketplace-fed/1`` envelope of local listings.
+
+    ``entries`` injects the listings directly (``CatalogEntry`` objects or raw
+    listing dicts) — the offline/test seam. Without it, listings come from the
+    real storage, :func:`maverick.catalog.load_catalog`, per kind (which serves
+    its on-disk cache when offline). Raises
+    :class:`maverick.federation_envelope.FederationError` if signing is
+    unavailable — an unsigned bundle is never produced.
+    """
+    if entries is None:
+        from ..catalog import load_catalog
+        entries = []
+        for kind in (kinds or VALID_KINDS):
+            try:
+                entries.extend(load_catalog(kind))
+            except Exception as e:  # one bad kind must not hide the rest
+                log.warning("marketplace federation: load_catalog(%s) failed: %s", kind, e)
+    listings = []
+    for raw in entries[:MAX_LISTINGS_PER_ENVELOPE]:
+        listing = _listing_for_export(raw)
+        if listing is not None:
+            listings.append(listing)
+    payload = {
+        "schema": SCHEMA,
+        "origin": origin or local_origin(),
+        "created_at": _iso(time.time() if now is None else now),
+        "listings": listings,
+    }
+    return sign_envelope(payload)
+
+
+# ---------------------------------------------------------------------------
+# Import side
+# ---------------------------------------------------------------------------
+
+def _store_path(path: Path | None = None) -> Path:
+    if path is not None:
+        return Path(path)
+    from ..paths import data_dir
+    return data_dir() / "marketplace_federation_imports.json"
+
+
+def _load_store(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_store(path: Path, data: dict) -> None:
+    # Unique temp + os.replace (0600): a fixed ".tmp" collides between two
+    # concurrent imports (one os.replace moves it out from under the other).
+    from ..file_lock import atomic_write_text
+    atomic_write_text(path, json.dumps(data, ensure_ascii=False, sort_keys=True))
+
+
+# Serializes the whole import_listings load-modify-save. Two concurrent imports
+# from DIFFERENT origins both load the same store; the second save (built on the
+# pre-first-write snapshot) clobbers the first origin's listings AND its rollback
+# watermark -- reopening the replay window the watermark exists to close.
+_IMPORT_LOCK = threading.Lock()
+
+
+def _import_locked(path: Path):
+    from contextlib import ExitStack
+
+    from ..file_lock import cross_process_lock
+    stack = ExitStack()
+    stack.enter_context(_IMPORT_LOCK)
+    stack.enter_context(cross_process_lock(path))
+    return stack
+
+
+def _moderate(name: str, summary: str, kind: str) -> dict:
+    """Run the local moderation gauntlet on a federated listing.
+
+    Projection onto the gauntlet's fields: title=name, description=summary,
+    tags=[kind] (a catalog entry has no free-form tags; its kind is the one
+    real category it carries).
+    """
+    from ..tools.marketplace_moderation import _scan
+    return _scan({"title": name, "description": summary, "tags": [kind]})
+
+
+def import_listings(
+    envelope: object,
+    *,
+    peers: dict[str, dict] | None = None,
+    store_path: Path | None = None,
+    now: float | None = None,
+) -> dict:
+    """Verify + apply a peer's listing bundle. Returns a report dict::
+
+        {"ok", "reason", "origin", "accepted": [namespaced names],
+         "rejected": [{"name", "reasons"}], "stripped_donations": [names]}
+
+    Fail-closed: an envelope that fails signature/origin verification (or is
+    oversized/malformed) persists **nothing** and reports ``ok=False``.
+    """
+    report: dict = {"ok": False, "reason": "", "origin": "", "accepted": [],
+                    "rejected": [], "stripped_donations": []}
+    if peers is None:
+        peers = peer_allowlist("marketplace_peers")
+    ok, reason = verify_envelope(envelope, expected_schema=SCHEMA, peers=peers)
+    if not ok:
+        report["reason"] = reason
+        log.warning("marketplace federation: rejected envelope: %s", reason)
+        return report
+    assert isinstance(envelope, dict)  # verify_envelope guarantees this
+    origin = envelope["origin"]
+    report["origin"] = origin
+    # Agent Trust Plane: when engaged, the (signature-verified) origin must also
+    # be a registered, inbound-permitted agent (single allowlist). No-op when
+    # disengaged (kernel rule 1).
+    from .. import agent_trust
+    decision = agent_trust.decide_inbound(origin)
+    if decision.denied:
+        agent_trust.record_denied(origin, decision, direction="inbound")
+        report["reason"] = decision.reason
+        return report
+    listings = envelope.get("listings")
+    if not isinstance(listings, list):
+        report["reason"] = "listings is not a list"
+        return report
+    if len(listings) > MAX_LISTINGS_PER_ENVELOPE:
+        report["reason"] = (
+            f"envelope carries {len(listings)} listings "
+            f"(max {MAX_LISTINGS_PER_ENVELOPE})"
+        )
+        return report
+
+    # Rollback guard: the import replaces this origin's whole set, so an older
+    # envelope replayed here would resurrect withdrawn listings. created_at is
+    # inside the signed body (can't be altered without breaking the signature);
+    # require it strictly newer than the last applied import from this origin.
+    created = _parse_iso_epoch(envelope.get("created_at"))
+    if created is None:
+        report["reason"] = "missing or malformed created_at"
+        return report
+    path = _store_path(store_path)
+    # Whole load-modify-save under the lock so two concurrent imports from
+    # different origins can't clobber each other's listings + rollback watermark.
+    with _import_locked(path):
+        store = _load_store(path)
+        watermarks = store.get(_WATERMARK_KEY)
+        if not isinstance(watermarks, dict):
+            watermarks = {}
+        prev = watermarks.get(origin)
+        if isinstance(prev, (int, float)) and created <= prev:
+            report["reason"] = (
+                "stale envelope: created_at is not newer than the last applied "
+                "import from this origin (replay/rollback?)")
+            return report
+
+        ts = time.time() if now is None else now
+        accepted: dict[str, dict[str, dict]] = {}
+        for raw in listings:
+            listing = _listing_for_export(raw)
+            if listing is None:
+                name = str(raw.get("name", "?")) if isinstance(raw, dict) else "?"
+                report["rejected"].append({"name": name, "reasons": ["malformed listing"]})
+                continue
+            name = listing["name"]
+            kind = listing["kind"]
+            verdict = _moderate(name, str(listing.get("summary", "")), kind)
+            if verdict["decision"] != "APPROVE":
+                report["rejected"].append(
+                    {"name": name,
+                     "reasons": [f"moderation {verdict['decision']}"] + verdict["reasons"]})
+                continue
+            if "donation_url" in listing:
+                d_ok, d_reason = validate_donation_url(listing["donation_url"])
+                if not d_ok:
+                    listing.pop("donation_url")
+                    report["stripped_donations"].append(name)
+                    log.info("marketplace federation: stripped donation_url on %s/%s: %s",
+                             origin, name, d_reason)
+            namespaced = f"{origin}/{name}"
+            listing["name"] = namespaced
+            listing["fed_origin"] = origin
+            listing["fed_name"] = name
+            listing["imported_at"] = round(ts, 3)
+            accepted.setdefault(kind, {})[namespaced] = listing
+            report["accepted"].append(namespaced)
+
+        # Re-sync semantics: this import replaces the origin's previous set, so
+        # withdrawn/renamed listings disappear and the store stays bounded. (store
+        # was loaded above for the rollback check; reuse it.)
+        for kind, by_name in store.items():
+            if kind == _WATERMARK_KEY:
+                continue  # reserved metadata, not a listing kind
+            if isinstance(by_name, dict):
+                store[kind] = {n: v for n, v in by_name.items()
+                               if not n.startswith(f"{origin}/")}
+        for kind, by_name in accepted.items():
+            store.setdefault(kind, {}).update(by_name)
+        # Advance this origin's rollback watermark only after a successful apply.
+        watermarks[origin] = created
+        store[_WATERMARK_KEY] = watermarks
+        _save_store(path, store)
+    report["ok"] = True
+    report["reason"] = "ok"
+    return report
+
+
+def imported_listings(kind: str | None = None,
+                      store_path: Path | None = None) -> list[dict]:
+    """Federated listings that passed verification + moderation, sorted by name.
+
+    Each carries ``fed_origin`` / ``fed_name`` / ``imported_at`` provenance and
+    a namespaced ``name`` (``"<origin>/<name>"``). Display layers merge these
+    alongside (never instead of) local catalog entries.
+    """
+    store = _load_store(_store_path(store_path))
+    out: list[dict] = []
+    for k, by_name in sorted(store.items()):
+        if k == _WATERMARK_KEY:
+            continue  # reserved rollback metadata, not listings
+        if kind is not None and k != kind:
+            continue
+        if isinstance(by_name, dict):
+            out.extend(v for _, v in sorted(by_name.items()) if isinstance(v, dict))
+    return out
+
+
+__all__ = [
+    "SCHEMA",
+    "MAX_LISTINGS_PER_ENVELOPE",
+    "export_listings",
+    "import_listings",
+    "imported_listings",
+]

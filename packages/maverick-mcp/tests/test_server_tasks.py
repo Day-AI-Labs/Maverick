@@ -50,6 +50,61 @@ def test_create_runs_and_completes_with_related_task_meta():
         store.shutdown()
 
 
+def test_per_owner_task_quota_isolates_sessions():
+    """One HTTP session can't monopolize the shared global task cap: its ACTIVE
+    tasks are bounded by a per-owner sub-cap, while other sessions and the stdio
+    (owner=None) path are unaffected. Without this, 256 active tasks from one
+    session block task creation for every other client."""
+    release = threading.Event()
+
+    def runner(name, args):
+        release.wait(timeout=5)
+        return _ok("done")
+
+    store = TaskStore(runner, max_workers=4, max_tasks=100, max_tasks_per_owner=2)
+    try:
+        # Session A fills its per-owner quota with 2 active tasks.
+        a1 = store.create("maverick_start", {}, {}, owner="A")
+        a2 = store.create("maverick_start", {}, {}, owner="A")
+        assert a1.status == "working" and a2.status == "working"
+        # A's 3rd active task is rejected by the per-owner quota, even though the
+        # global cap (100) is nowhere near full.
+        with pytest.raises(TaskError, match="too many active tasks for this session"):
+            store.create("maverick_start", {}, {}, owner="A")
+        # A different session B is unaffected by A's saturation.
+        assert store.create("maverick_start", {}, {}, owner="B").status == "working"
+        # stdio single-client (owner=None) is not subject to the per-owner cap.
+        for _ in range(5):
+            store.create("maverick_start", {}, {}, owner=None)
+    finally:
+        release.set()
+        store.shutdown()
+
+
+def test_per_owner_quota_counts_cancelled_tasks_until_future_drains():
+    """Cancelled queued/running tasks still occupy global capacity, so they
+    must also count toward the per-owner quota until their futures drain."""
+    release = threading.Event()
+
+    def runner(name, args):
+        release.wait(timeout=5)
+        return _ok("done")
+
+    store = TaskStore(runner, max_workers=1, max_tasks=3, max_tasks_per_owner=1)
+    try:
+        attacker = store.create("maverick_start", {}, {"ttl": 60000}, owner="attacker")
+        store.cancel(attacker.id, owner="attacker")
+
+        with pytest.raises(TaskError, match="too many active tasks for this session"):
+            store.create("maverick_start", {}, {"ttl": 60000}, owner="attacker")
+
+        victim = store.create("maverick_start", {}, {"ttl": 60000}, owner="victim")
+        assert victim.status == "working"
+    finally:
+        release.set()
+        store.shutdown()
+
+
 def test_tool_iserror_marks_task_failed():
     store = TaskStore(lambda n, a: {"isError": True,
                                     "content": [{"type": "text", "text": "boom"}]})
@@ -74,6 +129,34 @@ def test_runner_exception_marks_task_failed():
         assert store.get(task.id)["status"] == "failed"
         assert "RuntimeError" in store.get(task.id)["statusMessage"]
     finally:
+        store.shutdown()
+
+
+def test_result_call_block_is_bounded_independent_of_ttl():
+    """Audit round 12: a single tasks/result call must not block a worker thread
+    for the task's whole ttl (up to 24h). result() runs on the HTTP dispatch
+    pool, so an unbounded wait lets a few large-ttl tasks pin every thread and
+    freeze the server. The per-call block is capped (result_block_ms); on timeout
+    it raises so the client re-polls -- the task itself keeps running."""
+    release = threading.Event()
+
+    def runner(name, args):
+        release.wait(timeout=10)  # never released during the assertion
+        return _ok("late")
+
+    # Large ttl (60s) but a tiny per-call block ceiling (200ms).
+    store = TaskStore(runner, max_workers=2, result_block_ms=200)
+    try:
+        task = store.create("maverick_start", {}, {"ttl": 60000})
+        t0 = time.monotonic()
+        with pytest.raises(TaskError):
+            store.result(task.id)  # must time out fast, not wait ~60s
+        elapsed = time.monotonic() - t0
+        assert elapsed < 5.0, f"result() blocked {elapsed:.1f}s -- ttl not bounded"
+        # The task is still working (not cancelled/failed) -- only the call ended.
+        assert store.get(task.id)["status"] == "working"
+    finally:
+        release.set()
         store.shutdown()
 
 

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "engagement burn-vs-budget alert"
+consumers = ["engagement_lead", "billing_partner"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull actuals"
+instruction = "Query logged hours, fees, and expenses to date for each active engagement."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Load budgets"
+instruction = "Retrieve the approved budget, fee cap, and scope baseline for each engagement from firm records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute burn"
+instruction = "Calculate percent-of-budget consumed and projected completion cost, flagging engagements trending toward overrun."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag overruns"
+instruction = "Identify engagements crossing the early-warning threshold and note the scope or staffing driver behind each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Lead review"
+instruction = "Route the burn report with flagged overruns to the engagement lead for action before any scope or billing change is proposed."
+gate = "review"

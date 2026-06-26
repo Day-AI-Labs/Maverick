@@ -1,11 +1,11 @@
-# Maverick for VS Code
+# Lightwork for VS Code
 
-Sidebar + commands for the [Maverick](https://github.com/Day-AI-Labs/Maverick)
+Sidebar + commands for the [Lightwork](https://github.com/Day-AI-Labs/Lightwork)
 agent framework, accessible from inside VS Code.
 
 This is an MVP (v0.1):
 
-- Sidebar **Maverick** view with a recent-runs summary.
+- Sidebar **Lightwork** view with a recent-runs summary.
 - Commands: **Start goal**, **Show status**, **Halt**, **Unhalt**,
   **Export run as JSON**, **Refresh runs**.
 - All commands shell out to the user's local `maverick` CLI. No
@@ -13,7 +13,7 @@ This is an MVP (v0.1):
 
 ## Setup
 
-1. Install Maverick: `pip install maverick-agent` (or run the
+1. Install Lightwork: `pip install maverick-agent` (or run the
    wizard: `maverick init`).
 2. Build the extension: `cd apps/vscode-extension && npm install && npm run compile`.
 3. From VS Code: **Run** → **Run Extension** (F5), or package with
@@ -34,7 +34,7 @@ Next iterations of the extension (from `docs/ROADMAP.md`):
   (Q1 2026 ecosystem).
 - Plan-tree visualization (Q2 2026 UX).
 - Approve-tool-call inline in the editor (Q4 2027 UX).
-- Right-click context: "Send selection to Maverick" (Q2 2027 ecosystem).
+- Right-click context: "Send selection to Lightwork" (Q2 2027 ecosystem).
 
 ## License
 

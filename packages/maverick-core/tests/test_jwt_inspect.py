@@ -82,7 +82,7 @@ def test_alg_none_flagged_without_secret():
 
 
 def test_not_cacheable_because_default_now_is_time_dependent():
-    from maverick.tool_cache import cacheable
+    from maverick.cache.tool import cacheable
 
     tool = jwt_inspect()
     assert tool.parallel_safe is False

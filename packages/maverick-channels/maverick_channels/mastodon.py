@@ -16,7 +16,14 @@ import logging
 import os
 import re
 
-from .base import Channel, Handler, IncomingMessage, is_allowed
+from .base import (
+    Channel,
+    Handler,
+    IncomingMessage,
+    backoff_delay,
+    is_allowed,
+    normalize_allowlist,
+)
 
 log = logging.getLogger(__name__)
 
@@ -58,9 +65,8 @@ class MastodonChannel(Channel):
         self.access_token = (
             access_token or os.environ.get("MASTODON_ACCESS_TOKEN", "")
         )
-        self.allowed_user_ids = self._normalize_allowlist(
-            allowed_user_ids,
-            env_name="MASTODON_ALLOWED_USER_IDS",
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "MASTODON_ALLOWED_USER_IDS",
         )
         if not self.allowed_user_ids:
             raise ValueError(
@@ -70,13 +76,6 @@ class MastodonChannel(Channel):
         self._last_seen_id: str | None = None
         self._running = False
         self._stop_event = asyncio.Event()
-
-    @staticmethod
-    def _normalize_allowlist(values: set[str] | None, env_name: str) -> set[str]:
-        if values is not None:
-            return {str(v).strip() for v in values if str(v).strip()}
-        raw = os.environ.get(env_name, "")
-        return {item.strip() for item in raw.split(",") if item.strip()}
 
     @property
     def _base_url(self) -> str:
@@ -153,6 +152,7 @@ class MastodonChannel(Channel):
         try:
             import httpx
         except ImportError:
+            log.warning("mastodon: httpx not installed; dropping reply")
             return
         body = {
             "status": f"@{account.get('acct')} {text}"[:480],
@@ -198,18 +198,22 @@ class MastodonChannel(Channel):
         self._running = True
         await self._seed_cursor()
         log.info("Mastodon channel started (instance=%s)", self.instance)
+        errors = 0
         try:
             while not self._stop_event.is_set():
                 try:
                     notifs = await self._poll_once()
+                    errors = 0
                 except Exception as e:
+                    errors += 1
                     log.warning("mastodon poll failed: %s", e)
                     notifs = []
                 for n in notifs:
                     await self._dispatch(n)
                 try:
                     await asyncio.wait_for(
-                        self._stop_event.wait(), timeout=self.poll_interval,
+                        self._stop_event.wait(),
+                        timeout=backoff_delay(self.poll_interval, errors),
                     )
                 except asyncio.TimeoutError:
                     pass
@@ -220,6 +224,7 @@ class MastodonChannel(Channel):
         try:
             import httpx
         except ImportError:
+            log.warning("mastodon: httpx not installed; dropping message")
             return
         # Direct-visibility status mentioning the user. Mastodon turns
         # this into a thread that the user gets notified about.

@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "grievance response and bargaining brief"
+consumers = ["labor_relations_lead", "employment_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read grievance"
+instruction = "Read the grievance or council request and the governing CBA articles and prior settlements at issue."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check jurisdiction"
+instruction = "Confirm the applicable legal regime (NLRA, EU co-determination) and the procedural deadlines that apply."
+tools = ["web_search"]
+[[workflow]]
+name = "Analyze position"
+instruction = "Analyze the contractual and statutory merits of each party's position and identify the company's exposure."
+[[workflow]]
+name = "Draft response"
+instruction = "Draft the grievance response or bargaining brief with cited CBA articles and recommended positions."
+[[workflow]]
+name = "Route to lead"
+instruction = "Route the brief to the labor-relations lead and employment counsel who lead the response."
+gate = "review"

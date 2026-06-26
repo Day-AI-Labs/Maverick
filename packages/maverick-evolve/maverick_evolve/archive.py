@@ -121,9 +121,12 @@ class Archive:
         return arch
 
     def save(self, path: str | Path) -> None:
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        # Atomic write: a crash mid-write must not corrupt the archive (load()
+        # would then return an empty archive, silently discarding accumulated
+        # evolution state). A UNIQUE temp + os.replace also avoids a fixed-".tmp"
+        # collision if two evolve invocations save concurrently.
+        from maverick.file_lock import atomic_write_text
+        atomic_write_text(path, json.dumps(self.to_dict(), indent=2))
 
     @classmethod
     def load(cls, path: str | Path) -> Archive:

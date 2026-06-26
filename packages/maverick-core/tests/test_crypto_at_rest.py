@@ -296,7 +296,7 @@ def _per_tenant_env(monkeypatch, tmp_path, tenant="acme"):
         monkeypatch.setenv("MAVERICK_TENANT", tenant)
     else:
         monkeypatch.delenv("MAVERICK_TENANT", raising=False)
-    from maverick import tenant_kms
+    from maverick.tenant import kms as tenant_kms
     tenant_kms._clear_cache()
 
 
@@ -321,7 +321,7 @@ def test_per_tenant_enabled_by_config(monkeypatch):
 
 def test_tenant_magic_matches_tenant_kms():
     # The duplicated header constant must stay in lock-step with tenant_kms.
-    from maverick import tenant_kms
+    from maverick.tenant import kms as tenant_kms
     assert car._TENANT_MAGIC == tenant_kms._SEAL_MAGIC
 
 
@@ -357,7 +357,7 @@ def test_global_sealed_data_still_opens_after_per_tenant_on(monkeypatch, tmp_pat
     monkeypatch.setenv("MAVERICK_KMS_KEK", "ab" * 32)
     monkeypatch.setenv("MAVERICK_ENCRYPT_PER_TENANT", "1")
     monkeypatch.setenv("MAVERICK_TENANT", "acme")
-    from maverick import tenant_kms
+    from maverick.tenant import kms as tenant_kms
     tenant_kms._clear_cache()
     assert car.unseal(legacy) == b"sealed before the switch"
 
@@ -366,7 +366,7 @@ def test_global_sealed_data_still_opens_after_per_tenant_on(monkeypatch, tmp_pat
 def test_one_tenant_cannot_open_anothers_data(monkeypatch, tmp_path):
     _per_tenant_env(monkeypatch, tmp_path, tenant="acme")
     blob = car.seal(b"acme only")
-    from maverick import tenant_kms
+    from maverick.tenant import kms as tenant_kms
     # Re-pin to a different tenant; the GCM context no longer matches.
     monkeypatch.setenv("MAVERICK_TENANT", "beta")
     tenant_kms._clear_cache()
@@ -475,3 +475,148 @@ def test_unseal_wrong_key_or_tamper_raises_encryption_unavailable(monkeypatch, t
         car.unseal(car._MAGIC + b"short")
     # A clean round-trip still works.
     assert car.unseal(blob) == b"secret data"
+
+
+# --- key rotation (additive keyring) ----------------------------------------
+
+@requires_crypto
+def test_no_keyring_keeps_v1_format():
+    # With no keyring, seal() produces the legacy v1 header (no behaviour change).
+    blob = car.seal(b"hello")
+    assert blob[: len(car._MAGIC)] == car._MAGIC
+    assert car.unseal(blob) == b"hello"
+
+
+@requires_crypto
+def test_rotation_keeps_old_data_readable(monkeypatch):
+    # The data-safety guarantee: data sealed BEFORE rotation must still unseal
+    # AFTER rotation (old key retained), and new writes use the new key (v2).
+    old_blob = car.seal(b"pre-rotation secret")          # v1, under the legacy key
+    assert old_blob[: len(car._MAGIC)] == car._MAGIC
+
+    new_id = car.rotate_at_rest_key()
+    assert len(new_id) == car._KEYID_BYTES * 2           # hex of the 8-byte id
+
+    # Old v1 data still opens (legacy key is still resolvable).
+    assert car.unseal(old_blob) == b"pre-rotation secret"
+
+    # New writes are v2 under the rotated key, and round-trip.
+    new_blob = car.seal(b"post-rotation secret")
+    assert new_blob[: len(car._MAGIC_V2)] == car._MAGIC_V2
+    assert car.unseal(new_blob) == b"post-rotation secret"
+
+
+@requires_crypto
+def test_two_rotations_all_generations_readable():
+    import time
+
+    car.rotate_at_rest_key()
+    blob1 = car.seal(b"gen-1")
+    time.sleep(0.01)  # ensure the second key is unambiguously newest (active)
+    car.rotate_at_rest_key()
+    blob2 = car.seal(b"gen-2")
+
+    # Both generations decrypt -- each v2 blob names its own key-id, so a
+    # superseded key still opens the data it sealed.
+    assert car.unseal(blob1) == b"gen-1"
+    assert car.unseal(blob2) == b"gen-2"
+
+
+@requires_crypto
+def test_v2_blob_with_unknown_keyid_fails_closed():
+    car.rotate_at_rest_key()
+    blob = car.seal(b"x")
+    # Corrupt the embedded key-id so no key resolves -> fail closed.
+    body = bytearray(blob)
+    start = len(car._MAGIC_V2)
+    for i in range(start, start + car._KEYID_BYTES):
+        body[i] ^= 0xFF
+    with pytest.raises(car.EncryptionUnavailable):
+        car.unseal(bytes(body))
+
+
+@requires_crypto
+def test_rotated_key_file_is_private(monkeypatch):
+    import stat as _stat
+    car.rotate_at_rest_key()
+    for p in car._keyring_dir().glob("*.key"):
+        mode = _stat.S_IMODE(p.stat().st_mode)
+        assert mode & 0o077 == 0, f"{p} is group/world accessible ({oct(mode)})"
+
+
+# --- key durability: generation warning + escrow backup -----------------------
+
+def test_keygen_logs_backup_warning(monkeypatch, caplog):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    import logging
+    with caplog.at_level(logging.WARNING, logger="maverick.crypto_at_rest"):
+        car._load_or_create_key()
+    assert any("only way to decrypt" in r.message or "backup-key" in r.message
+               for r in caplog.records)
+
+
+def test_backup_key_material_copies_primary_and_keyring(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    car._load_or_create_key()              # create the primary key
+    keyring_key = car._keyring_dir() / "rotation.key"
+    keyring_key.parent.mkdir(parents=True)
+    keyring_key.write_text((b"r" * 32).hex(), encoding="utf-8")
+    keyring_key.chmod(0o600)
+    dest = tmp_path / "escrow"
+    written = car.backup_key_material(dest)
+    names = sorted(p.name for p in written)
+    assert "at_rest.key" in names
+    assert any(n.endswith(".key") and n != "at_rest.key" for n in names)
+    import stat as _stat
+    assert all(_stat.S_IMODE(p.stat().st_mode) == 0o600 for p in written)
+    # The escrowed primary key matches the live one (usable for recovery).
+    assert (dest / "at_rest.key").read_text() == car._KEY_PATH.read_text()
+
+
+def test_backup_key_material_refuses_existing_destination_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    car._load_or_create_key()
+    dest = tmp_path / "escrow"
+    dest.mkdir()
+    existing = dest / "at_rest.key"
+    existing.write_text("attacker controlled", encoding="utf-8")
+
+    with pytest.raises(car.EncryptionUnavailable, match="cannot copy key"):
+        car.backup_key_material(dest)
+
+    assert existing.read_text(encoding="utf-8") == "attacker controlled"
+
+
+def test_backup_key_material_refuses_destination_symlink(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    car._load_or_create_key()
+    dest = tmp_path / "escrow"
+    dest.mkdir()
+    leaked = tmp_path / "leaked.key"
+    leaked.write_text("attacker controlled", encoding="utf-8")
+    (dest / "at_rest.key").symlink_to(leaked)
+
+    with pytest.raises(car.EncryptionUnavailable, match="cannot copy key"):
+        car.backup_key_material(dest)
+
+    assert leaked.read_text(encoding="utf-8") == "attacker controlled"
+
+
+def test_backup_key_material_refuses_directory_symlink(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    car._load_or_create_key()
+    real_dest = tmp_path / "real-escrow"
+    real_dest.mkdir()
+    dest = tmp_path / "escrow-link"
+    dest.symlink_to(real_dest, target_is_directory=True)
+
+    with pytest.raises(car.EncryptionUnavailable, match="cannot prepare key backup dir"):
+        car.backup_key_material(dest)
+
+    assert not (real_dest / "at_rest.key").exists()
+
+
+def test_backup_key_material_errors_when_no_key(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    with pytest.raises(car.EncryptionUnavailable, match="no at-rest key material"):
+        car.backup_key_material(tmp_path / "escrow")

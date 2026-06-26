@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Maverick — Why this shouldn't have been possible</title>
+<title>Lightwork — Why this shouldn't have been possible</title>
 <!--
-  Maverick — the long read. Manifesto -> deep-dive -> walkthrough.
+  Lightwork — the long read. Manifesto -> deep-dive -> walkthrough.
   A scrollable, self-contained page (no build step). Open in a browser, or
-  print to PDF. Every number is verifiable from this repo; the single
-  founder-only fact (contact) is a highlighted [FILL].
+  print to PDF. Every number is verifiable from this repo. Contact:
+  info@daybreakailabs.com.
   Content sources: pitch/SEED-DECK.md, CLAUDE.md.
 -->
 <style>
@@ -113,12 +113,12 @@ a{color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(59,232,255
 <body>
 
 <div class="top"><div class="wrap">
-  <div class="wm">MAVERICK</div>
+  <div class="wm">LIGHTWORK</div>
   <div class="by">by <span style="color:var(--accent);font-weight:600">Daybreak Labs</span></div>
 </div></div>
 
 <header class="hero"><div class="wrap">
-  <div class="kick">Maverick · by Daybreak Labs</div>
+  <div class="kick">Lightwork · by Daybreak Labs</div>
   <h1>The agent workforce a regulated enterprise can <span class="ac">actually deploy</span>.</h1>
   <p class="lead">An AI workforce that does real, high-stakes operational work — finance, legal, healthcare ops — and can <b>prove, to a regulator,</b> that it stayed in policy and got better. Here is what we built, and why it shouldn&rsquo;t have been possible.</p>
   <div class="cue">↓ &nbsp;The long read</div>
@@ -155,7 +155,7 @@ a{color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(59,232,255
   <p>It is built around one uncompromising idea, and everything else follows from it.</p>
 
   <h3><span class="n">01</span>One gate. Every action. Before it runs.</h3>
-  <p>Every action an agent takes — every tool call, every payment, every write — passes through <b>one chokepoint before it happens</b>. Not after. At that gate, in order: a <b>capability</b> check (is this agent even allowed to attempt this?), a <b>governance policy</b> (allow, deny, or require a human?), a <b>safety shield</b> (is this dangerous, or an injection?), a <b>hard budget</b> (out of tokens, dollars, wall-clock, or tool calls?), and a <b>tamper-evident audit</b> entry. One path. No exceptions. An agent cannot do anything Maverick didn&rsquo;t watch and record.</p>
+  <p>Every action an agent takes — every tool call, every payment, every write — passes through <b>one chokepoint before it happens</b>. Not after. At that gate, in order: a <b>capability</b> check (is this agent even allowed to attempt this?), a <b>governance policy</b> (allow, deny, or require a human?), a <b>safety shield</b> (is this dangerous, or an injection?), a <b>hard budget</b> (out of tokens, dollars, wall-clock, or tool calls?), and a <b>tamper-evident audit</b> entry. One path. No exceptions. An agent cannot do anything Lightwork didn&rsquo;t watch and record.</p>
 
   <div class="figure">
     <svg viewBox="0 0 1140 322" font-family="Inter, sans-serif">
@@ -201,7 +201,7 @@ a{color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(59,232,255
   <p>Agents hold <b>capability tokens that can only ever be attenuated</b> — narrowed, never widened. A specialist that can read ledgers cannot grant itself the power to move money. And the whole system runs behind an <b>egress lock</b>: even a <em>successful</em> prompt injection — the attack everyone fears — can&rsquo;t move your data out, because there is no path out. The sandbox has its network off by default.</p>
 
   <h3><span class="n">03</span>An audit that can&rsquo;t be forged.</h3>
-  <p>Every action leaves a <b>signed, hash-chained</b> entry. Alter one row after the fact and the chain breaks — and Maverick catches it. The log <b>verifies offline</b>, with no call home: exactly what a regulator wants and what a hosted black box can never offer. This is the <b>Operating Record</b> — the single durable account of everything your AI workforce did, and why it was allowed to.</p>
+  <p>Every action leaves a <b>signed, hash-chained</b> entry. Alter one row after the fact and the chain breaks — and Lightwork catches it. The log <b>verifies offline</b>, with no call home: exactly what a regulator wants and what a hosted black box can never offer. This is the <b>Operating Record</b> — the single durable account of everything your AI workforce did, and why it was allowed to.</p>
   <div class="term">
     <div class="bar"><span class="chip">operating-record · verify --offline</span><span style="font-size:12px;color:var(--mint)">● chain intact</span></div>
     <div class="body mono">
@@ -214,12 +214,12 @@ a{color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(59,232,255
   </div>
 
   <h3><span class="n">04</span>A workforce that proves it improved.</h3>
-  <p>This is the part a frontier lab won&rsquo;t ship into a bank: a system that <b>rewrites its own behavior in production</b>. Overnight and offline, Maverick consolidates what it learned — we call it <em>dreaming</em> — turns hindsight into proposed guardrails, and tests each one. Here is the discipline that makes it safe: <b>every causal claim must survive a placebo test before it is allowed to change behavior.</b> If a &ldquo;lesson&rdquo; can&rsquo;t beat a sham version of itself, it&rsquo;s thrown out. What passes is applied — governed, audited, and <b>reversible</b>. You can roll the entire workforce back to any prior state.</p>
+  <p>This is the part a frontier lab won&rsquo;t ship into a bank: a system that <b>rewrites its own behavior in production</b>. Overnight and offline, Lightwork consolidates what it learned — we call it <em>dreaming</em> — turns hindsight into proposed guardrails, and tests each one. Here is the discipline that makes it safe: <b>every causal claim must survive a placebo test before it is allowed to change behavior.</b> If a &ldquo;lesson&rdquo; can&rsquo;t beat a sham version of itself, it&rsquo;s thrown out. What passes is applied — governed, audited, and <b>reversible</b>. You can roll the entire workforce back to any prior state.</p>
 
   <div class="pq">It rewrites itself in production — and every change has to <span class="ac">beat a placebo</span> before it&rsquo;s allowed to ship.</div>
 
   <h3><span class="n">05</span>1,118 specialists, already built.</h3>
-  <p>Maverick ships with <b>1,118 least-privilege specialist packs across 26 regulated suites</b> — finance, healthcare, insurance, legal, government. Run <span class="codechip">maverick domains-lint</span> yourself: <b class="mint">0 errors, 0 warnings</b>. The finance suite alone declares ~<b>29 governed deliverables across 11 roles</b>. This isn&rsquo;t a framework you assemble. It&rsquo;s a workforce that boots.</p>
+  <p>Lightwork ships with <b>1,118 least-privilege specialist packs across 26 regulated suites</b> — finance, healthcare, insurance, legal, government. Run <span class="codechip">maverick domains-lint</span> yourself: <b class="mint">0 errors, 0 warnings</b>. The finance suite alone declares ~<b>29 governed deliverables across 11 roles</b>. This isn&rsquo;t a framework you assemble. It&rsquo;s a workforce that boots.</p>
 
   <h3><span class="n">06</span>Seven parts, one governed spine.</h3>
   <p>Under the hood: a <b>kernel</b> (maverick-core) that runs and governs; a <b>shield</b> that scans; <b>channels</b> that connect; a <b>dashboard</b> for the humans in the loop; an <b>MCP server</b> so any client can drive it; <b>evolve</b>, the learning lifecycle; and <b>knowledge</b>, the memory. Seven components, one spine. Tellingly, the kernel runs <em>even without</em> the shield — it fails open with a warning, because governance should never be the thing that takes you down.</p>
@@ -271,14 +271,14 @@ a{color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(59,232,255
 <section class="close"><div class="wrap">
   <div class="kick" style="justify-content:center">The bet</div>
   <p class="big" style="margin:22px auto 0;max-width:60ch">Agents are going to do enterprise work. In regulated industries, the only question is <b>whose governance and proof layer they run through.</b></p>
-  <div class="big2">We intend that to be <span class="ac">Maverick</span>.</div>
+  <div class="big2">We intend that to be <span class="ac">Lightwork</span>.</div>
   <div class="contact">
-    <span class="fill">[ FILL: contact ]</span> &nbsp;·&nbsp; run the proof yourself: <span class="codechip">maverick proof-pack</span>
+    <a href="mailto:info@daybreakailabs.com?subject=Lightwork">info@daybreakailabs.com</a> &nbsp;·&nbsp; run the proof yourself: <span class="codechip">maverick proof-pack</span>
   </div>
 </div></section>
 
 <div class="foot"><div class="wrap" style="display:flex;justify-content:space-between;width:100%;padding:0 28px">
-  <span class="wm" style="font-size:12px">MAVERICK</span>
+  <span class="wm" style="font-size:12px">LIGHTWORK</span>
   <span>by Daybreak Labs · the AI workforce of record for regulated enterprises</span>
 </div></div>
 

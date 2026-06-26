@@ -136,7 +136,10 @@ def _send_discord(title: str, body: str, url: str) -> bool:
         )
         return resp.status_code < 400
     except Exception as e:
-        log.warning("notify discord failed: %s", e)
+        # The webhook URL IS the secret here, and httpx embeds the request URL
+        # in str(e); log the exception TYPE only so a failed POST can't write the
+        # full secret URL to the logs.
+        log.warning("notify discord failed: %s", type(e).__name__)
         return False
 
 
@@ -152,7 +155,8 @@ def _send_slack(title: str, body: str, url: str) -> bool:
         )
         return resp.status_code < 400
     except Exception as e:
-        log.warning("notify slack failed: %s", e)
+        # The webhook URL IS the secret (see _send_discord); log type only.
+        log.warning("notify slack failed: %s", type(e).__name__)
         return False
 
 

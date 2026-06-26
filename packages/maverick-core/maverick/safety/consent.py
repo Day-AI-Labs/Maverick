@@ -16,10 +16,13 @@ Threading: prompts serialize through a lock so two parallel agents
 don't both pop a prompt simultaneously on the same TTY.
 
 Note: this is the *primitive*. Tools wire it in themselves (the ``shell``
-tool does). The default mode is ``auto-approve`` so gating is strictly
-opt-in -- an operator turns it on via ``MAVERICK_CONSENT_MODE`` -- which
-keeps the out-of-the-box behavior unchanged while making the approvals
-queue / dashboard actually reachable.
+tool does). The base mode is ``auto-approve``, but under **secure-by-default**
+**high-** and **critical-risk** actions fail closed to ``ask`` (routing to the
+approvals queue / dashboard) instead of auto-approving; low/medium stay
+non-interactive out of the box. An operator can widen or narrow this via
+``MAVERICK_CONSENT_MODE`` (or per-action config), and ``[security]
+secure_defaults = false`` / ``MAVERICK_SECURE_DEFAULT=0`` restores the old
+fully-opt-in behavior.
 """
 from __future__ import annotations
 
@@ -29,12 +32,13 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from pathlib import Path
+
+from ..paths import data_dir
 
 log = logging.getLogger(__name__)
 
 
-CONSENT_LEDGER_PATH = Path.home() / ".maverick" / "consent.ledger"
+CONSENT_LEDGER_PATH = data_dir("consent.ledger")
 
 
 class ConsentDenied(Exception):
@@ -56,22 +60,30 @@ class ConsentDecision:
 _prompt_lock = threading.Lock()
 
 
-def _resolve_mode() -> str:
-    # Default 'auto-approve': gating is opt-in, so wiring require_consent into
-    # tools (e.g. shell) does not change out-of-the-box behavior. Operators
-    # set MAVERICK_CONSENT_MODE=ask/dashboard/auto-deny to actually gate.
+def _resolve_mode(risk: str | None = None) -> str:
+    # Explicit operator setting always wins (any risk level).
     env = os.environ.get("MAVERICK_CONSENT_MODE")
     if env:
         return env.strip().lower()
     # Enterprise mode flips the default to 'ask' so destructive actions are gated
-    # (and denied in non-interactive contexts) when handling sensitive data. An
-    # explicit MAVERICK_CONSENT_MODE above still wins.
+    # (and denied in non-interactive contexts) when handling sensitive data.
     try:
         from ..enterprise import enterprise_enabled
         if enterprise_enabled():
             return "ask"
     except Exception:
         pass
+    # Secure-by-default: gate HIGH/CRITICAL-risk actions (an autonomous run can't
+    # take a destructive action without an explicit decision -> 'ask', which
+    # denies in a non-interactive context). Low/medium stay frictionless so
+    # normal goals are unaffected. An explicit MAVERICK_CONSENT_MODE opts out.
+    if str(risk or "").strip().lower() in ("high", "critical"):
+        try:
+            from ..security_defaults import secure_by_default
+            if secure_by_default():
+                return "ask"
+        except Exception:
+            pass
     return "auto-approve"
 
 
@@ -184,8 +196,8 @@ def require_consent(
     # 1) Ledger fast-path (skipped when a fresh decision is demanded).
     if consult_ledger and _check_ledger(action, scope):
         return _emit(ConsentDecision(True, "ledger", risk, ts), action, scope, detail)
-    # 2) Mode override.
-    mode = _resolve_mode()
+    # 2) Mode override (risk-aware: secure-by-default gates high/critical risk).
+    mode = _resolve_mode(risk)
     if mode == "auto-approve":
         d = _emit(
             ConsentDecision(allow_auto_approve, "auto", risk, ts),
@@ -241,6 +253,32 @@ def _dashboard_timeout() -> float:
         return 300.0
 
 
+def _consent_requester(wm) -> str | None:
+    """The principal on whose behalf consent is being requested.
+
+    This is the owner of the goal currently executing (bound in the goal trace
+    context and copied across ``asyncio.to_thread`` into the tool/consent
+    worker). The goal owner shares the dashboard's approver namespace
+    (``caller_principal``), so recording it as ``requested_by`` lets the
+    dual-control self-approval bar in ``world_model.decide_approval`` fire:
+    under N-of-M dual control the requester cannot count as one of the distinct
+    approvers (segregation of duties).
+
+    Returns None when consent runs outside a goal, or for an unowned goal
+    (single-user / no-auth) -- the bar then stays inactive, which is the
+    unchanged single-approver behaviour."""
+    try:
+        from ..logging_config import current_goal_id
+        gid = current_goal_id()
+        if gid is None:
+            return None
+        goal = wm.get_goal(gid)
+        owner = (getattr(goal, "owner", "") or "").strip()
+        return owner or None
+    except Exception:  # pragma: no cover -- requester resolution never blocks consent
+        return None
+
+
 def _decide_via_dashboard(
     action: str,
     risk: str,
@@ -274,8 +312,17 @@ def _decide_via_dashboard(
     except Exception:  # pragma: no cover -- delegation never blocks consent
         pass
     try:
+        # N-of-M dual control: a risk band may require multiple distinct approvers
+        # before the action is granted (segregation of duties). Default 1 ->
+        # unchanged single-approver behaviour.
+        from .dual_control import required_approvals
+        required = required_approvals(risk)
+    except Exception:  # pragma: no cover -- config never blocks consent
+        required = 1
+    try:
         approval_id = wm.create_approval(
             action, risk=risk, scope=scope, detail=detail, provenance=provenance,
+            approvals_required=required, requested_by=_consent_requester(wm),
         )
     except Exception as e:
         log.warning("consent: cannot queue approval, falling back: %s", e)

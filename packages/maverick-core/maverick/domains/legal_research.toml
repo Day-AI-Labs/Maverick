@@ -18,3 +18,30 @@ deny_tools = ["shell", "write_file"]
 mcp_servers = ["CourtListener"]
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "legal research memo"
+consumers = ["attorney", "general_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame question"
+instruction = "Pin down the precise legal issue, governing jurisdiction, and the facts the requesting attorney needs answered."
+tools = ["read_file"]
+[[workflow]]
+name = "Gather authority"
+instruction = "Search case law, statutes, and the company knowledge base for controlling and persuasive authority on the issue."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Verify citations"
+instruction = "Confirm every case name, court, year, and quoted holding against CourtListener and mark anything you cannot verify as [UNVERIFIED]."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft memo"
+instruction = "Write the research memo stating the rule, applying it to the facts, and noting jurisdiction assumptions and open questions."
+[[workflow]]
+name = "Attorney review"
+instruction = "Route the memo to the requesting attorney to review and own before it is relied upon."
+gate = "review"

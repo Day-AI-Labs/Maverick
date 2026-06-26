@@ -156,3 +156,36 @@ class TestAgentVerifierIntegration:
         # Earlier behavior skipped the re-verify, letting bogus revisions
         # through with verifier_confidence=1.0 fallback.
         assert len(fake_llm.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_ensemble_reraises_budget_exceeded_not_swallowed():
+    # A BudgetExceeded from one panel member must PROPAGATE out of the ensemble
+    # (so the budget stops the run), not be collected by gather(return_exceptions)
+    # and folded into a combined reject verdict. The other member is still awaited
+    # rather than orphaned. Regression for the gather() that used to propagate
+    # mid-flight and leave siblings running.
+    from types import SimpleNamespace
+
+    from maverick.budget import Budget, BudgetExceeded
+    from maverick.verifier import verify_proposal_ensemble
+
+    class _PanelLLM:
+        def __init__(self):
+            self.calls = []
+
+        async def complete_async(self, **kw):
+            self.calls.append(kw.get("model"))
+            if kw.get("model") == "m-budget":
+                raise BudgetExceeded("verifier out of budget")
+            return SimpleNamespace(
+                text='{"confidence": 0.9, "accepts": true, "critique": "ok", "issues": []}')
+
+    llm = _PanelLLM()
+    with pytest.raises(BudgetExceeded):
+        await verify_proposal_ensemble(
+            "brief", "a genuine proposal to verify", llm, Budget(),
+            panel=["m-ok", "m-budget"], weighted=True,
+        )
+    # Both members were awaited (the panel ran), not just the failing one.
+    assert set(llm.calls) == {"m-ok", "m-budget"}

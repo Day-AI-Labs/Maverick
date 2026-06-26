@@ -21,3 +21,23 @@ deliverable = "Audit-readiness evidence package"
 consumers = ["internal_auditor", "compliance_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Scope controls"
+instruction = "List the in-scope controls for the period and the evidence each one requires."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull evidence"
+instruction = "Collect the current control evidence from Vanta and Drata and tie each artifact to its control."
+tools = ["vanta_read", "drata_read"]
+[[workflow]]
+name = "Test freshness"
+instruction = "Verify each artifact is current, complete, and within the audit period and flag stale or missing items."
+tools = ["read_file"]
+[[workflow]]
+name = "Assemble package"
+instruction = "Draft the auditor-ready evidence package indexing every control to its supporting artifact."
+[[workflow]]
+name = "Owner review"
+instruction = "Route the assembled package to the control owner for sign-off before any external send."
+gate = "review"

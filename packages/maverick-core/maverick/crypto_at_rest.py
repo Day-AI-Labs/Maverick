@@ -7,9 +7,14 @@ sensitive data: anyone who can read ``~/.maverick`` sees everything.
 
 This module provides authenticated at-rest encryption for bytes/text plus key
 management that reuses the local-keyfile pattern of the audit signer. It is
-**opt-in**: enable it with ``[encryption] at_rest = true`` /
-``MAVERICK_ENCRYPT_AT_REST=1``, and it is **implied by enterprise mode** (handling
-sensitive data -> seal it at rest). Off by default -> behaviour is unchanged.
+**on by default** (secure-by-default): new writes are sealed and the key
+auto-generates on first use. Disable it with ``[encryption] at_rest = false`` /
+``MAVERICK_ENCRYPT_AT_REST=0`` (or the whole posture via ``[security]
+secure_defaults = false`` / ``MAVERICK_SECURE_DEFAULT=0``); it is also **implied
+by enterprise mode** and **forced by a compliance floor** (e.g. HIPAA), which an
+opt-out cannot override. Existing installs are safe to leave on -- reads are
+plaintext-tolerant, so rows written before it was enabled are returned unchanged
+until rewritten (``maverick encryption migrate`` seals them eagerly).
 
 Key resolution (first match wins):
   1. ``MAVERICK_ENCRYPTION_KEY`` — a 32-byte key as hex or base64, so an operator
@@ -39,19 +44,27 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
+import logging
 import os
 import secrets
 import stat
 from pathlib import Path
 
-_MAGIC = b"MVKAR1\n"          # versioned header: Maverick At-Rest v1
+from .paths import data_dir
+
+log = logging.getLogger(__name__)
+
+_MAGIC = b"MVKAR1\n"          # versioned header: Maverick At-Rest v1 (single key)
+_MAGIC_V2 = b"MVKAR2\n"       # v2: keyring header -- MAGIC || keyid(8) || nonce || ct
 # Per-tenant envelope-sealed blob header. MUST equal tenant_kms._SEAL_MAGIC (a
 # test asserts this); duplicated here so is_sealed() stays cheap and we avoid a
 # crypto_at_rest <-> tenant_kms import cycle (tenant_kms imports from this module).
 _TENANT_MAGIC = b"MVKTEN1\n"
 _NONCE_BYTES = 12
 _KEY_BYTES = 32              # AES-256
-_KEY_PATH = Path.home() / ".maverick" / "keys" / "at_rest.key"
+_KEYID_BYTES = 8             # short key fingerprint embedded in v2 blobs
+_KEY_PATH = data_dir("keys", "at_rest.key")
 
 
 class EncryptionUnavailable(RuntimeError):
@@ -72,13 +85,16 @@ def _truthy(value: object) -> bool:
 
 
 def at_rest_enabled() -> bool:
-    """Opt-in unless required by an active compliance profile.
+    """On by default (secure-by-default), overridable per deployment.
 
     Compliance floors are mandatory and strictest-wins: HIPAA-mode at-rest
     encryption cannot be disabled by leaving or setting the standalone
     encryption knob false. With no such floor, ``MAVERICK_ENCRYPT_AT_REST`` env
     wins over ``[encryption] at_rest`` in config, which wins over enterprise
-    mode. Off by default.
+    mode, which falls back to
+    :func:`maverick.security_defaults.secure_by_default` -- ON unless explicitly
+    disabled (``MAVERICK_ENCRYPT_AT_REST=0`` / ``[encryption] at_rest = false``,
+    or the whole hardened cluster via ``MAVERICK_SECURE_DEFAULT=0``).
     """
     try:
         from .compliance_profiles import FLOOR_ENCRYPTION_AT_REST, requires_floor
@@ -98,9 +114,16 @@ def at_rest_enabled() -> bool:
         v = cfg.get("at_rest")
         return _truthy(v) if isinstance(v, str) else bool(v)
     # Enterprise mode implies at-rest encryption (sensitive data stays sealed).
+    # Secure-by-default otherwise: seal new writes unless explicitly disabled.
+    # Safe for existing installs -- reads are plaintext-tolerant (unseal_from_str
+    # returns unmarked legacy values unchanged), so mixing sealed + plaintext
+    # rows just works; the key auto-generates on first use (~/.maverick/keys).
     try:
         from .enterprise import enterprise_enabled
-        return enterprise_enabled()
+        if enterprise_enabled():
+            return True
+        from .security_defaults import secure_by_default
+        return secure_by_default()
     except Exception:
         return False
 
@@ -109,7 +132,7 @@ def per_tenant_at_rest() -> bool:
     """Opt-in per-tenant envelope encryption (default off).
 
     When on **and** at-rest is enabled, new seals use the *current tenant's* own
-    data key (:mod:`maverick.tenant_kms`) instead of the single process-wide key,
+    data key (:mod:`maverick.tenant.kms`) instead of the single process-wide key,
     so one tenant's key never opens another tenant's data — the posture a hosted
     multi-tenant store needs. Reads auto-detect by magic header, so data already
     sealed with the global key stays readable (transparent migration, no flag-day
@@ -241,17 +264,186 @@ def _load_or_create_key() -> bytes:
     except FileExistsError:
         # Another process won the first-use race; load the private key it wrote.
         return _read_key_file()
+    # At-rest is on by default now, so this auto-generation happens silently on
+    # most installs. The key file is the ONLY way to read sealed data -- losing it
+    # loses everything sealed under it -- so make the durability requirement loud.
+    log.warning(
+        "at-rest encryption generated a new key at %s. This key is the only way "
+        "to decrypt sealed data; if it is lost, that data is unrecoverable. Back "
+        "it up now to a secure location: `maverick encryption backup-key --to "
+        "<dir>` (or inject your own via MAVERICK_ENCRYPTION_KEY).",
+        _KEY_PATH,
+    )
     return key
+
+
+def backup_key_material(dest_dir: Path) -> list[Path]:
+    """Copy the at-rest key material to ``dest_dir`` for safe escrow.
+
+    Copies the primary key (``at_rest.key``) and every rotation-keyring key
+    (``at_rest.d/*.key``) into ``dest_dir``, each ``0600`` inside a ``0700``
+    directory. Returns the paths written. Raises :class:`EncryptionUnavailable`
+    when no key material exists yet (nothing has been sealed) or the copy fails.
+
+    The copies are plaintext key material -- store them somewhere at least as
+    protected as the originals (a secrets manager / offline vault), not next to
+    the data they unlock. A key injected via ``MAVERICK_ENCRYPTION_KEY`` lives
+    in your secrets manager already and is not on disk to copy.
+    """
+    sources: list[Path] = []
+    if _KEY_PATH.exists():
+        sources.append(_KEY_PATH)
+    try:
+        sources.extend(sorted(_keyring_dir().glob("*.key")))
+    except OSError:
+        pass
+    if not sources:
+        raise EncryptionUnavailable(
+            f"no at-rest key material to back up under {_KEY_PATH.parent} "
+            "(nothing has been sealed yet, or the key is injected via "
+            "MAVERICK_ENCRYPTION_KEY and not stored on disk)."
+        )
+    try:
+        dest_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        dest_stat = dest_dir.lstat()
+        if stat.S_ISLNK(dest_stat.st_mode) or not stat.S_ISDIR(dest_stat.st_mode):
+            raise OSError("backup destination must be a real directory")
+        if hasattr(os, "geteuid") and dest_stat.st_uid != os.geteuid():
+            raise OSError("backup destination must be owned by the current user")
+        os.chmod(dest_dir, 0o700)
+    except OSError as e:
+        raise EncryptionUnavailable(
+            f"cannot prepare key backup dir {dest_dir}: {e}"
+        ) from e
+    written: list[Path] = []
+    for src in sources:
+        dst = dest_dir / src.name
+        try:
+            with src.open("rb") as src_f:
+                fd = os.open(
+                    dst,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600,
+                )
+                try:
+                    with os.fdopen(fd, "wb") as dst_f:
+                        fd = -1
+                        for chunk in iter(lambda: src_f.read(1024 * 1024), b""):
+                            dst_f.write(chunk)
+                finally:
+                    if fd != -1:
+                        os.close(fd)
+        except OSError as e:
+            raise EncryptionUnavailable(
+                f"cannot copy key {src} -> {dst}: {e}"
+            ) from e
+        written.append(dst)
+    return written
+
+
+# --- rotation keyring -------------------------------------------------------
+# Graceful key rotation: a directory of ``<keyid>.key`` files alongside the
+# legacy single key. The NEWEST file is the active key (new v2 seals embed its
+# 8-byte id); every prior key is retained so v2 blobs sealed under it still
+# decrypt, and legacy v1 blobs keep decrypting under _load_or_create_key().
+# Rotation is therefore additive -- no existing data is rewritten or lost.
+
+
+def _key_fingerprint(key: bytes) -> bytes:
+    return hashlib.sha256(key).digest()[:_KEYID_BYTES]
+
+
+def _keyring_dir() -> Path:
+    # Derived from _KEY_PATH.parent so tests that monkeypatch _KEY_PATH (or set
+    # HOME) relocate the keyring with it.
+    return _KEY_PATH.parent / "at_rest.d"
+
+
+def _read_keyring_key(path: Path) -> bytes:
+    try:
+        st = path.stat()
+        if st.st_mode & 0o077:
+            os.chmod(path, 0o600)
+        key = bytes.fromhex(path.read_text().strip())
+    except (OSError, ValueError) as e:
+        raise EncryptionUnavailable(f"cannot read at-rest key {path}: {e}") from e
+    if len(key) != _KEY_BYTES:
+        raise EncryptionUnavailable(f"at-rest key {path} is malformed")
+    return key
+
+
+def _active_keyring_key() -> tuple[bytes, bytes] | None:
+    """``(key, keyid)`` of the newest keyring key, or None if the ring is empty
+    (then sealing uses the legacy single-key v1 path, unchanged)."""
+    try:
+        keys = sorted(_keyring_dir().glob("*.key"))
+    except OSError:
+        return None
+    if not keys:
+        return None
+    latest = max(keys, key=lambda p: p.stat().st_mtime)
+    return _read_keyring_key(latest), bytes.fromhex(latest.stem)
+
+
+def _resolve_key_by_id(keyid: bytes) -> bytes:
+    """The key matching a v2 blob's ``keyid``: a keyring file, else the legacy
+    key when its fingerprint matches (so a v1 deployment's key can also back v2)."""
+    path = _keyring_dir() / (keyid.hex() + ".key")
+    if path.exists():
+        return _read_keyring_key(path)
+    try:
+        legacy = _load_or_create_key()
+        if _key_fingerprint(legacy) == keyid:
+            return legacy
+    except EncryptionUnavailable:
+        pass
+    raise EncryptionUnavailable(
+        f"no at-rest key for key-id {keyid.hex()}: the key that sealed this data "
+        "is not available (a rotated key was removed, or the wrong keyring)."
+    )
+
+
+def rotate_at_rest_key() -> str:
+    """Mint a new active at-rest key in the rotation keyring and return its id.
+
+    Safe and additive: new seals immediately use the new key (v2 header), while
+    all prior keys are retained so existing data stays readable -- no re-encrypt
+    flag-day. Applies to the process-wide at-rest key (per-tenant envelope keys
+    rotate via their own KMS). Takes effect for new seals right away.
+    """
+    if not _have_crypto():
+        raise EncryptionUnavailable(
+            "at-rest encryption needs the 'cryptography' package."
+        )
+    d = _keyring_dir()
+    try:
+        d.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(d, 0o700)
+    except OSError as e:
+        raise EncryptionUnavailable(f"cannot secure keyring dir {d}: {e}") from e
+    key = secrets.token_bytes(_KEY_BYTES)
+    keyid = _key_fingerprint(key)
+    path = d / (keyid.hex() + ".key")
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(key.hex())
+        os.chmod(path, 0o600)
+    except FileExistsError:  # astronomically unlikely id collision; caller retries
+        raise EncryptionUnavailable("key-id collision; retry rotation") from None
+    except OSError as e:
+        raise EncryptionUnavailable(f"cannot write keyring key {path}: {e}") from e
+    return keyid.hex()
 
 
 def is_sealed(blob: bytes) -> bool:
     """True if ``blob`` was produced by :func:`seal` (carries a magic header).
 
-    Recognises both the process-wide at-rest header and the per-tenant envelope
-    header, so strict-mode + TEXT-column detection treat tenant-sealed values as
-    sealed too."""
+    Recognises the v1 + v2 process-wide headers and the per-tenant envelope
+    header, so strict-mode + TEXT-column detection treat sealed values as sealed."""
     return (
         blob[: len(_MAGIC)] == _MAGIC
+        or blob[: len(_MAGIC_V2)] == _MAGIC_V2
         or blob[: len(_TENANT_MAGIC)] == _TENANT_MAGIC
     )
 
@@ -266,7 +458,7 @@ def seal(plaintext: bytes) -> bytes:
     # globally-sealed data written before the switch still opens.
     if per_tenant_at_rest():
         from .paths import current_tenant
-        from .tenant_kms import seal_for_tenant
+        from .tenant.kms import seal_for_tenant
         return seal_for_tenant(current_tenant(), plaintext)
     if not _have_crypto():
         raise EncryptionUnavailable(
@@ -275,8 +467,16 @@ def seal(plaintext: bytes) -> bytes:
         )
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-    key = _load_or_create_key()
     nonce = secrets.token_bytes(_NONCE_BYTES)
+    # If the rotation keyring has been initialised (an operator ran
+    # `maverick encryption rotate`), seal under the active key and embed its id
+    # (v2). Otherwise keep the legacy single-key v1 path byte-for-byte unchanged.
+    active = _active_keyring_key()
+    if active is not None:
+        key, keyid = active
+        ct = AESGCM(key).encrypt(nonce, plaintext, None)
+        return _MAGIC_V2 + keyid + nonce + ct
+    key = _load_or_create_key()
     ct = AESGCM(key).encrypt(nonce, plaintext, None)
     return _MAGIC + nonce + ct
 
@@ -292,7 +492,7 @@ def unseal(blob: bytes) -> bytes:
     # — GCM authentication fails otherwise, which is the cross-tenant guarantee.
     if blob[: len(_TENANT_MAGIC)] == _TENANT_MAGIC:
         from .paths import current_tenant
-        from .tenant_kms import unseal_for_tenant
+        from .tenant.kms import unseal_for_tenant
         return unseal_for_tenant(current_tenant(), blob)
     if not is_sealed(blob):
         return blob
@@ -302,6 +502,26 @@ def unseal(blob: bytes) -> bytes:
         )
     from cryptography.exceptions import InvalidTag
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    # v2 (keyring): MAGIC_V2 || keyid(8) || nonce(12) || ct+tag. Resolve the key
+    # by its embedded id so blobs sealed under a now-superseded key still open.
+    if blob[: len(_MAGIC_V2)] == _MAGIC_V2:
+        body = blob[len(_MAGIC_V2):]
+        if len(body) < _KEYID_BYTES + _NONCE_BYTES + 16:
+            raise EncryptionUnavailable(
+                "sealed blob is truncated (too short for key-id + nonce + tag)"
+            )
+        keyid = body[:_KEYID_BYTES]
+        nonce = body[_KEYID_BYTES:_KEYID_BYTES + _NONCE_BYTES]
+        ct = body[_KEYID_BYTES + _NONCE_BYTES:]
+        key = _resolve_key_by_id(keyid)
+        try:
+            return AESGCM(key).decrypt(nonce, ct, None)
+        except InvalidTag as e:
+            raise EncryptionUnavailable(
+                "cannot decrypt sealed data: wrong at-rest key or altered "
+                "ciphertext (GCM authentication failed)"
+            ) from e
 
     key = _load_or_create_key()
     body = blob[len(_MAGIC):]
@@ -396,5 +616,7 @@ __all__ = [
     "unseal_to_text",
     "seal_to_str",
     "unseal_from_str",
+    "rotate_at_rest_key",
+    "backup_key_material",
     "EncryptionUnavailable",
 ]

@@ -16,7 +16,7 @@ from maverick.federation_envelope import (
     sign_envelope,
     verify_envelope,
 )
-from maverick.marketplace_federation import (
+from maverick.marketplace.federation import (
     MAX_LISTINGS_PER_ENVELOPE,
     SCHEMA,
     export_listings,
@@ -112,12 +112,85 @@ def test_import_round_trip_namespaces_and_persists(tmp_path):
 
 def test_reimport_replaces_origin_set(tmp_path):
     store = tmp_path / "imports.json"
-    env1 = _export(entries=[dict(LISTING), {**LISTING, "name": "old-skill"}])
+    env1 = _export(entries=[dict(LISTING), {**LISTING, "name": "old-skill"}],
+                   now=1_750_000_000.0)
     import_listings(env1, peers=_peers_for(env1), store_path=store)
-    env2 = _export(entries=[dict(LISTING)])  # old-skill withdrawn upstream
+    # A later re-export (newer created_at) withdraws old-skill upstream.
+    env2 = _export(entries=[dict(LISTING)], now=1_750_000_500.0)
     import_listings(env2, peers=_peers_for(env2), store_path=store)
     names = [r["name"] for r in imported_listings("skills", store_path=store)]
     assert names == ["peer-a/summarize-url"]
+
+
+def test_import_rejects_replayed_older_envelope_rollback(tmp_path):
+    """Re-sync replaces an origin's whole set, so replaying an OLDER signed
+    envelope would resurrect a withdrawn listing. The created_at watermark
+    refuses any envelope not strictly newer than the last one applied."""
+    store = tmp_path / "imports.json"
+    # v1 carries a now-withdrawn listing; v2 (newer) drops it.
+    env1 = _export(entries=[dict(LISTING), {**LISTING, "name": "pulled-malware"}],
+                   now=1_750_000_000.0)
+    env2 = _export(entries=[dict(LISTING)], now=1_750_000_500.0)
+    assert import_listings(env1, peers=_peers_for(env1), store_path=store)["ok"]
+    assert import_listings(env2, peers=_peers_for(env2), store_path=store)["ok"]
+    assert "peer-a/summarize-url" in [
+        r["name"] for r in imported_listings(store_path=store)]
+
+    # Attacker replays the genuine, still-validly-signed v1 to bring it back.
+    report = import_listings(env1, peers=_peers_for(env1), store_path=store)
+    assert not report["ok"]
+    assert "rollback" in report["reason"] or "newer" in report["reason"]
+    # The withdrawn listing did NOT come back.
+    names = [r["name"] for r in imported_listings(store_path=store)]
+    assert "peer-a/pulled-malware" not in names
+    assert names == ["peer-a/summarize-url"]
+
+
+def test_import_rejects_exact_replay_of_latest(tmp_path):
+    """created_at == watermark is also refused (exact replay, not just older)."""
+    store = tmp_path / "imports.json"
+    env = _export(now=1_750_000_000.0)
+    assert import_listings(env, peers=_peers_for(env), store_path=store)["ok"]
+    report = import_listings(env, peers=_peers_for(env), store_path=store)
+    assert not report["ok"]
+
+
+def test_import_rejects_missing_created_at(tmp_path):
+    payload = {"schema": SCHEMA, "origin": "peer-a", "listings": [dict(LISTING)]}
+    env = sign_envelope(payload)
+    report = import_listings(env, peers=_peers_for(env),
+                             store_path=tmp_path / "i.json")
+    assert not report["ok"] and "created_at" in report["reason"]
+
+
+def test_verify_envelope_rejects_recursion_bomb():
+    """A deeply-nested envelope must be rejected at the depth gate, not crash the
+    digest (json.dumps) with a RecursionError. The pubkey here matches the pinned
+    key, so without the guard verification would reach _digest and blow the stack
+    — an unauthenticated DoS (the pinned pubkey is public)."""
+    from maverick.federation_envelope import verify_envelope
+    deep: dict = {}
+    cur = deep
+    for _ in range(5000):
+        cur["x"] = {}
+        cur = cur["x"]
+    deep.update({"schema": SCHEMA, "origin": "o", "sig": "ab", "pubkey": "ab" * 32})
+    peers = {"o": {"origin": "o", "pubkey": "ab" * 32}}
+    ok, reason = verify_envelope(deep, expected_schema=SCHEMA, peers=peers)
+    assert ok is False
+    assert "deep" in reason  # rejected cleanly, not via RecursionError
+
+
+def test_distinct_origins_have_independent_watermarks(tmp_path):
+    """One origin's watermark must not block a different origin's first import."""
+    store = tmp_path / "imports.json"
+    env_a = _export(origin="peer-a", now=1_750_000_900.0)
+    import_listings(env_a, peers=_peers_for(env_a, "peer-a"), store_path=store)
+    # peer-b's older-timestamped envelope is still its FIRST, so it's accepted.
+    env_b = _export(origin="peer-b", now=1_750_000_100.0)
+    report = import_listings(env_b, peers=_peers_for(env_b, "peer-b"),
+                             store_path=store)
+    assert report["ok"], report["reason"]
 
 
 # -------------------------------------------------- import (fail-closed) ----
@@ -228,5 +301,63 @@ def test_peer_allowlist_parses_tables_and_strings():
 
 
 def test_module_states_ratings_do_not_federate():
-    import maverick.marketplace_federation as mod
+    import maverick.marketplace.federation as mod
     assert "Ratings do NOT federate" in (mod.__doc__ or "")
+
+
+def test_listing_name_charset_is_validated():
+    # A peer controls `name`; on import it becomes the f"{origin}/{name}" key.
+    # _listing_for_export (the export AND import normalizer) must drop names with
+    # a `/` (key injection), a leading `..`/`.` (traversal/hidden), or whitespace/
+    # control chars, while keeping ordinary kebab/identifier/dotted/scoped names.
+    from maverick.marketplace.federation import _listing_for_export
+
+    base = {"kind": "skills", "summary": "s",
+            "source": "gh:a:b", "sha256": "ab" * 32}
+    for ok in ("summarize-url", "my_plugin", "tool.v2", "Weather3", "scope@pkg"):
+        assert _listing_for_export({**base, "name": ok}) is not None, ok
+    for bad in ("../etc", "other-origin/foo", "a/b", "a b", ".hidden", "x\ny", "/abs"):
+        assert _listing_for_export({**base, "name": bad}) is None, bad
+
+
+def test_concurrent_imports_from_different_origins_do_not_clobber(tmp_path):
+    """import_listings does a load-modify-save of one shared store. Two
+    concurrent imports from DIFFERENT origins must each keep their listings AND
+    their rollback watermark -- without the lock the second save (built on the
+    pre-first snapshot) wipes the first origin's listings + watermark, reopening
+    the replay window."""
+    import threading
+
+    from maverick.marketplace.federation import _WATERMARK_KEY, _load_store
+
+    store = tmp_path / "fed_store.json"
+    env_a = _export(origin="peer-a", now=1_750_000_000.0)
+    env_b = _export(origin="peer-b", now=1_750_000_500.0)
+    peers = {"peer-a": {"origin": "peer-a", "pubkey": env_a["pubkey"]},
+             "peer-b": {"origin": "peer-b", "pubkey": env_b["pubkey"]}}
+    reports: list[dict] = []
+    lock = threading.Lock()
+    barrier = threading.Barrier(2)
+
+    def do(env):
+        barrier.wait()
+        r = import_listings(env, peers=peers, store_path=store)
+        with lock:
+            reports.append(r)
+
+    ts = [threading.Thread(target=do, args=(env_a,)),
+          threading.Thread(target=do, args=(env_b,))]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+
+    assert all(r["ok"] for r in reports), reports
+    # Both origins' listings survive.
+    names = {ls["name"] for ls in imported_listings(store_path=store)}
+    assert "peer-a/summarize-url" in names
+    assert "peer-b/summarize-url" in names
+    # Both rollback watermarks survive (neither was clobbered).
+    wm = _load_store(store).get(_WATERMARK_KEY) or {}
+    assert "peer-a" in wm and "peer-b" in wm
+    assert list(tmp_path.glob("*.tmp")) == []

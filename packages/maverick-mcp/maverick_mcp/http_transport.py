@@ -37,13 +37,16 @@ across major clients; we ship Streamable HTTP as the GA transport.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import ipaddress
 import json
 import logging
 import os
 import secrets
-from collections import OrderedDict
+import threading
+import time
+from collections import OrderedDict, deque
 from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
@@ -206,8 +209,64 @@ def _http_tasks_enabled() -> bool:
         "1", "true", "yes", "on")
 
 
-def _check_bearer(authorization: str | None) -> bool:
+# --- per-caller request rate limiting (sliding 60s window) -------------------
+_RATE_LOCK = threading.Lock()
+_RATE_HITS: dict[str, deque] = {}
+# Cap the number of tracked callers so a long-running server facing many
+# distinct IPs/tokens can't grow this map without bound. When exceeded, idle
+# buckets (no hits inside the window) are swept; memory stays ~O(active callers).
+_RATE_MAX_KEYS = 8192
+
+
+def _rate_limit_per_min() -> int:
+    """Requests/minute allowed per caller. Default 600; 0 disables. An authed
+    caller can otherwise spam goal-spawning RPCs with unbounded concurrency."""
+    try:
+        return max(0, int(os.environ.get("MAVERICK_MCP_RATE_LIMIT", "600")))
+    except ValueError:
+        return 600
+
+
+def _rate_key(authorization: str | None, request) -> str:
+    """Bucket by bearer token (hashed) when present, else by client IP."""
+    if authorization and authorization.startswith("Bearer "):
+        tok = authorization[len("Bearer "):].strip()
+        return "tok:" + hashlib.sha256(tok.encode("utf-8")).hexdigest()[:16]
+    host = getattr(getattr(request, "client", None), "host", None) or "?"
+    return "ip:" + str(host)
+
+
+def _rate_ok(key: str) -> bool:
+    """True if ``key`` is under its per-minute budget (and records the hit)."""
+    limit = _rate_limit_per_min()
+    if limit <= 0:
+        return True
+    now = time.monotonic()
+    with _RATE_LOCK:
+        cutoff = now - 60.0
+        dq = _RATE_HITS.setdefault(key, deque())
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        # Sweep idle buckets when the map grows large, so stale callers don't
+        # leak. Keep the current key even if momentarily empty.
+        if len(_RATE_HITS) > _RATE_MAX_KEYS:
+            for k in [k for k, d in _RATE_HITS.items()
+                      if k != key and (not d or d[-1] < cutoff)]:
+                del _RATE_HITS[k]
+        if len(dq) >= limit:
+            return False
+        dq.append(now)
+        return True
+
+
+def _check_bearer(authorization: str | None) -> tuple[bool, str]:
     """Bearer-token gate for network HTTP transport.
+
+    Returns ``(ok, caller_identity)`` -- ``caller_identity`` is the per-caller
+    :class:`TrustedAgent` id when a per-caller ``[agent_trust] mcp_token``
+    authenticated the request, or ``""`` for the shared ``MAVERICK_MCP_TOKEN``
+    (which carries no per-caller identity). The transport binds this identity
+    onto fleet-memory ops so a caller cannot act AS another rostered agent.
 
     Unlike stdio, HTTP requests are network-reachable; token auth is
     therefore mandatory. Two accepted credentials: the shared
@@ -223,7 +282,7 @@ def _check_bearer(authorization: str | None) -> bool:
     if authorization and authorization.startswith("Bearer "):
         given = authorization[len("Bearer "):].strip()
     if not given:
-        return False
+        return False, ""
     agent = None
     try:
         from maverick.agent_trust import agent_for_token
@@ -235,8 +294,10 @@ def _check_bearer(authorization: str | None) -> bool:
         or agent is not None
     )
     if not authed:
-        return False
-    return _mcp_trust_ok(agent)
+        return False, ""
+    if not _mcp_trust_ok(agent):
+        return False, ""
+    return True, (agent.id if agent is not None else "")
 
 
 def _mcp_trust_ok(agent) -> bool:
@@ -270,7 +331,16 @@ def _error_envelope(request_id, exc: Exception) -> dict:
     if isinstance(exc, (_ProtocolError, TaskError)):
         code, message = exc.code, exc.message
     else:
-        code, message = -32603, f"internal error: {exc}"
+        # Scrub the message before it reaches the HTTP client: a raw exception's
+        # args can carry secrets (DSNs, tokens, credentialed URLs). The stdio
+        # dispatch path (server._dispatch) already scrubs the same class of
+        # error; mirror it so both transports withhold the same internal detail.
+        try:
+            from maverick.secrets import scrub
+            detail = scrub(f"{type(exc).__name__}: {exc}")
+        except Exception:  # pragma: no cover - scrub must never mask the error
+            detail = type(exc).__name__
+        code, message = -32603, f"internal error: {detail}"
     return {"jsonrpc": "2.0", "id": request_id,
             "error": {"code": code, "message": message}}
 
@@ -334,6 +404,7 @@ def _sse_stream(
     method: str,
     params: dict,
     task_owner: str | None,
+    caller_identity: str | None = None,
     subscriptions: set,
     request_id,
     should_persist_session: bool,
@@ -350,7 +421,8 @@ def _sse_stream(
 
     def _dispatch_with_updates():
         with server.resource_update_scope(subscriptions):
-            result = _dispatch(server, method, params, task_owner=task_owner)
+            result = _dispatch(server, method, params, task_owner=task_owner,
+                               caller_identity=caller_identity)
             updates = server.drain_resource_updates()
             return result, updates
 
@@ -482,8 +554,13 @@ def build_app(server) -> FastAPI:
                 status_code=403,
                 detail="cross-origin request blocked (set MAVERICK_MCP_ALLOWED_ORIGINS to allow)",
             )
-        if not _check_bearer(authorization):
+        authed, caller_identity = _check_bearer(authorization)
+        if not authed:
             raise HTTPException(status_code=401, detail="invalid bearer")
+        # Per-caller rate limit (after auth so unauthenticated probes can't
+        # exhaust a victim's budget). Returns 429 over the per-minute cap.
+        if not _rate_ok(_rate_key(authorization, request)):
+            raise HTTPException(status_code=429, detail="rate limit exceeded")
         # Opt-in, consent-gated client-language analytics (off by default; no-op
         # and never raises when disabled). Feeds the language-bindings decision.
         try:
@@ -536,6 +613,7 @@ def build_app(server) -> FastAPI:
                 method=method,
                 params=params,
                 task_owner=task_owner,
+                caller_identity=caller_identity,
                 subscriptions=subscriptions,
                 request_id=request_id,
                 should_persist_session=should_persist_session,
@@ -549,7 +627,8 @@ def build_app(server) -> FastAPI:
         # for the same asyncio.run reason as above.
         def _dispatch_for_session():
             with server.resource_update_scope(subscriptions):
-                return _dispatch(server, method, params, task_owner=task_owner)
+                return _dispatch(server, method, params, task_owner=task_owner,
+                                 caller_identity=caller_identity)
 
         try:
             result = await asyncio.to_thread(_dispatch_for_session)
@@ -608,8 +687,16 @@ def _dispatch(
     params: dict,
     *,
     task_owner: str | None = None,
+    caller_identity: str | None = None,
 ) -> dict:
-    """Route a JSON-RPC method to the corresponding handle_* method."""
+    """Route a JSON-RPC method to the corresponding handle_* method.
+
+    ``caller_identity`` (the authenticated per-caller agent id, ``""`` for the
+    shared bearer) is bound for the duration of the handler so fleet-memory
+    tools cannot act AS another rostered agent. Bound here -- inside the worker
+    thread both dispatch paths funnel through -- so it cannot leak across
+    concurrent requests (the ContextVar is set in this thread's context copy).
+    """
     if method == "notifications/initialized":
         return {}
     if method == "ping":
@@ -619,9 +706,11 @@ def _dispatch(
         from .server import _ProtocolError
         raise _ProtocolError(-32601, f"method not found: {method}")
     handler = getattr(server, handler_name)
-    if method == "tools/call" or method.startswith("tasks/"):
-        return handler(params, task_owner=task_owner)
-    return handler(params)
+    from maverick.fleet_memory import bind_caller
+    with bind_caller(caller_identity):
+        if method == "tools/call" or method.startswith("tasks/"):
+            return handler(params, task_owner=task_owner)
+        return handler(params)
 
 
 def serve(host: str = "127.0.0.1", port: int = 8771) -> None:

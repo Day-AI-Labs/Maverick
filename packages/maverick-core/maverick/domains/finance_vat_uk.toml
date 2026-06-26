@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "UK VAT return (MTD) package"
+consumers = ["tax_manager", "controller"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull transactions"
+instruction = "Query the MTD-compliant digital records of sales and purchases for the VAT period from the system of record."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile records"
+instruction = "Reconcile the digital records to the ledger and confirm an unbroken MTD digital link, citing sources."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Compute boxes"
+instruction = "Calculate the nine VAT return boxes including reverse-charge and partial-exemption adjustments."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Review anomalies"
+instruction = "Compare box values against prior periods and flag any movement that signals a coding or recovery error."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for filing"
+instruction = "Hand the drafted MTD return to the human tax manager to post, pay, file, and certify."
+gate = "review"

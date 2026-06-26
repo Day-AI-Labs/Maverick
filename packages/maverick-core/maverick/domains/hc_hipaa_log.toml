@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "PHI disclosure accounting log"
+consumers = ["privacy_officer", "compliance_officer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture disclosure"
+instruction = "Read the disclosure record to capture the recipient, data shared, and date of release."
+tools = ["read_file"]
+[[workflow]]
+name = "Establish authority"
+instruction = "Confirm the purpose and legal authority for the disclosure against HIPAA and company policy."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Record entry"
+instruction = "Query existing entries and add the disclosure with purpose, authority, and minimum-necessary scope."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Assemble accounting"
+instruction = "Compile the accounting-of-disclosures log for the requested patient and date range."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Privacy review"
+instruction = "Route the accounting log to the privacy officer for review before release to the requester."
+gate = "review"

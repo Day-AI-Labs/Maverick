@@ -1,6 +1,6 @@
-# Maverick mobile companion (read-only)
+# Lightwork mobile companion (read-only)
 
-Watch your Maverick swarm from a phone: runs list, run detail with a live
+Watch your Lightwork swarm from a phone: runs list, run detail with a live
 event timeline, and an at-a-glance fleet summary — with an offline cache so
 losing the network shows "as of 12 min ago" instead of a blank screen.
 
@@ -41,6 +41,11 @@ Requirements:
 - **Token**: if dashboard auth is enabled, paste a bearer token in Settings.
   It is stored in the device keychain via `expo-secure-store`, never in
   plain storage. With auth off (local trusted networks only), leave it empty.
+  **Security:** the app refuses to send the token over plain `http://` to a
+  non-loopback host (an on-path attacker on shared Wi-Fi/VPN could sniff it) —
+  for remote access *with a token*, use an `https://` URL or a secure tunnel
+  (Tailscale, a reverse proxy, etc.). Plain `http://` to a LAN IP is fine only
+  with auth off (no token).
 - **Offline cache**: the last good `/api/v1/offline/bundle` payload is kept
   in `AsyncStorage` (`@react-native-async-storage/async-storage`) and
   rendered with an "as of N min ago — offline" banner when fetches fail.

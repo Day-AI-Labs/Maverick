@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "CLT & eSocial compliance brief"
+consumers = ["hr_business_partner", "employment_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame question"
+instruction = "Read the request and pull the company's CLT contracts, benefit records, and prior eSocial filings relevant to the matter."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Confirm current law"
+instruction = "Verify current CLT requirements, eSocial event rules, and mandatory-benefit thresholds against authoritative sources."
+tools = ["web_search"]
+[[workflow]]
+name = "Map eSocial events"
+instruction = "Map the applicable eSocial events and compute mandatory benefits using the minimum personal data the task needs."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft brief"
+instruction = "Draft the compliance brief stating assumptions and unknowns plainly and flagging where local counsel review is required."
+[[workflow]]
+name = "Route to owner"
+instruction = "Route the brief to the HR business partner and employment counsel for sign-off."
+gate = "review"

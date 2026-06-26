@@ -1,6 +1,6 @@
-# Maverick from Java / JVM
+# Lightwork from Java / JVM
 
-Drive a locally running Maverick swarm from a JVM app (Java, Kotlin,
+Drive a locally running Lightwork swarm from a JVM app (Java, Kotlin,
 Scala) over the [Model Context Protocol](https://modelcontextprotocol.io/).
 Same contract every IDE-side MCP client uses — you talk to `maverick mcp`
 over stdio JSON-RPC.
@@ -59,7 +59,7 @@ public class Client {
         client.initialize(); // MCP initialize handshake
 
         ListToolsResult tools = client.listTools();
-        System.out.println("Maverick exposes " + tools.tools().size() + " tools");
+        System.out.println("Lightwork exposes " + tools.tools().size() + " tools");
 
         // maverick_start runs the swarm and returns the final answer (long-running).
         var res = client.callTool(new CallToolRequest(
@@ -80,7 +80,7 @@ You should see the tool list (10 tools), then the swarm's final answer.
 ## What works
 
 The MCP server exposes a small, stable control surface — **8
-`maverick_*` tools**, not the ~70 in-kernel tools. You drive the swarm;
+`maverick_*` tools**, not the 100+ in-kernel tools. You drive the swarm;
 the kernel runs the tools internally.
 
 - `maverick_start` `{title, description?, max_dollars?, max_wall_seconds?, max_depth?}`
@@ -95,7 +95,7 @@ the kernel runs the tools internally.
 - `maverick_fleet_recall` `{agent_id, vendor, query}` — governed, audited
   memory read for an external fleet agent.
 
-The ~70 in-kernel tools (web search, repo map, editor, Slack, S3, …)
+The 100+ in-kernel tools (web search, repo map, editor, Slack, S3, …)
 are **not** individually exposed over MCP — the swarm decides which to
 use while running a goal.
 
@@ -128,13 +128,13 @@ per-tool table.
 
 - **Multi-agent orchestration stays in Python.** Don't try to
   reimplement the orchestrator-proposer-verifier topology in Java;
-  spawn goals and let Maverick run the swarm. The JVM process is the
+  spawn goals and let Lightwork run the swarm. The JVM process is the
   *client*, not a worker.
 - **Sandbox / kernel features are Python-side.** Backends
   (firecracker, k8s, devcontainer) live in `maverick-core` and are
   not part of the wire protocol.
 - **The MCP server is for cross-language clients, not for tunneling
-  Maverick over the public internet.** Pair with your own auth +
+  Lightwork over the public internet.** Pair with your own auth +
   TLS layer if you go remote (see `packages/maverick-mcp/http_transport.py`).
 
 ## SDK status

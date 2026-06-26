@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}chat · Maverick{% endblock %}
+{% block title %}chat · Lightwork{% endblock %}
 {% block content %}
 <style>
   /* Chat landing — page-scoped. Uses the design-system tokens from base. */
@@ -105,7 +105,7 @@
       <circle cx="11" cy="11" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/>
     </svg>
     <p class="chat-greeting" id="chat-greeting">Welcome back</p>
-    <h1 class="display">What should Maverick take on?</h1>
+    <h1 class="display">What should Lightwork take on?</h1>
   </div>
 
   <form method="post" action="/chat/send" class="composer chat-anim chat-anim-2" enctype="multipart/form-data">
@@ -115,7 +115,7 @@
       value="{{ prefill_title or '' }}"
       class="composer__field"
       placeholder="Describe a goal — e.g. plan a 2-week trip to Japan under $4k"
-      aria-label="Describe a goal for Maverick to run"
+      aria-label="Describe a goal for Lightwork to run"
       required
       autofocus
     />
@@ -136,7 +136,7 @@
         <button type="button" id="attach-btn" class="composer__icon" aria-label="Attach files">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11.7 5.3 6 11a2 2 0 0 1-2.83-2.83l5.66-5.66a3 3 0 0 1 4.24 4.24l-5.65 5.66" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <span class="composer__hint" id="composer-hint" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Maverick plans a sub-agent swarm and runs it under a budget cap.</span>
+        <span class="composer__hint" id="composer-hint" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Lightwork plans a sub-agent swarm and runs it under a budget cap.</span>
       </div>
       <button type="submit" id="send-btn" class="composer__send" aria-label="Start goal">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">

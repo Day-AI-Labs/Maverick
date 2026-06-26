@@ -26,14 +26,12 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
+from .best_of_n import AllAttemptsFailed  # re-export: single shared definition
+
 log = logging.getLogger(__name__)
 
 T = TypeVar("T")
 C = TypeVar("C")
-
-
-class AllAttemptsFailed(Exception):
-    """Every surviving attempt raised before producing a result."""
 
 
 @dataclass

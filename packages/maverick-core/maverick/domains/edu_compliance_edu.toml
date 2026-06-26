@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "accreditation evidence binder"
+consumers = ["accreditation_liaison", "provost"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Load standards"
+instruction = "Read the accrediting body's standards and the self-study outline to enumerate every evidence requirement."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Inventory evidence"
+instruction = "Catalog existing institutional documents and map each one to the standard and criterion it supports."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Find gaps"
+instruction = "Flag standards with no evidence, stale evidence, or evidence that does not actually demonstrate the criterion."
+[[workflow]]
+name = "Organize binder"
+instruction = "Arrange the cited evidence into a standard-by-standard binder structure with a cross-reference index."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Liaison review"
+instruction = "Route the accreditation evidence binder to the accreditation liaison for verification and sign-off."
+gate = "review"

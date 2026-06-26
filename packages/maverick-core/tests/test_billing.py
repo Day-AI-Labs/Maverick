@@ -98,7 +98,7 @@ def test_config_override_plans(monkeypatch):
 
 
 def test_tenant_entitled_reads_registered_plan(tmp_path):
-    from maverick import tenant_registry as tr
+    from maverick.tenant import registry as tr
     tr.create_tenant("acme", plan="enterprise")
     assert billing.tenant_entitled("acme", "audit_export") is True
     assert billing.tenant_entitled("acme", "nonexistent") is False

@@ -389,7 +389,7 @@ def _preflight_fetch(url: str, parsed: Any) -> str | None:
     # decision that must not depend on DNS resolving (the IP check now fails
     # closed on resolution failure).
     try:
-        from ..tenant_egress import egress_allowed
+        from ..tenant.egress import egress_allowed
         if not egress_allowed("http_fetch", parsed.hostname or ""):
             return (f"ERROR: egress policy blocks http_fetch from reaching "
                     f"{parsed.hostname!r} (see [egress] / [sandbox.tool.http_fetch]).")

@@ -66,6 +66,92 @@ def _max_inbound_chars() -> int:
         return 100000
 
 
+def backoff_delay(base_interval: float, consecutive_errors: int, *, cap: float = 300.0) -> float:
+    """Poll-loop sleep after ``consecutive_errors`` consecutive failures.
+
+    No failures -> the normal ``base_interval``. After each consecutive failure
+    the delay doubles (base*2, base*4, ...) up to ``cap`` seconds, so a
+    persistently failing upstream (API down, token revoked, instance
+    unreachable) is polled progressively less often instead of hammered every
+    ``base_interval`` -- which otherwise burns CPU, floods the logs, and can get
+    the account rate-limited or banned. Callers reset ``consecutive_errors`` to
+    0 on the first successful poll, which returns to ``base_interval``."""
+    if consecutive_errors <= 0:
+        return base_interval
+    return min(cap, base_interval * (2 ** consecutive_errors))
+
+
+def webhook_body_limit() -> int:
+    """Max inbound webhook body in bytes. Webhook listeners read the body
+    *before* the HMAC/signature check (they must, to compute it), so without a
+    cap an unauthenticated POST to an exposed webhook port can buffer arbitrary
+    memory. Override with MAVERICK_WEBHOOK_BODY_LIMIT; 0 disables the cap.
+    Default 1 MiB -- comfortably above any real Slack/Twilio/Meta payload."""
+    try:
+        return int(os.environ.get("MAVERICK_WEBHOOK_BODY_LIMIT", str(1 << 20)))
+    except ValueError:
+        return 1 << 20
+
+
+class BodySizeLimitMiddleware:
+    """ASGI middleware that bounds the request body of webhook apps.
+
+    Two layers: reject early with 413 when the Content-Length header exceeds the
+    cap (the honest/common case, no buffering), and -- for an absent or lying
+    Content-Length -- truncate the streamed body at the cap so the downstream
+    parser never buffers more than ``max_bytes`` (a truncated body simply fails
+    the signature check -> 403). Applied at the ASGI layer so it covers Form,
+    JSON and raw-body handlers uniformly, including FastAPI ``Form(...)`` params
+    that are parsed before the route function runs."""
+
+    def __init__(self, app, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") != "http" or self.max_bytes <= 0:
+            await self.app(scope, receive, send)
+            return
+        for name, value in scope.get("headers") or ():
+            if name == b"content-length":
+                try:
+                    if int(value) > self.max_bytes:
+                        await _send_413(send)
+                        return
+                except ValueError:
+                    pass
+                break
+        total = 0
+        truncated = False
+
+        async def capped_receive():
+            nonlocal total, truncated
+            if truncated:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            msg = await receive()
+            if msg.get("type") == "http.request":
+                body = msg.get("body", b"")
+                if total + len(body) > self.max_bytes:
+                    body = body[: max(0, self.max_bytes - total)]
+                    truncated = True
+                    msg = {"type": "http.request", "body": body, "more_body": False}
+                total += len(body)
+            return msg
+
+        await self.app(scope, capped_receive, send)
+
+
+async def _send_413(send) -> None:
+    await send({"type": "http.response.start", "status": 413,
+                "headers": [(b"content-type", b"text/plain")]})
+    await send({"type": "http.response.body", "body": b"payload too large"})
+
+
+def add_webhook_body_limit(app) -> None:
+    """Attach :class:`BodySizeLimitMiddleware` to a webhook channel's ASGI app."""
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=webhook_body_limit())
+
+
 @dataclass
 class IncomingMessage:
     user_id: str

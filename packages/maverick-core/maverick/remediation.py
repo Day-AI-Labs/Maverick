@@ -270,42 +270,60 @@ def apply_remediation(item: RemediationItem, *, dry_run: bool = True) -> ApplyRe
     if dry_run:
         return ApplyResult(item.control, False, dry_run=True, block=block,
                            undo=f"remove the appended [{item.section}] block")
-    existed_before = path.exists()
-    try:
-        existing = path.read_text(encoding="utf-8") if existed_before else ""
-    except OSError as e:
-        return ApplyResult(item.control, False, reason=f"could not read config: {e}")
-    new_text = (existing.rstrip() + "\n\n" + block) if existing.strip() else block
-    # Last gate: never write something that doesn't parse -- a duplicate table, a
-    # scalar/table name clash, or an already-malformed config the section check
-    # couldn't see. Refuse rather than corrupt the file.
-    if not _parses_ok(new_text):
-        return ApplyResult(
-            item.control, False, block=block,
-            reason=f"appending [{item.section}] would make config.toml invalid "
-                   "(it may already be malformed); fix it by hand")
-    try:
-        backup = _write_config_atomic(path, new_text, prior=existing)
-    except OSError as e:
-        return ApplyResult(item.control, False, reason=f"could not write config: {e}")
-    # Audit is load-bearing here: record only after the config commit succeeds,
-    # and roll the commit back if the audit writer reports failure. This avoids
-    # both unlogged config mutation and false-positive remediation audit rows.
-    if not _record_remediation(item, block):
+    # Serialize the read-modify-write of config.toml across processes: the
+    # section-absent check + read + append + write must be atomic w.r.t. another
+    # config writer (a second remediation, self_learning, the wizard), or the
+    # append is built on stale text and a concurrent edit is clobbered. Re-read
+    # and re-check the section INSIDE the lock so a writer that landed between
+    # the pre-filter above and here is not overwritten.
+    from .file_lock import cross_process_lock
+    with cross_process_lock(path):
         try:
-            if existed_before:
-                _write_config_atomic(path, existing, prior=new_text)
-            else:
-                path.unlink(missing_ok=True)
+            cfg_now = load_config() or {}
+        except Exception as e:
+            return ApplyResult(item.control, False, reason=f"could not read config: {e}")
+        if item.section in cfg_now:
+            return ApplyResult(
+                item.control, False, block=block,
+                reason=f"[{item.section}] already present -- apply by hand to avoid "
+                       "clobbering existing keys")
+        existed_before = path.exists()
+        try:
+            existing = path.read_text(encoding="utf-8") if existed_before else ""
         except OSError as e:
+            return ApplyResult(item.control, False, reason=f"could not read config: {e}")
+        new_text = (existing.rstrip() + "\n\n" + block) if existing.strip() else block
+        # Last gate: never write something that doesn't parse -- a duplicate table, a
+        # scalar/table name clash, or an already-malformed config the section check
+        # couldn't see. Refuse rather than corrupt the file.
+        if not _parses_ok(new_text):
+            return ApplyResult(
+                item.control, False, block=block,
+                reason=f"appending [{item.section}] would make config.toml invalid "
+                       "(it may already be malformed); fix it by hand")
+        try:
+            backup = _write_config_atomic(path, new_text, prior=existing)
+        except OSError as e:
+            return ApplyResult(item.control, False, reason=f"could not write config: {e}")
+        # Audit is load-bearing here: record only after the config commit succeeds,
+        # and roll the commit back if the audit writer reports failure. This avoids
+        # both unlogged config mutation and false-positive remediation audit rows.
+        # Kept inside the lock so the rollback write can't race another writer.
+        if not _record_remediation(item, block):
+            try:
+                if existed_before:
+                    _write_config_atomic(path, existing, prior=new_text)
+                else:
+                    path.unlink(missing_ok=True)
+            except OSError as e:
+                return ApplyResult(
+                    item.control, False,
+                    reason="could not write the audit record; rollback failed: "
+                           f"{e}")
             return ApplyResult(
                 item.control, False,
-                reason="could not write the audit record; rollback failed: "
-                       f"{e}")
-        return ApplyResult(
-            item.control, False,
-            reason="could not write the audit record; rolled back config change "
-                   "rather than leave it unlogged")
+                reason="could not write the audit record; rolled back config change "
+                       "rather than leave it unlogged")
     return ApplyResult(
         item.control, True, block=block,
         undo=f"restore {backup}" if backup

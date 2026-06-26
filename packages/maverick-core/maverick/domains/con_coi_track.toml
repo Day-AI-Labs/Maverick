@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "COI compliance tracker"
+consumers = ["project_manager", "risk_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Load requirements"
+instruction = "Read the contract and subcontract insurance exhibits to capture each sub's required coverage limits, endorsements, and additional-insured language."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather COIs"
+instruction = "Collect current certificates of insurance for each active subcontractor from project records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Verify coverage"
+instruction = "Compare each COI's limits, endorsements, and expiration dates against the required coverages and flag deficiencies."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag expirations"
+instruction = "Identify certificates lapsing within the renewal window so non-compliant subs can be held from the field."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the compliance tracker with deficiencies and expirations to the project manager for follow-up direction."
+gate = "review"

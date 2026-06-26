@@ -7,6 +7,7 @@ persona = """You are the SAR Narrative Prep for this business -- a banking speci
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "high"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["bank"]
@@ -17,4 +18,24 @@ shape = "report"
 deliverable = "SAR filing package"
 consumers = ["bsa_officer", "compliance_officer"]
 cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Gather case facts"
+instruction = "Read the alert case file and underlying records to assemble the who, what, when, where, and how of the activity."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Reconstruct flows"
+instruction = "Trace the suspicious transaction flows and amounts in a worksheet to establish the pattern and totals."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Apply standards"
+instruction = "Check the facts against FinCEN narrative expectations and the bank's SAR procedure to confirm completeness."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft narrative"
+instruction = "Draft the chronological SAR narrative citing the supporting records and stating any unknowns plainly."
+[[workflow]]
+name = "Route for filing"
+instruction = "Hand the SAR narrative and evidence package to the BSA and compliance officers to decide and file."
 gate = "approval"

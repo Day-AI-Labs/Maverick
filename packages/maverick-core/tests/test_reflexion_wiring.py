@@ -19,6 +19,23 @@ from maverick.sandbox import LocalBackend
 from maverick.world_model import WorldModel
 
 
+class TestReflexionModelId:
+    def test_model_id_round_trips(self, tmp_path):
+        p = tmp_path / "r.ndjson"
+        reflexion.record("a goal", "timeout", "timed out", "lesson",
+                         model_id="anthropic:claude-x", path=p)
+        rec = reflexion.list_recent(limit=5, path=p)[0]
+        assert rec.model_id == "anthropic:claude-x"
+
+    def test_legacy_line_without_model_id_loads_as_none(self, tmp_path):
+        # A pre-self-harness reflexion line (no model_id key) must still load.
+        p = tmp_path / "r.ndjson"
+        p.write_text('{"ts": 1, "goal_text": "g", "failure_class": "timeout", '
+                     '"failure_msg": "m", "reflection": "r"}\n', encoding="utf-8")
+        rec = reflexion.list_recent(limit=5, path=p)[0]
+        assert rec.model_id is None and rec.failure_class == "timeout"
+
+
 class TestReflexionHelpers:
     def test_disabled_by_default(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_REFLEXION", raising=False)
@@ -343,7 +360,7 @@ class TestReflexionSemanticRecall:
     def test_jaccard_path_misses_reworded_lesson(self, tmp_path, monkeypatch):
         # No embeddings available -> jaccard. The infra lesson shares no
         # tokens with the query, so the lexical path cannot surface it.
-        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed",
+        monkeypatch.setattr("maverick.skill.embeddings._have_fastembed",
                             lambda: False)
         path = tmp_path / "reflexions.ndjson"
         self._seed(path)
@@ -351,9 +368,9 @@ class TestReflexionSemanticRecall:
         assert not any(r.goal_text == self.INFRA_LESSON for _, r in hits)
 
     def test_embedding_path_recalls_reworded_lesson(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed",
+        monkeypatch.setattr("maverick.skill.embeddings._have_fastembed",
                             lambda: True)
-        monkeypatch.setattr("maverick.skill_embeddings.embed", self._fake_embed)
+        monkeypatch.setattr("maverick.skill.embeddings.embed", self._fake_embed)
         path = tmp_path / "reflexions.ndjson"
         self._seed(path)
         hits = reflexion.recall(self.QUERY, path=path)
@@ -366,11 +383,11 @@ class TestReflexionSemanticRecall:
     def test_embedding_failure_falls_back_to_jaccard(self, tmp_path, monkeypatch):
         # A lesson that DOES share tokens with the query is still found when
         # the embedder raises -- recall must fail open, not blow up.
-        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed",
+        monkeypatch.setattr("maverick.skill.embeddings._have_fastembed",
                             lambda: True)
         def _boom(_texts):
             raise RuntimeError("embedding backend down")
-        monkeypatch.setattr("maverick.skill_embeddings.embed", _boom)
+        monkeypatch.setattr("maverick.skill.embeddings.embed", _boom)
         path = tmp_path / "reflexions.ndjson"
         reflexion.record(
             goal_text="fix the flaky parser test",
