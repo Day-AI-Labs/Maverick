@@ -688,6 +688,68 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
 
 
 @main.command()
+@click.argument("demo_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--name", default=None, help="Task title (otherwise the file name).")
+@click.option("--industry", default="", help="Industry context (optional).")
+@click.option("--source", default="log",
+              help="Where the demonstration came from: screen | narration | log.")
+@click.option("--no-llm", is_flag=True,
+              help="Derive the pack deterministically from the steps (no LLM).")
+@click.option("--yes", is_flag=True, help="Skip the approval prompt.")
+@click.pass_context
+def demo(ctx: click.Context, demo_file, name, industry, source, no_llm, yes) -> None:
+    """Synthesize a specialist agent from a watched task (programming by demo).
+
+    Reads a demonstration -- an ordered log of what a person did (JSONL, or
+    prefixed text like ``ACTION[email]: send the weekly digest -> ops@``) --
+    induces a domain pack from it (clamped to a safe envelope), shows it for
+    your approval, and on approval saves it and provisions its skills/tools.
+    Nothing is activated without your yes.
+    """
+    from ..demonstration import induce_profile, load_demonstration
+    from ..intake import save_profile
+
+    demonstration = load_demonstration(demo_file, title=name or "", source=source,
+                                       industry=industry)
+    if not demonstration.steps:
+        click.echo("ERROR: no usable steps parsed from the demonstration file.", err=True)
+        sys.exit(2)
+    click.echo(f"Parsed {len(demonstration.steps)} step(s) from the demonstration.")
+
+    llm = None
+    if not no_llm:
+        try:
+            from ..llm import DEFAULT_MODEL, LLM
+            llm = LLM(model=ctx.obj.get("model") or DEFAULT_MODEL)
+        except Exception as e:  # no provider/key -> deterministic derivation
+            click.echo(f"(LLM unavailable; deriving pack from steps: {e})", err=True)
+
+    click.echo("Inducing a draft domain agent from the demonstration...")
+    profile = induce_profile(demonstration, llm=llm)
+
+    click.echo(click.style("\nDraft domain pack (review before it goes live):", bold=True))
+    click.echo(f"  name:        {profile.name}")
+    click.echo(f"  max_risk:    {profile.max_risk}")
+    click.echo(f"  allow_tools: {', '.join(profile.allow_tools) or '(none)'}")
+    click.echo(f"  workflow:    {len(profile.workflow)} step(s)")
+    for step in profile.workflow:
+        gate = f" [gate: {step.gate}]" if step.gate else ""
+        click.echo(f"    - {step.name}{gate}")
+    click.echo(f"  persona:     {profile.persona[:400]}")
+
+    plan = _show_capability_plan(profile)
+
+    if not yes and not click.confirm("\nApprove and activate this agent?", default=False):
+        click.echo("Discarded. Nothing was saved.")
+        return
+    path = save_profile(profile, approved=True)
+    click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
+    click.echo(f"Domain '{profile.name}' is now available to the swarm.")
+
+    _apply_capability_plan(plan, llm)
+
+
+@main.command()
 @click.option("--principal", default=None,
               help="Principal to inspect (default: user:local). Match your "
                    "[role_assignments] key, e.g. user:<oidc-sub>.")
