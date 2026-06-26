@@ -19,7 +19,8 @@ from .domain import DomainProfile, available_domains, suite_for
 from .domain_refusals import refusals_for
 
 # State-mutating / host-control tools a drafting agent must never reach.
-_DANGEROUS = ("shell", "write_file", "code_exec", "computer", "browser")
+_HOST_CONTROL = ("shell", "write_file", "code_exec", "computer", "browser")
+_FILE_CODE_MUTATORS = ("apply_patch", "str_replace_editor", "ast_edit")
 # Irreversible business actions; a pack denying these shows its segregation-of-
 # duties posture ("agents draft; humans post, pay, file, certify").
 _IRREVERSIBLE = (
@@ -27,7 +28,10 @@ _IRREVERSIBLE = (
     "post_journal_entry", "file_return", "file_tax_return", "file_with_sec",
     "place_trade", "execute_fx_trade", "vendor_master_change", "send_payment",
     "approve_expense", "approve_po", "approve_vendor", "set_credit_limit",
-    "send_invoice", "self_edit",
+    "send_invoice", "self_edit", "release_payroll_payment",
+    "close_period", "edit_chart_of_accounts", "write_off_balance",
+    "reimburse", "edit_employee_bank_details", "create_order_instruction",
+    "delete_order_instruction", "dispose_asset", "remit_tax",
 )
 
 
@@ -64,16 +68,25 @@ def _human_gate(p: DomainProfile) -> str | None:
 def audit_profile(profile: DomainProfile) -> PackAudit:
     """The governance posture of one pack (pure)."""
     allow = set(profile.allow_tools)
-    is_builder = bool(allow & {"shell", "code_exec"})
+    # Builder status is a roster classification, not something a drafting pack
+    # can acquire merely by adding shell/code_exec to its allowlist.
+    suite = suite_for(profile.name)
+    is_builder = (
+        suite == "product_engineering"
+        and bool(allow & {"shell", "code_exec"})
+    )
     cap = profile.capability(f"agent:{profile.name}")
-    reachable = [t for t in _DANGEROUS if cap.permits(t)]
+    dangerous = sorted(
+        set(_HOST_CONTROL) | set(_FILE_CODE_MUTATORS) | set(_IRREVERSIBLE)
+    )
+    reachable = [t for t in dangerous if cap.permits(t)]
     denied = [t for t in _IRREVERSIBLE if t in set(profile.deny_tools)]
     refusals = refusals_for(profile.name, profile.refuse)
     from .agent_autonomy import default_profile_for
     _auto = profile.autonomy or default_profile_for(profile.name)
     return PackAudit(
         name=profile.name,
-        suite=suite_for(profile.name),
+        suite=suite,
         compartment=profile.compartment,
         max_risk=profile.max_risk,
         effort=profile.effort,
