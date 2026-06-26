@@ -56,16 +56,24 @@ class RecordStats:
     departments: dict[str, int] = field(default_factory=dict)
 
 
-def _goal_records(world: Any, *, limit: int) -> list[DecisionRecord]:
+def _goal_records(
+    world: Any, *, limit: int, owner: str | None = None,
+) -> list[DecisionRecord]:
     out: list[DecisionRecord] = []
     try:
-        goals = world.list_goals(limit=limit, order="desc")
+        kwargs: dict[str, Any] = {"limit": limit, "order": "desc"}
+        if owner is not None:
+            kwargs["owner"] = owner
+        goals = world.list_goals(**kwargs)
     except Exception as e:  # pragma: no cover -- assembly never raises
         log.debug("operating_record: goal read failed: %s", e)
         return out
     spend: dict[int, float] = {}
     try:
-        for ep in world.list_episodes(limit=limit * 4):
+        kwargs = {"limit": limit * 4}
+        if owner is not None:
+            kwargs["owner"] = owner
+        for ep in world.list_episodes(**kwargs):
             gid = getattr(ep, "goal_id", None)
             if gid is not None:
                 spend[gid] = spend.get(gid, 0.0) + float(
@@ -87,7 +95,9 @@ def _goal_records(world: Any, *, limit: int) -> list[DecisionRecord]:
     return out
 
 
-def _approval_records(world: Any, *, limit: int) -> list[DecisionRecord]:
+def _approval_records(
+    world: Any, *, limit: int, owner: str | None = None,
+) -> list[DecisionRecord]:
     out: list[DecisionRecord] = []
     try:
         approvals = world.list_approvals(limit=limit)
@@ -95,6 +105,12 @@ def _approval_records(world: Any, *, limit: int) -> list[DecisionRecord]:
         log.debug("operating_record: approval read failed: %s", e)
         return out
     for a in approvals:
+        if owner is not None and owner not in {
+            getattr(a, "requested_by", None),
+            getattr(a, "claimed_by", None),
+            getattr(a, "decided_by", None),
+        }:
+            continue
         out.append(DecisionRecord(
             ts=float(getattr(a, "decided_at", None)
                      or getattr(a, "requested_at", 0) or 0),
@@ -108,11 +124,16 @@ def _approval_records(world: Any, *, limit: int) -> list[DecisionRecord]:
     return out
 
 
-def assemble(world: Any, *, limit: int = 500) -> list[DecisionRecord]:
-    """The Operating Record: every goal decision + human approval, newest
-    first. Pure read path over existing stores."""
-    records = _goal_records(world, limit=limit) + \
-        _approval_records(world, limit=limit)
+def assemble(
+    world: Any, *, limit: int = 500, owner: str | None = None,
+) -> list[DecisionRecord]:
+    """The Operating Record: goal decisions + human approvals, newest first.
+
+    ``owner`` scopes the record to one caller principal. ``None`` preserves the
+    historical admin / auth-off view across all principals.
+    """
+    records = _goal_records(world, limit=limit, owner=owner) + \
+        _approval_records(world, limit=limit, owner=owner)
     records.sort(key=lambda r: r.ts, reverse=True)
     return records[:limit]
 

@@ -1201,8 +1201,9 @@ async def workforce_page(request: Request) -> HTMLResponse:
 
     w = _world()
     depts = list_departments()
-    firm = firm_totals(assemble(w)).to_dict()
-    leaders = [c.to_dict() for c in worker_cards(w, top=5)]
+    owner = goal_owner_filter(request)
+    firm = firm_totals(assemble(w, owner=owner)).to_dict()
+    leaders = [c.to_dict() for c in worker_cards(w, top=5, owner=owner)]
     return templates.TemplateResponse(
         request, "workforce.html",
         {
