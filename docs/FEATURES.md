@@ -1328,6 +1328,30 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   it is gated on `[self_learning] enable` + the new `provision_packs` sub-knob
   (wizard step) + the same human approval `save_profile` requires, and never
   widens the pack's already-clamped envelope.
+- **Programming by demonstration** (`demonstration.py`) — the factory's second
+  front door: watch a person do their job, then build the agent that does it. A
+  `Demonstration` is an ordered record of observed actions + narration (from any
+  capture front-end), ingested by `parse_demonstration`/`load_demonstration`
+  (JSONL or prefixed text like `ACTION[email]: send digest -> ops@`;
+  secret-redacted at the door). `induce_profile` turns it into a `DomainProfile`
+  by reusing the intake pipeline wholesale — it builds the same
+  `propose(spec) -> dict` and routes through `generate_profile` →
+  `validate_profile`, so a demonstrated pack inherits the identical envelope
+  clamp + persona shield-scan as a described one. LLM path (model proposes from
+  the transcript) and deterministic path (workflow mirrors the steps, tools =
+  what the person used) both supported; a human review gate is always appended.
+  CLI: `maverick learn-demo <file>` → induce → approve → save → provision.
+- **Self-improving factory** (`factory_learning.py`) — closes the loop back onto
+  *generation quality*. Provisioning/approval gaps (a tool a draft kept omitting,
+  a skill its workflow kept needing) are attributed to the pack's suite and
+  mined into proposer **corrections**; each is promoted through the existing
+  `SelfImprovementController` on the `prompt` rung (guidance text widens no
+  capability, so no escalation proof or human sign-off is required — only the
+  evidence + calibration gates), and promoted guidance is folded into future
+  pack generation (`augment_system_prompt`, scope-matched per suite). OFF by
+  default and byte-identical to before while off; gated by `[self_improvement]
+  enable` + the `factory_learning` sub-knob (wizard step) or
+  `MAVERICK_FACTORY_LEARNING`. CLI: `maverick factory-learn [--dry-run]`.
 - **Domain packs** — spawn domain agents from profiles (legal / privacy / generic
   packs) on the sector-seal foundation.
 - **Pack output contract** — a pack's optional `[output]` block declares the

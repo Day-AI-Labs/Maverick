@@ -547,15 +547,21 @@ def _show_capability_plan(profile):
     return plan
 
 
-def _apply_capability_plan(plan, llm) -> None:
+def _apply_capability_plan(profile, plan, llm) -> None:
     """Equip an approved pack: install catalog skills + synthesize declared
-    tools through the governed paths. No-op unless self-learning is enabled."""
+    tools through the governed paths. No-op unless self-learning is enabled.
+    Records the gaps as factory-learning signals (no-op unless that's on)."""
     if plan is None or plan.is_empty():
         return
     from ..provision import apply_plan
     result = apply_plan(plan, approved=True, llm=llm)
     if result.acquired or result.generated or result.failed:
         click.echo(click.style(f"Provisioning: {result.summary()}", fg="cyan"))
+    try:
+        from .. import factory_learning
+        factory_learning.record_provisioning(profile, plan, result)
+    except Exception:  # pragma: no cover -- learning must never break onboarding
+        pass
 
 
 @main.command()
@@ -684,7 +690,107 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
     click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
     click.echo(f"Domain '{profile.name}' is now available to the swarm.")
 
-    _apply_capability_plan(plan, llm)
+    _apply_capability_plan(profile, plan, llm)
+
+
+@main.command("learn-demo")
+@click.argument("demo_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--name", default=None, help="Task title (otherwise the file name).")
+@click.option("--industry", default="", help="Industry context (optional).")
+@click.option("--source", default="log",
+              help="Where the demonstration came from: screen | narration | log.")
+@click.option("--no-llm", is_flag=True,
+              help="Derive the pack deterministically from the steps (no LLM).")
+@click.option("--yes", is_flag=True, help="Skip the approval prompt.")
+@click.pass_context
+def learn_demo(ctx: click.Context, demo_file, name, industry, source, no_llm, yes) -> None:
+    """Synthesize a specialist agent from a watched task (programming by demo).
+
+    Reads a demonstration -- an ordered log of what a person did (JSONL, or
+    prefixed text like ``ACTION[email]: send the weekly digest -> ops@``) --
+    induces a domain pack from it (clamped to a safe envelope), shows it for
+    your approval, and on approval saves it and provisions its skills/tools.
+    Nothing is activated without your yes.
+    """
+    from ..demonstration import induce_profile, load_demonstration
+    from ..intake import save_profile
+
+    demonstration = load_demonstration(demo_file, title=name or "", source=source,
+                                       industry=industry)
+    if not demonstration.steps:
+        click.echo("ERROR: no usable steps parsed from the demonstration file.", err=True)
+        sys.exit(2)
+    click.echo(f"Parsed {len(demonstration.steps)} step(s) from the demonstration.")
+
+    llm = None
+    if not no_llm:
+        try:
+            from ..llm import DEFAULT_MODEL, LLM
+            llm = LLM(model=ctx.obj.get("model") or DEFAULT_MODEL)
+        except Exception as e:  # no provider/key -> deterministic derivation
+            click.echo(f"(LLM unavailable; deriving pack from steps: {e})", err=True)
+
+    click.echo("Inducing a draft domain agent from the demonstration...")
+    profile = induce_profile(demonstration, llm=llm)
+
+    click.echo(click.style("\nDraft domain pack (review before it goes live):", bold=True))
+    click.echo(f"  name:        {profile.name}")
+    click.echo(f"  max_risk:    {profile.max_risk}")
+    click.echo(f"  allow_tools: {', '.join(profile.allow_tools) or '(none)'}")
+    click.echo(f"  workflow:    {len(profile.workflow)} step(s)")
+    for step in profile.workflow:
+        gate = f" [gate: {step.gate}]" if step.gate else ""
+        click.echo(f"    - {step.name}{gate}")
+    click.echo(f"  persona:     {profile.persona[:400]}")
+
+    plan = _show_capability_plan(profile)
+
+    if not yes and not click.confirm("\nApprove and activate this agent?", default=False):
+        click.echo("Discarded. Nothing was saved.")
+        return
+    path = save_profile(profile, approved=True)
+    click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
+    click.echo(f"Domain '{profile.name}' is now available to the swarm.")
+
+    _apply_capability_plan(profile, plan, llm)
+
+
+@main.command("factory-learn")
+@click.option("--min-support", default=3, show_default=True,
+              help="Distinct packs that must exhibit a gap before it's a correction.")
+@click.option("--dry-run", is_flag=True,
+              help="Show mined corrections without promoting any.")
+def factory_learn(min_support, dry_run) -> None:
+    """Improve the agent factory from what its packs got wrong.
+
+    Mines recurring provisioning/approval gaps into proposer corrections and
+    promotes those the self-improvement gate accepts; promoted guidance is then
+    folded into future pack generation. Off unless [self_improvement] enable
+    (or MAVERICK_FACTORY_LEARNING) is set.
+    """
+    from .. import factory_learning
+
+    if not factory_learning.enabled():
+        click.echo("Factory learning is OFF. Enable [self_improvement] or set "
+                   "MAVERICK_FACTORY_LEARNING=1 to mine and promote corrections.")
+        return
+    corrections = factory_learning.mine_corrections(min_support=min_support)
+    if not corrections:
+        click.echo("No recurring factory gaps meet the support threshold yet.")
+        return
+    click.echo(click.style(f"{len(corrections)} candidate correction(s):", bold=True))
+    for c in corrections:
+        click.echo(f"  - [{c.scope}/{c.signal}] support={c.support}: {c.guidance}")
+    if dry_run:
+        click.echo("\n(dry run: nothing promoted)")
+        return
+    promoted = factory_learning.review_and_promote(min_support=min_support)
+    if promoted:
+        click.echo(click.style(f"\nPromoted {len(promoted)} correction(s) through "
+                               "the self-improvement gate.", fg="green"))
+    else:
+        click.echo("\nNothing cleared the gate this pass "
+                   "(insufficient evidence, or calibration frozen).")
 
 
 @main.command()
