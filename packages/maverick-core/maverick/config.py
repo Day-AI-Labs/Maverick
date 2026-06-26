@@ -853,6 +853,12 @@ def get_dreaming() -> dict:
         except (TypeError, ValueError):
             return default
 
+    def _nonneg_float(key: str, default: float) -> float:
+        try:
+            return max(0.0, float(cfg.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
     return {
         "enable": bool(cfg.get("enable", False)),
         "min_cluster": _int("min_cluster", 2),
@@ -893,6 +899,18 @@ def get_dreaming() -> dict:
         "retire_skills": bool(cfg.get("retire_skills", True)),
         "retire_min_uses": _int("retire_min_uses", 5),
         "retire_below": _ratio("retire_below", 0.25),
+        # LLM-in-the-loop consolidation: when on (and a provider/key is
+        # configured), the cheap "summarizer" role rewrites each clustered
+        # failure into a transferable lesson instead of the deterministic
+        # template. Inputs AND the model's output are secret-redacted +
+        # Shield-scanned, the call is budget-metered, and it FAILS OPEN to the
+        # deterministic text. OFF by default -- the LLM-free path is the
+        # injection-safe baseline. `llm_consolidation_budget` caps the spend
+        # one dream cycle may use enriching insights.
+        "llm_consolidation": bool(cfg.get("llm_consolidation", False)),
+        "llm_consolidation_budget": _nonneg_float(
+            "llm_consolidation_budget", 1.0
+        ),
     }
 
 
