@@ -36,10 +36,14 @@ Honest limitations
   test suite — see ``train``'s docstring.
 * Klear rows do NOT carry the raw proposer text (the ``messages`` array
   is hashed/structural to avoid leaking PII). Real DPO needs the actual
-  prompt/response token strings, which live operator-side. Here we
-  reconstruct a *structural* sequence string from message
-  ``role``/``type``/``name`` as a documented stand-in — see
-  ``trajectory_to_text``.
+  prompt/response token strings, which live operator-side. An operator who
+  holds those logs supplies them via a ``--text-sidecar`` (id -> text map,
+  see ``load_text_sidecar``/``attach_pair_texts``); with
+  ``--require-real-text`` the loop trains ONLY on real text and refuses the
+  stand-in. Without a sidecar it falls back to a *structural* sequence
+  string from message ``role``/``type``/``name`` (``trajectory_to_text``),
+  logging a one-time warning — enough to wire the plumbing, not to trust the
+  result.
 
 The kernel never imports this module's heavy deps; ``torch`` /
 ``transformers`` are optional and only touched inside ``train``.
@@ -48,9 +52,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from heapq import heappop, heappush
 from pathlib import Path
+
+log = logging.getLogger(__name__)
+_warned_structural = False
 
 # ---------------------------------------------------------------------------
 # Pure, unit-testable helpers (no torch / transformers).
@@ -104,6 +112,104 @@ def trajectory_to_text(row: dict) -> str:
             token += "!err"
         parts.append(token)
     return " | ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Real proposer-text resolution (operator-side; the donated corpus is PII-safe
+# by design, so raw text comes from an operator side-channel keyed by id).
+# ---------------------------------------------------------------------------
+
+
+def load_text_sidecar(path: str | Path) -> dict[str, str]:
+    """Load an operator-supplied map ``trajectory_id -> raw proposer text``.
+
+    The donated/ingested Klear corpus deliberately stores hashed/structural
+    messages (no raw observations) to keep it PII-free. An operator who HOLDS
+    the raw proposer logs supplies them here, out-of-band, so real DPO can run
+    on real text without ever putting that text in the shared corpus.
+
+    Accepts either a JSON object ``{"<id>": "<text>", ...}`` or JSONL of
+    ``{"id": "<id>", "text": "<text>"}`` rows. Malformed lines are skipped.
+    """
+    raw = Path(path).expanduser().read_text(encoding="utf-8")
+    try:
+        obj = json.loads(raw)
+        if isinstance(obj, dict):
+            return {str(k): str(v) for k, v in obj.items() if isinstance(v, str)}
+    except json.JSONDecodeError:
+        pass
+    out: dict[str, str] = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        rid, txt = rec.get("id"), rec.get("text")
+        if rid is not None and isinstance(txt, str):
+            out[str(rid)] = txt
+    return out
+
+
+def row_text(
+    row: dict, sidecar: dict[str, str] | None = None, *, text_field: str = "text",
+) -> str | None:
+    """Resolve the REAL proposer text for a trajectory row, or None.
+
+    Precedence: operator ``sidecar[id]`` > an inline ``row[text_field]`` string
+    (if the operator chose to embed it) > a join of per-message ``content`` /
+    ``text`` fields (likewise opt-in). Returns None when no real text exists,
+    so callers can decide whether to drop the pair or fall back to the
+    structural stand-in. NEVER returns the stand-in itself.
+    """
+    rid = row.get("id")
+    if sidecar and rid is not None:
+        hit = sidecar.get(str(rid))
+        if isinstance(hit, str) and hit.strip():
+            return hit
+    inline = row.get(text_field)
+    if isinstance(inline, str) and inline.strip():
+        return inline
+    parts = [
+        str(m.get("content") or m.get("text") or "")
+        for m in (row.get("messages") or [])
+    ]
+    parts = [p for p in parts if p.strip()]
+    return "\n".join(parts) if parts else None
+
+
+def attach_pair_texts(
+    pairs: list[dict], rows_by_id: dict[str, dict], *,
+    sidecar: dict[str, str] | None = None, text_field: str = "text",
+    require_real: bool = False,
+) -> tuple[list[dict], int]:
+    """Populate ``chosen_text``/``rejected_text`` on pairs from real text.
+
+    Returns ``(kept_pairs, dropped)``. When ``require_real`` is set, any pair
+    missing real text for EITHER attempt is dropped (so the DPO loop never
+    trains that pair on the structural stand-in); otherwise the text is
+    attached when available and the pair is kept regardless. Input pairs are
+    not mutated -- copies are returned.
+    """
+    kept: list[dict] = []
+    dropped = 0
+    for p in pairs:
+        ct = row_text(rows_by_id.get(p.get("chosen_id"), {}) or {}, sidecar,
+                      text_field=text_field)
+        rt = row_text(rows_by_id.get(p.get("rejected_id"), {}) or {}, sidecar,
+                      text_field=text_field)
+        if require_real and (not ct or not rt):
+            dropped += 1
+            continue
+        q = dict(p)
+        if ct:
+            q["chosen_text"] = ct
+        if rt:
+            q["rejected_text"] = rt
+        kept.append(q)
+    return kept, dropped
 
 
 def build_preference_pairs(
@@ -252,6 +358,9 @@ def train(
     out_dir: str | Path,
     *,
     rows_by_id: dict[str, dict] | None = None,
+    text_sidecar: dict[str, str] | None = None,
+    require_real_text: bool = False,
+    allow_structural_fallback: bool = True,
     beta: float = 0.1,
     epochs: int = 1,
     lr: float = 5e-7,
@@ -328,10 +437,28 @@ def train(
         return token_logp.sum()
 
     def text_for(pair: dict, key: str) -> str:
-        if f"{key}_text" in pair:
-            return pair[f"{key}_text"]
+        cached = pair.get(f"{key}_text")
+        if cached:
+            return cached
+        rid = pair.get(f"{key}_id")
+        real = row_text((rows_by_id or {}).get(rid, {}) or {}, text_sidecar)
+        if real:
+            return real
+        if require_real_text or not allow_structural_fallback:
+            raise ValueError(
+                f"no real proposer text for {key} attempt {rid!r}; supply a "
+                "--text-sidecar (or unset --require-real-text to train on the "
+                "structural stand-in)."
+            )
+        global _warned_structural
+        if not _warned_structural:
+            log.warning(
+                "RLAIF: training on the STRUCTURAL STAND-IN text (no real "
+                "proposer text supplied); pass --text-sidecar for real DPO."
+            )
+            _warned_structural = True
         assert rows_by_id is not None, "rows_by_id required to recover text"
-        return trajectory_to_text(rows_by_id[pair[f"{key}_id"]])
+        return trajectory_to_text(rows_by_id[rid])
 
     policy.train()
     for epoch in range(epochs):
@@ -402,6 +529,16 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--disagree-penalty", type=float, default=0.5,
                     help="Weight multiplier for pairs the reward model "
                          "disagrees with (default 0.5).")
+    ap.add_argument("--text-sidecar", default=None, type=Path,
+                    help="Operator JSON/JSONL mapping trajectory id -> raw "
+                         "proposer text. Real DPO trains on this instead of the "
+                         "structural stand-in; the donated corpus stays PII-free.")
+    ap.add_argument("--require-real-text", action="store_true",
+                    help="Refuse the structural stand-in: drop any pair lacking "
+                         "real proposer text and exit non-zero if none remain.")
+    ap.add_argument("--text-field", default="text",
+                    help="Row key holding inline raw text, if embedded "
+                         "(default 'text').")
     return ap
 
 
@@ -418,6 +555,28 @@ def main(argv: list[str] | None = None) -> int:
         file=sys.stderr,
     )
     rows_by_id = {r.get("id"): r for r in rows}
+    # Real proposer text: attach from the operator side-channel so DPO trains on
+    # real prompt/response text, not the structural stand-in. With
+    # --require-real-text, pairs lacking real text are dropped and we refuse to
+    # train if none remain (before importing torch, so the operator gets a clear
+    # error rather than a heavy-dep failure).
+    sidecar = load_text_sidecar(args.text_sidecar) if args.text_sidecar else None
+    if sidecar is not None or args.require_real_text:
+        before = len(pairs)
+        pairs, dropped = attach_pair_texts(
+            pairs, rows_by_id, sidecar=sidecar, text_field=args.text_field,
+            require_real=args.require_real_text,
+        )
+        with_text = sum(
+            1 for p in pairs if p.get("chosen_text") and p.get("rejected_text"))
+        print(f"real proposer text: {with_text}/{before} pair(s) have it"
+              + (f"; dropped {dropped} without it" if dropped else ""),
+              file=sys.stderr)
+        if args.require_real_text and not pairs:
+            print("no preference pairs have real proposer text; supply "
+                  "--text-sidecar. Refusing to train on the structural stand-in.",
+                  file=sys.stderr)
+            return 1
     # Optional: cross-check the verifier's labels with a learned reward model and
     # downweight pairs the two signals don't corroborate. Off unless --reward-model.
     if args.reward_model:
@@ -441,6 +600,8 @@ def main(argv: list[str] | None = None) -> int:
         base_model=args.base_model,
         out_dir=args.out,
         rows_by_id=rows_by_id,
+        text_sidecar=sidecar,
+        require_real_text=args.require_real_text,
         beta=args.beta,
         epochs=args.epochs,
         lr=args.lr,
