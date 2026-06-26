@@ -200,6 +200,17 @@ def is_dashboard_admin(principal: str) -> bool:
     return principal in admins
 
 
+def global_role_for_principal(principal: str | None) -> str | None:
+    """The principal's dashboard-wide RBAC role, ignoring tenant memberships."""
+    if principal is None:
+        return None
+    if is_dashboard_admin(principal):
+        return "admin"
+    from . import rbac
+
+    return rbac.get_stored_role(principal) or rbac.default_role()
+
+
 def role_for_principal(principal: str | None) -> str | None:
     """The dashboard RBAC role for ``principal``.
 
@@ -228,7 +239,7 @@ def role_for_principal(principal: str | None) -> str | None:
                 return tenant_role
     except Exception:  # pragma: no cover - tenant resolution never gates auth
         pass
-    return rbac.get_stored_role(principal) or rbac.default_role()
+    return global_role_for_principal(principal)
 
 
 def caller_role(request: Request) -> str | None:
@@ -252,6 +263,26 @@ def has_permission(request: Request, permission: str) -> bool:
 def require_permission(request: Request, permission: str) -> None:
     """Raise ``HTTPException(403)`` unless the caller's role grants ``permission``."""
     if not has_permission(request, permission):
+        raise HTTPException(status_code=403, detail="insufficient role for this action")
+
+
+def has_global_permission(request: Request, permission: str) -> bool:
+    """Whether the caller may perform a dashboard-wide control-plane action.
+
+    Tenant memberships are intentionally ignored so a tenant-local admin cannot
+    satisfy global admin gates for other tenants or dashboard settings.
+    """
+    principal = caller_principal(request)
+    if principal is None:
+        return True
+    from . import rbac
+
+    return permission in rbac.permissions_for(global_role_for_principal(principal))
+
+
+def require_global_permission(request: Request, permission: str) -> None:
+    """Raise ``HTTPException(403)`` unless the global role grants permission."""
+    if not has_global_permission(request, permission):
         raise HTTPException(status_code=403, detail="insufficient role for this action")
 
 
