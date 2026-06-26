@@ -1320,7 +1320,7 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 - **Capability provisioning** (`provision.py`) — the agent factory equips a
   pack *at birth*, not reactively mid-run: `analyze_profile` diffs a draft's
   workflow + declared `allow_tools` against the installed skills and live tool
-  registry (`tools.base_tool_names`) and surfaces the gaps at the approval gate;
+  registry (`tools.base_tool_names()`) and surfaces the gaps at the approval gate;
   on approval, `apply_plan` installs the matching catalog skills
   (`self_learning.acquire_skill`) and synthesizes any missing declared tools
   (`self_learning.write_generated_tool` — stdlib-only, import-validated
