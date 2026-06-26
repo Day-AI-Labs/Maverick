@@ -41,3 +41,12 @@ def test_verify_script_present_and_executable():
     assert "cosign verify-blob" in body
     assert "--certificate-identity-regexp" in body
     assert "--certificate-oidc-issuer" in body
+
+
+def test_verify_script_requires_exact_release_tag():
+    body = _VERIFY.read_text()
+    assert "usage: verify-release.sh <artifact> <release-tag> [sig] [cert]" in body
+    assert 'TAG="$2"' in body
+    assert "@refs/tags/${ESCAPED_TAG}$" in body
+    assert "refs/tags/v.*" not in body
+    assert 'IDENTITY_REGEXP="${IDENTITY_REGEXP:-' not in body
