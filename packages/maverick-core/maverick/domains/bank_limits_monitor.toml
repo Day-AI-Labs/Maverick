@@ -18,3 +18,24 @@ deliverable = "Risk-limit exceptions"
 consumers = ["risk_officer", "treasurer"]
 cadence = "daily"
 gate = "review"
+
+[[workflow]]
+name = "Pull positions"
+instruction = "Query current credit and trading exposures against their assigned limits for the reporting window."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Identify breaches"
+instruction = "Flag every position that exceeds its limit and quantify the size and duration of each excess."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Find authority"
+instruction = "Locate the controlling limit policy and any documented approval or override for each flagged exception via knowledge_search and cite it."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build exceptions log"
+instruction = "Compile a dated exceptions table showing breach, magnitude, governing limit, and the approval evidence or gap for each item."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to risk"
+instruction = "Hand the documented exceptions package to the risk officer for disposition without closing any item yourself."
+gate = "review"

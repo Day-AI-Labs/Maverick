@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["bank"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Account-maintenance QC exceptions"
+consumers = ["operations_manager", "compliance_officer"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull change log"
+instruction = "Read the day's account-maintenance changes (rate, owner, address, signer, fee) from the core system."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Match authorizations"
+instruction = "Retrieve the underlying maintenance authorization for each change and confirm an approved request exists."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag unauthorized edits"
+instruction = "Compare each posted field against its authorization and flag changes with no, mismatched, or self-approved authority."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build exception table"
+instruction = "Assemble the exception list with account, field changed, maker, authorization reference, and citation for each finding."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to ops"
+instruction = "Hand the QC exception package to the operations manager and compliance officer for disposition."
+gate = "review"

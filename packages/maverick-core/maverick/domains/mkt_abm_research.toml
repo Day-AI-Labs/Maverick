@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "target-account dossier"
+consumers = ["account_executive", "abm_marketer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope account"
+instruction = "Confirm the target account, its tier, and the buying-committee roles the dossier must cover."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Gather signals"
+instruction = "Collect priorities, tech stack, and buying triggers from company records and public sources."
+tools = ["knowledge_search", "web_search", "read_file"]
+[[workflow]]
+name = "Map contacts"
+instruction = "Identify named decision-makers and influencers and record each with its supporting source."
+tools = ["web_search", "spreadsheet"]
+[[workflow]]
+name = "Cite and flag"
+instruction = "Trace every claim to a source and mark unverified items as assumptions rather than fact."
+tools = ["read_file"]
+[[workflow]]
+name = "Hand to AE"
+instruction = "Route the assembled dossier to the account team for review before outreach."
+gate = "review"

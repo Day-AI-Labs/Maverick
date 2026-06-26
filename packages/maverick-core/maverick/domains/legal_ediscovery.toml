@@ -13,7 +13,34 @@ Research and analysis, not legal advice."""
 
 allow_tools = ["read_file", "knowledge_search", "clio_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "web_search"]
 
 knowledge_sources = ["legal_matter"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "privilege log and production set"
+consumers = ["litigation_attorney", "ediscovery_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Load matter"
+instruction = "Read the matter documents and review protocol within the sealed compartment to scope responsiveness and privilege criteria."
+tools = ["read_file", "clio_read"]
+[[workflow]]
+name = "Code documents"
+instruction = "Review and code each document for responsiveness, relevance, and privilege per EDRM and FRCP Rule 26-34."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build privilege log"
+instruction = "Build the privilege log and, when privilege is in doubt, withhold and flag the document for attorney review."
+[[workflow]]
+name = "Prepare production"
+instruction = "Stage the responsive non-privileged set for production under proportionality and FRE 502(d) clawback, keeping everything inside the compartment."
+[[workflow]]
+name = "Route for production"
+instruction = "Hand the coded set and privilege log to the litigation attorney for the human production decision."
+gate = "review"

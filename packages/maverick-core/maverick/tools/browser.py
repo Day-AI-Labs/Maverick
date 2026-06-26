@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import atexit
 import base64
+import json
 import logging
 import os
 import re
@@ -40,7 +41,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from ..safety.action_gate import gate_browser_action
+from ..paths import data_dir
+from ..safety.action_evidence import seal_bracketed
+from ..safety.action_gate import browser_action_risk, gate_browser_action
 from . import Tool
 from .http_fetch import _scan_fetched
 
@@ -53,10 +56,15 @@ _MAX_FILL_FORM_VALUE_LENGTH = 10_000
 _MAX_FILL_FORM_FIELD_TIMEOUT_MS = 1_000
 _MAX_FILL_FORM_TOTAL_TIMEOUT_MS = 5_000
 
+# Bounds for the read-only ``observe`` snapshot so it never floods the context.
+_MAX_OBSERVE_ELEMENTS = 100
+_MAX_OBSERVE_NAME_LENGTH = 120
+_MAX_OBSERVE_AXTREE_CHARS = 20_000
+
 
 # ---------- session persistence (cookies + localStorage survive restarts) ----------
 
-_DEFAULT_STATE_PATH = Path.home() / ".maverick" / "browser" / "state.json"
+_DEFAULT_STATE_PATH = data_dir("browser", "state.json")
 
 
 def _persist_enabled() -> bool:
@@ -87,7 +95,7 @@ _BROWSER_INPUT_SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": [
                 "navigate", "click", "type", "fill_form", "press", "scroll",
-                "screenshot", "extract_text", "extract_html",
+                "screenshot", "observe", "extract_text", "extract_html",
                 "find_text", "wait_for", "go_back", "go_forward",
                 "current_url", "list_links", "save_session", "close",
             ],
@@ -482,6 +490,102 @@ def _browser_list_links(page) -> str:
     return "\n".join(links) if links else "no links on page"
 
 
+def _observe_selector_hint(el: Any) -> str | None:
+    """A best-effort, human-usable selector for an interactive element.
+
+    Prefers a stable handle (id, name, data-testid) and falls back to a tag +
+    accessible-attribute hint. Returns ``None`` if nothing useful is found.
+    Never raises -- a bad element just contributes no hint.
+    """
+    try:
+        for attr in ("id", "data-testid", "name"):
+            val = el.get_attribute(attr)
+            if val:
+                if attr == "id":
+                    return f"#{val}"
+                return f"[{attr}={val!r}]"
+        tag = (el.evaluate("e => e.tagName") or "").lower()
+        for attr in ("aria-label", "placeholder", "type", "href"):
+            val = el.get_attribute(attr)
+            if val:
+                return f"{tag or '*'}[{attr}={val!r}]"
+        return tag or None
+    except Exception:
+        return None
+
+
+def _browser_observe(page) -> str:
+    """READ-ONLY semantic snapshot of the current page.
+
+    Returns title + url, Playwright's accessibility tree, and a BOUNDED list of
+    interactive elements (role, accessible name, selector hint) so the agent can
+    act on meaning rather than pixels. Output is capped so it never floods the
+    context. Read-only: never mutates the page and is never gated.
+    """
+    try:
+        title = page.title()
+    except Exception:
+        title = ""
+    url = getattr(page, "url", "") or ""
+
+    # Accessibility tree (semantic structure). Bound its serialized size.
+    try:
+        ax = page.accessibility.snapshot()
+    except Exception as e:
+        ax = None
+        log.debug("browser.observe accessibility snapshot failed: %s", e)
+    try:
+        ax_json = json.dumps(ax, ensure_ascii=False, default=str) if ax else ""
+    except (TypeError, ValueError):
+        ax_json = ""
+    ax_truncated = len(ax_json) > _MAX_OBSERVE_AXTREE_CHARS
+    if ax_truncated:
+        ax_json = ax_json[:_MAX_OBSERVE_AXTREE_CHARS]
+
+    # Bounded list of interactive elements with role + accessible name + hint.
+    elements: list[dict[str, Any]] = []
+    try:
+        handles = page.query_selector_all(
+            "a[href], button, input, select, textarea, "
+            "[role=button], [role=link], [role=textbox], [contenteditable=true]",
+        )
+    except Exception as e:
+        handles = []
+        log.debug("browser.observe element query failed: %s", e)
+    for el in handles:
+        if len(elements) >= _MAX_OBSERVE_ELEMENTS:
+            break
+        try:
+            role = el.get_attribute("role") or (el.evaluate("e => e.tagName") or "").lower()
+            name = (
+                el.get_attribute("aria-label")
+                or el.get_attribute("placeholder")
+                or (el.inner_text() or "").strip()
+                or el.get_attribute("value")
+                or el.get_attribute("name")
+                or ""
+            )
+        except Exception:
+            continue
+        name = " ".join(str(name).split())[:_MAX_OBSERVE_NAME_LENGTH]
+        entry: dict[str, Any] = {"role": role or "?", "name": name}
+        hint = _observe_selector_hint(el)
+        if hint:
+            entry["selector"] = hint
+        elements.append(entry)
+
+    log.info("browser.observe url=%s elements=%d", url, len(elements))
+    snapshot = {
+        "title": title,
+        "url": url,
+        "interactive_elements": elements,
+        "interactive_truncated": len(handles) > len(elements),
+        "accessibility_tree": ax_json,
+        "accessibility_truncated": ax_truncated,
+    }
+    return json.dumps(snapshot, ensure_ascii=False, default=str)
+
+
 def _browser_save_session(session) -> str:
     ok = session.save_state()
     return "session saved" if ok else "session not saved (persistence disabled or no active context)"
@@ -521,6 +625,8 @@ def _dispatch_browser_action(
         return _browser_scroll(page, args)
     if action == "screenshot":
         return _browser_screenshot(page)
+    if action == "observe":
+        return _browser_observe(page)
     if action == "extract_text":
         return _browser_extract_text(page, args)
     if action == "extract_html":
@@ -569,6 +675,14 @@ def _run_browser_action(args: dict[str, Any]) -> str:
     if denied is not None:
         return denied
 
+    if browser_action_risk(action, args) == "high":
+        # Bracket a high-risk action with sealed before/after captures
+        # (no-op unless screenshot sealing is configured).
+        return seal_bracketed(
+            lambda: base64.b64encode(page.screenshot(full_page=False)).decode("ascii"),
+            lambda: _dispatch_browser_action(action, session, page, args, timeout, allow_hosts),
+            action=f"browser.{action}",
+        )
     return _dispatch_browser_action(
         action, session, page, args, timeout, allow_hosts,
     )
@@ -579,11 +693,14 @@ def browser() -> Tool:
     return Tool(
         name="browser",
         description=(
-            "Browse the web. navigate to a URL, find_text or use CSS selectors "
-            "to interact (click, type, fill_form to batch-fill many inputs), "
-            "extract_text or extract_html to read, "
-            "screenshot to see, list_links to discover navigation. Use this "
-            "for normal web tasks; use the 'computer' tool for non-DOM UIs."
+            "Browse the web. navigate to a URL, then observe to get a compact "
+            "semantic snapshot (title, url, accessibility tree, and interactive "
+            "elements with roles/names/selectors) so you can act on meaning, not "
+            "pixels -- prefer observe before clicking. find_text or use CSS "
+            "selectors to interact (click, type, fill_form to batch-fill many "
+            "inputs), extract_text or extract_html to read, screenshot to see, "
+            "list_links to discover navigation. Use this for normal web tasks; "
+            "use the 'computer' tool for non-DOM UIs."
         ),
         input_schema=_BROWSER_INPUT_SCHEMA,
         fn=_run_browser_action,

@@ -146,7 +146,7 @@ class Workflow:
         outputs: dict[str, str] = {}
         for step in self._topo_order:
             args = self._interpolate(step.args, outputs)
-            t0 = time.time()
+            t0 = time.monotonic()
             try:
                 raw = _drive(registry.run(step.tool, args))
                 ok = not str(raw).startswith("ERROR:")
@@ -155,7 +155,7 @@ class Workflow:
                 raw = ""
                 ok = False
                 err = f"{type(e).__name__}: {e}"
-            elapsed_ms = (time.time() - t0) * 1000
+            elapsed_ms = (time.monotonic() - t0) * 1000
             sr = StepResult(
                 name=step.name, tool=step.tool, ok=ok,
                 output=str(raw or ""), error=err, elapsed_ms=elapsed_ms,

@@ -21,8 +21,9 @@ verifier is calibrated, so the caller skips it when ``calibration`` is frozen.
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Awaitable, Callable
+
+from .config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -38,11 +39,9 @@ def _settings() -> dict:
 
 
 def enabled() -> bool:
-    env = os.environ.get("MAVERICK_CREDIT", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_CREDIT")
+    if _v is not None:
+        return _v
     return bool(_settings()["enable"])
 
 

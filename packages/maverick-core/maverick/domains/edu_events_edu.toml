@@ -11,3 +11,35 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "event run-of-show & follow-up package"
+consumers = ["advancement_director", "events_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Confirm brief"
+instruction = "Read the event brief for date, venue, budget, guest list, and fundraising goal."
+tools = ["read_file"]
+[[workflow]]
+name = "Build logistics"
+instruction = "Build the run-of-show, vendor, and registration plan against event policy and prior-event records."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Track registration"
+instruction = "Track RSVPs, table assignments, and dietary or access needs in the registration worksheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Reconcile outcomes"
+instruction = "After the event reconcile attendance, gifts and pledges raised, and outstanding follow-up commitments."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Draft follow-up"
+instruction = "Draft segmented thank-you and stewardship follow-up tied to each attendee's gift or pledge."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Route the run-of-show and follow-up package to the advancement director for review before guest communications go out."
+gate = "review"

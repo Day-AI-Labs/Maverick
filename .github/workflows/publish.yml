@@ -23,7 +23,7 @@ jobs:
       built: ${{ steps.list.outputs.dirs }}
       names: ${{ steps.names.outputs.names }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -115,12 +115,12 @@ jobs:
       contents: write     # release attach
       id-token: write     # Sigstore OIDC
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
-      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Sign artifacts (keyless)
         run: |
           set -e

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "payer audit documentation package"
+consumers = ["compliance_officer", "revenue_cycle_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope request"
+instruction = "Read the payer audit request to identify the claims, members, and date-of-service ranges in scope."
+tools = ["read_file"]
+[[workflow]]
+name = "Pull records"
+instruction = "Query claims and pull the supporting clinical and billing documents for each item under minimum-necessary limits."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Check completeness"
+instruction = "Verify every requested item has its required documentation and flag any missing or unreadable records."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Index package"
+instruction = "Assemble the documents into an indexed package mapping each audit line to its cited source."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Compliance sign-off"
+instruction = "Route the indexed package to the compliance officer for review before it is returned to the payer."
+gate = "review"

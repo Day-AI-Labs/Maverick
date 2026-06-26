@@ -1,6 +1,6 @@
-# Maverick AR plan tree (visionOS scaffold)
+# Lightwork AR plan tree (visionOS scaffold)
 
-A minimal SwiftUI + RealityKit visionOS app rendering a Maverick goal
+A minimal SwiftUI + RealityKit visionOS app rendering a Lightwork goal
 forest as a 3D plan tree in a volumetric window: each goal is a small
 sphere colored by status, parent links are thin connecting bars, and
 gazing at a node + pinching shows its title/status card.

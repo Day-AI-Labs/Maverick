@@ -18,3 +18,24 @@ deliverable = "FNOL triage & routing"
 consumers = ["claims_adjuster", "claims_manager"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Capture loss"
+instruction = "Record the first notice of loss details including date, location, coverage, and reporting party from the intake."
+tools = ["read_file"]
+[[workflow]]
+name = "Verify policy"
+instruction = "Look up the policy to confirm it was in force on the loss date and identify the applicable coverage lines."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Check completeness"
+instruction = "Identify missing FNOL fields, attachments, or coverage details that would stall assignment and note them plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Determine queue"
+instruction = "Map the loss type and severity to the correct adjusting queue per the routing rules."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Manager review"
+instruction = "Hand the assembled FNOL triage and routing file to the claims adjuster and claims manager for sign-off."
+gate = "review"

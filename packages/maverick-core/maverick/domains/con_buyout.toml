@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "buyout savings & exposure report"
+consumers = ["project_manager", "cost_accountant"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull budget"
+instruction = "Read the estimate budget by trade with the awarded subcontract values for the project."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map buyout status"
+instruction = "Compile every trade's buyout status from awarded through executed contract into the tracking spreadsheet."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Compute savings"
+instruction = "Compare awarded subcontract values against budget to calculate buyout savings or overage per trade."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag exposure"
+instruction = "Identify unbought trades and scope gaps between estimate and subcontract that leave the project exposed to cost growth."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the savings and exposure report to the project manager for sign-off."
+gate = "review"

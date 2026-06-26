@@ -1,6 +1,6 @@
 # Configuration
 
-Maverick reads `~/.maverick/config.toml`. The installer wizard writes it; you can also edit by hand.
+Lightwork reads `~/.maverick/config.toml`. The installer wizard writes it; you can also edit by hand.
 
 ## Full schema
 
@@ -70,6 +70,10 @@ role_editing = true  # allow editing the core roles (orchestrator, coder, ...)
                      #   system-prompt addendum + model/effort override per role
                      #   (winning over [models]/[effort]); false = read-only and
                      #   /api/v1/roles mutations 403.
+scheduling  = true   # allow arming recurring schedules (cron) from the dashboard;
+                     #   false = the scheduler editor + /api/v1 schedule routes 403.
+triggers    = true   # allow binding a saved template to an inbound webhook;
+                     #   false = the /api/v1/triggers editor + /webhook/run 404/403.
 
 [durable]
 # Crash-resume: checkpoint a goal's loop state each step so `maverick resume`
@@ -97,12 +101,12 @@ token = "${MAVERICK_DASHBOARD_TOKEN}"
 
 [persona]
 # Appended to every agent's system prompt. Optional.
-name      = "Maverick"
+name      = "Lightwork"
 style     = "concise"   # concise | thorough | friendly | formal | playful
 addendum  = ""           # free-form extra instruction
 
 [mcp_servers.filesystem]
-# External MCP servers Maverick consumes as tools. Each one is spawned as
+# External MCP servers Lightwork consumes as tools. Each one is spawned as
 # a subprocess; their tools appear in the agent's catalog as
 # `mcp_<name>__<tool>` and still pass through Shield.
 command       = "npx"
@@ -118,9 +122,37 @@ env     = { GITHUB_PERSONAL_ACCESS_TOKEN = "${GITHUB_TOKEN}" }
 ```
 
 `backend = "local"` runs tools in the same runtime environment as
-Maverick. For untrusted skills, avoid mounting secret-bearing paths into
+Lightwork. For untrusted skills, avoid mounting secret-bearing paths into
 that runtime and prefer sandbox isolation that does not expose host
 state.
+
+## Data residency & zero-data-retention (cloud providers)
+
+When a role is routed to a cloud provider, two `[providers.<name>]` knobs
+control where the request goes and what data-handling it asserts:
+
+- **`base_url`** — pin the endpoint. Point it at a regional/EU endpoint or at a
+  compliance gateway/proxy you operate, so prompts never leave the chosen
+  region. Honored by `anthropic`, `openai`, and the self-hosted/OpenAI-compatible
+  clients.
+- **`default_headers`** — a `key = value` table of HTTP headers attached to every
+  request to that provider, so a gateway can enforce **region pinning** or
+  **zero-data-retention** at the edge. Threaded into the two primary cloud
+  clients (`anthropic`, `openai`) today. Empty by default.
+
+```toml
+[providers.anthropic]
+api_key = "${ANTHROPIC_API_KEY}"
+base_url = "https://anthropic-eu.gateway.internal"   # region-pinned gateway
+[providers.anthropic.default_headers]
+anthropic-region = "eu"
+x-no-retention = "1"
+```
+
+For a hard guarantee that *no* prompt leaves your boundary, prefer the
+enterprise egress lock (`[enterprise] mode = true`), which pins every role to a
+self-hosted provider — see `docs/security-hardening.md`. Outbound PII can also be
+stripped before any cloud call with `[privacy] redact_egress = true`.
 
 ## Learning & workforce sections
 
@@ -153,9 +185,50 @@ enable = true              # measure (never apply) the codec's token savings on
 [reflexion]                # cross-run failure lessons (default off)
 enable = true
 
+[self_harness]             # learn a model-specific operating-guidance addendum
+enable = false             # mine failures -> propose -> regression-validate ->
+                           #   gate. Promotion ALSO needs [self_improvement]
+                           #   enable. Operator commands: `maverick self-harness
+                           #   show` (what was learned), `preview` (dry-run of
+                           #   what it would propose), `log` (audit trail), and
+                           #   `forget` (roll a learned line back).
+
+[self_learning]            # local continuous learning (default off)
+enable = true
+provision_packs = true     # equip a freshly-approved pack with the skills + tools
+                           #   its workflow needs at creation time (capability
+                           #   provisioning at pack-birth). Default on once
+                           #   self-learning is enabled; the wizard sets it.
+                           #   Read-only analysis is always safe; applying it is
+                           #   gated on the same human approval `save_profile`
+                           #   requires and never widens the clamped envelope.
+                           #   Wired into `maverick onboard`. See FEATURES.md.
+
+[self_improvement]         # promotion ladder for learned guidance (default off)
+enable = true
+factory_learning = true    # close the loop onto generation quality: attribute
+                           #   provisioning/approval gaps to a pack's suite/signal,
+                           #   mine them into proposer corrections, promote on the
+                           #   `prompt` rung, and fold into future pack generation.
+                           #   Default on once self-improvement is enabled; the
+                           #   wizard sets it. Force-enable via MAVERICK_FACTORY_LEARNING.
+                           #   `maverick factory-learn [--dry-run]`. See FEATURES.md.
+
 [domains]                  # specialist-pack behavior (defaults shown)
 discipline = true          # suite operating-discipline appended at spawn
 memory = true              # department lessons injected at spawn
+
+[workforce]                # treat each agent like a hire (defaults shown)
+levels = false             # per-agent autonomy levels (observe/suggest/request/
+                           #   auto). OFF -> every agent stages actions for human
+                           #   execution. Per-agent overrides: [workforce.agents].
+                           #   Env: MAVERICK_WORKFORCE_LEVELS.
+data_grounding = true      # auto-grant each analyst pack its suite's primary-
+                           #   source data connectors (SEC EDGAR, FRED, openFDA,
+                           #   USAspending, weather, ...). GET-only, low-risk,
+                           #   deferred (no context cost), inert without each
+                           #   source's API key. Set false to withhold them.
+                           #   Env: MAVERICK_WORKFORCE_DATA_GROUNDING.
 
 [fleet_memory]             # external agents read/write governed memory
 enable = false             # explicit trust decision; roster-gated
@@ -189,6 +262,19 @@ Roles available:
 
 The installer keeps these separated automatically.
 
+> **Config typos are caught, not silently ignored.** `maverick config-lint`
+> (also surfaced as advisory `config-lint` rows by `maverick doctor`, and emitted
+> as a one-line warning at process startup) walks the loaded config against a
+> known-section/key schema
+> and flags a mistyped section or an unknown key in a fixed-key section (with
+> `difflib` "did you mean" suggestions), plus a few obvious type errors. This
+> catches the classic footgun where a typo like `[budget] max_dollarss` would
+> otherwise be silently ignored and the run go **uncapped**. The check is
+> advisory — the kernel still fails soft on a bad config — so after editing
+> `config.toml` by hand, run `maverick config-lint` (or `maverick doctor`) and
+> confirm the security/cost-critical values (`[budget]`, `[enterprise]`,
+> `[encryption]`, `[audit]`, `[safety]`) read back as you intend.
+
 ## Overriding the config path
 
 ```bash
@@ -202,8 +288,12 @@ Useful for VPS deployments where you want the config under `/etc/`.
 For desktop installs the dashboard binds to `127.0.0.1:8765` and bearer
 auth is optional. For VPS deploys (reachable from the open internet)
 set `MAVERICK_DASHBOARD_TOKEN` — every request to `/api/v1/*` and every
-HTML page is then gated. Only `/healthz`, `/openapi.json`, `/docs`, and
-`/redoc` are exempt (so monitoring + API discovery still works).
+HTML page is then gated. The probe/discovery paths `/healthz`, `/livez`,
+`/readyz`, `/openapi.json`, `/docs`, `/redoc`, and the agent-card
+well-knowns are exempt (so monitoring + API discovery still works). The
+inbound webhook routes (`/webhook/start`, `/webhook/run`, issue webhooks)
+and the `/share/`, `/scim/`, `/saml/` prefixes authenticate by their own
+mechanism (HMAC signature / share token / SSO) rather than the bearer.
 
 Two ways to authenticate:
 
@@ -215,7 +305,7 @@ Token comparison is constant-time (`hmac.compare_digest`).
 
 ## External MCP servers
 
-Maverick can consume any MCP server (filesystem, GitHub, Postgres,
+Lightwork can consume any MCP server (filesystem, GitHub, Postgres,
 browser, etc.) as tools. Add entries under `[mcp_servers.<name>]`:
 
 ```toml
@@ -259,7 +349,8 @@ threads simultaneously. Override with:
 MAVERICK_MAX_CONCURRENT_GOALS=4 maverick dashboard
 ```
 
-Default is 2. Raise on a beefy machine; lower on a Raspberry Pi.
+Default is 16. Raise on a beefy machine; lower on a Raspberry Pi. (A
+separate per-principal cap also limits concurrent goals from any one caller.)
 
 ## Environment variables
 

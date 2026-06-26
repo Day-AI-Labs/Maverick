@@ -43,6 +43,10 @@ def _isolate_maverick_home(tmp_path, monkeypatch):
     # the suite sees only the (empty, isolated) user dir -- behaviour unchanged
     # from before the library shipped. Tests opt in with MAVERICK_BUILTIN_SKILLS=1.
     monkeypatch.setenv("MAVERICK_BUILTIN_SKILLS", "0")
+    # Pin the legacy (pre-secure-default) posture so the suite keeps asserting
+    # each control's explicit on/off mechanics; the secure DEFAULT is covered by
+    # test_secure_defaults.py (which overrides this). Production ships secure.
+    monkeypatch.setenv("MAVERICK_SECURE_DEFAULT", "0")
     return tmp_path
 
 
@@ -95,7 +99,7 @@ def _reset_client_binding_cache():
         except Exception:
             pass
         try:
-            from maverick import tenant_kms
+            from maverick.tenant import kms as tenant_kms
             tenant_kms._clear_cache()
         except Exception:
             pass

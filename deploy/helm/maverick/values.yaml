@@ -64,6 +64,15 @@ env: {}
 # preflight without enabling the boundary is exactly the misconfiguration this
 # gate is meant to catch.
 enterprise:
+  # Deployment posture (MAVERICK_PROFILE). "enterprise" (the default for this
+  # chart — a server deployment is the regulated path) turns the data boundary ON
+  # by default: the egress lock pins every LLM call to a self-hosted/allow-listed
+  # provider, consent fails closed, and capabilities are enforced. This means you
+  # MUST configure a local/self-hosted provider (ollama / vllm / tgi) or an
+  # allow-listed endpoint, otherwise cloud LLM calls are refused by design. Set to
+  # "standard" to run fail-open and cloud-capable (e.g. a quick non-regulated pilot
+  # with a hosted Anthropic key). Any explicit [enterprise] knob still wins.
+  profile: enterprise
   required: false
 
 # Pod/container security. Matches the image: unprivileged uid/gid 1000.
@@ -89,10 +98,54 @@ resources:
     cpu: "2"
     memory: 2Gi
 
-# Liveness/readiness hit the dashboard root. The dashboard has its own auth;
-# do not expose it without TLS — front with your Ingress/Gateway.
+# Liveness/readiness hit the deep health endpoints (/livez, /readyz) which
+# verify DB writability and provider config — not the HTML root, which returns
+# 200 even when the instance is degraded. The dashboard has its own auth; do not
+# expose it without TLS — front with your Ingress/Gateway.
 probes:
   enabled: true
+
+# Grace period for in-flight goals to finish on SIGTERM (rolling upgrade, node
+# drain). Paired with a preStop sleep so the LB deregisters first.
+terminationGracePeriodSeconds: 30
+
+# PodDisruptionBudget. Gates voluntary disruptions (node drains, upgrades). With
+# the default single replica + Recreate strategy a PDB cannot prevent downtime,
+# so it is off by default; enable it once you run multiple replicas on Postgres.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Horizontal Pod Autoscaler. Off by default and only valid on the Postgres
+# backend: the default SQLite backend is single-writer on a RWO volume, so the
+# chart hard-fails if you enable this without worldModel.backend=postgres. When
+# enabled the Deployment stops pinning replicas (the HPA owns the count).
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: ""   # "" = omit the memory metric
+
+# NetworkPolicy. Default-deny ingress except to the dashboard port, and (when
+# restrictEgress=true) deny egress to RFC1918/link-local ranges to blunt SSRF to
+# cloud metadata while still allowing DNS + public LLM/provider egress.
+networkPolicy:
+  enabled: false
+  restrictEgress: false
+
+# Prometheus Operator ServiceMonitor for /metrics. /metrics is bearer-gated when
+# a dashboard token is set, so the scrape must authenticate — this wires the
+# bearer from a secret. Requires the Prometheus Operator CRDs to be installed.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  # Secret + key holding the dashboard bearer token used to scrape /metrics.
+  # Leave name empty to use the chart's own secret.
+  bearerTokenSecret:
+    name: ""
+    key: MAVERICK_DASHBOARD_TOKEN
 
 ingress:
   enabled: false

@@ -1,6 +1,6 @@
 # maverick-desktop
 
-Native desktop window for the **local** Maverick dashboard. A Tauri v2 shell:
+Native desktop window for the **local** Lightwork dashboard. A Tauri v2 shell:
 the window opens on a bundled splash, the Rust side starts
 `maverick dashboard --host 127.0.0.1 --port 8765` if nothing is listening
 there, and the splash navigates to `http://127.0.0.1:8765` the moment

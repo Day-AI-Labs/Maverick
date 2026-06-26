@@ -168,3 +168,97 @@ class TestGatherFromWorld:
                 return [{"model": "m", "cost_dollars": 1.0}]
         rows = mc.gather_from_world(Legacy(), limit=10)
         assert rows and rows[0]["model"] == "m"
+
+
+class TestModelCardMetadata:
+    def test_from_dict_keeps_declared_fields_and_stringifies(self):
+        meta = mc.ModelCardMetadata.from_dict({
+            "intended_use": "  drafting assistant  ",
+            "risk_classification": "limited",
+            "evaluations": {"win_rate": 0.82, "refusal_rate": "1%"},
+            "unknown_key": "ignored",
+        })
+        assert meta.intended_use == "drafting assistant"  # stripped
+        assert meta.risk_classification == "limited"
+        assert meta.evaluations == {"win_rate": "0.82", "refusal_rate": "1%"}
+        assert not hasattr(meta, "unknown_key")
+
+    def test_from_dict_tolerates_junk_and_is_empty(self):
+        assert mc.ModelCardMetadata.from_dict(None).is_empty()
+        assert mc.ModelCardMetadata.from_dict("nope").is_empty()
+        # blank strings and a non-dict evaluations value declare nothing
+        assert mc.ModelCardMetadata.from_dict(
+            {"intended_use": "   ", "evaluations": "bad"}).is_empty()
+
+    def test_non_empty_when_any_field_declared(self):
+        assert not mc.ModelCardMetadata.from_dict({"limitations": "no legal advice"}).is_empty()
+        assert not mc.ModelCardMetadata.from_dict({"evaluations": {"acc": 0.9}}).is_empty()
+
+
+class TestRenderWithMetadata:
+    def _card(self):
+        return mc.build_cards([_row("claude-opus-4-8", provider="anthropic",
+                                    in_tokens=10, out_tokens=2,
+                                    cost_dollars=1.5)])["claude-opus-4-8"]
+
+    def test_card_without_metadata_has_no_operator_block(self):
+        text = mc.render_card(self._card())
+        assert "Operator-declared" not in text
+
+    def test_card_with_metadata_renders_operator_block(self):
+        meta = mc.ModelCardMetadata.from_dict({
+            "intended_use": "internal coding assistant",
+            "limitations": "not for medical/legal advice",
+            "risk_classification": "limited",
+            "human_oversight": "high-risk actions require approval",
+            "evaluations": {"win_rate": "0.82"},
+        })
+        text = mc.render_card(self._card(), meta)
+        assert "Operator-declared (this deployment's assertions, not vendor claims):" in text
+        assert "- intended use: internal coding assistant" in text
+        assert "- limitations: not for medical/legal advice" in text
+        assert "- risk classification (operator-declared): limited" in text
+        assert "- human oversight: high-risk actions require approval" in text
+        assert "  - win_rate: 0.82" in text
+
+    def test_render_cards_applies_per_model_metadata_only_where_present(self):
+        cards = mc.build_cards([_row("model-a"), _row("model-b")])
+        meta = {"model-a": mc.ModelCardMetadata.from_dict({"intended_use": "search"})}
+        doc = mc.render_cards(cards, meta)
+        a, b = doc.index("## model-a"), doc.index("## model-b")
+        # model-a's section (everything before model-b) carries the block; model-b's does not
+        assert "Operator-declared" in doc[a:b]
+        assert "Operator-declared" not in doc[b:]
+
+
+class TestLoadDeclaredMetadata:
+    def test_builds_per_model_metadata_from_raw_mapping(self):
+        raw = {
+            "claude-opus-4-8": {"intended_use": "orchestration", "risk_classification": "limited"},
+            "gpt-5.5": {"limitations": "english-only"},
+        }
+        loaded = mc.load_declared_metadata(raw)
+        assert set(loaded) == {"claude-opus-4-8", "gpt-5.5"}
+        assert loaded["claude-opus-4-8"].intended_use == "orchestration"
+        assert loaded["gpt-5.5"].limitations == "english-only"
+
+    def test_skips_junk_entries_and_tolerates_non_dict(self):
+        assert mc.load_declared_metadata("not-a-dict") == {}
+        loaded = mc.load_declared_metadata({"m": {"intended_use": "x"}, "": {"y": 1}, "bad": 7})
+        assert set(loaded) == {"m"}
+
+
+class TestExportModelCards:
+    def test_export_merges_usage_and_metadata(self):
+        world = _FakeWorld()
+        meta = {"claude-opus-4-8": mc.ModelCardMetadata.from_dict(
+            {"intended_use": "orchestration + coding"})}
+        doc = mc.export_model_cards(world, metadata=meta)
+        assert doc.startswith("# Model cards")
+        assert "## claude-opus-4-8" in doc
+        assert "- intended use: orchestration + coding" in doc
+
+    def test_export_without_world_rows_still_well_formed(self):
+        doc = mc.export_model_cards(object(), metadata={})
+        assert "own ledger, not vendor claims" in doc
+        assert "(no model usage recorded)" in doc

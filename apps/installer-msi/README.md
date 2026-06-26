@@ -10,14 +10,14 @@ first run.
 | Piece | What it does |
 |---|---|
 | `Package.wxs` | WiX v4 product/package definition: per-user scope, stable `UpgradeCode`, `MajorUpgrade` rule, PATH environment component |
-| `maverick.cmd` | Launcher installed to `%LOCALAPPDATA%\Programs\Maverick\bin`. Resolves the pip console script; on first run pip-installs the bundled wheel (`--user`) |
+| `maverick.cmd` | Launcher installed to `%LOCALAPPDATA%\Programs\Lightwork\bin`. Resolves the pip console script; on first run pip-installs the bundled wheel (`--user`) |
 | `build.ps1` | `wix build` invocation; takes the wheel path and version |
 | `test_wxs.py` | Static contract test (XML well-formed, UpgradeCode pinned, perUser scope, no hardcoded user paths) |
 
 Design notes:
 
 - **Per-user by default** (`Scope="perUser"`): no UAC, installs under
-  `%LOCALAPPDATA%\Programs\Maverick`, and the PATH component edits the *user*
+  `%LOCALAPPDATA%\Programs\Lightwork`, and the PATH component edits the *user*
   PATH only (`System="no"`).
 - **`UpgradeCode` is a constant** (`9E2B7C41-6A8D-4F3B-8E5A-2C90D17B4F6E`).
   Never change it: `MajorUpgrade` uses it to find and replace older versions.

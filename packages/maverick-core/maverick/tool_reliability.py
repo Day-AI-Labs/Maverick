@@ -24,7 +24,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-from . import retry_classifier
+from .retry import classifier as retry_classifier
 
 log = logging.getLogger(__name__)
 

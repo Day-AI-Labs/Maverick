@@ -1,7 +1,7 @@
 # Java / JVM MCP client example
 
 The runnable version of [`docs/clients/java-quickstart.md`](../../../docs/clients/java-quickstart.md),
-and the CI smoke test for Maverick's JVM cross-language MCP surface.
+and the CI smoke test for Lightwork's JVM cross-language MCP surface.
 
 `Client.java` spawns `maverick mcp` (stdio JSON-RPC) and runs the documented
 client flow — `initialize` → `tools/list` → a no-LLM `tools/call`
@@ -20,9 +20,9 @@ Requires JDK 17+ (CI uses Temurin 21) and Maven 3.9+.
 Expected output ends with:
 
 ```
-Maverick exposes 8 tools: maverick_answer, maverick_fact_set, ...
+Lightwork exposes 8 tools: maverick_answer, maverick_fact_set, ...
 maverick_facts_get round-trip OK
-OK: Java client drove Maverick over MCP end-to-end
+OK: Java client drove Lightwork over MCP end-to-end
 ```
 
 CI runs exactly this on every change to the MCP server or the clients (see

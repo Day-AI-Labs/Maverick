@@ -121,3 +121,29 @@ def test_erase_notes_removes_only_matching_scope(tmp_path):
     assert user_notes.notes_for("slack", "u1", path) == []
     assert user_notes.notes_for("slack", "u2", path)
     assert user_notes.notes_for("telegram", "u1", path)
+
+
+def test_concurrent_erase_of_different_users_all_apply(tmp_path):
+    """Each erase rewrites the whole ndjson store; without the lock a concurrent
+    erase of a DIFFERENT user resurrects the just-removed one. All targeted
+    removals must stick."""
+    import threading
+
+    path = tmp_path / "user_notes.ndjson"
+    n = 12
+    convs = [_conv(i, "slack", f"u{i:03d}") for i in range(n)]
+    turns = {i: [_turn("user", "Please always answer in tables.")] for i in range(n)}
+    assert user_notes.consolidate(_World(convs, turns), path=path, now=5.0) == n
+
+    def worker(i: int):
+        user_notes.erase_notes("slack", f"u{i:03d}", path=path)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    for i in range(n):
+        assert user_notes.notes_for("slack", f"u{i:03d}", path) == []
+    assert list(tmp_path.glob("*.tmp")) == []

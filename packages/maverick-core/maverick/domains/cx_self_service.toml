@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "deflection-gap findings & fix recommendations"
+consumers = ["knowledge_manager", "cx_operations_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull deflection data"
+instruction = "Query portal search, article views, and ticket-after-self-service events to locate where customers fail to self-serve."
+tools = ["sql_query"]
+[[workflow]]
+name = "Trace failure points"
+instruction = "Read the failing articles and portal flows tied to the top deflection gaps to see where they break down."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Benchmark patterns"
+instruction = "Check external best practices for the worst-performing flows to confirm the gap is fixable."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft fix recommendations"
+instruction = "Write evidence-backed fixes ranked by deflection impact, citing the data behind each."
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the findings package to the knowledge manager to approve content and portal changes."
+gate = "review"

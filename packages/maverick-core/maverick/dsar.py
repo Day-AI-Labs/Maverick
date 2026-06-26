@@ -34,8 +34,21 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 log = logging.getLogger(__name__)
+
+
+def _fact_subject_token(channel: str, user_id: str) -> str:
+    """Stable, delimiter-safe token for explicitly user-scoped facts.
+
+    Mirrors :func:`maverick.erasure_verify._fact_subject_token` and the CLI
+    ``export-user`` path so the *exported* set of facts is exactly the set the
+    erase path (``delete_facts_matching``) would remove -- the invariant the
+    erasure verifier relies on ("a row that would be erased is a row that is
+    exported"). Defined locally to avoid a dsar <-> erasure_verify import cycle.
+    """
+    return f"{quote(channel, safe='')}:{quote(user_id, safe='')}"
 
 
 def _iso(ts: Any) -> Any:
@@ -87,6 +100,44 @@ def _matches_user(conv_user_id: str, user_id: str) -> bool:
     return conv_user_id == user_id
 
 
+def _export_facts(world: Any, user_id: str, channel: str) -> dict[str, Any]:
+    """Export the subject's explicitly user-scoped global facts + history.
+
+    Facts are global key/value memory with no per-user column, so -- exactly as
+    the erase path does -- only keys deliberately namespaced ``user:<channel>:
+    <user_id>:<name>`` are considered (``facts_matching``). Arbitrary substrings
+    are never matched, so a short/common id can't pull an unrelated subject's
+    data. ``fact_history`` (superseded values, when [memory] temporal is on) is
+    itself the subject's personal data, so Art.15 completeness includes it.
+    """
+    out: dict[str, Any] = {"facts": {}, "fact_history": {}}
+    if world is None or not hasattr(world, "facts_matching"):
+        return out
+    token = _fact_subject_token(channel, user_id)
+    try:
+        out["facts"] = dict(world.facts_matching(token))
+    except Exception as e:  # pragma: no cover - defensive
+        log.warning("dsar: facts_matching failed: %s", e)
+    try:
+        history = world.fact_history_matching(token)
+    except Exception as e:  # pragma: no cover - defensive
+        log.warning("dsar: fact_history_matching failed: %s", e)
+        history = {}
+    out["fact_history"] = {
+        k: [
+            {
+                "value": getattr(v, "value", None),
+                "valid_from": _iso(getattr(v, "valid_from", None)),
+                "valid_to": _iso(getattr(v, "valid_to", None)),
+                "source": getattr(v, "source", ""),
+            }
+            for v in versions
+        ]
+        for k, versions in (history or {}).items()
+    }
+    return out
+
+
 def _export_world(world: Any, user_id: str, channel: str | None) -> dict[str, Any]:
     """Collect the subject's conversations + turns and the goals they touch.
 
@@ -95,8 +146,11 @@ def _export_world(world: Any, user_id: str, channel: str | None) -> dict[str, An
     per-user attribution of their own — the ``goal_id`` set referenced by those
     turns to pull each ``get_goal`` + its ``list_episodes``. A goal reachable
     only through a sibling subject's turn is therefore never included.
+
+    Explicitly user-scoped global facts (``user:<channel>:<user_id>:*``) are
+    included too, mirroring the erase path so export and erasure stay symmetric.
     """
-    empty = {"conversations": [], "goals": []}
+    empty = {"conversations": [], "goals": [], "facts": {}, "fact_history": {}}
     if world is None:
         return empty
 
@@ -192,7 +246,13 @@ def _export_world(world: Any, user_id: str, channel: str | None) -> dict[str, An
             }
         )
 
-    return {"conversations": conversations, "goals": goals}
+    facts_section = _export_facts(world, user_id, channel)
+    return {
+        "conversations": conversations,
+        "goals": goals,
+        "facts": facts_section["facts"],
+        "fact_history": facts_section["fact_history"],
+    }
 
 
 def _iter_audit_events(tenant: str | None) -> list[dict[str, Any]]:
@@ -326,10 +386,11 @@ def export_subject_data(
           "subject":      {"user_id": str, "channel": str | None},
           "tenant":       str | None,
           "generated_at": str,        # ISO-8601 UTC, when this export ran
-          "world":        {"conversations": [...], "goals": [...]},
+          "world":        {"conversations": [...], "goals": [...],
+                           "facts": {...}, "fact_history": {...}},
           "audit":        [ {...}, ... ],
           "counts":       {"conversations", "turns", "goals",
-                           "episodes", "audit_events"},
+                           "episodes", "facts", "audit_events"},
         }
     """
     world = _resolve_world(tenant)
@@ -351,6 +412,7 @@ def export_subject_data(
             "turns": turn_count,
             "goals": len(world_section["goals"]),
             "episodes": episode_count,
+            "facts": len(world_section["facts"]),
             "audit_events": len(audit_section),
         },
     }

@@ -17,3 +17,24 @@ deliverable = "Statutory policyholder notice"
 consumers = ["compliance_officer", "agency_manager"]
 cadence = "on-demand"
 gate = "approval"
+
+[[workflow]]
+name = "Identify trigger"
+instruction = "Determine which statutory notice is triggered and the affected policies and jurisdictions."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Confirm requirement"
+instruction = "Verify the required content, timing, and delivery method against the governing statute or filed rule."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compute deadline"
+instruction = "Calculate the statutory mailing deadline and flag any notice at risk of being late."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft notice"
+instruction = "Draft the policyholder notice with required language and exact dates cited to the statute."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Hand the notice to the compliance officer for approval before it is issued."
+gate = "approval"

@@ -15,3 +15,31 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_production", "ops_quality"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "SPC drift & yield findings"
+consumers = ["line_supervisor", "quality_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull line data"
+instruction = "Read yield, scrap, and measurement data for the line and product over the reporting window."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Run control charts"
+instruction = "Build control charts and compute Cpk and first-pass yield to characterize current process capability."
+tools = ["read_file"]
+[[workflow]]
+name = "Detect drift"
+instruction = "Apply control rules to detect out-of-control signals and process drift with the supporting SPC evidence."
+tools = ["web_search"]
+[[workflow]]
+name = "Trace root cause"
+instruction = "Correlate signals to scrap and yield loss to identify candidate root causes for the line team."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to quality team"
+instruction = "Present the SPC findings to the human line and quality teams who decide on any quality hold."
+gate = "review"

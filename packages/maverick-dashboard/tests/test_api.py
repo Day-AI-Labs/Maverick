@@ -56,6 +56,31 @@ class TestGoals:
         assert called[0][1] == 1.0
 
 
+    def test_idempotency_key_dedups_create(self, monkeypatch):
+        # A retried POST carrying the same Idempotency-Key must return the
+        # ORIGINAL goal and dispatch only one run (no double-create/double-bill).
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+        import maverick.runner as runner_mod
+        called = []
+        monkeypatch.setattr(
+            runner_mod, "run_goal_in_thread",
+            lambda goal_id, *a, **k: called.append(goal_id),
+        )
+        headers = {"Idempotency-Key": "abc-123"}
+        r1 = client.post("/api/v1/goals", json={"title": "idem goal"}, headers=headers)
+        r2 = client.post("/api/v1/goals", json={"title": "idem goal"}, headers=headers)
+        assert r1.status_code == 201 and r2.status_code == 201
+        assert r1.json()["id"] == r2.json()["id"]   # same goal returned
+        assert len(called) == 1                      # only one run dispatched
+
+    def test_distinct_idempotency_keys_create_distinct_goals(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+        import maverick.runner as runner_mod
+        monkeypatch.setattr(runner_mod, "run_goal_in_thread", lambda *a, **k: None)
+        r1 = client.post("/api/v1/goals", json={"title": "g"}, headers={"Idempotency-Key": "k1"})
+        r2 = client.post("/api/v1/goals", json={"title": "g"}, headers={"Idempotency-Key": "k2"})
+        assert r1.json()["id"] != r2.json()["id"]
+
     def test_create_rejects_invalid_template_name(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
         resp = client.post("/api/v1/goals", json={
@@ -64,6 +89,20 @@ class TestGoals:
         })
         assert resp.status_code == 400
         assert "invalid template name" in resp.json()["detail"]
+
+    def test_create_unknown_template_404_does_not_leak_path(self, monkeypatch):
+        # A valid-named but non-existent template -> 404 that reflects the
+        # caller's name, never the absolute on-disk template path.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+        resp = client.post("/api/v1/goals", json={
+            "title": "t", "template": "no_such_template_xyz",
+        })
+        assert resp.status_code == 404
+        detail = resp.json()["detail"]
+        assert "no_such_template_xyz" in detail   # reflects the request
+        assert "/" not in detail                  # no filesystem path leaked
+        assert ".maverick" not in detail
+
     def test_create_clamps_max_dollars(self, monkeypatch):
         """Pydantic Field bounds reject values outside [0, 100]."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")

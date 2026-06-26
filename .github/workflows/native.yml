@@ -18,6 +18,9 @@ on:
       - "packages/maverick-core/maverick/safety/unicode_filter.py"
       - "packages/maverick-core/maverick/safety/secret_detector.py"
       - "packages/maverick-core/maverick/safety/pii_detector.py"
+      # The audit verifier is a byte-exact port of verify_chain; rerun its
+      # cross-language parity job whenever the signing source of truth changes.
+      - "packages/maverick-core/maverick/audit/signing.py"
       - "packages/maverick-core/tests/test_native_unicode_parity.py"
       - "packages/maverick-core/tests/test_native_detect_parity.py"
       - ".github/workflows/native.yml"
@@ -39,7 +42,7 @@ jobs:
     name: cargo test (core crate)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
@@ -49,6 +52,34 @@ jobs:
       # exercised by the python/wasm parity jobs below.
       - run: cargo test -p mvk-scan --manifest-path rust/Cargo.toml
 
+  verify-audit:
+    name: maverick-verify-audit (build + cross-lang parity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: rust
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # Rust unit tests (canonical-JSON parity table + chain-break logic).
+      - run: cargo test -p maverick-verify-audit --manifest-path rust/Cargo.toml
+      - run: cargo build -p maverick-verify-audit --release --manifest-path rust/Cargo.toml
+      # Cross-language parity: drive the REAL Python AuditSigner to sign a log,
+      # run the binary on it, and assert the Rust verdict matches Python's
+      # verify_chain (intact -> exit 0; flipped byte -> break at the right row;
+      # unsigned -> UNVERIFIABLE). cryptography is required for the Python side.
+      - name: Cross-language parity (Rust binary == Python verify_chain)
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e packages/maverick-core --no-deps
+          python -m pip install "cryptography>=44.0.1"
+          MVK_VERIFY_BIN="$PWD/rust/target/release/maverick-verify-audit" \
+            python3 rust/maverick-verify-audit/tests/parity.py
+
   python:
     name: wheel + native parity (${{ matrix.os }})
     strategy:
@@ -57,7 +88,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -103,7 +134,7 @@ jobs:
           python -m pytest \
             packages/maverick-core/tests/test_native_unicode_parity.py \
             packages/maverick-core/tests/test_native_detect_parity.py -vv
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: maverick-native-wheel-${{ matrix.os }}
           path: dist/*.whl
@@ -113,7 +144,7 @@ jobs:
     name: wasm package + node parity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           targets: wasm32-unknown-unknown
@@ -121,14 +152,14 @@ jobs:
         with:
           workspaces: rust
       - uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
       - name: Build the wasm package (wasm-opt disabled in Cargo metadata)
         run: wasm-pack build rust/mvk-scan-wasm --target nodejs --out-dir pkg --release
       - name: Node parity tests (prove WASM == pure Python)
         run: node --test rust/mvk-scan-wasm/test/parity.test.mjs rust/mvk-scan-wasm/test/detect.parity.test.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mvk-scan-wasm-pkg
           path: rust/mvk-scan-wasm/pkg
@@ -148,8 +179,8 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: maverick-native-wheel-*
           path: dist
@@ -165,12 +196,12 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/native-v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           targets: wasm32-unknown-unknown
       - uses: jetli/wasm-pack-action@0d096b08b4e5a7de8c28de67e11e945404e9eefa # v0.4.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"

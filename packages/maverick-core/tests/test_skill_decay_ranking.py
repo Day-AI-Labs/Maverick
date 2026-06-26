@@ -9,7 +9,7 @@ ranking is untouched.
 from __future__ import annotations
 
 import pytest
-from maverick import skill_stats
+from maverick.skill import stats as skill_stats
 from maverick.skills import Skill, _relevant_skills_lexical
 
 

@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "social escalation brief"
+consumers = ["comms_lead", "brand_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Scan channels"
+instruction = "Sweep monitored social channels and surface mentions, spikes, and sentiment shifts that could become issues."
+tools = ["web_search"]
+[[workflow]]
+name = "Classify signal"
+instruction = "Read the company escalation protocol and classify each flagged item by severity tier and theme."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify facts"
+instruction = "Confirm what is actually claimed versus rumor and note unknowns rather than amplifying unverified detail."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Draft brief"
+instruction = "Write a concise escalation brief stating the issue, reach, severity tier, and recommended routing."
+[[workflow]]
+name = "Route per protocol"
+instruction = "Hand the brief to the comms lead and brand manager for response decision."
+gate = "review"

@@ -15,3 +15,30 @@ deny_tools = ["shell", "write_file", "home_assistant", "computer"]
 
 knowledge_sources = ["ops_maintenance", "ops_safety"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "PM schedule & predictive work-order package"
+consumers = ["maintenance_planner", "reliability_engineer"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Read telemetry"
+instruction = "Pull equipment condition data such as vibration and thermal readings along with asset history and PM intervals."
+tools = ["read_file", "samsara_read"]
+[[workflow]]
+name = "Assess condition"
+instruction = "Compare current readings against baselines and failure thresholds to predict impending failures."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft work orders"
+instruction = "Build the PM schedule and draft work orders for the assets needing service, never actuating or reconfiguring equipment."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check safety"
+instruction = "Escalate any condition touching a safety control and let worker safety override uptime in prioritization."
+[[workflow]]
+name = "Route to dispatch"
+instruction = "Hand the work-order package to a human planner to dispatch."
+gate = "approval"

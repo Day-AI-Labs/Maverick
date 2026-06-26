@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gtm"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "reference roster with fatigue & approval status"
+consumers = ["sales_account_team", "customer_marketing", "cs_director"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Intake request"
+instruction = "Capture the reference ask with its use case, audience, and the desired customer profile."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Match references"
+instruction = "Search the approved reference pool for customers that fit the profile and have given consent."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Check fatigue"
+instruction = "Verify each candidate against fatigue limits and recent activity so no customer is over-asked."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Confirm approvals"
+instruction = "Confirm the required internal and customer approvals are on record before any outreach."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Hand the matched reference roster to the account team for approval before the customer is contacted."
+gate = "approval"

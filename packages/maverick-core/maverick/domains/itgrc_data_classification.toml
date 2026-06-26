@@ -17,3 +17,24 @@ deliverable = "Data classification register"
 consumers = ["control_owner", "privacy_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "List repositories"
+instruction = "Enumerate in-scope data repositories and pull the company's classification policy and schema from grounding docs."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Sample data"
+instruction = "Query repository schemas and sample contents to identify what data each column or store actually holds."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Apply labels"
+instruction = "Assign each asset its classification tier per policy, citing the document and evidence behind each call."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Catch staleness"
+instruction = "Compare current classifications against the prior register to flag missing, drifted, or stale labels."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Route to owner"
+instruction = "Hand the updated classification register to the control owner and privacy officer for sign-off."
+gate = "review"

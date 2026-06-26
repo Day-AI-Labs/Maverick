@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "reusable-asset & IoT device health report"
+consumers = ["asset_manager", "operations_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory assets"
+instruction = "Query the current location, custody, and dwell time of reusable assets across network nodes."
+tools = ["sql_query"]
+[[workflow]]
+name = "Pull device telemetry"
+instruction = "Read IoT device health and last-ping telemetry and reconcile against the asset master via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Flag anomalies"
+instruction = "Identify stale pings, low batteries, and assets pooled or stranded beyond threshold in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Compile health report"
+instruction = "Summarize fleet utilization, loss exposure, and devices needing service with cited evidence."
+[[workflow]]
+name = "Route to steward"
+instruction = "Send the asset and device health report to the asset manager for review before remediation."
+gate = "review"

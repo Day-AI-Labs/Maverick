@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "stormwater inspection & corrective-action log"
+consumers = ["environmental_manager", "project_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Read permit"
+instruction = "Pull the site SWPPP and the governing stormwater permit defining inspection frequency and triggers."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Log inspections"
+instruction = "Record each routine and rain-event inspection with date, inspector, and BMP condition observed."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Verify against permit"
+instruction = "Confirm inspection timing and corrective-action deadlines meet the permit's required schedule."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Track corrections"
+instruction = "Flag deficient BMPs and any corrective action open past its permit-required completion deadline."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Manager review"
+instruction = "Route the inspection and corrective-action log to the environmental manager and project manager for review."
+gate = "review"

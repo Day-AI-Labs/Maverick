@@ -9,3 +9,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["tmt"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "incident triage summary"
+consumers = ["network_operator", "noc_shift_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull telemetry"
+instruction = "Read active alarms and query telemetry for the affected nodes and time window."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Correlate alarms"
+instruction = "Correlate related alarms into a single incident and identify the likely root signal against the runbooks."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Check known issues"
+instruction = "Check the correlated pattern against documented known issues and recent change history."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft summary"
+instruction = "Draft the incident summary with timeline, scope, and cited evidence, stating unknowns plainly."
+[[workflow]]
+name = "Operator handoff"
+instruction = "Route the incident summary and handoff notes to the network operator to act on."
+gate = "review"

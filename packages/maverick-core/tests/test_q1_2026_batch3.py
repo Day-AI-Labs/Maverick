@@ -110,14 +110,14 @@ def test_preflight_tools_count_toward_estimate():
     ("JSONDecodeError: malformed response",        "malformed_response"),
 ])
 def test_retry_classifier_substring_patterns(err_msg, expected):
-    from maverick.retry_classifier import classify
+    from maverick.retry.classifier import classify
     err = RuntimeError(err_msg)
     assert classify(err).value == expected
 
 
 def test_retry_classifier_status_code_attr():
     """Some HTTP libraries put the status on the exception."""
-    from maverick.retry_classifier import ErrorClass, classify
+    from maverick.retry.classifier import ErrorClass, classify
 
     class _HttpError(Exception):
         def __init__(self, code: int):
@@ -130,12 +130,12 @@ def test_retry_classifier_status_code_attr():
 
 
 def test_retry_classifier_unknown_defaults():
-    from maverick.retry_classifier import ErrorClass, classify
+    from maverick.retry.classifier import ErrorClass, classify
     assert classify(RuntimeError("weird unhelpful message")) == ErrorClass.UNKNOWN
 
 
 def test_retry_classifier_should_retry_respects_max():
-    from maverick.retry_classifier import should_retry
+    from maverick.retry.classifier import should_retry
     err = RuntimeError("429 Too Many Requests")
     assert should_retry(err, attempts_so_far=0)
     assert should_retry(err, attempts_so_far=5)
@@ -144,14 +144,14 @@ def test_retry_classifier_should_retry_respects_max():
 
 def test_retry_classifier_terminal_errors_dont_retry():
     """Auth + content filter + context overflow are terminal."""
-    from maverick.retry_classifier import should_retry
+    from maverick.retry.classifier import should_retry
     assert not should_retry(RuntimeError("401 Unauthorized"), attempts_so_far=0)
     assert not should_retry(RuntimeError("content filter"), attempts_so_far=0)
     assert not should_retry(RuntimeError("context length exceeded"), attempts_so_far=0)
 
 
 def test_retry_classifier_next_delay_grows():
-    from maverick.retry_classifier import next_delay
+    from maverick.retry.classifier import next_delay
     err = RuntimeError("Connection reset")  # transient_network
     d0 = next_delay(err, attempts_so_far=0)
     d3 = next_delay(err, attempts_so_far=3)
@@ -159,8 +159,19 @@ def test_retry_classifier_next_delay_grows():
 
 
 def test_retry_classifier_terminal_zero_delay():
-    from maverick.retry_classifier import next_delay
+    from maverick.retry.classifier import next_delay
     assert next_delay(RuntimeError("401 Unauthorized"), attempts_so_far=0) == 0.0
+
+
+def test_retry_classifier_next_delay_is_jittered():
+    # No jitter -> every caller hitting the same class at once retries in
+    # lockstep (synchronized storm against a recovering provider). Delays must
+    # be decorrelated and bounded to (0.5*base, base].
+    from maverick.retry.classifier import next_delay
+    err = RuntimeError("429 rate limit")  # rate_limit: base 10s at attempt 0
+    samples = {next_delay(err, attempts_so_far=0) for _ in range(50)}
+    assert len(samples) > 1                 # not deterministic
+    assert all(5.0 <= d < 10.0 for d in samples)  # equal-jitter band of 10s
 
 
 # ---------- wizard --fast flag ----------

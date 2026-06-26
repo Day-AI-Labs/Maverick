@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "certified payroll report"
+consumers = ["project_manager", "payroll_administrator"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull payroll"
+instruction = "Read the week's timecards and payroll records for workers on the prevailing-wage project."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Confirm wage rates"
+instruction = "Match each worker's classification and hours to the governing prevailing-wage determination and fringe rates."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Build report"
+instruction = "Compile the certified payroll report with gross wages, deductions, fringes, and the statement of compliance for each worker."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check compliance"
+instruction = "Flag any under-paid classification, missing fringe, misclassified worker, or apprentice-ratio breach before certification."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to PM"
+instruction = "Hand the draft certified payroll report to the project manager to review and sign the statement of compliance."
+gate = "review"

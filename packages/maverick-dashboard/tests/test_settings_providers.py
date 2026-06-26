@@ -84,3 +84,35 @@ def test_toggle_endpoints(monkeypatch, tmp_path):
     # an unchecked box is omitted from the form -> deactivated on save
     assert c.post("/settings/capabilities", data={}).status_code == 200
     assert config.get_capabilities()["browser"] is False
+
+
+def test_concurrent_provider_and_toggle_both_apply(monkeypatch, tmp_path):
+    """A set_provider racing a set_toggle (different sections of one overlay
+    file) must not have either change clobbered by a stale re-read."""
+    import threading
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _no_provider_env(monkeypatch)
+    from maverick_dashboard import settings_store
+
+    barrier = threading.Barrier(2)
+
+    def do_provider():
+        barrier.wait()
+        settings_store.set_provider("anthropic", api_key="sk-test-abc123")  # pragma: allowlist secret
+
+    def do_toggle():
+        barrier.wait()
+        name = next(iter(settings_store.FEATURE_DEFAULTS))
+        settings_store.set_toggle("features", name, True)
+
+    ts = [threading.Thread(target=do_provider), threading.Thread(target=do_toggle)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+
+    overlay = settings_store.load_overlay()
+    assert overlay.get("providers", {}).get("anthropic", {}).get("api_key")
+    name = next(iter(settings_store.FEATURE_DEFAULTS))
+    assert overlay.get("features", {}).get(name) is True

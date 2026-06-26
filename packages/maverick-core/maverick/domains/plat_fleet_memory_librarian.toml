@@ -10,3 +10,27 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["platform"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "fleet memory curation plan"
+consumers = ["platform_reviewer", "knowledge_steward"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Inventory memory"
+instruction = "Read the shared fleet memory and Operating Record entries with their provenance and compartment seals."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Detect duplicates"
+instruction = "Identify duplicate and stale shared memories that are candidates for dedup or aging out."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check seal boundaries"
+instruction = "Verify every cross-agent recall against tenancy and compartment seals and refuse any that would cross a boundary."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Recommend curation"
+instruction = "Compile the curation plan with provenance citations and route it to a human for approval before any memory is deleted or moved."
+gate = "approval"

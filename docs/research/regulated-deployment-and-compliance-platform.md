@@ -1,8 +1,8 @@
-# Maverick in Regulated Environments — and the OneTrust Replacement Question
+# Lightwork in Regulated Environments — and the OneTrust Replacement Question
 
 > Strategy analysis. Date: 2026-06-06. Follow-on to
 > [`agentic-os-and-enterprise-analysis.md`](./agentic-os-and-enterprise-analysis.md).
-> Method: full code audit of Maverick's governance substrate (file-cited) + a
+> Method: full code audit of Lightwork's governance substrate (file-cited) + a
 > web-sourced landscape pass on OneTrust, the AI-governance market, and the
 > concrete deployment requirements of HIPAA / SOC 2 / GDPR / EU AI Act / SR 11-7 /
 > FedRAMP. Load-bearing external figures are flagged **[verify]**.
@@ -23,10 +23,10 @@
 
 ## Bottom line (four verdicts)
 
-1. **This is two questions sharing one substrate.** "Use Maverick in regulated
-   environments safely" (make Maverick *deployable by* a bank/hospital/pharma —
+1. **This is two questions sharing one substrate.** "Use Lightwork in regulated
+   environments safely" (make Lightwork *deployable by* a bank/hospital/pharma —
    the agent is the thing **being governed**) and "replace OneTrust" (make
-   Maverick a compliance *product* others buy to govern **their own** estate —
+   Lightwork a compliance *product* others buy to govern **their own** estate —
    the swarm is the **execution engine**) are different products for different
    buyers. But the governance machinery that answers the first **is** the core of
    the second. We built a compliance engine to police our own agents; pointed
@@ -51,7 +51,7 @@
    *model paperwork*. **Governing autonomous agents at runtime — registry +
    capability scoping + tamper-evident action audit as a compliance artifact — is
    a forming category (OWASP Agentic Top 10, CSA NHI, Okta/Microsoft circling it)
-   that no GRC incumbent owns.** Maverick is *itself* an agent swarm, so it has a
+   that no GRC incumbent owns.** Lightwork is *itself* an agent swarm, so it has a
    structural right to win it. From there, expand into **compliance-as-agentic-
    labor**: agents that *run* the DSAR, *populate* the ROPA from live discovery,
    *chase* the vendor questionnaire, *collect* SOC 2 evidence — attacking OneTrust
@@ -89,7 +89,7 @@ Q2's foundation is already poured.
 
 ---
 
-## Part 2 — What Maverick already has (code-verified)
+## Part 2 — What Lightwork already has (code-verified)
 
 The first enterprise analysis already corrected the "we're behind on governance"
 framing. A second, deeper audit against `main` makes the point starker: the
@@ -234,7 +234,7 @@ filing.**
 
 ### The wedge (three moves, in order of defensibility)
 
-1. **Own agent governance as a compliance artifact.** Maverick is a recursive
+1. **Own agent governance as a compliance artifact.** Lightwork is a recursive
    swarm with signed action audit + attenuating capabilities + a kill-switch —
    it can answer the Okta/Microsoft question (*"where are my agents, what can they
    do, what did they do, prove it"*) not as paperwork but as **live, enforced,
@@ -243,7 +243,7 @@ filing.**
    and mostly a **projection of data we already emit.**
 
 2. **Compliance-as-agentic-labor.** Reframe each "human + questionnaire +
-   spreadsheet" workflow as a Maverick **goal template + connectors**: run the
+   spreadsheet" workflow as a Lightwork **goal template + connectors**: run the
    DSAR end-to-end (locate→retrieve→redact→fulfil), populate/maintain the ROPA
    from live system discovery, chase & complete vendor questionnaires, collect
    SOC 2/ISO evidence continuously. This extends Vanta's "automated evidence"
@@ -252,7 +252,7 @@ filing.**
    MCP **connectors**, the **scheduler**.
 
 3. **Self-host as the moat.** Regulated buyers must keep PHI/PCI/classified and
-   EU-resident data in-boundary. Maverick's default-self-host + 7 sandboxes +
+   EU-resident data in-boundary. Lightwork's default-self-host + 7 sandboxes +
    local models sidestep the residency/data-egress objections that slow SaaS GRC
    sales — *if* Q1's encryption-at-rest and tenancy land.
 
@@ -278,7 +278,7 @@ wizard-surfaced + fail-open per house rules:
 - Two-person rule in `consent.py`.
 - Policy-as-code **framework tags** on ACL/capability/consent rules.
 
-Outcome: Maverick is deployable in regulated environments **and** the Q2
+Outcome: Lightwork is deployable in regulated environments **and** the Q2
 foundation is poured. Valuable **regardless of the business-model decision.**
 
 **Phase 1 — Agent/AI governance system of record (the unowned wedge).**

@@ -18,3 +18,21 @@ deliverable = "Certificate-of-insurance tracking"
 consumers = ["agency_manager"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Read requirement"
+instruction = "Read the contract or holder request to capture required limits, additional-insured status, and endorsement wording."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify coverage"
+instruction = "Query active policies to confirm in-force limits and endorsements actually satisfy the holder requirements."
+tools = ["sql_query"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag any limit shortfall, expired policy, or missing endorsement that would make the certificate inaccurate."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Stage tracking entry"
+instruction = "Stage the certificate tracking record with holder, expiry, and renewal triggers for the agency manager to review."
+tools = ["spreadsheet"]
+gate = "review"

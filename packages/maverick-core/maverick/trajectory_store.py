@@ -94,6 +94,11 @@ class TrajectoryStore:
     def __post_init__(self) -> None:
         if self._lock is None:
             self._lock = threading.Lock()
+        # Appends since the last rotation check. _maybe_rotate re-reads the whole
+        # file, so we amortize that O(file) scan over a batch of appends instead
+        # of paying it on EVERY record -- once the file filled to max_rows the
+        # old code re-read tens of MB of NDJSON per captured step.
+        self._since_check = 0
 
     def record(self, step: TrajectoryStep) -> bool:
         """Append one redacted step. Returns True on success; never raises."""
@@ -107,7 +112,12 @@ class TrajectoryStore:
                 with open(os.open(p, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o600),
                           "a", encoding="utf-8") as fh:
                     fh.write(line + "\n")
-                self._maybe_rotate(p)
+                # Only scan for rotation periodically (worst-case overage is one
+                # batch above max_rows), not on every append.
+                self._since_check += 1
+                if self._since_check >= max(1, self.max_rows // 8):
+                    self._since_check = 0
+                    self._maybe_rotate(p)
             return True
         except Exception:  # pragma: no cover -- capture is best-effort
             log.debug("trajectory capture failed", exc_info=True)

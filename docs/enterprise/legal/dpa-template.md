@@ -8,7 +8,7 @@
 **Effective date:** `<…>`
 
 ## 1. Subject matter & duration
-The Processor processes personal data solely to provide the Maverick agent
+The Processor processes personal data solely to provide the Lightwork agent
 platform for the term of the underlying agreement and deletes/returns it on
 termination (see §7).
 

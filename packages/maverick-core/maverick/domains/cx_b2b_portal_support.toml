@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "portal issue resolution & action plan"
+consumers = ["account_manager", "portal_admin"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read ticket"
+instruction = "Read the portal ticket to pin down whether it concerns user access, permissions, or ordering."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reproduce in data"
+instruction = "Query the account, user, and order records to reproduce the reported state and confirm the root cause."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Draft resolution"
+instruction = "Draft the fix steps and customer reply, citing the portal documentation for each permission or ordering change."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag privileged changes"
+instruction = "Flag any change that grants permissions or touches another buyer's data so an admin makes it rather than the agent promising it."
+[[workflow]]
+name = "Account-manager review"
+instruction = "Route the resolution and any access changes to the account manager for sign-off before replying to the customer."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "SAM and certification renewal calendar"
+consumers = ["contracts_manager", "compliance_officer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull registrations"
+instruction = "Read current SAM registration, reps and certs, and certification records with their expiration dates from company files."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify status"
+instruction = "Confirm each registration and certification's current status and expiry against SAM.gov and issuing-authority sources."
+tools = ["web_search"]
+[[workflow]]
+name = "Compute lead time"
+instruction = "Calculate renewal due dates with required lead time and flag anything expiring inside the buffer window."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build calendar"
+instruction = "Lay out upcoming renewals, owners, and required actions in the renewal calendar noting any missing prerequisites."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route renewals"
+instruction = "Deliver the renewal calendar to the contracts manager to authorize and execute the renewals."
+gate = "review"

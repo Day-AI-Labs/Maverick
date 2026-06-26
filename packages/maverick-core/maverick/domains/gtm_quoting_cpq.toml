@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "customer quote/proposal draft"
+consumers = ["account_executive", "deal_desk"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture requirements"
+instruction = "Gather the customer's product needs, term, and quantities along with the approved price book."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Configure products"
+instruction = "Configure the product bundle and validate it against allowed combinations and dependency rules."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Price quote"
+instruction = "Apply list pricing and approved discounts, routing any non-list pricing to the deal desk for the human gate."
+[[workflow]]
+name = "Draft proposal"
+instruction = "Assemble the quote and proposal document with terms, scope, and the AI-assistant disclosure."
+[[workflow]]
+name = "Route to AE"
+instruction = "Hand the quote and proposal to the account executive and deal desk for review before it goes to the customer."
+gate = "review"

@@ -56,16 +56,24 @@ class RecordStats:
     departments: dict[str, int] = field(default_factory=dict)
 
 
-def _goal_records(world: Any, *, limit: int) -> list[DecisionRecord]:
+def _goal_records(
+    world: Any, *, limit: int, owner: str | None = None,
+) -> list[DecisionRecord]:
     out: list[DecisionRecord] = []
     try:
-        goals = world.list_goals(limit=limit, order="desc")
+        kwargs: dict[str, Any] = {"limit": limit, "order": "desc"}
+        if owner is not None:
+            kwargs["owner"] = owner
+        goals = world.list_goals(**kwargs)
     except Exception as e:  # pragma: no cover -- assembly never raises
         log.debug("operating_record: goal read failed: %s", e)
         return out
     spend: dict[int, float] = {}
     try:
-        for ep in world.list_episodes(limit=limit * 4):
+        kwargs = {"limit": limit * 4}
+        if owner is not None:
+            kwargs["owner"] = owner
+        for ep in world.list_episodes(**kwargs):
             gid = getattr(ep, "goal_id", None)
             if gid is not None:
                 spend[gid] = spend.get(gid, 0.0) + float(
@@ -87,7 +95,9 @@ def _goal_records(world: Any, *, limit: int) -> list[DecisionRecord]:
     return out
 
 
-def _approval_records(world: Any, *, limit: int) -> list[DecisionRecord]:
+def _approval_records(
+    world: Any, *, limit: int, owner: str | None = None,
+) -> list[DecisionRecord]:
     out: list[DecisionRecord] = []
     try:
         approvals = world.list_approvals(limit=limit)
@@ -95,6 +105,12 @@ def _approval_records(world: Any, *, limit: int) -> list[DecisionRecord]:
         log.debug("operating_record: approval read failed: %s", e)
         return out
     for a in approvals:
+        if owner is not None and owner not in {
+            getattr(a, "requested_by", None),
+            getattr(a, "claimed_by", None),
+            getattr(a, "decided_by", None),
+        }:
+            continue
         out.append(DecisionRecord(
             ts=float(getattr(a, "decided_at", None)
                      or getattr(a, "requested_at", 0) or 0),
@@ -108,11 +124,16 @@ def _approval_records(world: Any, *, limit: int) -> list[DecisionRecord]:
     return out
 
 
-def assemble(world: Any, *, limit: int = 500) -> list[DecisionRecord]:
-    """The Operating Record: every goal decision + human approval, newest
-    first. Pure read path over existing stores."""
-    records = _goal_records(world, limit=limit) + \
-        _approval_records(world, limit=limit)
+def assemble(
+    world: Any, *, limit: int = 500, owner: str | None = None,
+) -> list[DecisionRecord]:
+    """The Operating Record: goal decisions + human approvals, newest first.
+
+    ``owner`` scopes the record to one caller principal. ``None`` preserves the
+    historical admin / auth-off view across all principals.
+    """
+    records = _goal_records(world, limit=limit, owner=owner) + \
+        _approval_records(world, limit=limit, owner=owner)
     records.sort(key=lambda r: r.ts, reverse=True)
     return records[:limit]
 
@@ -182,7 +203,7 @@ def export_capsule(
         from . import dreaming
         learned["insights"] = [i.to_dict() for i in dreaming.load_insights()]
         learned["rehearsals"] = dreaming.load_rehearsals()
-        from .skill_distillation_local import _STORE
+        from .skill.distillation_local import _STORE
         skills_dir = dreaming._tenant_path("learned-skills", _STORE)
         learned["skills"] = {
             p.stem: p.read_text(encoding="utf-8")
@@ -204,8 +225,12 @@ def export_capsule(
                "sig": sig.hex()}
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(capsule, indent=2, default=str),
-                   encoding="utf-8")
+    # Atomic write: a crash mid-write must not leave a truncated capsule that
+    # verify_capsule would then flag as unreadable / invalid-signature. The
+    # capsule may contain learned operational state, so stage it with 0600
+    # permissions before atomically replacing the destination.
+    from .file_lock import atomic_write_text
+    atomic_write_text(out, json.dumps(capsule, indent=2, default=str), mode=0o600)
     try:
         from .audit import EventKind, record
         record(EventKind.LEARNING_UPDATE, agent="operating_record",

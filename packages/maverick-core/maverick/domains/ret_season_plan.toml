@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "seasonal buy plan"
+consumers = ["merchandise_planner", "buyer"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull history"
+instruction = "Query prior comparable-season sales, sell-through, and markdown data by category."
+tools = ["sql_query"]
+[[workflow]]
+name = "Gather trend inputs"
+instruction = "Collect current trend signals and assortment direction from company documents and market sources."
+tools = ["knowledge_search", "web_search", "read_file"]
+[[workflow]]
+name = "Build buy plan"
+instruction = "Project category-level units, depth, and open-to-buy from history adjusted for trend."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check OTB fit"
+instruction = "Verify the proposed buy reconciles to the open-to-buy budget and flag any overcommit."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Route to planner"
+instruction = "Hand the seasonal buy plan to the merchandise planner for review before committing buys."
+gate = "review"

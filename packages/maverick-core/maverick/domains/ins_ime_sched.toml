@@ -17,3 +17,24 @@ deliverable = "IME scheduling register"
 consumers = ["claims_adjuster", "claims_manager"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Identify exams"
+instruction = "Pull open claims flagged for an independent medical exam with their specialty and jurisdiction."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Check notice rules"
+instruction = "Confirm the jurisdiction's required notice period and claimant notification format from the procedures."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Stage scheduling"
+instruction = "Match each exam to an eligible examiner and proposed date that satisfies the notice window, flagging any that cannot be met."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Track reports"
+instruction = "Log notice-sent and report-due dates and surface exams whose reports are overdue."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Adjuster review"
+instruction = "Route the IME scheduling register to the claims adjuster and claims manager for confirmation."
+gate = "review"

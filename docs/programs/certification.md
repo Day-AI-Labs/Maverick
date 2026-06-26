@@ -43,7 +43,7 @@ A channel adapter is **Certified** when all of:
 ## Publication
 
 Certified listings get a row in the marketplace with the certification
-date + gate versions, and may use the "Maverick Certified" wordmark per
+date + gate versions, and may use the "Lightwork Certified" wordmark per
 TRADEMARK.md. The badge program kit ([badge-program.md](./badge-program.md))
 carries the asset rules. Revocation: a security issue in a certified
 listing follows SECURITY.md disclosure; certification is pulled with the

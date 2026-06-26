@@ -159,7 +159,7 @@ def test_fuzz_channel_federation_apply():
 
 
 def test_fuzz_marketplace_import(tmp_path):
-    from maverick import marketplace_federation as mf
+    from maverick.marketplace import federation as mf
     store = tmp_path / "imports.json"
     _run("marketplace.import_listings",
          lambda v: mf.import_listings(

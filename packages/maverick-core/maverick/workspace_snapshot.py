@@ -15,7 +15,9 @@ import tarfile
 import time
 from pathlib import Path
 
-_DEFAULT_STORE = Path.home() / ".maverick" / "snapshots"
+from .paths import data_dir
+
+_DEFAULT_STORE = data_dir("snapshots")
 _ID_RE = re.compile(r"^snap-(\d{4})(?:-.*)?$")
 # Per-snapshot ceiling so a runaway workspace can't fill the disk silently.
 _MAX_FILES = 20_000

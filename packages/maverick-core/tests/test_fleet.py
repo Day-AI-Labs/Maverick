@@ -138,3 +138,30 @@ def test_remove_fleet_deletes_run_index(monkeypatch, tmp_path):
     assert remove_fleet("a") is True
     assert not runs_path("a").exists()
     assert load_runs("a") == []
+
+
+def test_record_run_is_atomic_under_concurrency(monkeypatch, tmp_path):
+    """Concurrent runs of the same fleet must not lose run-log entries to a
+    read-modify-write race."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    import threading
+
+    from maverick.fleet import load_runs, record_run
+
+    n = 50
+    barrier = threading.Barrier(n)
+
+    def _rec(i):
+        barrier.wait()  # maximize overlap on the read-modify-write
+        record_run("acme", f"agent{i}", i)
+
+    threads = [threading.Thread(target=_rec, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    runs = load_runs("acme")
+    assert len(runs) == n, f"lost entries: {len(runs)} of {n}"
+    assert {r["goal_id"] for r in runs} == set(range(n))

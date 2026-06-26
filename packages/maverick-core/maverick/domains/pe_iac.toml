@@ -14,3 +14,27 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "infrastructure change pull request"
+consumers = ["platform_lead", "sre_oncall"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Read context"
+instruction = "Map the existing modules, state, and standards for the resources the change will touch."
+tools = ["read_file", "repo_map", "knowledge_search"]
+[[workflow]]
+name = "Author IaC"
+instruction = "Write the Terraform, Pulumi, or Helm change in the sandbox following module and naming conventions."
+tools = ["apply_patch", "ast_edit", "str_replace_editor"]
+[[workflow]]
+name = "Plan & validate"
+instruction = "Run plan and policy checks in the sandbox and confirm the diff matches intent with no unexpected destroys."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Open PR"
+instruction = "Open the pull request with the plan output attached for human review and approval before any apply."
+gate = "approval"

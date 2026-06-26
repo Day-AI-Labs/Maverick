@@ -1,6 +1,6 @@
 # demo-cluster — public read-only demo (demo.maverick.dev)
 
-Blueprint for a public, **read-only** Maverick demo: seeded finished runs,
+Blueprint for a public, **read-only** Lightwork demo: seeded finished runs,
 the real dashboard process, and an nginx path-allowlist proxy as the only
 exposed surface. Ships as both `docker-compose.yml` and `k8s.yaml` (same
 three-part shape).

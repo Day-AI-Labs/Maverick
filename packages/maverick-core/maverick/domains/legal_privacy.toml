@@ -16,3 +16,29 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal", "privacy_compliance"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "privacy legal position memo"
+consumers = ["privacy_counsel", "data_protection_officer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame question"
+instruction = "Pin down the DPA clause, breach scenario, or regulatory position to analyze and the governing jurisdictions in play."
+[[workflow]]
+name = "Gather record"
+instruction = "Pull the relevant contracts, data flows, and prior privacy positions from internal knowledge."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Analyze exposure"
+instruction = "Assess the question under GDPR, CCPA/CPRA, the US state-law wave, and sectoral law, citing each article and section."
+tools = ["web_search"]
+[[workflow]]
+name = "Mark limits"
+instruction = "Flag that breach-notification and final positions are attorney acts and tag any unverified or jurisdiction-dependent conclusion."
+[[workflow]]
+name = "DPO review"
+instruction = "Route the privacy position memo to counsel and the DPO for sign-off."
+gate = "review"

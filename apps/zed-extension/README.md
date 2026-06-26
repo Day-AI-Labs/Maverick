@@ -1,10 +1,10 @@
 # maverick-zed-extension
 
-Drive the [Maverick](https://github.com/Day-AI-Labs/maverick) agent runtime
+Drive the [Lightwork](https://github.com/Day-AI-Labs/maverick) agent runtime
 from the [Zed](https://zed.dev) editor. Two surfaces:
 
 1. **Assistant context server (MCP).** The extension registers
-   `maverick mcp` — Maverick's official MCP server
+   `maverick mcp` — Lightwork's official MCP server
    (`packages/maverick-mcp`, stdio transport) — as a Zed context server, so
    Zed's assistant can start goals, check status, and read results through
    MCP tools.
@@ -58,5 +58,5 @@ Zed compiles `src/lib.rs` against the WIT world for the pinned
 - The `zed_extension_api` pin in `Cargo.toml` may need a bump to match the
   Zed release you install into; the API is versioned and Zed only loads
   extensions built against versions it supports.
-- The extension does not install the Maverick CLI; it assumes `maverick`
+- The extension does not install the Lightwork CLI; it assumes `maverick`
   resolves on PATH and surfaces Zed's own error if it does not.

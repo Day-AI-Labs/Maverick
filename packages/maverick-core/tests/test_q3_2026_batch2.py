@@ -364,7 +364,7 @@ def test_cost_router_disabled_returns_none(monkeypatch):
     monkeypatch.delenv("MAVERICK_COST_ROUTING", raising=False)
     import maverick.config as cfg
     monkeypatch.setattr(cfg, "load_config", dict)
-    from maverick.cost_router import CostSignal, pick
+    from maverick.cost.router import CostSignal, pick
     assert pick(CostSignal(role="proposer")) is None
 
 
@@ -381,7 +381,7 @@ def test_cost_router_picks_cheapest_available(monkeypatch):
     import maverick.config as cfg
     monkeypatch.setattr(cfg, "load_config", dict)
 
-    from maverick.cost_router import TIER_CHEAP, CostSignal, pick
+    from maverick.cost.router import TIER_CHEAP, CostSignal, pick
     spec = pick(CostSignal(tier=TIER_CHEAP))
     assert spec is not None
     assert spec.startswith("deepseek:")
@@ -396,7 +396,7 @@ def test_cost_router_falls_back_when_no_provider_configured(monkeypatch):
     import maverick.config as cfg
     monkeypatch.setattr(cfg, "load_config", dict)
 
-    from maverick.cost_router import CostSignal, pick
+    from maverick.cost.router import CostSignal, pick
     # When no provider has usable credentials, the picker returns None so
     # model_for_role() defers to the role defaults. Picking a provider we
     # have no key for would only blow up later at client construction.
@@ -425,7 +425,7 @@ def test_cost_router_avoids_high_error_provider(monkeypatch):
         ph.record("deepseek", "deepseek-chat",
                   latency_ms=100, error=True)
     try:
-        from maverick.cost_router import TIER_CHEAP, CostSignal, pick
+        from maverick.cost.router import TIER_CHEAP, CostSignal, pick
         spec = pick(CostSignal(tier=TIER_CHEAP))
         assert spec is not None
         # Errored model itself should not be the pick (within-brand
@@ -539,7 +539,7 @@ def test_cost_router_respects_routing_provider_allowlist(monkeypatch):
         lambda: {"routing": {"allowed_providers": ["anthropic"]}},
     )
 
-    from maverick.cost_router import TIER_BASE, CostSignal, pick
+    from maverick.cost.router import TIER_BASE, CostSignal, pick
 
     spec = pick(CostSignal(tier=TIER_BASE))
     assert spec is not None

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "ECN impact assessment"
+consumers = ["engineering_manager", "change_review_board"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Read change request"
+instruction = "Pull the proposed engineering change with affected part numbers and the rationale."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Trace BOM impact"
+instruction = "Query every BOM, where-used, and assembly that references the changed parts."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check inventory and orders"
+instruction = "Quantify on-hand stock, WIP, and open purchase and sales orders exposed to the change."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Assess disposition"
+instruction = "Build the impact assessment with use-up, rework, or scrap disposition and an effectivity recommendation, citing source revisions."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Route to board"
+instruction = "Submit the ECN package to the change review board for approval before the change is released."
+gate = "approval"

@@ -10,3 +10,32 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "field-return failure-pattern analysis for CAPA"
+consumers = ["quality_engineer", "reliability_engineer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull return data"
+instruction = "Query field return records including part, lot, failure code, and date for the analysis period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load failure taxonomy"
+instruction = "Retrieve the failure-mode taxonomy and prior CAPA history from controlled quality documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pareto failure modes"
+instruction = "Aggregate returns by failure mode, lot, and date to build a Pareto and surface dominant patterns."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Trace to lots"
+instruction = "Correlate the top failure modes to production lots or process windows to localize root-cause candidates."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route to CAPA"
+instruction = "Compile the failure-pattern analysis and route candidate root causes to the quality engineer to open CAPA."
+tools = ["spreadsheet"]
+gate = "review"

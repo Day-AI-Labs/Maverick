@@ -16,3 +16,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_maintenance"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "asset register reconciliation & idle/ghost asset list"
+consumers = ["maintenance_manager", "fixed_assets_accountant"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull register"
+instruction = "Read the EAM/CMMS asset registry and the finance fixed-asset list for the period under review."
+tools = ["read_file", "samsara_read"]
+[[workflow]]
+name = "Reconcile to floor"
+instruction = "Match each registered asset to its physical/telemetry presence and flag records with no corresponding asset."
+tools = ["samsara_read", "knowledge_search"]
+[[workflow]]
+name = "Flag ghost & idle"
+instruction = "Identify ghost assets carried in the register and assets whose utilization is near zero over the window."
+tools = ["read_file"]
+[[workflow]]
+name = "Draft disposition"
+instruction = "Draft proposed dispose, transfer, or re-value actions with lifecycle and utilization evidence for each flagged asset."
+[[workflow]]
+name = "Route to finance"
+instruction = "Hand the reconciliation and draft dispositions to maintenance and fixed-assets for sign-off before any register or valuation change."
+gate = "review"

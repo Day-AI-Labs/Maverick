@@ -70,11 +70,26 @@ SESSION_COOKIE = "mvk_session"     # the authenticated browser session
 _TX_TTL = 600                      # 10 min to complete the round-trip
 _SESSION_TTL = 12 * 3600          # 12 h authenticated session
 
-# Best-effort, per-process replay guard for transaction cookies. The signed
-# cookie remains the source of transaction data, but the opaque tx id must be
-# consumed exactly once before any token exchange is attempted.
+# Per-process replay guard for transaction cookies. The signed cookie remains
+# the source of transaction data, but the opaque tx id must be consumed exactly
+# once before any token exchange is attempted.
+#
+# This in-process dict is the guard for a single-replica deployment. In a
+# multi-replica HA deployment (the dashboard scaled out behind a load balancer)
+# it is NOT sufficient on its own: a captured callback replayed against a
+# DIFFERENT replica would not be seen as consumed, so the replay would proceed.
+# When a SHARED world-model backend is configured (Postgres), we therefore
+# consume the tx id in that shared store instead -- see ``_consume_tx_once`` --
+# so the guard is cluster-wide. The in-process dict stays the fallback for the
+# default single-process / SQLite deployment, where it is already correct.
 _CONSUMED_TX_IDS: dict[str, int] = {}
 _CONSUMED_TX_LOCK = asyncio.Lock()
+
+# Synthetic "channel" under which OIDC login transactions are recorded in the
+# shared world-model dedup table (``processed_messages``), reusing its proven,
+# backend-agnostic first-writer-wins UNIQUE-insert primitive. Namespaced so it
+# can never collide with a real messaging channel's external ids.
+_OIDC_TX_CHANNEL = "__oidc_login_tx__"
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
@@ -124,17 +139,84 @@ def _code_challenge_s256(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
+def _shared_release_tx(tx_id: str) -> None:
+    """Release a shared-store OIDC transaction claim after a failed login.
+
+    The shared replay guard claims a transaction before token exchange so
+    cross-replica replays cannot race that exchange. If the exchange or token
+    validation fails, no session was created, so keeping a durable claim only
+    creates unauthenticated database growth. Best-effort release preserves the
+    HA replay guard for successful logins while bounding failed-flow storage to
+    the lifetime of the failed request.
+    """
+    if not tx_id:
+        return
+    try:
+        from maverick.world_model_backends import is_postgres_configured
+
+        if not is_postgres_configured():
+            return
+        from ._shared import _world
+        world = _world()
+        release = getattr(world, "release_processed_message", None)
+        if callable(release):
+            release(_OIDC_TX_CHANNEL, tx_id)
+    except Exception:  # pragma: no cover - cleanup must never mask login failure
+        log.warning("OIDC replay guard: shared tx cleanup failed")
+
+def _shared_consume_tx(tx_id: str) -> bool | None:
+    """Consume ``tx_id`` in the shared world-model store, if one is configured.
+
+    Returns True on first-consume (proceed), False on replay (reject), or None
+    when there is no shared backend / the store is unavailable -- in which case
+    the caller falls back to the in-process guard. Runs only when a Postgres
+    backend is configured: that is the multi-replica HA case where the
+    in-process dict alone leaves a replay window across replicas. Reuses the
+    backend-agnostic ``mark_message_processed`` (a UNIQUE-constrained insert that
+    returns True exactly once per id, atomically, on both SQLite and Postgres).
+
+    Synchronous and quick (one indexed insert); called from the async callback
+    via ``run_in_executor`` so it never blocks the event loop on the DB round
+    trip. Any failure returns None (fall back) rather than raising -- a degraded
+    shared store must not harden into a hard login outage, and the signed
+    cookie + PKCE + state CSRF remain in force regardless.
+    """
+    try:
+        from maverick.world_model_backends import is_postgres_configured
+        if not is_postgres_configured():
+            return None
+        from ._shared import _world
+        world = _world()
+        # True == first writer (not previously consumed) -> allow this callback.
+        return bool(world.mark_message_processed(_OIDC_TX_CHANNEL, tx_id))
+    except Exception:  # pragma: no cover - shared store must never gate login hard
+        log.warning("OIDC replay guard: shared store unavailable, using in-process guard")
+        return None
+
+
 async def _consume_tx_once(tx_id: str, expires_at: int) -> bool:
     """Atomically mark an OIDC login transaction as consumed.
 
     Transaction cookies are self-contained so they can survive redirects without
     external session middleware, but callbacks must not be replayable. This
-    per-process guard records the opaque transaction id before the token
-    exchange; repeated callbacks with the same cookie are rejected before making
-    an outbound IdP request. Expired entries are pruned opportunistically.
+    records the opaque transaction id before the token exchange; repeated
+    callbacks with the same cookie are rejected before making an outbound IdP
+    request.
+
+    Shared-store first: when a Postgres backend is configured (HA / multi-replica
+    dashboard), the id is consumed in that shared store so the guard holds across
+    every replica -- the in-process dict alone would let a replay land on a
+    sibling replica. Falls back to the in-process guard for the default
+    single-process / SQLite deployment, or if the shared store is unavailable.
     """
     if not tx_id:
         return False
+
+    shared = await asyncio.get_running_loop().run_in_executor(
+        None, _shared_consume_tx, tx_id
+    )
+    if shared is not None:
+        return shared
 
     now = _now()
     async with _CONSUMED_TX_LOCK:
@@ -212,6 +294,12 @@ def _principal_from_request_session(request: Request):
         return None
     sub = payload.get("sub")
     if not isinstance(sub, str) or not sub:
+        return None
+    # Revocation: a session minted before the principal's revocation epoch
+    # ("log out everywhere" / SCIM deprovision) is rejected even though its HMAC
+    # signature and exp are still valid.
+    from .session_revocation import is_revoked
+    if is_revoked(sub, payload.get("iat")):
         return None
     return VerifiedPrincipal(
         sub=sub, issuer="oidc-session", audience="", claims={"via": "session"},
@@ -349,6 +437,9 @@ async def auth_callback(request: Request):
     except Exception:
         # Never log the exception payload: it can echo the code/secret back.
         log.warning("OIDC callback: token exchange failed")
+        await asyncio.get_running_loop().run_in_executor(
+            None, _shared_release_tx, tx_id
+        )
         return _fail()
 
     id_token = ""
@@ -356,6 +447,9 @@ async def auth_callback(request: Request):
         id_token = str(token_data.get("id_token") or "")
     if not id_token:
         log.warning("OIDC callback: token response had no id_token")
+        await asyncio.get_running_loop().run_in_executor(
+            None, _shared_release_tx, tx_id
+        )
         return _fail()
 
     # (4) verify the ID token — reuse the kernel verifier (no re-implementation).
@@ -363,12 +457,28 @@ async def auth_callback(request: Request):
         principal = verify_oidc_token(id_token)
     except OIDCError:
         log.warning("OIDC callback: id_token verification failed")
+        await asyncio.get_running_loop().run_in_executor(
+            None, _shared_release_tx, tx_id
+        )
         return _fail()
 
     # (5) success: set the signed session cookie, clear the tx cookie, redirect.
     return_to = _safe_return_to(tx.get("return_to"))
-    session_payload = {"sub": principal.sub, "exp": _now() + _SESSION_TTL}
+    session_payload = {"sub": principal.sub, "iat": _now(), "exp": _now() + _SESSION_TTL}
     session_cookie = sign_session(session_payload, cfg.session_secret)
+
+    # Record this sub against the user's stable IdP identifiers so a later SCIM
+    # deprovision can revoke this session even if the IdP's sub is pairwise and
+    # appears in no SCIM attribute (Entra). Best-effort -- never blocks login.
+    try:
+        from .subject_directory import record_login
+        claims = principal.claims or {}
+        record_login(principal.sub, [
+            claims.get("email"), claims.get("preferred_username"),
+            claims.get("oid"), claims.get("upn"),
+        ])
+    except Exception:  # pragma: no cover -- directory never blocks login
+        pass
 
     response = RedirectResponse(return_to, status_code=303)
     _set_cookie(
@@ -389,12 +499,41 @@ def _csrf_reject():
 
 @router.get("/auth/logout")
 async def auth_logout(request: Request):
-    """Clear the session cookie and return to ``/``."""
+    """Clear the session cookie and return to ``/``.
+
+    ``?all=1`` (log out everywhere) additionally bumps the principal's revocation
+    epoch, immediately invalidating every other session/bearer that principal
+    holds -- not just the cookie in this browser."""
     if not login_enabled():
         raise HTTPException(status_code=404)
+    if request.query_params.get("all"):
+        # Derive the sub from the verified session payload DIRECTLY, not via
+        # _principal_from_request_session -- that returns None for an
+        # already-revoked session, so "log out everywhere" on a session that was
+        # revoked once would silently skip and leave OTHER (newer) bearers alive.
+        # Re-bumping the epoch to now catches any credential minted since.
+        sub = _session_sub_unchecked(request)
+        if sub:
+            from .session_revocation import revoke_principal
+            revoke_principal(sub)
     response = RedirectResponse("/", status_code=303)
     _clear_cookie(response, SESSION_COOKIE)
     return response
+
+
+def _session_sub_unchecked(request: Request) -> str | None:
+    """The ``sub`` from a validly-signed, unexpired session cookie, WITHOUT the
+    revocation check -- so "log out everywhere" can revoke even when the session
+    is already revoked. Returns None when the cookie is absent/tampered/expired."""
+    if not login_enabled():
+        return None
+    raw = request.cookies.get(SESSION_COOKIE)
+    cfg = load_oidc_config()
+    if not raw or not cfg.session_secret:
+        return None
+    payload = verify_session(raw, cfg.session_secret)
+    sub = payload.get("sub") if payload else None
+    return sub if isinstance(sub, str) and sub else None
 
 
 @router.get("/auth/error")

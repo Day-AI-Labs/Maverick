@@ -59,12 +59,19 @@ class ProbeSignal:
     reasons: list[str]
 
 
-def cheap_probe(text: str) -> ProbeSignal:
+def cheap_probe(text: str, *, model: object | None = "__configured__") -> ProbeSignal:
     """Constitutional v2-style cheap classifier.
 
     Returns a ProbeSignal with score in [0,1] and reasons. Threshold for
     "flagged" is 0.3 by default -- intentionally low so we err toward
     sending more texts to the deep scan. The deep scan can still pass.
+
+    When a trained probe model is configured (``[shield] probe_model`` /
+    ``MAVERICK_SHIELD_PROBE_MODEL``), its probability is ENSEMBLED with the
+    heuristic by taking the max -- so a model can only raise recall, never
+    weaken the heuristic floor. Pass ``model=None`` to force heuristics-only,
+    or an explicit object exposing ``score(text)`` to override the configured
+    one (used in tests).
     """
     if not text:
         return ProbeSignal(flagged=False, score=0.0, reasons=[])
@@ -103,8 +110,26 @@ def cheap_probe(text: str) -> ProbeSignal:
         score += 0.15
         reasons.append("hex-escape payload")
 
+    score = min(score, 1.0)
+
+    # Optional trained-classifier ensemble (max => never weaker than heuristics).
+    if model == "__configured__":
+        try:
+            from .probe_model import configured_probe_model
+            model = configured_probe_model()
+        except Exception:  # pragma: no cover -- model wiring never breaks the probe
+            model = None
+    if model is not None:
+        try:
+            m_score = float(model.score(text))
+            if m_score > score:
+                reasons.append(f"trained model: {m_score:.2f}")
+            score = max(score, min(m_score, 1.0))
+        except Exception:  # pragma: no cover -- a bad model must not break scanning
+            log.warning("cheap_probe: probe model scoring failed", exc_info=True)
+
     flagged = score >= 0.3
-    return ProbeSignal(flagged=flagged, score=min(score, 1.0), reasons=reasons)
+    return ProbeSignal(flagged=flagged, score=score, reasons=reasons)
 
 
 @dataclass

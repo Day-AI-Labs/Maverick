@@ -105,7 +105,9 @@ def _op_capture(event: str, distinct_id: str, properties: dict) -> str:
     }
     r = httpx.post(
         f"{_ingestion_host()}/capture/",
-        json=payload, timeout=15.0, follow_redirects=True,
+        # follow_redirects=False: don't replay the project API key to another
+        # host on a cross-origin 30x off the ingestion endpoint.
+        json=payload, timeout=15.0, follow_redirects=False,
     )
     if r.status_code >= 400:
         return f"ERROR: capture ({r.status_code}): {r.text[:300]}"

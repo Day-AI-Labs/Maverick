@@ -8,11 +8,35 @@ reintroducing the cycle; both modules ``from ._shared import`` these.
 """
 from __future__ import annotations
 
+import asyncio
+import os
 from typing import Any
 
 # One process-wide WorldModel cache keyed by absolute DB path (was a
 # separate dict per module). Tests clear it via ``<module>._world_cache``.
 _world_cache: dict[str, Any] = {}
+
+
+# SSE concurrency cap. Each open event-stream holds a slot; new streams 503
+# past the cap. This lived as a verbatim copy in both ``app`` and ``api``,
+# which created TWO independent semaphores -- so the real ceiling was the cap
+# per module, not process-wide. One shared semaphore makes the limit actually
+# bind across all streaming routes. Built lazily on the running loop.
+def _max_sse_streams() -> int:
+    try:
+        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_SSE", "64")))
+    except ValueError:
+        return 64
+
+
+_sse_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_sse_semaphore() -> asyncio.Semaphore:
+    global _sse_semaphore
+    if _sse_semaphore is None:
+        _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
+    return _sse_semaphore
 
 def _any_provider_key_set() -> bool:
     """True iff some LLM provider is configured (env key, base-url env, or
@@ -32,6 +56,24 @@ def _any_provider_key_set() -> bool:
         return False
 
 
+def require_provider_or_400() -> None:
+    """Raise HTTP 400 if no LLM provider is configured, with the canonical
+    setup message. The goal/chat/webhook routes each used to inline this block;
+    the copies had already drifted (some omitted GEMINI_API_KEY)."""
+    if _any_provider_key_set():
+        return
+    from fastapi import HTTPException
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "No LLM provider key or endpoint configured. Run 'maverick init', "
+            "export ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY, or add "
+            "a [providers.<name>] api_key/base_url to ~/.maverick/config.toml "
+            "before starting the dashboard."
+        ),
+    )
+
+
 def _world():
     """Return a per-DB-path cached WorldModel (council perf fix).
 
@@ -45,6 +87,23 @@ def _world():
     # reads/writes that client's isolated world DB (under tenants/<client>/),
     # never the shared root. Unbound (legacy / tests that monkeypatch
     # DEFAULT_DB) keeps the prior DEFAULT_DB path exactly.
+    #
+    # Backend selection (split-brain fix): when the deployment opts into Postgres
+    # ([world_model] backend = "postgres" / MAVERICK_WORLD_BACKEND=postgres), the
+    # dashboard must read/write the SAME Postgres the runner, channel server and
+    # gRPC API use. Previously this always opened SQLite, so a Postgres
+    # deployment had the dashboard reading a stale local world.db. Checked before
+    # the tenant floor because Postgres isolates by tenant_id at query time, not
+    # by a per-tenant file. open_postgres_world() builds a fresh connection per
+    # call, so cache the one backend for the process under a fixed key.
+    from maverick.world_model_backends import is_postgres_configured
+    if is_postgres_configured():
+        cached = _world_cache.get("__postgres__")
+        if cached is None:
+            from maverick.world_model import open_world
+            cached = open_world()  # also enforces the at-rest fail-closed guard
+            _world_cache["__postgres__"] = cached
+        return cached
     from maverick.paths import current_tenant_id
     tid = current_tenant_id()
     if tid:

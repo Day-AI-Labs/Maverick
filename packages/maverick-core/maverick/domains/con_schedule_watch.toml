@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "milestone slippage & critical-path risk report"
+consumers = ["project_manager", "scheduler"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Load baseline"
+instruction = "Pull the approved baseline schedule and the latest progress update for the project."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Measure slippage"
+instruction = "Compare actual milestone dates to baseline and calculate variance and float consumption per activity."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Trace critical path"
+instruction = "Identify activities on or near the critical path whose slippage threatens downstream milestones."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify causes"
+instruction = "Confirm each flagged delay against field reports or correspondence rather than assuming the cause from the bars alone."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "PM review"
+instruction = "Deliver the slippage and critical-path risk report to the project manager and scheduler for sign-off."
+gate = "review"

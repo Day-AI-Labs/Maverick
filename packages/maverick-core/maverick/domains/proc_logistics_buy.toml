@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "freight rate benchmark & award recommendation"
+consumers = ["procurement_manager", "logistics_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define lanes"
+instruction = "Read the shipment profile and pull lane volumes, weights, and service levels from internal shipping data."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Gather quotes"
+instruction = "Collect carrier quotes and published parcel and freight tariffs for the relevant lanes."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Benchmark rates"
+instruction = "Build a rate-per-lane comparison against market benchmarks and current incumbent pricing."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Validate terms"
+instruction = "Confirm accessorials, fuel surcharges, and transit commitments are normalized so quotes are truly comparable."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Recommend award"
+instruction = "Hand the benchmarked award recommendation with savings estimates to the manager who signs the agreement."
+gate = "review"

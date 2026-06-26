@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "chargeback dispute evidence packet"
+consumers = ["accounts_receivable_manager", "deductions_analyst"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Triage chargebacks"
+instruction = "Query open chargebacks with deduction codes, amounts, and response deadlines to prioritize the most contestable."
+tools = ["sql_query"]
+[[workflow]]
+name = "Gather proof"
+instruction = "Pull POs, ASNs, BOLs, compliance docs, and routing guides that refute each disputed deduction."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build packet"
+instruction = "Assemble a per-claim evidence packet matching each charge to its rebuttal document and dollar amount."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Deadline check"
+instruction = "Confirm every contested claim falls inside its dispute window and flag any expiring before submission."
+tools = ["sql_query"]
+[[workflow]]
+name = "AR review"
+instruction = "Route the dispute evidence packet to the AR manager for approval before it is filed with the customer."
+gate = "review"

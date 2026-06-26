@@ -136,6 +136,19 @@ class OutboundQueue:
             path = data_dir() / "channel_federation_outbox.json"
         self.path = Path(path)
         self.max_len = max(1, int(max_len))
+        # Serializes a load-modify-save of the outbox in-process; the
+        # cross_process_lock in _locked() extends it across processes (the
+        # dashboard appends while serve flushes -- separate processes).
+        self._rmw_lock = threading.Lock()
+
+    def _locked(self):
+        from contextlib import ExitStack
+
+        from .file_lock import cross_process_lock
+        stack = ExitStack()
+        stack.enter_context(self._rmw_lock)
+        stack.enter_context(cross_process_lock(self.path))
+        return stack
 
     def _load(self) -> dict:
         try:
@@ -148,22 +161,24 @@ class OutboundQueue:
         return data
 
     def _save(self, data: dict) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, self.path)
-        try:
-            os.chmod(self.path, 0o600)
-        except OSError:  # pragma: no cover
-            pass
+        # Unique temp + os.replace (0600): a fixed ".tmp" collides between a
+        # concurrent append and flush (one os.replace moves it out from under
+        # the other, dropping a write).
+        from .file_lock import atomic_write_text
+        atomic_write_text(self.path, json.dumps(data, ensure_ascii=False))
 
     def append(self, envelope: dict) -> None:
-        data = self._load()
-        data["items"].append(envelope)
-        while len(data["items"]) > self.max_len:
-            data["items"].pop(0)
-            data["dropped"] = int(data.get("dropped", 0)) + 1
-        self._save(data)
+        # Whole load-modify-save under the lock: an append racing a flush would
+        # otherwise both load the same items, and the later save clobbers the
+        # other -- losing an enqueued envelope or resurrecting an already-sent
+        # one (a re-send that breaks at-least-once dedup).
+        with self._locked():
+            data = self._load()
+            data["items"].append(envelope)
+            while len(data["items"]) > self.max_len:
+                data["items"].pop(0)
+                data["dropped"] = int(data.get("dropped", 0)) + 1
+            self._save(data)
 
     def __len__(self) -> int:
         return len(self._load()["items"])
@@ -206,19 +221,23 @@ def flush(queue: OutboundQueue, send: Callable[[dict], None]) -> int:
     failure stops the flush and keeps the remainder (including the failed one)
     queued for retry.
     """
-    data = queue._load()
-    items = data["items"]
-    sent = 0
-    while items:
-        try:
-            send(items[0])
-        except Exception as e:
-            log.warning("channel federation: send failed after %d envelope(s): %s",
-                        sent, e)
-            break
-        items.pop(0)
-        sent += 1
-    queue._save(data)
+    # Hold the queue lock across the whole drain so a concurrent append can't
+    # clobber the post-flush state (resurrecting a just-sent envelope) -- the
+    # load, the send loop, and the save are one atomic read-modify-save.
+    with queue._locked():
+        data = queue._load()
+        items = data["items"]
+        sent = 0
+        while items:
+            try:
+                send(items[0])
+            except Exception as e:
+                log.warning("channel federation: send failed after %d envelope(s): %s",
+                            sent, e)
+                break
+            items.pop(0)
+            sent += 1
+        queue._save(data)
     return sent
 
 
@@ -375,7 +394,9 @@ class InboundApplier:
         if not ok:
             log.warning("channel federation: rejected inbound envelope: %s", reason)
             return {"applied": False, "reason": reason, "result": None}
-        assert isinstance(envelope, dict)
+        if not isinstance(envelope, dict):  # defensive: honor the never-raises
+            return {"applied": False, "reason": "envelope is not an object",
+                    "result": None}
         origin = envelope["origin"]
         if envelope.get("to") != self.local:
             return {"applied": False,

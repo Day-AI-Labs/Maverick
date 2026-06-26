@@ -19,6 +19,40 @@ from maverick.orchestrator import run_goal
 from maverick.sandbox import LocalBackend
 from maverick.world_model import WorldModel
 
+# ---------- token counting ----------
+
+class TestApproxTokens:
+    def _reset(self, monkeypatch):
+        # The resolved counter is module-global + cached; reset it per test.
+        monkeypatch.setattr(cc, "_token_counter", None)
+
+    def test_empty_is_zero(self, monkeypatch):
+        self._reset(monkeypatch)
+        assert cc._approx_tokens("") == 0
+
+    def test_falls_back_to_heuristic_without_tokenizer(self, monkeypatch):
+        # Force the heuristic path (env opt-out) -> char/4 rounding, positive.
+        monkeypatch.setenv("MAVERICK_COMPACT_TIKTOKEN", "0")
+        self._reset(monkeypatch)
+        assert cc._approx_tokens("abcd") == 1
+        assert cc._approx_tokens("a" * 40) == 10
+
+    def test_uses_real_counter_when_available(self, monkeypatch):
+        # Inject a fake BPE counter through the resolution seam and confirm
+        # _approx_tokens prefers it over the char heuristic.
+        monkeypatch.setenv("MAVERICK_COMPACT_TIKTOKEN", "1")
+        monkeypatch.setattr(cc, "_token_counter", lambda s: 999)
+        assert cc._approx_tokens("anything") == 999
+
+    def test_counter_error_fails_open_to_heuristic(self, monkeypatch):
+        def _boom(_s):
+            raise RuntimeError("tokenizer blew up")
+
+        monkeypatch.setattr(cc, "_token_counter", _boom)
+        # 8 chars -> (8+3)//4 == 2 via the heuristic fallback.
+        assert cc._approx_tokens("12345678") == 2
+
+
 # ---------- config helpers ----------
 
 class TestCompactorConfig:

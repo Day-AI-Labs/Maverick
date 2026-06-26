@@ -28,15 +28,79 @@ import logging
 import os
 import re
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+from .config import env_flag
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-_LEGACY_DIR = Path.home() / ".maverick" / "fleet-memory"
+_LEGACY_DIR = data_dir("fleet-memory")
 _MAX_TEXT = 2000
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 KINDS = ("success", "failure", "lesson")
+
+# The authenticated caller identity for the current fleet operation, bound by
+# the network transport. ``None`` (the default) = unbound: stdio / in-process /
+# local trust, where there is no remote principal to forge. ``""`` = an
+# authenticated SHARED-token caller that carries no per-caller identity. A
+# non-empty value is the per-caller :class:`~maverick.agent_trust.TrustedAgent`
+# id proven by an ``[agent_trust] mcp_token``. ``recall``/``ingest`` read
+# ``agent_id``/``vendor`` from the caller-supplied body, so WITHOUT this binding
+# any token-holder could act AS any rostered agent and inherit its trust scope
+# (cross-department read + audit forgery). :func:`_authorize_claim` ties the
+# claimed fleet identity to the proven caller.
+_caller: ContextVar[str | None] = ContextVar("fleet_caller", default=None)
+
+
+@contextmanager
+def bind_caller(identity: str | None):
+    """Bind the authenticated caller identity for fleet ops in this context.
+
+    ``identity`` is the per-caller :class:`~maverick.agent_trust.TrustedAgent`
+    id (proven by an mcp_token), ``""`` for a shared-token caller (no per-caller
+    identity), or ``None`` to leave unbound (local/in-process trust). The
+    transport scopes this per request so identities never leak across concurrent
+    calls (a ContextVar is copied into ``asyncio.to_thread`` worker contexts).
+    """
+    token = _caller.set(identity)
+    try:
+        yield
+    finally:
+        _caller.reset(token)
+
+
+def _authorize_claim(agent_id: str) -> str | None:
+    """Tie the claimed fleet ``agent_id`` to the authenticated caller.
+
+    Returns a denial reason, or ``None`` to allow:
+
+    * unbound caller (``None`` -- stdio / in-process) -> allow (local trust);
+    * per-caller agent (non-empty id) -> may act ONLY as its own id;
+    * shared-token caller (``""``) -> may not bear a specific fleet identity once
+      the Agent Trust Plane is engaged (it can't prove ownership); the default
+      disengaged deployment treats the shared bearer as the trusted admin path.
+    """
+    caller = _caller.get()
+    if caller is None:
+        return None  # unbound: local/in-process trust (no network principal)
+    if caller:
+        if caller != agent_id:
+            return (f"caller {caller!r} may not act as fleet agent "
+                    f"{agent_id!r} (a per-caller agent acts only as itself)")
+        return None
+    try:
+        from . import agent_trust
+        enforced, _ = agent_trust.load_trust_state()
+    except Exception:  # pragma: no cover - config read never breaks the plane
+        enforced = False
+    if enforced:
+        return ("shared-token caller cannot act as a specific fleet agent while "
+                "the agent trust plane is engaged; use a per-caller mcp_token")
+    return None
 
 
 def _dir() -> Path:
@@ -58,11 +122,9 @@ def registry_path() -> Path:
 
 
 def enabled() -> bool:
-    env = os.environ.get("MAVERICK_FLEET_MEMORY", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_FLEET_MEMORY")
+    if _v is not None:
+        return _v
     try:
         from .config import load_config
         return bool((load_config().get("fleet_memory") or {}).get("enable", False))
@@ -77,6 +139,17 @@ def _sanitize(text: str, *, shield: Any | None) -> str | None:
         from .safety.secret_detector import redact as _redact
         safe, _ = _redact(safe)
     except Exception:  # pragma: no cover
+        pass
+    # Fleet records are EXTERNAL-trust, third-party input that later rides into
+    # orchestrator prompts via dream/reflexion recall. Apply the same injection
+    # tripwire memory_guard uses for EXTERNAL writes (it documents this list as
+    # reusable by the fleet inbox), so a marker-bearing record is rejected even
+    # when no Shield is wired (shield=None, the common path).
+    try:
+        from .memory_guard import injection_markers
+        if injection_markers(safe):
+            return None
+    except Exception:  # pragma: no cover -- screening failure must not crash ingest
         pass
     if shield is not None:
         try:
@@ -150,9 +223,21 @@ def ingest(record: dict, *, shield: Any | None = None) -> tuple[bool, str]:
         return False, "fleet memory is disabled ([fleet_memory] enable = true)"
     agent_id = str(record.get("agent_id", "") or "")
     vendor = str(record.get("vendor", "") or "")
+    # Re-validate the identifiers up front: ingest later builds an inbox
+    # filename from them (f"...-{vendor}-{agent_id}.json"), so a "/" or ".."
+    # here would be path-injection. register_agent already enforces _ID_RE, so a
+    # legitimately-registered agent always passes this; checking per-component
+    # (rather than relying on the roster string-equality match below to reject a
+    # malformed pair) makes the path-safety local and explicit.
+    if not (_ID_RE.match(agent_id) and _ID_RE.match(vendor)):
+        return False, "invalid agent_id or vendor (must match the registered id format)"
     source = f"{vendor}:{agent_id}"
     if not any(r.get("source") == source for r in roster()):
         return False, f"unregistered fleet agent {source!r}: register it first"
+    denial = _authorize_claim(agent_id)
+    if denial:
+        _audit("ingest_blocked", source=source, reason=denial)
+        return False, denial
     kind = str(record.get("kind", "") or "").lower()
     if kind not in KINDS:
         return False, f"kind must be one of {KINDS}"
@@ -231,6 +316,10 @@ def recall(
     source = f"{vendor}:{agent_id}"
     if not any(r.get("source") == source for r in roster()):
         return "", f"unregistered fleet agent {source!r}"
+    denial = _authorize_claim(agent_id)
+    if denial:
+        _audit("recall_blocked", source=source, reason=denial)
+        return "", denial
     # Data-scope control: when the Agent Trust Plane is engaged, an external
     # agent may only recall a data scope its [agent_trust] entry allows, AND the
     # returned content is HARD-FILTERED to that scope (department is a real
@@ -306,5 +395,5 @@ def status() -> dict:
 
 __all__ = [
     "KINDS", "enabled", "register_agent", "roster", "ingest", "recall",
-    "status", "inbox_dir", "registry_path",
+    "status", "inbox_dir", "registry_path", "bind_caller",
 ]

@@ -19,15 +19,18 @@ import secrets
 import sqlite3
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Iterator
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 20
+DEFAULT_DB = data_dir("world.db")
+SCHEMA_VERSION = 23
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -214,10 +217,23 @@ CREATE TABLE IF NOT EXISTS approvals (
     decided_at REAL,
     claimed_by TEXT,
     claimed_at REAL,
-    decided_by TEXT
+    decided_by TEXT,
+    approvals_required INTEGER NOT NULL DEFAULT 1,
+    requested_by TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, id);
+
+-- v21 N-of-M dual control: one row per (approval, approver), so the PK enforces
+-- a given approver counting once toward the quorum (segregation of duties).
+CREATE TABLE IF NOT EXISTS approval_signoffs (
+    approval_id INTEGER NOT NULL,
+    approver    TEXT NOT NULL,
+    decision    TEXT NOT NULL,
+    decided_at  REAL NOT NULL,
+    note        TEXT,
+    PRIMARY KEY (approval_id, approver)
+);
 
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -290,6 +306,31 @@ CREATE TABLE IF NOT EXISTS processed_messages (
     goal_id INTEGER REFERENCES goals(id),
     seen_at REAL NOT NULL,
     UNIQUE(channel, external_id)
+);
+
+-- v22 cluster-wide killswitch: a shared halt the dashboard arms and every
+-- replica's killswitch.check() consults, so an emergency stop propagates across
+-- the fleet (the in-process flag + local HALT file only stop the replica that
+-- served the request). Untenanted on purpose -- a global emergency stop is not
+-- per-tenant; ``scope=''`` is the global row.
+CREATE TABLE IF NOT EXISTS halt (
+    scope    TEXT PRIMARY KEY,
+    reason   TEXT,
+    source   TEXT,
+    armed_by TEXT,
+    armed_at REAL NOT NULL
+);
+
+-- v23 cluster-wide provider spend ledger: a shared per-(period, provider) total
+-- so the provider_cost_cap ceiling is enforced across the fleet, not per-host.
+-- The host-local JSON ledger (provider_spend.json) is per-host and lets N
+-- replicas each spend up to the cap; on a shared backend this row is the single
+-- authoritative total.
+CREATE TABLE IF NOT EXISTS provider_spend (
+    period_key TEXT NOT NULL,
+    provider   TEXT NOT NULL,
+    dollars    REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (period_key, provider)
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -432,6 +473,22 @@ MIGRATIONS: dict[int, list[str]] = {
     # v20 share links: the share_links table is in SCHEMA (idempotent CREATE);
     # listed here so existing DBs bump the version on next open.
     20: [],
+    # v21 N-of-M dual control: quorum + requester columns on approvals, and the
+    # per-(approval, approver) signoff table (also in SCHEMA for fresh DBs).
+    21: [
+        "ALTER TABLE approvals ADD COLUMN approvals_required INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE approvals ADD COLUMN requested_by TEXT",
+        "CREATE TABLE IF NOT EXISTS approval_signoffs ("
+        " approval_id INTEGER NOT NULL, approver TEXT NOT NULL,"
+        " decision TEXT NOT NULL, decided_at REAL NOT NULL, note TEXT,"
+        " PRIMARY KEY (approval_id, approver))",
+    ],
+    # v22 cluster-wide killswitch: the halt table is in SCHEMA (idempotent
+    # CREATE); listed here so existing DBs bump the version on next open.
+    22: [],
+    # v23 cluster-wide provider spend ledger: the provider_spend table is in
+    # SCHEMA (idempotent CREATE); listed here so existing DBs bump the version.
+    23: [],
 }
 
 
@@ -475,6 +532,8 @@ class Approval:
     claimed_by: str | None = None
     claimed_at: float | None = None
     decided_by: str | None = None
+    approvals_required: int = 1
+    requested_by: str | None = None
 
 
 @dataclass
@@ -1211,16 +1270,20 @@ class WorldModel:
         it); ``content`` is encrypted at rest like other agent output."""
         now = time.time()
         with self._writing() as conn:
-            cur = conn.execute(
-                "SELECT COALESCE(MAX(version), 0) FROM artifacts WHERE goal_id = ? AND title = ?",
-                (int(goal_id), title or ""),
-            )
-            version = int(cur.fetchone()[0]) + 1
+            # Compute the next version in the SAME statement as the INSERT so the
+            # whole read-modify-write is atomic under SQLite's per-statement write
+            # lock. A separate SELECT MAX(version)+1 then INSERT races ACROSS
+            # PROCESSES (the dashboard + worker each hold their own _writing lock,
+            # and a deferred txn takes no write lock until the INSERT) -> two
+            # processes assign the SAME version. The scalar subquery closes that
+            # gap; mirrors the per-key serialization done in the Postgres backend.
             cur = conn.execute(
                 "INSERT INTO artifacts(goal_id, kind, title, content, version, created_at) "
-                "VALUES(?, ?, ?, ?, ?, ?)",
-                (int(goal_id), str(kind or "text"), title or "",
-                 _enc_field(content), version, now),
+                "VALUES(?, ?, ?, ?, "
+                "(SELECT COALESCE(MAX(version), 0) + 1 FROM artifacts "
+                " WHERE goal_id = ? AND title = ?), ?)",
+                (int(goal_id), str(kind or "text"), title or "", _enc_field(content),
+                 int(goal_id), title or "", now),
             )
             return int(cur.lastrowid)
 
@@ -1305,6 +1368,21 @@ class WorldModel:
             (int(project_id),),
         )
         return {r["status"]: int(r["n"]) for r in rows}
+
+    def goal_status_counts(self) -> dict[str, int]:
+        """All goals keyed by status -- the backend-agnostic source for the
+        ``/metrics`` ``maverick_goals_total`` gauge (the dashboard inlined this
+        SQL against SQLite, so a Postgres deployment counted a stale local file)."""
+        rows = self._read_all("SELECT status, COUNT(*) AS n FROM goals GROUP BY status")
+        return {r["status"]: int(r["n"]) for r in rows}
+
+    def ping(self) -> bool:
+        """Cheap liveness probe for ``/healthz`` -- confirms the world store
+        answers a trivial read. Backend-agnostic (mirrored on Postgres) so the
+        deep health check probes the SAME store the app actually uses, not a
+        hard-coded local ``world.db``. Raises on failure (the caller reports it)."""
+        self._read_one("SELECT 1 AS one", ())
+        return True
 
     # ---- share links: revocable, expiring read-only access to a goal --------
 
@@ -1633,6 +1711,15 @@ class WorldModel:
         params.append(limit)
         rows = self._read_all(sql, tuple(params))
         return [_episode_spend_from_row(r) for r in rows]
+
+    def episode_exists(self, goal_id: int, episode_id: int) -> bool:
+        """True if ``episode_id`` belongs to ``goal_id``. A single indexed
+        lookup -- callers must not scan list_episodes to check existence."""
+        row = self._read_one(
+            "SELECT 1 FROM episodes WHERE id = ? AND goal_id = ? LIMIT 1",
+            (episode_id, goal_id),
+        )
+        return row is not None
 
     def total_spend(self, owner: str | None = None) -> dict[str, float]:
         """Aggregate spend. ``owner`` scopes to one principal's runs (join to
@@ -2002,19 +2089,28 @@ class WorldModel:
         scope: str | None = None,
         detail: str | None = None,
         provenance: str | None = None,
+        approvals_required: int = 1,
+        requested_by: str | None = None,
     ) -> int:
         """Park a high-risk action for out-of-band (dashboard) approval.
 
         ``provenance`` is trusted caller-supplied metadata used by operator UIs;
         it must not be inferred from ``detail``, which may contain untrusted
         model, user, or remote-server text.
+
+        ``approvals_required`` is the quorum (N) of DISTINCT approvers needed
+        before the action is granted (segregation of duties; 1 = legacy single
+        approver). ``requested_by`` is the requesting principal, so a multi-party
+        approval can bar the requester from approving their own request.
         """
         with self._writing() as conn:
             cur = conn.execute(
-                "INSERT INTO approvals(action, risk, scope, detail, provenance, status, requested_at) "
-                "VALUES(?, ?, ?, ?, ?, 'pending', ?)",
+                "INSERT INTO approvals(action, risk, scope, detail, provenance, "
+                "status, requested_at, approvals_required, requested_by) "
+                "VALUES(?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
                 (_enc_field(action), risk, _enc_field(scope), _enc_field(detail),
-                 provenance, time.time()),
+                 provenance, time.time(), max(1, int(approvals_required)),
+                 (requested_by or None)),
             )
             return cur.lastrowid
 
@@ -2041,22 +2137,95 @@ class WorldModel:
 
     def decide_approval(self, approval_id: int, status: str,
                         decided_by: str | None = None) -> bool:
-        """Flip a pending approval to 'approved' or 'denied'.
+        """Record one approver's decision on a pending approval.
 
-        Returns True if a pending row was transitioned, False otherwise
-        (unknown id, or already decided — so a double-click is a no-op).
-        ``decided_by`` records WHICH supervisor decided (collaborative
-        supervision attribution); None keeps the legacy unattributed form.
+        Single-approver (``approvals_required <= 1``, the default): flips the row
+        to 'approved'/'denied' atomically, exactly as before.
+
+        N-of-M (``approvals_required > 1``): records this approver's sign-off and
+        applies **segregation of duties** — a ``denied`` vote rejects immediately;
+        an ``approved`` vote counts toward the quorum and the row flips to
+        'approved' only once N **distinct** approvers have approved. The requester
+        cannot approve their own request unless ``allow_self_approval`` is set.
+
+        Returns True when the vote was accepted (recorded and/or final), False on
+        an unknown/already-decided id, a self-approval that is barred, or a
+        multi-party vote with no ``decided_by`` (an approver identity is required
+        to enforce distinctness).
         """
         if status not in ("approved", "denied"):
             raise ValueError("status must be 'approved' or 'denied'")
+        appr = self.get_approval(approval_id)
+        if appr is None or appr.status != "pending":
+            return False
+        required = max(1, int(getattr(appr, "approvals_required", 1) or 1))
+        if required <= 1:
+            with self._writing() as conn:
+                cur = conn.execute(
+                    "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ? "
+                    "WHERE id = ? AND status = 'pending'",
+                    (status, time.time(), decided_by, approval_id),
+                )
+                return cur.rowcount > 0
+
+        approver = (decided_by or "").strip()
+        if not approver:
+            return False   # distinctness needs an attributed approver
+        if (status == "approved" and appr.requested_by
+                and approver == appr.requested_by):
+            from .safety.dual_control import allow_self_approval
+            if not allow_self_approval():
+                return False   # segregation of duties: no self-approval
+        now = time.time()
         with self._writing() as conn:
-            cur = conn.execute(
-                "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ? "
-                "WHERE id = ? AND status = 'pending'",
-                (status, time.time(), decided_by, approval_id),
+            # PK (approval_id, approver) makes a given approver count once; a
+            # repeat vote from the same approver updates their recorded decision.
+            conn.execute(
+                "INSERT INTO approval_signoffs(approval_id, approver, decision, "
+                "decided_at) VALUES(?, ?, ?, ?) "
+                "ON CONFLICT(approval_id, approver) DO UPDATE SET "
+                "decision = excluded.decision, decided_at = excluded.decided_at",
+                (approval_id, approver, status, now),
             )
-            return cur.rowcount > 0
+            if status == "denied":
+                conn.execute(
+                    "UPDATE approvals SET status = 'denied', decided_at = ?, "
+                    "decided_by = ? WHERE id = ? AND status = 'pending'",
+                    (now, approver, approval_id),
+                )
+                return True
+            approved = conn.execute(
+                "SELECT COUNT(*) FROM approval_signoffs "
+                "WHERE approval_id = ? AND decision = 'approved'",
+                (approval_id,),
+            ).fetchone()[0]
+            if approved >= required:
+                conn.execute(
+                    "UPDATE approvals SET status = 'approved', decided_at = ?, "
+                    "decided_by = ? WHERE id = ? AND status = 'pending'",
+                    (now, approver, approval_id),
+                )
+            return True
+
+    def approval_state(self, approval_id: int) -> dict | None:
+        """Quorum progress for an approval, or None if unknown. Shape:
+        ``{status, approvals_required, approved_count, approvers, requested_by}``
+        -- the operator/UI view of an in-flight N-of-M decision."""
+        appr = self.get_approval(approval_id)
+        if appr is None:
+            return None
+        rows = self._read_all(
+            "SELECT approver, decision FROM approval_signoffs "
+            "WHERE approval_id = ? ORDER BY decided_at", (approval_id,),
+        )
+        approvers = [r["approver"] for r in rows if r["decision"] == "approved"]
+        return {
+            "status": appr.status,
+            "approvals_required": max(1, int(appr.approvals_required or 1)),
+            "approved_count": len(approvers),
+            "approvers": approvers,
+            "requested_by": appr.requested_by,
+        }
 
     def claim_approval(self, approval_id: int, principal: str) -> bool:
         """Atomically claim a pending approval for one supervisor.
@@ -2277,6 +2446,68 @@ class WorldModel:
         )
         return row is not None
 
+    # ----- cluster-wide killswitch (v22) -----
+    # Untenanted, single-row global emergency stop. On a shared backend
+    # (Postgres) every replica's killswitch.check() consults this, so a halt
+    # armed via the dashboard stops the whole fleet rather than just the replica
+    # that served the request.
+    def arm_halt(self, reason: str = "", source: str = "manual",
+                 armed_by: str = "") -> None:
+        with self._writing() as conn:
+            conn.execute(
+                "INSERT INTO halt(scope, reason, source, armed_by, armed_at) "
+                "VALUES('', ?, ?, ?, ?) "
+                "ON CONFLICT(scope) DO UPDATE SET reason=excluded.reason, "
+                "source=excluded.source, armed_by=excluded.armed_by, "
+                "armed_at=excluded.armed_at",
+                (reason or "", source or "manual", armed_by or "", time.time()),
+            )
+
+    def disarm_halt(self) -> None:
+        with self._writing() as conn:
+            conn.execute("DELETE FROM halt WHERE scope = ''")
+
+    def active_halt(self) -> dict | None:
+        """The shared global halt state, or ``None`` when not armed."""
+        row = self._read_one(
+            "SELECT reason, source, armed_by, armed_at FROM halt WHERE scope = ''",
+            (),
+        )
+        if row is None:
+            return None
+        return {"reason": row[0] or "", "source": row[1] or "",
+                "armed_by": row[2] or "", "armed_at": row[3]}
+
+    # ----- cluster-wide provider spend ledger (v23) -----
+    def add_provider_spend(self, period_key: str, provider: str,
+                           amount: float) -> float:
+        """Atomically add ``amount`` to ``(period_key, provider)``; return the new
+        running total. The single authoritative spend total when this world is the
+        shared (Postgres) backend, so N replicas can't each spend up to the cap."""
+        amt = max(0.0, float(amount or 0.0))
+        with self._writing() as conn:
+            conn.execute(
+                "INSERT INTO provider_spend(period_key, provider, dollars) "
+                "VALUES(?, ?, ?) ON CONFLICT(period_key, provider) "
+                "DO UPDATE SET dollars = dollars + ?",
+                (period_key, provider, amt, amt),
+            )
+            row = conn.execute(
+                "SELECT dollars FROM provider_spend "
+                "WHERE period_key = ? AND provider = ?",
+                (period_key, provider),
+            ).fetchone()
+        return float(row[0]) if row else amt
+
+    def get_provider_spend(self, period_key: str, provider: str) -> float:
+        """The running spend total for ``(period_key, provider)`` (0.0 if none)."""
+        row = self._read_one(
+            "SELECT dollars FROM provider_spend "
+            "WHERE period_key = ? AND provider = ?",
+            (period_key, provider),
+        )
+        return float(row[0]) if row else 0.0
+
     # ----- attachments -----
     def add_attachment(
         self,
@@ -2352,28 +2583,16 @@ def open_world(path: Path | None = None) -> Any:
     when selected, so the default SQLite path stays dependency-free and the
     kernel runs without psycopg installed.
 
-    **Fail-closed at-rest safety:** the Postgres backend does not seal content
-    at rest yet (unlike SQLite). Selecting it while encryption-at-rest is
-    enabled raises :class:`PostgresAtRestUnsupported` instead of silently
-    storing plaintext — use SQLite for encrypted/regulated deployments until
-    Postgres sealing lands.
+    **At-rest encryption:** the Postgres backend now seals the same sensitive
+    content columns as SQLite (goal title/description/result, messages, turns,
+    episodes, facts, questions, approvals, artifacts, projects, sign-off notes,
+    event bodies) with the shared AES-256-GCM field codec, so encryption-at-rest
+    is supported on Postgres too. Text search over sealed columns transparently
+    falls back to scan-then-decrypt.
     """
     from .world_model_backends import is_postgres_configured
 
     if is_postgres_configured():
-        # Fail closed rather than silently degrade the encryption-at-rest
-        # guarantee: the Postgres backend stores content as plaintext today.
-        # Checked BEFORE importing psycopg so a misconfig surfaces this clear
-        # error rather than an ImportError or, worse, plaintext-at-rest.
-        from .crypto_at_rest import at_rest_enabled
-        if at_rest_enabled():
-            raise PostgresAtRestUnsupported(
-                "encryption-at-rest is enabled, but the Postgres world-model "
-                "backend does not seal content at rest yet. Use the SQLite "
-                "backend (unset [world_model] backend / MAVERICK_WORLD_BACKEND) "
-                "for encrypted or regulated deployments, or disable "
-                "encryption-at-rest. Tracked in FIXES.md / docs/encryption.md."
-            )
         from .world_model_backends import open_postgres_world
 
         return open_postgres_world()
@@ -2399,12 +2618,16 @@ def open_world(path: Path | None = None) -> Any:
 # WAL + a write lock, so one instance is safely shared across the FastAPI
 # threadpool / goal tasks.
 MAX_TENANT_WORLDS = 128
-_tenant_worlds: dict[str, WorldModel] = {}
+# LRU cache of per-tenant WorldModels (insertion/access order = recency). An
+# OrderedDict so a full cache evicts the least-recently-used tenant instead of
+# hard-failing the next one.
+_tenant_worlds: OrderedDict[str, WorldModel] = OrderedDict()
 _tenant_worlds_lock = threading.Lock()
 
 
 class TenantWorldLimitError(RuntimeError):
-    """Raised when the process has reached its tenant world cache limit."""
+    """Retained for back-compat. No longer raised: the cache now evicts the
+    least-recently-used tenant rather than hard-failing at the ceiling."""
 
 
 def world_for_tenant(tenant: str | None = None) -> WorldModel:
@@ -2416,20 +2639,39 @@ def world_for_tenant(tenant: str | None = None) -> WorldModel:
     :func:`maverick.paths.data_dir`, the same primitive memory + audit use, so
     world/memory/audit all land under the same tenant dir.
 
-    Repeated calls for the same tenant return the SAME instance; distinct
-    tenants get distinct DBs, up to ``MAX_TENANT_WORLDS`` cached tenant
-    connections. Does NOT consult the Postgres backend -- it is the per-tenant
-    SQLite factory the server uses for goal/conversation/turn writes.
+    Repeated calls for the same tenant return the SAME instance. The cache holds
+    up to ``MAX_TENANT_WORLDS`` tenant connections as an LRU: reaching the
+    ceiling EVICTS the least-recently-used tenant (so a busy fleet of many
+    tenants keeps working) rather than raising. The legacy shared (``None``)
+    world is never evicted. Eviction drops the cache reference only -- it does
+    not force-close the connection (an in-flight caller may still hold it); the
+    underlying SQLite connection is reclaimed when its last reference drops.
+    Does NOT consult the Postgres backend -- it is the per-tenant SQLite factory
+    the server uses for goal/conversation/turn writes.
     """
     from .paths import data_dir
 
     path = data_dir("world.db", tenant=tenant)
     key = str(path)
+    shared_key = str(data_dir("world.db", tenant=None))
     with _tenant_worlds_lock:
         world = _tenant_worlds.get(key)
-        if world is None:
-            if tenant is not None and len(_tenant_worlds) >= MAX_TENANT_WORLDS:
-                raise TenantWorldLimitError("tenant world cache limit reached")
-            world = WorldModel(path)
-            _tenant_worlds[key] = world
+        if world is not None:
+            _tenant_worlds.move_to_end(key)  # mark most-recently-used
+            return world
+        if tenant is not None and len(_tenant_worlds) >= MAX_TENANT_WORLDS:
+            _evict_lru_tenant_world(shared_key)
+        world = WorldModel(path)
+        _tenant_worlds[key] = world
+        _tenant_worlds.move_to_end(key)
         return world
+
+
+def _evict_lru_tenant_world(shared_key: str) -> None:
+    """Drop the least-recently-used TENANT world from the cache (never the
+    shared ``None`` world). Caller holds ``_tenant_worlds_lock``."""
+    for k in list(_tenant_worlds):  # oldest-first
+        if k == shared_key:
+            continue
+        _tenant_worlds.pop(k, None)
+        return

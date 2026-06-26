@@ -1,4 +1,4 @@
-# Maverick — Launch Readiness Assessment
+# Lightwork — Launch Readiness Assessment
 
 This public readiness note intentionally avoids listing sensitive audit findings,
 affected components, private branch names, or unfinished security remediation

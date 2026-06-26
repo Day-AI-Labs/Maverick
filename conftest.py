@@ -32,3 +32,10 @@ _session_home = tempfile.mkdtemp(prefix="maverick-test-home-")
 os.environ["HOME"] = _session_home
 os.environ["USERPROFILE"] = _session_home  # Windows: what Path.home() reads
 atexit.register(shutil.rmtree, _session_home, True)
+
+# Secure-by-default ships ON in production (audit signing, at-rest encryption,
+# fail-closed high-risk consent, ...). The existing suite asserts each control's
+# on/off mechanics under explicit config, so pin the legacy posture here for
+# stability (same pattern as the MAVERICK_BUILTIN_SKILLS=0 pin); the secure
+# DEFAULT itself is covered by test_secure_defaults.py, which overrides this.
+os.environ.setdefault("MAVERICK_SECURE_DEFAULT", "0")

@@ -138,9 +138,11 @@ class TaskStore:
         *,
         max_workers: int | None = None,
         max_tasks: int | None = None,
+        max_tasks_per_owner: int | None = None,
         default_ttl_ms: int | None = None,
         max_ttl_ms: int | None = None,
         poll_interval_ms: int | None = None,
+        result_block_ms: int | None = None,
         page_size: int = 100,
         on_status_change: Callable[[McpTask], None] | None = None,
     ):
@@ -150,12 +152,27 @@ class TaskStore:
         self._on_status_change = on_status_change
         self._max_tasks = max_tasks if max_tasks is not None else _env_int(
             "MAVERICK_MCP_MAX_TASKS", 256, lo=1, hi=100_000)
+        # Per-owner sub-cap (HTTP multi-client mode only). The global cap above
+        # is shared, and _make_room only evicts TERMINAL tasks, so without this
+        # one HTTP session could fill all 256 slots with active tasks and block
+        # task creation for every other client -- defeating the per-session
+        # isolation MAVERICK_MCP_HTTP_TASKS exists to provide. Bounded by the
+        # global cap; ignored for stdio (owner=None, single client).
+        self._max_tasks_per_owner = (
+            max_tasks_per_owner if max_tasks_per_owner is not None else _env_int(
+                "MAVERICK_MCP_MAX_TASKS_PER_OWNER",
+                min(32, self._max_tasks), lo=1, hi=self._max_tasks)
+        )
         self._default_ttl_ms = default_ttl_ms if default_ttl_ms is not None else _env_int(
             "MAVERICK_MCP_TASK_TTL_MS", 3_600_000, lo=1_000, hi=604_800_000)
         self._max_ttl_ms = max_ttl_ms if max_ttl_ms is not None else _env_int(
             "MAVERICK_MCP_TASK_MAX_TTL_MS", 86_400_000, lo=1_000, hi=604_800_000)
         self._poll_ms = poll_interval_ms if poll_interval_ms is not None else _env_int(
             "MAVERICK_MCP_TASK_POLL_MS", 1_000, lo=50, hi=3_600_000)
+        # Upper bound on how long a single ``tasks/result`` call blocks a worker
+        # thread, INDEPENDENT of the task's ttl (see result()). Defaults to 60s.
+        self._result_block_ms = result_block_ms if result_block_ms is not None else _env_int(
+            "MAVERICK_MCP_TASK_RESULT_BLOCK_MS", 60_000, lo=1_000, hi=600_000)
         self._page_size = max(1, page_size)
         workers = max_workers if max_workers is not None else _env_int(
             "MAVERICK_MCP_TASK_WORKERS", 4, lo=1, hi=64)
@@ -182,6 +199,7 @@ class TaskStore:
             owner=owner,
         )
         with self._lock:
+            self._reject_if_owner_over_quota_locked(owner)
             self._make_room_for_task_locked()
             self._tasks[task.id] = task
             # Assign the future under the SAME lock that inserts the task: a
@@ -240,10 +258,16 @@ class TaskStore:
 
     def result(self, task_id: str, *, owner: str | None = None) -> dict:
         task = self._require(task_id, owner=owner)
-        # Block until terminal (spec requirement). The worker always reaches a
-        # terminal status (the tool is budget/wall-clock bounded), so the wait
-        # is bounded; ttl is the backstop.
-        task.done.wait(timeout=max(1.0, (task.ttl_ms or 0) / 1000.0 + 5.0))
+        # Block until terminal (spec requirement) -- but bound how long a SINGLE
+        # call blocks, independent of the task's ttl. result() runs on the HTTP
+        # dispatch thread pool, so waiting the full ttl (up to 24h) lets a caller
+        # pin every worker thread with a few large-ttl tasks and freeze the whole
+        # server (auth, /healthz, everything). Cap at _result_block_ms (default
+        # 60s); on timeout raise so the client re-issues tasks/result or polls
+        # tasks/get. The task keeps running until it terminates or its ttl lapses.
+        wait_s = max(1.0, min((task.ttl_ms or 0) / 1000.0 + 5.0,
+                              self._result_block_ms / 1000.0))
+        task.done.wait(timeout=wait_s)
         with self._lock:
             if task.status not in TASK_TERMINAL:
                 raise TaskError(_INTERNAL_ERROR, "timed out waiting for task result")
@@ -320,6 +344,29 @@ class TaskStore:
             raise TaskError(_INVALID_PARAMS, "invalid cursor")
         return start
 
+    def _reject_if_owner_over_quota_locked(self, owner: str | None) -> None:
+        # owner=None is stdio/single-client mode: the global cap governs, no
+        # per-owner quota. In HTTP mode, count this owner's records that still
+        # occupy the shared worker/queue capacity. That includes non-terminal
+        # tasks and cancelled terminal tasks whose Future has not drained yet;
+        # otherwise one session can repeatedly create+cancel tasks to bypass
+        # the owner cap while filling the global cap with non-evictable records.
+        if owner is None:
+            return
+        active = sum(
+            1 for t in self._tasks.values()
+            if t.owner == owner and self._task_occupies_capacity(t)
+        )
+        if active >= self._max_tasks_per_owner:
+            raise TaskError(
+                _INVALID_PARAMS, "too many active tasks for this session")
+
+    @staticmethod
+    def _task_occupies_capacity(task: McpTask) -> bool:
+        if task.status not in TASK_TERMINAL:
+            return True
+        return task.future is not None and not task.future.done()
+
     def _make_room_for_task_locked(self) -> None:
         # Completed/failed/cancelled records are retained only for polling; drop
         # the oldest terminal snapshots first before rejecting new work. A
@@ -329,8 +376,7 @@ class TaskStore:
         # running executions unmanageable and defeat the configured task cap.
         while len(self._tasks) >= self._max_tasks:
             for tid, task in self._tasks.items():
-                future_done = task.future is None or task.future.done()
-                if task.status in TASK_TERMINAL and future_done:
+                if not self._task_occupies_capacity(task):
                     self._tasks.pop(tid, None)
                     break
             else:
@@ -357,8 +403,7 @@ class TaskStore:
                 if task.status not in TASK_TERMINAL:
                     self._cancel_task_locked(task, "The task expired.")
                     continue
-                future_done = task.future is None or task.future.done()
-                if future_done:
+                if not self._task_occupies_capacity(task):
                     self._tasks.pop(tid, None)
 
     def _notify(self, task: McpTask) -> None:

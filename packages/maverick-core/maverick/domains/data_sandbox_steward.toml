@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "sandbox expiry & promotion roster"
+consumers = ["analytics_lead", "data_platform_owner"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Scan sandboxes"
+instruction = "Query the sandbox schemas for dataset age, owner, size, and last-access to identify stale and expiring objects."
+tools = ["sql_query"]
+[[workflow]]
+name = "Apply expiry rules"
+instruction = "Read the sandbox governance policy and mark each dataset as expired, expiring-soon, or active per the documented TTL."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Assess promotion"
+instruction = "Evaluate candidate datasets against promotion criteria and note which warrant graduation to a governed schema."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build cleanup roster"
+instruction = "Compile the roster of expiry, promotion, and cleanup recommendations with owner and rationale for each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Lead review"
+instruction = "Route the roster to the analytics lead and platform owner to approve cleanups and promotions before action."
+gate = "review"

@@ -7,7 +7,7 @@ Both paths now run through secrets.scrub().
 """
 import json
 
-import maverick.replay_export as rx
+import maverick.replay.export as rx
 
 # sk-ant- + 30 chars -> matches the anthropic_key pattern in secrets.scrub
 _SECRET = "sk-ant-api03-" + "A" * 30

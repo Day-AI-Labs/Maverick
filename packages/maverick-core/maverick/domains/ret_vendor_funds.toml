@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "co-op & rebate collection tracker"
+consumers = ["vendor_manager", "accounting_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Read agreements"
+instruction = "Pull co-op and rebate agreement terms, accrual rates, and claim deadlines from company documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Calculate earned"
+instruction = "Query qualifying spend and sales to compute funds earned under each agreement."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Reconcile collected"
+instruction = "Match earned funds against amounts already collected and surface the open balance."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag at-risk"
+instruction = "Flag claims approaching their deadline or missing the documentation needed to collect."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Submit tracker"
+instruction = "Route the collection tracker to vendor management and accounting for review."
+gate = "review"

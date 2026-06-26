@@ -11,3 +11,34 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "executive trip itinerary"
+consumers = ["executive_assistant", "chief_of_staff"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Confirm trip brief"
+instruction = "Collect the executive's destinations, dates, meetings, and stated preferences for the trip."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Check travel policy"
+instruction = "Pull the company travel policy and verify class, vendor, and spend limits that apply to this traveler."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Source verified options"
+instruction = "Look up flights, hotels, and ground transport and verify schedules, addresses, and prices against current sources."
+tools = ["web_search"]
+[[workflow]]
+name = "Build itinerary grid"
+instruction = "Lay out the door-to-door itinerary with timings, confirmations, and costs in a single grid."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Add contingencies"
+instruction = "Attach backup flights, alternate hotels, and connection buffers for each leg that could fail."
+[[workflow]]
+name = "Route to assistant"
+instruction = "Hand the itinerary to the executive assistant and chief of staff for review and booking approval."
+gate = "review"

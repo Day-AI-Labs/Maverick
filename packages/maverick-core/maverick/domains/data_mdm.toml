@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "master record merge proposal"
+consumers = ["data_governance_lead", "operations_manager"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Pull masters"
+instruction = "Query the customer and vendor master records in scope along with their key identifying attributes."
+tools = ["sql_query"]
+[[workflow]]
+name = "Confirm rules"
+instruction = "Ground the match and survivorship rules against governance policy via knowledge_search."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Cluster duplicates"
+instruction = "Cluster likely duplicates and build the proposed surviving record with an audit trail in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag false merges"
+instruction = "Flag risky near-matches and conflicting attributes that could cause an incorrect merge."
+[[workflow]]
+name = "Hand to steward"
+instruction = "Route the merge proposal with audit trail to the data governance lead to approve before any merge."
+gate = "approval"

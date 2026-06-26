@@ -36,8 +36,11 @@ def test_store_file_is_0600_and_valid_json(store):
     mode = stat.S_IMODE(os.stat(store).st_mode)
     assert mode == 0o600
     assert json.loads(store.read_text()) == {"morning routine": ["status report"]}
-    # No stray temp files left behind by the atomic write.
-    assert [p.name for p in store.parent.iterdir()] == [store.name]
+    # No stray temp files left behind by the atomic write. (The cross-process
+    # lock's ".lock" sidecar is an expected, persistent artifact.)
+    leftovers = {p.name for p in store.parent.iterdir()}
+    assert not [n for n in leftovers if n.endswith(".tmp")]
+    assert leftovers <= {store.name, store.name + ".lock"}
 
 
 def test_load_missing_or_corrupt_fails_soft(store):
@@ -218,3 +221,25 @@ def test_trigger_falls_through_on_no_match(store):
         "pause goal 5", parse=parse_utterance, dispatch=lambda i, s: "", path=store,
     )
     assert out is None  # caller's normal grammar handling takes over
+
+
+def test_concurrent_record_macro_does_not_lose_macros(tmp_path):
+    """record_macro does a load-modify-save; without the lock concurrent
+    records of different macros clobber each other. All N must survive."""
+    import threading
+
+    from maverick import voice_macros
+
+    store = tmp_path / "voice_macros.json"
+    n = 16
+
+    def do(i: int):
+        voice_macros.record_macro(f"macro {i:03d}", ["do thing"], path=store)
+
+    threads = [threading.Thread(target=do, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(voice_macros.load_macros(store)) == n

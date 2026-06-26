@@ -27,6 +27,7 @@ import json
 import math
 import os
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,6 +81,32 @@ class VoiceGate:
             from .paths import data_dir
             store_path = data_dir("voice_profiles.json")
         self._path = Path(store_path)
+        # Serializes the profile-store load-modify-save in-process; the
+        # cross_process_lock in _locked() extends it across processes.
+        self._lock = threading.Lock()
+
+    def _ensure_parent(self) -> None:
+        # The profile dir holds biometric data: it must be 0700. Create it here
+        # so it exists at 0700 BEFORE the lock sidecar / temp land in it -- the
+        # lock's own mkdir would otherwise create it at the default 0755.
+        parent = self._path.parent
+        parent_existed = parent.exists()
+        parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        if not parent_existed:
+            try:
+                os.chmod(parent, 0o700)
+            except OSError:  # pragma: no cover
+                pass
+
+    def _locked(self):
+        from contextlib import ExitStack
+
+        from .file_lock import cross_process_lock
+        self._ensure_parent()
+        stack = ExitStack()
+        stack.enter_context(self._lock)
+        stack.enter_context(cross_process_lock(self._path))
+        return stack
 
     # -- store --------------------------------------------------------------
 
@@ -90,15 +117,8 @@ class VoiceGate:
             return {}
 
     def _save(self, data: dict) -> None:
+        self._ensure_parent()
         parent = self._path.parent
-        parent_existed = parent.exists()
-        parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-        if not parent_existed:
-            try:
-                os.chmod(parent, 0o700)
-            except OSError:  # pragma: no cover
-                pass
-
         fd, tmp_name = tempfile.mkstemp(
             dir=parent,
             prefix=f".{self._path.name}.",
@@ -133,19 +153,23 @@ class VoiceGate:
         vecs = [list(map(float, self._embed(s))) for s in samples]
         if len({len(v) for v in vecs}) != 1:
             raise ValueError("embedder returned inconsistent dimensions")
-        data = self._load()
-        data[speaker] = {"centroid": _centroid(vecs), "enrolled_at": time.time(),
-                         "samples": len(samples)}
-        self._save(data)
+        # Whole load-modify-save under the lock so a concurrent enroll/delete of
+        # another speaker can't clobber this one (last-writer-wins on the dict).
+        with self._locked():
+            data = self._load()
+            data[speaker] = {"centroid": _centroid(vecs), "enrolled_at": time.time(),
+                             "samples": len(samples)}
+            self._save(data)
         return len(vecs[0])
 
     def delete_profile(self, speaker: str) -> bool:
         """Erase a speaker's biometric profile (first-class by design)."""
-        data = self._load()
-        if speaker not in data:
-            return False
-        del data[speaker]
-        self._save(data)
+        with self._locked():
+            data = self._load()
+            if speaker not in data:
+                return False
+            del data[speaker]
+            self._save(data)
         return True
 
     def profiles(self) -> list[str]:

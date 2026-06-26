@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "retention disposition log"
+consumers = ["data_owner", "compliance_officer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Load schedules"
+instruction = "Read the company retention schedules and policy documents that govern each dataset class."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Inventory datasets"
+instruction = "Query the catalog for affected tables and their last-modified and creation timestamps to find records past their retention window."
+tools = ["sql_query"]
+[[workflow]]
+name = "Match to policy"
+instruction = "Map each over-retained dataset to its governing schedule and flag legal-hold or ambiguous cases that block deletion."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Document deletions"
+instruction = "Record the disposition log of deletions performed by owners with dataset, policy citation, and date, noting any unresolved exceptions."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Owner sign-off"
+instruction = "Route the disposition log to the data owner and compliance for review before it is filed."
+gate = "review"

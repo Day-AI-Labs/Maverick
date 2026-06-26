@@ -18,3 +18,24 @@ deliverable = "Dormant/escheatment register"
 consumers = ["operations_manager", "compliance_officer"]
 cadence = "quarterly"
 gate = "approval"
+
+[[workflow]]
+name = "Pull inactivity"
+instruction = "Query accounts with no customer-initiated activity and last-contact dates across the relevant lookback window."
+tools = ["sql_query"]
+[[workflow]]
+name = "Apply state rules"
+instruction = "Look up each account owner's state dormancy and escheatment periods and classify which accounts have crossed the threshold."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Verify exclusions"
+instruction = "Confirm due-diligence contact attempts and statutory exclusions so active or already-contacted accounts are not wrongly flagged as abandoned."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build register"
+instruction = "Compile the dormant and escheatment-due accounts with balances, state, and trigger dates into the register."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to officer"
+instruction = "Hand the evidence register to the compliance officer to approve remittance and any account holds."
+gate = "approval"

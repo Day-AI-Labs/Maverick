@@ -16,3 +16,30 @@ deny_tools = ["shell", "write_file"]
 mcp_servers = ["CourtListener"]
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "employment-law analysis memo"
+consumers = ["employment_counsel", "hr_partner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Intake facts"
+instruction = "Read the policy, claim, or dispute facts and identify the governing jurisdiction and employee population."
+tools = ["read_file"]
+[[workflow]]
+name = "Frame statutes"
+instruction = "Identify the applicable statutes among Title VII, ADA, ADEA, FLSA, FMLA, NLRA, WARN, and state law for the issue presented."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify case law"
+instruction = "Pull controlling case law and confirm each authority and jurisdiction before relying on it."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft analysis"
+instruction = "Draft the claim or policy analysis citing the statute, authority, and jurisdiction for each position taken."
+[[workflow]]
+name = "Counsel sign-off"
+instruction = "Route the memo to human counsel and the HR partner, who own every binding decision."
+gate = "review"

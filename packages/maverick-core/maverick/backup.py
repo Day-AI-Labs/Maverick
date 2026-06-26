@@ -155,7 +155,22 @@ def create_backup(out: str | Path | None = None) -> Path:
             tar.add(Path(td) / MANIFEST, arcname=MANIFEST)
             tar.add(stage, arcname="data")
         os.chmod(tmp_out, 0o600)
+        # fsync the tarball before the rename: os.replace is atomic for
+        # VISIBILITY, but on a power-loss the rename can be durable while the
+        # file contents are not -- yielding a zero/short backup at the final
+        # name, exactly the DR artifact you reach for after a crash. Flush the
+        # bytes (and the parent dir entry) so a present backup is a complete one.
+        with open(tmp_out, "rb") as _f:
+            os.fsync(_f.fileno())
         os.replace(tmp_out, out)
+        try:
+            dir_fd = os.open(str(out.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:  # pragma: no cover -- dir fsync unsupported on some FS
+            pass
     log.info("backup written: %s (%d files, client=%s)", out, len(files), cid)
     return out
 
@@ -240,8 +255,19 @@ def restore_backup(tarball: str | Path, *, force: bool = False) -> Path:
             dst = root / rel
             if dst.resolve() != root_resolved and root_resolved not in dst.resolve().parents:
                 raise BackupError(f"unsafe restore path: {rel}")
+            # The manifest is an EXHAUSTIVE allow-list: create_backup records a
+            # SHA-256 for every staged file, so a payload file with no manifest
+            # entry is not a legitimate backup -- it's a corrupt/tampered archive
+            # smuggling an unverified file into the live root. Reject it rather
+            # than write it through unchecked (the old `want is not None` guard
+            # silently skipped integrity for unlisted files).
             want = expected.get(str(rel))
-            if want is not None and _sha256(src) != want:
+            if want is None:
+                raise BackupError(
+                    f"backup payload {rel} is not in the manifest "
+                    f"(backup is corrupt or tampered)"
+                )
+            if _sha256(src) != want:
                 raise BackupError(
                     f"backup integrity check failed for {rel} "
                     f"(SHA-256 mismatch — backup is corrupt or truncated)"

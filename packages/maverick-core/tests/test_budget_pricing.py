@@ -57,7 +57,7 @@ def test_router_selectable_models_bill_at_real_rate_not_fallback():
     Budget bills each id at the MODEL_PRICES rate -- catching any future id
     that drifts out of the canonical catalog and silently bills at fallback.
     """
-    from maverick.cost_router import _PRICING
+    from maverick.cost.router import _PRICING
     from maverick.llm import MODEL_PRICES
 
     saw_non_fallback = False

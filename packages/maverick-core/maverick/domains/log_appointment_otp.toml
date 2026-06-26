@@ -10,3 +10,29 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "on-time pickup performance review"
+consumers = ["logistics_manager", "carrier_manager"]
+cadence = "weekly"
+
+[[workflow]]
+name = "Pull appointments"
+instruction = "Query scheduled versus actual pickup times by carrier and lane for the period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Compute OTP"
+instruction = "Calculate on-time pickup rates against the contracted appointment windows per carrier."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Attribute root cause"
+instruction = "Classify each late pickup by root cause using dispatch notes and exception records in the knowledge base."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Rank offenders"
+instruction = "Rank carriers and lanes by missed-appointment rate and recurring root-cause patterns."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Brief manager"
+instruction = "Deliver the performance review with root-cause findings to the logistics manager for carrier follow-up."

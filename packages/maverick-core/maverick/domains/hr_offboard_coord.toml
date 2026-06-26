@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "offboarding completion checklist"
+consumers = ["hr_business_partner", "it_admin", "payroll"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Open checklist"
+instruction = "Read the departing employee record and assemble the access, asset, payroll, and exit-doc checklist items."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Verify steps"
+instruction = "Check each checklist item against company offboarding policy and confirm owners for access revocation, asset return, and final pay."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Track completion"
+instruction = "Record completion status for every item and surface any incomplete or overdue steps."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand off open items"
+instruction = "Route remaining open items and sensitive matters to the HR owner to close out."
+gate = "review"

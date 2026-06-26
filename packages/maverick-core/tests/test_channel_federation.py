@@ -242,3 +242,28 @@ def test_apply_many_iterates_injected_receive():
     env2 = _envelope(text="two")  # distinct sig so it isn't seen as a replay
     results = _applier(handled, env1).apply_many(iter([env1, "junk", env2]))
     assert [r["applied"] for r in results] == [True, False, True]
+
+
+def test_append_is_concurrency_safe(tmp_path):
+    """Concurrent appends do a load-modify-save; without the lock two writers
+    both load the same items and the second save clobbers the first -- an
+    enqueued envelope vanishes. All N must survive (queue large enough to not
+    bound)."""
+    import threading
+
+    q = OutboundQueue(path=tmp_path / "outbox.json", max_len=10_000)
+    n, per = 12, 30
+
+    def worker(w: int):
+        for i in range(per):
+            q.append({"w": w, "i": i})
+
+    threads = [threading.Thread(target=worker, args=(w,)) for w in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(q) == n * per
+    # No fixed-temp droppings from concurrent writers.
+    assert list(tmp_path.glob("*.tmp")) == []

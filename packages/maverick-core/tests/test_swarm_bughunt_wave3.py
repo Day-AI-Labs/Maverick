@@ -73,7 +73,7 @@ class TestElasticsearchSeg:
 
 class TestReplayExportSanitize:
     def test_pii_and_secrets_redacted(self):
-        from maverick.replay_export import _sanitize
+        from maverick.replay.export import _sanitize
         text = 'contact john@example.com key=sk-ant-abcdefghij0123456789XYZ'
         out = _sanitize(text)
         assert "john@example.com" not in out

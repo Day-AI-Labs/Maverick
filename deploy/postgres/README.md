@@ -1,6 +1,6 @@
-# Maverick on Postgres — scaling past single-writer SQLite
+# Lightwork on Postgres — scaling past single-writer SQLite
 
-By default Maverick keeps run state in SQLite under `~/.maverick/world.db`:
+By default Lightwork keeps run state in SQLite under `~/.maverick/world.db`:
 simple, zero-dependency, and a **single writer**. That caps a deployment at one
 replica per state volume. To run multiple replicas (HA, horizontal scale, or
 many tenants on shared infra), move the world model to Postgres.
@@ -60,7 +60,7 @@ Any Postgres 14+ works. Recommended baseline for a managed instance:
 - **HA**: multi-AZ / zone-redundant for production.
 - **Backups**: automated daily + point-in-time recovery (retain ≥ 7 days).
 - **Connection pooling**: front with PgBouncer (transaction pooling) when you
-  run many replicas — each Maverick process opens a small pool.
+  run many replicas — each Lightwork process opens a small pool.
 - **TLS**: require `sslmode=verify-full` in the DSN for networked databases.
 
 Create the role and database:
@@ -70,7 +70,7 @@ CREATE ROLE maverick LOGIN PASSWORD '***';
 CREATE DATABASE maverick OWNER maverick;
 ```
 
-Maverick creates and migrates its own schema on first connect (the same
+Lightwork creates and migrates its own schema on first connect (the same
 forward-only migration machinery as SQLite). No manual DDL is required.
 
 ## Backups & restore

@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "runbook / ADR / API reference draft"
+consumers = ["engineering_manager", "developer_experience_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope the doc"
+instruction = "Clarify the doc type, audience, and the system or decision being documented from the request."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather sources"
+instruction = "Pull the authoritative code, configs, and prior docs and confirm current behavior against external references."
+tools = ["read_file", "knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft document"
+instruction = "Write the runbook, ADR, or API reference grounded strictly in verified source material."
+tools = ["read_file"]
+[[workflow]]
+name = "Verify accuracy"
+instruction = "Re-check every claim, command, and endpoint against source to catch stale or invented details."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route for review"
+instruction = "Send the finished draft to the owning engineer to review and publish."
+gate = "review"

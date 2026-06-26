@@ -51,3 +51,27 @@ class TestBudgetTaskClass:
         class _G:
             title = "1234 !!"
         assert _budget_task_class(_G()) == "default"
+
+
+def test_record_is_concurrency_safe(tmp_path):
+    """Concurrent record() must not lose win/loss updates that bias topology
+    selection."""
+    import threading
+
+    p = tmp_path / "planning_stats.json"
+    n, per = 16, 30
+
+    def worker():
+        for _ in range(per):
+            planning_stats.record("default", "fix", True, path=p)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    import json
+    data = json.loads(p.read_text(encoding="utf-8"))
+    assert data["default::fix"]["runs"] == n * per
+    assert data["default::fix"]["wins"] == n * per

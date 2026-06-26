@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "compensation band proposal"
+consumers = ["comp_committee", "hr_director"]
+cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Pull benchmarks"
+instruction = "Read the role inventory and surveyed market data (Radford/Mercer/Pave) for the roles in scope."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Ground in policy"
+instruction = "Confirm the company's leveling framework and current band structure from internal compensation documents."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build bands"
+instruction = "Construct band minimums, midpoints, and maximums per level and compute compa-ratio impact for the merit cycle."
+[[workflow]]
+name = "Bias screen"
+instruction = "Verify no protected-class data or proxy feeds the band design and flag any leveling or pay-equity outliers for review."
+[[workflow]]
+name = "Route approval"
+instruction = "Package the band proposal with rationale and route it to the comp committee for sign-off before any pay change."
+gate = "approval"

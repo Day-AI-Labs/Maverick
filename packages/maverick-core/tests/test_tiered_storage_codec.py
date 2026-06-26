@@ -120,3 +120,64 @@ def test_write_cold_file_auto_unchanged(tmp_path, monkeypatch):
     assert path.name.endswith(".jsonl.gz")
     back = list(ts.read_cold(tmp_path, "episodes"))
     assert back == _ROWS
+
+
+def test_read_cold_dedups_duplicate_rows(tmp_path, monkeypatch):
+    """Crash-recovery idempotency: archive() durably renames a cold file BEFORE
+    its DELETE commits, so a crash in between leaves the same rows in a SECOND
+    cold file on the next run. read_cold must yield each id once, not twice.
+    """
+    monkeypatch.setenv("MAVERICK_WORLD_COLD_CODEC", "gzip")  # dep-free codec
+    rows = [{"id": 1, "ts": 10, "v": "a"}, {"id": 2, "ts": 20, "v": "b"}]
+    p1 = ts._write_cold_file(tmp_path, "episodes", "ts", rows)
+    p2 = ts._write_cold_file(tmp_path, "episodes", "ts", rows)  # the duplicate
+    assert p1 != p2
+    got = [r["id"] for r in ts.read_cold(tmp_path, "episodes")]
+    assert got == [1, 2], f"expected each id once, got {got}"
+
+
+def test_write_cold_file_concurrent_same_range_no_clobber(tmp_path, monkeypatch):
+    """Two processes archiving the SAME date-range must not clobber each other.
+
+    The old `while path.exists()` + os.replace was a TOCTOU: both archivers saw
+    the same `-N` free and replaced onto it, destroying one cold file after its
+    SQLite rows were already deleted. Each concurrent writer must end up with its
+    own distinct, fully-readable file; no rows go missing.
+    """
+    import threading
+
+    monkeypatch.setenv("MAVERICK_WORLD_COLD_CODEC", "gzip")  # dep-free codec
+    monkeypatch.setattr(ts, "_have_pyarrow", lambda: False)
+    n = 16
+    rows = [{"id": 1, "ts": 10, "v": "a"}, {"id": 2, "ts": 20, "v": "b"}]
+    paths: list = []
+    errors: list[Exception] = []
+    lock = threading.Lock()
+
+    def worker():
+        try:
+            p = ts._write_cold_file(tmp_path, "episodes", "ts", rows)
+        except (OSError, ValueError) as e:
+            with lock:
+                errors.append(e)
+            return
+        with lock:
+            paths.append(p)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, errors[:3]
+    # Every writer got a DISTINCT name (no clobber) and every file is on disk.
+    assert len(paths) == n
+    assert len({p.name for p in paths}) == n, "two writers shared a name"
+    for p in paths:
+        assert p.exists()
+    # No stray temp files survive a successful publish.
+    assert not list(tmp_path.glob("*.tmp"))
+    # Each file is independently readable (none was left half-written/empty).
+    for p in paths:
+        assert sorted(r["id"] for r in ts._read_jsonl_gz(p)) == [1, 2]

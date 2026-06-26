@@ -86,6 +86,26 @@ def test_load_config_with_models_section():
         path.unlink()
 
 
+def test_get_governed_connectors_defaults_off(monkeypatch):
+    import maverick.config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "load_config", lambda *a, **k: {})
+    gc = cfg_mod.get_governed_connectors()
+    assert gc == {"enable": False, "connectors": [], "approver": ""}
+
+
+def test_get_governed_connectors_parses_list_and_csv(monkeypatch):
+    import maverick.config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "load_config", lambda *a, **k: {
+        "governed_connectors": {"enable": True, "connectors": ["salesforce", " servicenow "],
+                                "approver": "ops@corp"}})
+    assert cfg_mod.get_governed_connectors() == {
+        "enable": True, "connectors": ["salesforce", "servicenow"], "approver": "ops@corp"}
+    # A CSV string (an operator hand-edit) is tolerated and split.
+    monkeypatch.setattr(cfg_mod, "load_config", lambda *a, **k: {
+        "governed_connectors": {"enable": True, "connectors": "salesforce, servicenow"}})
+    assert cfg_mod.get_governed_connectors()["connectors"] == ["salesforce", "servicenow"]
+
+
 def test_nested_dict_interpolation(monkeypatch):
     monkeypatch.setenv("X", "42")
     data = {"a": "${X}", "b": ["${X}", "plain"], "c": {"inner": "${X}"}}
@@ -130,3 +150,19 @@ def test_toml_cache_is_bounded(tmp_path, monkeypatch):
         assert len(cfg._toml_cache) <= 8     # bounded, not 40
     finally:
         cfg.reset_config_cache()
+
+
+def test_env_flag_tristate(monkeypatch):
+    from maverick.config import env_flag
+
+    for val in ("1", "true", "TRUE", "Yes", "on", " on "):
+        monkeypatch.setenv("MAVERICK_X", val)
+        assert env_flag("MAVERICK_X") is True, val
+    for val in ("0", "false", "No", "off", "OFF"):
+        monkeypatch.setenv("MAVERICK_X", val)
+        assert env_flag("MAVERICK_X") is False, val
+    for val in ("", "maybe", "2"):
+        monkeypatch.setenv("MAVERICK_X", val)
+        assert env_flag("MAVERICK_X") is None, val
+    monkeypatch.delenv("MAVERICK_X", raising=False)
+    assert env_flag("MAVERICK_X") is None

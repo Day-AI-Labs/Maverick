@@ -17,3 +17,23 @@ deliverable = "Stale-item / outstanding-check register"
 consumers = ["operations_manager"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull outstanding"
+instruction = "Query the GL and bank reconciliation for outstanding checks and unresolved items past the staleness threshold."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Apply dormancy rules"
+instruction = "Look up the applicable state escheatment and dormancy periods and classify each item by its required disposition."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build register"
+instruction = "Compile a stale-item register with item age, owner, last activity, and the escheatment action each item triggers."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag due-diligence"
+instruction = "Identify items requiring owner outreach or due-diligence letters before write-off so none are escheated prematurely."
+[[workflow]]
+name = "Officer sign-off"
+instruction = "Route the register and proposed dispositions to the operations manager for review before any funds are moved or reported."
+gate = "review"

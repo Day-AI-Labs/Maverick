@@ -6,7 +6,7 @@ ref:** 2027-H2 Performance "JIT consideration (mypyc/cython on hot path)" ·
 
 ## Question
 
-Should Maverick compile its hot path (tool dispatch, compaction, world-model
+Should Lightwork compile its hot path (tool dispatch, compaction, world-model
 access) with mypyc or Cython for speed?
 
 ## Measurements (the deciding input)

@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "speech & talking points draft"
+consumers = ["executive", "chief_of_staff", "communications_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame the ask"
+instruction = "Read the event brief, audience profile, and prior remarks to fix the occasion, length, and intended message."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify facts"
+instruction = "Confirm every figure, claim, and position against approved company sources before it enters the draft."
+tools = ["knowledge_search", "web_search", "read_file"]
+[[workflow]]
+name = "Draft remarks"
+instruction = "Write the speech in the executive's voice using only verified facts and approved positions."
+[[workflow]]
+name = "Check positions"
+instruction = "Cross-check each claim against approved messaging and flag any statement that ventures beyond sanctioned positions."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Executive review"
+instruction = "Route the draft and talking points to the executive for review before delivery."
+gate = "review"

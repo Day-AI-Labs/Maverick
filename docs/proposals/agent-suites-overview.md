@@ -2,7 +2,7 @@
 
 At-a-glance index of the business-function agent suites designed for the platform.
 Full detail lives in the per-suite docs below; this is the summary to skim later.
-**Twenty-six suites, 1,118 shipped agents** — the original eight functional
+**Fifty-three suites, 2,020 shipped agents** — the original eight functional
 suites below plus customer experience, marketing, procurement, data &
 analytics, security ops, executive office, facilities/EHS, tax preparation
 (CPA firms), and ten industry verticals (healthcare, insurance, banking,
@@ -45,7 +45,16 @@ All build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
 
 - **Each agent is one `DomainProfile` pack** — `compartment` seal + `persona` +
   attenuating `allow_tools`/`deny_tools` + `max_risk` + `allow_hosts` +
-  `mcp_servers` + `knowledge_sources`.
+  `mcp_servers` + `knowledge_sources`, plus the consumption + governance surface:
+  an `[output]` contract (deliverable/consumers/cadence/gate), an editable
+  `[[workflow]]` playbook, an `effort` tier (right-sized reasoning), and a
+  `refuse` list of hard, no-approval-path prohibitions. All 2,020 carry these.
+- **Tooling over the roster** — `maverick domains-lint` (well-formedness +
+  envelope/gate/effort/deny-floor rules), `domains-audit` (governance-posture
+  inventory: what's reachable, what's denied, refusals, sign-off — `--json` for
+  GRC), `domains-eval` (behavioral golden cases + rubric scorer), and a
+  query-based router (`list_specialists query=<task>`, hybrid lexical +
+  embeddings) that narrows the roster to a shortlist.
 - **The platform's own primitives *are* the controls.** Capabilities = access
   control (segregation of duties); the signed Ed25519 **Merkle audit chain** = the
   tamper-evident record; `governance.py` = the policy engine (allow/deny/**require_human**);
@@ -98,9 +107,14 @@ regulatory capital · cost-allocation/ABC · insurance · ESG · escheatment.
 `require_human` gate · SOX book of record = the signed Merkle chain · money tools
 are already `high`-risk so they auto-pause.
 
-**The one load-bearing gap to build:** amount-aware authorization (dollar/DoA
-thresholds) — `governance.evaluate()` is action/risk-based, not amount-based.
-Everything in L3 / the DoA matrix depends on it.
+**Amount-aware authorization — shipped.** `governance.evaluate()` now takes an
+`amount`/`currency` and gates on the policy's dollar tiers (`deny_above` /
+`require_human_above`), and the agent chokepoint extracts the transaction amount
+from tool args (`agent._governance_amount`), so the L3 / DoA dollar thresholds
+are live. Remaining refinement (not a blocker): per-pack DoA thresholds — today
+the tiers are org-level config, and every pack denies its irreversible tools
+outright, so a per-role authority matrix only matters once a pack carries L3
+automation.
 
 ---
 
@@ -149,7 +163,7 @@ replace the people or the systems of record.
 
 ### The throughline
 
-**Maverick's own primitives are the GRC controls, so the fleet governs itself** —
+**Lightwork's own primitives are the GRC controls, so the fleet governs itself** —
 Tower 1 oversees the very agents it runs among, which is exactly why the
 un-lowerable hard floors live in the profile compiler, not per-tenant config. The
 strongest already-built story is the **GRC Supervisor (Layer A)**: governance +
@@ -238,7 +252,7 @@ SoD: HR decides people, finance owns payroll, IT owns provisioning.
 
 ## Product & Engineering suite — at a glance
 
-The inverse of the others: **Maverick is itself a coding agent**, so the engineering core
+The inverse of the others: **Lightwork is itself a coding agent**, so the engineering core
 and the connector layer are the most mature in the platform. *"The tools are nearly all
 there; the role personas aren't."*
 
@@ -253,7 +267,7 @@ there; the role personas aren't."*
 8. **Technical Research & Architecture** — design docs/ADRs · spikes · tech evaluation
 
 ### What's shipped (the most of any suite)
-The coding kernel, 7 sandbox backends (+ a network-policy egress layer), code review + the test-driven verifier + the
+The coding kernel, 9 sandbox backends (+ a network-policy egress layer), code review + the test-driven verifier + the
 SWE-bench eval harness, VCS/CI tools, the swarm/orchestrator — plus ~140 connectors incl.
 the full PM stack (Jira/Linear/Asana/ClickUp/Notion/Confluence), product analytics
 (GA4/Mixpanel/PostHog), DevOps (Datadog/Sentry/PagerDuty/Vercel/Cloudflare), Figma + a11y.
@@ -263,7 +277,7 @@ Gaps are the **role personas** (PM/designer/data-eng as packs), DORA metrics, ML
 QA test-mgmt. Cardinal control: agents write/test/review in the **sandbox**, but code ships
 only through the **verifier + review** gates, **humans approve every merge/release/deploy**,
 and — uniquely — **an agent never modifies its own runtime/safety without human
-authorization** (`self_edit` ships off by default; *Maverick builds Maverick*).
+authorization** (`self_edit` ships off by default; *Lightwork builds Lightwork*).
 
 ---
 

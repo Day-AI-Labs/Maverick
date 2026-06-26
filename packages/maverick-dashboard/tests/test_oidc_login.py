@@ -287,6 +287,34 @@ def test_callback_verify_failure_sets_no_session(login_env, client, monkeypatch)
 # ---- logout -------------------------------------------------------------------
 
 
+def test_callback_records_pairwise_sub_in_subject_directory(
+    login_env, client, monkeypatch
+):
+    # Entra-shaped login: pairwise `sub` plus email/oid claims. The callback must
+    # record the sub against those identifiers so SCIM deprovision can reach it.
+    state, _ = _do_login(client)
+
+    async def _fake_exchange(url, *, cfg, code, code_verifier):
+        return {"id_token": "fake.id.token"}
+
+    monkeypatch.setattr(ol, "_exchange_code_for_tokens", _fake_exchange)
+    monkeypatch.setattr(
+        ol, "verify_oidc_token",
+        lambda token: VerifiedPrincipal(
+            sub="pairwise-zzz", issuer=ISSUER, audience="maverick",
+            claims={"sub": "pairwise-zzz", "email": "dana@example.com",
+                    "oid": "aad-oid-7"},
+        ),
+    )
+    resp = client.get(
+        f"/auth/callback?code=c&state={state}", follow_redirects=False)
+    assert resp.status_code == 303
+
+    from maverick_dashboard import subject_directory as sd
+    assert sd.subs_for(["dana@example.com"]) == {"pairwise-zzz"}
+    assert sd.subs_for(["aad-oid-7"]) == {"pairwise-zzz"}
+
+
 def test_logout_clears_session(login_env, client):
     resp = client.get("/auth/logout", follow_redirects=False)
     assert resp.status_code == 303
@@ -294,6 +322,30 @@ def test_logout_clears_session(login_env, client):
     set_cookie = resp.headers.get("set-cookie", "")
     # delete_cookie sets the cookie with an empty value / expiry in the past.
     assert ol.SESSION_COOKIE in set_cookie
+
+
+def test_logout_all_revokes_even_when_session_already_revoked(login_env, client):
+    # Regression: "log out everywhere" must bump the epoch even if THIS session
+    # was already revoked once -- otherwise other (newer) bearers survive.
+    import time
+
+    from maverick.web_session import sign_session
+    from maverick_dashboard import session_revocation as sr
+
+    now = int(time.time())
+    raw = sign_session(
+        {"sub": "user-123", "iat": now, "exp": now + 3600}, SESSION_SECRET)
+    # Pre-revoke the principal (epoch now) so the session is already revoked.
+    sr.revoke_principal("user-123")
+    epoch_before = sr.revocation_epoch("user-123")
+    assert epoch_before > 0
+
+    client.cookies.set(ol.SESSION_COOKIE, raw)
+    resp = client.get("/auth/logout?all=1", follow_redirects=False)
+    assert resp.status_code == 303
+    # The epoch was re-bumped (>=), proving revoke fired despite the prior
+    # revocation -- not silently skipped.
+    assert sr.revocation_epoch("user-123") >= epoch_before
 
 
 # ---- disabled: every route 404s -----------------------------------------------
@@ -314,3 +366,108 @@ def test_routes_404_when_login_disabled(monkeypatch, tmp_path):
     c = TestClient(app)
     for path in ("/auth/login", "/auth/callback", "/auth/logout", "/auth/error"):
         assert c.get(path, follow_redirects=False).status_code == 404
+
+
+# ---- replay guard: shared store backs the multi-replica HA case ---------------
+
+
+class _FakeSharedWorld:
+    """Minimal stand-in for the shared world model: a first-writer-wins insert
+    mirroring ``mark_message_processed`` (True once per id, then False)."""
+
+    def __init__(self):
+        self.seen: set[tuple[str, str]] = set()
+        self.released: list[tuple[str, str]] = []
+
+    def mark_message_processed(self, channel, external_id, goal_id=None):
+        key = (channel, external_id)
+        if key in self.seen:
+            return False
+        self.seen.add(key)
+        return True
+
+    def release_processed_message(self, channel, external_id):
+        key = (channel, external_id)
+        self.released.append(key)
+        self.seen.discard(key)
+
+
+def test_callback_releases_shared_tx_when_token_exchange_fails(
+    login_env, client, monkeypatch
+):
+    """Bogus unauthenticated callbacks must not leave durable HA replay rows."""
+    import maverick_dashboard._shared as shared
+    from maverick import world_model_backends
+
+    monkeypatch.setattr(world_model_backends, "is_postgres_configured", lambda: True)
+    fake = _FakeSharedWorld()
+    monkeypatch.setattr(shared, "_world", lambda: fake)
+    state, tx_cookie = _do_login(client)
+    tx = verify_session(tx_cookie, SESSION_SECRET)
+
+    async def _fail_exchange(*a, **k):
+        raise RuntimeError("bad code")
+
+    monkeypatch.setattr(ol, "_exchange_code_for_tokens", _fail_exchange)
+
+    resp = client.get(
+        f"/auth/callback?code=bogus&state={state}", follow_redirects=False
+    )
+    assert resp.status_code == 303
+    key = (ol._OIDC_TX_CHANNEL, tx["jti"])
+    assert key in fake.released
+    assert key not in fake.seen
+
+
+def test_consume_tx_in_process_guard_is_default(monkeypatch):
+    """No shared backend (the default SQLite / single-process deployment): the
+    in-process dict consumes once and rejects the replay."""
+    import asyncio
+
+    from maverick import world_model_backends
+    monkeypatch.setattr(world_model_backends, "is_postgres_configured", lambda: False)
+    ol._CONSUMED_TX_IDS.clear()
+
+    assert asyncio.run(ol._consume_tx_once("tx-1", ol._now() + 600)) is True
+    assert asyncio.run(ol._consume_tx_once("tx-1", ol._now() + 600)) is False
+    assert "tx-1" in ol._CONSUMED_TX_IDS  # recorded in-process
+
+
+def test_consume_tx_uses_shared_store_under_postgres(monkeypatch):
+    """HA / Postgres: the id is consumed in the SHARED store (so the guard holds
+    across replicas), and the in-process dict is bypassed entirely."""
+    import asyncio
+
+    import maverick_dashboard._shared as shared
+    from maverick import world_model_backends
+    monkeypatch.setattr(world_model_backends, "is_postgres_configured", lambda: True)
+    fake = _FakeSharedWorld()
+    monkeypatch.setattr(shared, "_world", lambda: fake)
+    ol._CONSUMED_TX_IDS.clear()
+
+    assert asyncio.run(ol._consume_tx_once("tx-A", ol._now() + 600)) is True
+    assert asyncio.run(ol._consume_tx_once("tx-A", ol._now() + 600)) is False
+    # consumed in the shared store under the namespaced channel...
+    assert (ol._OIDC_TX_CHANNEL, "tx-A") in fake.seen
+    # ...and the in-process guard was never touched.
+    assert ol._CONSUMED_TX_IDS == {}
+
+
+def test_consume_tx_falls_back_when_shared_store_errors(monkeypatch):
+    """A broken shared store degrades to the in-process guard rather than
+    hard-failing every login (defense-in-depth: cookie+PKCE+state still hold)."""
+    import asyncio
+
+    import maverick_dashboard._shared as shared
+    from maverick import world_model_backends
+    monkeypatch.setattr(world_model_backends, "is_postgres_configured", lambda: True)
+
+    def _boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(shared, "_world", _boom)
+    ol._CONSUMED_TX_IDS.clear()
+
+    assert asyncio.run(ol._consume_tx_once("tx-Z", ol._now() + 600)) is True
+    assert asyncio.run(ol._consume_tx_once("tx-Z", ol._now() + 600)) is False
+    assert "tx-Z" in ol._CONSUMED_TX_IDS  # fell back to in-process recording

@@ -14,3 +14,31 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "feature definition PR"
+consumers = ["ml_engineer", "data_platform_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read spec"
+instruction = "Read the feature request and existing definitions to locate sources, entities, and join keys."
+tools = ["read_file", "repo_map", "knowledge_search"]
+[[workflow]]
+name = "Author feature"
+instruction = "Write the feature definition with point-in-time-correct time-travel joins and backfill logic in the sandbox."
+tools = ["apply_patch", "ast_edit", "str_replace_editor"]
+[[workflow]]
+name = "Test parity"
+instruction = "Run tests comparing online and offline values to confirm parity and zero train/serve skew."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Audit leakage"
+instruction = "Verify backfills respect event-time boundaries so no future data leaks into a training snapshot."
+tools = ["read_file", "code_exec"]
+[[workflow]]
+name = "Open PR"
+instruction = "Open a pull request for the ML engineer and platform lead to review before any feature-service deploy."
+gate = "review"

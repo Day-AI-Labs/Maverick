@@ -33,9 +33,10 @@ on an untrustworthy estimate. Promote only what you can show *caused* the win.
 from __future__ import annotations
 
 import math
-import os
 import random
 from dataclasses import dataclass, field
+
+from .config import env_flag
 
 # Two-sided 95% normal quantile.
 _Z95 = 1.959963984540054
@@ -77,11 +78,9 @@ class EffectEstimate:
 
 def enabled() -> bool:
     """Whether the controller should consult causal effects. OFF by default."""
-    env = os.environ.get("MAVERICK_CAUSAL_PROMOTION", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_CAUSAL_PROMOTION")
+    if _v is not None:
+        return _v
     try:
         from .config import get_self_improvement
 

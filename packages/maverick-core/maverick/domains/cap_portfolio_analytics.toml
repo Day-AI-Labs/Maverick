@@ -10,3 +10,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "place_trade", "execute_fx_trade", "create_order_instruction", "browser"]
 knowledge_sources = ["cap"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "performance attribution & risk pack"
+consumers = ["portfolio_manager", "risk_officer"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Load positions"
+instruction = "Pull the firm's positions, pricing, and benchmark constituents for the portfolios and period under analysis."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Validate data"
+instruction = "Check positions and prices against the firm's books and flag any missing, stale, or mismatched inputs before computing."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Run attribution"
+instruction = "Compute performance attribution, exposure decomposition, and risk metrics versus benchmark and label each figure with its as-of date."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "State assumptions"
+instruction = "Document methodology choices and data gaps plainly rather than papering over them in the narrative."
+[[workflow]]
+name = "Deliver to PM"
+instruction = "Hand the attribution and risk pack to the portfolio manager who owns every decision."
+gate = "review"

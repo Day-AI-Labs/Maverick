@@ -196,7 +196,7 @@ def test_scheduler_leap_day_still_resolves():
 # ---------- llm_cache: row cap eviction ----------
 
 def test_llm_cache_evicts_beyond_max_rows(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db", max_rows=3)
     # Insert 5 distinct keys; cap is 3.
     for i in range(5):
@@ -206,7 +206,7 @@ def test_llm_cache_evicts_beyond_max_rows(tmp_path):
 
 
 def test_llm_cache_eviction_is_lru_keeps_newest(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db", max_rows=2)
     cache.store("hot", provider="p", model="m", text="x")
     # hit_count is intentionally NOT the eviction key. A naive LFU policy
@@ -227,7 +227,7 @@ def test_llm_cache_eviction_is_lru_keeps_newest(tmp_path):
 
 
 def test_llm_cache_unbounded_when_max_rows_zero(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db", max_rows=0)
     for i in range(20):
         cache.store(f"k{i}", provider="p", model="m", text="x")
@@ -248,7 +248,7 @@ def test_cost_router_tolerates_snapshot_without_error_rate(monkeypatch):
         lambda: type("H", (), {"snapshot": staticmethod(
             lambda: [{"provider": "deepseek", "model": "deepseek-chat"}])})(),
     )
-    from maverick.cost_router import CostSignal, pick
+    from maverick.cost.router import CostSignal, pick
     spec = pick(CostSignal())
     assert spec is None or ":" in spec  # no KeyError
 
@@ -520,7 +520,7 @@ def test_compute_fallback_blocks_power_tower(monkeypatch):
 def test_replay_export_skips_bad_goal_id(tmp_path, monkeypatch):
     import json as _json
 
-    import maverick.replay_export as rex
+    import maverick.replay.export as rex
     audit = tmp_path / "audit"
     audit.mkdir()
     f = audit / "2026-05-28.ndjson"

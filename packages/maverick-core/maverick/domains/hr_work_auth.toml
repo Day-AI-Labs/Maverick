@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "I-9 / work-authorization status review"
+consumers = ["hr_manager", "immigration_counsel"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull I-9 records"
+instruction = "Read each I-9 and supporting document set and pull current visa and work-auth status from the HRIS."
+tools = ["read_file", "deel_read"]
+[[workflow]]
+name = "Check completeness"
+instruction = "Verify Section 1 and 2 completeness, signatures, and timeliness against IRCA requirements and flag missing or expired fields."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Track expirations"
+instruction = "Identify work-auth and visa documents nearing expiration and assemble the reverification timeline."
+tools = ["read_file", "deel_read"]
+[[workflow]]
+name = "Flag exceptions"
+instruction = "Compile exceptions while applying anti-discrimination rules and never substituting a document choice for the employee."
+[[workflow]]
+name = "Route for decision"
+instruction = "Route flagged cases to the HR manager and immigration counsel for the human verification decision."
+gate = "review"

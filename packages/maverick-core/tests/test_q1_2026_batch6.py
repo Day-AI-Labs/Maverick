@@ -42,7 +42,7 @@ def test_docs_index_landing_exists():
     assert p.is_file()
     body = p.read_text()
     # Landing must mention the project's pitch fields.
-    for keyword in ("Maverick", "Quick start", "Pricing", "Roadmap"):
+    for keyword in ("Lightwork", "Quick start", "Pricing", "Roadmap"):
         assert keyword in body, f"index.md missing section: {keyword}"
 
 

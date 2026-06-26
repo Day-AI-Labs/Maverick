@@ -5,7 +5,7 @@
 elected Technical Steering Committee launches at all depends on the
 foundation-exploration decision
 ([programs/foundation-exploration.md](../programs/foundation-exploration.md))
-and on the licensing position: Maverick is proprietary (LICENSE), so what a
+and on the licensing position: Lightwork is proprietary (LICENSE), so what a
 TSC can govern is **the open surfaces** — the plugin/skill/channel
 ecosystem, the public specs and docs, community programs — not the
 proprietary core's commercial direction, which remains the company's. The

@@ -11,3 +11,32 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "answered query brief with SQL and results"
+consumers = ["business_requester", "analytics_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Clarify question"
+instruction = "Restate the business question and confirm the metric definitions, filters, and time window the requester actually means."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Confirm schema"
+instruction = "Inspect the relevant tables and column meanings so the query joins and grain match the source of truth."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Write query"
+instruction = "Compose read-only SQL that answers the question and run it to produce results."
+tools = ["sql_query"]
+[[workflow]]
+name = "Sanity check"
+instruction = "Validate row counts, nulls, and totals against a known reference to catch grain doubling or silent filter errors."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Explain results"
+instruction = "Draft a plain-language brief with the SQL, the numbers, and each metric's definition and freshness for reviewer sign-off."
+tools = ["read_file"]
+gate = "review"

@@ -24,7 +24,7 @@ code review. No hype slogans.
 | **T-shirt B — "governed"** | Front: wordmark. Back, mono-spaced, three stacked lines: `budget.check()` / `sandbox.exec()` / `audit verify` — the three primitives, each a real call/verb in the runtime |
 | **Sticker pack (die-cut, 3 designs)** | (1) logo mark alone *(blocked on assets)*; (2) text badge `governed · audited · self-hosted`; (3) mono `~/.maverick/HALT` — the killswitch file, the insider joke that's also a real feature |
 | **Terminal mug** | Wrap-around mono print of a real (trimmed) `maverick monitor` plan-tree frame — sourced from an actual run's TUI output, secrets none by construction |
-| **Laptop sleeve sticker — "Built with Maverick"** | Reserved for the [badge program](./badge-program.md): given to verified showcase-wall entrants, not handed out loose, so it stays a signal |
+| **Laptop sleeve sticker — "Built with Lightwork"** | Reserved for the [badge program](./badge-program.md): given to verified showcase-wall entrants, not handed out loose, so it stays a signal |
 | **Speaker/contributor gift** | Higher-grade item (e.g. embroidered wordmark on a quality hoodie) reserved for summit speakers, ambassadors, and merged-PR contributors — scarcity is the point |
 
 Explicitly out: anything with capability claims ("the most X agent"),
@@ -57,7 +57,7 @@ competitor mentions, or invented numbers.
 - Free at events while stocks last; no "star the repo for a shirt"
   ([stars-campaign rules](./github-stars-campaign.md) apply to swag too).
 - Contributor/speaker gifts are sent, not requested.
-- The "Built with Maverick" sticker ships only with a verified badge
+- The "Built with Lightwork" sticker ships only with a verified badge
   ([`badge-program.md`](./badge-program.md)).
 
 ## Measurement

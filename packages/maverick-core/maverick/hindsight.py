@@ -93,7 +93,7 @@ def _store_paths(directory: Path | str | None) -> dict[str, Path]:
     """
     if directory is None:
         from . import dreaming, reflexion
-        from .skill_distillation_local import _STORE
+        from .skill.distillation_local import _STORE
         return {
             "reflexions": reflexion.default_path(),
             "insights": Path(dreaming.insights_path()),
@@ -116,7 +116,7 @@ def _skill_match(goal_text: str, skills_dir: Path, *, min_overlap: float = 0.34)
     if not skills_dir.is_dir():
         return None
     try:
-        from .skill_distillation_v2 import _tokens as _sk_tokens
+        from .skill.distillation_v2 import _tokens as _sk_tokens
     except Exception:  # pragma: no cover
         return None
     gt = _sk_tokens(goal_text)

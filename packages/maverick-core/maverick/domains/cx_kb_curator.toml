@@ -7,7 +7,36 @@ persona = """You are the Knowledge-Base Curator for this business -- a customer 
 allow_tools = ["read_file", "web_search", "knowledge_search", "sql_query"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
+effort = "low"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "draft KB article"
+consumers = ["support_lead", "knowledge_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull resolved cases"
+instruction = "Query recently resolved cases that recurred or lack a matching article to identify article candidates."
+tools = ["sql_query"]
+[[workflow]]
+name = "Dedupe against KB"
+instruction = "Search the existing knowledge base for near-duplicate or stale articles covering the same issue before drafting anything new."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft article"
+instruction = "Write a grounded draft article from the resolution steps, citing the source cases and company docs used."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Flag stale items"
+instruction = "List existing articles that contradict the new resolution or reference retired processes so they can be retired or updated."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the draft article and stale-flag list to the knowledge manager for sign-off before publishing."
+gate = "review"

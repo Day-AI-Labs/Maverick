@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}automations · Maverick{% endblock %}
+{% block title %}automations · Lightwork{% endblock %}
 {% block content %}
 <style>
   .auto { max-width: 880px; margin-inline: auto; }
@@ -56,7 +56,34 @@
   </section>
   {% endif %}
 
-  {% if not scheduling_enabled and not triggers_enabled %}
+  {% if import_enabled %}
+  <section class="auto__section" id="auto-import-section" aria-labelledby="auto-import-h">
+    <div class="section-head">
+      <h2 id="auto-import-h" tabindex="-1">Import from another platform</h2>
+    </div>
+    <p class="auto__hint">Pull a client’s existing automations (n8n, Make, Workato, Power Automate, UiPath) into Lightwork templates. For Zapier/Notion (no exportable definitions), describe the automation as JSON or have it call an inbound webhook.</p>
+    <form id="auto-import-form">
+      <div class="field">
+        <label for="auto-import-source">Platform</label>
+        <select id="auto-import-source" name="source"></select>
+      </div>
+      <div class="field">
+        <label for="auto-import-defs">Exported definitions JSON (optional — leave blank to fetch live)</label>
+        <textarea id="auto-import-defs" name="definitions" rows="6" spellcheck="false" placeholder='[ { "id": "1", "name": "...", "nodes": [...] } ]'></textarea>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="auto-import-webhooks"> Wire inbound webhook triggers for webhook automations</label>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="auto-import-dry"> Preview only (dry run)</label>
+      </div>
+      <button class="btn btn--primary" type="submit">Import</button>
+    </form>
+    <ul class="auto__list" id="auto-import-results" aria-label="Import results"></ul>
+  </section>
+  {% endif %}
+
+  {% if not scheduling_enabled and not triggers_enabled and not import_enabled %}
   <div class="mv-empty">
     <p class="mv-empty__title">Automations are disabled</p>
     <p class="mv-empty__body">Enable <code>[features] scheduling</code> and/or <code>[features] triggers</code> in config to use this page.</p>
@@ -192,6 +219,60 @@
       a.setAttribute('aria-label', 'Run #' + r.goal_id + ' — ' + (r.status || 'pending') + ' — ' + fmtWhen(r.created_at));
       a.title = (r.title || '') + ' · ' + (r.status || '') + ' · ' + fmtWhen(r.created_at);
       into.appendChild(a);
+    });
+  }
+
+  // ---- import from another platform ----
+  var importForm = document.getElementById('auto-import-form');
+  if (importForm) {
+    var sourceSel = document.getElementById('auto-import-source');
+    (async function () {
+      var data;
+      try { data = await (await fetch('/api/v1/import/sources')).json(); } catch (e) { return; }
+      (data.sources || []).forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.source;
+        opt.textContent = s.source + ' (' + s.mode + ')';
+        sourceSel.appendChild(opt);
+      });
+    })();
+    importForm.addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      var results = document.getElementById('auto-import-results');
+      results.textContent = '';
+      var body = {
+        source: sourceSel.value,
+        dry_run: document.getElementById('auto-import-dry').checked,
+        create_webhook_triggers: document.getElementById('auto-import-webhooks').checked,
+      };
+      var raw = document.getElementById('auto-import-defs').value.trim();
+      if (raw) {
+        var parsed;
+        try { parsed = JSON.parse(raw); } catch (e) {
+          results.appendChild(el('li', 'auto__warn', 'Definitions are not valid JSON.'));
+          return;
+        }
+        body.definitions = Array.isArray(parsed) ? parsed : [parsed];
+      }
+      var resp = await fetch('/api/v1/import/run', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        var err = await resp.json().catch(function () { return {}; });
+        results.appendChild(el('li', 'auto__warn', 'Import failed: ' + (err.detail || resp.status)));
+        return;
+      }
+      var out = await resp.json();
+      (out.imported || []).forEach(function (it) {
+        var li = el('li', '');
+        var verb = out.dry_run ? 'would import' : (it.created ? 'imported' : 'skipped');
+        li.appendChild(document.createTextNode(it.name + ' — ' + verb + ' as template ‘' + it.template + '’ (trigger: ' + it.trigger + ')'));
+        if (it.webhook_trigger) li.appendChild(document.createTextNode(' · webhook trigger wired'));
+        if (it.schedule) li.appendChild(document.createTextNode(' · schedule created'));
+        results.appendChild(li);
+      });
+      if (!out.dry_run) { loadSchedules(); loadTriggers(); }
     });
   }
 

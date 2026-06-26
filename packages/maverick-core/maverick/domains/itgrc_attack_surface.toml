@@ -21,3 +21,24 @@ deliverable = "Attack-surface & pen-test findings"
 consumers = ["security_analyst", "ciso"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Map exposure"
+instruction = "Enumerate external-facing hosts, services, and domains from Censys/Shodan exports and prior surface inventories."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Pull scan data"
+instruction = "Read current Qualys and Tenable results to confirm exposed services and known vulnerabilities against the mapped surface."
+tools = ["qualys_read", "tenable_read"]
+[[workflow]]
+name = "Threat model"
+instruction = "Apply STRIDE to the exposed surface to identify likely attack paths and prioritize pen-test focus areas."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft findings"
+instruction = "Compile the attack-surface map, pen-test scope, and prioritized findings with remediation recommendations for the human owner."
+tools = ["read_file"]
+[[workflow]]
+name = "Findings review"
+instruction = "Route the attack-surface and pen-test findings to the security analyst and CISO for review without closing any finding."
+gate = "review"

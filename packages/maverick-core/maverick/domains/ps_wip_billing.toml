@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "draft bill package with write-offs"
+consumers = ["engagement_partner", "billing_coordinator"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull WIP"
+instruction = "Query unbilled time and expense WIP by engagement and read the governing fee arrangements."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Check terms"
+instruction = "Confirm billing rates, caps, and fee terms for each engagement against the contract documents on file."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft bills"
+instruction = "Assemble draft bills from WIP with each proposed write-down or write-off itemized and justified."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag write-offs"
+instruction = "Surface aged WIP, rate mismatches, and write-offs exceeding policy thresholds for partner attention."
+tools = ["sql_query"]
+[[workflow]]
+name = "Partner review"
+instruction = "Route the draft bill package with transparent write-off detail to the engagement partner for review."
+gate = "review"

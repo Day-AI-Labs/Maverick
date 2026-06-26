@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "early-alert risk list"
+consumers = ["academic_advisor", "retention_director"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull risk indicators"
+instruction = "Read the documented risk indicators, attendance flags, and grade alerts for the current cohort from institutional records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Confirm thresholds"
+instruction = "Verify each indicator against the school's documented early-alert thresholds and FERPA disclosure rules so only eligible students are listed."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compile alert list"
+instruction = "Assemble the ranked early-alert roster with the specific cited indicator behind each student's inclusion."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Drop unsupported"
+instruction = "Remove any student whose listing rests on an assumption rather than a documented indicator and note the gap."
+[[workflow]]
+name = "Advisor review"
+instruction = "Route the early-alert list to the retention director and advisors for sign-off before outreach begins."
+gate = "review"

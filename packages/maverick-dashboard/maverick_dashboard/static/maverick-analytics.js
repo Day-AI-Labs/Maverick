@@ -59,7 +59,7 @@
         '<text x="' + (74 + bw).toFixed(1) + '" y="' + (y + 12) + '" font-size="10" fill="' + textColor + '">' + counts[k] + "</text>";
     }).join("");
     return '<svg width="' + w + '" height="' + (labels.length * rowH) + '" role="img" aria-label="goals by status: ' +
-      labels.map((k) => k + " " + counts[k]).join(", ") + '">' + rows + "</svg>";
+      labels.map((k) => esc(k) + " " + counts[k]).join(", ") + '">' + rows + "</svg>";
   }
 
   class MaverickAnalytics extends HTMLElement {

@@ -1,4 +1,4 @@
-"""Dashboard RBAC: admin-managed user roles (admin / operator / viewer).
+"""Dashboard RBAC: admin-managed user roles (admin / operator / auditor / viewer).
 
 This is the dashboard's *access-control* layer and is deliberately distinct from
 the kernel's ``[roles]`` (``maverick.capability``), which only ATTENUATES an
@@ -19,15 +19,38 @@ Store: ``~/.maverick/dashboard-users.json`` (0600), ``{principal: role}``.
 from __future__ import annotations
 
 import json
-import os
+import threading
 from pathlib import Path
 
-ROLES = ("admin", "operator", "viewer")
+ROLES = ("admin", "operator", "auditor", "viewer")
 
+# Serializes a roster load-modify-save in-process; cross_process_lock in
+# _locked() extends it across processes (multiple dashboard workers edit roles).
+_RBAC_LOCK = threading.Lock()
+
+
+def _locked(path: Path):
+    from contextlib import ExitStack
+
+    from maverick.file_lock import cross_process_lock
+    stack = ExitStack()
+    stack.enter_context(_RBAC_LOCK)
+    stack.enter_context(cross_process_lock(path))
+    return stack
+
+# Permission lattice. The "audit" permission gates the audit-trail read surface
+# (/api/v1/audit/*): the who-did-what-when record that can name principals, tool
+# inputs and costs. It is held by "admin" and by the dedicated read-only
+# "auditor" role -- separation of duties, so a compliance reviewer can read the
+# audit log WITHOUT also holding operate/admin (run goals, change settings,
+# manage users). "auditor" deliberately grants NOTHING operational: audit + view
+# only. "operator"/"viewer" do NOT get "audit" -- reading the trail is a
+# distinct grant, not implied by operate.
 _PERMISSIONS: dict[str, frozenset[str]] = {
-    "admin": frozenset({"admin", "operate", "view"}),     # users, settings, secrets, + all
-    "operator": frozenset({"operate", "view"}),           # run/cancel goals, approve, tools
-    "viewer": frozenset({"view"}),                        # read-only
+    "admin": frozenset({"admin", "audit", "operate", "view"}),  # users, settings, secrets, + all
+    "operator": frozenset({"operate", "view"}),                 # run/cancel goals, approve, tools
+    "auditor": frozenset({"audit", "view"}),                    # read audit trail (read-only)
+    "viewer": frozenset({"view"}),                              # read-only
 }
 
 
@@ -72,17 +95,11 @@ def _load() -> dict[str, str]:
 
 
 def _write(data: dict[str, str]) -> None:
-    p = store_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".json.tmp")
-    fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, sort_keys=True)
-    os.replace(tmp, p)
-    try:
-        os.chmod(p, 0o600)
-    except OSError:
-        pass
+    # Unique temp + os.replace (0600): the fixed ".json.tmp" collided between
+    # two concurrent dashboard workers (one os.replace moved it out from under
+    # the other). Cross-process serialization of the RMW is in the mutators.
+    from maverick.file_lock import atomic_write_text
+    atomic_write_text(store_path(), json.dumps(data, indent=2, sort_keys=True))
 
 
 def list_users() -> dict[str, str]:
@@ -100,15 +117,17 @@ def set_role(principal: str, role: str) -> None:
         raise ValueError("empty principal")
     if role not in ROLES:
         raise ValueError("unknown role")
-    data = _load()
-    data[principal] = role
-    _write(data)
+    with _locked(store_path()):
+        data = _load()
+        data[principal] = role
+        _write(data)
 
 
 def remove_user(principal: str) -> None:
-    data = _load()
-    if data.pop((principal or "").strip(), None) is not None:
-        _write(data)
+    with _locked(store_path()):
+        data = _load()
+        if data.pop((principal or "").strip(), None) is not None:
+            _write(data)
 
 
 # --- Per-tenant role memberships ---------------------------------------------
@@ -145,17 +164,9 @@ def _load_tenant() -> dict[str, dict[str, str]]:
 
 
 def _write_tenant(data: dict[str, dict[str, str]]) -> None:
-    p = tenant_store_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".json.tmp")
-    fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, sort_keys=True)
-    os.replace(tmp, p)
-    try:
-        os.chmod(p, 0o600)
-    except OSError:
-        pass
+    from maverick.file_lock import atomic_write_text
+    atomic_write_text(tenant_store_path(),
+                      json.dumps(data, indent=2, sort_keys=True))
 
 
 def get_tenant_role(tenant: str, principal: str) -> str | None:
@@ -171,18 +182,20 @@ def set_tenant_role(tenant: str, principal: str, role: str) -> None:
         raise ValueError("empty tenant or principal")
     if role not in ROLES:
         raise ValueError("unknown role")
-    data = _load_tenant()
-    data.setdefault(tenant, {})[principal] = role
-    _write_tenant(data)
+    with _locked(tenant_store_path()):
+        data = _load_tenant()
+        data.setdefault(tenant, {})[principal] = role
+        _write_tenant(data)
 
 
 def remove_tenant_role(tenant: str, principal: str) -> None:
-    data = _load_tenant()
-    members = data.get((tenant or "").strip())
-    if members and members.pop((principal or "").strip(), None) is not None:
-        if not members:
-            data.pop((tenant or "").strip(), None)
-        _write_tenant(data)
+    with _locked(tenant_store_path()):
+        data = _load_tenant()
+        members = data.get((tenant or "").strip())
+        if members and members.pop((principal or "").strip(), None) is not None:
+            if not members:
+                data.pop((tenant or "").strip(), None)
+            _write_tenant(data)
 
 
 def list_tenant_roles(tenant: str) -> dict[str, str]:

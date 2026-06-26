@@ -4,7 +4,7 @@
 **Status:** kit complete; an instructor adopting it is the remaining
 operational work. Pairs with [`university-outreach.md`](./university-outreach.md)
 — **the educational license grant in that kit's IP note is a prerequisite**
-for running this course (Maverick is proprietary; coursework needs the
+for running this course (Lightwork is proprietary; coursework needs the
 written grant).
 
 A semester course — *Building and Governing Autonomous Agent Systems* — for
@@ -36,8 +36,8 @@ tests.
 | 7 | Safety I: the shield | `docs/safety.md`; `packages/maverick-shield/maverick_shield/` (`builtin_rules.py`, `redteam.py`, `redteam_corpus.jsonl`) | Add ≥5 labeled attack/benign pairs to a corpus copy; run the red-team gate; write up a miss and why the heuristic missed it |
 | 8 | Safety II: capabilities & consent | `capability.py`, `capability_boot.py`, `safety/consent.py`; `tests/test_capability.py`, `test_capability_fuzzer.py` | Run the capability fuzzer; design 2 new probe families; argue (in writing) whether each could leak and verify with the fuzzer |
 | 9 | Audit & compliance engineering | `audit/` (signing, retention, federation); `tests/test_audit_verify_cli.py`, `test_audit_tenancy.py` | Tamper with a copied audit log byte-by-byte; show `maverick audit verify` catching each manipulation class; map which it can't and why |
-| 10 | Context engineering | `compaction.py`, `compaction_plugins.py`, `context_compactor.py`; `tests/test_compaction_plugins.py` | Register a custom compaction strategy; benchmark it against `"heuristic"` on a fixed transcript corpus (tokens kept vs. task success) |
-| 11 | Multi-tenancy & isolation | `workspace.py`, `paths.py`, `tenant_kms.py`; `tests/test_multitenant_isolation.py` | Extend the isolation suite with one new cross-tenant probe; explain the tenant wall it exercises |
+| 10 | Context engineering | `compaction/__init__.py`, `compaction/plugins.py`, `context_compactor.py`; `tests/test_compaction_plugins.py` | Register a custom compaction strategy; benchmark it against `"heuristic"` on a fixed transcript corpus (tokens kept vs. task success) |
+| 11 | Multi-tenancy & isolation | `workspace.py`, `paths.py`, `tenant/kms.py`; `tests/test_multitenant_isolation.py` | Extend the isolation suite with one new cross-tenant probe; explain the tenant wall it exercises |
 | 12 | Evaluation & the honest benchmark | `benchmarks/` (`harness.py`, `EVAL.md`, `RESULTS.md` conventions) | Run one benchmark multi-seed under a cap; submit measured rows + an analysis that states variance and limitations |
 
 **Weeks 13-15 (if the term allows): project block** — teams pick from the

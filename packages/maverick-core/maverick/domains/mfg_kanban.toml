@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "kanban right-size proposal"
+consumers = ["materials_manager", "production_supervisor"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull loops"
+instruction = "Read the current kanban loops with their card counts, container quantities, and replenishment policies via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull demand"
+instruction = "Query recent consumption, lead time, and demand variability for each part in the loops."
+tools = ["sql_query"]
+[[workflow]]
+name = "Recompute sizing"
+instruction = "Recalculate required card and container counts from demand, lead time, and safety buffer for each loop."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag mismatches"
+instruction = "Flag loops that are starved or overstocked versus computed need and propose the right-size adjustment."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Planner review"
+instruction = "Route the right-size proposal to the materials manager for approval before any loop change."
+gate = "review"

@@ -1,4 +1,4 @@
-# Maverick — Product Portfolio & Pricing (Working Draft)
+# Lightwork — Product Portfolio & Pricing (Working Draft)
 
 > **Purpose:** an internal working doc to (1) show the full scope of what's been
 > built, (2) pick product/tier/pack **names**, and (3) seed the website.
@@ -10,7 +10,7 @@
 
 ## The shape — 4 products
 
-1. **Maverick Platform** — the core. Sold good-better-best: **Basic / Gold / Platinum**.
+1. **Lightwork Platform** — the core. Sold good-better-best: **Basic / Gold / Platinum**.
 2. **Specialized Agent Packs** — turnkey departments of agents (Finance, Tax, …), priced as add-ons by group.
 3. **Fleet Governance & Memory** — govern + learn from agents you didn't build. Stands alone.
 4. **Custom Work** — bespoke agents, regime packs, regulated deployment, outcome-priced labor.
@@ -20,7 +20,7 @@ is plumbing *inside* Product 1, not a separate thing to sell.
 
 > **Data & learning principle (non-negotiable).** Each customer's usage improves
 > *their own* isolated workforce — on their own data, inside their own boundary.
-> Maverick never pools, aggregates, or learns across customers: no hivemind, no
+> Lightwork never pools, aggregates, or learns across customers: no hivemind, no
 > telemetry, and one tenant's learning never feeds another's runs. The compounding
 > benefit is the *customer's* (a bespoke, portable, sticky instance they own); our
 > defensibility is the specialist packs, the governance/compliance control plane,
@@ -30,7 +30,29 @@ is plumbing *inside* Product 1, not a separate thing to sell.
 
 ---
 
-## Product 1 — Maverick Platform
+## Canonical naming, editions & SKU map
+
+> **This document is the single source of truth for product names, editions,
+> tiers, and SKUs.** Three *independent* axes describe what a customer gets — do
+> not conflate them:
+
+| Axis | Values | What it means | Defined in |
+|---|---|---|---|
+| **Edition** (distribution) | **Community** *(planned — not yet shipped)* · **Enterprise** *(available now)* | Open-core split: a future stripped-down community on-ramp vs. the licensed commercial build. | [`enterprise/editions.md`](./enterprise/editions.md) |
+| **Platform tier** (commercial pricing, within Enterprise) | **Basic · Gold · Platinum** | The good/better/best pricing tiers in this doc. | This doc (canonical) |
+| **Billing-plan key** (multi-tenant entitlement) | `free` · `pro` · `enterprise` | Technical plan IDs an operator assigns *per tenant* for feature gating + quotas (`maverick.billing.DEFAULT_PLANS`) — **not** the sales-tier names. | Code (`billing.py`) |
+
+Working tier labels (Basic/Gold/Platinum) are placeholders pending the
+[Naming worksheet](#naming-worksheet). The earlier exploration in
+[`research/commercialization/02-packaging-pricing-editions.md`](./research/commercialization/02-packaging-pricing-editions.md)
+used **Community / Team / Enterprise** and a **$120K** entry-enterprise floor;
+that teardown is **superseded by this document** for current naming and numbers
+(the Platinum floor here is **$200K**). All pricing remains a directional
+hypothesis — see the note at the top.
+
+---
+
+## Product 1 — Lightwork Platform
 
 The governed agent platform itself. Each tier is a **superset** of the one below.
 Basic makes agents *work and stay safe*; Gold makes them *pass a security/compliance
@@ -46,6 +68,7 @@ environments*.
 | Hard budget caps | Set a dollar / time / token ceiling per run; the system stops itself before it overspends. | ✓ | ✓ | ✓ |
 | Sandboxed execution (local + Docker) | Agents run code in an isolated container instead of on your machine, so nothing escapes. | ✓ | ✓ | ✓ |
 | Skills + Knowledge (RAG) | Agents reuse learned "recipes" and answer grounded in *your* documents, with citations. | ✓ | ✓ | ✓ |
+| Primary-source data grounding | Analyst packs are auto-granted 37 read-only public-data connectors (SEC EDGAR, FRED, Treasury, Census, BLS, openFDA, CourtListener, ...) so answers cite authoritative primary sources, not just model recall. On by default; kill-switch + wizard step. | ✓ | ✓ | ✓ |
 | 17 channels + Dashboard + CLI + MCP | Reach it from Slack/Teams/email/etc., a web dashboard, the terminal, or inside Cursor/Claude Code. | ✓ | ✓ | ✓ |
 | Agent Shield | Screens every input, tool call, and output for prompt-injection, jailbreaks, and data theft. | Built-in rules | Full | Full |
 | SSO/OIDC + RBAC + capability tokens | Log in with corporate identity; every agent gets least-privilege permissions it physically cannot exceed. | — | ✓ | ✓ |
@@ -60,7 +83,7 @@ environments*.
 | Framework packs + regulatory content | Pre-built control mappings for HIPAA, ISO 42001, model-risk (SR 11-7), and a FedRAMP path. | — | — | ✓ |
 | KMS / BYOK encryption-at-rest | Your data encrypted with your own keys; one tenant's key can never open another's. | — | — | ✓ |
 | Air-gap / confidential-compute | Runs fully disconnected for classified/regulated environments, with a one-command readiness check. | — | — | ✓ |
-| Federation / A2A | Link multiple Maverick deployments (or other vendors' agents) into one coordinated, governed fleet. | — | — | ✓ |
+| Federation / A2A | Link multiple Lightwork deployments (or other vendors' agents) into one coordinated, governed fleet. | — | — | ✓ |
 | High-isolation sandboxes | Stronger isolation (microVMs, gVisor, Kubernetes) for untrusted or sensitive workloads. | — | — | ✓ |
 | Support | — | Community | Standard SLA | Dedicated CSM + premium SLA |
 
@@ -83,7 +106,7 @@ environments*.
 **What a "pack" is:** a turnkey department of specialist agents. Each agent has a
 fixed job, a least-privilege tool set, a risk ceiling, and a built-in maker-checker
 discipline — it **drafts and recommends; a credentialed human reviews and commits**.
-You don't prompt-engineer them; you switch them on. **1,118 agents across 32 packs.**
+You don't prompt-engineer them; you switch them on. **2,020 agents across 53 suites.**
 
 Packs attach to any platform tier and get *more* valuable on Gold/Platinum (the
 governance and learning layers wrap around them).
@@ -212,7 +235,7 @@ A governed memory + oversight plane for agents you *didn't* build — Agentforce
 Copilot, custom in-house agents, open-source runtimes. They deposit their experience
 into one roster-gated, Shield-scanned, tenant-isolated memory and recall lessons
 from it; every read is audited, and value is broken out **per vendor**. It sells even
-to organizations that never run Maverick's own runtime, which is what makes it a
+to organizations that never run Lightwork's own runtime, which is what makes it a
 standalone product and not just a platform feature.
 
 **Pricing — starting point:** **$75K / yr** standalone, or **included at Platinum**.
@@ -221,7 +244,7 @@ standalone product and not just a platform feature.
 
 ## Product 4 — Custom Work (Professional Services)
 
-Bespoke labor powered by the **Agent Factory** (a business describes itself → Maverick
+Bespoke labor powered by the **Agent Factory** (a business describes itself → Lightwork
 synthesizes a validated, fail-closed custom department pack):
 
 - Custom agent / department authoring for a specific business.
@@ -264,7 +287,7 @@ placeholders.)
 | Thing | Current placeholder | Proposed name |
 |---|---|---|
 | The company | Daybreak Labs | |
-| The platform | Maverick Platform | |
+| The platform | Lightwork Platform | |
 | Tier 1 | Basic | |
 | Tier 2 | Gold | |
 | Tier 3 | Platinum | |
@@ -288,6 +311,6 @@ placeholders.)
 - **Don't meter the audit log or charge per-agent** — it punishes the exact behavior
   a recursive swarm exists to produce. Agent count is a soft tier *band*, never a
   multiplier (see the commercialization doc, "What would kill us").
-- The 32 packs all pass the quality gate (`maverick domains-lint`): every agent has a
+- The 53 suites all pass the quality gate (`maverick domains-lint`): every agent has a
   bounded persona, a least-privilege allow-list, an explicit deny-list, and a risk
-  ceiling — 0 errors, 0 warnings across all 1,118.
+  ceiling — 0 errors, 0 warnings across all 2,020.

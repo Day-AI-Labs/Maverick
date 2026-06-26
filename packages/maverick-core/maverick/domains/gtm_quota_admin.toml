@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gtm"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "quota & crediting roster with exceptions"
+consumers = ["sales_operations", "revops_director", "compensation_admin"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Gather inputs"
+instruction = "Pull the approved quota model, territory assignments, and crediting rules from company source documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify rules"
+instruction = "Reconcile each rep's quota and crediting allocation against approved policy and cite the source used."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Log exceptions"
+instruction = "Document every split, override, or exception with its rationale and the approver of record."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag conflicts"
+instruction = "Surface double-credits, uncovered territories, or unapproved overrides that would corrupt the comp run."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to ops"
+instruction = "Hand the quota and crediting roster with documented exceptions to sales operations for sign-off."
+gate = "review"

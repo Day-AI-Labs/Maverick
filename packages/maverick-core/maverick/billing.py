@@ -16,6 +16,8 @@ built-in defaults are the last-resort fallback.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 
 from .quotas import UsageLedger
@@ -79,15 +81,40 @@ class Invoice:
     subtotal: float = 0.0
     total: float = 0.0
     currency: str = "USD"
+    # Deterministic idempotency key for (tenant, period, currency). A downstream
+    # payment/AR step can use it to charge a given tenant-period at most once, so
+    # re-running generate_invoice never double-bills the same period.
+    invoice_id: str = ""
 
     def to_dict(self) -> dict:
         return {
             "tenant": self.tenant,
+            "invoice_id": self.invoice_id,
             "period_start": self.period_start, "period_end": self.period_end,
             "currency": self.currency,
             "subtotal": self.subtotal, "total": self.total,
             "line_items": [li.to_dict() for li in self.line_items],
         }
+
+
+def _invoice_id(tenant: str | None, period_start: str, period_end: str,
+                currency: str) -> str:
+    """Stable idempotency key for one tenant's **closed** billing period.
+
+    Keyed on identity (tenant + period + currency), NOT on the amount, so the
+    same logical invoice keeps the same id across re-runs -- that is exactly what
+    lets a payment integration dedup.
+
+    Returns ``""`` for an **open-ended** period (a missing ``period_start`` or
+    ``period_end``): that invoice means "all usage so far", whose total grows as
+    usage accrues, so a deterministic key would let a deduping processor charge
+    the first (smaller) run and silently drop later, larger ones -- under-billing.
+    Pass both bounds (close the period) to get a safe dedup key."""
+    if not period_start or not period_end:
+        return ""
+    key = json.dumps([tenant or "", period_start, period_end, currency],
+                     separators=(",", ":"))
+    return "inv_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
 
 def _in_period(day: str, since: str | None, until: str | None) -> bool:
@@ -130,9 +157,11 @@ def rate_ledger(
             ))
     subtotal = round(sum(li.charge for li in items), 6)
     total = round(max(subtotal, card.minimum_charge), 6)
+    period_start, period_end = since or "", until or ""
     return Invoice(
-        tenant=tenant, period_start=since or "", period_end=until or "",
+        tenant=tenant, period_start=period_start, period_end=period_end,
         line_items=items, subtotal=subtotal, total=total, currency=card.currency,
+        invoice_id=_invoice_id(tenant, period_start, period_end, card.currency),
     )
 
 
@@ -157,6 +186,10 @@ class Entitlements:
 
 
 # Last-resort defaults; operators override via ``[billing.plans]`` in config.
+# These keys (free/pro/enterprise) are the technical *billing-plan IDs* an operator
+# assigns per tenant for feature gating + quotas -- a different axis from the
+# Basic/Gold/Platinum sales tiers and the Community/Enterprise editions. Canonical
+# naming + SKU map: docs/product-portfolio.md ("Canonical naming, editions & SKU map").
 DEFAULT_PLANS: dict[str, Entitlements] = {
     "free": Entitlements("free", frozenset({"core"}), 5.0, 1),
     "pro": Entitlements("pro", frozenset({"core", "grpc", "channels"}), 100.0, 5),
@@ -192,10 +225,28 @@ def entitled(plan: str, feature: str) -> bool:
     return feature in entitlements_for(plan).features
 
 
+def known_plan_names() -> set[str]:
+    """Plan IDs an operator may legitimately assign: the built-in defaults plus
+    any defined in the ``[billing.plans]`` config section.
+
+    Used to catch a mistyped plan name -- ``entitlements_for`` silently falls
+    back to the ``free`` entitlements for an unknown plan, so a typo (``pr`` for
+    ``pro``) would otherwise leave a tenant under-entitled with no signal."""
+    names = set(DEFAULT_PLANS)
+    try:
+        from .config import load_config
+        plans = ((load_config() or {}).get("billing") or {}).get("plans") or {}
+        if isinstance(plans, dict):
+            names.update(str(k) for k in plans)
+    except Exception:  # pragma: no cover -- never block on config
+        pass
+    return names
+
+
 def tenant_entitled(tenant_id: str, feature: str) -> bool:
     """Whether the tenant's registered plan includes ``feature``. Unknown
     tenants get the ``free`` entitlements."""
-    from .tenant_registry import get_tenant
+    from .tenant.registry import get_tenant
     rec = get_tenant(tenant_id)
     return entitled(rec.plan if rec else "free", feature)
 
@@ -220,7 +271,7 @@ def feature_allowed(feature: str, *, tenant: str | None = None) -> bool:
         tid = tenant or _active_tenant_id()
         if not tid:
             return True
-        from .tenant_registry import get_tenant
+        from .tenant.registry import get_tenant
         rec = get_tenant(tid)
         if rec is None:
             return True

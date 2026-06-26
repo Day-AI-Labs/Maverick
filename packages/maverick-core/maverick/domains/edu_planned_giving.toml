@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "planned-gift stewardship dossier"
+consumers = ["gift_officer", "development_director"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory instruments"
+instruction = "Read planned-gift records to inventory each bequest, trust, and annuity with its donor, terms, and documented intent."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map obligations"
+instruction = "Identify each instrument's stewardship and reporting obligations against the gift agreement and institutional policy."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag due actions"
+instruction = "Build a schedule of upcoming stewardship touches and reporting dates and flag any obligation that is overdue or undocumented."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to gift officer"
+instruction = "Hand the stewardship dossier to the gift officer for review before any donor contact or commitment."
+gate = "review"

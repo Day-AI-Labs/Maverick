@@ -17,7 +17,7 @@
 - **Self-hosted LLM** (vLLM/Ollama/TGI) or **enterprise mode** (egress lock):
   no LLM sub-processor — inference stays on the customer's infrastructure. State
   that explicitly here when it applies.
-- Maverick **scrubs secrets** from logs/audit/exports before they leave the
+- Lightwork **scrubs secrets** from logs/audit/exports before they leave the
   process (`maverick.secrets`); document this as a data-minimization control.
 - Update this list and notify the customer **before** adding a sub-processor, per
   the DPA's change-notification clause.

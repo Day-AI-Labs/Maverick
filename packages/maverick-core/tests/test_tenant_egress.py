@@ -1,7 +1,7 @@
 """Per-tenant egress policy plane (ROADMAP platform spine)."""
 from __future__ import annotations
 
-from maverick import tenant_egress as te
+from maverick.tenant import egress as te
 
 
 def test_no_policy_allows_all():

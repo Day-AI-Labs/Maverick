@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "3PL invoice audit & dispute schedule"
+consumers = ["logistics_manager", "accounts_payable"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull invoices"
+instruction = "Query the 3PL invoices and line-item charges for the billing period under review."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Load contract rates"
+instruction = "Retrieve the contracted rate tables and accessorial schedules from the company knowledge base."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Reconcile to activity"
+instruction = "Match each invoice line to shipment activity data and recompute the expected charge from contracted rates."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag overbilling"
+instruction = "Isolate lines where billed amounts exceed contracted rates or lack supporting activity and quantify each variance."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route disputes"
+instruction = "Compile the dispute schedule with cited evidence and send to the logistics manager for sign-off before any claim is raised."
+gate = "review"

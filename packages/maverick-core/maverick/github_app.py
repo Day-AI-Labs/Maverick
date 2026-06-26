@@ -290,6 +290,12 @@ def _origin_full_name(workdir: Path) -> str:
     return m.group(1) if m else ""
 
 
+# Per-call timeout for the local git plumbing below. Matches the timeouts the
+# clone/push helpers already use; without it a hung git (stalled NFS, wedged
+# index.lock, hung credential helper) blocks the webhook handler indefinitely.
+_GIT_TIMEOUT = 60
+
+
 async def process_issue(
     payload: WebhookPayload,
     *,
@@ -327,10 +333,17 @@ async def process_issue(
 
     # Create the branch in the clone before the agent starts so its
     # commits land where we expect.
-    subprocess.run(
-        ["git", "-C", str(workdir), "checkout", "-b", branch_name],
-        check=True, capture_output=True,
-    )
+    try:
+        subprocess.run(
+            ["git", "-C", str(workdir), "checkout", "-b", branch_name],
+            check=True, capture_output=True, timeout=_GIT_TIMEOUT,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        from .secrets import scrub
+        return PRResult(
+            branch_name=branch_name, pr_url=None, workdir=workdir,
+            summary="", error=scrub(f"branch checkout failed: {e}"),
+        )
 
     from .budget import Budget
     from .llm import LLM
@@ -352,37 +365,46 @@ async def process_issue(
         gid, sandbox=sandbox, max_depth=3,
     )
 
-    # If the agent committed anything, push + open PR.
-    diff_out = subprocess.run(
-        ["git", "-C", str(workdir), "diff", "--cached", "--quiet"],
-        capture_output=True,
-    )
-    # Returncode 1 = changes staged; 0 = nothing staged.
-    has_staged = diff_out.returncode == 1
-    if not has_staged:
-        # Auto-add everything modified so a sloppy agent run still
-        # produces a PR (operator can review the diff).
-        subprocess.run(
-            ["git", "-C", str(workdir), "add", "-A"],
-            check=False, capture_output=True,
-        )
-        # Empty changeset -> no PR.
-        check = subprocess.run(
+    # If the agent committed anything, push + open PR. A hung git here must not
+    # wedge the handler forever -- time-box each call and surface a timeout as a
+    # clean result (the run's work is preserved in the summary).
+    try:
+        diff_out = subprocess.run(
             ["git", "-C", str(workdir), "diff", "--cached", "--quiet"],
-            capture_output=True,
+            capture_output=True, timeout=_GIT_TIMEOUT,
         )
-        if check.returncode == 0:
-            return PRResult(
-                branch_name=branch_name, pr_url=None, workdir=workdir,
-                summary=summary,
-                error="agent finished but produced no changes",
+        # Returncode 1 = changes staged; 0 = nothing staged.
+        has_staged = diff_out.returncode == 1
+        if not has_staged:
+            # Auto-add everything modified so a sloppy agent run still
+            # produces a PR (operator can review the diff).
+            subprocess.run(
+                ["git", "-C", str(workdir), "add", "-A"],
+                check=False, capture_output=True, timeout=_GIT_TIMEOUT,
             )
+            # Empty changeset -> no PR.
+            check = subprocess.run(
+                ["git", "-C", str(workdir), "diff", "--cached", "--quiet"],
+                capture_output=True, timeout=_GIT_TIMEOUT,
+            )
+            if check.returncode == 0:
+                return PRResult(
+                    branch_name=branch_name, pr_url=None, workdir=workdir,
+                    summary=summary,
+                    error="agent finished but produced no changes",
+                )
 
-    subprocess.run(
-        ["git", "-C", str(workdir), "commit", "-m",
-         f"Maverick: address #{payload.issue_number}"],
-        check=False, capture_output=True,
-    )
+        subprocess.run(
+            ["git", "-C", str(workdir), "commit", "-m",
+             f"Maverick: address #{payload.issue_number}"],
+            check=False, capture_output=True, timeout=_GIT_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as e:
+        from .secrets import scrub
+        return PRResult(
+            branch_name=branch_name, pr_url=None, workdir=workdir,
+            summary=summary, error=scrub(f"git timed out staging changes: {e}"),
+        )
 
     pr_title = f"Maverick: {payload.issue_title[:60]}"
     pr_body = (

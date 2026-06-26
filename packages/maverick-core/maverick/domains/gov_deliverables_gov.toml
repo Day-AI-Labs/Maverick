@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "CDRL deliverable status tracker"
+consumers = ["program_manager", "contracts_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Extract CDRLs"
+instruction = "Read the contract CDRL list and DD Form 1423s to capture each data item, its DID, and its due frequency."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build schedule"
+instruction = "Build a deliverable schedule mapping each CDRL to its next due date and required approval authority."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Match submissions"
+instruction = "Match each submission and acceptance record against its CDRL to confirm what was delivered and accepted."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Flag at-risk"
+instruction = "Flag deliverables that are late, rejected, or missing an acceptance record so the program can act before a cure notice."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the updated deliverable tracker to the program manager for review of at-risk items."
+gate = "review"

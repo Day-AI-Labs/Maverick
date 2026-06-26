@@ -1,7 +1,7 @@
 # Oversight experience — audit & plan
 
 > The strategic UX bet: the **supervisor / oversight experience** is both
-> Maverick's biggest experience gap and its competitive moat (see
+> Lightwork's biggest experience gap and its competitive moat (see
 > [`strategy/competitive-landscape.md`](../strategy/competitive-landscape.md)).
 > This note audits what exists and lays out the plan to make one experience
 > excellent rather than thirty pages adequate.

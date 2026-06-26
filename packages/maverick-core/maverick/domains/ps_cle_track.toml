@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "CLE/CPE compliance status by professional"
+consumers = ["compliance_manager", "practice_partner"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull completions"
+instruction = "Query recorded CLE/CPE credits earned per professional with course dates and credit types."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Load requirements"
+instruction = "Retrieve the credit requirements, deadlines, and ethics minimums for each jurisdiction the professional is licensed in."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Reconcile credits"
+instruction = "Match earned credits against per-jurisdiction requirements and compute the remaining shortfall by category."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag at-risk"
+instruction = "Identify professionals at risk of missing a reporting deadline and rank by days remaining to the cycle close."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Compliance review"
+instruction = "Route the compliance status table to the compliance manager for follow-up with at-risk professionals."
+gate = "review"

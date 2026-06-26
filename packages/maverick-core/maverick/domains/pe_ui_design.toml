@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "UI design and handoff spec"
+consumers = ["product_manager", "frontend_engineer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather requirements"
+instruction = "Read the product brief, user flows, and design-system tokens that constrain the interface."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Survey patterns"
+instruction = "Research comparable interaction patterns and accessibility conventions for this surface."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft wireframes"
+instruction = "Draft the wireframes and prototype states covering the primary and empty or error flows."
+[[workflow]]
+name = "Check consistency"
+instruction = "Verify the design honors the design system and flags any new component that lacks a token or pattern."
+tools = ["read_file"]
+[[workflow]]
+name = "Handoff review"
+instruction = "Package the design-to-code handoff spec for product and engineering to sign off."
+gate = "review"

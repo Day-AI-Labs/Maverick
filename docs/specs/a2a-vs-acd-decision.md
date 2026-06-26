@@ -4,9 +4,9 @@
 
 ## The question
 
-Roadmap **B3** was an open decision: should Maverick describe its agent
+Roadmap **B3** was an open decision: should Lightwork describe its agent
 capabilities with the open **A2A (Agent2Agent) Agent Card**, or with a
-**homegrown ACD** (Agent Capability Descriptor) — a Maverick-specific spec that
+**homegrown ACD** (Agent Capability Descriptor) — a Lightwork-specific spec that
 the roadmap had penciled in as `docs/specs/acd.md` (Q4 2026), then `ACD spec
 v1.0` (2027 H2) and `v1.1` (2028 H2)?
 
@@ -14,7 +14,7 @@ v1.0` (2027 H2) and `v1.1` (2028 H2)?
 
 **Adopt the A2A Agent Card. Cut the homegrown ACD entirely.** Do not author
 `docs/specs/acd.md`; remove ACD as a roadmap workstream and fold its only real
-goal — "let other agents discover what Maverick can do" — into A2A, which already
+goal — "let other agents discover what Lightwork can do" — into A2A, which already
 ships.
 
 ## Why

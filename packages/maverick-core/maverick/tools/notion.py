@@ -64,7 +64,11 @@ def _client():
             "Notion-Version": _API_VERSION,
             "Content-Type": "application/json",
         },
-        timeout=30.0, follow_redirects=True,
+        # follow_redirects=False: the Bearer token is a client default header,
+        # which httpx replays across a cross-origin 30x (it strips only the
+        # `auth=` param, not header creds) -- an open-redirect off api.notion.com
+        # would exfiltrate the token to another host.
+        timeout=30.0, follow_redirects=False,
     )
 
 

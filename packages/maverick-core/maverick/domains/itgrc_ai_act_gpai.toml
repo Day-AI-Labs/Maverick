@@ -18,3 +18,24 @@ deliverable = "EU AI Act GPAI duties package"
 consumers = ["compliance_officer", "ciso"]
 cadence = "annual"
 gate = "approval"
+
+[[workflow]]
+name = "Scope GPAI duties"
+instruction = "Read the model's release posture and capabilities to determine which Article 53 and 55 GPAI and systemic-risk duties apply."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map obligations"
+instruction = "Map each applicable duty to the GPAI Code of Practice and current Article 53 and 55 text, citing the source for each."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Assess artifacts"
+instruction = "Assess the training-data summary and copyright policy against their required form and flag gaps or weaknesses."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Draft duties package"
+instruction = "Draft the GPAI duties package with a proposed systemic-risk tier and the evidence a human will attest to."
+tools = ["read_file"]
+[[workflow]]
+name = "Owner attests"
+instruction = "Route the package to the compliance officer to finalize the systemic-risk tier and sign any attestation or filing."
+gate = "approval"

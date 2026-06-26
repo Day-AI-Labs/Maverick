@@ -19,6 +19,12 @@ Safety:
   - ``MAVERICK_COMPUTER_DISABLE=1`` env var disables the tool entirely
     (kill switch for production deployments where the user wants the
     agent capability but not actual mouse control).
+  - Host-safety guard (opt-in): when sandboxing is required --
+    ``MAVERICK_COMPUTER_REQUIRE_SANDBOX=1`` or enterprise mode -- the tool
+    refuses to drive the display unless ``MAVERICK_COMPUTER_ALLOW_HOST=1`` is
+    set or ``DISPLAY`` is explicitly pointed at the same non-host display named
+    by ``MAVERICK_COMPUTER_DISPLAY``. Off by default: behavior is unchanged
+    unless explicitly required.
 """
 from __future__ import annotations
 
@@ -30,7 +36,8 @@ import tempfile
 import time
 from typing import Any
 
-from ..safety.action_gate import gate_computer_action
+from ..safety.action_evidence import seal_bracketed
+from ..safety.action_gate import computer_action_risk, gate_computer_action
 from . import Tool
 
 log = logging.getLogger(__name__)
@@ -346,6 +353,68 @@ _PYAUTOGUI_ACTIONS = {
 }
 
 
+# X11 :0 is the local console -- the operator's real seat.
+_DEFAULT_HOST_DISPLAYS = frozenset({":0", ":0.0"})
+
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def _host_guard_required() -> bool:
+    """True when computer-use is REQUIRED to be sandboxed.
+
+    Opt-in only: the explicit ``MAVERICK_COMPUTER_REQUIRE_SANDBOX=1`` flag, or
+    enterprise mode. With neither set this is False and the guard is a no-op, so
+    default behavior is unchanged (kernel rule 1: fail open).
+    """
+    if os.environ.get("MAVERICK_COMPUTER_REQUIRE_SANDBOX", "").strip().lower() in _TRUTHY:
+        return True
+    try:
+        from ..enterprise import enterprise_enabled
+        return enterprise_enabled()
+    except Exception:
+        # enterprise module absent/broken must never make the tool fail closed.
+        return False
+
+
+def _host_drive_allowed() -> bool:
+    """True when it is safe to drive this display.
+
+    Safe means an explicit operator override (``MAVERICK_COMPUTER_ALLOW_HOST=1``)
+    or that the process ``DISPLAY`` has actually been pointed at the same
+    non-host display named by ``MAVERICK_COMPUTER_DISPLAY``. Merely setting the
+    Maverick-specific variable is not enough because screenshot and input
+    backends read the real ``DISPLAY`` environment variable.
+    """
+    if os.environ.get("MAVERICK_COMPUTER_ALLOW_HOST", "").strip().lower() in _TRUTHY:
+        return True
+    display = (os.environ.get("DISPLAY") or "").strip()
+    configured_display = (os.environ.get("MAVERICK_COMPUTER_DISPLAY") or "").strip()
+    return (
+        bool(display)
+        and display == configured_display
+        and display not in _DEFAULT_HOST_DISPLAYS
+    )
+
+
+def _host_safety_error() -> str | None:
+    """ERROR string if sandboxing is required but this looks like the host
+    display; otherwise None (proceed). No-op unless the guard is required."""
+    if not _host_guard_required():
+        return None
+    if _host_drive_allowed():
+        return None
+    display = (os.environ.get("DISPLAY") or "").strip() or "(unset)"
+    return (
+        "ERROR: computer-use refused -- sandboxing is required "
+        "(MAVERICK_COMPUTER_REQUIRE_SANDBOX=1 or enterprise mode) and this looks "
+        f"like the operator's real display (DISPLAY={display}). Run the agent "
+        "against a remote/sandboxed display by setting DISPLAY to the same "
+        "non-host value as MAVERICK_COMPUTER_DISPLAY (for example, both :99), "
+        "or, only if you intend to "
+        "drive this machine, set MAVERICK_COMPUTER_ALLOW_HOST=1."
+    )
+
+
 def _run_computer_action(args: dict[str, Any]) -> str:
     if os.environ.get("MAVERICK_COMPUTER_DISABLE") == "1":
         return "ERROR: computer-use tool disabled by MAVERICK_COMPUTER_DISABLE=1"
@@ -356,6 +425,15 @@ def _run_computer_action(args: dict[str, Any]) -> str:
     # validating the schema get a clear error even without optional deps.
     if action not in _VALID_ACTIONS:
         return f"ERROR: unknown action {action!r}"
+
+    # Host-safety guard: when sandboxing is REQUIRED (explicit flag or enterprise
+    # mode) refuse to read/drive what looks like the operator's real display
+    # unless an override or a remote display is configured. Opt-in -- a no-op by
+    # default, so kernel rule 1 (fail open) holds. Sits alongside the
+    # MAVERICK_COMPUTER_DISABLE kill switch above.
+    host_error = _host_safety_error()
+    if host_error is not None:
+        return host_error
 
     # Per-action approval gate (mutating actuations only -- clicks/keystrokes/
     # drag). No-op in the default auto-approve consent mode; routes the action
@@ -388,6 +466,14 @@ def _run_computer_action(args: dict[str, Any]) -> str:
 
     handler = _PYAUTOGUI_ACTIONS.get(action)
     if handler is not None:
+        if computer_action_risk(action, args) == "high":
+            # Bracket a high-risk actuation with sealed before/after captures
+            # (no-op unless screenshot sealing is configured).
+            return seal_bracketed(
+                _screenshot_png_b64,
+                lambda: handler(pyautogui, coord, args),
+                action=f"computer.{action}",
+            )
         return handler(pyautogui, coord, args)
 
     # Defense in depth -- _VALID_ACTIONS guard at the top should make

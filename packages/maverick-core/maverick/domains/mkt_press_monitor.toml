@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Daily press clips & sentiment digest"
+consumers = ["comms_lead", "marketing_manager"]
+cadence = "daily"
+
+[[workflow]]
+name = "Scan coverage"
+instruction = "Search for new mentions and coverage of the company and key executives since the last digest."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Verify mentions"
+instruction = "Confirm each item genuinely references the company and capture outlet, date, and source link."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Score sentiment"
+instruction = "Classify each clip by sentiment and reach, logging the basis for any negative rating."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag responses"
+instruction = "Flag items needing a response, escalation, or correction with a short note on why."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Compile digest"
+instruction = "Compile the dated clips digest with sentiment summary and a prioritized flag list for the comms lead."
+tools = ["spreadsheet"]

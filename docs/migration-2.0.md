@@ -1,4 +1,4 @@
-# Maverick 2.0 migration playbook
+# Lightwork 2.0 migration playbook
 
 **Roadmap refs:** 2028-H1 "2.0 stable release" + "migration playbook".
 This playbook is the operator-facing half; the changes themselves are

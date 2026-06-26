@@ -1,4 +1,4 @@
-# RFC 0001: Maverick 2.0
+# RFC 0001: Lightwork 2.0
 
 - Status: **Draft — open for comment**
 - Tracking: roadmap item "2.0 RFC" (2027-H2 Distribution)

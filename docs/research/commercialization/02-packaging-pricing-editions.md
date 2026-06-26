@@ -5,6 +5,12 @@
 > table for an **agent-governance + regulated-deployment** product positioned
 > against OneTrust. Companion to `regulated-deployment-and-compliance-platform.md`
 > and `agentic-os-and-enterprise-analysis.md`. External figures flagged **[verify]**.
+>
+> **Status (superseded for naming & numbers):** exploratory teardown. For current
+> product naming, editions, tiers, and pricing,
+> [`docs/product-portfolio.md`](../../product-portfolio.md) is canonical — it
+> supersedes the **Community/Team/Enterprise** labels and the **$120K** floor used
+> below (current tiers are Basic/Gold/Platinum; Platinum floor $200K).
 
 ## Bottom line
 

@@ -21,3 +21,23 @@ deliverable = "Vulnerability register"
 consumers = ["security_analyst", "ciso"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Aggregate findings"
+instruction = "Pull and de-duplicate scanner findings across assets from Qualys, Tenable, and Rapid7 for the cycle."
+tools = ["qualys_read", "tenable_read", "rapid7_read"]
+[[workflow]]
+name = "Enrich severity"
+instruction = "Enrich each finding with current CVSS, EPSS, KEV, and SSVC signals to establish exploitability and exposure."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Prioritize SLAs"
+instruction = "Rank findings and map them to remediation SLA tiers, flagging KEV and overdue items for escalation."
+tools = ["read_file"]
+[[workflow]]
+name = "Draft register"
+instruction = "Draft the prioritized vulnerability register with recommended remediation owners and target dates for human review."
+[[workflow]]
+name = "Route to security"
+instruction = "Route the register to the security analyst for review and remediation tasking, never closing findings directly."
+gate = "review"

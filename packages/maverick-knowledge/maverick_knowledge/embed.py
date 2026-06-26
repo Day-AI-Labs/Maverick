@@ -81,7 +81,13 @@ class HostedEmbedder:
         # vectors back to their input chunks (a reordered batch would otherwise
         # pair chunk text with the wrong vector and silently corrupt the index).
         data = sorted(r.json()["data"], key=lambda d: d.get("index", 0))
-        return [d["embedding"] for d in data]
+        vectors = [d["embedding"] for d in data]
+        if len(vectors) != len(texts):
+            raise ValueError(
+                f"embedding API returned {len(vectors)} vectors for "
+                f"{len(texts)} inputs; refusing to misalign the index"
+            )
+        return vectors
 
 
 class CohereEmbedder:
@@ -122,9 +128,13 @@ class CohereEmbedder:
         body = r.json()
         # v2 nests vectors under embeddings.float; v1 returned a flat list.
         embeddings = body.get("embeddings", body)
-        if isinstance(embeddings, dict):
-            return embeddings["float"]
-        return embeddings
+        vectors = embeddings["float"] if isinstance(embeddings, dict) else embeddings
+        if len(vectors) != len(texts):
+            raise ValueError(
+                f"embedding API returned {len(vectors)} vectors for "
+                f"{len(texts)} inputs; refusing to misalign the index"
+            )
+        return vectors
 
 
 def build_embedder(cfg: dict | None = None) -> Embedder:

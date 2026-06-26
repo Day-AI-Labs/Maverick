@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "listing accuracy & gap report"
+consumers = ["merchandising_manager", "ecommerce_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull listings"
+instruction = "Query current product listings, attributes, and channel feeds for the catalog in scope."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Check source"
+instruction = "Verify titles, specs, pricing, and imagery against the company's product master and merchandising guidelines."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Find gaps"
+instruction = "Flag missing attributes, inconsistencies across channels, and listings drifting from approved content."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft fixes"
+instruction = "Propose specific listing corrections per channel with the source justification for each change."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the proposed corrections to the merchandising manager for review before any catalog update."
+gate = "review"

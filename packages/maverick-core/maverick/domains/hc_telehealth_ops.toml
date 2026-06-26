@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "telehealth visit readiness board"
+consumers = ["telehealth_coordinator", "clinic_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull schedule"
+instruction = "Query the day's telehealth visits with patient platform, device, and connection details."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Run tech checks"
+instruction = "Verify each visit against the tech-check protocol for link, consent, and device readiness."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag at-risk"
+instruction = "Flag visits missing consent, with failed connection tests, or lacking documentation setup."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Track docs flow"
+instruction = "Reconcile completed visits against required visit documentation to surface open charting gaps."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Coordinator review"
+instruction = "Route the readiness board to the telehealth coordinator to resolve flagged visits before start."
+gate = "review"

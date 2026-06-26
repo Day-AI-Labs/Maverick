@@ -135,8 +135,8 @@ def test_export_without_events_400(client, world):
 
 @pytest.fixture
 def render_stub(monkeypatch):
-    """Stub maverick.replay_video.render (the encode half needs ffmpeg)."""
-    from maverick import replay_video
+    """Stub maverick.replay.video.render (the encode half needs ffmpeg)."""
+    from maverick.replay import video as replay_video
     calls = []
 
     def fake_render(goal_id, out_path, *, sandbox=None, events=None, fps=25):
@@ -179,7 +179,7 @@ def test_export_writes_video_and_captions(client, world, home, render_stub):
 
 def test_export_reports_unencoded_honestly(client, world, monkeypatch):
     """No Pillow/ffmpeg -> encoded=false, no video name, command included."""
-    from maverick import replay_video
+    from maverick.replay import video as replay_video
     def fake_render(goal_id, out_path, *, sandbox=None, events=None, fps=25):
         return SimpleNamespace(
             frames=len(events or []), frame_dir=out_path.parent,

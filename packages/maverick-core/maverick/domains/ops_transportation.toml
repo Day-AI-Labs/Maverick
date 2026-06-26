@@ -15,3 +15,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_logistics"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "carrier & routing recommendation"
+consumers = ["transportation_planner", "logistics_manager"]
+cadence = "daily"
+gate = "approval"
+
+[[workflow]]
+name = "Pull shipment data"
+instruction = "Read open orders, lanes, freight rates, and live shipment ETAs for the planning window."
+tools = ["read_file", "flexport_read", "samsara_read", "easypost_read"]
+[[workflow]]
+name = "Optimize routes"
+instruction = "Build optimized route and load plans that consolidate volume against service windows and cost."
+[[workflow]]
+name = "Apply constraints"
+instruction = "Validate plans against hazmat-routing and hours-of-service constraints and flag any violation rather than bypassing it."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Recommend carriers"
+instruction = "Rank carriers per lane on cost, capacity, and on-time performance and audit recent freight charges for discrepancies."
+tools = ["flexport_read"]
+[[workflow]]
+name = "Route to dispatch"
+instruction = "Route the drafted carrier and routing recommendation to the planner for human-authorized tender."
+gate = "approval"

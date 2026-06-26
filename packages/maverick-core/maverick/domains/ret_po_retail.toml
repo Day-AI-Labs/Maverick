@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "open PO status & exception log"
+consumers = ["buyer", "supply_planner"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull open POs"
+instruction = "Query open purchase orders with order dates, promised delivery dates, and quantities from the PO system."
+tools = ["sql_query"]
+[[workflow]]
+name = "Match receipts"
+instruction = "Reconcile each PO against goods-received records to identify undelivered, partial, and overdue lines."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Verify terms"
+instruction = "Confirm promised dates and quantities against the supplier's PO confirmation documents in knowledge before flagging an exception."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build exception list"
+instruction = "Compile late, short, and at-risk POs with supplier, days overdue, and last known status into the exception log."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to buyer"
+instruction = "Submit the status table and exception log to the buyer for chase-and-escalation decisions."
+gate = "review"

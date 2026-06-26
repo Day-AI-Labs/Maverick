@@ -33,6 +33,7 @@ import logging
 import time
 from pathlib import Path
 
+from .paths import data_dir
 from .tax_prep import (
     FILING_STATUSES,
     STATE_CODES,
@@ -43,7 +44,7 @@ from .tax_prep import (
 log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-_LEGACY_DIR = Path.home() / ".maverick"
+_LEGACY_DIR = data_dir()
 _BUNDLE_NAME = "tax-constants.json"
 _STAMP_NAME = ".tax-constants-check"
 
@@ -295,17 +296,20 @@ def apply_bundle(envelope: dict, *, trusted: list[str] | None = None,
         return False, "bundle failed sanity validation: " + "; ".join(problems)
     new_version = int(payload["version"])
     p = path if path is not None else bundle_path()
-    current = active_version() if path is None else _file_version(p)
-    if new_version <= current:
-        return False, (f"bundle v{new_version} is not newer than the applied "
-                       f"v{current} (downgrades are refused)")
-    p.parent.mkdir(parents=True, exist_ok=True)
-    if p.exists():
-        p.replace(p.with_suffix(p.suffix + ".prev"))
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(json.dumps(envelope, indent=2, default=str),
-                   encoding="utf-8")
-    tmp.replace(p)
+    # Serialize the downgrade-check + .prev backup + write across processes:
+    # without it two concurrent applies can both pass the `new_version <=
+    # current` gate and interleave the backup/rename, clobbering the .prev
+    # rollback copy. The fixed ".tmp" likewise collides between two writers.
+    from .file_lock import atomic_write_text, cross_process_lock
+    with cross_process_lock(p):
+        current = active_version() if path is None else _file_version(p)
+        if new_version <= current:
+            return False, (f"bundle v{new_version} is not newer than the applied "
+                           f"v{current} (downgrades are refused)")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if p.exists():
+            p.replace(p.with_suffix(p.suffix + ".prev"))
+        atomic_write_text(p, json.dumps(envelope, indent=2, default=str))
     try:
         from .audit import EventKind, record
         record(EventKind.LEARNING_UPDATE, agent="tax_constants",

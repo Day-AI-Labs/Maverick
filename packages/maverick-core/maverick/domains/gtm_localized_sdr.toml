@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "localized outbound sequence draft"
+consumers = ["sdr_manager", "sales_rep"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope locale"
+instruction = "Read the target locale, account list, and motion brief to fix language, etiquette norms, and applicable consent regime."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Resolve consent rule"
+instruction = "Research the per-jurisdiction consent regime and apply the strictest-wins rule, excluding any opted-out or non-consenting party."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft in language"
+instruction = "Draft the in-language outbound and inbound messages adapted to local business etiquette with AI disclosure in the recipient's language."
+[[workflow]]
+name = "Localization QA"
+instruction = "Check the draft for fluency, cultural fit, and that no weaker local rule was substituted for a stricter one."
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the localized sequence draft to the SDR manager for review before any human sends it."
+gate = "review"

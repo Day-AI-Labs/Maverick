@@ -30,6 +30,7 @@ from .openai_provider import OpenAIClient
 class VLLMClient(OpenAIClient):
     DEFAULT_MODEL = "vllm"
     PRICE_MODEL_PREFIX = "vllm:"  # self-hosted: unknown ids price $0
+    USAGE_REQUIRED = False  # local server may omit usage; $0 -> nothing to enforce
 
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         key = api_key or os.environ.get("VLLM_API_KEY") or "vllm-no-auth"

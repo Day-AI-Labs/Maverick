@@ -17,7 +17,7 @@ network port unless you enable a channel that needs one (WhatsApp/SMS).
 
 **Available now:** native single-file builds (PyInstaller) and a
 Tauri-based GUI installer for users who don't open terminals — see the
-[latest release](https://github.com/Day-AI-Labs/Maverick/releases/latest).
+[latest release](https://github.com/Day-AI-Labs/Lightwork/releases/latest).
 Both are currently **unsigned** (first launch shows an "unknown
 developer" prompt); code signing + notarization are still coming.
 
@@ -51,18 +51,18 @@ The `vps` deployment target generates:
 - Config under `/etc/maverick/config.toml` (`MAVERICK_CONFIG` env)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Day-AI-Labs/Maverick/main/deploy/vps/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Day-AI-Labs/Lightwork/main/deploy/vps/install.sh | sudo bash
 sudo systemctl enable --now maverick
 ```
 
 ## Phone (companion mode)
 
-Maverick itself runs on Desktop or VPS — your phone is a frontend that
+Lightwork itself runs on Desktop or VPS — your phone is a frontend that
 talks to it through one of the channels below. This avoids the cost,
 privacy, and capability tradeoffs of running an agent on the phone
 itself, while keeping parity with the desktop experience.
 
-Start the channel server on whichever machine Maverick runs on:
+Start the channel server on whichever machine Lightwork runs on:
 
 ```bash
 maverick serve
@@ -132,7 +132,7 @@ Multiple channels can be enabled at once; each runs in its own async task.
 **WhatsApp / SMS (require public webhook):**
 
 1. Sign up at twilio.com; verify a sender
-2. Run Maverick on a VPS (you need a public HTTPS endpoint)
+2. Run Lightwork on a VPS (you need a public HTTPS endpoint)
 3. Caddyfile in `deploy/vps/Caddyfile` shows the reverse-proxy pattern
 4. `maverick init`, enable whatsapp/sms, paste Twilio creds + from number
 5. In Twilio console, set the webhook URL to

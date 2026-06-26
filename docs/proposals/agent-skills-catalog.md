@@ -1,6 +1,6 @@
 # Agent skills catalog
 
-> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,118 lint-clean agents across 26 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
+> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 2,020 lint-clean agents across 53 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
 
 
 **Status:** in progress — the per-agent skill profiles for the eight agent suites
@@ -10,7 +10,7 @@ the **skills it should have** — from baseline (Word/Excel/email) to deep, name
 litigation procedure, fix data/automation errors in Salesforce). This installment covers the
 **Finance** suite; the remaining seven follow (§ Remaining suites).
 
-> **How a "skill" is delivered in Maverick.** Each skill below maps to one (or more) of three
+> **How a "skill" is delivered in Lightwork.** Each skill below maps to one (or more) of three
 > real mechanisms the platform already has:
 > - an installable **`SKILL.md`** (procedural know-how — the skills system, `skills.py` +
 >   the marketplace index) — *e.g. "3-way-match procedure", "ASC 606 5-step recognition"*;
@@ -33,7 +33,7 @@ JD: <one-line job description>
 - Technical:  data/query/coding/quant skills
 - Domain:     the body of knowledge + methods/frameworks
 - Regulatory: the laws/standards it must know
-- Maverick:   the control-discipline skills specific to its risk (the gates it must respect)
+- Lightwork:   the control-discipline skills specific to its risk (the gates it must respect)
 ```
 Not every line applies to every agent. **Baseline bundles** (below) are assumed and not
 repeated per agent — an entry lists only what it *adds* on top.
@@ -59,7 +59,7 @@ applied to the council-added and updated entries below and roll out to the rest 
   (RAG retrieval) · PDF/document extraction (OCR).
 - **Collaboration:** the company chat (Slack/Teams) · the relevant ticketing/PM tool ·
   file management (SharePoint/Drive).
-- **Maverick platform fluency:** using tools correctly within its capability scope ·
+- **Lightwork platform fluency:** using tools correctly within its capability scope ·
   respecting the **consent/HITL gates** · producing **drafts for human review** · writing to
   the **audit trail** · saying **"unverified"** when evidence is missing rather than guessing.
 
@@ -132,7 +132,7 @@ JD: Owns the period-end close — drafts journal entries, runs reconciliations a
 - Technical: **SQL against the GL/sub-ledger DB (Oracle, SQL Server)** to pull the trial balance & JE detail · the CoA/dimension data model · advanced Excel (Power Query, pivots) `[S]`.
 - Domain: US GAAP / IFRS · R2R close mechanics (accruals, prepaids, reclasses) · balance-sheet reconciliations · **flux/variance analysis** · close-checklist management `[K]`.
 - Regulatory: **SOX §404 (ICFR)** · audit-trail/evidence discipline `[K]`.
-- Maverick: stage-not-post · SoD vs AP/AR · cite the source document for every entry.
+- Lightwork: stage-not-post · SoD vs AP/AR · cite the source document for every entry.
 
 #### 1.2 Accounts Payable Agent  [UB +Data]
 JD: Procure-to-pay — ingests invoices, runs the 3-way match, codes and stages payment batches.
@@ -140,14 +140,14 @@ JD: Procure-to-pay — ingests invoices, runs the 3-way match, codes and stages 
 - Technical: SQL AP queries · **3-way-match logic** (PO↔receipt↔invoice) · duplicate/anomaly detection · vendor-bank-change detection `[S]`.
 - Domain: P2P cycle · expense recognition (GAAP) · 1099/W-9, W-8 · accruals at close `[K]`.
 - Regulatory: **OFAC payee screening** · SOX AP controls `[K]`.
-- Maverick: payment-staging gate · ghost-vendor/duplicate checks · invoices ingested through the shield (poisoned-PDF defense).
+- Lightwork: payment-staging gate · ghost-vendor/duplicate checks · invoices ingested through the shield (poisoned-PDF defense).
 
 #### 1.3 Accounts Receivable & Collections Agent  [UB +Data +Reach]
 JD: Order-to-cash — invoices, cash application, AR aging, dunning, bad-debt flags.
 - Systems: NetSuite · **Stripe, Chargebee, Zuora** (billing) · bank feeds (Plaid, Modern Treasury) · CRM (customer context) `[C]`.
 - Technical: SQL AR · **cash-application matching** · aging analysis · DSO computation `[S]`.
 - Domain: O2C · ASC 606 basics · **CECL / allowance for doubtful accounts** · collections/dunning strategy `[K]`.
-- Maverick: collections comms gated (outbound) · write-offs `require_human` · SoD vs cash custody.
+- Lightwork: collections comms gated (outbound) · write-offs `require_human` · SoD vs cash custody.
 
 #### 1.4 Payroll Agent  [UB +Data]
 JD: Gross-to-net — validates pay changes, computes payroll, reconciles the register, drafts payroll-tax filings.
@@ -155,28 +155,28 @@ JD: Gross-to-net — validates pay changes, computes payroll, reconciles the reg
 - Technical: **gross-to-net calculation** · garnishment & 401(k)/benefits deductions · payroll-register-to-GL reconciliation · multi-state allocation `[S]`.
 - Domain: **FLSA** (wage/hour) · payroll tax (941, W-2, state/local) · off-cycle & retro pay `[K]`.
 - Regulatory: IRS, state payroll tax, FLSA, garnishment law `[K]`.
-- Maverick: **highest-PII compartment** (encryption) · run-payroll & bank-detail edits `require_human` · SoD.
+- Lightwork: **highest-PII compartment** (encryption) · run-payroll & bank-detail edits `require_human` · SoD.
 
 #### 1.5 Fixed Assets Agent  [UB +Data]
 JD: Asset accounting — register, depreciation, capitalization, impairment, disposals.
 - Systems: ERP FA modules (**SAP Asset Accounting, NetSuite FAM, Oracle Assets**) · asset/lease systems `[C]`.
 - Technical: **book depreciation** (SL/DDB/units-of-production) · **parallel tax book — MACRS, bonus §168(k), §179** + book-tax difference (feeds 4.1) · CWIP & **capitalized interest (ASC 835-20)** `[S]`.
 - Domain: capitalization policy & useful lives · **ASC 360 impairment (two-step recoverability)** vs **ASC 350 goodwill** · **ASC 410 ARO** · disposals/transfers `[K]`.
-- Maverick: capitalize-vs-expense threshold · disposal `require_human`.
+- Lightwork: capitalize-vs-expense threshold · disposal `require_human`.
 
 #### 1.6 Revenue Recognition Agent  [UB +Data]
 JD: ASC 606 — reads contracts, runs the 5-step model, builds deferred-revenue schedules.
 - Systems: Salesforce/CPQ · **Zuora / Stripe Billing / Zuora Revenue (RevPro)** · ERP rev JE · contract repository `[C]`.
 - Technical: contract analysis · **deferred-revenue & rev-waterfall schedules** · SSP allocation · variable-consideration estimates `[S]`.
 - Domain: **ASC 606 / IFRS 15 (5-step)** · **ASC 340-40 (capitalized commissions / costs to obtain & fulfill)** · variable-consideration constraint · significant financing component · material right/breakage · bill-and-hold · contract mods · principal-vs-agent `[K]`.
-- Maverick: cite the contract clause · flag judgmental calls (SSP, variable consideration).
+- Lightwork: cite the contract clause · flag judgmental calls (SSP, variable consideration).
 
 #### 1.7 Intercompany & Consolidations Agent  [UB +Data]
 JD: Multi-entity consolidation — eliminations, FX translation, minority interest, consolidated statements.
 - Systems: **Oracle FCCS, OneStream, SAP Group Reporting, Workiva** · multi-book ERP *(Hyperion HFM / SAP BPC = legacy)* `[C]`.
 - Technical: **intercompany eliminations** · **FX translation (CTA)** · allocations · entity-tree roll-up `[S]`.
 - Domain: **ASC 810** (consolidation — **voting-interest *and* VIE** models) · **ASC 805** (business combinations / PPA / goodwill / NCI at FV) · **ASC 323** (equity method) · **ASC 350** (goodwill impairment) · **ASC 830 / IAS 21** (FX, incl. CTA recycling on disposal) `[K]`.
-- Maverick: intercompany nets to zero or it's a finding · tenancy-respecting cross-entity reads.
+- Lightwork: intercompany nets to zero or it's a finding · tenancy-respecting cross-entity reads.
 
 #### 1.8 Expense & T&E Agent  [UB +Data]
 JD: Audits expense reports & corporate-card spend against policy; drafts the accrual.
@@ -184,35 +184,35 @@ JD: Audits expense reports & corporate-card spend against policy; drafts the acc
 - Technical: policy-rule checking · card-statement reconciliation · duplicate/personal-spend detection `[S]`.
 - Domain: T&E policy · IRS **accountable-plan** rules · per-diem `[K]`.
 - Regulatory: **PCI-DSS** (card tokens, never PAN) `[K]`.
-- Maverick: reimbursement `require_human` · SoD vs AP.
+- Lightwork: reimbursement `require_human` · SoD vs AP.
 
 #### 1.9 Cost Accounting & Inventory Agent  [UB +Data]
 JD: Standard/actual costing, inventory valuation, manufacturing variances, COGS.
 - Systems: ERP cost modules (**SAP CO/Product Costing, NetSuite, Oracle Cost Mgmt**) · MES/WMS (read) `[C]`.
 - Technical: **standard- & actual-cost roll-ups** (BOM/routing) · **variance analysis** (PPV, usage, labor, overhead absorption) · inventory valuation calc `[S]`.
 - Domain: **ASC 330** cost accounting · **FIFO/weighted-avg (lower-of-cost-or-NRV); LIFO (US-only, LIFO reserve + conformity rule, LCM)** · absorption costing + abnormal-idle-capacity expensing · variance capitalization · **E&O reserves** · landed cost `[K]`.
-- Maverick: write-downs/revaluations & cycle-count adjustments `require_human` · SoD vs warehouse custody.
+- Lightwork: write-downs/revaluations & cycle-count adjustments `require_human` · SoD vs warehouse custody.
 
 #### 1.10 Lease Accounting Agent  [UB +Data]
 JD: ASC 842 / IFRS 16 — classification, ROU/liability schedules, remeasurement.
 - Systems: **LeaseQuery, Visual Lease, Nakisa** · ERP lease JE `[C]`.
 - Technical: **ROU-asset & lease-liability schedules** · incremental-borrowing-rate (IBR) determination · remeasurement on modification `[S]`.
 - Domain: **ASC 842 / IFRS 16** · finance-vs-operating classification · **embedded-lease** detection · short-term/low-value elections `[K]`.
-- Maverick: classification judgment flagged · modifications gated.
+- Lightwork: classification judgment flagged · modifications gated.
 
 #### 1.11 Account Reconciliation Agent  [UB +Data]
 JD: The independent "reconcile" duty — reconciles BS accounts, ages items, certifies completeness.
 - Systems: **BlackLine, FloQast** · bank portals · ERP + all sub-ledgers (read both sides) `[C]`.
 - Technical: **reconciliation matching** · reconciling-item aging · subledger-to-GL tie-outs · bank reconciliation `[S]`.
 - Domain: balance-sheet reconciliations · suspense/clearing accounts · escheatment-trigger awareness `[K]`.
-- Maverick: **independence — cannot post the adjustments it finds** (closes the SoD loop) · stale items escalate.
+- Lightwork: **independence — cannot post the adjustments it finds** (closes the SoD loop) · stale items escalate.
 
 #### 1.12 Financial Master-Data & CoA Governance Agent  [UB +Data]
 JD: Integrity of financial master data — CoA, cost/profit centers, dimensions, entities, bank master.
 - Systems: ERP master data · **MDM (SAP MDG, Reltio)** · mapping tables `[C]`.
 - Technical: dedup · **local↔group CoA mapping** · validation rules · dimension governance `[S]`.
 - Domain: chart-of-accounts design · cost/profit-center hierarchies · legal-entity structure `[K]`.
-- Maverick: all master-data changes `require_human` (drives every report) · SoD vs transaction recording.
+- Lightwork: all master-data changes `require_human` (drives every report) · SoD vs transaction recording.
 
 ### Tower 2 — FP&A
 
@@ -221,35 +221,35 @@ JD: Budget vs actuals, variance analysis with narrative, board/management report
 - Systems: **Anaplan, Workday Adaptive, Pigment** (EPM) · ERP actuals · BI (Power BI/Tableau/Looker) `[C]`.
 - Technical: **variance/bridge analysis** · driver-based models · SQL + advanced Excel · board-deck building (PowerPoint) `[S]`.
 - Domain: budgeting/planning · **unit economics & KPIs** · management reporting · cohort analysis `[K]`.
-- Maverick: cite the source query · state assumptions · read-only on the plan of record.
+- Lightwork: cite the source query · state assumptions · read-only on the plan of record.
 
 #### 2.2 Forecasting Agent  [UB +Data]
 JD: Driver-based revenue/expense/headcount forecasts, scenario & sensitivity modeling, backtesting.
 - Systems: EPM (Adaptive/Anaplan) · FRED / market-data feeds `[C]`.
 - Technical: **driver-based & statistical forecasting** (Python: statsmodels/Prophet) · scenario/sensitivity modeling · **backtesting & error reporting** `[S]`.
 - Domain: forecasting methodology · seasonality · confidence intervals `[K]`.
-- Maverick: label estimates · methodology + confidence stated · sandboxed compute.
+- Lightwork: label estimates · methodology + confidence stated · sandboxed compute.
 
 #### 2.3 Cash-Flow & Liquidity Forecasting Agent  [UB +Data]
 JD: The 13-week cash forecast, working-capital analysis, liquidity/runway.
 - Systems: bank feeds (Plaid, Modern Treasury) · TMS · AP/AR sub-ledgers `[C]`.
 - Technical: **13-week direct cash-flow model** · working-capital metrics (**DSO/DPO/DIO/CCC**) · burn/runway `[S]`.
 - Domain: liquidity management · cash-conversion cycle `[K]`.
-- Maverick: cannot sweep/transfer (feeds Treasury) · assumptions explicit.
+- Lightwork: cannot sweep/transfer (feeds Treasury) · assumptions explicit.
 
 #### 2.4 CapEx & Capital-Planning Agent  [UB +Data]
 JD: Capital budgeting & appraisal — business cases, ROI, capex tracking, post-investment review.
 - Systems: EPM/capital-planning · ERP (capex) · procurement (capex POs) `[C]`.
 - Technical: **NPV / IRR / payback / discounted-payback** · business-case modeling · capex-vs-actual tracking `[S]`.
 - Domain: capital budgeting · capex-vs-opex classification · hurdle rates / WACC `[K]`.
-- Maverick: capital approval `require_human` per DoA · hands assets to FA.
+- Lightwork: capital approval `require_human` per DoA · hands assets to FA.
 
 #### 2.5 Workforce & Headcount-Cost Planning Agent  [UB +Data]
 JD: People-cost planning — headcount plans, comp modeling, attrition, plan-to-actual.
 - Systems: HRIS (read — Workday/BambooHR) · EPM · payroll actuals `[C]`.
 - Technical: **compensation modeling** (salary/bonus/benefits/payroll-tax/equity loading) · hiring-plan phasing · attrition modeling `[S]`.
 - Domain: workforce planning · span-of-control · cost-per-head `[K]`.
-- Maverick: high-PII · read-only HRIS · comp data least-privilege.
+- Lightwork: high-PII · read-only HRIS · comp data least-privilege.
 
 ### Tower 3 — Treasury
 
@@ -259,28 +259,28 @@ JD: Daily cash positioning, proposes sweeps/funding, monitors debt covenants.
 - Technical: **cash positioning** across accounts · covenant calculation · short-term liquidity forecasting · **bank-fee analysis (AFP codes)** · pooling (ZBA/notional) `[S]`.
 - Domain: liquidity & working capital · **debt covenants** · **SOFR / post-LIBOR (term SOFR, ARRC fallbacks)** · bank-account management (BAM) / FBAR · **ISO 20022 migration** `[K]`.
 - Regulatory: bank KYC `[K]`.
-- Maverick: **propose-not-send** (denies wire/ACH/release) · dual approval over DoA threshold · covenant breach → alert.
+- Lightwork: **propose-not-send** (denies wire/ACH/release) · dual approval over DoA threshold · covenant breach → alert.
 
 #### 3.2 Investments / Portfolio Agent  [UB +Data]
 JD: Manages the corporate investment portfolio per the IPS — researches, prices, proposes allocations.
 - Systems: **Interactive Brokers (IBKR — already wired)** · **Bloomberg Terminal** · custodian APIs `[C]`.
 - Technical: **portfolio analytics** (yield, **duration & convexity, OAS, yield-to-worst**, credit) · pricing · **investment accounting (ASC 320 HTM/AFS/trading, ASC 321 equity, ASC 326-30 AFS credit losses)** · **MMF Rule 2a-7** `[S]`.
 - Domain: money-market & **fixed-income** instruments · the **Investment Policy Statement** · FINRA/SEC basics for corporate investing `[K]`.
-- Maverick: **trade-propose-not-execute** (denies order tools, verbatim from `finance.toml`) · IPS limit enforcement · egress pinned to IBKR hosts.
+- Lightwork: **trade-propose-not-execute** (denies order tools, verbatim from `finance.toml`) · IPS limit enforcement · egress pinned to IBKR hosts.
 
 #### 3.3 FX & Hedging Agent  [UB +Data]
 JD: Quantifies currency exposure, proposes hedges, supports hedge-accounting docs.
 - Systems: IBKR/bank FX · ERP exposure data · FX-rate feeds `[C]`.
 - Technical: **exposure quantification** (transaction, translation/**net-investment**, economic) · **hedge-effectiveness testing** · instruments (forwards, options, collars, **cross-currency swaps, NDFs**) `[S]`.
 - Domain: **ASC 815 / IFRS 9 hedge accounting + ASU 2017-12** (the three hedge types; portfolio-layer; contemporaneous designation) · SOFR transition `[K]`.
-- Maverick: hedge execution `require_human` · effectiveness method cited.
+- Lightwork: hedge execution `require_human` · effectiveness method cited.
 
 #### 3.4 Capital Markets & Debt Agent  [UB +Data]
 JD: Debt/lease schedules, interest/amortization, covenant compliance, refinancing models.
 - Systems: debt register · market-rate feeds · agent/bank statements `[C]`.
 - Technical: **effective-interest amortization** · refinancing/issuance models · covenant tests (**leverage, FCCR, DSCR/ICR**) · borrowing-base/maturity-ladder `[S]`.
 - Domain: **ASC 470 (modification vs extinguishment 10% test, issuance costs), ASC 470-20 + ASU 2020-06 (convertibles), ASC 815-15 (embedded derivatives)** · SOFR · capital structure · credit ratings `[K]`.
-- Maverick: covenant breaches escalate · any draw/issuance `require_human`.
+- Lightwork: covenant breaches escalate · any draw/issuance `require_human`.
 
 ### Tower 4 — Tax
 
@@ -289,7 +289,7 @@ JD: ASC 740 — current/deferred provision, ETR reconciliation, deferred-tax bal
 - Systems: **ONESOURCE Tax Provision, Corptax** · ERP trial balance · prior returns `[C]`.
 - Technical: **current & deferred tax computation** · **effective-tax-rate reconciliation** · DTA/DTL roll-forward · valuation-allowance analysis `[S]`.
 - Domain: **ASC 740 / IAS 12** · book-tax differences · **uncertain tax positions (ASC 740-10)** · **OECD Pillar Two / GloBE 15% min tax, GILTI/FDII/BEAT, §163(j), CAMT** · valuation-allowance (4 sources) · intraperiod allocation (740-20) · APB 23 `[K]`.
-- Maverick: positions cite authority · uncertain positions flagged · ties to the GL provision JE.
+- Lightwork: positions cite authority · uncertain positions flagged · ties to the GL provision JE.
 
 #### 4.2 Tax Compliance & Filing-Prep Agent  [UB +Data]
 JD: Prepares (not files) income, sales & use, VAT/GST returns; validates nexus/taxability.
@@ -297,58 +297,58 @@ JD: Prepares (not files) income, sales & use, VAT/GST returns; validates nexus/t
 - Technical: **nexus & taxability determination** · return preparation · tax-collected-vs-remitted reconciliation `[S]`.
 - Domain: **sales & use / VAT / GST / income tax** · jurisdiction rules · filing calendar `[K]`.
 - Regulatory: IRS, state & local, multi-jurisdiction indirect tax `[K]`.
-- Maverick: **filing & remittance always `require_human`** · jurisdiction rule cited.
+- Lightwork: **filing & remittance always `require_human`** · jurisdiction rule cited.
 
 #### 4.3 Transfer Pricing Agent  [UB +Data]
 JD: Tests intercompany pricing for arm's-length, maintains BEPS documentation.
 - Systems: benchmarking DBs (**TP Catalyst / RoyaltyStat**) · intercompany ledger `[C]`.
 - Technical: **arm's-length / comparables analysis** · TP-method selection · adjustment modeling `[S]`.
 - Domain: **OECD BEPS** · master file / local file / **CbCR** · TP methods (CUP, TNMM, etc.) `[K]`.
-- Maverick: method & comparables cited · adjustments routed to Consolidations.
+- Lightwork: method & comparables cited · adjustments routed to Consolidations.
 
 ### Tower 5 — Risk, Controls & Assurance
 
 #### 5.1 SOX / Internal Controls (ICFR) Agent  [UB +Assess]
 JD: Maintains the RCM, tests control operating effectiveness, tracks deficiencies, monitors SoD/ITGCs.
-- Systems: **AuditBoard, Workiva, ServiceNow GRC** · the **Maverick audit log** (as control evidence) `[C]`.
+- Systems: **AuditBoard, Workiva, ServiceNow GRC** · the **Lightwork audit log** (as control evidence) `[C]`.
 - Technical: **control testing & sampling** · evidence evaluation · **SoD-conflict analysis** · ITGC testing (access/change/ops) `[S]`.
 - Domain: **SOX §302/§404** · **COSO 2013** (5 components/17 principles) · the Risk-Control Matrix · COBIT/ITGC `[K]`.
-- Maverick: **independence (read-only)** · the assessment flow (`start_assessment`→`answer_question`→`finalize_assessment`) — *today's shipped templates are `pia`/`aira`/`vendor_risk`; `sox_control`/`itgc` are templates to author* · deficiency = finding for a human owner.
+- Lightwork: **independence (read-only)** · the assessment flow (`start_assessment`→`answer_question`→`finalize_assessment`) — *today's shipped templates are `pia`/`aira`/`vendor_risk`; `sox_control`/`itgc` are templates to author* · deficiency = finding for a human owner.
 
 #### 5.2 Internal Audit Agent  [UB +Assess]
 JD: Risk-based audit planning, fieldwork, workpapers, findings, follow-up.
 - Systems: **AuditBoard, TeamMate+** · all finance systems (read) `[C]`.
 - Technical: risk-based audit planning · workpaper drafting · sampling & testing `[S]`.
 - Domain: **IIA Global Internal Audit Standards (2024/2025)** · audit methodology · three-lines model · CAATs / data analytics · QAIP · root-cause analysis `[K]`.
-- Maverick: read-only (no operational capability) · evidence-cited · risk-ranked.
+- Lightwork: read-only (no operational capability) · evidence-cited · risk-ranked.
 
 #### 5.3 External-Audit / PBC Liaison Agent  [UB +Assess]
 JD: Manages the prepared-by-client list, packages evidence, tracks open items.
 - Systems: auditor data-request portals · the evidence collector (`soc2.py`) · the signed audit chain (`maverick audit verify`) `[C]`.
 - Technical: evidence extraction & packaging · PBC tracking `[S]`.
 - Domain: **PCAOB / external-audit support** · audit-readiness `[K]`.
-- Maverick: external send `require_human` · data minimization in shares.
+- Lightwork: external send `require_human` · data minimization in shares.
 
 #### 5.4 Fraud Detection Agent  [UB +Data]
 JD: Hunts financial fraud — ghost vendors/employees, duplicate/split payments, expense abuse.
 - Systems: GL/AP/payroll (read) · vendor/employee master · case management `[C]`.
 - Technical: **Benford's Law · Beneish M-score · Altman Z-score** · duplicate/round-dollar/just-under-threshold detection · SQL forensics · vendor-bank-change detection `[S]`.
 - Domain: **occupational fraud (ACFE fraud tree)** · fraud triangle · **AU-C 240 / SAS 145** (ex-SAS 99) · FSF screens (Beneish, **Dechow F-score**, Altman) vs transactional tests · link analysis/entity resolution (shared bank/address) `[K]`.
-- Maverick: outputs are **risk-ranked leads, never accusations** · base rates stated · routed to a human investigator.
+- Lightwork: outputs are **risk-ranked leads, never accusations** · base rates stated · routed to a human investigator.
 
 #### 5.5 Anomaly Detection Agent  [UB +Data]
 JD: Continuous unsupervised monitoring of transaction streams for statistical outliers.
 - Systems: GL/AP/AR transaction feeds (read/stream) · the audit log `[C]`.
 - Technical: **unsupervised outlier detection** (statistical/ML) · time-series analysis · baseline modeling · SQL/streaming `[S]`.
 - Domain: transaction-monitoring patterns (manual-JE spikes, post-close/weekend entries) `[K]`.
-- Maverick: tuned to reviewable alert volume (budget-bounded) · every alert carries its baseline.
+- Lightwork: tuned to reviewable alert volume (budget-bounded) · every alert carries its baseline.
 
 #### 5.6 Financial Risk / ERM Agent  [UB]
 JD: Maintains the enterprise risk register + KRIs, quantifies exposure, drafts risk reporting.
 - Systems: GRC risk register · BI `[C]`.
 - Technical: **risk scoring** · KRI design · exposure quantification (VaR basics) `[S]`.
 - Domain: **COSO ERM / ISO 31000** · financial risks (liquidity, credit, market, concentration) `[K]`.
-- Maverick: read-only over operations · methodology cited.
+- Lightwork: read-only over operations · methodology cited.
 
 #### 5.7 Credit Risk Agent  [UB +Data]
 JD: Sets/recommends customer credit limits, scores creditworthiness, drafts allowance estimates.
@@ -356,7 +356,7 @@ JD: Sets/recommends customer credit limits, scores creditworthiness, drafts allo
 - Technical: **credit scoring** · **CECL allowance modeling** · AR-portfolio risk analysis `[S]`.
 - Domain: credit analysis · trade-credit terms `[K]`.
 - Regulatory: **FCRA fairness** if consumer credit data (routes to privacy bias checks) `[K]`.
-- Maverick: limit changes `require_human`.
+- Lightwork: limit changes `require_human`.
 
 #### 5.8 AML / Financial-Crime Agent  [UB +Assess]
 JD: Customer-side financial-crime — KYC/CDD, transaction monitoring, SAR drafting.
@@ -364,7 +364,7 @@ JD: Customer-side financial-crime — KYC/CDD, transaction monitoring, SAR draft
 - Technical: **ML-typology / transaction monitoring** · alert triage · KYC/CDD/EDD · PEP screening `[S]`.
 - Domain: **BSA/AML 5 pillars** · **FinCEN CDD rule + CTA beneficial-ownership (BOI)** · OFAC (SDN, 50% rule, licenses) · **SAR (30/60-day) / CTR ($10k aggregation, structuring)** · 314(a)/(b) · FATF typologies · TM engines (Actimize, Verafin) `[K]`.
 - Regulatory: FinCEN `[K]`.
-- Maverick: **SAR filing is a human act** · customer blocking gated · independent of the business line.
+- Lightwork: **SAR filing is a human act** · customer blocking gated · independent of the business line.
 
 ### Tower 6 — Procurement & Vendor
 
@@ -373,14 +373,14 @@ JD: Spend cube, savings/consolidation, contract-compliance, PO drafting.
 - Systems: **Coupa, SAP Ariba, Ramp** · ERP spend `[C]`.
 - Technical: **spend-cube analysis** · maverick-spend/off-contract detection · SQL `[S]`.
 - Domain: P2P · category sourcing · savings/should-cost `[K]`.
-- Maverick: PO issuance `require_human` · SoD vs AP & vendor master.
+- Lightwork: PO issuance `require_human` · SoD vs AP & vendor master.
 
 #### 6.2 Vendor Master & Vendor-Risk Agent  [UB +Assess]
 JD: Vendor onboarding & master-data integrity — dedup, bank-detail validation, sanctions screening.
 - Systems: ERP vendor master · **OFAC / Dow Jones / ComplyAdvantage (KYB)** · tax-ID validation (W-9/W-8) `[C]`.
 - Technical: dedup · **bank-detail validation** · **sanctions/PEP screening** · `start/answer/finalize_assessment` (vendor_risk) `[S]`.
 - Domain: TPRM · vendor onboarding · beneficial-ownership `[K]`.
-- Maverick: **bank-detail changes always `require_human`** (BEC-fraud intercept) · sanctions hit blocks onboarding · SoD vs AP.
+- Lightwork: **bank-detail changes always `require_human`** (BEC-fraud intercept) · sanctions hit blocks onboarding · SoD vs AP.
 
 ### Tower 7 — External & Investor Reporting
 
@@ -390,28 +390,28 @@ JD: Drafts financial statements + footnotes, the 10-K/10-Q, and XBRL tagging.
 - Technical: **XBRL / iXBRL tagging** · disclosure-checklist execution · financial-statement assembly · tie-to-trial-balance `[S]`.
 - Domain: US GAAP · **Reg S-X / S-K** · 10-K/10-Q (MD&A, risk factors, footnotes) `[K]`.
 - Regulatory: SEC reporting `[K]`.
-- Maverick: filing `require_human` · §302/§906 certification is a human act.
+- Lightwork: filing `require_human` · §302/§906 certification is a human act.
 
 #### 7.2 Investor-Relations / Earnings Agent  [UB]
 JD: Earnings releases, board/investor decks, non-GAAP reconciliations, Q&A prep.
 - Systems: IR CRM · market-data feeds · prior IR materials `[C]`.
 - Technical: earnings-materials drafting · **non-GAAP reconciliation (Reg G)** · consensus/estimate tracking `[S]`.
 - Domain: IR · **Reg FD** (no selective disclosure) · non-GAAP measures `[K]`.
-- Maverick: external release `require_human` · Reg FD discipline · forward-looking statements flagged.
+- Lightwork: external release `require_human` · Reg FD discipline · forward-looking statements flagged.
 
 #### 7.3 Equity & Stock-Based-Comp Agent  [UB +Data]
 JD: Cap-table maintenance, ASC 718 stock-comp expense, dilution, 409A support.
 - Systems: **Carta, Pulley** (cap table) · payroll (RSU/ESPP tax) · ERP comp JE `[C]`.
 - Technical: **ASC 718 expense** (Black-Scholes / lattice valuation) · forfeiture-rate estimation · dilution & waterfall analysis `[S]`.
 - Domain: **ASC 718 / IFRS 2** · options/RSUs/ESPP · **409A** valuation support `[K]`.
-- Maverick: ties to payroll-tax on vesting · 409A human-owned.
+- Lightwork: ties to payroll-tax on vesting · 409A human-owned.
 
 #### 7.4 Statutory & Local-GAAP Reporting Agent  [UB]
 JD: Per-jurisdiction statutory statements, GAAP-to-local adjustments, local filings.
 - Systems: statutory-reporting tools · local filing portals · per-entity ledgers `[C]`.
 - Technical: **GAAP-to-local-GAAP/stat adjustments** · entity-by-entity mapping `[S]`.
 - Domain: **local GAAP** per jurisdiction · statutory filing requirements & calendars `[K]`.
-- Maverick: filing `require_human` · ties to Consolidations & Master-Data mapping.
+- Lightwork: filing `require_human` · ties to Consolidations & Master-Data mapping.
 
 ### Vertical packs (skills delta when enabled)
 
@@ -434,7 +434,7 @@ JD: Executes/releases *approved* payments and runs payment-rail operations — t
 - Domain: treasury operations · cash positioning · payment formats (ISO 20022) `[K]`.
 - Regulatory: **OFAC** sanctions · **NACHA** rules · wire controls · SOX payment controls `[K]`.
 - Cert: CTP-equivalent.
-- Maverick: the **custody** seat in the four-way SoD — **`release_payment`/`wire_transfer` is `require_human`** and amount-gated (DoA tiers); sealed from AP (records) and the GL; never both creates and releases a payment.
+- Lightwork: the **custody** seat in the four-way SoD — **`release_payment`/`wire_transfer` is `require_human`** and amount-gated (DoA tiers); sealed from AP (records) and the GL; never both creates and releases a payment.
 
 #### C2 Model Risk Management / Validation Agent (SR 11-7)  [UB +Data] {expert}
 JD: Independently validates the suite's models — the second line over CECL, VaR, ASC 718, forecasting, and anomaly ML.
@@ -443,7 +443,7 @@ JD: Independently validates the suite's models — the second line over CECL, Va
 - Domain: **SR 11-7** model-risk management · model lifecycle/validation · the models reviewed (CECL, VaR, ASC 718, forecasting, anomaly detection) `[K]`.
 - Regulatory: **SR 11-7 / OCC 2011-12** model governance `[K]`.
 - Verified: validation findings independently evidenced via the eval harness.
-- Maverick: **independent of the model owners** (never validates its own work); findings go to a human; recommends, never approves a model into production.
+- Lightwork: **independent of the model owners** (never validates its own work); findings go to a human; recommends, never approves a model into production.
 
 #### C3 Pension & Benefits-Accounting Agent (ASC 715)  [UB +Data]
 JD: Accounts for defined-benefit/OPEB obligations and benefit-plan reporting.
@@ -451,7 +451,7 @@ JD: Accounts for defined-benefit/OPEB obligations and benefit-plan reporting.
 - Technical: **DB/OPEB obligation accounting** `[S]` · actuarial gain/loss `[S]` · funded-status roll-forward `[S]` · **Form 5500** prep support · plan-audit support.
 - Domain: **ASC 715 / 712** · ERISA plan accounting · actuarial assumptions (discount rate, EROA) `[K]`.
 - Regulatory: **ERISA, ASC 715, Form 5500** `[K]`.
-- Maverick: drafts entries for human posting; relies on the qualified actuary for assumptions; never posts without review.
+- Lightwork: drafts entries for human posting; relies on the qualified actuary for assumptions; never posts without review.
 
 #### C4 ESG Controllership Agent  [UB +Data]
 JD: The controllership/data side of sustainability — controls over non-financial data (Strategy 7.3 owns external disclosure).
@@ -459,7 +459,7 @@ JD: The controllership/data side of sustainability — controls over non-financi
 - Technical: **GHG Protocol Scope 1/2/3 accounting** `[S]` · CSRD/ESRS data assembly `[S]` · controls over non-financial data `[S]` · **limited-vs-reasonable-assurance** readiness.
 - Domain: **GHG Protocol · CSRD/ESRS · ISSB (IFRS S1/S2)** data · assurance readiness `[K]`.
 - Regulatory: **CSRD/ESRS**, SEC climate where applicable `[K]`.
-- Maverick: owns the data + controls, not the disclosure (dedup with Strategy 7.3); external disclosure is gated and human-certified.
+- Lightwork: owns the data + controls, not the disclosure (dedup with Strategy 7.3); external disclosure is gated and human-certified.
 
 #### C5 Government-Contract & Cost-Accounting Agent  [UB +Data]
 JD: Cost accounting and compliance for government contractors.
@@ -467,7 +467,7 @@ JD: Cost accounting and compliance for government contractors.
 - Technical: **incurred-cost submission** `[S]` · **indirect-rate** computation (provisional/final) `[S]` · cost-pool/allocation modeling `[S]` · unallowable-cost screening.
 - Domain: **FAR Part 31** cost principles · **CAS** (Cost Accounting Standards) · **DCAA** audit expectations `[K]`.
 - Regulatory: **FAR, CAS, DCAA** `[K]`.
-- Maverick: drafts submissions for human certification; never certifies a rate or files itself.
+- Lightwork: drafts submissions for human certification; never certifies a rate or files itself.
 
 ---
 
@@ -485,14 +485,14 @@ JD: Inventory of AI systems/models/agents — owner, purpose, data, risk tier, l
 - Systems: model registries (MLflow, HF Hub) · `fleet.py` (the live roster) · `domain.py` packs · CMDB `[C]`.
 - Technical: metadata harvesting · model/agent lineage · the DomainProfile schema `[S]`.
 - Domain: AI inventory practice · EU AI Act system definitions · NIST AI RMF "Map" `[K]`.
-- Maverick: read-only over fleet/packs/configs.
+- Lightwork: read-only over fleet/packs/configs.
 
 #### 1.2 AI Risk Assessment (AIRA) Agent  [UB +Assess]
 JD: NIST AI RMF / EU AI Act risk assessment of an AI system.
 - Systems: the assessment engine (`_AIRA`) `[C]`.
 - Technical: `start/answer/finalize_assessment` scoring · evidence-cited findings `[S]`.
 - Domain: **NIST AI RMF** (Govern/Map/Measure/Manage) · EU AI Act risk tiers · bias/robustness/security concepts `[K]`.
-- Maverick: drafts findings; never approves.
+- Lightwork: drafts findings; never approves.
 
 #### 1.3 EU AI Act Conformity Agent  [UB +Assess]
 JD: Classify risk tier, report Art 12/14/50 posture, assemble the high-risk conformity scaffold.
@@ -500,14 +500,14 @@ JD: Classify risk tier, report Art 12/14/50 posture, assemble the high-risk conf
 - Technical: risk-tier classification · **Annex IV technical-documentation** assembly · conformity checklist `[S]`.
 - Domain: **EU AI Act** (Art 5 prohibited, Annex III high-risk, Art 50 transparency, GPAI) `[K]`.
 - Regulatory: EU AI Act, GPAI Code of Practice `[K]`.
-- Maverick: classifies; a human attests conformity.
+- Lightwork: classifies; a human attests conformity.
 
 #### 1.4 Model & Agent Card / Transparency Agent  [UB]
 JD: Model/agent cards — intended use, limitations, data provenance, eval results; AI-content marking.
 - Systems: HF model cards · model registry `[C]`.
 - Technical: model-card authoring · eval-result reporting · training-data provenance documentation `[S]`.
 - Domain: **Model Cards / Datasheets for Datasets** · Art 50 transparency `[K]`.
-- Maverick: AI-generated-content marking.
+- Lightwork: AI-generated-content marking.
 
 #### 1.5 Bias & Fairness Evaluation Agent  [UB +Data]
 JD: Evaluate consequential-decision systems for bias; produce the bias-audit export.
@@ -515,21 +515,21 @@ JD: Evaluate consequential-decision systems for bias; produce the bias-audit exp
 - Technical: **disparate-impact metrics** (four-fifths, demographic parity, equalized odds) · statistical significance testing `[S]`.
 - Domain: fairness definitions · adverse impact `[K]`.
 - Regulatory: **NYC LL144** (independent bias audit; **impact-ratio**, incl. intersectional), **Colorado AI Act (SB 24-205)**, **Illinois (amended IHRA)**, EEOC (Title VII/ADA), **EU AI Act Annex III**, **ISO 42001** `[K]`.
-- Maverick: bias-audit export; no protected-class proxies.
+- Lightwork: bias-audit export; no protected-class proxies.
 
 #### 1.6 Agent Oversight / Supervisor Agent  [UB]
 JD: The live operator over the fleet — monitor, approve/deny/pause/kill, quarantine.
 - Systems: `governance.py`, `fleet.py`, `quarantine.py`, `killswitch.py`, the consent dashboard `[C]`.
 - Technical: policy evaluation · approve/deny/pause/kill · seal/quarantine ops · audit reading `[S]`.
 - Domain: **human oversight (Art 14)** · the control-plane model · the three-rung seal model `[K]`.
-- Maverick: holds the parent capability; cannot widen any grant.
+- Lightwork: holds the parent capability; cannot widen any grant.
 
 #### 1.7 AI Incident Response Agent  [UB]
 JD: Triage AI incidents (harmful output, jailbreak, drift), contain, run the PIR.
 - Systems: Shield events + the audit log · `quarantine.py`/`killswitch.py` `[C]`.
 - Technical: incident triage/severity · containment · post-incident review `[S]`.
 - Domain: AI-incident taxonomy · jailbreak/drift patterns · the OWASP LLM Top 10 `[K]`.
-- Maverick: containment `require_human`; independent of the incident's cause.
+- Lightwork: containment `require_human`; independent of the incident's cause.
 
 ### Tower 2 — Privacy / Data Protection
 
@@ -538,7 +538,7 @@ JD: GDPR Art 35 DPIA + ISO 29134 PIA — processing description, risk register, 
 - Systems: **OneTrust** · `dpia.py` + `_PIA` `[C]`.
 - Technical: `generate_dpia` · necessity/proportionality analysis · risk-register construction `[S]`.
 - Domain: **GDPR Art 35**, ISO 29134 · the agent-on-personal-data risk set `[K]`.
-- Maverick: residual-risk sign-off is the DPO's.
+- Lightwork: residual-risk sign-off is the DPO's.
 
 #### 2.2 ROPA / Records Agent  [UB]
 JD: GDPR Art 30 Records of Processing Activities.
@@ -551,7 +551,7 @@ JD: Access/portability (Art 15/20) and erasure (Art 17) fulfillment.
 - Systems: `dsar.py`, `audit/erase.py` · DSAR portals `[C]`.
 - Technical: `export_subject_data` · `erase_subject` · identity verification · cross-system data location `[S]`.
 - Domain: **GDPR Art 15/17/20**, CCPA access/delete `[K]`.
-- Maverick: erasure `require_human` (irreversible); legal-hold overrides erasure.
+- Lightwork: erasure `require_human` (irreversible); legal-hold overrides erasure.
 
 #### 2.4 Data Mapping & Classification Agent  [UB +Data]
 JD: Discover & classify personal/sensitive data; map data flows.
@@ -571,7 +571,7 @@ JD: Assess a breach, run the 72-hour clock, draft regulator + subject notices.
 - Systems: incident/case mgmt · the audit log `[C]`.
 - Technical: breach-severity assessment · the 72h clock · notification drafting `[S]`.
 - Domain: **GDPR Art 33/34** · state breach laws · harm assessment `[K]`.
-- Maverick: notifying a regulator/subject is a hard-floor human act.
+- Lightwork: notifying a regulator/subject is a hard-floor human act.
 
 #### 2.7 Cross-Border Transfer Agent  [UB]
 JD: Map transfers, check adequacy/SCCs, run the Transfer Impact Assessment.
@@ -592,14 +592,14 @@ JD: Posture across SOC 2 / ISO 27001 / HIPAA / PCI / NIST; control mapping + gap
 - Systems: **Vanta, Drata, AuditBoard** · `soc2.py`, `compliance.py` `[C]`.
 - Technical: control mapping · framework crosswalks · gap analysis · evidence collection `[S]`.
 - Domain: **SOC 2 TSC · ISO 27001:2022 (Annex A) · HIPAA Security Rule · PCI-DSS v4.0.1 · NIST CSF 2.0 / 800-53 · HITRUST CSF · ISO 42001 (AI MS) · CIS Controls v8.1** `[K]`.
-- Maverick: never marks a control effective without seeing evidence.
+- Lightwork: never marks a control effective without seeing evidence.
 
 #### 3.2 Evidence / Audit-Readiness Agent  [UB +Assess]
 JD: Continuously collect control evidence; assemble the auditor package.
 - Systems: GRC platforms · `collect_soc2_evidence`, `audit/export` (CEF) `[C]`.
 - Technical: continuous evidence collection · auditor-package assembly `[S]`.
 - Domain: audit readiness · evidence types/sufficiency `[K]`.
-- Maverick: external send gated.
+- Lightwork: external send gated.
 
 #### 3.3 Risk Management / ERM Agent  [UB]
 JD: Enterprise risk register + KRIs; scoring; treatment tracking.
@@ -618,7 +618,7 @@ JD: Test control operating effectiveness; continuous control monitoring + drift 
 - Systems: GRC · `governance.py`, `soc2.py` probes `[C]`.
 - Technical: control testing · sampling · continuous control monitoring · drift detection `[S]`.
 - Domain: design vs operating effectiveness · ITGC · COBIT `[K]`.
-- Maverick: reads the platform's own controls as evidence.
+- Lightwork: reads the platform's own controls as evidence.
 
 #### 3.6 Regulatory Change Management Agent  [UB]
 JD: Track regulatory changes; map to affected controls; assess impact.
@@ -633,21 +633,21 @@ JD: Risk-based planning, fieldwork, workpapers, findings, follow-up.
 - Systems: **AuditBoard, TeamMate+** `[C]`.
 - Technical: risk-based planning · workpaper drafting · sampling & testing `[S]`.
 - Domain: **IIA Global Internal Audit Standards (2024) · COBIT 2019 · three-lines model** · CAATs (IDEA/ACL→Diligent, Alteryx) · root-cause analysis `[K]`.
-- Maverick: read-only, independent.
+- Lightwork: read-only, independent.
 
 #### 4.2 Controls Assurance & SoD Agent  [UB]
 JD: Independent control verification + SoD/access-conflict monitoring across the fleet.
 - Systems: `capability.py` grants · IAM `[C]`.
 - Technical: **SoD-conflict scanning** · access-grant review · control verification `[S]`.
 - Domain: SoD matrices · least-privilege `[K]`.
-- Maverick: read-only.
+- Lightwork: read-only.
 
 #### 4.3 External-Audit / PBC Liaison Agent  [UB +Assess]
 JD: Manage the SOC 2 / ISO PBC list, package evidence, track open items.
 - Systems: evidence collector · auditor data-request portals `[C]`.
 - Technical: PBC management · evidence packaging `[S]`.
 - Domain: SOC 2 / ISO 27001 audit process · `maverick audit verify` as tamper-evidence `[K]`.
-- Maverick: external send gated.
+- Lightwork: external send gated.
 
 ### Tower 5 — Third-Party / Vendor Risk
 
@@ -675,21 +675,21 @@ JD: Prompt-injection/jailbreak/exfil detection at runtime; canaries; unicode fil
 - Systems: the Agent Shield (`safety/{jailbreak_heuristics,remote_scan,canaries,unicode_filter}.py`) `[C]`.
 - Technical: injection/jailbreak/exfil detection · canary tokens · unicode-attack filtering `[S]`.
 - Domain: **OWASP LLM Top 10** · prompt-injection taxonomy · RAG poisoning `[K]`.
-- Maverick: kernel chokepoint (fail-open per rule 1).
+- Lightwork: kernel chokepoint (fail-open per rule 1).
 
 #### 6.2 SIEM / Detection & Alert-Triage Agent  [UB +Data]
 JD: Forward events to the SIEM, correlate, triage alerts, enrich.
 - Systems: **Splunk, Microsoft Sentinel, Elastic** · `audit/export` (CEF) `[C]`.
 - Technical: **SPL / KQL** detection rules · log correlation · alert triage · enrichment `[S]`.
 - Domain: **detection engineering · MITRE ATT&CK** · SOC operations `[K]`.
-- Maverick: suppress/close gated (hard floor).
+- Lightwork: suppress/close gated (hard floor).
 
 #### 6.3 Security Incident Response Agent  [UB]
 JD: IR lifecycle — triage → contain → eradicate → recover → PIR.
 - Systems: SOAR (**Splunk SOAR, Tines**) · `quarantine.py`/`killswitch.py` `[C]`.
 - Technical: IR lifecycle · severity matrix · containment · forensics · chain-of-custody `[S]`.
 - Domain: **NIST 800-61 · SANS IR · MITRE ATT&CK** `[K]`.
-- Maverick: containment `require_human`.
+- Lightwork: containment `require_human`.
 
 #### 6.4 Threat Intelligence Agent  [UB]
 JD: Ingest threat intel/IOCs/advisories; correlate; brief the SOC.
@@ -722,7 +722,7 @@ JD: Vet MCP servers & plugins before install — pinning, manifest, provenance.
 - Systems: `mcp_registry.py` (`pin_sha256`), `plugin_manifest.py` · **Sigstore/cosign** `[C]`.
 - Technical: dependency/plugin vetting · signature/provenance verification · pinning `[S]`.
 - Domain: **SLSA** · supply-chain attacks (typosquatting, dependency confusion) `[K]`.
-- Maverick: install gated.
+- Lightwork: install gated.
 
 ### Tower 8 — Vulnerability & Threat Management
 
@@ -737,7 +737,7 @@ JD: Patch cadence/compliance, maintenance windows, remediation verification.
 - Systems: **MECM (ex-SCCM), Intune / Windows Autopatch, Tanium, BigFix** · Linux patching (**Ansible, Red Hat Satellite**) · the asset inventory `[C]`.
 - Technical: patch-compliance tracking · maintenance-window planning `[S]`.
 - Domain: patch cadence · change control `[K]`.
-- Maverick: patching `require_human`.
+- Lightwork: patching `require_human`.
 
 #### 8.3 Attack-Surface & Pen-Test Agent  [UB +Build]
 JD: Map external attack surface, coordinate pen tests, red-team the agents' own controls.
@@ -752,21 +752,21 @@ JD: Orchestrate access provisioning/deprovisioning on lifecycle events.
 - Systems: **Okta, Microsoft Entra ID, SailPoint** · HRIS · SCIM `[C]`.
 - Technical: provisioning/deprovisioning · **SCIM** · role assignment · JML automation `[S]`.
 - Domain: identity lifecycle · **RBAC/ABAC** `[K]`.
-- Maverick: grant/revoke `require_human` (hard floor); orchestrates an org process.
+- Lightwork: grant/revoke `require_human` (hard floor); orchestrates an org process.
 
 #### 9.2 Access Review / Recertification Agent  [UB]
 JD: Periodic access recertification + least-privilege review (humans *and* agents).
 - Systems: IGA (**SailPoint, Saviynt**) · `capability.py` grants `[C]`.
 - Technical: certification campaigns · least-privilege review · SoD scanning `[S]`.
 - Domain: access governance · entitlement review `[K]`.
-- Maverick: revoke is human.
+- Lightwork: revoke is human.
 
 #### 9.3 Privileged Access (PAM) Agent  [UB]
 JD: Just-in-time privileged access, session control, expiry enforcement.
 - Systems: **CyberArk, HashiCorp Vault, Teleport** · `capability.py` (`max_risk`/`expires_at`) `[C]`.
 - Technical: JIT access · session management · secret/credential vaulting `[S]`.
 - Domain: privileged-access governance `[K]`.
-- Maverick: capability **expiry is enforced at `permits()`** (an expired grant is denied at use-time); the gap to build is a **mid-session revocation sweep + a revocation list** for un-expired grants.
+- Lightwork: capability **expiry is enforced at `permits()`** (an expired grant is denied at use-time); the gap to build is a **mid-session revocation sweep + a revocation list** for un-expired grants.
 
 #### 9.4 Authentication / SSO Agent  [UB]
 JD: SSO/MFA coverage & configuration; auth posture.
@@ -787,7 +787,7 @@ JD: Change request → impact → approval → audit → rollback.
 - Systems: ServiceNow/Jira Change · `governance.py` (approval) · `checkpoint.py` (rollback) `[C]`.
 - Technical: change-request workflow · impact assessment · CAB support `[S]`.
 - Domain: **ITIL change management** `[K]`.
-- Maverick: approval `require_human`.
+- Lightwork: approval `require_human`.
 
 #### 10.3 Observability / SRE Agent  [UB +Build]
 JD: Monitor health/SLOs, tune alerts, drive reliability.
@@ -800,14 +800,14 @@ JD: Backup policy, point-in-time recovery, DR drills, BCP.
 - Systems: backup (**Veeam, Rubrik**) · cloud snapshots · `checkpoint.py`/`job_queue.py` `[C]`.
 - Technical: backup policy · PITR · DR drills · **RPO/RTO** design `[S]`.
 - Domain: BC/DR · **ISO 22301** `[K]`.
-- Maverick: restore/failover gated.
+- Lightwork: restore/failover gated.
 
 #### 10.5 Service Desk / ITSM Agent  [UB +Reach]
 JD: Ticketing, request fulfillment, KB, SLA — the employee IT front door.
 - Systems: **ServiceNow, Jira Service Management, Zendesk** · channels · `intake.py` `[C]`.
 - Technical: ticket triage/deflection · request fulfillment · KB authoring · SLA tracking `[S]`.
 - Domain: **ITIL service management** `[K]`.
-- Maverick: AI disclosure; escalate sensitive.
+- Lightwork: AI disclosure; escalate sensitive.
 
 ### Council-added agents
 *(GRC/security seats the council flagged as missing. Full profiles below.)*
@@ -818,7 +818,7 @@ JD: Owns cloud and Kubernetes security posture — assesses misconfiguration, dr
 - Technical: **CSPM / CIEM / CWPP** · **CIS Benchmarks** · IaC drift detection · **Kubernetes security (OPA/Gatekeeper, Falco), container image scan (Trivy/Grype)** · multi-cloud config review · attack-path analysis.
 - Domain: cloud shared-responsibility model · identity-first cloud security · workload/network segmentation.
 - Regulatory: **CIS · NIST 800-53 · SOC 2 · FedRAMP** control mappings.
-- Maverick: read + recommend; **remediation is human-gated** (no auto-change to cloud config); assurance stays independent and read-only.
+- Lightwork: read + recommend; **remediation is human-gated** (no auto-change to cloud config); assurance stays independent and read-only.
 
 #### C2 DLP / Data-Protection Agent  [UB]
 JD: Designs and tunes data-loss-prevention policy across channels and surfaces insider-risk for a human owner.
@@ -826,7 +826,7 @@ JD: Designs and tunes data-loss-prevention policy across channels and surfaces i
 - Technical: **DLP policy across email/endpoint/cloud/SaaS** · **CASB/SSE/SASE** architecture · data classification/labeling · exfiltration-pattern detection · insider-risk/UEBA tuning.
 - Domain: data classification · egress control (complements the platform's own enterprise egress-lock).
 - Regulatory: **GDPR/CCPA** data-protection · **PCI-DSS** cardholder-data flows · HIPAA ePHI.
-- Maverick: policy drafted for a human owner; **blocking/quarantine actions are gated**; never reads protected data outside its scope.
+- Lightwork: policy drafted for a human owner; **blocking/quarantine actions are gated**; never reads protected data outside its scope.
 
 #### C3 DFIR / Digital-Forensics Agent  [UB +Build]
 JD: Memory/disk forensics and triage collection on a confirmed incident; preserves the evidentiary record.
@@ -834,7 +834,7 @@ JD: Memory/disk forensics and triage collection on a confirmed incident; preserv
 - Technical: **memory/disk forensics · triage collection · timeline analysis · chain-of-custody · malware triage** · IOC extraction · forensic imaging (hashing/write-blocking).
 - Domain: **NIST 800-86** · incident forensics · evidence integrity.
 - Regulatory: chain-of-custody / evidentiary standards · breach-investigation discipline.
-- Maverick: read + collect only — **no remediation**; chain-of-custody recorded on the signed audit chain; containment proposals go to the human (quarantine/kill is gated).
+- Lightwork: read + collect only — **no remediation**; chain-of-custody recorded on the signed audit chain; containment proposals go to the human (quarantine/kill is gated).
 
 #### C4 Business-Continuity / Resilience Agent  [UB]
 JD: Owns BIA and resilience governance — RTO/RPO targets, crisis playbooks, and tabletop/DR-test orchestration.
@@ -842,7 +842,7 @@ JD: Owns BIA and resilience governance — RTO/RPO targets, crisis playbooks, an
 - Technical: **business-impact analysis (BIA)** · **RTO/RPO** governance · crisis-management runbooks · tabletop & DR-test orchestration · dependency mapping.
 - Domain: operational resilience · **ISO 22301 · NIST 800-34 · DORA** (financial-sector resilience).
 - Regulatory: **DORA, ISO 22301** attestations · sector continuity mandates.
-- Maverick: plans drafted for human ownership; a declared invocation of continuity/failover is human-gated; recovery uses durable checkpoints.
+- Lightwork: plans drafted for human ownership; a declared invocation of continuity/failover is human-gated; recovery uses durable checkpoints.
 
 #### C5 GRC-Automation / Continuous-Compliance Agent  [UB +Build]
 JD: The engineering side of GRC — builds automated evidence collectors and continuous-compliance scoring so controls are tested continuously, not at audit time.
@@ -850,7 +850,7 @@ JD: The engineering side of GRC — builds automated evidence collectors and con
 - Technical: **automated evidence collectors · control-to-test mapping · integration health monitoring · continuous-compliance scoring** · drift alerting.
 - Domain: control automation · evidence sufficiency · the control-to-framework crosswalk.
 - Regulatory: **SOC 2, ISO 27001:2022, NIST CSF 2.0** continuous-monitoring expectations.
-- Maverick: builds collectors in the sandbox; **never disables or closes a control/finding**; collected evidence is immutable and human-attested.
+- Lightwork: builds collectors in the sandbox; **never disables or closes a control/finding**; collected evidence is immutable and human-attested.
 
 #### C6 Email-Security / Phishing & Insider-Threat Agent  [UB]
 JD: Triages phishing/BEC, tunes email authentication, and surfaces insider-risk signals (phishing is the #1 initial-access vector).
@@ -858,7 +858,7 @@ JD: Triages phishing/BEC, tunes email authentication, and surfaces insider-risk 
 - Technical: **BEC/phishing triage** · **DMARC/DKIM/SPF** alignment · header/URL/attachment analysis · **UEBA/insider-risk** tuning · quarantine-policy review.
 - Domain: social-engineering TTPs · email authentication · insider-threat indicators.
 - Regulatory: anti-phishing/BEC reporting · evidence handling for insider cases.
-- Maverick: triage + recommend; **release/quarantine/block is human-gated**; insider signals inform, never auto-discipline (HR/legal own consequences).
+- Lightwork: triage + recommend; **release/quarantine/block is human-gated**; insider signals inform, never auto-discipline (HR/legal own consequences).
 
 #### C7 AI Red-Team / Model-Security Agent  [UB +Build]
 JD: The offensive counterpart to the defensive Shield — adversarially tests models and agents for jailbreak, injection, extraction, and poisoning.
@@ -866,7 +866,7 @@ JD: The offensive counterpart to the defensive Shield — adversarially tests mo
 - Technical: **adversarial-ML** — jailbreak/prompt-injection/extraction/model-inversion/data-poisoning · attack-prompt corpora · automated red-team runs · finding write-ups.
 - Domain: **MITRE ATLAS** · **NIST AI 100-2** (adversarial ML taxonomy) · OWASP LLM Top 10.
 - Regulatory: AI-safety testing expectations (EU AI Act robustness, NIST AI RMF measure).
-- Maverick: tests in an isolated compartment; findings go to a human owner; **never weaponizes findings against production**; respects the kernel's self-modification floor.
+- Lightwork: tests in an isolated compartment; findings go to a human owner; **never weaponizes findings against production**; respects the kernel's self-modification floor.
 
 #### C8 SaaS Security Posture (SSPM) Agent  [UB]
 JD: Assesses SaaS misconfiguration, risky OAuth grants, and least-privilege across the SaaS estate.
@@ -874,7 +874,7 @@ JD: Assesses SaaS misconfiguration, risky OAuth grants, and least-privilege acro
 - Technical: **SaaS misconfiguration scanning · OAuth-grant / third-party-app risk · least-privilege review across SaaS** · shadow-SaaS discovery · token/secret hygiene.
 - Domain: SaaS shared-responsibility · OAuth scope risk · SaaS-to-SaaS integration risk.
 - Regulatory: **SOC 2 / ISO 27001** SaaS-control mappings · data-residency in SaaS.
-- Maverick: read + recommend; **revoking a grant or changing SaaS config is human-gated**; assurance independent.
+- Lightwork: read + recommend; **revoking a grant or changing SaaS config is human-gated**; assurance independent.
 
 ---
 
@@ -891,21 +891,21 @@ JD: Plan/orchestrate multi-channel campaigns, draft assets, measure pipeline con
 - Systems: **Marketo, HubSpot, Marketing Cloud Account Engagement (ex-Pardot), Salesforce Marketing Cloud** (MAP/ESP) · **Google/Meta/LinkedIn Ads** · the channels layer `[C]`.
 - Technical: campaign building · audience segmentation · UTM/attribution setup · A/B testing `[S]`.
 - Domain: demand gen · funnel math · channel mix · budget pacing `[K]`.
-- Maverick: spend cap; launch `require_human`; consent/suppression floor.
+- Lightwork: spend cap; launch `require_human`; consent/suppression floor.
 
 #### 1.2 Content & SEO Agent  [UB +Reach]
 JD: Content briefs/drafts (blog/landing/whitepaper), SEO, the content calendar.
 - Systems: CMS / **Wix** (MCP) · **Semrush, Ahrefs, Google Search Console** · GA4 `[C]`.
 - Technical: keyword research · on-page SEO · content optimization · schema markup `[S]`.
 - Domain: SEO/SEM · content strategy · E-E-A-T `[K]`.
-- Maverick: brand/claims review before publish; WCAG.
+- Lightwork: brand/claims review before publish; WCAG.
 
 #### 1.3 Social & Community Agent  [UB +Reach]
 JD: Draft/schedule social, monitor mentions, moderate community.
 - Systems: **Sprout Social, Hootsuite** · Bluesky/Mastodon/Discord (shipped) · LinkedIn/X `[C]`.
 - Technical: social scheduling · listening/sentiment · engagement `[S]`.
 - Domain: social strategy · community management · platform norms `[K]`.
-- Maverick: post gated; brand voice; AI disclosure.
+- Lightwork: post gated; brand voice; AI disclosure.
 
 #### 1.4 Product Marketing Agent  [UB]
 JD: Positioning, messaging, launch plans, battlecards, competitive framing.
@@ -924,7 +924,7 @@ JD: Lifecycle/nurture email sequences; deliverability & list hygiene.
 - Systems: the email channel (shipped) · MAP (Marketo/HubSpot) `[C]`.
 - Technical: sequence building · **deliverability** (SPF/DKIM/DMARC, warmup, bounce/spam management) · list segmentation `[S]`.
 - Domain: lifecycle marketing · email best practice `[K]`.
-- Maverick: **consent/suppression hard floor**; CAN-SPAM/GDPR; rate caps.
+- Lightwork: **consent/suppression hard floor**; CAN-SPAM/GDPR; rate caps.
 
 #### 1.7 Marketing Ops & Analytics Agent  [UB +Data]
 JD: Attribution, funnel analytics, lead scoring, MAP hygiene.
@@ -937,14 +937,14 @@ JD: Event/webinar planning, invites, registration, follow-up.
 - Systems: **Google Calendar** (live) · event platforms (ON24, Cvent, Zoom Webinars) `[C]`.
 - Technical: event setup · invite/registration flows · follow-up sequences `[S]`.
 - Domain: field/event marketing `[K]`.
-- Maverick: sends gated; suppression honored.
+- Lightwork: sends gated; suppression honored.
 
 #### 1.9 PR & Comms Agent  [UB +Reach]
 JD: Press materials, announcements, media monitoring.
 - Systems: **Cision, Meltwater** · `web_search` `[C]`.
 - Technical: press-release drafting · media-list building · monitoring `[S]`.
 - Domain: PR · crisis comms · messaging `[K]`.
-- Maverick: external release gated.
+- Lightwork: external release gated.
 
 ### Tower 2 — Sales Development
 
@@ -953,14 +953,14 @@ JD: Qualify inbound leads (MQL→SQL), respond fast, route, book meetings.
 - Systems: **Salesforce / HubSpot** (CRM) · Google Calendar · the channels layer · `intake.py` `[C]`.
 - Technical: lead qualification (BANT/MEDDIC-lite) · routing · meeting booking `[S]`.
 - Domain: inbound SDR motion · SLAs `[K]`.
-- Maverick: AI disclosure; consent on follow-up.
+- Lightwork: AI disclosure; consent on follow-up.
 
 #### 2.2 Outbound Prospecting (SDR) Agent  [UB +Reach]
 JD: Research accounts/contacts, draft personalized outreach, run sequences.
 - Systems: **ZoomInfo, Apollo, 6sense** (enrichment/intent) · **Outreach, Salesloft** · the channels layer `[C]`.
 - Technical: account/contact research · personalization · multi-touch sequencing `[S]`.
 - Domain: outbound motion · ICP targeting `[K]`.
-- Maverick: **consent/suppression hard floor** + AI disclosure are the whole game; lead-source provenance.
+- Lightwork: **consent/suppression hard floor** + AI disclosure are the whole game; lead-source provenance.
 
 #### 2.3 Lead Enrichment & Account-Research Agent  [UB +Data]
 JD: Enrich firmographic/technographic data, intent signals, account/stakeholder research.
@@ -972,7 +972,7 @@ JD: Enrich firmographic/technographic data, intent signals, account/stakeholder 
 JD: Orchestrate multi-touch cadences, A/B test, protect deliverability.
 - Systems: `scheduler.py`/`worker.py` · **Outreach, Salesloft** · the channels layer `[C]`.
 - Technical: cadence design · A/B testing · deliverability protection `[S]`.
-- Maverick: sends only inside the gated sequence.
+- Lightwork: sends only inside the gated sequence.
 
 #### 2.5 Meeting-Booking Agent  [UB +Reach]
 JD: Book demos, hand off to the AE with context.
@@ -998,14 +998,14 @@ JD: Generate quotes/proposals, configure products, apply the price book.
 - Systems: **Salesforce CPQ, DealHub, Conga** · `knowledge_search` (pricing) `[C]`.
 - Technical: product configuration · quote generation · proposal assembly `[S]`.
 - Domain: pricing/packaging · discounting rules `[K]`.
-- Maverick: list-price auto; discounts → Deal Desk (3.4).
+- Lightwork: list-price auto; discounts → Deal Desk (3.4).
 
 #### 3.4 Deal Desk & Approvals Agent  [UB +Data]
 JD: Enforce the discount/term approval matrix, check margin, route approvals.
 - Systems: CPQ · `governance.py` (risk-floor gate today; **DoA/amount-aware policy to build**) · the legal domain `[C]`.
 - Technical: **margin analysis** · approval-matrix routing · non-standard-term detection `[S]`.
 - Domain: deal desk · DoA matrices · revenue/margin policy `[K]`.
-- Maverick: discounts beyond floor `require_human`; never approves itself.
+- Lightwork: discounts beyond floor `require_human`; never approves itself.
 
 #### 3.5 Sales Engineering / POC Agent  [UB]
 JD: Technical Q&A, POC plans, security questionnaires.
@@ -1024,7 +1024,7 @@ JD: Assemble the order form, redline vs standard, hand off to CLM.
 - Systems: **DocuSign, Ironclad** (CLM/e-sign) · the legal domain `[C]`.
 - Technical: order-form assembly · redline vs standard `[S]`.
 - Domain: commercial terms · the contract playbook `[K]`.
-- Maverick: never signs; non-standard terms → legal/human.
+- Lightwork: never signs; non-standard terms → legal/human.
 
 ### Tower 4 — Revenue Operations
 
@@ -1033,7 +1033,7 @@ JD: Pipeline health, deal inspection, forecast roll-up.
 - Systems: **Salesforce** · BI (Tableau/Looker) · **Clari/BoostUp** (forecasting) `[C]`.
 - Technical: pipeline analytics · deal inspection · **forecast methodology** (weighted/commit) · SQL `[S]`.
 - Domain: forecasting discipline · pipeline hygiene `[K]`.
-- Maverick: forecast commit is human; feeds finance.
+- Lightwork: forecast commit is human; feeds finance.
 
 #### 4.2 Territory, Quota & Capacity Agent  [UB +Data]
 JD: Territory design, quota setting, capacity/coverage modeling.
@@ -1046,14 +1046,14 @@ JD: Calculate commissions/attainment against the comp plan; disputes.
 - Systems: **Xactly, CaptivateIQ, Spiff** · CRM · finance payroll `[C]`.
 - Technical: commission calculation · attainment tracking · dispute resolution `[S]`.
 - Domain: incentive-comp plans · SPM `[K]`.
-- Maverick: payout gated (finance); SoD vs closing.
+- Lightwork: payout gated (finance); SoD vs closing.
 
 #### 4.4 CRM Data Hygiene & Governance Agent  [UB +Data]
 JD: Dedup, enrich, validate, and govern CRM fields & data quality — **fix Salesforce errors**.
 - Systems: **Salesforce** (Admin) · HubSpot · enrichment · `pii_detector` `[C]`.
 - Technical: **fixing Salesforce errors — Flow (record-triggered/scheduled/screen) + fault paths & Process-Builder→Flow migration, SOQL/SOSL, governor limits (CPU/SOQL-101/DML), Apex triggers & async (Batch/Queueable/Future), debug logs + Developer Console, validation & duplicate rules + dedup, Data Loader, deployment (change sets/SFDX/unlocked packages/Gearset), sharing model (OWD/roles/FLS), Optimizer/Health Check** · CRM data modeling. *(Admin + Developer depth; see also the council-added Salesforce Admin/Dev agent.)* `[S]`
 - Domain: CRM data governance · field/object model `[K]`.
-- Maverick: bulk writes gated; privacy; change audit.
+- Lightwork: bulk writes gated; privacy; change audit.
 
 #### 4.5 Lead Routing & Assignment Agent  [UB]
 JD: Route leads/accounts by rules, round-robin, enforce SLAs.
@@ -1066,7 +1066,7 @@ JD: Manage the GTM tech stack, workflow automation, RevOps process.
 - Systems: the GTM stack APIs · **Zapier/Workato/Tray** · Salesforce admin `[C]`.
 - Technical: integration/automation building · process documentation `[S]`.
 - Domain: RevOps architecture `[K]`.
-- Maverick: config changes gated.
+- Lightwork: config changes gated.
 
 ### Tower 5 — Customer Success & Account Management
 
@@ -1087,13 +1087,13 @@ JD: Renewal forecasting, notices, paperwork prep.
 - Systems: CRM/CS · finance `[C]`.
 - Technical: renewal forecasting · notice/paperwork drafting `[S]`.
 - Domain: renewals motion · NRR/GRR `[K]`.
-- Maverick: never auto-renew or commit price (→ Deal Desk).
+- Lightwork: never auto-renew or commit price (→ Deal Desk).
 
 #### 5.4 Expansion / Upsell Agent  [UB +Reach]
 JD: Whitespace analysis, expansion plays, upsell timing.
 - Systems: CS + product analytics `[C]`.
 - Technical: whitespace analysis · expansion-play design · propensity modeling `[S]`.
-- Maverick: outreach gated.
+- Lightwork: outreach gated.
 
 #### 5.5 Churn-Risk & Save Agent  [UB +Data]
 JD: Churn prediction, save plays, escalation.
@@ -1110,7 +1110,7 @@ JD: QBR decks, success plans, executive business reviews.
 JD: Identify advocates, manage references, case studies, reviews.
 - Systems: CS platform · review sites (G2) · the channels layer `[C]`.
 - Technical: advocate identification · case-study drafting · review generation `[S]`.
-- Maverick: outreach gated + consented.
+- Lightwork: outreach gated + consented.
 
 ### Tower 6 — Customer Support & Service
 
@@ -1119,25 +1119,25 @@ JD: Tier-1 support — triage, KB answers, deflect, escalate.
 - Systems: **Zendesk, Intercom, Salesforce Service Cloud** · the channels layer · `knowledge_search` · `intake.py` `[C]`.
 - Technical: ticket triage · KB-grounded answering · escalation routing `[S]`.
 - Domain: support operations · CSAT drivers `[K]`.
-- Maverick: AI disclosure; escalate the novel; no commitments.
+- Lightwork: AI disclosure; escalate the novel; no commitments.
 
 #### 6.2 Knowledge-Base & Self-Service Agent  [UB]
 JD: Author/maintain the KB & help content from tickets + product changes.
 - Systems: support platform + CMS · `knowledge_search` `[C]`.
 - Technical: KB authoring · gap detection · content maintenance `[S]`.
-- Maverick: publish gated.
+- Lightwork: publish gated.
 
 #### 6.3 Escalation & Customer-Incident Agent  [UB +Reach]
 JD: Manage escalations + customer-facing status comms during incidents.
 - Systems: support + **Statuspage** · the GRC incident agent `[C]`.
 - Technical: escalation management · status-comms drafting `[S]`.
-- Maverick: external posts gated.
+- Lightwork: external posts gated.
 
 #### 6.4 Voice-of-Customer & CSAT Agent  [UB +Data]
 JD: Run CSAT/NPS, synthesize sentiment, route to product.
 - Systems: survey tools (Delighted, Qualtrics) · product `[C]`.
 - Technical: survey design · **sentiment analysis** · feedback synthesis `[S]`.
-- Maverick: surveys gated + consented.
+- Lightwork: surveys gated + consented.
 
 ### Tower 7 — Partnerships & Channel
 
@@ -1158,7 +1158,7 @@ JD: Manage marketplace listings (AWS/Azure/GCP/app stores) and alliances.
 - Systems: cloud marketplace consoles · app-store consoles `[C]`.
 - Technical: listing management · private-offer setup `[S]`.
 - Domain: marketplace/alliance strategy `[K]`.
-- Maverick: listing changes gated.
+- Lightwork: listing changes gated.
 
 ### Tower 8 — GTM Enablement, Strategy & Intelligence
 
@@ -1172,7 +1172,7 @@ JD: Analyze recorded calls, coach reps, track talk-track adherence.
 - Systems: **Gong, Chorus** · the voice channel · CRM `[C]`.
 - Technical: call analysis · coaching-insight extraction · talk-track/risk-language detection `[S]`.
 - Domain: sales coaching · methodology adherence `[K]`.
-- Maverick: **call-recording consent** (two-party-consent states) — hard floor.
+- Lightwork: **call-recording consent** (two-party-consent states) — hard floor.
 
 #### 8.3 Competitive & Market-Intelligence Agent  [UB +Data]
 JD: Track competitors, win/loss analysis, market/TAM, ICP research.
@@ -1195,7 +1195,7 @@ JD: The seat that can actually "fix Salesforce errors" — diagnoses and repairs
 - Technical: **Flow (record-triggered/scheduled/screen) + fault paths · Apex (triggers + async Batch/Queueable/Future) · SOQL/SOSL · governor limits (CPU/SOQL-101/DML) · LWC · deployment (change sets/SFDX/Gearset) · security model (OWD/roles/FLS/sharing)** · validation/duplicate rules · Data Loader · Optimizer/Health Check.
 - Domain: CRM data modeling · CPQ→Revenue Cloud migration · org-health remediation.
 - Prereq: CRM data model fluency.
-- Maverick: config/code ships through the sandbox + review gate; **bulk data writes and destructive deploys are human-gated**; never edits production directly without approval.
+- Lightwork: config/code ships through the sandbox + review gate; **bulk data writes and destructive deploys are human-gated**; never edits production directly without approval.
 
 #### C2 Marketing-Ops / MarTech Engineer Agent  [UB +Build]
 JD: Builds and maintains the marketing-automation and measurement plumbing — programs, scoring, and privacy-safe tracking.
@@ -1203,7 +1203,7 @@ JD: Builds and maintains the marketing-automation and measurement plumbing — p
 - Technical: **MAP program build · lead scoring / lifecycle · GA4 + Consent Mode v2 · server-side GTM · Meta CAPI / enhanced conversions · attribution plumbing** · webhook/API integrations.
 - Domain: lifecycle marketing · attribution modeling · martech architecture.
 - Regulatory: **consent-mode / cookie-consent** integration · CAN-SPAM/CASL plumbing.
-- Maverick: builds in the sandbox; **sends and ad-spend changes are gated**; consent/suppression is wired in by construction, never bypassed.
+- Lightwork: builds in the sandbox; **sends and ad-spend changes are gated**; consent/suppression is wired in by construction, never bypassed.
 
 #### C3 Deliverability / Email-Infrastructure Agent  [UB]
 JD: Protects sender reputation and inbox placement — the owner the brief named that was smeared across other seats.
@@ -1211,7 +1211,7 @@ JD: Protects sender reputation and inbox placement — the owner the brief named
 - Technical: **SPF/DKIM/DMARC enforcement (p=reject) · BIMI/VMC · Google/Yahoo 2024 bulk-sender rules (one-click unsub RFC 8058, <0.3% complaint rate) · IP warmup · seed-list/inbox-placement testing** · bounce/complaint analysis.
 - Domain: deliverability engineering · reputation management · list hygiene.
 - Regulatory: **CAN-SPAM / CASL** · one-click-unsubscribe mandates.
-- Maverick: the **consent/suppression floor is absolute** — never sends to an opted-out party; reputation changes are recommended, sends stay gated.
+- Lightwork: the **consent/suppression floor is absolute** — never sends to an opted-out party; reputation changes are recommended, sends stay gated.
 
 #### C4 Revenue / GTM Data-Engineering Agent  [UB +Build +Data]
 JD: The "RevOps engineering" seat — warehouse-native GTM data, models, and activation.
@@ -1219,7 +1219,7 @@ JD: The "RevOps engineering" seat — warehouse-native GTM data, models, and act
 - Technical: **warehouse-native GTM modeling · reverse-ETL activation · CDP pipelines · dbt funnel models · lead-to-account identity resolution** · data-quality tests on GTM data.
 - Domain: funnel/attribution data models · identity resolution · GTM semantic layer.
 - Regulatory: PII handling in the warehouse · consent propagation to activation.
-- Maverick: builds pipelines in the sandbox; **bulk writes back to systems-of-record are gated**; honors suppression/consent on every activation.
+- Lightwork: builds pipelines in the sandbox; **bulk writes back to systems-of-record are gated**; honors suppression/consent on every activation.
 
 #### C5 Marketing-Privacy / Consent Agent  [UB]
 JD: Owns marketing-side consent and privacy — the CMP, do-not-sell, and suppression sync.
@@ -1227,7 +1227,7 @@ JD: Owns marketing-side consent and privacy — the CMP, do-not-sell, and suppre
 - Technical: **consent capture by purpose/category · GPC · CCPA Do-Not-Sell/Share · cookie consent · suppression sync** across MAP/CRM/ads.
 - Domain: consent management · cookie/tracker governance · preference centers.
 - Regulatory: **GDPR/ePrivacy · CCPA/CPRA · GPC** · state-privacy wave.
-- Maverick: enforces consent/suppression as a hard floor across the GTM suite; **never contacts an opted-out party**; AI disclosure where applicable.
+- Lightwork: enforces consent/suppression as a hard floor across the GTM suite; **never contacts an opted-out party**; AI disclosure where applicable.
 
 ---
 
@@ -1246,7 +1246,7 @@ JD: Source candidates, build pipelines, market/talent mapping.
 - Systems: **Greenhouse, Lever, Ashby** (ATS) · LinkedIn Recruiter · job boards `[C]`.
 - Technical: Boolean/X-ray sourcing · pipeline building · talent-market mapping `[S]`.
 - Domain: sourcing strategy · candidate-data privacy `[K]`.
-- Maverick: outreach gated; no protected-class targeting.
+- Lightwork: outreach gated; no protected-class targeting.
 
 #### 1.2 Resume Screening & Ranking Agent  [UB +Assess]
 JD: Screen/rank applications against job-related criteria; draft a shortlist (Annex-III/LL144).
@@ -1254,13 +1254,13 @@ JD: Screen/rank applications against job-related criteria; draft a shortlist (An
 - Technical: structured screening against **job-related** criteria · **proxy detection/exclusion** · evidence-cited rationale `[S]`.
 - Domain: **structured hiring** · validity · adverse impact (four-fifths) `[K]`.
 - Regulatory: **NYC LL144, EU AI Act Annex III, EEOC (Title VII/ADA/ADEA)** `[K]`.
-- Maverick: **L1 ceiling** (drafts only); bias-evaluated; no demographic inference.
+- Lightwork: **L1 ceiling** (drafts only); bias-evaluated; no demographic inference.
 
 #### 1.3 Candidate Engagement & Scheduling Agent  [UB +Reach]
 JD: Candidate comms, interview scheduling, status updates, candidate experience.
 - Systems: the channels layer + **Google Calendar** (live) · ATS `[C]`.
 - Technical: candidate messaging · interview scheduling/coordination `[S]`.
-- Maverick: AI disclosure; consent on outreach; no commitments.
+- Lightwork: AI disclosure; consent on outreach; no commitments.
 
 #### 1.4 Interview & Assessment-Design Agent  [UB]
 JD: Structured interview kits, scorecards, job-related assessments, interviewer prep.
@@ -1273,14 +1273,14 @@ JD: Draft offers within comp bands, route approvals, manage acceptance.
 - Systems: ATS + comp tools · Total Rewards (4.1) `[C]`.
 - Technical: offer drafting · band-compliance checking `[S]`.
 - Domain: offer strategy · comp bands · pay-transparency law `[K]`.
-- Maverick: comp commitment gated (DoA).
+- Lightwork: comp commitment gated (DoA).
 
 #### 1.6 Employer Brand & Recruitment-Marketing Agent  [UB +Reach]
 JD: Careers content, job postings, candidate nurture.
 - Systems: career-site CMS · the channels layer · ATS `[C]`.
 - Technical: job-posting authoring · **inclusive-language checking** · candidate nurture `[S]`.
 - Regulatory: **EEO** (no discriminatory language in postings) `[K]`.
-- Maverick: publish gated.
+- Lightwork: publish gated.
 
 #### 1.7 Recruiting Ops & Analytics Agent  [UB +Data]
 JD: Funnel metrics, time-to-fill, source quality, adverse-impact monitoring.
@@ -1294,27 +1294,27 @@ JD: Funnel metrics, time-to-fill, source quality, adverse-impact monitoring.
 JD: Pre-boarding, day-1 plans, new-hire paperwork; triggers IT provisioning.
 - Systems: **HRIS (Workday, BambooHR, Rippling)** · the IT IAM agent · channels · `intake.py` `[C]`.
 - Technical: onboarding-plan design · paperwork (tax/policy) · provisioning request (→ IAM) `[S]`.
-- Maverick: provisioning handed to IT (cross-suite SoD).
+- Lightwork: provisioning handed to IT (cross-suite SoD).
 
 #### 2.2 Work-Authorization (I-9 / E-Verify) Agent  [UB]
 JD: Work-auth verification, I-9 completeness, immigration/visa tracking.
 - Systems: **E-Verify, Tracker I-9** · HRIS `[C]`.
 - Technical: I-9 completeness checking · work-auth/visa tracking `[S]`.
 - Domain: **IRCA / I-9** · visa categories · anti-discrimination (no document abuse) `[K]`.
-- Maverick: the verification decision is human; highly sensitive.
+- Lightwork: the verification decision is human; highly sensitive.
 
 #### 2.3 Offboarding & Exit Agent  [UB +Reach]
 JD: Offboarding checklist, access-revocation trigger, exit interviews, final-pay handoff.
 - Systems: HRIS · IT IAM · finance payroll · channels `[C]`.
 - Technical: offboarding-checklist execution · deprovisioning request · exit-interview synthesis `[S]`.
 - Domain: final-pay law · COBRA · timely access revocation (security) `[K]`.
-- Maverick: deprovisioning → IT; final pay → finance.
+- Lightwork: deprovisioning → IT; final pay → finance.
 
 #### 2.4 Internal Mobility & Transfer Agent  [UB]
 JD: Transfers, role changes, internal moves, redeployment.
 - Systems: HRIS · the talent-marketplace module `[C]`.
 - Technical: transfer drafting · internal-match analysis `[S]`.
-- Maverick: role/comp change gated (consequential).
+- Lightwork: role/comp change gated (consequential).
 
 ### Tower 3 — HR Operations & Shared Services
 
@@ -1322,27 +1322,27 @@ JD: Transfers, role changes, internal moves, redeployment.
 JD: Tier-1 HR Q&A (policy, PTO, benefits), case triage, escalation.
 - Systems: **ServiceNow HRSD** · the channels layer · `knowledge_search` · `intake.py` `[C]`.
 - Technical: policy-grounded answering · case triage · escalation `[S]`.
-- Maverick: AI disclosure; **escalate anything sensitive** (ER, comp, medical); never expose another employee's data.
+- Lightwork: AI disclosure; **escalate anything sensitive** (ER, comp, medical); never expose another employee's data.
 
 #### 3.2 HRIS & Employee-Records Agent  [UB +Data]
 JD: Employee master data, records management, data quality/governance.
 - Systems: **Workday, SuccessFactors, BambooHR** · `pii_detector` `[C]`.
 - Technical: HRIS data management · validation · **Workday report/calc-field basics** · data quality `[S]`.
 - Domain: HR data model · special-category privacy `[K]`.
-- Maverick: record changes gated; need-to-know.
+- Lightwork: record changes gated; need-to-know.
 
 #### 3.3 Employment-Verification & Letters Agent  [UB]
 JD: Verification of employment, letters (visa/mortgage), references.
 - Systems: HRIS · **The Work Number** (verification) `[C]`.
 - Technical: verification drafting · letter generation `[S]`.
 - Domain: what may be disclosed; consent for references/comp `[K]`.
-- Maverick: release without authorization gated.
+- Lightwork: release without authorization gated.
 
 #### 3.4 HR Policy & Document Agent  [UB]
 JD: Policy/handbook lifecycle, acknowledgments, e-signatures.
 - Systems: policy repo (Drive) · e-sign · the GRC policy agent `[C]`.
 - Technical: policy drafting · acknowledgment tracking · version control `[S]`.
-- Maverick: publish gated.
+- Lightwork: publish gated.
 
 #### 3.5 HR Compliance & Reporting Agent  [UB]
 JD: Mandatory reporting (EEO-1, OSHA 300, ACA, BLS, VETS-4212), retention, audit support.
@@ -1350,7 +1350,7 @@ JD: Mandatory reporting (EEO-1, OSHA 300, ACA, BLS, VETS-4212), retention, audit
 - Technical: compliance-report generation · data extraction `[S]`.
 - Domain: **EEO-1, OSHA 300/300A, ACA 1094/1095, VETS-4212, BLS** `[K]`.
 - Regulatory: EEOC, OSHA, IRS/ACA, DOL `[K]`.
-- Maverick: filing gated.
+- Lightwork: filing gated.
 
 ### Tower 4 — Total Rewards (Comp & Benefits)
 
@@ -1359,34 +1359,34 @@ JD: Comp benchmarking, band design, range placement, merit-cycle modeling.
 - Systems: **Radford, Mercer, Pave** (survey/comp) · HRIS `[C]`.
 - Technical: comp benchmarking · band design · **merit-cycle modeling** · compa-ratio analysis `[S]`.
 - Domain: comp philosophy · **pay-transparency law** · job architecture `[K]`.
-- Maverick: comp data need-to-know; changes gated (DoA).
+- Lightwork: comp data need-to-know; changes gated (DoA).
 
 #### 4.2 Pay-Equity Agent  [UB +Data]
 JD: Pay-equity analysis, disparate-pay detection, remediation modeling.
 - Systems: HRIS + comp · the bias-eval engine `[C]`.
 - Technical: **regression-based pay-equity analysis** · disparate-pay detection · remediation modeling `[S]`.
 - Domain: pay equity · **EU Pay Transparency Directive** · state pay laws `[K]`.
-- Maverick: often attorney-client-privileged → restricted compartment; aggregate.
+- Lightwork: often attorney-client-privileged → restricted compartment; aggregate.
 
 #### 4.3 Benefits Administration Agent  [UB +Reach]
 JD: Benefits enrollment, open enrollment, vendor liaison, questions.
 - Systems: **benefits platforms (Sequoia, bSwift), carriers** · HRIS `[C]`.
 - Technical: enrollment guidance · open-enrollment support `[S]`.
 - Domain: **ERISA, ACA, COBRA, HIPAA** (health data = Art 9) `[K]`.
-- Maverick: health-data privacy; elections gated.
+- Lightwork: health-data privacy; elections gated.
 
 #### 4.4 Leave & Absence Agent  [UB]
 JD: FMLA/ADA leave administration, accommodation intake, absence tracking.
 - Systems: HRIS + leave platform (AbsenceSoft) `[C]`.
 - Technical: leave-eligibility checking · absence tracking · accommodation intake (→ ER 7.4) `[S]`.
 - Domain: **FMLA, ADA, PWFA** · state leave laws `[K]`.
-- Maverick: medical-data privacy; eligibility/accommodation decisions human-led.
+- Lightwork: medical-data privacy; eligibility/accommodation decisions human-led.
 
 #### 4.5 Payroll Liaison Agent  [UB]
 JD: Feed comp/status changes to finance Payroll, reconcile, resolve queries.
 - Systems: HRIS ↔ the finance Payroll agent `[C]`.
 - Technical: payroll-input sync · reconciliation `[S]`.
-- Maverick: **never runs payroll** (finance owns); SoD across HR↔finance.
+- Lightwork: **never runs payroll** (finance owns); SoD across HR↔finance.
 
 ### Tower 5 — Performance & Talent Management
 
@@ -1400,27 +1400,27 @@ JD: Orchestrate the cycle; draft review summaries from documented inputs; calibr
 - Systems: performance platform · the bias-eval engine `[C]`.
 - Technical: review synthesis from documented inputs · **bias-aware language** · calibration data `[S]`.
 - Domain: performance management · rater-bias awareness (recency/halo) `[K]`.
-- Maverick: **L1 ceiling**; never assigns a rating/decision; decision record on the human rating.
+- Lightwork: **L1 ceiling**; never assigns a rating/decision; decision record on the human rating.
 
 #### 5.3 Calibration & Promotion Agent  [UB +Data]
 JD: Calibration support, promotion-packet assembly, pay-for-performance modeling.
 - Systems: performance + comp `[C]`.
 - Technical: calibration analysis · promo-packet assembly · **adverse-impact check on promotion rates** `[S]`.
-- Maverick: consequential gate; the decision is human.
+- Lightwork: consequential gate; the decision is human.
 
 #### 5.4 Succession & Talent-Review Agent  [UB]
 JD: Succession plans, 9-box, high-potential, talent reviews.
 - Systems: HRIS + performance `[C]`.
 - Technical: succession-plan drafting · 9-box analysis `[S]`.
 - Domain: talent management; bias-aware (no proxy-based potential) `[K]`.
-- Maverick: sensitive/confidential.
+- Lightwork: sensitive/confidential.
 
 #### 5.5 Performance-Improvement & Coaching Agent  [UB]
 JD: Draft PIPs and coaching plans; manager guidance.
 - Systems: performance platform · ER (7.1) `[C]`.
 - Technical: PIP drafting · coaching-plan design `[S]`.
 - Domain: progressive discipline; documentation; dignity `[K]`.
-- Maverick: **delivering it is human-owned**; legal review of PIP/termination paths.
+- Lightwork: **delivering it is human-owned**; legal review of PIP/termination paths.
 
 ### Tower 6 — Learning & Development
 
@@ -1439,7 +1439,7 @@ JD: Skills taxonomy, gap analysis, career paths, IDPs.
 JD: Assign/track training, LMS admin, completion nudges.
 - Systems: LMS · channels `[C]`.
 - Technical: training assignment · completion tracking · LMS admin `[S]`.
-- Maverick: low-risk → L3/L4 eligible.
+- Lightwork: low-risk → L3/L4 eligible.
 
 #### 6.4 Compliance-Training Agent  [UB]
 JD: Mandatory training (harassment, security, ethics, safety), completion + attestation.
@@ -1454,42 +1454,42 @@ JD: ER case intake, manager guidance, documentation, trend spotting.
 - Systems: ER case mgmt (HR Acuity) · `knowledge_search` `[C]`.
 - Technical: case intake · manager-guidance drafting · trend analysis `[S]`.
 - Domain: ER practice · consistency · documentation `[K]`.
-- Maverick: confidential; escalate; decides no outcomes.
+- Lightwork: confidential; escalate; decides no outcomes.
 
 #### 7.2 Investigations Agent  [UB]
 JD: Workplace-investigation support — interview plans, evidence organization, neutral report.
 - Systems: case mgmt (restricted) · the legal domain `[C]`.
 - Technical: investigation planning · evidence organization · timeline building · neutral report drafting `[S]`.
 - Domain: workplace-investigation protocol · interview techniques `[K]`.
-- Maverick: **independence + strict confidentiality + privilege**; isolated compartment; never concludes.
+- Lightwork: **independence + strict confidentiality + privilege**; isolated compartment; never concludes.
 
 #### 7.3 Employment-Law Compliance Agent  [UB]
 JD: FLSA/FMLA/ADA/Title VII/WARN/state-law compliance; policy/practice review.
 - Systems: the legal domain · GRC · `knowledge_search` `[C]`.
 - Technical: compliance checking · risk flagging `[S]`.
 - Domain: **FLSA, FMLA, ADA, Title VII, ADEA, NLRA, WARN** + state law `[K]`.
-- Maverick: drafts for counsel; not legal advice.
+- Lightwork: drafts for counsel; not legal advice.
 
 #### 7.4 EEO / AAP & Accommodations Agent  [UB]
 JD: EEO compliance, affirmative-action plans, ADA/PWFA accommodation interactive process.
 - Systems: HRIS · the bias-eval engine · legal `[C]`.
 - Technical: **AAP drafting (OFCCP)** · accommodation-process support · adverse-impact analysis `[S]`.
 - Domain: **EEO, OFCCP/AAP, ADA/PWFA** interactive process `[K]`.
-- Maverick: protected-class data aggregate/compliance-only; interactive process human-led.
+- Lightwork: protected-class data aggregate/compliance-only; interactive process human-led.
 
 #### 7.5 Labor-Relations Agent  [UB]
 JD: Union/CBA support, grievances, works councils, NLRA.
 - Systems: `knowledge_search` (CBA) · case mgmt `[C]`.
 - Technical: CBA interpretation · grievance tracking `[S]`.
 - Domain: **NLRA · CBA administration · EU works councils / co-determination** `[K]`.
-- Maverick: jurisdiction-aware; sensitive; human-led.
+- Lightwork: jurisdiction-aware; sensitive; human-led.
 
 #### 7.6 Ethics & Whistleblower-Triage Agent  [UB]
 JD: Hotline intake, triage, routing (SOX §301 for finance matters).
 - Systems: the GRC ethics/whistleblower agent · case mgmt `[C]`.
 - Technical: report intake · triage · routing `[S]`.
 - Domain: whistleblower protection · anonymity preservation `[K]`.
-- Maverick: confidential/anonymous-preserving.
+- Lightwork: confidential/anonymous-preserving.
 
 ### Tower 8 — People Analytics, Workforce Planning & Engagement
 
@@ -1503,26 +1503,26 @@ JD: HR metrics, attrition/retention analytics, dashboards, flight-risk.
 JD: Headcount/workforce plans, org design, scenario modeling.
 - Systems: HRIS · the finance FP&A workforce-cost agent `[C]`.
 - Technical: workforce modeling · org-design analysis · scenario planning `[S]`.
-- Maverick: HR owns the people plan, finance owns the cost (SoD); WARN if layoffs.
+- Lightwork: HR owns the people plan, finance owns the cost (SoD); WARN if layoffs.
 
 #### 8.3 Engagement & Survey Agent  [UB]
 JD: Engagement/pulse surveys, consented & aggregated sentiment, action planning.
 - Systems: **Culture Amp, Glint, Qualtrics** `[C]`.
 - Technical: survey design · **aggregate sentiment synthesis** (min-response threshold) `[S]`.
-- Maverick: **REFUSES individual emotion inference / monitoring (EU AI Act Art 5)** — aggregate-only.
+- Lightwork: **REFUSES individual emotion inference / monitoring (EU AI Act Art 5)** — aggregate-only.
 
 #### 8.4 DEI Analytics & Programs Agent  [UB +Data]
 JD: Diversity representation analytics, DEI programs, inclusion metrics.
 - Systems: HRIS · BI `[C]`.
 - Technical: representation analytics · inclusion metrics · DEI-program drafting `[S]`.
 - Domain: DEI; **post-SFFA / jurisdiction limits** — aggregate-only, no protected attribute as a selection input `[K]`.
-- Maverick: legal review; no protected-class-based decisions.
+- Lightwork: legal review; no protected-class-based decisions.
 
 #### 8.5 Internal-Communications Agent  [UB +Reach]
 JD: Employee communications, announcements, change comms.
 - Systems: the channels layer · intranet `[C]`.
 - Technical: comms drafting · audience targeting `[S]`.
-- Maverick: sensitive comms (layoffs, policy) human-approved.
+- Lightwork: sensitive comms (layoffs, policy) human-approved.
 
 ### Council-added agents
 *(seats the council flagged as missing; full profiles below.)*
@@ -1533,7 +1533,7 @@ JD: Runs the background-check process and the FCRA adverse-action sequence — d
 - Technical: adjudication-matrix application · individualized-assessment drafting · dispute tracking · timing-clock management.
 - Domain: **FCRA** pre-adverse/adverse-action two-step · **ban-the-box / fair-chance** timing · EEOC arrest-vs-conviction guidance · dispute handling.
 - Regulatory: **FCRA, EEOC, state/local fair-chance laws**.
-- Maverick: drafts the notices and timeline; **the hire/no-hire decision is human**; uses only job-related criteria, never protected-class proxies.
+- Lightwork: drafts the notices and timeline; **the hire/no-hire decision is human**; uses only job-related criteria, never protected-class proxies.
 
 #### C2 Immigration / Global-Mobility Agent  [UB]
 JD: Supports the work-authorization and global-mobility lifecycle (deeper than I-9, which 2.2 owns).
@@ -1541,7 +1541,7 @@ JD: Supports the work-authorization and global-mobility lifecycle (deeper than I
 - Technical: visa-timeline tracking · **LCA / public-access-file** assembly · prevailing-wage checks · expat-assignment + **shadow-payroll** triggers (to finance Payroll).
 - Domain: visa lifecycle (**H-1B/L-1/O-1/TN/PERM/green card**) · global-mobility · expat tax interplay.
 - Regulatory: **INA/USCIS, DOL (LCA/PERM), IRCA anti-discrimination**, host-country immigration.
-- Maverick: prepares filings for counsel/human sign-off; **a filing or status decision is human**; anti-discrimination rules apply.
+- Lightwork: prepares filings for counsel/human sign-off; **a filing or status decision is human**; anti-discrimination rules apply.
 
 #### C3 HRIS / HCM Platform-Admin Agent  [UB +Build]
 JD: Configures and troubleshoots the HCM platform — the admin depth split out of HRIS records (3.2).
@@ -1549,7 +1549,7 @@ JD: Configures and troubleshoots the HCM platform — the admin depth split out 
 - Technical: business-process configuration · security-group/RBP design · **EIB/Studio/Integration-Center** integrations · advanced/matrix reporting · tenant-config troubleshooting.
 - Domain: HCM data model · org/position management · effective-dating.
 - Regulatory: HR-data privacy (special-category) · SoD in HCM security.
-- Maverick: changes ship through the sandbox + review; **production config changes and mass data loads are gated**; employee data stays need-to-know.
+- Lightwork: changes ship through the sandbox + review; **production config changes and mass data loads are gated**; employee data stays need-to-know.
 
 #### C4 Workers'-Comp & HR-Safety Agent  [UB]
 JD: Owns the HR↔EHS seam — OSHA recordkeeping, WC claims intake, and return-to-work.
@@ -1557,7 +1557,7 @@ JD: Owns the HR↔EHS seam — OSHA recordkeeping, WC claims intake, and return-
 - Technical: **OSHA recordability (300/301/300A) + ITA e-submission (1904.41)** · fatality/hospitalization reporting · WC claims intake · return-to-work coordination.
 - Domain: workers'-comp administration · OSHA↔FMLA/ADA interplay · modified-duty programs.
 - Regulatory: **OSHA 1904, state workers'-comp, FMLA/ADA**.
-- Maverick: maintains the log and drafts filings; **regulatory submission is human-gated**; medical data is protected and aggregate where possible.
+- Lightwork: maintains the log and drafts filings; **regulatory submission is human-gated**; medical data is protected and aggregate where possible.
 
 #### C5 Total-Rewards Equity / LTI Agent  [UB +Data]
 JD: Benchmarks and models equity/long-term incentives (ties to finance SBC, 7.3).
@@ -1565,7 +1565,7 @@ JD: Benchmarks and models equity/long-term incentives (ties to finance SBC, 7.3)
 - Technical: RSU/option/ESPP benchmarking · **dilution / burn-rate / overhang** modeling · vesting schedules · mobility & **§83(b)** tax modeling.
 - Domain: long-term-incentive design · equity-grant mechanics · total-rewards strategy.
 - Regulatory: **ASC 718 (cross-ref finance), §409A, §83(b), §6039** · mobility tax.
-- Maverick: models and benchmarks for human decision; **grant/comp changes are gated**; comp data is strictly need-to-know.
+- Lightwork: models and benchmarks for human decision; **grant/comp changes are gated**; comp data is strictly need-to-know.
 
 ---
 
@@ -1588,7 +1588,7 @@ JD: User/market research, problem validation, opportunity assessment, JTBD.
 JD: Roadmap construction, prioritization, tradeoff analysis.
 - Systems: **Jira, Linear, Productboard, Notion** `[C]`.
 - Technical: prioritization frameworks (**RICE, WSJF, Kano**) · roadmap building · tradeoff analysis `[S]`.
-- Maverick: roadmap is human-owned (product decision).
+- Lightwork: roadmap is human-owned (product decision).
 
 #### 1.3 Requirements & Spec (PRD) Agent  [UB]
 JD: PRDs, user stories, acceptance criteria, edge-case enumeration.
@@ -1617,7 +1617,7 @@ JD: Synthesize feedback/reviews/tickets into themes & product signals.
 JD: Launch plans, release notes, internal/GTM coordination.
 - Systems: GTM suite · Jira/Linear · channels `[C]`.
 - Technical: launch-plan drafting · release-notes authoring `[S]`.
-- Maverick: external comms gated (GTM).
+- Lightwork: external comms gated (GTM).
 
 ### Tower 2 — Design & UX
 
@@ -1653,10 +1653,10 @@ JD: Microcopy, content design, product voice, localization prep.
 
 #### 3.1 Implementation / Coding Agent  [UB +Build]
 JD: Feature implementation — the core write-test loop against a spec.
-- Systems: the kernel (`agent`/`coding_mode`/`edit_format`) · `tools/{apply_patch,ast_edit,code_exec,repo_map}` · the **7 sandbox backends** (+ a `network_policy` egress layer) · Git `[C]`.
+- Systems: the kernel (`agent`/`coding_mode`/`edit_format`) · `tools/{apply_patch,ast_edit,code_exec,repo_map}` · the **9 sandbox backends** (+ a `network_policy` egress layer) · Git `[C]`.
 - Technical: **multi-language coding** (Python, TypeScript/JS, Go, Java, Rust, …) · test-first development · debugging · the relevant frameworks `[S]`.
 - Domain: software design · the codebase + its standards `[K]`.
-- Maverick: edit-in-sandbox; opens PRs; **never merges, deploys, or `self_edit`s**.
+- Lightwork: edit-in-sandbox; opens PRs; **never merges, deploys, or `self_edit`s**.
 
 #### 3.2 Code-Review Agent  [UB +Build]
 JD: Review diffs for correctness, simplification, reuse; enforce standards.
@@ -1678,7 +1678,7 @@ JD: Reproduce, diagnose, fix defects; root-cause analysis.
 JD: Write unit/integration/E2E tests (TDD); raise coverage on risk.
 - Systems: `verifier.py` · `code_exec` · `test_impact` · test frameworks (pytest, Jest, Playwright) `[C]`.
 - Technical: **TDD** · test-pyramid design · coverage-on-risk `[S]`.
-- Maverick: the anti-test-cheating verifier discipline.
+- Lightwork: the anti-test-cheating verifier discipline.
 
 #### 3.6 Code-Documentation Agent  [UB +Build]
 JD: Docstrings, API docs, READMEs, comments to house density.
@@ -1711,7 +1711,7 @@ JD: Triage bugs, defect analytics, flakiness/quality trends.
 JD: Release gates/checklists, chaos & resilience testing.
 - Systems: `chaos.py` · `benchmarks/` · the sandbox `[C]`.
 - Technical: release-gate execution · **chaos/fault-injection** testing `[S]`.
-- Maverick: the release decision is human.
+- Lightwork: the release decision is human.
 
 ### Tower 5 — DevOps / Platform / Release
 
@@ -1719,20 +1719,20 @@ JD: Release gates/checklists, chaos & resilience testing.
 JD: Pipeline authoring/maintenance, build/test automation, gate config.
 - Systems: **GitHub Actions, GitLab CI** · `deploy/` `[C]`.
 - Technical: pipeline authoring (YAML) · build/test automation · caching/matrix `[S]`.
-- Maverick: never disables a gate (hard floor).
+- Lightwork: never disables a gate (hard floor).
 
 #### 5.2 Infrastructure-as-Code Agent  [UB +Build]
 JD: IaC, provisioning, environment config — incl. standing up databases.
 - Systems: **Terraform, Pulumi, Helm/Kubernetes** · `tools/{cloudflare_tool,vercel_tool,lambda_tool,s3_tool}` · AWS/Azure/GCP `[C]`.
 - Technical: **IaC authoring** · **provisioning & configuring databases (e.g., stand up Oracle 23ai, Postgres, RDS — install, parameters, backup, HA)** · container orchestration `[S]`.
 - Domain: cloud architecture · the Well-Architected frameworks `[K]`.
-- Maverick: plan-in-sandbox; **apply/provision gated** (human).
+- Lightwork: plan-in-sandbox; **apply/provision gated** (human).
 
 #### 5.3 Release & Deployment Agent  [UB +Build]
 JD: Cut releases, orchestrate rollouts/canaries, rollback.
 - Systems: `deploy/` · **GitHub Actions, Vercel, ArgoCD/Spinnaker** · `checkpoint.py` `[C]`.
 - Technical: release engineering · canary/blue-green rollouts · rollback `[S]`.
-- Maverick: **production deploy = hard floor (human)**.
+- Lightwork: **production deploy = hard floor (human)**.
 
 #### 5.4 Observability & SRE Agent  [UB +Build]
 JD: Monitoring, SLOs, alert tuning, reliability *(cross-ref IT-GRC 10.3)*.
@@ -1744,7 +1744,7 @@ JD: Monitoring, SLOs, alert tuning, reliability *(cross-ref IT-GRC 10.3)*.
 JD: Dependency updates, SBOM, vuln remediation *(cross-ref IT-GRC 7.2/7.4)*.
 - Systems: `license_scan.py` · `dep_graph` · **Dependabot, Snyk** `[C]`.
 - Technical: dependency updates · SBOM · CVE remediation `[S]`.
-- Maverick: copyleft/critical-CVE deps = hard floor.
+- Lightwork: copyleft/critical-CVE deps = hard floor.
 
 ### Tower 6 — Data & ML Engineering
 
@@ -1753,7 +1753,7 @@ JD: ETL/ELT, transformations, data models, pipeline maintenance.
 - Systems: **dbt, Airflow/Dagster** · **Snowflake, BigQuery, Databricks** · `tools/{sql_query,pandas_query,notebook_exec}` `[C]`.
 - Technical: **SQL/dbt modeling** · pipeline orchestration · **querying Oracle/Snowflake/etc. to extract data** · data testing `[S]`.
 - Domain: dimensional modeling · ELT patterns `[K]`.
-- Maverick: prod pipeline changes gated.
+- Lightwork: prod pipeline changes gated.
 
 #### 6.2 Data-Quality & Governance Agent  [UB +Data]
 JD: Data-quality tests, lineage, data contracts *(cross-ref GRC data gov)*.
@@ -1765,13 +1765,13 @@ JD: Model development, training, evaluation, experiment tracking.
 - Systems: **PyTorch/scikit-learn, MLflow, Weights & Biases** · `tools/{embeddings,huggingface,notebook_exec}` · the sandbox `[C]`.
 - Technical: model development · training/eval · experiment tracking · feature engineering `[S]`.
 - Domain: ML methods · evaluation rigor `[K]`.
-- Maverick: model promotion gated.
+- Lightwork: model promotion gated.
 
 #### 6.4 MLOps & Model-Deployment Agent  [UB +Build]
 JD: Model serving, monitoring, drift detection, retraining *(model cards/AI risk → IT-GRC T1)*.
 - Systems: **SageMaker, Vertex AI, KServe/Seldon** · serving infra `[C]`.
 - Technical: model serving · **drift/performance monitoring** · retraining pipelines `[S]`.
-- Maverick: deploy gated.
+- Lightwork: deploy gated.
 
 #### 6.5 BI & Reporting Agent  [UB +Data]
 JD: Dashboards, reports, self-serve analytics.
@@ -1799,7 +1799,7 @@ JD: DORA + flow metrics, bottleneck analysis.
 JD: Answer "how does X work / where is Y", onboarding, codebase navigation.
 - Systems: `repo_map`, `knowledge_search` · the codebase `[C]`.
 - Technical: codebase navigation/explanation · onboarding support `[S]`.
-- Maverick: read-only.
+- Lightwork: read-only.
 
 ### Tower 8 — Technical Research & Architecture
 
@@ -1813,7 +1813,7 @@ JD: System design, ADRs, design reviews, tradeoff analysis.
 JD: Research spikes, feasibility studies, throwaway PoCs in the sandbox.
 - Systems: the sandbox · `web_search` · the reasoning strategies (debate/ToT) `[C]`.
 - Technical: feasibility prototyping · spike investigation `[S]`.
-- Maverick: PoCs don't ship without the gate.
+- Lightwork: PoCs don't ship without the gate.
 
 #### 8.3 Technology-Evaluation Agent  [UB +Build]
 JD: Library/framework/vendor evaluation, build-vs-buy, license screening.
@@ -1829,7 +1829,7 @@ JD: Builds native and cross-platform mobile apps (the agent for the already-ship
 - Technical: **Swift/SwiftUI · Kotlin/Jetpack Compose · React Native/Flutter** · mobile CI/release automation · **mobile security (keychain/keystore, cert pinning)** · offline/sync.
 - Domain: mobile UX patterns · app lifecycle · push/deep-linking.
 - Regulatory: store privacy labels · mobile data-protection (ATT, Play Data Safety).
-- Maverick: builds and tests in the sandbox; opens a PR; **App Store / Play release is a hard human floor**; never self-edits.
+- Lightwork: builds and tests in the sandbox; opens a PR; **App Store / Play release is a hard human floor**; never self-edits.
 
 #### C2 API Design & Contract Agent  [UB +Build]
 JD: Designs API contracts and enforces compatibility (the agent for the shipped OpenAPI runner).
@@ -1837,7 +1837,7 @@ JD: Designs API contracts and enforces compatibility (the agent for the shipped 
 - Technical: **OpenAPI 3.1 · GraphQL / Apollo federation · gRPC/protobuf · AsyncAPI** · versioning/deprecation · idempotency/pagination · **contract testing (Pact)**.
 - Domain: API design (REST/GraphQL/event) · backward-compatibility · API governance.
 - Regulatory: API security (OWASP API Top 10) · data-exposure review.
-- Maverick: proposes contracts and tests in the sandbox via PR; **breaking changes require human review**; never self-edits.
+- Lightwork: proposes contracts and tests in the sandbox via PR; **breaking changes require human review**; never self-edits.
 
 #### C3 Database Engineering / DBA Agent  [UB +Build +Data] {expert}
 JD: Owns data modeling, performance, and database standups — including the named "Oracle 23ai standup" capability.
@@ -1845,7 +1845,7 @@ JD: Owns data modeling, performance, and database standups — including the nam
 - Technical: **data modeling · indexing/partitioning · query optimization (EXPLAIN) · migrations (Flyway/Liquibase/Alembic) · replication/HA/PITR · standing up Oracle 23ai (incl. JSON-relational duality + vector)** · NoSQL data modeling.
 - Domain: relational + NoSQL design · transaction isolation · HA/DR topologies.
 - Regulatory: data-at-rest encryption · DB access controls (ITGC) · PII handling.
-- Maverick: provisions/standups in the sandbox; **schema migrations and production DB changes are human-gated**; never touches a system-of-record without approval; never self-edits.
+- Lightwork: provisions/standups in the sandbox; **schema migrations and production DB changes are human-gated**; never touches a system-of-record without approval; never self-edits.
 
 #### C4 Platform Engineering Agent  [UB +Build]
 JD: Builds the internal developer platform — golden paths, environments, and secrets.
@@ -1853,15 +1853,15 @@ JD: Builds the internal developer platform — golden paths, environments, and s
 - Technical: **IDP / golden paths · ephemeral environments · secrets management · FinOps / cloud cost** · self-service scaffolding · paved-road tooling.
 - Domain: developer experience · platform-as-a-product · multi-tenancy.
 - Regulatory: secrets hygiene · least-privilege platform access.
-- Maverick: builds platform components in the sandbox via PR; **provisioning/apply to shared infra is human-gated**; never self-edits the kernel runtime.
+- Lightwork: builds platform components in the sandbox via PR; **provisioning/apply to shared infra is human-gated**; never self-edits the kernel runtime.
 
 #### C5 LLM-Application / Prompt-Engineering Agent  [UB +Build]
-JD: Builds LLM-powered product features — Maverick is itself an AI product, so this is distinct from classical ML (6.3/6.4).
+JD: Builds LLM-powered product features — Lightwork is itself an AI product, so this is distinct from classical ML (6.3/6.4).
 - Systems: the LLM/provider layer · vector stores · the eval/benchmark harness · `tools/embeddings`.
 - Technical: **RAG pipelines · prompt engineering · eval (RAGAS / LLM-as-judge) · guardrails · latency/cost optimization** · context/window management · tool-use design.
 - Domain: applied LLM patterns · retrieval quality · agent/guardrail design.
 - Regulatory: AI transparency (Art 50) · eval/robustness evidence (NIST AI RMF).
-- Maverick: builds features in the sandbox via PR; **guardrails/safety changes go through review**; respects the self-modification floor — never edits the agent's own runtime/safety/controls.
+- Lightwork: builds features in the sandbox via PR; **guardrails/safety changes go through review**; respects the self-modification floor — never edits the agent's own runtime/safety/controls.
 
 #### C6 Performance / Load-Engineering Agent  [UB +Build]
 JD: Owns non-functional performance — load testing, profiling, and capacity.
@@ -1869,7 +1869,7 @@ JD: Owns non-functional performance — load testing, profiling, and capacity.
 - Technical: **load/stress testing · profiling · Core Web Vitals (INP) · capacity testing** · bottleneck analysis · regression budgets.
 - Domain: performance engineering · scalability · capacity planning.
 - Regulatory: performance SLAs · resilience-test evidence.
-- Maverick: runs tests in the sandbox; reports for human decision; **load against production/shared environments is gated**; never self-edits.
+- Lightwork: runs tests in the sandbox; reports for human decision; **load against production/shared environments is gated**; never self-edits.
 
 ---
 
@@ -1915,7 +1915,7 @@ JD: Build the acquisition pipeline; screen targets against the thesis.
 - Systems: `web_search` `[C]`, `tools/newsapi_tool` `[C]` · market data · **PitchBook/CapIQ** `[C]`.
 - Technical: target screening `[S]` · pipeline building `[S]` · thesis-fit analysis `[S]`.
 - Domain: M&A sourcing · the acquisition thesis `[K]`.
-- Maverick: sealed; no approach/commitment.
+- Lightwork: sealed; no approach/commitment.
 
 #### 2.2 Due-Diligence Agent  [UB +Assess] {expert}
 JD: Coordinate DD, analyze the data room, surface red flags.
@@ -1924,7 +1924,7 @@ JD: Coordinate DD, analyze the data room, surface red flags.
 - Domain: M&A diligence (financial/legal/tech/commercial) `[K]`.
 - Verified: the eval/`assessment` harness (DD-coverage completeness).
 - Judgment: deal-breaker vs price-adjuster; "unknown" over a confident guess.
-- Maverick: **sealed deal compartment** (`allow_hosts=[]`); MNPI cannot cross.
+- Lightwork: **sealed deal compartment** (`allow_hosts=[]`); MNPI cannot cross.
 
 #### 2.3 Valuation & Deal-Modeling Agent  [UB +Data] {expert}
 JD: Valuation, deal models, synergy & accretion/dilution.
@@ -1932,14 +1932,14 @@ JD: Valuation, deal models, synergy & accretion/dilution.
 - Technical: **DCF · comparable-companies · precedent transactions · LBO modeling** `[S]` · synergy & accretion/dilution `[S]`.
 - Domain: valuation theory · deal structures `[K]`.
 - Verified: model-integrity checks (balancing, no broken circularity) via the eval harness.
-- Maverick: sealed; reuses finance models.
+- Lightwork: sealed; reuses finance models.
 
 #### 2.4 Deal-Execution & Documentation Agent  [UB]
 JD: Term sheets, deal-doc assembly/redline (with legal), process management.
 - Systems: the legal domain (CLM) `[C]` · the deal compartment.
 - Technical: term-sheet drafting `[S]` · deal-doc redline `[S]` · process management.
 - Domain: deal-doc structure · closing mechanics `[K]`.
-- Maverick: never signs/commits (human + legal).
+- Lightwork: never signs/commits (human + legal).
 
 #### 2.5 Post-Merger Integration (PMI) Agent  [UB]
 JD: Integration planning, synergy tracking, Day-1/Day-100 plans.
@@ -1991,14 +1991,14 @@ JD: Investor comms, shareholder analysis, Q&A prep, perception tracking.
 - Systems: the finance IR/reporting towers `[C]` · **IR CRM (Q4, Irwin)** `[C]` · `tools/salesforce_tool` `[C]`.
 - Technical: investor-material drafting `[S]` · shareholder/ownership analysis `[S]` · Q&A prep `[S]`.
 - Domain: IR · **Reg FD** · the equity story `[K]`.
-- Maverick: external release gated; no selective disclosure.
+- Lightwork: external release gated; no selective disclosure.
 
 #### 5.2 Earnings & Disclosure Agent  [UB] {strong}
 JD: Earnings materials, scripts, consistency with the filing; disclosure-control checklist.
 - Systems: the finance SEC-reporting tower `[C]`.
 - Technical: earnings-material drafting `[S]` · consistency checking `[S]` · **non-GAAP (Reg G)** reconciliation `[S]`.
 - Domain: earnings process · Reg FD/Reg G `[K]`.
-- Maverick: release human (Reg FD).
+- Lightwork: release human (Reg FD).
 
 #### 5.3 Capital-Strategy & Markets Agent  [UB +Data]
 JD: Capital structure, financing options, analyst/coverage tracking.
@@ -2013,7 +2013,7 @@ JD: Board materials, pre-reads, minutes, governance/calendar, action tracking.
 - Systems: **board portal (Diligent, Boardvantage)** `[C]` · `gdrive_tool` `[C]` · `tools/calendar_tool` `[C]`.
 - Technical: board-deck/pre-read drafting `[S]` · minutes `[S]` · governance-action tracking.
 - Domain: corporate governance · board process `[K]`.
-- Maverick: **sealed board compartment**; confidentiality/privilege; no board decisions.
+- Lightwork: **sealed board compartment**; confidentiality/privilege; no board decisions.
 
 #### 6.2 Decision-Brief & Memo Agent  [UB]
 JD: Executive decision memos, pre-reads, options/recommendations, synthesis.
@@ -2025,13 +2025,13 @@ JD: Executive decision memos, pre-reads, options/recommendations, synthesis.
 JD: Scheduling, inbox triage, travel, meeting prep — exec operational support.
 - Systems: `tools/{calendar_tool,calendly_tool,gmail_tool,msgraph_tool,teams_tool}` `[C]` · channels `[C]`.
 - Technical: scheduling/coordination `[S]` · inbox triage/prioritization `[S]` · travel · meeting prep.
-- Maverick: external sends gated.
+- Lightwork: external sends gated.
 
 #### 6.4 Executive-Communications Agent  [UB +Reach]
 JD: Exec/leadership comms — all-hands, leadership messages, internal narrative.
 - Systems: the channels layer `[C]` · `knowledge_search` `[C]`.
 - Technical: exec-comms drafting `[S]` · narrative crafting `[S]`.
-- Maverick: sensitive/external comms human-approved.
+- Lightwork: sensitive/external comms human-approved.
 
 ### Tower 7 — Corporate Affairs & ESG
 
@@ -2039,21 +2039,21 @@ JD: Exec/leadership comms — all-hands, leadership messages, internal narrative
 JD: External narrative, press, crisis comms, message consistency *(cross-ref GTM PR)*.
 - Systems: the GTM PR agent · media DBs (Cision) `[C]` · channels `[C]`.
 - Technical: corp-comms drafting `[S]` · crisis-comms playbooks `[S]`.
-- Maverick: external release gated.
+- Lightwork: external release gated.
 
 #### 7.2 Government-Relations & Public-Affairs Agent  [UB]
 JD: Policy/regulatory monitoring, public-affairs positions, engagement prep.
 - Systems: `CourtListener` `[C]`, `web_search` `[C]`, `tools/newsapi_tool` `[C]` · the GRC reg-change agent.
 - Technical: policy monitoring `[S]` · position-paper drafting `[S]`.
 - Domain: public policy · **lobbying-disclosure** awareness `[K]`.
-- Maverick: engagement gated.
+- Lightwork: engagement gated.
 
 #### 7.3 ESG & Sustainability Agent  [UB +Data] {strong}
 JD: ESG strategy + reporting (CSRD/ESRS, ISSB), carbon/impact tracking *(cross-ref finance ESG)*.
 - Systems: the finance ESG vertical `[C]` · ESG-data platforms (Persefoni, Workiva ESG) `[C]`.
 - Technical: **ESG reporting** `[S]` · carbon accounting (Scope 1/2/3) `[S]` · materiality assessment `[S]`.
 - Domain: **CSRD/ESRS, ISSB (IFRS S1/S2), GRI, TCFD, EU Taxonomy** `[K]`.
-- Maverick: disclosure gated.
+- Lightwork: disclosure gated.
 
 #### 7.4 Corporate Social Responsibility Agent  [UB]
 JD: CSR programs, philanthropy, community impact, volunteering.
@@ -2069,7 +2069,7 @@ JD: Builds the deal models — closes the Strategy↔Finance modeling gap inside
 - Technical: **three-statement model · LBO mechanics (debt schedule / cash sweep / circularity) · DCF / WACC build-up · PPA / opening balance sheet · accretion-dilution · returns (IRR/MOIC) bridges · structuring (cash/stock/earnout/NWC peg)**.
 - Domain: deal modeling · synergy quantification · capital structure.
 - Regulatory: purchase accounting (**ASC 805**) interplay · MNPI handling.
-- Maverick: **sealed deal compartment** — MNPI cannot cross the wall; models for the deal team to decide; never commits, prices, or signs.
+- Lightwork: **sealed deal compartment** — MNPI cannot cross the wall; models for the deal team to decide; never commits, prices, or signs.
 
 #### C2 Antitrust / Merger-Clearance Agent  [UB]
 JD: Flags merger-control and foreign-investment risk for counsel (was a "flag for counsel" gap with no skill).
@@ -2077,7 +2077,7 @@ JD: Flags merger-control and foreign-investment risk for counsel (was a "flag fo
 - Technical: HSR-threshold screening · overlap/concentration analysis · filing-timeline mapping · second-request readiness assessment.
 - Domain: **HSR thresholds + the 2024 HSR rule · 2023 Merger Guidelines · second requests · EU/UK & global merger control · CFIUS · gun-jumping**.
 - Regulatory: **HSR/Clayton Act, EU/UK merger control, CFIUS (FIRRMA)**.
-- Maverick: awareness/flagging only — **the legal determination is qualified counsel's**; gun-jumping discipline enforced inside the wall.
+- Lightwork: awareness/flagging only — **the legal determination is qualified counsel's**; gun-jumping discipline enforced inside the wall.
 
 #### C3 Activist-Defense / Shareholder-Engagement Agent  [UB]
 JD: Monitors the shareholder base and prepares engagement and defense readiness.
@@ -2085,7 +2085,7 @@ JD: Monitors the shareholder base and prepares engagement and defense readiness.
 - Technical: **13D/G monitoring (2024 deadlines) · proxy season / ISS-Glass Lewis analysis · say-on-pay modeling · Rule 10b5-1 plan tracking** · vulnerability/perception assessment.
 - Domain: activism defense · proxy mechanics · shareholder engagement.
 - Regulatory: **§13(d)/(g), Reg 14A proxy rules, say-on-pay, Rule 10b5-1**.
-- Maverick: research + brief; **external engagement/disclosure is gated under Reg FD**; MNPI walled.
+- Lightwork: research + brief; **external engagement/disclosure is gated under Reg FD**; MNPI walled.
 
 #### C4 JV / Alliance / BD Agent  [UB]
 JD: Supports non-M&A inorganic growth — JVs, alliances, and licensing.
@@ -2093,7 +2093,7 @@ JD: Supports non-M&A inorganic growth — JVs, alliances, and licensing.
 - Technical: JV structuring · alliance/partnership design · **licensing/partnership economics** modeling · governance-structure options.
 - Domain: joint-venture structures · strategic alliances · BD deal shapes.
 - Regulatory: antitrust-in-JVs awareness (cross-ref C2) · IP/licensing terms (cross-ref legal).
-- Maverick: structures and models for executive decision; **never signs or commits**; antitrust/IP routed to counsel.
+- Lightwork: structures and models for executive decision; **never signs or commits**; antitrust/IP routed to counsel.
 
 #### C5 Transaction-Tax / Structuring Agent  [UB]
 JD: Analyzes deal tax structuring with finance tax (sealed).
@@ -2101,7 +2101,7 @@ JD: Analyzes deal tax structuring with finance tax (sealed).
 - Technical: structuring analysis — **338(h)(10)/336(e) · NOLs & §382 limitation · step-up · tax-free reorg (§368)** · entity/jurisdiction structuring.
 - Domain: transaction tax · M&A tax structuring · attribute preservation.
 - Regulatory: **IRC §§338/336/368/382**, cross-ref finance tax.
-- Maverick: **sealed** deal compartment; models for counsel/tax sign-off; never commits a position; MNPI walled.
+- Lightwork: **sealed** deal compartment; models for counsel/tax sign-off; never commits a position; MNPI walled.
 
 ---
 
@@ -2120,14 +2120,14 @@ JD: Research case law/statutes/regulations; write memos with precise, quoted aut
 - Systems: **CourtListener** (live) · **Westlaw, LexisNexis** · `web_search` · `knowledge_search` `[C]`.
 - Technical: case-law/statute research · **Bluebook citation** · memo drafting (IRAC/CRAC) `[S]`.
 - Domain: legal research method · primary vs secondary authority `[K]`.
-- Maverick: **verify every citation**; jurisdiction-scoped; not legal advice.
+- Lightwork: **verify every citation**; jurisdiction-scoped; not legal advice.
 
 #### 1.2 Citation-Verification Agent  [UB]
 JD: Verify every citation against a real source; flag/strip unverifiable authority.
 - Systems: **CourtListener** (live) · Westlaw/Lexis · Shepard's/KeyCite `[C]`.
 - Technical: **citation verification** · quote/pin-cite checking · **Shepardizing** (good law check) `[S]`.
 - Domain: citation accuracy · the fabricated-citation failure mode `[K]`.
-- Maverick: **the citation-integrity enforcement point** — unverifiable → `[UNVERIFIED]`, excluded.
+- Lightwork: **the citation-integrity enforcement point** — unverifiable → `[UNVERIFIED]`, excluded.
 
 #### 1.3 Legal Knowledge-Management Agent  [UB]
 JD: Internal precedent/clause/memo library; surface prior work.
@@ -2141,14 +2141,14 @@ JD: Draft contracts from approved templates + the playbook (NDAs, MSAs, SOWs, DP
 - Systems: **CLM (Ironclad, Icertis, DocuSign CLM)** · template library `[C]`.
 - Technical: **contract drafting** from templates/playbook · clause assembly `[S]`.
 - Domain: commercial contract law · the contract playbook `[K]`.
-- Maverick: never executes/signs.
+- Lightwork: never executes/signs.
 
 #### 2.2 Contract-Review & Redline Agent  [UB]
 JD: Review third-party paper against the playbook, redline, flag risk.
 - Systems: CLM · the playbook · privacy suite (DPA terms) · **contract-AI (Spellbook, LegalOn)** `[C]`.
 - Technical: **contract review & redlining** (liability, indemnity, IP, data, termination) · playbook-deviation flagging `[S]`.
 - Domain: commercial terms · risk allocation `[K]`.
-- Maverick: cite the playbook; attorney owns non-standard; never signs.
+- Lightwork: cite the playbook; attorney owns non-standard; never signs.
 
 #### 2.3 Contract-Negotiation-Support Agent  [UB]
 JD: Fallback positions, negotiation tracking, counterparty-position analysis.
@@ -2172,27 +2172,27 @@ JD: Entity formation/maintenance, subsidiary management, registered agents, annu
 - Systems: **entity mgmt (Diligent Entities)** · state SOS portals `[C]`.
 - Technical: entity tracking · corporate-filing drafting `[S]`.
 - Domain: corporate law · entity structures `[K]`.
-- Maverick: filing gated.
+- Lightwork: filing gated.
 
 #### 3.2 Board & Governance Agent  [UB]  *(cross-ref Strategy 6.1 — sealed)*
 JD: Board materials, minutes, resolutions, governance.
 - Systems: the Strategy board agent · `gdrive_tool` `[C]`.
 - Technical: resolution/minutes drafting · governance support `[S]`.
-- Maverick: sealed board compartment; privilege; no board decisions.
+- Lightwork: sealed board compartment; privilege; no board decisions.
 
 #### 3.3 Securities & SEC Agent  [UB]  *(cross-ref finance SEC tower)*
 JD: Securities-law compliance, disclosure review, filing legal review.
 - Systems: the finance SEC tower · CourtListener (rules) · EDGAR `[C]`.
 - Technical: disclosure review · securities-risk flagging `[S]`.
 - Domain: **'33/'34 Acts, Reg S-K/S-X, Section 16, 10b-5** `[K]`.
-- Maverick: filing gated.
+- Lightwork: filing gated.
 
 #### 3.4 Equity & Cap-Table Legal Agent  [UB]
 JD: Equity-issuance legal, option grants, 409A legal, securities exemptions.
 - Systems: cap-table (Carta) · the finance equity agent `[C]`.
 - Technical: equity-doc review · exemption analysis `[S]`.
 - Domain: **Reg D/S, Rule 701, 409A, ISO/NSO** law `[K]`.
-- Maverick: no issuance.
+- Lightwork: no issuance.
 
 ### Tower 4 — Litigation, Disputes & E-Discovery  *(sealed matter compartments)*
 
@@ -2201,35 +2201,35 @@ JD: Case management, docketing/deadlines, strategy support, outside-counsel coor
 - Systems: matter system · `tools/calendar_tool` · CourtListener · **PACER** `[C]`.
 - Technical: **docketing & deadline calculation** (FRCP/local rules) · case-status synthesis `[S]`.
 - Domain: **the finer points of litigation procedure — FRCP, jurisdiction/venue, pleadings, motion practice, discovery sequencing, appeals** `[K]`.
-- Maverick: **deadline integrity** (missed deadline = malpractice); sealed; no filings.
+- Lightwork: **deadline integrity** (missed deadline = malpractice); sealed; no filings.
 
 #### 4.2 E-Discovery Agent  [UB]
 JD: Document review, responsiveness/relevance coding, privilege review/logging, production prep.
 - Systems: **Relativity, Everlaw, Disco** · `tools/{pdf_reader,ocr}` `[C]`.
 - Technical: **TAR/predictive coding** · responsiveness/relevance review · **privilege review & logging** · production prep `[S]`.
 - Domain: **EDRM / FRCP Rule 26-34** · privilege types · proportionality `[K]`.
-- Maverick: **privilege protection** (mis-coding waives privilege); sealed; production human.
+- Lightwork: **privilege protection** (mis-coding waives privilege); sealed; production human.
 
 #### 4.3 Legal-Hold Agent  [UB]
 JD: Issue/track legal holds, custodian management, spoliation prevention.
 - Systems: the data stores · `audit/` (hold flags) · HRIS (custodians) · legal-hold tools `[C]`.
 - Technical: hold issuance/tracking · custodian management · hold-reminder workflow `[S]`.
 - Domain: **preservation duty / spoliation (FRCP Rule 37(e))** `[K]`.
-- Maverick: **deletion of held data refused** (hold overrides retention/erasure — hard floor).
+- Lightwork: **deletion of held data refused** (hold overrides retention/erasure — hard floor).
 
 #### 4.4 Brief & Motion-Drafting Agent  [UB]
 JD: Draft briefs, motions, pleadings; build the table of authorities.
 - Systems: CourtListener (live) · Westlaw/Lexis · the matter (sealed) `[C]`.
 - Technical: **brief/motion/pleading drafting** · legal argument (IRAC) · table-of-authorities assembly · **Bluebook** `[S]`.
 - Domain: motion practice · standards of review · persuasive writing `[K]`.
-- Maverick: **citation integrity** (the courtroom is where fabricated cites get sanctioned); filing is the attorney's.
+- Lightwork: **citation integrity** (the courtroom is where fabricated cites get sanctioned); filing is the attorney's.
 
 #### 4.5 Settlement & Dispute Agent  [UB]
 JD: Settlement analysis, demand/response letters, ADR support, exposure modeling.
 - Systems: the matter (sealed) · finance (exposure) `[C]`.
 - Technical: settlement analysis · demand/response drafting · exposure modeling `[S]`.
 - Domain: ADR (mediation/arbitration) · settlement strategy `[K]`.
-- Maverick: never sends/commits.
+- Lightwork: never sends/commits.
 
 ### Tower 5 — Intellectual Property
 
@@ -2238,14 +2238,14 @@ JD: Patent/prior-art search, application support, portfolio management.
 - Systems: **USPTO Patent Center** (filing) + **Patent Public Search** (PatFT/AppFT retired), **PEDS, Global Dossier, Google Patents, Espacenet** `[C]`.
 - Technical: prior-art search · claim analysis · application-support drafting `[S]`.
 - Domain: patent law (35 USC) · patentability · the PCT `[K]`.
-- Maverick: filing gated.
+- Lightwork: filing gated.
 
 #### 5.2 Trademark Agent  [UB]
 JD: Trademark clearance/search, filing prep, watch/monitoring, oppositions.
 - Systems: **USPTO Trademark Search** (TESS retired) + **TSDR**, **ID Manual, Madrid/WIPO Global Brand DB, TTABVUE** · trademark watch services `[C]`.
 - Technical: clearance/knockout search · filing prep · likelihood-of-confusion analysis `[S]`.
 - Domain: trademark law (Lanham Act) · classes (Nice) `[K]`.
-- Maverick: filing gated.
+- Lightwork: filing gated.
 
 #### 5.3 Copyright & Trade-Secret Agent  [UB]
 JD: Copyright registration, trade-secret programs, DMCA, NDAs.
@@ -2257,7 +2257,7 @@ JD: Copyright registration, trade-secret programs, DMCA, NDAs.
 JD: Licensing-deal support, infringement analysis, enforcement/C&D.
 - Systems: the contracts tower · CourtListener `[C]`.
 - Technical: license-agreement drafting · **infringement analysis** · cease-and-desist drafting `[S]`.
-- Maverick: enforcement sends gated.
+- Lightwork: enforcement sends gated.
 
 ### Tower 6 — Regulatory, Antitrust & Trade
 
@@ -2272,14 +2272,14 @@ JD: Antitrust analysis, HSR/merger review, competition compliance.
 - Systems: the Strategy M&A tower · CourtListener `[C]`.
 - Technical: antitrust analysis · **HSR filing support** · competition-risk assessment `[S]`.
 - Domain: **Sherman/Clayton/HSR Acts** · merger guidelines · EU competition law `[K]`.
-- Maverick: no filings.
+- Lightwork: no filings.
 
 #### 6.3 Trade & Sanctions Agent  [UB]  *(cross-ref finance AML + GTM screening)*
 JD: Export controls, sanctions/OFAC, trade compliance.
 - Systems: sanctions screening · the GRC/finance suites `[C]`.
 - Technical: **export-control classification (ECCN)** · sanctions screening · trade-compliance review `[S]`.
 - Domain: **EAR/ITAR, OFAC, customs** `[K]`.
-- Maverick: decisions gated.
+- Lightwork: decisions gated.
 
 ### Tower 7 — Employment & Privacy Law
 
@@ -2288,14 +2288,14 @@ JD: Employment-law advice, policy legal review, dispute/claim analysis.
 - Systems: the HR employment-law agent · CourtListener `[C]`.
 - Technical: employment-policy legal review · claim analysis `[S]`.
 - Domain: **Title VII, ADA, ADEA, FLSA, FMLA, NLRA, WARN** + state `[K]`.
-- Maverick: attorney-owned; not legal advice.
+- Lightwork: attorney-owned; not legal advice.
 
 #### 7.2 Privacy & Data-Protection-Law Agent  [UB]  *(cross-ref privacy suite)*
 JD: Privacy counsel, DPAs, breach legal analysis, GDPR/CCPA positions.
 - Systems: the privacy suite · CourtListener `[C]`.
 - Technical: **DPA review** · breach legal analysis · privacy-position drafting `[S]`.
 - Domain: **GDPR, CCPA/CPRA, sectoral (HIPAA/GLBA/FERPA)** · cross-border `[K]`.
-- Maverick: notification decisions human/attorney.
+- Lightwork: notification decisions human/attorney.
 
 ### Tower 8 — Legal Operations
 
@@ -2308,13 +2308,13 @@ JD: Matter intake/triage, lifecycle, status reporting, prioritization.
 JD: Outside-counsel guidelines, e-billing review, spend analytics, panel management.
 - Systems: **e-billing (Legal Tracker, Brightflag)** · finance (spend) `[C]`.
 - Technical: **e-billing/invoice review** (OCG compliance, LEDES) · legal-spend analytics `[S]`.
-- Maverick: approvals gated; SoD vs finance AP.
+- Lightwork: approvals gated; SoD vs finance AP.
 
 #### 8.3 Legal-Intake & Triage Agent  [UB +Reach]
 JD: Legal-request intake, routing, self-service answers, SLA tracking.
 - Systems: `intake.py` · the channels layer · `knowledge_search` `[C]`.
 - Technical: request intake · routing · self-service answering `[S]`.
-- Maverick: AI disclosure; **escalate substantive questions** (not legal advice).
+- Lightwork: AI disclosure; **escalate substantive questions** (not legal advice).
 
 #### 8.4 Legal-Tech & KM-Ops Agent  [UB +Build]
 JD: Legal tech stack, workflow automation, legal metrics/reporting.
@@ -2326,7 +2326,7 @@ JD: Run conflicts checks before matter intake; set up ethical walls.
 - Systems: the matter/entity system · `quarantine.py`/`capability.py` `[C]`.
 - Technical: **conflicts checking** · ethical-wall setup `[S]`.
 - Domain: conflicts of interest · ethical-wall practice `[K]`.
-- Maverick: clearing a conflict is human; the ethical-wall setup point.
+- Lightwork: clearing a conflict is human; the ethical-wall setup point.
 
 ### Council-added agents
 *(seats the council flagged as missing; full profiles below.)*
@@ -2337,7 +2337,7 @@ JD: The legal owner of AI/emerging-tech matters, complementing the GRC AI-govern
 - Technical: AI-contract drafting/review · training-data & IP risk analysis · model-terms review · regulatory-mapping for AI features.
 - Domain: **EU AI Act · Colorado AI Act (SB 24-205) · the US state-privacy wave · AI/IP & training-data law · AI contracting**.
 - Regulatory: **EU AI Act, US state AI/privacy laws, copyright/IP**.
-- Maverick: drafts and analyzes — **not legal advice**; a licensed attorney reviews; every authority is citation-verified (no fabricated cases).
+- Lightwork: drafts and analyzes — **not legal advice**; a licensed attorney reviews; every authority is citation-verified (no fabricated cases).
 
 #### C2 Litigation Discovery-Response / Subpoena Agent  [UB]
 JD: Runs the inbound-demand workflow — responding to subpoenas, CIDs, and investigations (distinct from e-discovery review).
@@ -2345,7 +2345,7 @@ JD: Runs the inbound-demand workflow — responding to subpoenas, CIDs, and inve
 - Technical: subpoena/CID response drafting · scope/objection analysis · litigation-hold coordination · **30(b)(6)** witness-prep support · production-tracking.
 - Domain: responding to **subpoenas / CIDs / government investigations** · meet-and-confer · privilege-log basics.
 - Regulatory: **FRCP (26/30/34/45), state discovery rules**.
-- Maverick: drafts responses for attorney sign-off; **not legal advice**; preserves privilege; citations verified.
+- Lightwork: drafts responses for attorney sign-off; **not legal advice**; preserves privilege; citations verified.
 
 #### C3 Internal-Investigations (GC-led) Agent  [UB]
 JD: Supports privileged, counsel-led investigations (distinct from HR's workplace investigations; sealed, privileged).
@@ -2353,7 +2353,7 @@ JD: Supports privileged, counsel-led investigations (distinct from HR's workplac
 - Technical: investigation-plan drafting · evidence organization · neutral timeline construction · **Upjohn-warning** scripting · board/audit-committee report drafting.
 - Domain: **privileged, counsel-led** investigations (**FCPA, fraud, whistleblower-legal**) · privilege preservation.
 - Regulatory: **FCPA, attorney-client privilege / work-product, whistleblower law**.
-- Maverick: **sealed, privileged** compartment — findings stay inside the wall; reaches no legal conclusion; the attorney/board decides; not legal advice.
+- Lightwork: **sealed, privileged** compartment — findings stay inside the wall; reaches no legal conclusion; the attorney/board decides; not legal advice.
 
 #### C4 Insurance-Coverage Agent  [UB]
 JD: Analyzes coverage and manages claim tender across the insurance program.
@@ -2361,7 +2361,7 @@ JD: Analyzes coverage and manages claim tender across the insurance program.
 - Technical: **D&O / cyber / E&O coverage analysis** · claim-tender drafting · **reservation-of-rights** review · exclusion/retention analysis.
 - Domain: insurance coverage · claims handling · tower/limits structure.
 - Regulatory: insurance-law basics · notice-and-tender timing.
-- Maverick: analyzes and drafts tenders for attorney/risk sign-off; **a coverage position is human**; not legal advice; citations verified.
+- Lightwork: analyzes and drafts tenders for attorney/risk sign-off; **a coverage position is human**; not legal advice; citations verified.
 
 #### C5 Bankruptcy / Restructuring & Creditors'-Rights Agent  [UB]
 JD: Owns the finance/AR credit seam — secured transactions, claims, and avoidance-risk awareness.
@@ -2369,7 +2369,7 @@ JD: Owns the finance/AR credit seam — secured transactions, claims, and avoida
 - Technical: **UCC Article 9** security-interest analysis · **proof-of-claim** drafting · **preference / fraudulent-transfer** awareness · lien/perfection checks.
 - Domain: bankruptcy & restructuring · creditors' rights · workout structures.
 - Regulatory: **Bankruptcy Code (§§547/548/362), UCC Article 9**.
-- Maverick: drafts and flags for counsel; **not legal advice**; a filing/position is attorney-owned; citations verified.
+- Lightwork: drafts and flags for counsel; **not legal advice**; a filing/position is attorney-owned; citations verified.
 
 ---
 
@@ -2405,7 +2405,7 @@ JD: Sales & operations planning, IBP, scenario balancing.
 JD: Safety stock, reorder points, ABC/XYZ, multi-echelon optimization.
 - Systems: ERP/WMS · `pandas_query` `[C]`.
 - Technical: **safety-stock / reorder-point math** · ABC/XYZ · multi-echelon optimization `[S]`.
-- Maverick: reorder execution tiered.
+- Lightwork: reorder execution tiered.
 
 #### 1.5 Network & Capacity-Planning Agent  [UB +Data]
 JD: Network design, capacity planning, footprint/sourcing strategy.
@@ -2418,13 +2418,13 @@ JD: Network design, capacity planning, footprint/sourcing strategy.
 JD: Sourcing strategy, RFx, bid analysis, supplier selection.
 - Systems: **SAP Ariba, Coupa** (sourcing) · finance `[C]`.
 - Technical: RFx management · bid/should-cost analysis · supplier selection `[S]`.
-- Maverick: award gated.
+- Lightwork: award gated.
 
 #### 2.2 Purchasing / PO Agent  [UB]
 JD: Create POs, run the 3-way match, manage confirmations.
 - Systems: ERP · finance AP (1.2) · `governance` (risk-floor gate today; **DoA/amount-aware policy to build**) `[C]`.
 - Technical: PO creation · **3-way match** · variance flagging `[S]`.
-- Maverick: **PO commit beyond the DoA tier denied**; never releases payment; bank-detail-change → human.
+- Lightwork: **PO commit beyond the DoA tier denied**; never releases payment; bank-detail-change → human.
 
 #### 2.3 Supplier-Management & Performance Agent  [UB +Data]
 JD: Supplier scorecards, performance/SLA tracking, relationship management.
@@ -2443,20 +2443,20 @@ JD: Supplier risk, single-source/concentration, forced-labor/conflict-minerals, 
 JD: Production schedules, sequencing, line balancing, capacity feasibility.
 - Systems: **MES / ERP (SAP PP)** · the planning tower `[C]`.
 - Technical: **finite scheduling** · sequencing · line balancing `[S]`.
-- Maverick: releasing to the floor is human/tier.
+- Lightwork: releasing to the floor is human/tier.
 
 #### 3.2 Shop-Floor / MES Agent  [UB +Data]
 JD: Work-order management, shop-floor status, OEE analysis (read; actuation refused).
 - Systems: **MES** · industrial IoT (read-only telemetry) `[C]`.
 - Technical: work-order management · **OEE analysis** · throughput/bottleneck analysis `[S]`.
 - Domain: lean manufacturing · TPS `[K]`.
-- Maverick: **refuses equipment actuation / safety control** (§ safety refusal); escalate unsafe conditions.
+- Lightwork: **refuses equipment actuation / safety control** (§ safety refusal); escalate unsafe conditions.
 
 #### 3.3 BOM & Routing Agent  [UB]  *(cross-ref P&E for design)*
 JD: BOM management, routings, engineering-change orders.
 - Systems: ERP/**PLM (Teamcenter, Windchill)** · the P&E suite `[C]`.
 - Technical: BOM management · routing definition · **ECO** processing `[S]`.
-- Maverick: changes gated.
+- Lightwork: changes gated.
 
 #### 3.4 Production-Quality & Yield Agent  [UB +Data]
 JD: Yield, scrap, statistical process control, first-pass yield.
@@ -2470,13 +2470,13 @@ JD: Yield, scrap, statistical process control, first-pass yield.
 JD: Inspection plans, sampling, test-result capture/analysis.
 - Systems: **QMS (MasterControl, ETQ)** · MES `[C]`.
 - Technical: inspection planning · **AQL sampling** · test-result analysis `[S]`.
-- Maverick: quality-hold decisions gated.
+- Lightwork: quality-hold decisions gated.
 
 #### 4.2 Nonconformance & CAPA Agent  [UB]
 JD: NCR management, root-cause, CAPA tracking to closure.
 - Systems: QMS `[C]`.
 - Technical: NCR management · **root-cause (5-why, fishbone, 8D)** · CAPA tracking `[S]`.
-- Maverick: closure gated.
+- Lightwork: closure gated.
 
 #### 4.3 Supplier-Quality Agent  [UB]  *(cross-ref Procurement)*
 JD: Incoming quality, supplier audits, SCARs.
@@ -2488,7 +2488,7 @@ JD: ISO 9001 / regulatory quality compliance, lot/serial traceability, recall sc
 - Systems: QMS/ERP · legal (regulatory) · the audit chain `[C]`.
 - Technical: **lot/serial traceability** · recall-scope assembly `[S]`.
 - Domain: **ISO 9001** · industry quality (FDA QSR/21 CFR 820, IATF 16949) `[K]`.
-- Maverick: **recall execution is human-led** (safety/regulatory).
+- Lightwork: **recall execution is human-led** (safety/regulatory).
 
 ### Tower 5 — Logistics, Warehousing & Distribution
 
@@ -2496,32 +2496,32 @@ JD: ISO 9001 / regulatory quality compliance, lot/serial traceability, recall sc
 JD: Carrier selection, route/load optimization, freight audit, tracking.
 - Systems: **TMS (project44, FourKites, MercuryGate)** `[C]`.
 - Technical: **route/load optimization** · carrier selection · freight audit · ETA tracking `[S]`.
-- Maverick: **dispatch gated**; routing optimization is L3-eligible.
+- Lightwork: **dispatch gated**; routing optimization is L3-eligible.
 
 #### 5.2 Warehouse / WMS Agent  [UB +Data]
 JD: Warehouse ops — pick/pack waves, slotting, labor/dock planning.
 - Systems: **WMS (Manhattan, Körber, Blue Yonder)** `[C]`.
 - Technical: wave planning · **slotting optimization** · labor/dock planning `[S]`.
-- Maverick: physical task release gated.
+- Lightwork: physical task release gated.
 
 #### 5.3 Inventory-Control Agent  [UB +Data]  *(cross-ref finance 1.9)*
 JD: Inventory accuracy, cycle counts, adjustments.
 - Systems: WMS/ERP · finance `[C]`.
 - Technical: cycle-count planning · variance analysis · accuracy (IRA) tracking `[S]`.
-- Maverick: **adjustments gated**.
+- Lightwork: **adjustments gated**.
 
 #### 5.4 Fulfillment & Order-Ops Agent  [UB +Reach]
 JD: Order fulfillment, allocation, OTC operations, exceptions.
 - Systems: **Shopify** (shipped) · ERP/OMS `[C]`.
 - Technical: fulfillment management · allocation · exception resolution `[S]`.
-- Maverick: customer comms gated.
+- Lightwork: customer comms gated.
 
 #### 5.5 Customs, Trade & Returns Agent  [UB]  *(cross-ref legal trade 6.3)*
 JD: Customs/import-export docs, HS classification, duties; reverse logistics.
 - Systems: customs/trade (Descartes) · the legal suite `[C]`.
 - Technical: **HS classification** · customs-doc drafting · duty calculation · returns management `[S]`.
 - Domain: customs · Incoterms · trade compliance `[K]`.
-- Maverick: filings gated.
+- Lightwork: filings gated.
 
 ### Tower 6 — Asset & Maintenance Management
 
@@ -2534,7 +2534,7 @@ JD: Physical-asset registry, lifecycle, utilization.
 JD: PM schedules, condition monitoring, predictive maintenance.
 - Systems: **CMMS** · industrial IoT (read telemetry) `[C]`.
 - Technical: PM scheduling · **condition monitoring / predictive maintenance** (vibration, thermal) `[S]`.
-- Maverick: **equipment actuation refused**; work-order execution gated.
+- Lightwork: **equipment actuation refused**; work-order execution gated.
 
 #### 6.3 Reliability & Downtime Agent  [UB +Data]
 JD: Reliability engineering, downtime/RCA, spare-parts optimization.
@@ -2548,13 +2548,13 @@ JD: Reliability engineering, downtime/RCA, spare-parts optimization.
 JD: Facilities ops, maintenance work orders, service-vendor coordination.
 - Systems: **CMMS/IWMS** · the channels layer `[C]`.
 - Technical: facility-WO management · vendor coordination `[S]`.
-- Maverick: vendor spend gated.
+- Lightwork: vendor spend gated.
 
 #### 7.2 Real-Estate & Lease Agent  [UB]  *(cross-ref finance Lease 1.10 + legal)*
 JD: Real-estate portfolio, lease administration, site-selection support.
 - Systems: **lease/IWMS** · finance + legal `[C]`.
 - Technical: lease administration · portfolio analysis · site-selection support `[S]`.
-- Maverick: commitments gated.
+- Lightwork: commitments gated.
 
 #### 7.3 Workplace & Space Agent  [UB]
 JD: Space planning, workplace services, moves/adds/changes, occupancy.
@@ -2565,7 +2565,7 @@ JD: Space planning, workplace services, moves/adds/changes, occupancy.
 JD: Utilities/energy management, consumption analytics, efficiency.
 - Systems: **BMS / energy-management** · finance ESG `[C]`.
 - Technical: energy-consumption analytics · efficiency recommendations `[S]`.
-- Maverick: **building-control actuation refused/gated**.
+- Lightwork: **building-control actuation refused/gated**.
 
 ### Tower 8 — EHS & Sustainability Operations  *(safety paramount)*
 
@@ -2574,21 +2574,21 @@ JD: Safety programs, hazard/JSA management, incident/injury tracking, OSHA recor
 - Systems: **EHS (Cority, Intelex, VelocityEHS)** · the channels layer `[C]`.
 - Technical: hazard/JSA management · incident tracking · **OSHA 300/301/300A recordkeeping** `[S]`.
 - Domain: **OSHA standards (29 CFR 1910/1926)** · safety management (ISO 45001) `[K]`.
-- Maverick: **safety paramount**; incidents escalate; never recommends an unsafe shortcut.
+- Lightwork: **safety paramount**; incidents escalate; never recommends an unsafe shortcut.
 
 #### 8.2 Environmental-Compliance Agent  [UB]  *(cross-ref GRC/legal)*
 JD: Environmental permits, emissions/waste/water tracking, EPA reporting.
 - Systems: EHS · GRC + legal `[C]`.
 - Technical: permit tracking · emissions/waste reporting · exceedance flagging `[S]`.
 - Domain: **EPA (Clean Air/Water Acts, RCRA), hazmat (DOT/IATA)** `[K]`.
-- Maverick: **permit-limit exceedance is a hard floor**; filing gated.
+- Lightwork: **permit-limit exceedance is a hard floor**; filing gated.
 
 #### 8.3 Incident & Emergency-Management Agent  [UB +Reach]  *(cross-ref IT-GRC IR/DR)*
 JD: Operational incident management, emergency response, physical BCP.
 - Systems: EHS · the IT-GRC incident agents · channels `[C]`.
 - Technical: incident management · emergency-response coordination · BCP drafting `[S]`.
 - Domain: emergency management · ISO 22301 `[K]`.
-- Maverick: actions gated.
+- Lightwork: actions gated.
 
 #### 8.4 Sustainability-Operations Agent  [UB +Data]  *(cross-ref finance ESG)*
 JD: Operational sustainability — carbon (Scope 1&2), waste/circularity, efficiency.
@@ -2607,7 +2607,7 @@ JD: Owns security over the SCADA/historian/DCS the rest of the suite only reads 
 - Technical: OT asset inventory · IT-OT segmentation review · OT-protocol monitoring · OT vulnerability triage · safe patch-window planning.
 - Domain: **IEC 62443 · the Purdue model / IT-OT segmentation · NIST 800-82** · OT incident response.
 - Regulatory: **IEC 62443, NIST 800-82**, sector OT mandates (e.g. TSA pipeline, NERC CIP where applicable).
-- Maverick: read + recommend; **never writes to a control system or changes a setpoint** (refuses safety-critical actuation); remediation is human-gated.
+- Lightwork: read + recommend; **never writes to a control system or changes a setpoint** (refuses safety-critical actuation); remediation is human-gated.
 
 #### C2 Continuous-Improvement / OpEx (Lean) Agent  [UB +Data]
 JD: Owns the lean operating system the suite treated as cross-cutting but no one held.
@@ -2615,7 +2615,7 @@ JD: Owns the lean operating system the suite treated as cross-cutting but no one
 - Technical: **VSM · kaizen · 5S · SMED · kanban/pull · A3 · standard work · DMAIC** · process-data analysis · bottleneck/constraint analysis.
 - Domain: Lean / TPS · Six Sigma · theory of constraints · OpEx program design.
 - Regulatory: change-control discipline where processes touch quality systems.
-- Maverick: analyzes and proposes improvements; **process changes are human-approved**; never alters a running line or control parameter.
+- Lightwork: analyzes and proposes improvements; **process changes are human-approved**; never alters a running line or control parameter.
 
 #### C3 Process-Safety (PSM/RMP) Agent  [UB]
 JD: Process-safety management for chemical/process plants (distinct from general EHS).
@@ -2623,7 +2623,7 @@ JD: Process-safety management for chemical/process plants (distinct from general
 - Technical: **PHA/HAZOP/LOPA** facilitation support · **LOTO / confined-space / hot-work** permit review · MOC review · incident-investigation support.
 - Domain: **OSHA PSM (1910.119) · EPA RMP** · the 14 PSM elements · mechanical integrity.
 - Regulatory: **OSHA 1910.119, EPA RMP (40 CFR 68)**.
-- Maverick: **safety is a refusal, not a gate** — never authorizes a permit or overrides an interlock; drafts analyses for the human process-safety owner.
+- Lightwork: **safety is a refusal, not a gate** — never authorizes a permit or overrides an interlock; drafts analyses for the human process-safety owner.
 
 #### C4 Trade-Compliance / Export-Control Agent  [UB]
 JD: Owns export-control and trade compliance in-band (cross-ref legal 6.3).
@@ -2631,7 +2631,7 @@ JD: Owns export-control and trade compliance in-band (cross-ref legal 6.3).
 - Technical: **ECCN/EAR** classification · **deemed-export** screening · denied-party / **Entity List** screening · **rules-of-origin / FTA (USMCA)** analysis · **FTZ / duty drawback** modeling.
 - Domain: **EAR (de minimis, Entity List, the 2022–23 semiconductor controls) · ITAR/USML + DDTC · OFAC · UFLPA forced-labor · CTPAT**.
 - Regulatory: **EAR, ITAR, OFAC, UFLPA, USMCA, CBP**.
-- Maverick: classifies and screens, drafts filings; **an export decision / license position is human (and counsel where required)**; blocks on a screening hit.
+- Lightwork: classifies and screens, drafts filings; **an export decision / license position is human (and counsel where required)**; blocks on a screening hit.
 
 #### C5 Industrial / Production-Engineering Agent  [UB +Data]
 JD: Designs the line and the work — capacity, flow, and automation integration.
@@ -2639,7 +2639,7 @@ JD: Designs the line and the work — capacity, flow, and automation integration
 - Technical: time/motion studies · line & **takt** design · capacity modeling · ergonomics analysis · **automation/robotics integration (AS/RS, AMRs)** specification.
 - Domain: industrial engineering · line balancing · work-design · throughput analysis.
 - Regulatory: machine-safety/ergonomics standards awareness (cross-ref EHS).
-- Maverick: designs and models for human approval; **never commissions equipment or changes a running line**; safety-critical specs route to EHS/process-safety.
+- Lightwork: designs and models for human approval; **never commissions equipment or changes a running line**; safety-critical specs route to EHS/process-safety.
 
 #### C6 Cold-Chain / Serialization Agent  [UB +Data]
 JD: Regulated-vertical traceability depth beyond generic lot tracking (pharma/food).
@@ -2647,7 +2647,7 @@ JD: Regulated-vertical traceability depth beyond generic lot tracking (pharma/fo
 - Technical: lot/serial/aggregation management · **temperature-excursion** handling · chain-of-custody traceability · recall-trace support.
 - Domain: **pharma DSCSA** · **food FSMA 204 traceability** · cold-chain validation.
 - Regulatory: **DSCSA, FSMA 204, FDA 21 CFR Part 11** (records).
-- Maverick: maintains traceability and flags excursions; **a hold/release or recall decision is human**; never alters a physical shipment or environmental control.
+- Lightwork: maintains traceability and flags excursions; **a hold/release or recall decision is human**; never alters a physical shipment or environmental control.
 
 ---
 
@@ -2659,7 +2659,7 @@ Product & Engineering +6 · Strategy +5 · Legal +5 · Operations +6) = **~346 a
 
 **Full profiles for the council-added seats (45/45).** Every suite's council-added agents have been
 promoted from one-line bullets to **full profiles** (JD + Systems/Technical/Domain/Regulatory/
-Maverick), numbered `C1…Cn` under each "Council-added agents" block — so every one of those seats
+Lightwork), numbered `C1…Cn` under each "Council-added agents" block — so every one of those seats
 has the same depth as the base roster and can actually execute its JD (Finance's 5 included).
 
 **Council pass: complete.** A five-member adversarial council reviewed every suite; their

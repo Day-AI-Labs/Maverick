@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import stat
 
-from maverick.replay_trace import TraceWriter, read_trace, replay
+from maverick.replay.trace import TraceWriter, read_trace, replay
 
 
 def test_write_then_read_roundtrip(tmp_path):

@@ -18,3 +18,25 @@ deliverable = "Card dispute / Reg E file"
 consumers = ["operations_manager", "compliance_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Intake dispute"
+instruction = "Read the cardholder's dispute claim and pull the disputed transaction and account history."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Classify reason"
+instruction = "Determine the dispute reason code and the applicable Reg E and network chargeback timeframe for the case."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Gather evidence"
+instruction = "Collect transaction records, merchant data, and prior correspondence and cite each item supporting or rebutting the claim."
+tools = ["sql_query", "knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Check deadlines"
+instruction = "Verify the provisional-credit and chargeback filing windows are met and flag any case at risk of missing a network timeframe."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Route for decision"
+instruction = "Assemble the documented Reg E dispute file and hand it to the operations manager for review."
+tools = ["spreadsheet"]
+gate = "review"

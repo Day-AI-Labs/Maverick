@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "product requirements document"
+consumers = ["product_manager", "engineering_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather intent"
+instruction = "Read the feature brief, prior specs, and any customer or research notes that define the problem to be solved."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Scan prior art"
+instruction = "Research comparable solutions and standards to inform scope and avoid reinventing established patterns."
+tools = ["web_search"]
+[[workflow]]
+name = "Enumerate edge cases"
+instruction = "Map user stories, acceptance criteria, and the edge cases and failure modes that the spec must cover."
+[[workflow]]
+name = "Draft PRD"
+instruction = "Write the PRD with goals, requirements, acceptance criteria, and open questions, marking assumptions explicitly."
+[[workflow]]
+name = "Route to PM"
+instruction = "Hand the drafted PRD to the product manager for review and prioritization sign-off."
+gate = "review"

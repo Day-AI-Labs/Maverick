@@ -6,7 +6,7 @@ suites; indexed in [`agent-suites-overview.md`](agent-suites-overview.md). Build
 [`agent-factory.md`](agent-factory.md). ~46 agents (40 base + 6 council-added) across eight towers.
 
 > **Product & Engineering is the inverse of every other suite.** Finance and HR are
-> greenfield *workflow*; here, **Maverick itself is a software-engineering agent**, so
+> greenfield *workflow*; here, **Lightwork itself is a software-engineering agent**, so
 > the engineering core — the recursive coding loop, sandboxed execution (7 backends),
 > code review, the test-driven verifier, the SWE-bench eval harness, VCS/CI tools — is
 > the most mature capability in the whole platform. And the connector layer is
@@ -26,7 +26,7 @@ The cardinal rule for every agent below (the P&E analogue of "never move money")
 > product decisions (what to build) are human-owned, and **an agent never modifies its own
 > runtime, safety, or controls without explicit human authorization.***
 
-That last clause is unique to this suite: **Maverick builds Maverick**, so
+That last clause is unique to this suite: **Lightwork builds Lightwork**, so
 self-modification is a first-class hard floor (see the shipped "disable self-edit writes
 by default" control).
 
@@ -35,7 +35,7 @@ by default" control).
 ## Contents
 
 1. [What's already shipped — the reuse map](#1-whats-already-shipped--the-reuse-map)
-2. [How a P&E agent maps onto Maverick](#2-how-a-pe-agent-maps-onto-maverick)
+2. [How a P&E agent maps onto Lightwork](#2-how-a-pe-agent-maps-onto-maverick)
 3. [The control model (cross-cutting)](#3-the-control-model-cross-cutting)
 4. [Per-client customization — the dials](#4-per-client-customization--the-dials)
 5. [The roster — eight towers](#5-the-roster--eight-towers)
@@ -90,7 +90,7 @@ ML model registry / MLOps depth, and **DORA / engineering-metrics**.
 
 ---
 
-## 2. How a P&E agent maps onto Maverick
+## 2. How a P&E agent maps onto Lightwork
 
 Each agent is one [`DomainProfile`](../../packages/maverick-core/maverick/domain.py)
 pack — but here the pack is mostly **tool selection + persona over a shipped toolset**,
@@ -102,7 +102,7 @@ Two specifics:
 - **The engineering agents are the most autonomous in the platform** (they write and run
   code), so the controls are about *what ships and what they're allowed to touch*, not
   about whether they can act.
-- **Maverick builds Maverick.** Agents work on this very codebase, so self-modification,
+- **Lightwork builds Lightwork.** Agents work on this very codebase, so self-modification,
   the verifier/review/CI gates, and human-approved merges are not abstract — they're the
   controls that keep an agent from changing its own safety substrate.
 
@@ -139,7 +139,7 @@ CVE/SBOM-checked; secrets are detected/redacted; MCP/plugins are pinned (`mcp_re
 An agent must not modify its **own runtime, safety controls, or kernel** without explicit
 human authorization — `tools/self_edit.py` ships with **writes disabled by default**.
 Changes to `safety/`, `capability.py`, `governance.py`, the audit chain, or the sandbox
-require a human and the full review gate. Maverick can improve Maverick, but never
+require a human and the full review gate. Lightwork can improve Lightwork, but never
 silently weaken its own guardrails.
 
 ### 3.7 Product decisions are human-owned
@@ -532,7 +532,7 @@ Six seats the council flagged — several with **shipped tooling but no persona*
 - **API Design & Contract Agent** *(Tower 3/8)* — `tools/openapi_runner.py` ships. OpenAPI 3.1, GraphQL/federation, gRPC/protobuf, AsyncAPI, versioning/deprecation, contract testing (Pact). **Status: Gap.**
 - **Database Engineering / DBA Agent** *(Tower 6)* — owns the **Oracle 23ai standup** + data modeling, query tuning, migrations (Flyway/Liquibase/Alembic), HA/PITR, and the shipped NoSQL connectors (`dynamodb`/`mongodb`/`redis`/`elasticsearch`). **Status: Gap** (DBA depth was mis-scoped into IaC).
 - **Platform Engineering Agent** *(Tower 5/7)* — Backstage/IDP, golden paths, ephemeral envs, secrets (Vault/SOPS), FinOps. **Status: Gap.**
-- **LLM-Application / Prompt-Engineering Agent** *(Tower 6)* — RAG pipelines, prompt engineering, eval (RAGAS/LLM-judge), guardrails, latency/cost. Distinct from classical ML (6.3/6.4) — Maverick is itself an AI product. **Status: Gap.**
+- **LLM-Application / Prompt-Engineering Agent** *(Tower 6)* — RAG pipelines, prompt engineering, eval (RAGAS/LLM-judge), guardrails, latency/cost. Distinct from classical ML (6.3/6.4) — Lightwork is itself an AI product. **Status: Gap.**
 - **Performance / Load-Engineering Agent** *(Tower 4)* — k6/Gatling/JMeter/Locust, profiling (eBPF/Pyroscope), Core Web Vitals, capacity testing. **Status: Gap** (no non-functional-perf owner).
 
 ---
@@ -644,7 +644,7 @@ The kernel ships; lead with role personas + the gates, then close the workflow g
 - **Agents draft; humans merge, release, and deploy.** No agent merges to a protected
   branch, cuts a release, or deploys to production on its own — those are gated human acts,
   and **production deploy is a hard floor**.
-- **Self-modification is the load-bearing control.** Because Maverick builds Maverick, an
+- **Self-modification is the load-bearing control.** Because Lightwork builds Lightwork, an
   agent changing its own runtime/safety/kernel without human authorization would undermine
   every other suite's controls. `self_edit` ships off by default — keep it that way and
   route any safety-substrate change through a human + the full review gate.

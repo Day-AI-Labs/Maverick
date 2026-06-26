@@ -32,7 +32,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-USER_TEMPLATES = Path.home() / ".maverick" / "templates"
+from .paths import data_dir
+
+USER_TEMPLATES = data_dir("templates")
 log = logging.getLogger(__name__)
 
 # Bundled templates ship in the repo; locate via relative path from the

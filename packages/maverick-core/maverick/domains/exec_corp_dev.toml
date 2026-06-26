@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "acquisition and partnership pipeline"
+consumers = ["executive", "corp_dev_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Define criteria"
+instruction = "Read the company's stated strategy and acquisition or partnership criteria to scope target sourcing."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Source targets"
+instruction = "Search public sources for candidate companies fitting the criteria and capture sourcing references for each."
+tools = ["web_search"]
+[[workflow]]
+name = "Profile targets"
+instruction = "Build a sourced profile per target with size, fit, and rationale, citing where each fact came from."
+tools = ["spreadsheet", "web_search"]
+[[workflow]]
+name = "Update pipeline"
+instruction = "Refresh the pipeline with new targets and stage changes, flagging any profile with unverifiable claims."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Executive review"
+instruction = "Route the updated pipeline to the executive for sign-off before any target is advanced."
+gate = "review"

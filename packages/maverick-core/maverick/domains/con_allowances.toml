@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "allowance & contingency usage log"
+consumers = ["project_manager", "cost_accountant"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull allowance schedule"
+instruction = "Read the contract allowance and contingency line items with their original budgeted values for the project."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Tally draws"
+instruction = "Compile every allowance and contingency draw to date with its supporting approval documentation in the tracking spreadsheet."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Reconcile balances"
+instruction = "Compare drawn amounts against budgeted allowances to compute remaining balance and flag any draw lacking a documented approval."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag overruns"
+instruction = "Identify allowances trending over budget or contingency depletion that threatens remaining project risk."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the usage log with flagged exceptions to the project manager for sign-off."
+gate = "review"

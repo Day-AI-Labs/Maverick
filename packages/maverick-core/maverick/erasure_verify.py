@@ -47,10 +47,18 @@ def verify_erasure(user_id: str, *, channel: str | None = None,
                    tenant: str | None = None) -> dict:
     """Confirm no residual data remains for a subject after erasure.
 
-    Returns ``{subject, tenant, counts, residual, clean, verified_at}`` where
-    ``clean`` is True iff every per-store count is zero. ``channel`` should be
-    given (it is part of subject identity); the export fails closed on an
-    ambiguous bare ``user_id``.
+    Returns ``{subject, tenant, counts, residual, clean, indeterminate,
+    verified_at}`` where ``clean`` is True iff every per-store count is zero
+    **and** the verification could actually run. ``channel`` should be given
+    (it is part of subject identity); the export fails closed on an ambiguous
+    bare ``user_id``.
+
+    When the channel can't be resolved (omitted *and* the subject's rows span
+    multiple channels, or no rows exist to disambiguate), the underlying export
+    fails closed and every count is zero -- which would otherwise read as a
+    clean erasure. That is a false certification: nothing was actually checked.
+    In that case ``indeterminate`` is True and ``clean`` is forced False so an
+    unverifiable subject is never reported as successfully erased.
     """
     from .dsar import export_subject_data
     bundle = export_subject_data(user_id, channel=channel, tenant=tenant)
@@ -60,14 +68,24 @@ def verify_erasure(user_id: str, *, channel: str | None = None,
     counts["facts"] = _count_user_scoped_facts(
         user_id, channel=resolved_channel, tenant=tenant)
     residual = {k: v for k, v in counts.items() if v}
-    return {
+    # No resolved channel == the export could not scope to a single subject, so
+    # the all-zero counts prove nothing. Never certify clean on that basis.
+    indeterminate = not resolved_channel
+    result = {
         "subject": bundle.get("subject"),
         "tenant": tenant,
         "counts": counts,
         "residual": residual,
-        "clean": not residual,
+        "clean": (not residual) and not indeterminate,
         "verified_at": datetime.now(timezone.utc).isoformat(),
     }
+    if indeterminate:
+        result["indeterminate"] = True
+        result["reason"] = (
+            "subject channel could not be resolved; pass an explicit channel "
+            "to obtain a definitive erasure verdict"
+        )
+    return result
 
 
 def differential(before: dict, after: dict) -> dict:

@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["ops"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "rework order status & cost ledger"
+consumers = ["production_supervisor", "cost_accountant"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull rework orders"
+instruction = "Query all open rework orders with their parent work order, part, revision, defect code, and current stage."
+tools = ["sql_query"]
+[[workflow]]
+name = "Verify routing"
+instruction = "Confirm each rework order follows the approved rework routing and that quality holds remain in place until inspection passes."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Capture cost"
+instruction = "Tally labor, material, and scrap cost charged to each rework loop and reconcile against the order's standard."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag stalled loops"
+instruction = "Surface rework orders past their cycle-time target or looping repeatedly through the same defect as escalations."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Route the rework status and cost ledger to the production supervisor for review before closure."
+gate = "review"

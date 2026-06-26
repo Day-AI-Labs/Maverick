@@ -10,7 +10,7 @@ import os
 import stat
 from random import Random
 
-from maverick.compaction_hybrid import (
+from maverick.compaction.hybrid import (
     FALLBACK_STRATEGY,
     FEATURE_NAMES,
     STRATEGIES,
@@ -131,7 +131,7 @@ def test_pick_fails_open_on_broken_input(tmp_path, monkeypatch):
     strategy, reason = picker.pick(None)  # type: ignore[arg-type]
     assert strategy in STRATEGIES
     # And even an internal explosion falls open to the structural default.
-    monkeypatch.setattr("maverick.compaction_hybrid.extract_features",
+    monkeypatch.setattr("maverick.compaction.hybrid.extract_features",
                         lambda m: (_ for _ in ()).throw(RuntimeError("boom")))
     strategy2, reason2 = picker.pick(_window(3))
     assert strategy2 == FALLBACK_STRATEGY
@@ -204,9 +204,9 @@ def test_epsilon_exploration_uses_injected_prng(tmp_path):
 def test_no_torch_required():
     import sys
 
-    import maverick.compaction_hybrid  # noqa: F401  (already imported above)
+    import maverick.compaction.hybrid  # noqa: F401  (already imported above)
     assert "torch" not in sys.modules
-    doc = " ".join((sys.modules["maverick.compaction_hybrid"].__doc__ or "").split())
+    doc = " ".join((sys.modules["maverick.compaction.hybrid"].__doc__ or "").split())
     assert "no torch" in doc.lower()
     assert "not a pretrained model" in doc
 

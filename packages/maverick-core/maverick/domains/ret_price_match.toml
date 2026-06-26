@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "price-match adjudication memo"
+consumers = ["store_manager", "customer_service_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read request"
+instruction = "Read the customer's price-match request capturing the SKU, claimed competitor price, and cited source."
+tools = ["read_file"]
+[[workflow]]
+name = "Check policy"
+instruction = "Retrieve the price-match policy from knowledge to confirm eligibility, exclusions, and required proof for this item category."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify competitor price"
+instruction = "Verify the competitor's current advertised price against the live listing and capture the documented evidence."
+tools = ["web_search"]
+[[workflow]]
+name = "Adjudicate"
+instruction = "Decide approve, deny, or partial against policy and compute the adjusted price with the verification record attached."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Route decision"
+instruction = "Submit the documented adjudication memo to the store manager for sign-off before any price override is applied."
+gate = "review"

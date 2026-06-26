@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "account health score & risk model"
+consumers = ["cs_lead", "csm"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull usage"
+instruction = "Read account adoption and usage analytics from Gainsight to assemble the signal set for scoring."
+tools = ["read_file", "gainsight_read"]
+[[workflow]]
+name = "Define signals"
+instruction = "Select leading risk indicators and weight them, grounding thresholds in known churn and expansion patterns."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compute scores"
+instruction = "Calculate health scores across the book and tier each account into healthy, watch, or at-risk bands."
+tools = ["gainsight_read"]
+[[workflow]]
+name = "Validate outliers"
+instruction = "Inspect accounts whose score swings sharply to catch stale data or seasonal usage before flagging false risk."
+tools = ["gainsight_read"]
+[[workflow]]
+name = "Route to CS"
+instruction = "Hand the scored risk model with at-risk drivers to the CS lead for review and play assignment."
+gate = "review"

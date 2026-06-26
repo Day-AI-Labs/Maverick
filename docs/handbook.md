@@ -1,20 +1,20 @@
-# The Maverick Handbook
+# The Lightwork Handbook
 
-**The front door.** One document that explains what Maverick is, how to
+**The front door.** One document that explains what Lightwork is, how to
 think about it, how to drive it, how to operate it, and where everything
 deeper lives. Every command and module named here exists in the tree;
 counts come from [`FEATURES.md`](./FEATURES.md), the catalogue of shipped
 features. When this page and the code disagree, the code wins and this
 page is the bug.
 
-Maverick is **proprietary, commercially licensed software**
+Lightwork is **proprietary, commercially licensed software**
 ([`LICENSE`](../LICENSE)) — self-hosted in your environment, but use
 requires a license. A stripped-down open-source "lite" edition is a stated
 possibility on the [roadmap](./ROADMAP.md), not a commitment.
 
 ---
 
-## 1. What Maverick is
+## 1. What Lightwork is
 
 A **governed agent runtime**: a recursive multi-agent swarm wrapped in the
 runtime primitives most agent frameworks skip — hard budgets, sandboxed
@@ -30,7 +30,7 @@ It targets enterprises and regulated teams that need agents they can
 Docker, VPS, Kubernetes, or an air-gapped network — and technical users
 who want the deepest agent framework available. The useful mental frame is
 an operating system: an OS multiplexes processes onto hardware under
-isolation, permissions, and resource limits; Maverick multiplexes *agents*
+isolation, permissions, and resource limits; Lightwork multiplexes *agents*
 onto LLMs and tools under the same kinds of controls. (A lens, not a brand
 — see [`architecture.md`](./architecture.md) for why.)
 
@@ -139,7 +139,7 @@ maverick schedule goal "0 7 * * *" "Summarize my GitHub notifications"
 maverick worker                # drains the scheduled-job queue
 maverick serve                 # channel server: Telegram/Discord/Slack/...
 maverick dashboard             # web UI + REST API at http://127.0.0.1:8765
-maverick mcp                   # MCP server: drive Maverick from Claude Code,
+maverick mcp                   # MCP server: drive Lightwork from Claude Code,
                                # Cursor, or any MCP client
 ```
 
@@ -204,8 +204,8 @@ world DB; isolation is pinned by a dedicated test suite
 `maverick tenant create / list / suspend / resume / quota / delete`
 (roster + per-tenant daily spend caps), `maverick billing invoice /
 entitlements` (metering → invoices, plan entitlements), per-tenant
-envelope encryption with a KMS-wrapped key per tenant (`tenant_kms.py`),
-and a per-tenant egress policy (`tenant_egress.py`). The channel server
+envelope encryption with a KMS-wrapped key per tenant (`tenant/kms.py`),
+and a per-tenant egress policy (`tenant/egress.py`). The channel server
 enforces the roster at the door.
 
 ### Audit, compliance, retention
@@ -263,6 +263,17 @@ Defense in depth, each layer independent:
    periodic human heartbeat (`[safety] review_checkpoint`).
 6. **Audit** — everything recorded, signed, verifiable after the fact.
 
+These are not just claimed; they are *tested at roster scale*. A governance
+invariant test suite verifies six invariants across all 2,020 packs — (1)
+tool-reachability (no drafting/non-builder agent can reach a state-mutating
+tool), (2) the autonomy dial (an onboarding agent, or any high-risk action, is
+never autonomous), (3) capability attenuation (a spawned child can never exceed
+its parent grant), (4) compartment isolation (a quarantine seal never bleeds
+across compartments/suites), (5) hard refusals (the universal refusal floor is
+unstrippable), and (6) budget caps (no cap is ever silently exceeded) — each
+fault-injected at 1,000,000 iterations with a non-vacuity control, alongside
+hostile-argument fuzzing of every connector and tool.
+
 Posture checks make claims testable: `maverick airgap check` fails if the
 config has any outbound path (remote provider, non-deny-all egress,
 networked sandbox); `maverick confidential-compute` detects SEV-SNP/TDX;
@@ -280,7 +291,7 @@ screened by the same shield/budget/sandbox machinery:
   the agent applies when a goal matches. `maverick skill install / browse /
   validate`, schema in
   [`benchmarks/example-skills/README.md`](../benchmarks/example-skills/README.md).
-  Maverick can also *learn* skills from its own successful runs, opt-in
+  Lightwork can also *learn* skills from its own successful runs, opt-in
   (`[self_learning]`, [`self-learning.md`](./self-learning.md)).
 - **Plugins** — Python entry points under plugin API v2
   ([`plugin-api-v2.md`](./plugin-api-v2.md)): declared manifests, enforced
@@ -292,12 +303,22 @@ screened by the same shield/budget/sandbox machinery:
   for any language. Single Python tools need only the `@tool` decorator
   (`tools/decorator.py`).
 - **Channels** — 17 wired adapters (`packages/maverick-channels/`):
+- **Connectors & primary-source grounding** — 214 write-capable enterprise
+  REST/GraphQL connectors plus 37 read-only primary-source / public-data
+  connectors (SEC EDGAR, FRED, Treasury, World Bank, FDIC, Census, BLS, EIA,
+  openFDA, NPPES, ClinicalTrials, USAspending, SAM.gov, CourtListener, Federal
+  Register, GLEIF, OpenCorporates, NWS/NOAA, EPA, ...), plus dedicated-module
+  connectors (Salesforce, HubSpot, Stripe, ServiceNow, Snowflake, ...). The 37
+  public-data connectors are auto-granted per analyst suite for primary-source
+  grounding (GET-only, low-risk, deferred); on by default, kill-switch
+  `[workforce] data_grounding = false` (or `MAVERICK_WORKFORCE_DATA_GROUNDING=off`),
+  with an installer wizard step.
   Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon,
   Voice, WhatsApp (Twilio + Cloud API), SMS, iMessage, IRC, Threads, RCS,
   and a glasses/wearable bridge. New ones subclass `Channel` in `base.py`
   — four steps, documented in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 - **MCP, both directions** — `maverick mcp` exposes the swarm to any MCP
-  client (stdio + Streamable HTTP); `[mcp_servers]` makes Maverick
+  client (stdio + Streamable HTTP); `[mcp_servers]` makes Lightwork
   *consume* external MCP servers as tools, which still pass through the
   shield. `maverick mcp-registry browse / add` manages sources.
 - **APIs & language clients** — the dashboard's REST API
@@ -305,7 +326,7 @@ screened by the same shield/budget/sandbox machinery:
   ([`grpc.md`](./grpc.md)), A2A Agent Card interop ([`a2a.md`](./a2a.md)),
   LangChain/AutoGen/CrewAI adapters, and quickstarts for TypeScript, Go,
   Rust, C#, and Java (`docs/clients/`). Deliberately *not* a port: other
-  languages drive Maverick over the wire; the kernel stays Python (the
+  languages drive Lightwork over the wire; the kernel stays Python (the
   council decision in [`ROADMAP.md`](./ROADMAP.md)).
 - **Sandbox backends** — the entry-point contract from primitive #5;
   conformance-checked, refused if non-conformant.
@@ -343,7 +364,7 @@ haven't installed yet.
 
 ### The honest closing note
 
-Maverick is alpha. It is installable today, carries 2000+ tests in CI, and
+Lightwork is alpha. It is installable today, carries 2000+ tests in CI, and
 the features in this handbook ship and run — and parts of the frontier are
 explicitly unfinished, which the roadmap states plainly, including the
 things that were considered and declined. That discipline — shipped vs.

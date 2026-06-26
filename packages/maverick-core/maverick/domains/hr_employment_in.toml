@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "shops-and-establishments compliance memo"
+consumers = ["hr_business_partner", "employment_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope states"
+instruction = "Identify the states where employees work and the shops-and-establishments or statutory benefit question in scope."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull policy basis"
+instruction = "Retrieve the company's registrations and benefit policies for those states and cite them."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compare requirements"
+instruction = "Tabulate per-state shops-and-establishments rules and statutory benefit thresholds against the company position."
+tools = ["spreadsheet", "web_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Call out states where registration or benefit obligations are unmet and state unknowns plainly."
+[[workflow]]
+name = "Counsel review"
+instruction = "Route the India compliance memo to employment counsel for sign-off before action."
+gate = "review"

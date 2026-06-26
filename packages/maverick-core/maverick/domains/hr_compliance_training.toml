@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "training completion & attestation report"
+consumers = ["hr_compliance_lead", "people_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Map requirements"
+instruction = "Read the mandatory training matrix (harassment, security, ethics, safety) and the assignment roster for the period."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check deadlines"
+instruction = "Confirm jurisdiction and role-specific training cadence requirements against current regulations."
+tools = ["web_search"]
+[[workflow]]
+name = "Compute status"
+instruction = "Reconcile completion and attestation records against assignments to identify overdue and missing learners."
+[[workflow]]
+name = "Flag overdue"
+instruction = "Surface overdue mandatory trainings and lapsed attestations that create compliance exposure."
+[[workflow]]
+name = "Route report"
+instruction = "Hand the completion and attestation report to the compliance lead for sign-off."
+gate = "review"

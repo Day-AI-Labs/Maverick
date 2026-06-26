@@ -22,6 +22,8 @@ import threading
 import time
 from pathlib import Path
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
 
@@ -34,7 +36,7 @@ def _default_halt_file() -> Path:
     ``Path.home()`` per call keeps the killswitch trustworthy — the one
     place we can least afford a stale path.
     """
-    return Path.home() / ".maverick" / "HALT"
+    return data_dir("HALT")
 
 
 class Halted(Exception):
@@ -50,6 +52,12 @@ _state_lock = threading.Lock()
 _in_process_halt: tuple[str, str] | None = None  # (reason, source)
 _last_file_check_ts: float = 0.0
 _last_file_present: bool = False
+# Cluster-wide halt (v22): consulted from the shared world store so an emergency
+# stop armed on one replica halts the whole fleet. Throttled like the file check;
+# only engaged on a shared backend (Postgres).
+_last_shared_check_ts: float = 0.0
+_last_shared_halt: tuple[str, str] | None = None
+_shared_world = None  # cached world handle for the shared-halt consult
 
 
 def _halt_file_path() -> Path:
@@ -102,6 +110,40 @@ def _file_halt_active(min_interval: float = 1.0) -> bool:
     return _last_file_present
 
 
+def _shared_halt_active(min_interval: float = 2.0) -> tuple[str, str] | None:
+    """The cluster-wide halt from the shared world store, throttled + fail-open.
+
+    Only engaged on a shared backend (Postgres): the SQLite single-host path is
+    already covered by the local HALT file, and querying a per-host SQLite world
+    on every tool call would add hot-path cost for no cluster benefit. Returns
+    ``(reason, source)`` when armed, else ``None``. Any error -> keep the last
+    known state and drop the cached handle so the next check reconnects -- the
+    killswitch must never wedge a run on a shared-store hiccup, but a transient
+    read error must not silently drop a real halt either.
+    """
+    global _last_shared_check_ts, _last_shared_halt, _shared_world
+    now = time.time()
+    if now - _last_shared_check_ts < min_interval:
+        return _last_shared_halt
+    _last_shared_check_ts = now
+    try:
+        from .world_model_backends import is_postgres_configured
+        if not is_postgres_configured():
+            _last_shared_halt = None
+            return None
+        if _shared_world is None:
+            from .world_model import open_world
+            _shared_world = open_world()
+        state = _shared_world.active_halt()
+        _last_shared_halt = (
+            (state.get("reason") or "cluster halt", state.get("source") or "shared")
+            if state else None
+        )
+    except Exception:  # pragma: no cover -- fail-open; reconnect next time
+        _shared_world = None
+    return _last_shared_halt
+
+
 def check() -> None:
     """Raise ``Halted`` if any halt source is active."""
     with _state_lock:
@@ -110,6 +152,9 @@ def check() -> None:
         raise Halted(ip[0], ip[1])
     if _file_halt_active():
         raise Halted(f"HALT file present at {_halt_file_path()}", "file")
+    shared = _shared_halt_active()
+    if shared is not None:
+        raise Halted(shared[0], shared[1])
 
 
 def is_active() -> bool:

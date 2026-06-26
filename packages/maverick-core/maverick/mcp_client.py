@@ -96,6 +96,30 @@ class MCPClientError(Exception):
     pass
 
 
+def _finalize_tool_result(spec_name: str, tool_name: str, resp: dict) -> str:
+    """Turn a tools/call response into the agent-visible text result.
+
+    A tool error is a real failure -> raise, so it rides the same path as
+    transport/protocol errors (the wrapper in mcp_tools.py turns any exception
+    into the agent-visible "ERROR: ..." string). The old "ERROR: " text prefix
+    was ambiguous: a successful result whose text merely started with "ERROR:"
+    was indistinguishable from a failure. A spec-compliant server mirrors
+    structuredContent in a text block, but one that returns only structured
+    output would come back empty -- fall back to the serialized structured
+    result so the data still reaches the model.
+    """
+    if resp.get("isError"):
+        detail = _safe_error_detail(_content_to_str(resp.get("content", [])))
+        msg = f"MCP {spec_name!r} tool {tool_name!r} failed"
+        if detail:
+            msg += f": {detail}"
+        raise MCPClientError(msg)
+    text = _content_to_str(resp.get("content", []))
+    if not text and resp.get("structuredContent") is not None:
+        return json.dumps(resp["structuredContent"])
+    return text
+
+
 def _format_rpc_error(err: object) -> str:
     """Render a JSON-RPC ``error`` member for a message.
 
@@ -468,7 +492,7 @@ class MCPClient:
     async def _request(self, method: str, params: dict) -> dict:
         # Register the Future + send under the small lock, but await the reply
         # OUTSIDE it so concurrent requests overlap instead of serializing.
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         async with self._lock:
             self._check_alive()
@@ -544,8 +568,14 @@ class MCPClient:
             except Exception:  # noqa: BLE001 -- request already abandoned
                 pass
 
+        # Keep a strong reference: the event loop only holds a WEAK ref to a
+        # task, so a bare `create_task` whose handle isn't stored can be GC'd
+        # mid-flight, dropping the cancel notice ("Task was destroyed but it is
+        # pending"). Track it like _handle_inbound_request does so it stays alive
+        # until done and is cancelled on stop().
         task = asyncio.create_task(_bounded_send_cancel())
-        task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
+        self._inbound_tasks.add(task)
+        task.add_done_callback(self._inbound_tasks.discard)
 
     async def _send(self, payload: dict) -> None:
         assert self._proc is not None and self._proc.stdin is not None
@@ -763,25 +793,7 @@ class MCPClient:
             "name": tool_name,
             "arguments": arguments,
         })
-        # A tool error is a real failure -> raise, so it rides the same path
-        # as transport/protocol errors (the wrapper in mcp_tools.py turns any
-        # exception into the agent-visible "ERROR: ..." string). The old
-        # "ERROR: " text prefix was ambiguous: a successful result whose text
-        # merely started with "ERROR:" was indistinguishable from a failure.
-        if resp.get("isError"):
-            detail = _safe_error_detail(_content_to_str(resp.get("content", [])))
-            msg = f"MCP {self.spec.name!r} tool {tool_name!r} failed"
-            if detail:
-                msg += f": {detail}"
-            raise MCPClientError(msg)
-        text = _content_to_str(resp.get("content", []))
-        # A spec-compliant server mirrors structuredContent in a text block,
-        # but one that returns only structured output would otherwise come
-        # back empty -- fall back to the serialized structured result so the
-        # data still reaches the model.
-        if not text and resp.get("structuredContent") is not None:
-            return json.dumps(resp["structuredContent"])
-        return text
+        return _finalize_tool_result(self.spec.name, tool_name, resp)
 
     async def stop(self) -> None:
         if self._reader_task is not None:
@@ -1081,16 +1093,7 @@ class StreamableHttpMCPClient:
         resp = await self._request("tools/call", {
             "name": tool_name, "arguments": arguments,
         })
-        if resp.get("isError"):
-            detail = _safe_error_detail(_content_to_str(resp.get("content", [])))
-            msg = f"MCP {self.spec.name!r} tool {tool_name!r} failed"
-            if detail:
-                msg += f": {detail}"
-            raise MCPClientError(msg)
-        text = _content_to_str(resp.get("content", []))
-        if not text and resp.get("structuredContent") is not None:
-            return json.dumps(resp["structuredContent"])
-        return text
+        return _finalize_tool_result(self.spec.name, tool_name, resp)
 
     async def stop(self) -> None:
         if self._client is not None:

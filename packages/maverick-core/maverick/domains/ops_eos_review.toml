@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ops"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "S&OP review deck"
+consumers = ["ops_director", "supply_planner", "demand_planner"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Gather inputs"
+instruction = "Pull demand, supply, inventory, and financial source records for the S&OP cycle from the company's documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile data"
+instruction = "Query and reconcile the figures across sources so every number ties out with consistent units and revisions."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Identify variances, assumptions, and unknowns plainly and confirm no safety interlock or quality hold is bypassed."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build deck"
+instruction = "Assemble the S&OP deck with reconciled data, traceability identifiers, and cited sources."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Route to lead"
+instruction = "Route the assembled pack to the operations director for review before the S&OP meeting."
+gate = "review"

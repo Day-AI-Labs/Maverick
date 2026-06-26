@@ -3,9 +3,9 @@
 > Workstream 05 of the commercialization teardown. Date: 2026-06-06.
 > Premise (from [`../regulated-deployment-and-compliance-platform.md`](../regulated-deployment-and-compliance-platform.md)):
 > the wedge is **agent governance** — a category no GRC incumbent owns. This
-> doc specs the MVP, separates cheap *projection* of data Maverick already
+> doc specs the MVP, separates cheap *projection* of data Lightwork already
 > emits from expensive *net-new* build, and answers the make-or-break TAM
-> question: can it govern **non-Maverick** agents?
+> question: can it govern **non-Lightwork** agents?
 
 ## Bottom line
 
@@ -14,7 +14,7 @@ The MVP is an **AI/agent-governance system of record + runtime control plane**:
 capabilities, data access, lifecycle); (2) **runtime policy enforcement** —
 already shipped as `capability.py` + `safety/tool_acl.py` + `safety/consent.py`;
 (3) **framework-mapped evidence** projected from the tamper-evident audit chain
-(`audit/signing.py`). **~60% of the MVP is a projection of data Maverick already
+(`audit/signing.py`). **~60% of the MVP is a projection of data Lightwork already
 emits** — registry, evidence export, and the "where are my agents" dashboard are
 read-models over the capability graph, tool registry, world model, and signed
 NDJSON. The genuinely net-new build is narrow: a **control catalog + mapping
@@ -23,8 +23,8 @@ analysis flagged), and — the strategic bet — a **third-party ingestion adapt
 
 The single thing that decides whether this is a company or a feature: **it must
 govern third-party agents (LangGraph, CrewAI, OpenAI Assistants, MCP servers),
-not just Maverick's own swarm.** If it only governs Maverick agents, the TAM is
-the Maverick install base — tiny. We already have the two integration vectors in
+not just Lightwork's own swarm.** If it only governs Lightwork agents, the TAM is
+the Lightwork install base — tiny. We already have the two integration vectors in
 tree (OTel span export in `observability.py`; MCP introspection in
 `mcp_client.py`), so this is reachable in the 90-day window as a **read-only
 observe-and-attest** plane, with enforcement on third parties deferred.
@@ -39,7 +39,7 @@ One inventory row per **agent**, **model**, and **tool/MCP server**. Fields:
 servers/sandboxes it can reach), `lifecycle_state` (proposed → approved →
 production → retired), `framework_tags`, `last_seen`.
 
-- **Maverick agents auto-populate**: the registry is a read-model over the
+- **Lightwork agents auto-populate**: the registry is a read-model over the
   capability graph (`capability_from_config`, the attenuation tree), the tool
   registry (`tools/__init__.py`), MCP server specs (`MCPServerSpec`), and goal/
   episode rows in `world_model.py` (already SQLite + FTS5 + schema-versioned).
@@ -48,7 +48,7 @@ production → retired), `framework_tags`, `last_seen`.
   state machine (reuse the `approvals` table + consent queue), and the dashboard
   surface. Risk-tier *defaults* can be derived from `tool_risk` + data sensitivity.
 
-### 2. Runtime policy enforcement — *100% reuse, zero net-new for Maverick agents*
+### 2. Runtime policy enforcement — *100% reuse, zero net-new for Lightwork agents*
 
 Already shipped, opt-in, fail-open:
 - **Least privilege / identity** → `capability.py` (signed, attenuating; child ≤ parent).
@@ -70,7 +70,7 @@ verification status from `verify_chain`/`verify_anchors`.
 
 Concrete control mappings (cite these in the product):
 
-| Framework / control | Maverick evidence (already emitted) | Source |
+| Framework / control | Lightwork evidence (already emitted) | Source |
 |---|---|---|
 | **EU AI Act Art. 12 (logging / record-keeping)** | signed append-only event chain, per-action attribution | `audit/signing.py` |
 | **EU AI Act Art. 14 (human oversight)** | `consent_prompt`/`consent_result`, `halt` (kill-switch), HITL queue | `safety/consent.py`, `killswitch.py` |
@@ -107,8 +107,8 @@ third-party ingestion = net-new** and are where the real cost sits.
 
 ## Third-party agent strategy (the TAM question)
 
-If Maverick governs only its own agents, the buyer must run their AI workloads
-*on Maverick* — a tiny, self-selecting market. The category ("where are my
+If Lightwork governs only its own agents, the buyer must run their AI workloads
+*on Lightwork* — a tiny, self-selecting market. The category ("where are my
 agents, what can they do, what did they do, prove it") demands governing the
 estate the buyer **already runs**: LangGraph, CrewAI, OpenAI Assistants, raw MCP
 servers. Three ingestion vectors, in build order:
@@ -144,7 +144,7 @@ oversell enforcement.
 Ship a **read-only system of record + evidence pack** for the agent estate:
 
 1. **Registry table + projection** over capability graph, tool registry, MCP
-   specs, world model. Owner/purpose/risk_tier/lifecycle editable; Maverick
+   specs, world model. Owner/purpose/risk_tier/lifecycle editable; Lightwork
    agents auto-discovered. (~projection + thin schema)
 2. **Control catalog + mapping table** for the seven controls above (EU AI Act
    12/14/50, NIST AI RMF, ISO 42001, SR 11-7, SOC 2 trail). Net-new, but it's a
@@ -155,7 +155,7 @@ Ship a **read-only system of record + evidence pack** for the agent estate:
    edges, `last_seen`, control-coverage gaps.
 5. **Third-party read-only ingest, MVP slice**: MCP-server introspection into
    the registry **+** a minimal OTel-span collector mapping `gen_ai.*` → audit
-   events. Proves "governs non-Maverick agents."
+   events. Proves "governs non-Lightwork agents."
 6. **Policy-as-code framework tags** on existing ACL/capability/consent rules
    (small; the Q1→Q2 bridge).
 7. **SSO/OIDC + SCIM** (`identity/`) — required for any org buyer; reuse the
@@ -181,8 +181,8 @@ Each item is config-gated, wizard-surfaced, fail-open (house rules).
 
 ## What would kill us
 
-1. **Maverick-only governance.** If the third-party MCP/OTel ingest slips, TAM
-   collapses to the Maverick install base. This is the **#1 must-ship**, not a
+1. **Lightwork-only governance.** If the third-party MCP/OTel ingest slips, TAM
+   collapses to the Lightwork install base. This is the **#1 must-ship**, not a
    nice-to-have — the collector slice is non-negotiable in the 90-day cut.
 2. **Evidence an auditor won't accept.** A projection that *looks* like a control
    map but doesn't survive audit scrutiny is worse than nothing. The mappings

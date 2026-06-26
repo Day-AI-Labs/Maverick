@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light" />
   <meta name="theme-color" content="#0e1320" />
-  <title>{% block title %}Maverick{% endblock %}</title>
+  <title>{% block title %}Lightwork{% endblock %}</title>
   <style>
     /* =====================================================================
-       Maverick design system. All visual decisions live in CSS variables so
+       Lightwork design system. All visual decisions live in CSS variables so
        the 4 built-in themes + operator custom themes ([dashboard] themes in
        config.toml, which set only --bg/--panel/--text/--accent) all work from
        one set of rules. Derived tokens live on <body> (not :root) and are
@@ -543,12 +543,12 @@
         <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
       </svg>
     </button>
-    <a class="brand" href="/" aria-label="Maverick by Daybreak Labs — home">
+    <a class="brand" href="/" aria-label="Lightwork by Daybreak Labs — home">
       <span class="brand__plate">
         <img class="brand__logo" src="/static/daybreak-logo.jpg" alt="Daybreak Labs"
              width="35" height="24" />
       </span>
-      <span class="brand__name">Maverick</span>
+      <span class="brand__name">Lightwork</span>
     </a>
     <span class="topbar__controls">
       <a href="#" id="halt-pill" class="halt-pill" role="button" aria-label="Halt: arm or clear killswitch">
@@ -620,15 +620,16 @@
         '/providers': 'providers', '/benchmarks': 'bench', '/learned': 'learned',
         '/plan-tree-3d': 'cube', '/approvals': 'check', '/permissions': 'key',
         '/safety': 'shield', '/compliance': 'compliance', '/compartments': 'compartments',
-        '/audit': 'audit', '/replay': 'audit', '/trust': 'agents', '/skills': 'skills', '/store': 'store', '/templates': 'templates',
+        '/audit': 'audit', '/replay': 'audit', '/trust': 'agents', '/discovery': 'overview', '/simulate': 'graph', '/skills': 'skills', '/store': 'store', '/templates': 'templates',
         '/tools': 'tools', '/plugins': 'plugins', '/mcp': 'mcp', '/channels': 'channels',
         '/settings': 'settings', '/styles': 'roles', '/users': 'users', '/tenants': 'tenants', '/cache': 'cache',
         '/facts': 'facts', '/walkthroughs': 'walkthroughs', '/embed-demo': 'embed',
+        '/workforce': 'agents',
       } %}
       {% set _nav_groups = [
-        ('Operate', [('/start', 'Get started'), ('/chat', 'Chat'), ('/goals', 'Goals'), ('/projects', 'Projects'), ('/deliverables', 'Deliverables'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/workflows', 'Workflows'), ('/automations', 'Automations'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
-        ('Observe', [('/overview', 'Overview'), ('/oversight', 'Oversight'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
-        ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'), ('/safety', 'Safety'), ('/compliance', 'Compliance'), ('/compartments', 'Compartments'), ('/audit', 'Audit'), ('/replay', 'Replay'), ('/trust', 'Agent Trust')]),
+        ('Operate', [('/start', 'Get started'), ('/chat', 'Chat'), ('/goals', 'Goals'), ('/projects', 'Projects'), ('/deliverables', 'Deliverables'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/workforce', 'Workforce'), ('/goal-builder', 'Builder'), ('/workflows', 'Workflows'), ('/automations', 'Automations'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
+        ('Observe', [('/overview', 'Overview'), ('/oversight', 'Oversight'), ('/discovery', 'Discovery'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
+        ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'), ('/simulate', 'Simulate'), ('/safety', 'Safety'), ('/compliance', 'Compliance'), ('/compartments', 'Compartments'), ('/audit', 'Audit'), ('/replay', 'Replay'), ('/trust', 'Agent Trust')]),
         ('Extend', [('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'), ('/tools', 'Tools'), ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/channels', 'Channels')]),
         ('Admin', [('/settings', 'Settings'), ('/styles', 'Styles'), ('/users', 'Users'), ('/tenants', 'Tenants'), ('/cache', 'Cache'), ('/facts', 'Facts'), ('/walkthroughs', 'Walkthroughs'), ('/embed-demo', 'Embed')]),
       ] %}
@@ -653,7 +654,7 @@
     {% block content %}{% endblock %}
   </main>
   <footer>
-    <span class="muted">Maverick by Daybreak Labs · {{ t('footer.local') }} · proprietary software</span>
+    <span class="muted">Lightwork by Daybreak Labs · {{ t('footer.local') }} · proprietary software</span>
   </footer>
 
   <!-- Reusable toast regions + confirm dialog (window.mvToast / window.mvConfirm).

@@ -11,3 +11,27 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "Agency support answer memo"
+consumers = ["agency_manager", "underwriter"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture question"
+instruction = "Restate the agent or broker question and identify the specific policy, form, and coverage at issue."
+tools = ["read_file"]
+[[workflow]]
+name = "Find the form"
+instruction = "Retrieve the governing policy form, endorsement, and underwriting guideline from company documents."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Draft answer"
+instruction = "Draft a form-accurate answer that cites the exact provision and states any assumption or unknown rather than guessing."
+tools = ["read_file"]
+[[workflow]]
+name = "Scope check"
+instruction = "Confirm the answer assembles facts only and does not approve, deny, bind, or reserve, routing any decision to the adjuster or underwriter."
+gate = "review"

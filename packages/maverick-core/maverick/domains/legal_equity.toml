@@ -15,3 +15,31 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "equity-exemption legal memo"
+consumers = ["securities_counsel", "corporate_secretary"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read documents"
+instruction = "Read the equity-issuance or option-grant documents and the relevant cap-table records for the transaction."
+tools = ["read_file", "carta_read"]
+[[workflow]]
+name = "Identify exemption"
+instruction = "Determine the applicable securities exemption among Reg D/S, Rule 701, Rule 144, ISO/NSO, 409A, §83(b), and Form D / blue-sky."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify rule"
+instruction = "Confirm each exemption's conditions against the current rule text and cite the rule for every position."
+tools = ["web_search"]
+[[workflow]]
+name = "Review documents"
+instruction = "Review the equity documents and signature records for exemption compliance, issuing nothing and authorizing no grant."
+tools = ["docusign_read"]
+[[workflow]]
+name = "Counsel sign-off"
+instruction = "Route the memo to human counsel, who owns every issuance and grant decision."
+gate = "review"

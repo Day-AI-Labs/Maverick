@@ -11,7 +11,7 @@
 > *about people*, using the company's **most protected data** (comp, health, performance,
 > disciplinary, immigration, protected-class), under the **heaviest anti-discrimination
 > regime** (Title VII, ADA, ADEA, EEOC, NYC LL144, EU AI Act). It is the convergence of
-> three control stories Maverick has *already built*: **privacy** (employee PII is
+> three control stories Lightwork has *already built*: **privacy** (employee PII is
 > special-category — reuse the privacy suite), **AI governance** (employment is EU AI
 > Act **Annex III high-risk** and NYC LL144 territory — reuse the AI-Gov tower), and
 > **need-to-know access control** (comp/performance/medical segregation — the capability
@@ -32,7 +32,7 @@ money"):
 ## Contents
 
 1. [What's already shipped — the reuse map](#1-whats-already-shipped--the-reuse-map)
-2. [How an HR agent maps onto Maverick](#2-how-an-hr-agent-maps-onto-maverick)
+2. [How an HR agent maps onto Lightwork](#2-how-an-hr-agent-maps-onto-maverick)
 3. [The control model (cross-cutting)](#3-the-control-model-cross-cutting)
 4. [Per-client customization — the dials](#4-per-client-customization--the-dials)
 5. [The roster — eight towers](#5-the-roster--eight-towers)
@@ -83,7 +83,7 @@ pack** and the **bias-evaluation** engine (shared with AI-Gov).
 
 ---
 
-## 2. How an HR agent maps onto Maverick
+## 2. How an HR agent maps onto Lightwork
 
 Each agent is one [`DomainProfile`](../../packages/maverick-core/maverick/domain.py)
 pack, governed by Layer A + consent + the signed audit chain. Three HR specifics:

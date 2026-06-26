@@ -7,6 +7,8 @@ crash because of an audit-path bug.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import logging
 import os
@@ -17,12 +19,53 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..paths import data_dir
 from .events import AuditEvent, EventKind, is_valid_day
 
 log = logging.getLogger(__name__)
 
 
-DEFAULT_AUDIT_DIR = Path.home() / ".maverick" / "audit"
+# Goal-id binding for events logged deep in the stack. The agent kernel records
+# tool/shield events with an explicit goal_id, but events emitted further down --
+# notably the consent gate (safety/consent.py) and the per-action approval gate
+# -- don't carry one. The run loop binds this ContextVar for the duration of a
+# goal (see orchestrator.run_goal_sync), so a goal-less record() still attributes
+# to the run. A ContextVar (not a global) so concurrent async runs each keep
+# their own goal id; asyncio.run copies the current context into the root task,
+# so a binding set just before it propagates to every nested tool/consent call.
+_current_goal: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "maverick_audit_goal", default=None,
+)
+
+
+def set_goal_context(goal_id: int | None) -> contextvars.Token:
+    """Bind the goal id that goal-less :func:`record` calls attribute to.
+
+    Returns a token for :func:`reset_goal_context`. Prefer the
+    :func:`goal_context` context manager unless you need manual control.
+    """
+    return _current_goal.set(goal_id)
+
+
+def reset_goal_context(token: contextvars.Token) -> None:
+    """Undo a :func:`set_goal_context` binding (fail-soft on a stale token)."""
+    try:
+        _current_goal.reset(token)
+    except (ValueError, LookupError):  # token from another context -- ignore
+        pass
+
+
+@contextlib.contextmanager
+def goal_context(goal_id: int | None):
+    """Bind ``goal_id`` for goal-less audit records within the ``with`` block."""
+    token = set_goal_context(goal_id)
+    try:
+        yield
+    finally:
+        reset_goal_context(token)
+
+
+DEFAULT_AUDIT_DIR = data_dir("audit")
 
 # Every live AuditLog registers here so an erase can drop the stale in-memory
 # chain head on *any* writer pointed at the erased dir -- not just the default
@@ -77,8 +120,10 @@ def _resolve_signing(explicit: bool | None) -> bool:
     Compliance floors are mandatory and strictest-wins: HIPAA-mode audit logging
     requires signed/tamper-evident audit rows even if the standalone signing knob
     is absent or false. Otherwise, precedence is explicit arg >
-    MAVERICK_AUDIT_SIGN env > [audit] sign in config.toml > off. Resolved once
-    at construction so the hot record() path never re-reads config.
+    MAVERICK_AUDIT_SIGN env > [audit] sign in config.toml > secure-by-default
+    (ON unless explicitly disabled, via ``MAVERICK_SECURE_DEFAULT=0`` /
+    ``[security] secure_defaults = false``). Resolved once at construction so the
+    hot record() path never re-reads config.
     """
     try:
         from ..compliance_profiles import FLOOR_AUDIT_LOG, requires_floor
@@ -94,8 +139,14 @@ def _resolve_signing(explicit: bool | None) -> bool:
         return env_bool("MAVERICK_AUDIT_SIGN", False)
     try:
         from ..config import load_config
+        from ..security_defaults import secure_by_default
 
-        return bool(((load_config() or {}).get("audit") or {}).get("sign", False))
+        # Secure-by-default: sign + hash-chain the audit log unless explicitly
+        # disabled. An explicit [audit] sign still wins when present.
+        sign = ((load_config() or {}).get("audit") or {}).get("sign")
+        if sign is not None:
+            return bool(sign)
+        return secure_by_default()
     except Exception:
         return False
 
@@ -105,8 +156,10 @@ class AuditLog:
 
     Single writer instance per process. Thread-safe.
 
-    When signing is enabled (opt-in via ``sign=True`` /
-    ``MAVERICK_AUDIT_SIGN`` / ``[audit] sign``), each row is routed
+    When signing is enabled (**on by default** via secure-by-default; also
+    forced by ``sign=True`` / ``MAVERICK_AUDIT_SIGN`` / ``[audit] sign``, and
+    turned off by ``[audit] sign = false`` / ``MAVERICK_AUDIT_SIGN=0`` / the
+    ``secure_defaults`` master switch), each row is routed
     through :class:`maverick.audit.signing.AuditSigner`, adding an
     Ed25519 ``prev_hash``/``hash``/``sig`` chain so tampering is
     detectable by ``maverick audit verify``. For third-party
@@ -239,13 +292,35 @@ class AuditLog:
                 self._signer = AuditSigner(path)
                 self._signer_path = path
             except ImportError:
-                log.warning(
+                # A compliance floor (e.g. HIPAA) that mandates signed,
+                # tamper-evident audit rows must NOT silently degrade to plaintext
+                # -- mirror crypto_at_rest's fail-closed posture and refuse rather
+                # than let an operator believe tamper-evidence is active when it
+                # isn't. Only the no-floor (secure-by-default) path degrades, and
+                # then loudly (error, not warning).
+                try:
+                    from ..compliance_profiles import FLOOR_AUDIT_LOG, requires_floor
+                    floored = requires_floor(FLOOR_AUDIT_LOG)
+                except Exception:  # pragma: no cover - floor lookup never blocks
+                    floored = False
+                if floored:
+                    raise RuntimeError(
+                        "audit: an active compliance profile requires signed, "
+                        "tamper-evident audit logs, but the 'cryptography' extra is "
+                        "not installed -- refusing to write UNSIGNED. Run: "
+                        "pip install 'maverick-agent[audit-signing]'"
+                    ) from None
+                log.error(
                     "audit: signing enabled but 'cryptography' not installed; "
                     "writing UNSIGNED. Run: pip install 'maverick-agent[audit-signing]'"
                 )
                 self._signing_enabled = False
                 return None
             except Exception as e:  # pragma: no cover - defensive
+                from .signing import OffHostSigningRequiredError
+
+                if isinstance(e, OffHostSigningRequiredError):
+                    raise
                 log.warning("audit: signer init failed (%s); writing unsigned", e)
                 self._signing_enabled = False
                 return None
@@ -450,7 +525,14 @@ def record(
     goal_id: int | None = None,
     **payload: Any,
 ) -> bool:
-    """Module-level shortcut for the default audit log."""
+    """Module-level shortcut for the default audit log.
+
+    When ``goal_id`` is not given, falls back to the goal bound by the run loop
+    (:func:`set_goal_context`) so consent/approval and other deep events still
+    attribute to the active run. An explicit ``goal_id`` always wins.
+    """
+    if goal_id is None:
+        goal_id = _current_goal.get()
     event = AuditEvent(
         ts=time.time(),
         kind=kind,
@@ -492,4 +574,7 @@ __all__ = [
     "record",
     "reanchor_after_erase",
     "EventKind",
+    "set_goal_context",
+    "reset_goal_context",
+    "goal_context",
 ]

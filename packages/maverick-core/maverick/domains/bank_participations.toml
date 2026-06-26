@@ -17,3 +17,24 @@ deliverable = "Loan participation schedule"
 consumers = ["credit_officer", "controller"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull participations"
+instruction = "Query the participation master and loan ledger to pull each participated loan's balance, ownership percentage, and recent activity."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Recompute shares"
+instruction = "Recompute each participant's pro-rata principal, interest, and fee shares for the period in a worksheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Tie to agreements"
+instruction = "Confirm the computed splits match the executed participation agreements and cite the governing terms."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Reconcile remittances"
+instruction = "Compare prior remittances to recomputed shares and flag over- or under-payments to participants."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Route schedule"
+instruction = "Hand the participation schedule and any variances to the credit officer and controller to approve the remittance."
+gate = "review"

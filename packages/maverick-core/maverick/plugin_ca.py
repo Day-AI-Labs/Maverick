@@ -202,10 +202,20 @@ def sign_artifact(path: Path, *, publisher_priv_hex: str, cert: dict) -> dict:
     }
 
 
-def verify_artifact(path: Path, bundle: dict, *, root_pub: str,
-                    revoked: set[str] | None = None,
-                    now: float | None = None) -> VerifyResult:
-    """Install-side chain verification. FAIL-CLOSED on any missing piece."""
+def sign_digest(digest: str, *, publisher_priv_hex: str, cert: dict) -> dict:
+    """Publisher-side: sign a precomputed sha256 hex digest into a bundle."""
+    _require_crypto()
+    return {
+        "digest": digest,
+        "sig": _sign(publisher_priv_hex, digest.encode("ascii")),
+        "cert": cert,
+    }
+
+
+def verify_digest(digest: str, bundle: dict, *, root_pub: str,
+                  revoked: set[str] | None = None,
+                  now: float | None = None) -> VerifyResult:
+    """Install-side chain verification for a precomputed sha256 hex digest."""
     if not _have_crypto():
         return VerifyResult(False, "cryptography not installed; refusing unverified plugin")
     cert = bundle.get("cert") or {}
@@ -221,12 +231,19 @@ def verify_artifact(path: Path, bundle: dict, *, root_pub: str,
         return VerifyResult(False, "revocation data required")
     if cert["serial"] in revoked:
         return VerifyResult(False, f"cert revoked ({cert['publisher']})")
-    digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
     if digest != bundle.get("digest"):
         return VerifyResult(False, "artifact digest mismatch (file changed after signing)")
     if not _verify(cert["pubkey"], bundle.get("sig", ""), digest.encode("ascii")):
         return VerifyResult(False, "artifact signature invalid")
     return VerifyResult(True, "ok", publisher=cert["publisher"])
+
+
+def verify_artifact(path: Path, bundle: dict, *, root_pub: str,
+                    revoked: set[str] | None = None,
+                    now: float | None = None) -> VerifyResult:
+    """Install-side chain verification. FAIL-CLOSED on any missing piece."""
+    digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    return verify_digest(digest, bundle, root_pub=root_pub, revoked=revoked, now=now)
 
 
 def new_publisher_keypair() -> tuple[str, str]:
@@ -236,4 +253,5 @@ def new_publisher_keypair() -> tuple[str, str]:
 
 
 __all__ = ["PluginCA", "VerifyResult", "sign_artifact", "verify_artifact",
-           "new_publisher_keypair", "DEFAULT_CERT_DAYS"]
+           "sign_digest", "verify_digest", "new_publisher_keypair",
+           "DEFAULT_CERT_DAYS"]

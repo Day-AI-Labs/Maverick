@@ -19,7 +19,7 @@ def _isolate(monkeypatch, tmp_path):
 
 
 def _provision(tenant_id="acme"):
-    from maverick import tenant_registry as tr
+    from maverick.tenant import registry as tr
     tr.create_tenant(tenant_id, plan="pro")
 
 
@@ -29,7 +29,7 @@ def test_quota_rejects_negative_instead_of_silently_unlimiting():
     assert res.exit_code == 2, res.output
     assert "negative" in res.output
     # The cap must be unchanged (still unlimited == 0), not the clamped value.
-    from maverick.tenant_registry import get_tenant
+    from maverick.tenant.registry import get_tenant
     assert get_tenant("acme").max_daily_dollars == 0.0
 
 
@@ -56,8 +56,8 @@ def test_tenant_list_flags_over_quota():
     # tenants are over their daily cap from `tenant list`.
     from datetime import datetime, timezone
 
-    from maverick import tenant_registry as tr
     from maverick.billing import ledger_for_tenant
+    from maverick.tenant import registry as tr
     tr.create_tenant("acme", plan="pro")
     tr.set_quota("acme", 1.0)
     tr.create_tenant("beta", plan="free")  # unlimited -> never flagged

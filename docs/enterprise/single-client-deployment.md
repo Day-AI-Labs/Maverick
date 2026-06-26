@@ -1,6 +1,6 @@
-# Single-Client Deployment — one Maverick per enterprise
+# Single-Client Deployment — one Lightwork per enterprise
 
-**Delivery model (decided, non-negotiable): one Maverick instance per enterprise
+**Delivery model (decided, non-negotiable): one Lightwork instance per enterprise
 client, always.** There is no shared, hosted, multi-tenant service. Cross-client
 data mingling is therefore a *deployment* guarantee — separate instances,
 separate hosts, separate storage — not something the application has to enforce
@@ -19,10 +19,10 @@ to get fully enterprise-ready, and (3) the per-client deployment runbook.
 
 | Layer | How a single client is isolated |
 |---|---|
-| **Deployment** | One Maverick process/host/volume per client. Two clients never share a host. |
+| **Deployment** | One Lightwork process/host/volume per client. Two clients never share a host. |
 | **Client binding** | `[client] id` / `MAVERICK_CLIENT_ID` binds the instance. `[client] enforce = true` (auto-on under enterprise mode) makes serving **fail closed** if unbound. |
 | **Tenant floor** (`maverick.client` + `maverick.paths`) | The client id is the tenant *floor*: every `data_dir()` path — world DB, audit chain + keys, cross-session memory, fleet memory — resolves under `~/.maverick/tenants/<client>/…`. There is no un-scoped global location for client data. |
-| **At-rest encryption** | Per-tenant DEK wrapped by a KEK, with the client id bound into the AEAD context (`tenant_kms`), so a key cannot decrypt another scope's data. Enable with `[encryption] at_rest = true` + `per_tenant = true`. |
+| **At-rest encryption** | Per-tenant DEK wrapped by a KEK, with the client id bound into the AEAD context (`tenant/kms.py`), so a key cannot decrypt another scope's data. Enable with `[encryption] at_rest = true` + `per_tenant = true`. |
 | **Audit** | Signed, hash-chained, per-client audit dir + signing key; `maverick doctor` shows the bound client + data root. |
 
 **Status (this PR): the client-binding keystone is shipped** — binding, tenant
@@ -88,7 +88,7 @@ Sequenced by leverage. Each phase is independently shippable.
 - **Secrets hygiene** ✅: `doctor` warns when `config.toml` is group/world-
   accessible; use `${ENV}` refs for tokens (the systemd unit injects them).
 - **BYOK** ✅: real cloud-KMS backends (`maverick/kms_backends.py`) behind the
-  `tenant_kms.KMS` Protocol — AWS KMS, GCP KMS, and Vault transit. `[kms]
+  `tenant/kms.py` `KMS` Protocol — AWS KMS, GCP KMS, and Vault transit. `[kms]
   provider = aws|gcp|vault` keeps the KEK in the customer's HSM (the tenant
   context binds as the KMS EncryptionContext / AAD); a missing SDK or unknown
   provider fails closed (never downgrades to in-process keys). Env-injected
@@ -200,7 +200,7 @@ tls_client_key  = "/etc/maverick/tls/client.key"
 
 ```ini
 [Unit]
-Description=Maverick (client: acme-corp)
+Description=Lightwork (client: acme-corp)
 After=network-online.target
 
 [Service]

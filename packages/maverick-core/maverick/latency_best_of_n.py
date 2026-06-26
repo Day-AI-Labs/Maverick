@@ -13,9 +13,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-
-class AllAttemptsFailed(Exception):
-    """Every attempt raised before any succeeded."""
+from .best_of_n import AllAttemptsFailed  # re-export: single shared definition
 
 
 async def race_first_success(
@@ -34,14 +32,14 @@ async def race_first_success(
         raise ValueError("race_first_success needs at least one factory")
     tasks = [asyncio.ensure_future(f()) for f in factories]
     timeout = None if budget_ms is None else max(0.0, budget_ms / 1000.0)
-    deadline = None if timeout is None else asyncio.get_event_loop().time() + timeout
+    deadline = None if timeout is None else asyncio.get_running_loop().time() + timeout
     errors: list[BaseException] = []
     pending = set(tasks)
     try:
         while pending:
             remaining = None
             if deadline is not None:
-                remaining = deadline - asyncio.get_event_loop().time()
+                remaining = deadline - asyncio.get_running_loop().time()
                 if remaining <= 0:
                     raise asyncio.TimeoutError(
                         f"no attempt succeeded within {budget_ms}ms")

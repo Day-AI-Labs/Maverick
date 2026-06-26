@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "cadence design & A/B test plan"
+consumers = ["sdr_manager", "revops_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull current cadences"
+instruction = "Read existing sequences, step performance, and reply rates from Salesloft and Outreach for the target segment."
+tools = ["salesloft_read", "outreach_read"]
+[[workflow]]
+name = "Check suppression"
+instruction = "Confirm the target list honors consent and suppression and excludes any opted-out parties before designing touches."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Design cadence"
+instruction = "Draft the multi-touch sequence and A/B variants with timing, channels, and messaging grounded in approved sources."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Define test plan"
+instruction = "Specify the A/B split, sample size, and success metric so results are measurable before launch."
+tools = ["salesloft_read", "outreach_read"]
+[[workflow]]
+name = "Submit for launch"
+instruction = "Route the cadence and test plan to the SDR manager for approval to enable inside the gated sequence."
+gate = "approval"

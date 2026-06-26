@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "gated outbound sequence package"
+consumers = ["sdr_manager", "account_executive"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Research accounts"
+instruction = "Research target accounts and contacts and pull their engagement history from Salesloft, Outreach, and Apollo."
+tools = ["salesloft_read", "outreach_read", "apollo_read", "web_search"]
+[[workflow]]
+name = "Check suppression"
+instruction = "Confirm every contact passes the consent and suppression floor and drop any opted-out party before drafting."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Draft outreach"
+instruction = "Draft personalized, AI-disclosed outreach copy for each step of the sequence grounded in the account research."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify copy"
+instruction = "Verify the sequence makes no price or discount commitment and carries the required AI disclosure."
+[[workflow]]
+name = "Route to manager"
+instruction = "Hand the suppression-cleared sequence package to the SDR manager for approval before any send."
+gate = "approval"

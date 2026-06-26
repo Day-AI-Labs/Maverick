@@ -161,7 +161,7 @@ def test_server_passes_channel_user_to_run_goal(monkeypatch):
 # ---------- file_cache ----------
 
 def test_file_cache_read_round_trip(tmp_path):
-    from maverick.file_cache import (
+    from maverick.cache.file import (
         clear_read_cache,
         read_cache_stats,
         read_file_cached,
@@ -182,7 +182,7 @@ def test_file_cache_read_round_trip(tmp_path):
 def test_file_cache_invalidates_on_mtime_change(tmp_path):
     import time as _time
 
-    from maverick.file_cache import clear_read_cache, read_file_cached
+    from maverick.cache.file import clear_read_cache, read_file_cached
     clear_read_cache()
     f = tmp_path / "f.txt"
     f.write_text("v1")
@@ -195,12 +195,12 @@ def test_file_cache_invalidates_on_mtime_change(tmp_path):
 
 
 def test_file_cache_missing_file_returns_none(tmp_path):
-    from maverick.file_cache import read_file_cached
+    from maverick.cache.file import read_file_cached
     assert read_file_cached(tmp_path / "nope") is None
 
 
 def test_repo_map_cache_invalidates_on_workdir_change(tmp_path):
-    from maverick.file_cache import clear_repo_cache, repo_map_cached
+    from maverick.cache.file import clear_repo_cache, repo_map_cached
     clear_repo_cache()
     workdir = tmp_path / "wd"
     workdir.mkdir()

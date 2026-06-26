@@ -9,9 +9,13 @@
   "containerDefinitions": [
     {
       "name": "maverick",
-      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/maverick:latest",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/maverick:0.1.6",
       "essential": true,
       "command": ["dashboard", "--host", "0.0.0.0", "--port", "8765"],
+      "user": "1000:1000",
+      "linuxParameters": {
+        "capabilities": {"drop": ["ALL"]}
+      },
       "portMappings": [
         {"containerPort": 8765, "protocol": "tcp"}
       ],
@@ -19,13 +23,17 @@
         {
           "name": "ANTHROPIC_API_KEY",
           "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/maverick/anthropic-api-key"
+        },
+        {
+          "name": "MAVERICK_DASHBOARD_TOKEN",
+          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/maverick/dashboard-token"
         }
       ],
       "mountPoints": [
         {"sourceVolume": "maverick-state", "containerPath": "/home/maverick/.maverick"}
       ],
       "healthCheck": {
-        "command": ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8765/', timeout=3)\" || exit 1"],
+        "command": ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8765/livez', timeout=3)\" || exit 1"],
         "interval": 30,
         "timeout": 5,
         "retries": 3,

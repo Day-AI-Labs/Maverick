@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "RevOps process & config change plan"
+consumers = ["revops_lead", "sales_ops_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Map current state"
+instruction = "Read the existing workflow definitions and inspect Segment event flows to document the current GTM stack and process baseline."
+tools = ["read_file", "segment_read"]
+[[workflow]]
+name = "Diagnose gap"
+instruction = "Identify the automation gap or data-quality issue and research vendor or platform best practices to ground the fix."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft change"
+instruction = "Draft the proposed config or workflow change with the exact objects, triggers, and rollback path it touches."
+[[workflow]]
+name = "Trace impact"
+instruction = "Verify against Segment data which downstream routing, reporting, or sync would break and call out the blast radius."
+tools = ["segment_read"]
+[[workflow]]
+name = "Gate config change"
+instruction = "Submit the documented config change plan for RevOps to approve before any system is modified."
+gate = "approval"

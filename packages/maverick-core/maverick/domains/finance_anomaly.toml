@@ -15,7 +15,35 @@ allow_tools = [
     "gl_read_journal", "ap_read_invoice", "ar_read_invoice", "audit_log_read",
     "flag_anomaly",
 ]
-deny_tools = ["post_journal_entry", "release_payment"]
+deny_tools = ["post_journal_entry", "release_payment", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
 knowledge_sources = ["finance_rcm", "finance_accounting_policy"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "transaction anomaly alert digest"
+consumers = ["internal_auditor", "controller"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Establish baseline"
+instruction = "Read the historical journal, AP, and AR streams to build the statistical baseline for amounts, timing, and counterparties."
+tools = ["gl_read_journal", "ap_read_invoice", "ar_read_invoice"]
+[[workflow]]
+name = "Scan stream"
+instruction = "Monitor the live transaction stream for outliers like new GL-account usage, post-close entries, manual-JE spikes, and after-hours postings."
+tools = ["gl_read_journal", "audit_log_read"]
+[[workflow]]
+name = "Attach baseline"
+instruction = "For each candidate outlier, attach the baseline it deviated from and the deviation magnitude so reviewers can judge it."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Rank and bound"
+instruction = "Rank alerts by severity and trim the volume to a reviewable, budget-bounded set before handoff."
+[[workflow]]
+name = "Flag for audit"
+instruction = "Flag the ranked anomalies for SOX and Internal Audit review without blocking or mutating any transaction."
+tools = ["flag_anomaly"]
+gate = "review"

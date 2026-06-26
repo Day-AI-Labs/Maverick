@@ -54,7 +54,7 @@ def test_tool_loop_pays_at_most_once(suite):
 
 
 def test_tool_loop_leaves_no_residue(suite):
-    from maverick import tool_cache
+    from maverick.cache import tool as tool_cache
 
     prior_env = os.environ.get("MAVERICK_TOOL_CACHE")
     suite.scenario_tool_loop()

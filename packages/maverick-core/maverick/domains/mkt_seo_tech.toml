@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "technical SEO audit with prioritized fixes"
+consumers = ["web_engineering_lead", "seo_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Gather signals"
+instruction = "Collect crawl data, schema markup, and performance metrics for the site from approved exports and documents."
+tools = ["read_file", "knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Check crawlability"
+instruction = "Review robots directives, canonicals, redirects, and indexability against documented site structure."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Validate schema"
+instruction = "Verify structured data and Core Web Vitals against current standards and flag deviations."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Prioritize fixes"
+instruction = "Rank technical issues by crawl and ranking impact versus engineering effort with cited rationale."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand to eng"
+instruction = "Route the prioritized technical fix list to the web engineering lead for sign-off before deployment."
+gate = "review"

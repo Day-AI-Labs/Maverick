@@ -1,6 +1,6 @@
-# Maverick threat model (STRIDE)
+# Lightwork threat model (STRIDE)
 
-This is the working threat model for Maverick. It's living: when we add
+This is the working threat model for Lightwork. It's living: when we add
 a capability, we update this doc with the new threats and mitigations.
 PRs that add tools or providers SHOULD touch this file.
 
@@ -37,7 +37,7 @@ crossing those needs explicit consent or shield approval.
 
 ### Networked / multi-principal boundaries (enterprise + federated)
 
-The single-user picture above is the default. When Maverick is deployed
+The single-user picture above is the default. When Lightwork is deployed
 as a governed service it grows three more inbound trust boundaries, each
 fronted by its own authenticated, fail-closed surface:
 
@@ -49,7 +49,7 @@ fronted by its own authenticated, fail-closed surface:
    API / SDK / MCP   ---> | gRPC goal API + MCP server |  bearer / per-caller
    clients               |  - capability-attenuated    |  trust token; TLS
                          +----------------------------+
-   peer Maverick     ---> | federation + A2A + channel |  Ed25519 signed
+   peer Lightwork     ---> | federation + A2A + channel |  Ed25519 signed
    swarms / agents       |  + marketplace federation   |  envelopes; per-peer
                          |  - Agent Trust Plane gate    |  token; pinned keys
                          +----------------------------+
@@ -62,7 +62,7 @@ fronted by its own authenticated, fail-closed surface:
 ```
 
 **One client per deployment.** The product contract is one tenant per
-Maverick instance; client/tenant state is namespaced on disk under
+Lightwork instance; client/tenant state is namespaced on disk under
 `tenants/<client>/` and the dashboard owner-scopes every object. Cross-peer
 and cross-user data mingling is the threat this whole layer exists to prevent.
 
@@ -77,7 +77,7 @@ or unknown caller is refused before any work is done.
 - Session cookies (in `~/.maverick/sessions/*.json`, chmod 600).
 - Audit log (in `~/.maverick/audit/*.ndjson`, chmod 600).
 - World model SQLite db (optional per-column at-rest encryption,
-  `crypto_at_rest` / `tenant_kms`; AES-256-GCM, per-tenant DEK).
+  `crypto_at_rest` / `tenant/kms.py`; AES-256-GCM, per-tenant DEK).
 - At-rest / KMS key material (`~/.maverick/keys/`, mode-at-creation 0600;
   the wrapped DEK is never written unwrapped).
 - Per-deployment / per-tenant client data — must never mingle across
@@ -93,10 +93,14 @@ or unknown caller is refused before any work is done.
 - Compromised provider API endpoints — we trust the providers we
   configured to do their job. If Anthropic ships a compromised model,
   we have bigger problems.
-- Compromised optional plugins — plugins run in-process; users who
-  install untrusted plugins are responsible for vetting them. The
-  `[plugin.permissions]` manifest section is a soft signal, not an
-  enforcement mechanism (yet).
+- Compromised optional plugins — users who install untrusted plugins are
+  responsible for vetting them. Manifest permissions ARE enforced by default
+  (`[plugins] enforce_permissions = true`): a plugin requesting an ungranted
+  `network`/`fs_write`/`subprocess`/`sensitive_envs` permission is skipped
+  (never loaded) unless granted via `[plugins] grant=[...]`; setting
+  `enforce_permissions = false` (or `MAVERICK_PLUGINS_ENFORCE=0`) downgrades to
+  load-with-warning. Plugin tool calls can additionally run out-of-process
+  under `[plugins] isolation`.
 
 ## Threats by category
 
@@ -163,7 +167,7 @@ or unknown caller is refused before any work is done.
 
 | Threat                                                  | Mitigation                                                                            |
 |---------------------------------------------------------|----------------------------------------------------------------------------------------|
-| Plugin escapes its declared capabilities               | Plugin manifest declares permissions; tool ACLs filter at registry time.               |
+| Plugin escapes its declared capabilities               | Manifest permissions enforced by default (ungranted → plugin skipped); tool ACLs filter at registry time; optional out-of-process isolation. |
 | Browser tool reaches private/loopback addresses        | `http_fetch` refuses private IPs by default; `MAVERICK_FETCH_ALLOW_PRIVATE=1` opt-in.  |
 | Computer-use tool drives mouse/keyboard outside scope  | Kill switch `MAVERICK_COMPUTER_DISABLE=1`; consent prompt for first session (Q2 26).   |
 | Shell tool reads sensitive files (gold patches, etc.)  | Opaque-mode blocklists for benchmark contexts; tool ACLs.                              |
@@ -209,7 +213,7 @@ point.
 | One dashboard user reads another user's goals (IDOR) | Object-level `assert_goal_access` on every goal-by-id endpoint; exact owner match; denials return **404** (not 403) so existence isn't disclosed. Legacy `owner==""` rows are unreachable by authenticated non-admins. |
 | A peer reads webhook/push secrets back from config | `get_push_config` masks the token; support bundles redact secret-named keys. |
 | Provider session cookies readable by another local user mid-write | Written **mode-at-creation** (`os.open(..., 0600)`), closing the world-readable window the old write-then-chmod left. |
-| Cross-tenant data decryption | Per-tenant DEK + AEAD context binding (`tenant_kms`); a tenant's key/ciphertext can't open another's (GCM auth fails). |
+| Cross-tenant data decryption | Per-tenant DEK + AEAD context binding (`tenant/kms.py`); a tenant's key/ciphertext can't open another's (GCM auth fails). |
 | Forwarded channel user-ids leak across peers | Pseudonymized per-peer (HMAC under a per-pair secret) before they leave the host; no secret = no forwarding. |
 
 ### Denial of service

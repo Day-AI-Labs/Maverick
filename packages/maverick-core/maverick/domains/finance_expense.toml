@@ -16,7 +16,7 @@ allow_tools = [
     "flag_policy_violation", "draft_accrual", "reconcile_accounts",
     "concur_read", "ramp_read",   # read seat (low) -- pull vendor data
 ]
-deny_tools = ["approve_expense", "reimburse"]
+deny_tools = ["approve_expense", "reimburse", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.concur.com", "*.expensify.com", "*.ramp.com"]
 mcp_servers = ["Expense_Ramp"]
@@ -28,4 +28,25 @@ shape = "table"
 deliverable = "T&E exceptions & accrual"
 consumers = ["accounting_manager", "controller"]
 cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull reports"
+instruction = "Read submitted expense reports and the corporate-card statement for the period."
+tools = ["expense_read_report", "expense_read_card", "concur_read", "ramp_read"]
+[[workflow]]
+name = "Audit policy"
+instruction = "Test each line against the T&E policy and flag out-of-policy, duplicate, and personal spend using card tokens only."
+tools = ["knowledge_search", "flag_policy_violation"]
+[[workflow]]
+name = "Reconcile card"
+instruction = "Reconcile flagged transactions to the card statement and confirm every charge is accounted for."
+tools = ["reconcile_accounts"]
+[[workflow]]
+name = "Draft accrual"
+instruction = "Draft the expense accrual for unsubmitted and in-flight spend and attach the exception list."
+tools = ["draft_accrual"]
+[[workflow]]
+name = "Route review"
+instruction = "Hand the exceptions and accrual draft to the accounting manager for sign-off."
 gate = "review"

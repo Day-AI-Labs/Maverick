@@ -10,3 +10,35 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "recall execution & disposition tracker"
+consumers = ["compliance_officer", "store_operations_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Confirm recall scope"
+instruction = "Read the recall notice to capture affected SKUs, lot or date codes, hazard, and required corrective action."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Identify affected stock"
+instruction = "Query inventory and sales records to locate affected units across stores, DCs, and shipped-to-customer orders."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check recall procedure"
+instruction = "Retrieve the recall and customer-notification procedure from knowledge to confirm pull steps, notice content, and reporting duties."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft pull and notice"
+instruction = "Draft the store pull instructions, customer notice text, and disposition log covering quarantine, return, and destroy outcomes."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Reconcile disposition"
+instruction = "Track pulled-versus-expected quantities and flag unaccounted units that block recall closure."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Route for execution"
+instruction = "Submit the recall package to the compliance officer for approval before pulls, customer notices, or disposition are executed."
+gate = "approval"

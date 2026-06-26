@@ -53,10 +53,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from .config import env_flag
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
-LEARNED_PATH = Path.home() / ".maverick" / "learned.ndjson"
-GENERATED_TOOLS_DIR = Path.home() / ".maverick" / "generated_tools"
+LEARNED_PATH = data_dir("learned.ndjson")
+GENERATED_TOOLS_DIR = data_dir("generated_tools")
 
 # A generated tool module must be addressable as a plain identifier and
 # must not shadow a stdlib / kernel module name when imported.
@@ -70,11 +73,9 @@ _lock = threading.Lock()
 # --------------------------------------------------------------------------
 def enabled() -> bool:
     """Whether the self-learning loop is active. Off by default."""
-    env = os.environ.get("MAVERICK_SELF_LEARNING", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_SELF_LEARNING")
+    if _v is not None:
+        return _v
     try:
         from .config import get_self_learning
         return bool(get_self_learning()["enable"])
@@ -242,7 +243,7 @@ def _rank_embed(need: str, entries: list, max_n: int) -> list[Candidate] | None:
     empty if nothing clears ``_EMBED_MIN_SCORE``).
     """
     try:
-        from .skill_embeddings import _cosine, _have_fastembed, embed
+        from .skill.embeddings import _cosine, _have_fastembed, embed
 
         if not _have_fastembed() or not entries:
             return None
@@ -369,9 +370,15 @@ def add_mcp_server(
     body = ("" if existing.endswith("\n") or not existing else "\n") + \
         "\n" + "\n".join(block) + "\n"
 
+    # Atomic write (temp + os.replace), NOT an append to the live config: a
+    # crash / power-loss / ENOSPC mid-write used to leave a truncated TOML block
+    # at EOF, making the WHOLE config unparseable -- the next load_config() would
+    # raise and the deployment would fail to start. We already hold the full
+    # file in `existing`; render the new content in memory and swap it in atomically.
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(body)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(existing + body, encoding="utf-8")
+    os.replace(tmp, path)
     record(need or name, "mcp", name, source=command)
     return spec
 
@@ -389,11 +396,9 @@ def mcp_acquisition_enabled() -> bool:
     re-enables the capability #392 disabled, so it's a separate, explicit
     trust decision. ``MAVERICK_ALLOW_MCP_ACQUISITION`` overrides config.
     """
-    env = os.environ.get("MAVERICK_ALLOW_MCP_ACQUISITION", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_ALLOW_MCP_ACQUISITION")
+    if _v is not None:
+        return _v
     return bool(settings().get("allow_mcp_acquisition", False))
 
 
@@ -630,6 +635,16 @@ print({ok!r})
 '''
 
 
+def _raise_if_import_check_failed(stdout: str | None, stderr: str | None, exit_code: int) -> None:
+    """Shared success check for the sandbox and plain-subprocess import probes:
+    a clean run prints exactly the OK sentinel and exits 0."""
+    if exit_code != 0 or (stdout or "") != f"{_IMPORT_CHECK_OK}\n":
+        detail = (stderr or "").strip() or (stdout or "").strip()
+        raise ValueError(
+            f"generated tool failed validation: {detail or 'import check failed'}"
+        )
+
+
 def _validate_import_isolated(path: Path, *, sandbox: Any = None) -> None:
     """Import ``path`` and check its make_tool() shape in a child process.
 
@@ -652,13 +667,9 @@ def _validate_import_isolated(path: Path, *, sandbox: Any = None) -> None:
             raise ValueError(
                 f"generated tool import check could not run: {type(e).__name__}: {e}"
             ) from e
-        stdout = result.stdout or ""
-        exit_code = getattr(result, "exit_code", 1)
-        if exit_code != 0 or stdout != f"{_IMPORT_CHECK_OK}\n":
-            detail = (result.stderr or "").strip() or stdout.strip()
-            raise ValueError(
-                f"generated tool failed validation: {detail or 'import check failed'}"
-            )
+        _raise_if_import_check_failed(
+            result.stdout, result.stderr, getattr(result, "exit_code", 1),
+        )
         return
     try:
         proc = subprocess.run(  # noqa: S603 -- isolated import check, not a tool shell
@@ -667,12 +678,7 @@ def _validate_import_isolated(path: Path, *, sandbox: Any = None) -> None:
         )
     except subprocess.TimeoutExpired as e:
         raise ValueError("generated tool failed validation: import timed out") from e
-    stdout = proc.stdout or ""
-    if proc.returncode != 0 or stdout != f"{_IMPORT_CHECK_OK}\n":
-        detail = (proc.stderr or "").strip() or stdout.strip()
-        raise ValueError(
-            f"generated tool failed validation: {detail or 'import check failed'}"
-        )
+    _raise_if_import_check_failed(proc.stdout, proc.stderr, proc.returncode)
 
 
 def write_generated_tool(
@@ -930,7 +936,7 @@ def _parse_needs(text: str) -> list[str]:
         data = json.loads(m.group(0))
     except json.JSONDecodeError:
         return []
-    return [str(x).strip() for x in data if isinstance(x, (str,)) and str(x).strip()][:10]
+    return [str(x).strip() for x in data if isinstance(x, str) and str(x).strip()][:10]
 
 
 async def preflight(

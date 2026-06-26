@@ -159,3 +159,30 @@ def test_audit_contract_holds_for_mixed_valid_invalid_markers():
     assert all(len(code) == 2 for code in book.forward.values())  # esc + 1 char
     for m in ["alpha beta gamma", "alpha beta", "alpha beta gamma and more"]:
         assert et.decode(et.encode(m, book), book) == m
+
+
+def test_store_concurrent_updates_stay_valid(tmp_path):
+    """update() replaces the whole codebook; with the fixed ".tmp" two
+    concurrent writers collided. Separate stores at one path updating
+    concurrently must leave a valid, fully-readable book and no temp."""
+    import threading
+
+    p = tmp_path / "codebook.json"
+    n = 12
+
+    def worker(i: int):
+        store = et.TokenCodebookStore(path=p)
+        book = et.TokenCodebook(escape="␛",
+                                forward={f"phrase{i}": f"␛m{i}"})
+        store.update(book)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # A fresh load sees a complete, valid codebook (one of the writers' books).
+    final = et.TokenCodebookStore(path=p).book()
+    assert isinstance(final.forward, dict) and final.forward
+    assert list(tmp_path.glob("*.tmp")) == []

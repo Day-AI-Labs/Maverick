@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "bug triage report with severity & flakiness trends"
+consumers = ["engineering_manager", "qa_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Gather reports"
+instruction = "Collect incoming bug reports, stack traces, and reproduction steps for the triage window."
+tools = ["read_file"]
+[[workflow]]
+name = "Reproduce & locate"
+instruction = "Read the relevant code paths to confirm reproducibility and isolate the failing component."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Classify severity"
+instruction = "Assign severity, priority, and owning area to each defect using impact and frequency."
+[[workflow]]
+name = "Detect flakiness"
+instruction = "Analyze recurrence and intermittent-failure patterns to separate flaky tests from real defects."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Hand to EM"
+instruction = "Route the prioritized triage report to the engineering manager for assignment sign-off."
+gate = "review"

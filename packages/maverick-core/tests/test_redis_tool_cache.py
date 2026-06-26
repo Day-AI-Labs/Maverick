@@ -8,8 +8,8 @@ import fnmatch
 import sys
 import types
 
-from maverick import redis_tool_cache as rtc
-from maverick.tool_cache import _key as local_key
+from maverick.cache import redis_tool as rtc
+from maverick.cache.tool import _key as local_key
 
 
 class FakeRedisClient:

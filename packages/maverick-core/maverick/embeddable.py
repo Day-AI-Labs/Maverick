@@ -12,15 +12,12 @@ short-circuit.
 """
 from __future__ import annotations
 
-import os
-
-_TRUE = {"1", "true", "yes", "on"}
+from ._envparse import env_bool
 
 
 def no_cli() -> bool:
     """True if Maverick is being imported as a library (no CLI needed)."""
-    val = (os.environ.get("MAVERICK_NO_CLI") or "").strip().lower()
-    return val in _TRUE
+    return env_bool("MAVERICK_NO_CLI")
 
 
 def short_circuit_in_embedded(label: str = "") -> None:

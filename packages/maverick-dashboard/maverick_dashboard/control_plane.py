@@ -19,6 +19,7 @@ empty/neutral view rather than an error, so the pages never 500 on a fresh box.
 from __future__ import annotations
 
 import datetime
+import math
 from typing import Any
 
 # ---- replay / flight recorder ----------------------------------------------
@@ -43,6 +44,7 @@ _KIND_LABELS: dict[str, tuple[str, str]] = {
     "agent_trust_denied": ("Agent-trust denied", "block"),
     "memory_guard": ("Memory guard", "block"),
     "secret_redacted": ("Secret redacted", "redaction"),
+    "evidence_capture": ("Evidence captured", "evidence"),
     "config_remediated": ("Config remediated", "lifecycle"),
     "halt": ("Killswitch halt", "block"),
 }
@@ -114,6 +116,9 @@ def _summarize(ev: dict[str, Any]) -> str:
         return f"{ev.get('peer', '?')} {ev.get('direction', '')}: {ev.get('reason', '')}".strip()
     if kind == "egress_blocked":
         return ev.get("host") or ev.get("provider") or ev.get("reason") or "egress denied"
+    if kind == "evidence_capture":
+        sha = str(ev.get("sha256", ""))[:12]
+        return f"{ev.get('phase', '')} {ev.get('action', '')} · {ev.get('file', '')} (sha256 {sha})".strip()
     if kind == "secret_redacted":
         return "secret value redacted before it reached disk"
     if kind in ("goal_start", "goal_end"):
@@ -258,6 +263,39 @@ def evidence_packet(goal: Any, replay: dict[str, Any]) -> dict[str, Any]:
 
 # ---- agent trust plane / permission graph ----------------------------------
 
+def _trust_graph(
+    agents: list[dict[str, Any]], *, width: int = 760, height: int = 360,
+) -> dict[str, Any]:
+    """Radial layout for the permission graph: this deployment at the centre,
+    each external agent on a ring, edges directed by who may initiate.
+
+    Colour encodes posture: red = revoked/expired, amber = high tool-risk
+    ceiling, blue = active and bounded. Pure geometry so it is unit-testable.
+    """
+    cx, cy = width / 2, height / 2
+    radius = min(width, height) / 2 - 70
+    n = len(agents)
+    nodes: list[dict[str, Any]] = []
+    for i, a in enumerate(agents):
+        angle = (2 * math.pi * i / n - math.pi / 2) if n else 0.0
+        if a["revoked"] or not a["active"]:
+            color = "#dc2626"
+        elif a["max_risk"] == "high":
+            color = "#d97706"
+        else:
+            color = "#2563eb"
+        direction = a["direction"]
+        nodes.append({
+            "id": a["id"],
+            "x": round(cx + radius * math.cos(angle), 1),
+            "y": round(cy + radius * math.sin(angle), 1),
+            "color": color,
+            "inbound": direction in ("inbound", "both"),
+            "outbound": direction in ("outbound", "both"),
+        })
+    return {"width": width, "height": height, "cx": cx, "cy": cy, "nodes": nodes}
+
+
 def trust_overview() -> dict[str, Any]:
     """Enumerate configured external agents with their ceilings + lifecycle.
 
@@ -291,7 +329,173 @@ def trust_overview() -> dict[str, Any]:
             "expires_at": getattr(a, "expires_at", None),
             "revoked": bool(getattr(a, "revoked", False)),
         })
-    return {"enforced": bool(enforced), "agents": agents, "available": True}
+    return {
+        "enforced": bool(enforced),
+        "agents": agents,
+        "available": True,
+        "graph": _trust_graph(agents),
+    }
 
 
-__all__ = ["build_replay", "evidence_packet", "trust_overview"]
+# ---- discovery (what this deployment exposes) ------------------------------
+
+def _discover_tools() -> dict[str, Any]:
+    try:
+        from maverick.safety.tool_risk import risk_map
+        from maverick.tools import CORE_TOOL_NAMES
+        names = sorted(CORE_TOOL_NAMES)
+        risks = risk_map(names)
+        # key is "entries" not "items": dict.items is a method, and Jinja
+        # attribute access (discovery.tools.items) would resolve the method.
+        entries = [{"name": n, "risk": risks.get(n, "medium")} for n in names]
+        by_tier = {"high": 0, "medium": 0, "low": 0}
+        for it in entries:
+            by_tier[it["risk"]] = by_tier.get(it["risk"], 0) + 1
+        return {"entries": entries, "by_tier": by_tier, "count": len(entries)}
+    except Exception:
+        return {"entries": [], "by_tier": {}, "count": 0}
+
+
+def _discover_mcp() -> list[dict[str, Any]]:
+    try:
+        from maverick.mcp_registry import load_mcp_registry
+        out = []
+        for e in load_mcp_registry():
+            spec = getattr(e, "spec", None)
+            pin = (getattr(spec, "pin_sha256", None) if spec else None) or ""
+            out.append({
+                "name": getattr(e, "name", "?"),
+                "command": getattr(spec, "command", "") if spec else "",
+                "pin_sha256": pin,
+                "pinned": bool(pin),
+            })
+        return out
+    except Exception:
+        return []
+
+
+def _discover_providers() -> list[str]:
+    try:
+        from maverick.config import load_config
+        cfg = load_config() or {}
+        return sorted((cfg.get("providers") or {}).keys())
+    except Exception:
+        return []
+
+
+def _discover_channels() -> list[str]:
+    try:
+        from maverick.plugins import discover_channels
+        return sorted(name for name, _ in discover_channels())
+    except Exception:
+        return []
+
+
+def discovery_overview() -> dict[str, Any]:
+    """Inventory the governable surfaces this deployment exposes: tools (by
+    risk), MCP servers (with supply-chain pins), configured LLM providers (names
+    only, never keys), channels, and external agents. Fail-soft per section so a
+    missing optional registry yields an empty list, never a 500."""
+    agents = trust_overview()
+    return {
+        "tools": _discover_tools(),
+        "mcp_servers": _discover_mcp(),
+        "providers": _discover_providers(),
+        "channels": _discover_channels(),
+        "agents": {"enforced": agents["enforced"], "count": len(agents["agents"])},
+    }
+
+
+# ---- pre-action simulation (dry-run, no execution) -------------------------
+
+def _consent_mode() -> str:
+    try:
+        from maverick.safety.consent import _resolve_mode
+        return _resolve_mode()
+    except Exception:
+        return "auto-approve"
+
+
+def simulate_action(surface: str, action: str, target: str = "") -> dict[str, Any]:
+    """Classify a proposed action's risk and report whether it WOULD be gated,
+    without executing anything -- the 'why allowed / why blocked' preview."""
+    surface = (surface or "").strip().lower()
+    action = (action or "").strip()
+    mode = _consent_mode()
+
+    if surface == "computer":
+        from maverick.safety.action_gate import computer_action_risk
+        risk = computer_action_risk(action, {"text": target, "coordinate": [0, 0]})
+    elif surface == "browser":
+        from maverick.safety.action_gate import browser_action_risk
+        risk = browser_action_risk(action, {"selector": target, "url": target})
+    elif surface == "tool":
+        from maverick.safety.tool_risk import tool_risk
+        risk = tool_risk(action) if action else None
+    elif surface:
+        return {"error": f"unknown surface {surface!r}; use computer | browser | tool"}
+    else:
+        return {}
+
+    if surface in ("computer", "browser"):
+        if risk is None:
+            decision, why = "not gated", "read-only / non-mutating action runs freely"
+        elif mode == "auto-deny":
+            decision, why = "DENY", f"consent mode '{mode}': gated and denied"
+        elif mode in ("ask", "dashboard"):
+            decision, why = "REQUIRES APPROVAL", f"consent mode '{mode}': routed to a human ({risk} risk)"
+        else:
+            decision, why = "allow (logged)", f"consent mode '{mode}': gated but auto-granted ({risk} risk)"
+    else:  # tool
+        if risk is None:
+            decision, why = "unknown tool", "no built-in or configured risk classification"
+        else:
+            decision = "exposed"
+            why = f"tool risk '{risk}': dropped from the registry under a max_risk ceiling below it"
+    return {
+        "surface": surface, "action": action, "target": target,
+        "risk": risk or "n/a", "consent_mode": mode, "decision": decision, "why": why,
+    }
+
+
+# ---- deployment compliance packet ------------------------------------------
+
+def _recent_audit_chain(days_back: int = 7) -> dict[str, Any]:
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    days = [(today - datetime.timedelta(days=i)).isoformat() for i in range(days_back)]
+    return _verify_days(days)
+
+
+def compliance_packet() -> dict[str, Any]:
+    """One-click compliance evidence bundle: the SOC 2 control snapshot, the
+    GDPR / EU AI Act control report, and the audit-chain verdict over the recent
+    window -- assembled into a single downloadable JSON artifact. Fail-soft."""
+    packet: dict[str, Any] = {
+        "artifact": "maverick.compliance_packet",
+        "maverick_version": _version(),
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    try:
+        from maverick.soc2 import collect_soc2_evidence
+        packet["soc2"] = collect_soc2_evidence()
+    except Exception as e:  # noqa: BLE001 -- evidence is fail-soft
+        packet["soc2"] = {"error": str(e)}
+    try:
+        from dataclasses import asdict
+
+        from maverick.compliance import compliance_report
+        packet["controls"] = [asdict(c) for c in compliance_report()]
+    except Exception as e:  # noqa: BLE001
+        packet["controls"] = {"error": str(e)}
+    packet["audit_chain"] = _recent_audit_chain()
+    return packet
+
+
+__all__ = [
+    "build_replay",
+    "evidence_packet",
+    "trust_overview",
+    "discovery_overview",
+    "simulate_action",
+    "compliance_packet",
+]

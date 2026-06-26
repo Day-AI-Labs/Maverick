@@ -16,19 +16,27 @@ Off by default + fail-open at the call site; this module is a pure primitive.
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+
+from .config import env_flag
 
 log = logging.getLogger(__name__)
 
 
+class AllAttemptsFailed(Exception):
+    """Every candidate/attempt in a best-of-N / racing primitive failed.
+
+    Defined here once and re-exported by latency_best_of_n and
+    speculative_best_of_n so a caller catching it from one module also catches
+    it from the others (they previously each defined their own, so an
+    ``except`` on one silently missed the other)."""
+
+
 def enabled() -> bool:
-    env = os.environ.get("MAVERICK_BEST_OF_N", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_BEST_OF_N")
+    if _v is not None:
+        return _v
     try:
         from .config import get_search
         return bool(get_search()["enable"])
