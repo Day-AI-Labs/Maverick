@@ -3564,7 +3564,7 @@ async def deploy_department_api(request: Request, key: str) -> dict:
 async def department_review_api(request: Request, key: str) -> dict:
     """A governed performance review: delivery + authority + learning."""
     from maverick.worker_review import review
-    r = review(_world(), key)
+    r = review(_world(), key, owner=goal_owner_filter(request))
     if r is None:
         raise HTTPException(status_code=404, detail="no such department")
     return r
@@ -3576,9 +3576,10 @@ async def outcomes_api(request: Request, top: int = 0) -> dict:
     from maverick.operating_record import assemble
     from maverick.outcomes import firm_totals, worker_cards
     w = _world()
-    cards = worker_cards(w, top=(max(0, int(top)) or None))
+    owner = goal_owner_filter(request)
+    cards = worker_cards(w, top=(max(0, int(top)) or None), owner=owner)
     return {
-        "firm": firm_totals(assemble(w)).to_dict(),
+        "firm": firm_totals(assemble(w, owner=owner)).to_dict(),
         "workers": [c.to_dict() for c in cards],
     }
 
