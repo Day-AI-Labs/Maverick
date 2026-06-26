@@ -29,6 +29,9 @@ dependencies = [
     "anthropic>=0.40.0",
     "click>=8.1",
     "httpx>=0.27",
+    # Secure-by-default at-rest encryption and audit signing need AES-GCM/Ed25519
+    # on a fresh install; keep the legacy [audit-signing] extra as an alias.
+    "cryptography>=44.0.1",
     # idna is pulled transitively (httpx/anthropic); floor it past PYSEC-2026-215
     # / GHSA-65pc-fj4g-8rjx so a fresh install can't resolve a vulnerable <3.15.
     "idna>=3.15",
