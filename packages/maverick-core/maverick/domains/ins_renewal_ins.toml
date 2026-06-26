@@ -18,3 +18,24 @@ deliverable = "Renewal file"
 consumers = ["underwriter", "agency_manager"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Pull expiring policy"
+instruction = "Read the expiring policy, exposures, and loss runs from the company records ahead of the renewal date."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Update exposures"
+instruction = "Update exposures and loss history to current values and reconcile each change against the source via knowledge_search."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Build loss summary"
+instruction = "Summarize loss history and frequency-severity by year and line for the renewal file."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag stale data"
+instruction = "Flag any exposure or loss figure that is stale, missing, or past the renewal deadline and note the assumption."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand off renewal"
+instruction = "Assemble the renewal file and route it to the underwriter for review."
+gate = "review"

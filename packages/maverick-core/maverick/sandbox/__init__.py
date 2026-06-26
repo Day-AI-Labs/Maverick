@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
+import shutil
 from pathlib import Path
 
 from .devcontainer import DevcontainerBackend
@@ -150,6 +151,44 @@ def _container_backend_required(full_cfg: dict | None = None) -> bool:
         return False
 
 
+def _resolve_local_under_policy(chosen: str, full_cfg: dict | None) -> str:
+    """Container-default under enterprise: when ``chosen == "local"`` but a
+    container backend is required (enterprise mode / require-container), upgrade
+    ``local`` to an available container backend (docker, then podman) instead of
+    running ``shell=True`` on the host. Only when NO container runtime is
+    installed do we refuse, fail-closed -- we never silently fall back to the
+    unsandboxed host. Returns ``chosen`` unchanged when the policy is inactive or
+    the backend isn't ``local``."""
+    if chosen != "local" or not _container_backend_required(full_cfg):
+        return chosen
+    auto = _default_container_backend()
+    if auto is None:
+        raise SandboxPolicyError(
+            "refusing the unsandboxed 'local' sandbox backend: enterprise / "
+            "require-container policy is active but [sandbox] backend = "
+            "\"local\" runs shell=True on the host with no isolation, and no "
+            "container runtime (docker / podman) was found to default to. "
+            "Install docker or podman, or set [sandbox] backend to a "
+            "container backend (gvisor / kubernetes / firecracker)."
+        )
+    log.warning(
+        "enterprise/require-container policy is active and [sandbox] backend is "
+        "'local' (no host isolation); defaulting to the available '%s' container "
+        "backend. Pin [sandbox] backend explicitly to silence this.", auto,
+    )
+    return auto
+
+
+def _default_container_backend() -> str | None:
+    """The container backend to default to when ``local`` is refused: the first
+    of ``docker`` / ``podman`` whose CLI is on PATH, or ``None`` if neither is
+    installed (caller then fails closed rather than running on the host)."""
+    for backend in ("docker", "podman"):
+        if shutil.which(backend):
+            return backend
+    return None
+
+
 def _warn_local_unsandboxed() -> None:
     """Warn (once per process) that the agent will run model-generated shell
     directly on the host with no container isolation.
@@ -242,19 +281,10 @@ def build_sandbox(
     # explicitly asked for it. Lowercase + strip so the configured backend
     # actually applies.
     chosen = str(backend or cfg.get("backend") or "local").strip().lower()
-    # Enterprise gate: the local backend runs ``shell=True`` on the host with NO
-    # isolation. Under enterprise mode -- or an explicit opt-in via
-    # ``MAVERICK_REQUIRE_CONTAINER_BACKEND=1`` / ``[sandbox] require_container =
-    # true`` -- refuse it fail-closed rather than silently executing untrusted
-    # agent code on the host. Off by default, so single-tenant dev is unchanged.
-    if chosen == "local" and _container_backend_required(full_cfg):
-        raise SandboxPolicyError(
-            "refusing the unsandboxed 'local' sandbox backend: enterprise / "
-            "require-container policy is active but [sandbox] backend = \"local\" "
-            "runs shell=True on the host with no isolation. Set [sandbox] backend "
-            "to a container backend (docker / podman / gvisor / kubernetes / "
-            "firecracker)."
-        )
+    # Enterprise gate (container-default under enterprise): when 'local' is
+    # chosen but a container backend is required, upgrade to an available one or
+    # fail closed. Extracted to keep build_sandbox under the complexity cap.
+    chosen = _resolve_local_under_policy(chosen, full_cfg)
     wd = Path(workdir or cfg.get("workdir", str(Path.cwd()))).expanduser()
     # Coerce defensively: [sandbox] timeout is hand-editable, and a non-numeric
     # ("fast") or non-positive value would otherwise raise here and crash the

@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "contract renewal & notice-date radar"
+consumers = ["procurement_manager", "category_owner"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull contracts"
+instruction = "Query the contract repository and knowledge base for all active supplier agreements with their term, notice, and renewal dates."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Verify dates"
+instruction = "Open each executed contract to confirm the notice window, auto-renewal clause, and effective renewal date against the recorded values."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compute runway"
+instruction = "Calculate days remaining until each notice deadline and bucket contracts by urgency in the radar table."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag actions"
+instruction = "Mark contracts whose notice window opens or closes soon and note the recommended action and owner for each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route radar"
+instruction = "Hand the renewal radar with flagged deadlines to the procurement manager for action decisions."
+gate = "review"

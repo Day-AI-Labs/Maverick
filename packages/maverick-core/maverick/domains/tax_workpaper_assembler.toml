@@ -10,3 +10,35 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "standardized prep workpaper"
+consumers = ["tax_preparer", "review_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather extractions"
+instruction = "Pull the extraction agents' figures and the client organizer for this return."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Tie to source"
+instruction = "Trace every figure back to its source document, citing the document, box, and tax year."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Confirm status"
+instruction = "Verify filing status and dependents against the organizer and flag any mismatch."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Assemble workpaper"
+instruction = "Lay out totals tied to sources in the firm's standardized workpaper template."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Log open items"
+instruction = "Carry every unresolved question and assumption forward as an explicit open item."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to preparer"
+instruction = "Hand the assembled workpaper to the credentialed preparer for review and signature."
+gate = "review"

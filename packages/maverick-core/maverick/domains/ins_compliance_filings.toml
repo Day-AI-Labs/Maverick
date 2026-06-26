@@ -18,3 +18,24 @@ deliverable = "Rate & form filing status"
 consumers = ["compliance_officer", "underwriter"]
 cadence = "monthly"
 gate = "approval"
+
+[[workflow]]
+name = "Pull filings"
+instruction = "Query the filing log for open rate and form filings across states with their submission and status fields."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check requirements"
+instruction = "Look up each state's filing requirements and review cycles to confirm submissions and dependencies are complete."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Track effective dates"
+instruction = "Map approval status to target effective dates and flag any filing whose approval lags its planned go-live."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag stalled filings"
+instruction = "Isolate objections, overdue responses, and effective-date conflicts that put a program rollout at risk."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Assemble the filing status grid with at-risk items and route to the compliance officer for approval."
+gate = "approval"

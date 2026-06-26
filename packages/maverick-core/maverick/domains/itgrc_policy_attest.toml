@@ -17,3 +17,24 @@ deliverable = "Policy attestation tracker"
 consumers = ["compliance_officer", "control_owner"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull campaign"
+instruction = "Query the attestation system for in-scope populations, due dates, and current completion status."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Reconcile roster"
+instruction = "Reconcile the assigned population against HR and policy mappings via knowledge_search to confirm everyone required is included."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Compute status"
+instruction = "Compute completed, outstanding, and overdue attestations per policy and per org unit."
+tools = ["sql_query"]
+[[workflow]]
+name = "Flag laggards"
+instruction = "Flag overdue attesters and missing-population gaps that risk the campaign deadline, citing the source records."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to owner"
+instruction = "Hand the tracker and escalation list to the compliance officer for follow-up sign-off."
+gate = "review"

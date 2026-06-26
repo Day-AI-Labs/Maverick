@@ -15,7 +15,6 @@ ratings are 1-5 integer stars with an optional short comment.
 from __future__ import annotations
 
 import json
-import os
 import threading
 import time
 from pathlib import Path
@@ -37,11 +36,14 @@ class RatingsLedger:
         except (OSError, ValueError):
             return {}
 
+    def _cplock(self):
+        from ..file_lock import cross_process_lock
+        return cross_process_lock(self.path)
+
     def _save(self, data: dict) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=0), encoding="utf-8")
-        os.replace(tmp, self.path)
+        # Unique temp + os.replace: a fixed ".tmp" collides between processes.
+        from ..file_lock import atomic_write_text
+        atomic_write_text(self.path, json.dumps(data, ensure_ascii=False, indent=0))
 
     def rate(self, kind: str, name: str, stars: int, comment: str = "") -> dict:
         if kind not in _VALID_KINDS:
@@ -52,7 +54,9 @@ class RatingsLedger:
         if not name:
             raise ValueError("name is required")
         entry = {"stars": stars, "comment": str(comment or "")[:280], "at": time.time()}
-        with self._lock:
+        # In-process lock + cross-process flock: two processes both load the
+        # ledger and the second save clobbers the first's rating otherwise.
+        with self._lock, self._cplock():
             data = self._load()
             data.setdefault(kind, {})[name] = entry
             self._save(data)

@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "attribution & funnel analytics report"
+consumers = ["marketing_ops_lead", "demand_gen_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull funnel data"
+instruction = "Read funnel, campaign, and lead-scoring data from the MAP and CDP for the reporting window."
+tools = ["marketo_read", "segment_read"]
+[[workflow]]
+name = "Reconcile sources"
+instruction = "Reconcile lead and revenue counts across systems and verify them against the source-of-truth definitions before modeling."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Run attribution"
+instruction = "Apply the attribution model to assign credit across touchpoints and recompute stage conversion rates and scoring accuracy."
+[[workflow]]
+name = "Flag anomalies"
+instruction = "Identify tracking gaps, double-counting, or scoring drift that would distort the funnel picture."
+[[workflow]]
+name = "Route for review"
+instruction = "Submit the attribution and funnel report to the marketing ops lead for sign-off before it informs spend decisions."
+gate = "review"

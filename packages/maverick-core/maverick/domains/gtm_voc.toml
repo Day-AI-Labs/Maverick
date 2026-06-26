@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "voice-of-customer insights report"
+consumers = ["product_management", "customer_success", "gtm_leadership"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull feedback"
+instruction = "Read CSAT, NPS, and survey responses along with support and success notes from the feedback systems."
+tools = ["read_file", "gainsight_read"]
+[[workflow]]
+name = "Check consent"
+instruction = "Confirm every survey is gated and consented and exclude any opted-out or suppressed respondents from analysis."
+tools = ["gainsight_read"]
+[[workflow]]
+name = "Synthesize sentiment"
+instruction = "Cluster verbatims into themes, quantify sentiment trends, and tie each theme to representative customer quotes."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Prioritize signals"
+instruction = "Rank themes by frequency and revenue impact and separate evidenced signals from low-sample noise."
+[[workflow]]
+name = "Route to product"
+instruction = "Deliver the voice-of-customer insights report to product management for review and roadmap intake."
+gate = "review"

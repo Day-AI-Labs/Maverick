@@ -10,3 +10,31 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["util"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "REC reconciliation & retirement package"
+consumers = ["compliance_manager", "rps_program_lead"]
+cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Pull obligations"
+instruction = "Read the RPS obligations and the applicable registry rules for the compliance period."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Inventory RECs"
+instruction = "Inventory held certificates from the registry and label each with its vintage and registry of record."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Reconcile to obligation"
+instruction = "Reconcile generation to certificates against the obligation and compute the surplus or shortfall."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag exceptions"
+instruction = "Flag any shortfall, double-count, or vintage mismatch for human review."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Stage retirement"
+instruction = "Prepare the retirement and compliance-demonstration package for a human to execute in the registry."
+gate = "approval"

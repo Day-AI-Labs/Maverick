@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "at-risk account save-play package"
+consumers = ["customer_success_manager", "account_executive"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull health signals"
+instruction = "Read account health, usage, support, and renewal-date signals from Gainsight and account files for the renewal cohort."
+tools = ["gainsight_read", "read_file"]
+[[workflow]]
+name = "Score churn risk"
+instruction = "Rank accounts by churn risk and tag the specific driver behind each at-risk account."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check suppression"
+instruction = "Confirm each at-risk contact is not opted out before any outreach is proposed."
+tools = ["gainsight_read"]
+[[workflow]]
+name = "Draft save play"
+instruction = "Draft a tailored save play per at-risk account with the offer, talking points, and escalation path."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to CSM"
+instruction = "Send the save-play package to the customer success manager for review before any contact or commitment."
+gate = "review"

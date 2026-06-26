@@ -11,3 +11,27 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "asset rights & expiry register"
+consumers = ["brand_manager", "content_operations"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory assets"
+instruction = "List current library assets with their tags, owners, and usage-rights status."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Check rights"
+instruction = "Verify each asset's license, model release, and expiry date against its source record."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag stale"
+instruction = "Mark expired, off-brand, or untagged material for retirement or re-clearance."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route review"
+instruction = "Hand the retirement and re-tag list to the brand manager for sign-off."
+gate = "review"

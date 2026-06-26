@@ -7,6 +7,7 @@ persona = """You are the Reserve Adequacy Watcher for this business -- a insuran
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "low"
+effort = "high"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ins"]
@@ -17,4 +18,25 @@ shape = "table"
 deliverable = "Reserve adequacy exceptions"
 consumers = ["actuary", "claims_manager"]
 cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull reserves"
+instruction = "Query current case reserves with claim age, line, and last-change date for the period under review."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load guidelines"
+instruction = "Retrieve the company's reserving guidelines and review thresholds via knowledge_search and cite them."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Detect outliers"
+instruction = "Compare each reserve against guideline bands to flag stale, under-reserved, and outlier claims in a spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Document rationale"
+instruction = "Annotate each flagged claim with the specific guideline breach and cited source, stating any assumptions."
+tools = ["read_file"]
+[[workflow]]
+name = "Route exceptions"
+instruction = "Hand the reserve adequacy exception table to the actuary and claims manager for sign-off."
 gate = "review"

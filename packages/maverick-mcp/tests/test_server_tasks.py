@@ -81,6 +81,30 @@ def test_per_owner_task_quota_isolates_sessions():
         store.shutdown()
 
 
+def test_per_owner_quota_counts_cancelled_tasks_until_future_drains():
+    """Cancelled queued/running tasks still occupy global capacity, so they
+    must also count toward the per-owner quota until their futures drain."""
+    release = threading.Event()
+
+    def runner(name, args):
+        release.wait(timeout=5)
+        return _ok("done")
+
+    store = TaskStore(runner, max_workers=1, max_tasks=3, max_tasks_per_owner=1)
+    try:
+        attacker = store.create("maverick_start", {}, {"ttl": 60000}, owner="attacker")
+        store.cancel(attacker.id, owner="attacker")
+
+        with pytest.raises(TaskError, match="too many active tasks for this session"):
+            store.create("maverick_start", {}, {"ttl": 60000}, owner="attacker")
+
+        victim = store.create("maverick_start", {}, {"ttl": 60000}, owner="victim")
+        assert victim.status == "working"
+    finally:
+        release.set()
+        store.shutdown()
+
+
 def test_tool_iserror_marks_task_failed():
     store = TaskStore(lambda n, a: {"isError": True,
                                     "content": [{"type": "text", "text": "boom"}]})

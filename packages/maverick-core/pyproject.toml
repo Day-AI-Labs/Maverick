@@ -31,6 +31,9 @@ dependencies = [
     "httpx>=0.27",
     # idna is pulled transitively (httpx/anthropic); floor it past PYSEC-2026-215
     # / GHSA-65pc-fj4g-8rjx so a fresh install can't resolve a vulnerable <3.15.
+    # Required for secure-by-default at-rest encryption; without AES-GCM support
+    # normal persistence writes would fail when encryption is default-enabled.
+    "cryptography>=44.0.1",
     "idna>=3.15",
     "tomli>=2.0; python_version<'3.11'",
 ]
@@ -49,6 +52,7 @@ chroma     = ["chromadb>=0.4"]
 qdrant     = ["qdrant-client>=1.6", "fastembed>=0.3"]
 weaviate   = ["weaviate-client>=4.5"]
 postgres   = ["psycopg[binary]>=3.1"]
+saml       = ["pysaml2>=7.3"]
 grpc       = ["grpcio>=1.60", "grpcio-tools>=1.60"]
 queue      = ["arq>=0.25"]
 zstd       = ["zstandard>=0.20"]

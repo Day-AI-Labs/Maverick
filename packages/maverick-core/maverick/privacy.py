@@ -77,10 +77,19 @@ _SENSITIVE_KEYS = frozenset({
     "prompt", "system", "messages", "answer", "msg", "message",
     "input_summary", "output_summary", "detail", "reason",
     "channel", "user_id", "goal_id", "conversation_id", "from", "to",
-    "email", "username", "result", "summary",
+    "email", "username", "principal", "decided_by", "claimed_by", "created_by",
+    "result", "summary",
 })
 
 _OPAQUE_TEXT_KEYS = frozenset({"goal_text", "title", "description"})
+
+_IDENTITY_KEYS = frozenset({
+    "user_id", "username", "channel", "goal_id", "conversation_id",
+    "from", "to", "email",
+    # Human/API principals that may contain stable user IDs or email-like
+    # strings (for example ``user:alice@example.com``).
+    "principal", "decided_by", "claimed_by", "created_by",
+})
 
 
 def _home_pattern() -> re.Pattern[str]:
@@ -154,10 +163,7 @@ def anonymize_field(key: str, value: Any) -> Any:
     - Anything else: return as-is.
     """
     lower = key.lower()
-    if lower in (
-        "user_id", "username", "channel", "goal_id", "conversation_id",
-        "from", "to", "email",
-    ):
+    if lower in _IDENTITY_KEYS:
         return _hash_id(value, prefix=lower)
     if lower in _OPAQUE_TEXT_KEYS:
         return _hash_id(value, prefix=lower)

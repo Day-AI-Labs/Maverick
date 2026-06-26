@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "compliance case timeline log"
+consumers = ["title_ix_coordinator", "compliance_officer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Intake case facts"
+instruction = "Read the reported case details, parties, and dates from the intake record without altering the underlying report."
+tools = ["read_file"]
+[[workflow]]
+name = "Map requirements"
+instruction = "Identify the applicable notice and timeline requirements for this case type against the institution's documented Title IX procedures."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build timeline"
+instruction = "Log each required notice and deadline with its computed due date and the source rule that sets it."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check deadlines"
+instruction = "Flag any notice already overdue or missing a documented completion date so nothing lapses silently."
+[[workflow]]
+name = "Coordinator review"
+instruction = "Route the case timeline log to the Title IX coordinator for verification before it enters the official case file."
+gate = "review"

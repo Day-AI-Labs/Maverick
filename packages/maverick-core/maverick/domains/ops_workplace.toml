@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_facilities"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "space & moves plan"
+consumers = ["workplace_manager", "facilities_director"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull occupancy data"
+instruction = "Read current floor plans, seat assignments, and occupancy/utilization data for the affected areas."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Analyze demand"
+instruction = "Assess headcount changes and space requests against available capacity and utilization targets."
+[[workflow]]
+name = "Draft moves plan"
+instruction = "Lay out the moves/adds/changes and space allocation that balance utilization with employee experience."
+[[workflow]]
+name = "Verify egress"
+instruction = "Validate the plan against safety, egress, and code requirements and flag any layout that violates them."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Route the drafted space and moves plan to the workplace manager for approval before any move or spend is committed."
+gate = "approval"

@@ -139,6 +139,31 @@ def _code_challenge_s256(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
+def _shared_release_tx(tx_id: str) -> None:
+    """Release a shared-store OIDC transaction claim after a failed login.
+
+    The shared replay guard claims a transaction before token exchange so
+    cross-replica replays cannot race that exchange. If the exchange or token
+    validation fails, no session was created, so keeping a durable claim only
+    creates unauthenticated database growth. Best-effort release preserves the
+    HA replay guard for successful logins while bounding failed-flow storage to
+    the lifetime of the failed request.
+    """
+    if not tx_id:
+        return
+    try:
+        from maverick.world_model_backends import is_postgres_configured
+
+        if not is_postgres_configured():
+            return
+        from ._shared import _world
+        world = _world()
+        release = getattr(world, "release_processed_message", None)
+        if callable(release):
+            release(_OIDC_TX_CHANNEL, tx_id)
+    except Exception:  # pragma: no cover - cleanup must never mask login failure
+        log.warning("OIDC replay guard: shared tx cleanup failed")
+
 def _shared_consume_tx(tx_id: str) -> bool | None:
     """Consume ``tx_id`` in the shared world-model store, if one is configured.
 
@@ -269,6 +294,12 @@ def _principal_from_request_session(request: Request):
         return None
     sub = payload.get("sub")
     if not isinstance(sub, str) or not sub:
+        return None
+    # Revocation: a session minted before the principal's revocation epoch
+    # ("log out everywhere" / SCIM deprovision) is rejected even though its HMAC
+    # signature and exp are still valid.
+    from .session_revocation import is_revoked
+    if is_revoked(sub, payload.get("iat")):
         return None
     return VerifiedPrincipal(
         sub=sub, issuer="oidc-session", audience="", claims={"via": "session"},
@@ -406,6 +437,9 @@ async def auth_callback(request: Request):
     except Exception:
         # Never log the exception payload: it can echo the code/secret back.
         log.warning("OIDC callback: token exchange failed")
+        await asyncio.get_running_loop().run_in_executor(
+            None, _shared_release_tx, tx_id
+        )
         return _fail()
 
     id_token = ""
@@ -413,6 +447,9 @@ async def auth_callback(request: Request):
         id_token = str(token_data.get("id_token") or "")
     if not id_token:
         log.warning("OIDC callback: token response had no id_token")
+        await asyncio.get_running_loop().run_in_executor(
+            None, _shared_release_tx, tx_id
+        )
         return _fail()
 
     # (4) verify the ID token — reuse the kernel verifier (no re-implementation).
@@ -420,12 +457,28 @@ async def auth_callback(request: Request):
         principal = verify_oidc_token(id_token)
     except OIDCError:
         log.warning("OIDC callback: id_token verification failed")
+        await asyncio.get_running_loop().run_in_executor(
+            None, _shared_release_tx, tx_id
+        )
         return _fail()
 
     # (5) success: set the signed session cookie, clear the tx cookie, redirect.
     return_to = _safe_return_to(tx.get("return_to"))
-    session_payload = {"sub": principal.sub, "exp": _now() + _SESSION_TTL}
+    session_payload = {"sub": principal.sub, "iat": _now(), "exp": _now() + _SESSION_TTL}
     session_cookie = sign_session(session_payload, cfg.session_secret)
+
+    # Record this sub against the user's stable IdP identifiers so a later SCIM
+    # deprovision can revoke this session even if the IdP's sub is pairwise and
+    # appears in no SCIM attribute (Entra). Best-effort -- never blocks login.
+    try:
+        from .subject_directory import record_login
+        claims = principal.claims or {}
+        record_login(principal.sub, [
+            claims.get("email"), claims.get("preferred_username"),
+            claims.get("oid"), claims.get("upn"),
+        ])
+    except Exception:  # pragma: no cover -- directory never blocks login
+        pass
 
     response = RedirectResponse(return_to, status_code=303)
     _set_cookie(
@@ -446,12 +499,41 @@ def _csrf_reject():
 
 @router.get("/auth/logout")
 async def auth_logout(request: Request):
-    """Clear the session cookie and return to ``/``."""
+    """Clear the session cookie and return to ``/``.
+
+    ``?all=1`` (log out everywhere) additionally bumps the principal's revocation
+    epoch, immediately invalidating every other session/bearer that principal
+    holds -- not just the cookie in this browser."""
     if not login_enabled():
         raise HTTPException(status_code=404)
+    if request.query_params.get("all"):
+        # Derive the sub from the verified session payload DIRECTLY, not via
+        # _principal_from_request_session -- that returns None for an
+        # already-revoked session, so "log out everywhere" on a session that was
+        # revoked once would silently skip and leave OTHER (newer) bearers alive.
+        # Re-bumping the epoch to now catches any credential minted since.
+        sub = _session_sub_unchecked(request)
+        if sub:
+            from .session_revocation import revoke_principal
+            revoke_principal(sub)
     response = RedirectResponse("/", status_code=303)
     _clear_cookie(response, SESSION_COOKIE)
     return response
+
+
+def _session_sub_unchecked(request: Request) -> str | None:
+    """The ``sub`` from a validly-signed, unexpired session cookie, WITHOUT the
+    revocation check -- so "log out everywhere" can revoke even when the session
+    is already revoked. Returns None when the cookie is absent/tampered/expired."""
+    if not login_enabled():
+        return None
+    raw = request.cookies.get(SESSION_COOKIE)
+    cfg = load_oidc_config()
+    if not raw or not cfg.session_secret:
+        return None
+    payload = verify_session(raw, cfg.session_secret)
+    sub = payload.get("sub") if payload else None
+    return sub if isinstance(sub, str) and sub else None
 
 
 @router.get("/auth/error")

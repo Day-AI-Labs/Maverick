@@ -45,6 +45,10 @@ KNOWN_SCHEMA: dict[str, set[str] | None] = {
         "max_tool_calls",
         "max_input_tokens",
         "max_output_tokens",
+        # Opt-in per-task-class self-tuning of max_dollars (self_tuning_budget.py
+        # reads [budget] self_tuning; self_healing.py recommends it). Without it
+        # here, a client enabling the documented knob got a false "unknown key".
+        "self_tuning",
     },
     "safety": {
         "profile",
@@ -76,7 +80,7 @@ KNOWN_SCHEMA: dict[str, set[str] | None] = {
     # and migrate.py already lists it; config-lint flagged the whole section as
     # unknown ("did you mean auth?"), telling a regulated client their flagship
     # signed-audit config looked like a typo (client-journey finding).
-    "audit": {"sign"},
+    "audit": {"sign", "worm"},
     "durable": {"enabled", "keep_last"},
     "persona": {"name", "style", "addendum"},
     # The dashboard reads more than the auth token: theme/density/allow_extension
@@ -179,6 +183,60 @@ _BOOL_KEYS: dict[str, set[str]] = {
 }
 
 _UNIVERSAL_BOOL_KEYS = ("enabled", "enable")
+
+
+# Key names that carry secrets. A literal (non-``${ENV}``) string under one of
+# these is a plaintext secret in config.toml -- flagged so operators route it
+# through an env var / secrets manager instead. Conservative to avoid noise.
+# Bare ``token`` is deliberately NOT here: it is a documented operator setting
+# (e.g. ``[dashboard] token``) and too broad to flag without false positives.
+# Secret-bearing ``*_token`` keys are still caught by the suffix list below.
+_SECRET_KEY_NAMES = frozenset({
+    "api_key", "apikey", "secret", "client_secret", "password", "passwd",
+    "private_key",
+})
+_SECRET_KEY_SUFFIXES = ("_api_key", "_secret", "_password", "_token")
+
+
+def _is_secret_key(key: str) -> bool:
+    k = key.lower()
+    return k in _SECRET_KEY_NAMES or k.endswith(_SECRET_KEY_SUFFIXES)
+
+
+def _looks_like_env_ref(v: str) -> bool:
+    """True for an env-var reference or an empty placeholder -- i.e. NOT an inline
+    secret. ``${VAR}`` / ``$VAR`` interpolate from the environment; ``""`` is an
+    unset placeholder. Anything else under a secret-bearing key is literal."""
+    s = v.strip()
+    return s == "" or s.startswith("$")
+
+
+def _lint_inline_secrets(cfg: dict, _path: tuple[str, ...] = ()) -> list[Finding]:
+    """Walk the whole config (nested tables included) and warn on a literal
+    string under a secret-bearing key -- a plaintext secret in config.toml."""
+    out: list[Finding] = []
+    for key, val in cfg.items():
+        if not isinstance(key, str):
+            continue
+        if isinstance(val, dict):
+            out.extend(_lint_inline_secrets(val, _path + (key,)))
+        elif (
+            _is_secret_key(key)
+            and isinstance(val, str)
+            and not _looks_like_env_ref(val)
+        ):
+            dotted = ".".join(_path + (key,))
+            out.append(Finding(
+                section=".".join(_path) or "(root)",
+                key=key,
+                severity="warning",
+                message=(
+                    f"{dotted} looks like an inline secret; reference an env var "
+                    f'instead (e.g. {key} = "${{MY_SECRET}}") so the secret is not '
+                    "stored in plaintext config."
+                ),
+            ))
+    return out
 
 
 def _is_number(v: Any) -> bool:
@@ -307,6 +365,7 @@ def lint_config(cfg: dict) -> list[Finding]:
                     )
                 )
 
+    findings.extend(_lint_inline_secrets(cfg))
     return findings
 
 

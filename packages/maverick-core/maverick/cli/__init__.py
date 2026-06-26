@@ -526,6 +526,44 @@ def support(output: str | None) -> None:
         click.echo(text)
 
 
+def _show_capability_plan(profile):
+    """Analyse a draft pack for capability gaps and print them. Read-only;
+    returns the plan (or None if analysis was unavailable) for later apply."""
+    from ..provision import analyze_profile
+    try:
+        from ..tools import base_tool_names
+        plan = analyze_profile(profile, known_tools=base_tool_names())
+    except Exception as e:  # analysis must never block onboarding
+        click.echo(f"(capability analysis skipped: {e})", err=True)
+        return None
+    if plan.is_empty():
+        return plan
+    click.echo(click.style("\nCapability gaps the factory can close:", bold=True))
+    for g in plan.gaps:
+        click.echo(f"  - {g.describe()}")
+    from .. import self_learning
+    if not self_learning.enabled():
+        click.echo("  (enable [self_learning] to auto-provision these on approval)")
+    return plan
+
+
+def _apply_capability_plan(profile, plan, llm) -> None:
+    """Equip an approved pack: install catalog skills + synthesize declared
+    tools through the governed paths. No-op unless self-learning is enabled.
+    Records the gaps as factory-learning signals (no-op unless that's on)."""
+    if plan is None or plan.is_empty():
+        return
+    from ..provision import apply_plan
+    result = apply_plan(plan, approved=True, llm=llm)
+    if result.acquired or result.generated or result.failed:
+        click.echo(click.style(f"Provisioning: {result.summary()}", fg="cyan"))
+    try:
+        from .. import factory_learning
+        factory_learning.record_provisioning(profile, plan, result)
+    except Exception:  # pragma: no cover -- learning must never break onboarding
+        pass
+
+
 @main.command()
 @click.option("--name", default=None, help="Business name (otherwise prompted).")
 @click.option("--doc", "docs", multiple=True,
@@ -639,6 +677,10 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
     click.echo(f"  knowledge:   {', '.join(profile.knowledge_sources) or '(none)'}")
     click.echo(f"  persona:     {profile.persona[:400]}")
 
+    # Capability provisioning: surface (and, on approval, close) the skills/
+    # tools this pack needs but doesn't have yet. Analysis is always safe.
+    plan = _show_capability_plan(profile)
+
     if not yes and not click.confirm("\nApprove and activate this agent?", default=False):
         click.echo("Discarded. Nothing was saved.")
         return
@@ -647,6 +689,108 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
     path = save_profile(profile, approved=True)
     click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
     click.echo(f"Domain '{profile.name}' is now available to the swarm.")
+
+    _apply_capability_plan(profile, plan, llm)
+
+
+@main.command("learn-demo")
+@click.argument("demo_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--name", default=None, help="Task title (otherwise the file name).")
+@click.option("--industry", default="", help="Industry context (optional).")
+@click.option("--source", default="log",
+              help="Where the demonstration came from: screen | narration | log.")
+@click.option("--no-llm", is_flag=True,
+              help="Derive the pack deterministically from the steps (no LLM).")
+@click.option("--yes", is_flag=True, help="Skip the approval prompt.")
+@click.pass_context
+def learn_demo(ctx: click.Context, demo_file, name, industry, source, no_llm, yes) -> None:
+    """Synthesize a specialist agent from a watched task (programming by demo).
+
+    Reads a demonstration -- an ordered log of what a person did (JSONL, or
+    prefixed text like ``ACTION[email]: send the weekly digest -> ops@``) --
+    induces a domain pack from it (clamped to a safe envelope), shows it for
+    your approval, and on approval saves it and provisions its skills/tools.
+    Nothing is activated without your yes.
+    """
+    from ..demonstration import induce_profile, load_demonstration
+    from ..intake import save_profile
+
+    demonstration = load_demonstration(demo_file, title=name or "", source=source,
+                                       industry=industry)
+    if not demonstration.steps:
+        click.echo("ERROR: no usable steps parsed from the demonstration file.", err=True)
+        sys.exit(2)
+    click.echo(f"Parsed {len(demonstration.steps)} step(s) from the demonstration.")
+
+    llm = None
+    if not no_llm:
+        try:
+            from ..llm import DEFAULT_MODEL, LLM
+            llm = LLM(model=ctx.obj.get("model") or DEFAULT_MODEL)
+        except Exception as e:  # no provider/key -> deterministic derivation
+            click.echo(f"(LLM unavailable; deriving pack from steps: {e})", err=True)
+
+    click.echo("Inducing a draft domain agent from the demonstration...")
+    profile = induce_profile(demonstration, llm=llm)
+
+    click.echo(click.style("\nDraft domain pack (review before it goes live):", bold=True))
+    click.echo(f"  name:        {profile.name}")
+    click.echo(f"  max_risk:    {profile.max_risk}")
+    click.echo(f"  allow_tools: {', '.join(profile.allow_tools) or '(none)'}")
+    click.echo(f"  workflow:    {len(profile.workflow)} step(s)")
+    for step in profile.workflow:
+        gate = f" [gate: {step.gate}]" if step.gate else ""
+        click.echo(f"    - {step.name}{gate}")
+    click.echo(f"  persona:     {profile.persona[:400]}")
+
+    plan = _show_capability_plan(profile)
+
+    if not yes and not click.confirm("\nApprove and activate this agent?", default=False):
+        click.echo("Discarded. Nothing was saved.")
+        return
+    path = save_profile(profile, approved=True)
+    click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
+    click.echo(f"Domain '{profile.name}' is now available to the swarm.")
+
+    _apply_capability_plan(profile, plan, llm)
+
+
+@main.command("factory-learn")
+@click.option("--min-support", default=3, show_default=True,
+              help="Distinct packs that must exhibit a gap before it's a correction.")
+@click.option("--dry-run", is_flag=True,
+              help="Show mined corrections without promoting any.")
+def factory_learn(min_support, dry_run) -> None:
+    """Improve the agent factory from what its packs got wrong.
+
+    Mines recurring provisioning/approval gaps into proposer corrections and
+    promotes those the self-improvement gate accepts; promoted guidance is then
+    folded into future pack generation. Off unless [self_improvement] enable
+    (or MAVERICK_FACTORY_LEARNING) is set.
+    """
+    from .. import factory_learning
+
+    if not factory_learning.enabled():
+        click.echo("Factory learning is OFF. Enable [self_improvement] or set "
+                   "MAVERICK_FACTORY_LEARNING=1 to mine and promote corrections.")
+        return
+    corrections = factory_learning.mine_corrections(min_support=min_support)
+    if not corrections:
+        click.echo("No recurring factory gaps meet the support threshold yet.")
+        return
+    click.echo(click.style(f"{len(corrections)} candidate correction(s):", bold=True))
+    for c in corrections:
+        click.echo(f"  - [{c.scope}/{c.signal}] support={c.support}: {c.guidance}")
+    if dry_run:
+        click.echo("\n(dry run: nothing promoted)")
+        return
+    promoted = factory_learning.review_and_promote(min_support=min_support)
+    if promoted:
+        click.echo(click.style(f"\nPromoted {len(promoted)} correction(s) through "
+                               "the self-improvement gate.", fg="green"))
+    else:
+        click.echo("\nNothing cleared the gate this pass "
+                   "(insufficient evidence, or calibration frozen).")
 
 
 @main.command()
@@ -1132,6 +1276,86 @@ def _governance_denied_counts(principals: set[str], *, limit: int = 500) -> dict
     except Exception:  # pragma: no cover -- the oversight view never blocks on audit
         pass
     return counts
+
+
+@main.group("self-harness")
+def harness() -> None:
+    """Inspect and roll back the self-harness learned operating guidance."""
+
+
+@harness.command("show")
+@click.option("--model", default=None, help="Only show this model's guidance.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def harness_show(model: str | None, as_json: bool) -> None:
+    """Show the operating-guidance the self-harness loop has learned, per model.
+
+    This is the operator's window into what gets recalled into each model's
+    system prompt. Read-only.
+    """
+    import json as _json
+
+    from ..self_harness import enabled, list_learned
+    learned = list_learned()
+    if model:
+        learned = {k: v for k, v in learned.items() if k == model}
+    if as_json:
+        click.echo(_json.dumps(learned, indent=2, sort_keys=True))
+        return
+    if not enabled():
+        click.echo("note: self-harness is OFF ([self_harness] enable=false) — "
+                   "stored guidance is NOT recalled into prompts until enabled.")
+    if not learned:
+        click.echo("no learned guidance yet.")
+        return
+    for m, lines in sorted(learned.items()):
+        click.echo(f"\n{m}  ({len(lines)} line{'s' if len(lines) != 1 else ''}):")
+        for ln in lines:
+            click.echo(f"  - {ln}")
+
+
+@harness.command("log")
+@click.option("--limit", default=20, show_default=True, help="Recent events to show.")
+def harness_log(limit: int) -> None:
+    """Show recent self-harness learning events — what was learned or forgotten,
+    for which model, and when (read from the signed audit trail). Read-only."""
+    from ..audit import EventKind, default_audit_log
+    rows: list[dict] = []
+    try:
+        for ev in default_audit_log().tail(2000):
+            if ev.get("kind") == EventKind.LEARNING_UPDATE and ev.get("agent") == "self_harness":
+                rows.append(ev)
+    except Exception:  # pragma: no cover -- inspection never blocks on audit
+        pass
+    rows = rows[-limit:]
+    if not rows:
+        click.echo("no self-harness learning events recorded.")
+        return
+    for ev in rows:
+        ts = ev.get("ts") or ev.get("time") or ""
+        click.echo(f"{ts}  {ev.get('phase', 'apply'):7} {ev.get('model_id', '?')}  "
+                   f"{ev.get('line', '')}")
+
+
+@harness.command("forget")
+@click.option("--model", required=True, help="Model whose guidance to remove.")
+@click.option("--line", default=None,
+              help="Remove just this one line (default: all guidance for the model).")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+def harness_forget(model: str, line: str | None, yes: bool) -> None:
+    """Roll back learned guidance for a model — the operator undo handle.
+
+    Removes the whole block for MODEL, or a single --line. The removal is atomic
+    and audited.
+    """
+    from ..self_harness import forget_addendum
+    what = f"the line {line!r}" if line else "ALL learned guidance"
+    if not yes and not click.confirm(f"Remove {what} for {model}?"):
+        click.echo("aborted.")
+        return
+    if forget_addendum(model, line=line):
+        click.echo("removed.")
+    else:
+        click.echo("nothing to remove.")
 
 
 @main.group()
@@ -2122,6 +2346,13 @@ def tenant_create(tenant_id: str, plan: str, display_name: str,
         click.echo(f"ERROR: {e}", err=True)
         sys.exit(2)
     click.echo(f"created tenant {rec.id!r} (plan {rec.plan}, status {rec.status})")
+    from ..billing import known_plan_names
+    if rec.plan not in known_plan_names():
+        click.echo(
+            f"  WARNING: plan {rec.plan!r} is not a known billing plan; its "
+            f"entitlements fall back to 'free' until defined in [billing.plans]",
+            err=True,
+        )
     # Tell the operator where to drop this tenant's own provider keys / models /
     # budget so each client can use its own credentials (overlays global config).
     from ..workspace import Workspace
@@ -2224,6 +2455,145 @@ def tenant_delete(tenant_id: str, purge: bool, yes: bool) -> None:
         sys.exit(2)
 
 
+@tenant.command("rls-preflight")
+@click.option("--dsn", default=None,
+              help="Postgres DSN (else MAVERICK_PG_DSN / [world_model] dsn).")
+def tenant_rls_preflight(dsn: str | None) -> None:
+    """Check readiness to enable Postgres Row-Level Security.
+
+    Reports, per tenant-scoped table, whether this DB role owns it (only the
+    owner can install the RLS policy) and how many legacy NULL-tenant rows remain
+    (which RLS would hide). Assign those rows with `maverick tenant backfill`,
+    then set [world_model] rls = true.
+    """
+    from ..world_model_backends import pg_rls
+    resolved = pg_rls.resolve_dsn(dsn)
+    if not resolved:
+        click.echo("ERROR: no Postgres DSN (set MAVERICK_PG_DSN or "
+                   "[world_model] dsn).", err=True)
+        sys.exit(2)
+    try:
+        conn = pg_rls.connect(resolved, autocommit=True)
+    except ImportError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    try:
+        rep = pg_rls.preflight(conn)
+    finally:
+        conn.close()
+    click.echo(f"role: {rep['role']}")
+    for t, info in rep["tables"].items():
+        if info.get("missing"):
+            click.echo(f"  {t}: MISSING (run the app once to migrate the schema)")
+            continue
+        own = ("owned" if info["owned_by_current_role"]
+               else f"NOT owned (owner={info['owner']})")
+        click.echo(f"  {t}: {own}, {info['null_tenant_rows']} legacy "
+                   f"NULL-tenant row(s)")
+    if rep["ready"]:
+        click.echo("READY: set [world_model] rls = true (or MAVERICK_PG_RLS=1) "
+                   "to enforce database tenant isolation.")
+    else:
+        click.echo("NOT READY: assign NULL rows with `maverick tenant backfill "
+                   "--tenant <id>` and ensure this role owns every table above.")
+
+
+@tenant.command("backfill")
+@click.option("--tenant", "tenant_id", required=True,
+              help="Tenant id to assign legacy NULL-tenant rows to.")
+@click.option("--dsn", default=None,
+              help="Postgres DSN (else MAVERICK_PG_DSN / [world_model] dsn).")
+@click.option("--dry-run", is_flag=True,
+              help="Report how many rows would be assigned without writing.")
+def tenant_backfill(tenant_id: str, dsn: str | None, dry_run: bool) -> None:
+    """Assign legacy NULL-tenant rows to a tenant before enabling RLS.
+
+    Pre-tenancy rows have a NULL tenant_id and RLS (strict equality) would hide
+    them. This assigns them to --tenant so they stay visible under that tenant.
+    Idempotent and safe to re-run. Run `maverick tenant rls-preflight` first.
+    """
+    from ..world_model_backends import pg_rls
+    resolved = pg_rls.resolve_dsn(dsn)
+    if not resolved:
+        click.echo("ERROR: no Postgres DSN (set MAVERICK_PG_DSN or "
+                   "[world_model] dsn).", err=True)
+        sys.exit(2)
+    # Warn (don't block) if the target tenant isn't in the registry: a typo would
+    # otherwise silently assign every legacy row to a non-existent tenant.
+    try:
+        from ..tenant.registry import get_tenant
+        if get_tenant(tenant_id) is None:
+            click.echo(f"WARNING: tenant {tenant_id!r} is not in the registry; "
+                       "continuing (use `maverick tenant create` if this is a typo).")
+    except Exception:
+        pass
+    try:
+        conn = pg_rls.connect(resolved, autocommit=False)
+    except ImportError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    try:
+        report = pg_rls.backfill(conn, tenant_id, dry_run=dry_run)
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    finally:
+        conn.close()
+    verb = "would assign" if dry_run else "assigned"
+    for t in sorted(report):
+        click.echo(f"  {t}: {verb} {report[t]}")
+    click.echo(f"{verb} {sum(report.values())} row(s) to tenant {tenant_id!r}"
+               + (" (dry run)" if dry_run else ""))
+
+
+@tenant.command("kms-rotate")
+@click.option("--old-kek-file", "old_kek_file",
+              type=click.Path(exists=True, dir_okay=False, readable=True),
+              help="File containing the current KEK (hex/base64, 32 bytes).")
+@click.option("--new-kek-file", "new_kek_file",
+              type=click.Path(exists=True, dir_okay=False, readable=True),
+              help="File containing the new KEK (hex/base64, 32 bytes).")
+@click.option("--dry-run", is_flag=True,
+              help="Report what each tenant would do; write nothing.")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+def tenant_kms_rotate(old_kek_file: str | None, new_kek_file: str | None,
+                      dry_run: bool, yes: bool) -> None:
+    """Rotate every tenant's wrapped DEK between LocalKMS KEKs.
+
+    Use when rolling the at-rest master key / MAVERICK_KMS_KEK. Re-wrap only --
+    no tenant data is re-encrypted. Idempotent and resumable: a tenant already
+    on the new KEK is skipped, so a re-run finishes an interrupted rotation. Set
+    the new KEK live only AFTER this reports 0 failed. Supply KEKs via protected
+    files or the hidden prompts; raw KEKs are never accepted in command argv.
+    """
+    from ..tenant.kms_fleet import rotate_local_fleet
+
+    def _read_kek(label: str, path: str | None) -> str:
+        if path:
+            return Path(path).read_text(encoding="utf-8").strip()
+        return click.prompt(label, hide_input=True).strip()
+
+    old_kek = _read_kek("Current KEK", old_kek_file)
+    new_kek = _read_kek("New KEK", new_kek_file)
+    if not dry_run and not yes:
+        click.confirm("Re-wrap every tenant's DEK to the new KEK?", abort=True)
+    try:
+        rep = rotate_local_fleet(old_kek, new_kek, dry_run=dry_run)
+    except Exception as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    tag = " (dry run)" if dry_run else ""
+    click.echo(f"fleet KEK rotation{tag}: {rep['total']} tenant(s) with a DEK")
+    click.echo(f"  rotated: {len(rep['rotated'])}  skipped (already new): "
+               f"{len(rep['skipped'])}  failed: {len(rep['failed'])}")
+    for tid, reason in sorted(rep["failed"].items()):
+        click.echo(f"  FAILED {tid}: {reason}", err=True)
+    if rep["failed"]:
+        click.echo("Do NOT retire the old KEK: some tenants are still wrapped "
+                   "under it. Resolve the failures and re-run.", err=True)
+        sys.exit(1)
+
+
 @main.group()
 def billing() -> None:
     """Rate metered usage into invoices and inspect plan entitlements."""
@@ -2273,6 +2643,11 @@ def billing_invoice(tenant_id: str, since: str | None, until: str | None,
         click.echo(_json.dumps(inv.to_dict(), indent=2))
         return
     click.echo(f"Invoice for {tenant_id!r}  {inv.period_start or '…'} → {inv.period_end or '…'}")
+    if inv.invoice_id:
+        click.echo(f"  id: {inv.invoice_id}  (idempotency key — charge this period once)")
+    else:
+        click.echo("  id: (open-ended period — NOT a safe dedup key; pass --since and "
+                   "--until to close the period before charging)")
     for li in inv.line_items:
         click.echo(f"  {li.day}  {li.principal:<24} ${li.charge:.4f} "
                    f"({li.in_tokens}+{li.out_tokens} tok)")
@@ -4637,6 +5012,124 @@ def domains_lint(ci: bool, show_warnings: bool) -> None:
         raise click.ClickException(f"{n_err} pack error(s)")
 
 
+@main.command("domains-audit")
+@click.option("--json", "json_out", type=click.Path(),
+              help="Write the full machine-readable audit document to this path.")
+@click.option("--suite", default=None,
+              help="Limit the report to one suite (e.g. finance, hr, healthcare).")
+def domains_audit(json_out: str | None, suite: str | None) -> None:
+    """Governance-posture inventory of the specialist roster.
+
+    The auditable answer to "what can these agents do, and what stops them?":
+    per pack, the compartment seal, risk ceiling, whether any state-mutating
+    tool is reachable, the hard refusals it carries, and the human sign-off on
+    its deliverable. ``--json`` exports the full document for a GRC system;
+    ``domains-lint`` remains the pass/fail well-formedness gate.
+    """
+    from ..domain_audit import audit_roster, summarize, to_json
+    audits = audit_roster()
+    if suite:
+        audits = [a for a in audits if a.suite == suite]
+        if not audits:
+            raise click.ClickException(f"no packs in suite {suite!r}")
+    s = summarize(audits)
+    click.echo(f"{s['packs']} pack(s) across {s['suites']} suite(s); "
+               f"{s['builders']} builder(s)")
+    click.echo(f"  drafting agents that can reach a state-mutator: "
+               f"{s['drafting_agents_reaching_a_mutator']}  (must be 0)")
+    click.echo(f"  with a human sign-off gate:   {s['packs_with_human_gate']}")
+    click.echo(f"  with suite/pack refusals:     {s['packs_with_refusals_beyond_universal']}")
+    click.echo(f"  with a declared deliverable:  {s['packs_with_deliverable']}")
+    click.echo(f"  with a reasoning-effort tier: {s['packs_with_effort_tier']}")
+    _ap = s.get("autonomy_posture", {})
+    click.echo(
+        "  autonomy posture (baseline rung): "
+        f"observe={_ap.get('observe', 0)} suggest={_ap.get('suggest', 0)} "
+        f"request={_ap.get('request', 0)} auto={_ap.get('auto', 0)}; "
+        f"onboarding={s.get('packs_onboarding', 0)}")
+    flagged = [a for a in audits if a.reachable_dangerous and not a.is_builder]
+    for a in flagged:
+        click.echo(f"  FLAG {a.name}: reaches {', '.join(a.reachable_dangerous)}", err=True)
+    if json_out:
+        import json as _json
+        Path(json_out).write_text(_json.dumps(to_json(audits), indent=2),
+                                  encoding="utf-8")
+        click.echo(f"Wrote audit document -> {json_out}")
+    if flagged:
+        raise click.ClickException(
+            f"{len(flagged)} drafting pack(s) can reach a state-mutator")
+
+
+@main.command("workforce-graduation")
+@click.option("--db", "db_path", type=click.Path(), default=None,
+              help="World DB to read the approvals history from (default: the configured one).")
+def workforce_graduation(db_path: str | None) -> None:
+    """Which onboarding agents have earned graduation to more autonomy?
+
+    Reads the human approval decisions on each agent's gated actions (the same
+    record predictive-approvals learns from) and lists the hires with a clean
+    enough record to graduate -- the advisory signal a client acts on by setting
+    ``onboarding = false`` under ``[workforce.agents]`` (or by enabling
+    ``[workforce] auto_graduate``). Advisory only: it never changes a config.
+    """
+    from ..agent_autonomy import graduation_candidates
+    from ..domain import available_domains
+    try:
+        from ..world_model import DEFAULT_DB, WorldModel
+        wm = WorldModel(db_path or DEFAULT_DB)
+        approvals = wm.list_approvals(limit=5000)
+    except Exception as e:  # pragma: no cover -- no DB / empty install
+        raise click.ClickException(f"could not read approvals history: {e}") from e
+    names = sorted(available_domains())
+    cands = graduation_candidates(approvals, names)
+    if not cands:
+        click.echo("No agents have earned graduation yet "
+                   "(need a clean record of human-approved actions).")
+        return
+    click.echo(f"{len(cands)} agent(s) ready to graduate from onboarding:")
+    for v in cands:
+        click.echo(f"  {v.name}: {v.reason} (confidence {v.confidence:.2f})")
+    click.echo("\nGraduate one by adding to ~/.maverick/config.toml:")
+    click.echo("  [[workforce.agents]]\n  name = \"<agent>\"\n  onboarding = false")
+
+
+@main.command("domains-eval")
+@click.option("--check", "check_only", is_flag=True,
+              help="Lint the eval suite against the roster and exit (no provider needed).")
+def domains_eval(check_only: bool) -> None:
+    """Per-pack behavioral evals: does a specialist do its job?
+
+    The rubric scorer is deterministic, but running a case needs to spawn the
+    pack agent (a provider key). This command lints the golden suite -- every
+    case names a real pack and carries a non-empty rubric -- which is the
+    CI-safe, key-free gate; ``run_eval(cases, runner)`` in maverick.domain_eval
+    executes them live when a caller supplies an agent runner.
+    """
+    from ..domain_eval import GOLDEN_CASES, check_suite
+    problems = check_suite()
+    for p in problems:
+        click.echo(f"ERROR  {p}", err=True)
+    click.echo(f"{len(GOLDEN_CASES)} golden eval case(s) across "
+               f"{len({c.domain for c in GOLDEN_CASES})} pack(s); "
+               f"{len(problems)} problem(s)")
+    for c in GOLDEN_CASES:
+        dims = []
+        if c.expect_includes:
+            dims.append(f"includes={list(c.expect_includes)}")
+        if c.expect_excludes:
+            dims.append(f"excludes={list(c.expect_excludes)}")
+        if c.expect_refusal:
+            dims.append("refuses")
+        if c.expect_citation:
+            dims.append("cites")
+        click.echo(f"  {c.domain}: {', '.join(dims)}")
+    if not check_only:
+        click.echo("\nLive scoring needs a provider key; run via "
+                   "maverick.domain_eval.run_eval(cases, runner).")
+    if problems:
+        raise click.ClickException(f"{len(problems)} eval-suite problem(s)")
+
+
 @main.command("insights-export")
 @click.argument("out", type=click.Path())
 @click.option("--max", "max_insights", default=50, show_default=True,
@@ -5236,7 +5729,157 @@ def audit_export(
         click.echo("no audit events to export", err=True)
 
 
-# ----- Killswitch --------------------------------------------------------
+@audit.command("forward")
+@click.option("--format", "fmt", type=click.Choice(["json", "cef"]), default="json",
+              help="Wire format for the SIEM (default: json).")
+@click.option("--to", "dest", default=None,
+              help="Destination URI: tcp://host:port, udp://host:port, or "
+                   "http(s)://host/path. Default: MAVERICK_SIEM_DEST / "
+                   "[audit] siem_dest.")
+@click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
+@click.option("--all", "all_days", is_flag=True,
+              help="Forward every YYYY-MM-DD.ndjson day-file in the audit dir.")
+@click.option("--since", default=None,
+              help="Start of an inclusive YYYY-MM-DD window (e.g. an incident).")
+@click.option("--until", default=None,
+              help="End of the inclusive YYYY-MM-DD window.")
+@click.option("--tenant", default=None,
+              help="Tenant whose audit dir to forward (default: active/none).")
+@click.option("--dry-run", is_flag=True,
+              help="Validate the destination and count events; send nothing.")
+def audit_forward(
+    fmt: str, dest: str | None, day: str | None, all_days: bool,
+    since: str | None, until: str | None, tenant: str | None, dry_run: bool,
+) -> None:
+    """Push the audit log to a SIEM collector over the network.
+
+    The push counterpart of ``audit export``: same read-only re-emission of the
+    tamper-evident NDJSON log, but shipped to ``--to`` (a tcp/udp syslog or
+    http(s) collector) instead of a file. A transport failure exits non-zero --
+    a SIEM gap is a compliance event, not something to swallow. An empty log
+    exits 0 with a note (cron never fails on a quiet day).
+    """
+    import datetime as _dt
+
+    _require_day_opt(day)
+    for _label, _val in (("--since", since), ("--until", until)):
+        if _val is not None:
+            try:
+                _parsed = _dt.datetime.strptime(_val, "%Y-%m-%d")
+            except ValueError:
+                click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
+                sys.exit(2)
+            if _parsed.strftime("%Y-%m-%d") != _val:
+                click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
+                sys.exit(2)
+
+    if not dest or not dest.strip():
+        import os as _os
+        dest = _os.environ.get("MAVERICK_SIEM_DEST")
+        if not dest:
+            try:
+                from ..config import load_config
+                dest = (load_config() or {}).get("audit", {}).get("siem_dest")
+            except Exception:
+                dest = None
+    if not dest or not str(dest).strip():
+        click.echo(
+            "ERROR: no SIEM destination (--to, MAVERICK_SIEM_DEST, or "
+            "[audit] siem_dest)", err=True,
+        )
+        sys.exit(2)
+
+    # Same paid-tier entitlement gate as export when a tenant is named.
+    if tenant:
+        from ..billing import feature_allowed
+        if not feature_allowed("audit_export", tenant=tenant):
+            click.echo(
+                f"ERROR: tenant '{tenant}' plan does not include SIEM audit "
+                "export (audit_export entitlement). Upgrade the tenant's plan.",
+                err=True,
+            )
+            sys.exit(2)
+
+    from ..audit import forwarder
+    from ..audit.export import iter_audit_events, to_cef, to_jsonl
+
+    # Validate the destination up front so a typo fails before we read the log.
+    try:
+        forwarder.parse_dest(str(dest))
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+
+    render = to_cef if fmt == "cef" else to_jsonl
+    lines = (render(ev) for ev in iter_audit_events(
+        day=day, all_days=all_days, since=since, until=until, tenant=tenant,
+    ))
+
+    if dry_run:
+        n = sum(1 for _ in lines)
+        click.echo(f"dry-run: {n} event(s) would ship to {dest}", err=True)
+        return
+
+    try:
+        sent = forwarder.forward(lines, str(dest))
+    except Exception as e:
+        click.echo(f"ERROR: SIEM forward failed: {e}", err=True)
+        sys.exit(1)
+    if sent == 0:
+        click.echo("no audit events to forward", err=True)
+    else:
+        click.echo(f"forwarded {sent} event(s) to {dest}", err=True)
+
+
+@audit.group("worm")
+def audit_worm() -> None:
+    """Write-once (WORM) export of closed audit day-files (see docs/security-hardening.md)."""
+
+
+@audit_worm.command("push")
+@click.option("--dry-run", is_flag=True,
+              help="Show which day-files would be shipped; write nothing.")
+def audit_worm_push(dry_run: bool) -> None:
+    """Ship closed audit day-files to the configured write-once target.
+
+    Each day-file dated before today is shipped to an S3 Object-Lock bucket (or a
+    local read-only mirror) with a retention lock, so the historical trail can't
+    be altered or deleted even by a privileged insider. Idempotent: unchanged
+    files are skipped; a file changed by `audit seal` / erase is re-shipped as a
+    new locked version. Configure via `[audit.worm]`.
+    """
+    from ..audit.worm import WormUnavailable, push_closed_dayfiles
+    try:
+        report = push_closed_dayfiles(dry_run=dry_run)
+    except WormUnavailable as e:
+        raise click.ClickException(str(e)) from e
+    for name, status in sorted(report.items()):
+        click.echo(f"  {name}: {status}")
+    shipped = sum(1 for s in report.values()
+                  if s.startswith(("pushed", "re-pushed", "would")))
+    click.echo(f"{'Would ship' if dry_run else 'Shipped'} {shipped} day-file(s).")
+
+
+@audit_worm.command("verify")
+def audit_worm_verify() -> None:
+    """Check closed day-files against the WORM manifest.
+
+    Reports, per closed day-file, whether its current bytes were shipped (`ok`),
+    differ from the last shipped version (`changed since push` -- re-run push), or
+    were never shipped (`NOT pushed`). Exits non-zero if anything is unshipped or
+    diverged, so it can gate a compliance cron.
+    """
+    from ..audit.worm import verify
+    report = verify()
+    for name, status in sorted(report.items()):
+        click.echo(f"  {name}: {status}")
+    bad = [n for n, s in report.items() if s != "ok"]
+    if bad:
+        click.echo(f"{len(bad)} day-file(s) not durably shipped: {sorted(bad)}",
+                   err=True)
+        sys.exit(1)
+    click.echo(f"all {len(report)} closed day-file(s) verified in WORM store.")
+
 
 @main.command()
 @click.option("--reason", default="manual halt", help="Why you're halting.")
@@ -5421,9 +6064,11 @@ def _soc2_posture_ready(evidence) -> bool:
 # run (@main.group/@main.command register onto `main` on import).
 from . import (  # noqa: E402,F401
     _compliance_groups,
+    _connector_groups,
     _finance_groups,
     _import_groups,
     _ops_groups,
+    _training_groups,
 )
 
 if __name__ == "__main__":

@@ -366,9 +366,29 @@ class Budget:
         with self._lock:
             self._reserved = max(0.0, getattr(self, "_reserved", 0.0) - held)
 
+    def cache_hit_rate(self) -> float:
+        """Fraction of prompt-input tokens served from cache this run, across
+        ALL providers (Anthropic ephemeral, OpenAI/Gemini auto-cache).
+
+        ``cache_read / (cache_read + billable_input)`` — the consolidated
+        signal there was no single cross-provider view of before (each
+        provider's cache was its own ledger). 0.0 when nothing was sent."""
+        seen = self.input_tokens + self.cache_read_tokens
+        return (self.cache_read_tokens / seen) if seen else 0.0
+
+    def cache_stats(self) -> dict:
+        """Read-only cross-provider cache accounting for this run."""
+        return {
+            "cache_read_tokens": self.cache_read_tokens,
+            "cache_write_tokens": self.cache_write_tokens,
+            "billable_input_tokens": self.input_tokens,
+            "hit_rate": self.cache_hit_rate(),
+        }
+
     def summary(self) -> str:
         return (
             f"tokens in={self.input_tokens} out={self.output_tokens} "
+            f"cache_read={self.cache_read_tokens} hit_rate={self.cache_hit_rate():.0%} "
             f"$={self.dollars:.3f} tools={self.tool_calls} wall={self.elapsed():.0f}s"
         )
 
@@ -460,4 +480,33 @@ def budget_from_config(*, defaults: dict | None = None,
     for key, val in overrides.items():
         if val is not None and key in _BUDGET_KEY_TYPES:
             kwargs[key] = val
+    _clamp_to_tenant_remainder(kwargs)
     return Budget(**kwargs)
+
+
+def _clamp_to_tenant_remainder(kwargs: dict) -> None:
+    """Clamp ``kwargs['max_dollars']`` to the active tenant's remaining daily
+    allowance (#78), in place.
+
+    Highest precedence: the tenant's aggregate daily ceiling is a billing
+    guarantee, so it overrides even an explicit ``--max-dollars``. Without it the
+    over-quota gate only fires *between* runs, letting one run blow past the
+    tenant cap. No active tenant / no cap -> untouched (the default single-tenant
+    install is unchanged). Never *raises* a cap, only lowers it.
+    """
+    try:
+        from .paths import current_tenant
+        from .tenant.registry import tenant_remaining_today
+        remaining = tenant_remaining_today(current_tenant())
+    except Exception:  # pragma: no cover -- quota coordination never blocks a run
+        return
+    if remaining is None:
+        return
+    # The clamp must only ever LOWER the effective cap. When no max_dollars was
+    # set, the effective cap is Budget's own default (not "unbounded"), so clamp
+    # against that -- otherwise a tenant with a large remainder would silently
+    # RAISE an unset per-run cap above the default, contradicting the invariant.
+    current = kwargs.get("max_dollars")
+    if current is None:
+        current = Budget.__dataclass_fields__["max_dollars"].default
+    kwargs["max_dollars"] = min(float(current), remaining)

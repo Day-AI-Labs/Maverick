@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "ranked candidate shortlist"
+consumers = ["recruiter", "hiring_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Load criteria"
+instruction = "Read the job description and required qualifications to fix the job-related screening criteria."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull applications"
+instruction = "Retrieve the applicant pool and resumes for the requisition from the ATS."
+tools = ["greenhouse_read", "smartrecruiters_read"]
+[[workflow]]
+name = "Score consistently"
+instruction = "Rank each application against the fixed criteria only, excluding protected-class data and its proxies."
+[[workflow]]
+name = "Audit bias"
+instruction = "Review the ranking for proxy bias and document the rationale per LL144 and the EU AI Act before handoff."
+[[workflow]]
+name = "Route shortlist"
+instruction = "Hand the ranked shortlist to the recruiter and hiring manager, who advance or reject candidates."
+gate = "review"

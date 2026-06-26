@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "critical lift plan tracker"
+consumers = ["project_manager", "safety_manager"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "List lifts"
+instruction = "Read the lookahead schedule and lift logs to identify upcoming critical lifts and their planned dates."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather plans"
+instruction = "Collect each critical lift plan with its load chart, rigging, and crane configuration from project records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Check approvals"
+instruction = "Verify each lift plan has the required engineer and safety approvals recorded before its scheduled lift date."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag unapproved"
+instruction = "Flag any lift whose plan or approval is missing within the lead-time window so it can be held."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Safety sign-off"
+instruction = "Route lifts pending plans or approvals to the safety manager for clearance before the lift proceeds."
+gate = "approval"

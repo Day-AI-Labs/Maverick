@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,6 +37,20 @@ from .paths import data_dir
 from .tools import as_bool
 
 log = logging.getLogger(__name__)
+
+# Serializes a macro-store load-modify-save in-process; cross_process_lock in
+# _locked() extends it across processes.
+_MACROS_LOCK = threading.Lock()
+
+
+def _locked(path: Path | None):
+    from contextlib import ExitStack
+
+    from .file_lock import cross_process_lock
+    stack = ExitStack()
+    stack.enter_context(_MACROS_LOCK)
+    stack.enter_context(cross_process_lock(path if path is not None else macros_path()))
+    return stack
 
 MAX_STEPS = 16
 
@@ -105,20 +120,24 @@ def record_macro(name: str, steps: list[str], path: Path | None = None) -> dict[
         if not isinstance(s, str) or not s.strip():
             raise ValueError("every step must be a non-empty string")
         clean.append(" ".join(s.split()))
-    macros = load_macros(path)
-    macros[key] = clean
-    save_macros(macros, path)
+    # Whole load-modify-save under the lock so a concurrent record/delete of
+    # another macro can't clobber this one (last-writer-wins on the dict).
+    with _locked(path):
+        macros = load_macros(path)
+        macros[key] = clean
+        save_macros(macros, path)
     return macros
 
 
 def delete_macro(name: str, path: Path | None = None) -> bool:
     """Remove a macro by name; True if it existed."""
     key = _normalize_phrase(name)
-    macros = load_macros(path)
-    if key not in macros:
-        return False
-    del macros[key]
-    save_macros(macros, path)
+    with _locked(path):
+        macros = load_macros(path)
+        if key not in macros:
+            return False
+        del macros[key]
+        save_macros(macros, path)
     return True
 
 

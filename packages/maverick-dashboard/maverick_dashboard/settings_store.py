@@ -15,8 +15,24 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 
 from maverick import config
+
+# Serializes the overlay load-modify-save in-process; cross_process_lock in
+# _locked() extends it across processes (multiple dashboard workers edit
+# provider keys / toggles).
+_SETTINGS_LOCK = threading.Lock()
+
+
+def _locked():
+    from contextlib import ExitStack
+
+    from maverick.file_lock import cross_process_lock
+    stack = ExitStack()
+    stack.enter_context(_SETTINGS_LOCK)
+    stack.enter_context(cross_process_lock(config.dashboard_overrides_path()))
+    return stack
 
 # Providers offered in the UI: name, label, env var(s) that also satisfy it,
 # whether a base_url (self-hosted endpoint) is relevant.
@@ -149,17 +165,10 @@ def _dump(data: dict) -> str:
 
 
 def _write(data: dict) -> None:
-    p = config.dashboard_overrides_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".toml.tmp")
-    fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(_dump(data))
-    os.replace(tmp, p)
-    try:
-        os.chmod(p, 0o600)
-    except OSError:
-        pass
+    # Unique temp + os.replace (0600): the fixed ".toml.tmp" collided between two
+    # concurrent workers. RMW serialization is in the mutators via _locked().
+    from maverick.file_lock import atomic_write_text
+    atomic_write_text(config.dashboard_overrides_path(), _dump(data))
 
 
 def set_provider(name: str, api_key: str | None = None, base_url: str | None = None) -> None:
@@ -168,23 +177,25 @@ def set_provider(name: str, api_key: str | None = None, base_url: str | None = N
     ``clear_provider`` to remove."""
     if name not in _PROVIDER_NAMES:
         raise ValueError("unknown provider")
-    data = load_overlay()
-    pcfg = data.setdefault("providers", {}).setdefault(name, {})
-    if api_key and api_key.strip():
-        pcfg["api_key"] = api_key.strip()
-    if base_url and base_url.strip():
-        pcfg["base_url"] = base_url.strip()
-    if not pcfg:
-        data["providers"].pop(name, None)
-    _write(data)
+    with _locked():
+        data = load_overlay()
+        pcfg = data.setdefault("providers", {}).setdefault(name, {})
+        if api_key and api_key.strip():
+            pcfg["api_key"] = api_key.strip()
+        if base_url and base_url.strip():
+            pcfg["base_url"] = base_url.strip()
+        if not pcfg:
+            data["providers"].pop(name, None)
+        _write(data)
 
 
 def clear_provider(name: str) -> None:
     if name not in _PROVIDER_NAMES:
         raise ValueError("unknown provider")
-    data = load_overlay()
-    (data.get("providers") or {}).pop(name, None)
-    _write(data)
+    with _locked():
+        data = load_overlay()
+        (data.get("providers") or {}).pop(name, None)
+        _write(data)
 
 
 def set_toggle(section: str, name: str, enabled: bool) -> None:
@@ -192,9 +203,10 @@ def set_toggle(section: str, name: str, enabled: bool) -> None:
     defaults = {"capabilities": CAPABILITY_DEFAULTS, "features": FEATURE_DEFAULTS}.get(section)
     if defaults is None or name not in defaults:
         raise ValueError("unknown setting")
-    data = load_overlay()
-    data.setdefault(section, {})[name] = bool(enabled)
-    _write(data)
+    with _locked():
+        data = load_overlay()
+        data.setdefault(section, {})[name] = bool(enabled)
+        _write(data)
 
 
 def set_channel(name: str, enabled: bool, values: dict | None = None) -> None:

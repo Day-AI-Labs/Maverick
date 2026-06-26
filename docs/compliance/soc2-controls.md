@@ -85,7 +85,7 @@ This is Lightwork's strongest area.
 | CC6.3 Role-based access / modification | Capability attenuation (child ≤ parent); risk ceilings | Implemented (opt-in) | `maverick/capability.py` (`attenuate`); `controls.capability_enforcement` |
 | CC6.6 Boundary protection (external threats) | Agent Shield (prompt-injection/exfil); host-scope capability; network host allow-globs | Implemented | `maverick/safety/` (shield); `maverick/capability.py` (`allow_hosts`) |
 | CC6.7 Restricts data transmission/movement | Secret/PII redaction; exfil detection; capability path scopes | Implemented | `maverick/safety/secret_detector.py`; `maverick/capability.py` (`allow_paths`) |
-| CC6.7 Encryption at rest | AES-256-GCM authenticated encryption for sensitive local stores; opt-in, implied by enterprise mode | Implemented (opt-in) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
+| CC6.7 Encryption at rest | AES-256-GCM authenticated encryption for sensitive local stores; **on by default** (secure-by-default), forced by compliance floors | Implemented (on by default) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
 | CC6.8 Prevents/detects unauthorized software | Sandbox isolation backends; tool ACLs; plugin manifest | Partial | sandbox `exec()`; `maverick/plugin_manifest.py` |
 
 ### CC7 — System Operations
@@ -138,7 +138,7 @@ This is Lightwork's strongest area.
 | --- | --- | --- | --- |
 | C1.1 Identifies & protects confidential information | Multi-tenant isolation (per-tenant memory/audit/world.db); secret/PII redaction | Implemented (opt-in) | `maverick/paths.py` (`controls.tenant_isolation`); `maverick/safety/secret_detector.py` |
 | C1.1 Access boundaries for confidential data | Capability path/host scopes; tool ACLs | Implemented (opt-in) | `maverick/capability.py` (`allow_paths`/`allow_hosts`) |
-| C1.1 Encryption at rest | AES-256-GCM authenticated encryption of sensitive local stores (also CC6.7); opt-in, implied by enterprise mode | Implemented (opt-in) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
+| C1.1 Encryption at rest | AES-256-GCM authenticated encryption of sensitive local stores (also CC6.7); **on by default** (secure-by-default), forced by compliance floors | Implemented (on by default) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
 | C1.2 Disposes of confidential information | **GDPR erase** (scrub/delete user + re-sign chain); audit retention | Implemented | `maverick/audit/erase.py`, `retention.py` |
 
 ## P — Privacy
@@ -226,13 +226,24 @@ print(json.dumps(collect_soc2_evidence(), indent=2))"
 ```
 
 A SOC 2-ready deployment should show `capability_enforcement`,
-`tenant_isolation`, and `usage_quotas` as `enabled`, and `audit_log` as `ok`
-with `audit_signing_key` present. Note that `audit_log` is only `ok` when audit
-signing is turned on (`[audit] sign = true` / `MAVERICK_AUDIT_SIGN=1`) and the
-per-day chains plus cross-file anchor ledger verify cleanly; with
-signing off the log exists but is reported `unsigned` — append-only, but not
-cryptographically tamper-evident. So OIDC and audit signing both default off and
-must be enabled (alongside capabilities/tenancy/quotas) for a SOC 2 posture.
+`tenant_isolation`, `usage_quotas`, and `oidc_auth` as `enabled`,
+`encryption_at_rest` as `enabled`, and `audit_log` as `ok` with
+`audit_signing_key` present.
+
+At-rest encryption and audit signing **default ON** (secure-by-default —
+`maverick.security_defaults.secure_by_default`), unless explicitly disabled
+(`MAVERICK_SECURE_DEFAULT=0`, or the per-control knobs `[encryption] at_rest` /
+`[audit] sign`). So on a fresh install `encryption_at_rest` reports `enabled`, and
+once the audit log has rows they are signed and the per-day chains plus cross-file
+anchor ledger verify `ok` (the log reads `empty` only until the first write, and
+`audit_signing_key` becomes present once the first signed row is written). With
+signing explicitly off the log is reported `unsigned` — append-only, but not
+cryptographically tamper-evident.
+
+The deployment-specific controls that would break the zero-config happy path stay
+opt-in and must be turned on for a full SOC 2 posture: `capability_enforcement`,
+`tenant_isolation`, `usage_quotas`, and `oidc_auth` (OIDC would otherwise lock out
+the local single-user dashboard).
 
 > **Follow-on (not in this change):** a `maverick soc2` CLI command that prints
 > this snapshot (and exits non-zero if required controls are not `enabled`) is a

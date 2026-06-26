@@ -227,3 +227,30 @@ class TestLearnedSummarizer:
         out = ls.compact(_traj(), keep_recent=2)
         assert fake_llm.calls[0]["system"] == TEMPLATES["narrative"]
         assert 'template="narrative"' in out[1]["content"]
+
+
+def test_record_is_concurrency_safe(tmp_path):
+    """Separate ledgers at one path (≈ separate processes) recording the same
+    template must accumulate trials, not clobber: the load-modify-save is now
+    flock-guarded (the discipline the docstring already promised)."""
+    import threading
+
+    from maverick.compaction.learned import OutcomeLedger
+
+    p = tmp_path / "ledger.json"
+    n, per = 8, 20
+
+    def worker():
+        led = OutcomeLedger(path=p)
+        for _ in range(per):
+            led.record("code", "facts", success=True, continuation_turns=5)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    st = OutcomeLedger(path=p).stats("code").get("facts", {})
+    assert int(st.get("trials", 0)) == n * per
+    assert list(tmp_path.glob("*.tmp")) == []

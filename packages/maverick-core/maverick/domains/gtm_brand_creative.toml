@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "creative brief"
+consumers = ["creative_director", "marketing_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Intake request"
+instruction = "Read the campaign request and target audience to scope the creative objective and deliverables."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull brand guardrails"
+instruction = "Retrieve brand-voice guidelines and prior approved assets to anchor tone and visual direction."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Reference scan"
+instruction = "Scan competitor and category creative for context and differentiation cues."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft brief"
+instruction = "Draft the creative brief with messaging, voice guardrails, and design direction, disclosing it as AI-assisted."
+[[workflow]]
+name = "Creative review"
+instruction = "Route the creative brief to the creative director for sign-off before any asset is produced."
+gate = "review"

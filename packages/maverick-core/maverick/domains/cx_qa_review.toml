@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "QA scorecard & coaching themes"
+consumers = ["support_manager", "team_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Sample conversations"
+instruction = "Select the set of closed conversations due for review per the sampling policy for the period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load rubric"
+instruction = "Pull the current quality rubric and its scoring definitions to ensure consistent application."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Score transcripts"
+instruction = "Score each sampled conversation against every rubric criterion, citing the transcript evidence for each rating."
+tools = ["read_file"]
+[[workflow]]
+name = "Surface themes"
+instruction = "Aggregate low-scoring criteria across the sample into recurring coaching themes by agent and team."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route to manager"
+instruction = "Deliver the scorecard and coaching themes to the support manager for calibration and sign-off."
+gate = "review"

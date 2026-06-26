@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "policy-checked requisition package"
+consumers = ["procurement_lead", "category_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read request"
+instruction = "Capture the purchase request details including item, quantity, need-by date, and requesting cost center."
+tools = ["read_file"]
+[[workflow]]
+name = "Complete data"
+instruction = "Fill gaps by sourcing supplier, catalog pricing, and account coding from internal records."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Check policy"
+instruction = "Validate the request against purchasing policy, spend thresholds, and preferred-supplier rules."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Set approvers"
+instruction = "Determine the correct approval chain from the delegation of authority for the requisition amount."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route requisition"
+instruction = "Assemble the complete requisition package and route it to the procurement lead for review."
+gate = "review"

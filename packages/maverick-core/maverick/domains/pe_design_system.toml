@@ -14,3 +14,31 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "design-system component PR"
+consumers = ["design_lead", "frontend_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Map request"
+instruction = "Read the design intent and locate the affected components and tokens across the repo."
+tools = ["read_file", "repo_map", "knowledge_search"]
+[[workflow]]
+name = "Edit components"
+instruction = "Update component code and token definitions in the sandbox keeping design and code in sync."
+tools = ["apply_patch", "ast_edit", "str_replace_editor"]
+[[workflow]]
+name = "Build and test"
+instruction = "Run the build and visual/unit tests to confirm tokens resolve and no component regresses."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Check parity"
+instruction = "Verify the rendered output matches the source design and that no token drift or breaking API change slipped in."
+tools = ["read_file", "code_exec"]
+[[workflow]]
+name = "Open PR"
+instruction = "Open a pull request for the design and frontend leads to review before any merge."
+gate = "review"

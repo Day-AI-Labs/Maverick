@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "data-quality defect report"
+consumers = ["data_engineer", "data_steward"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Load DQ rules"
+instruction = "Read the data-quality rule set and table criticality definitions from the company docs."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Run checks"
+instruction = "Execute null, uniqueness, range, and referential-integrity checks against the critical tables."
+tools = ["sql_query"]
+[[workflow]]
+name = "Quantify failures"
+instruction = "Tabulate each failing rule with affected row counts and freshness in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify real defect"
+instruction = "Re-query suspected failures to confirm they are genuine defects and not a stale snapshot or in-flight load."
+tools = ["sql_query"]
+[[workflow]]
+name = "File defect report"
+instruction = "Open a precise defect report per confirmed failure and route to the data engineer for fix."
+gate = "review"

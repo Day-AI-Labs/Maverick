@@ -21,3 +21,22 @@ deliverable = "SaaS misconfiguration findings"
 consumers = ["security_analyst", "ciso"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Scope SaaS estate"
+instruction = "List the in-scope SaaS apps and pull their current posture, OAuth grants, and admin role assignments."
+tools = ["read_file"]
+[[workflow]]
+name = "Check baselines"
+instruction = "Compare each app's configuration against vendor and CIS least-privilege baselines using knowledge and current advisories."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Score findings"
+instruction = "Rank misconfigurations and over-broad OAuth grants by exposure and least-privilege violation severity."
+[[workflow]]
+name = "Draft remediation"
+instruction = "Write findings with recommended config and grant-revocation steps, noting that no control is changed by this read-only assessment."
+[[workflow]]
+name = "Route to CISO"
+instruction = "Submit the SaaS misconfiguration findings to the security analyst and CISO for remediation sign-off."
+gate = "review"

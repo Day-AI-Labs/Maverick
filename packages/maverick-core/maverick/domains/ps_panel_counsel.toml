@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "outside-counsel guidelines compliance report"
+consumers = ["relationship_partner", "billing_partner"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Load OCG"
+instruction = "Read the client's outside-counsel guidelines and panel requirements applicable to the matter."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map requirements"
+instruction = "Translate the guidelines into concrete billing, staffing, and approval rules to monitor."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Check compliance"
+instruction = "Query matter billing and staffing data against each OCG rule to detect violations such as blocked tasks or unapproved rates."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag breaches"
+instruction = "List OCG breaches and at-risk entries likely to trigger client write-downs, with the governing clause cited."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Partner review"
+instruction = "Route the OCG compliance report to the relationship partner before corrective billing action is taken."
+gate = "review"

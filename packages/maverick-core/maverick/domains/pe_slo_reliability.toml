@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "SLO & error-budget policy"
+consumers = ["sre_lead", "engineering_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Identify journeys"
+instruction = "Read service and architecture docs to identify the critical user journeys that need SLIs."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Define SLIs"
+instruction = "Define each SLI precisely and propose SLO targets grounded in historical performance and user expectations."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Design alerting"
+instruction = "Design multi-window multi-burn-rate alerts and set the error-budget policy thresholds."
+[[workflow]]
+name = "State assumptions"
+instruction = "Document data gaps, assumptions, and any SLO whose target lacks supporting evidence so it is not mistaken for fact."
+[[workflow]]
+name = "Recommend to human"
+instruction = "Deliver the SLO and error-budget policy, including any freeze recommendation with evidence, for a human to decide."
+gate = "review"

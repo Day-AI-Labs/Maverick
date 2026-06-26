@@ -10,3 +10,29 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "NIS2 obligations & deadlines register"
+consumers = ["legal_counsel", "compliance_officer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Read scope"
+instruction = "Pull the company's NIS2 scoping and applicable security obligations from internal documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map articles"
+instruction = "Map each obligation to its exact NIS2 article or section and confirm jurisdiction assumptions."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Set deadlines"
+instruction = "Derive incident-reporting and compliance deadlines and build the dated obligations register."
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag obligations with missing evidence, overdue deadlines, or unverified jurisdiction assumptions."
+[[workflow]]
+name = "Counsel review"
+instruction = "Route the obligations register and flagged gaps to counsel for review."
+gate = "review"

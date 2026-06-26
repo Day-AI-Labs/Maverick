@@ -29,7 +29,10 @@ wins, so anyone with both channel-allow and user-deny gets the deny.
 A ``max_risk`` ceiling (low/medium/high) can be set at the global,
 channel, or user layer; tools whose risk exceeds the tightest configured
 ceiling are dropped too. See ``tool_risk`` for the risk classification.
-Default: no ceiling, so behaviour is unchanged unless configured.
+Default: under **secure-by-default** the ceiling is ``high`` when none is
+configured, so CRITICAL-risk tools need an explicit raise; an explicit
+``[security] max_risk`` always wins, and ``secure_defaults = false`` /
+``MAVERICK_SECURE_DEFAULT=0`` restores the uncapped ("no ceiling") default.
 
 This lets a deployment lock down what an agent can do per-context
 without touching the kernel.
@@ -142,6 +145,17 @@ def resolve_max_risk(
         if isinstance(u, str) and u in RISK_LEVELS:
             candidates.append(u)
     if not candidates:
+        # Secure-by-default: with no configured ceiling, cap at 'high' so
+        # CRITICAL-risk tools (funds movement, mass-delete, prod writes) are not
+        # exposed without an explicit ceiling raise. High-risk tools stay
+        # available but are gated by the consent layer. No-op when secure
+        # defaults are off; an explicit [security] max_risk always wins above.
+        try:
+            from ..security_defaults import secure_by_default
+            if secure_by_default():
+                return "high"
+        except Exception:
+            pass
         return None
     return min(candidates, key=risk_rank)
 

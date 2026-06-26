@@ -11,3 +11,35 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "tail-spend consolidation plan"
+consumers = ["procurement_manager", "category_lead"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Extract spend"
+instruction = "Pull the period's low-value purchase transactions and group them by category, vendor, and requesting department."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Map to catalogs"
+instruction = "Match each fragmented purchase against preferred vendors and existing catalog contracts to find consolidation candidates."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Benchmark pricing"
+instruction = "Compare off-catalog unit prices to preferred-vendor and market rates to quantify potential savings."
+tools = ["web_search", "spreadsheet"]
+[[workflow]]
+name = "Flag maverick spend"
+instruction = "Isolate off-contract and duplicate-vendor purchases that should be redirected, noting volume thresholds that justify a new catalog item."
+tools = ["sql_query"]
+[[workflow]]
+name = "Draft plan"
+instruction = "Assemble a consolidation recommendation with savings estimates, target vendors, and assumptions clearly stated."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the consolidation plan to the procurement manager for review before any sourcing action."
+gate = "review"

@@ -15,8 +15,8 @@ tool-call caps, with every input, tool call, and output screened by the Agent
 Shield safety layer and every action recorded in a signed, append-only audit
 log. The runtime is self-hosted — laptop, Docker, VPS, Kubernetes, or
 air-gapped — and model-agnostic: 12 LLM providers, routable per role, so
-customers pick the models. It ships 100+ built-in tools, 14
-messaging/voice/wearable channels, and 7 sandbox backends, and can be driven
+customers pick the models. It ships 286 built-in tool modules, 17
+messaging/voice/wearable channels, and 9 sandbox backends, and can be driven
 from other languages over MCP and gRPC. Lightwork is developed by Day AI Labs.
 
 ### 50-word version
@@ -24,11 +24,11 @@ from other languages over MCP and gRPC. Lightwork is developed by Day AI Labs.
 Lightwork is a proprietary, commercially licensed, self-hosted AI agent runtime
 for enterprises. A recursive orchestrator decomposes goals and spawns
 specialist sub-agents that work in parallel under hard budget caps, behind a
-safety shield, with a signed audit log. It ships 1,118 prebuilt specialist
-agents across 26 business suites (every pack lint-audited for least-privilege
+safety shield, with a signed audit log. It ships 2,020 prebuilt specialist
+agents across 53 business suites (every pack lint-audited for least-privilege
 envelopes), a closed learning lifecycle — agents consolidate experience,
 provably improve, and every learned change is audited and reversible — plus
-100+ tools, 14 channels, 7 sandbox backends, and 12 LLM providers.
+286 built-in tool modules, 514 reusable skills, 17 channels, 9 sandbox backends, and 12 LLM providers.
 
 ### 25-word version
 
@@ -51,9 +51,14 @@ append-only audit log.
   retries, and a graded critic.
 - **Safety**: the Agent Shield layer screens at three chokepoints (input,
   tool call, output); hard budget caps and a killswitch bound every run.
-- **Surface area** (counts from `FEATURES.md`): 100+ built-in tools, including
-  ~47 SaaS connectors; 14 wired channels; 7 sandbox backends; 12 LLM
-  providers, routable per role.
+- **Surface area** (counts from `FEATURES.md`): 286 built-in tool modules and
+  514 reusable skills; 214 write-capable enterprise REST/GraphQL connectors
+  plus 37 read-only primary-source / public-data connectors (SEC EDGAR, FRED,
+  Treasury, World Bank, FDIC, Census, BLS, EIA, openFDA, NPPES,
+  ClinicalTrials, USAspending, SAM.gov, CourtListener, Federal Register,
+  GLEIF, OpenCorporates, NWS/NOAA, EPA, ...) and dedicated-module connectors
+  (Salesforce, HubSpot, Stripe, ServiceNow, Snowflake, ...); 17 wired
+  channels; 9 sandbox backends; 12 LLM providers, routable per role.
 - **Auditability**: signed, append-only audit log (`maverick audit verify`),
   SIEM export, encryption-at-rest, DSAR, data-retention enforcement.
 - **Distribution**: 8 packages on PyPI, a GHCR Docker image, PyInstaller

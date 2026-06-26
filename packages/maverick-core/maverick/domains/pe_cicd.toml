@@ -14,3 +14,31 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "pipeline change PR with passing checks"
+consumers = ["engineering_manager", "devops_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Map repo & pipeline"
+instruction = "Read the existing pipeline config and repo structure to understand current build, test, and gate stages."
+tools = ["read_file", "repo_map", "jenkins_read", "circleci_read"]
+[[workflow]]
+name = "Draft pipeline change"
+instruction = "Edit the pipeline definition in the sandbox to add or fix stages without disabling any existing gate."
+tools = ["apply_patch", "ast_edit", "str_replace_editor"]
+[[workflow]]
+name = "Run locally"
+instruction = "Execute the pipeline steps in the sandbox to verify the build and tests pass before opening a PR."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Verify gates intact"
+instruction = "Confirm no required gate was weakened or removed and that the verifier still blocks failing builds."
+tools = ["read_file"]
+[[workflow]]
+name = "Open PR"
+instruction = "Open a pull request with the pipeline change for human review and merge approval on the protected branch."
+gate = "approval"

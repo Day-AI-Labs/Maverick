@@ -80,7 +80,7 @@ You should see the tool list (10 tools), then the swarm's final answer.
 ## What works
 
 The MCP server exposes a small, stable control surface — **8
-`maverick_*` tools**, not the ~70 in-kernel tools. You drive the swarm;
+`maverick_*` tools**, not the 100+ in-kernel tools. You drive the swarm;
 the kernel runs the tools internally.
 
 - `maverick_start` `{title, description?, max_dollars?, max_wall_seconds?, max_depth?}`
@@ -95,7 +95,7 @@ the kernel runs the tools internally.
 - `maverick_fleet_recall` `{agent_id, vendor, query}` — governed, audited
   memory read for an external fleet agent.
 
-The ~70 in-kernel tools (web search, repo map, editor, Slack, S3, …)
+The 100+ in-kernel tools (web search, repo map, editor, Slack, S3, …)
 are **not** individually exposed over MCP — the swarm decides which to
 use while running a goal.
 

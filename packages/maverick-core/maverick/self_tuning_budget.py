@@ -79,11 +79,28 @@ class SelfTuningBudget:
         if self.path is not None:
             self._load()
 
+    def _cplock(self):
+        # Cross-process lock over the load-apply-save; no-op for a path-less
+        # store. Without it two processes each hold a stale cached _classes and
+        # the second _save clobbers the first's accumulated samples.
+        if self.path is None:
+            from contextlib import nullcontext
+            return nullcontext()
+        from .file_lock import cross_process_lock
+        return cross_process_lock(self.path)
+
+    def _reload_locked(self) -> None:
+        if self.path is None:
+            return
+        self._classes = {}
+        self._load()
+
     def observe(self, task_class: str, final_dollars: float) -> None:
         """Record what a finished run of ``task_class`` actually spent."""
         if not task_class or final_dollars < 0:
             return
-        with self._lock:
+        with self._lock, self._cplock():
+            self._reload_locked()
             c = self._classes.setdefault(task_class, _Class())
             c.count += 1
             if len(c.samples) < _RESERVOIR:
@@ -141,13 +158,9 @@ class SelfTuningBudget:
             p.parent.mkdir(parents=True, exist_ok=True)
             data = {n: {"count": c.count, "samples": c.samples}
                     for n, c in self._classes.items()}
-            tmp = p.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
-            os.replace(tmp, p)
-            try:
-                os.chmod(p, 0o600)
-            except OSError:
-                pass
+            # Unique temp + os.replace: a fixed ".tmp" collides between processes.
+            from .file_lock import atomic_write_text
+            atomic_write_text(p, json.dumps(data, sort_keys=True))
         except Exception:  # pragma: no cover -- persistence is best-effort
             log.debug("self-tuning budget save failed", exc_info=True)
 

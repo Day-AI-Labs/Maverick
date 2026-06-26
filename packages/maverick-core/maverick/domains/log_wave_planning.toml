@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "proposed pick-wave plan"
+consumers = ["warehouse_supervisor", "operations_manager"]
+cadence = "daily"
+gate = "approval"
+
+[[workflow]]
+name = "Pull open orders"
+instruction = "Query open orders with their carrier cutoffs, service levels, and ship-by deadlines from the WMS."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check labor & cutoffs"
+instruction = "Verify available labor by shift and zone against pick volume and confirm cutoff times from the carrier schedule documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build wave plan"
+instruction = "Group orders into pick waves that balance labor across zones while keeping every cutoff achievable."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag at-risk orders"
+instruction = "Identify orders that cannot make their cutoff under the proposed plan and surface them with the constraint that drives the miss."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to supervisor"
+instruction = "Submit the proposed waves to the warehouse supervisor for release approval before any wave is dropped to the floor."
+gate = "approval"

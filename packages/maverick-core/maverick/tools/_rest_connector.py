@@ -15,6 +15,7 @@ a service without hard-coding entities.
 from __future__ import annotations
 
 import base64
+import fnmatch
 import json
 import os
 from typing import Any
@@ -23,6 +24,25 @@ from urllib.parse import unquote, urlsplit
 from . import Tool, as_bool
 
 _WRITE_OPS = {"post", "put", "patch", "delete"}
+
+
+def _capability_egress_denial(url: str, args: dict[str, Any], *, name: str) -> str | None:
+    """Apply an active capability host scope to REST connector base URLs."""
+    raw_allow_hosts = args.get("_capability_allow_hosts") if isinstance(args, dict) else None
+    if not raw_allow_hosts:
+        return None
+    try:
+        host = urlsplit(url).hostname
+    except ValueError:
+        host = None
+    if not host:
+        return None
+    host_l = host.lower().rstrip(".")
+    for pat in raw_allow_hosts:
+        pat_l = str(pat).lower().rstrip(".")
+        if fnmatch.fnmatchcase(host_l, pat_l):
+            return None
+    return f"capability policy denies host {host!r} for tool {name!r}"
 
 
 def _env_config(name: str, base_url_env: str, token_env: str) -> tuple[str, str]:
@@ -87,12 +107,15 @@ def _rest_validate(
     norm,
 ) -> tuple[str, str] | str:
     """Validate op/path/confirm. Returns ``(op, path)`` or an ``ERROR/DRY RUN`` string."""
-    op = (args.get("op") or ("get" if read_only else "")).strip().lower()
+    # Coerce to str first: a malformed non-string op/path (e.g. the model emits
+    # an int or a list) must yield an ``ERROR:`` string, never raise into the
+    # agent loop -- ``(123).strip()`` would AttributeError otherwise.
+    op = str(args.get("op") or ("get" if read_only else "")).strip().lower()
     if read_only and op != "get":
         return f"ERROR: {name} is read-only -- only GET is permitted from this seat."
     if op not in ("get", "post", "put", "patch", "delete"):
         return f"ERROR: op must be get/post/put/patch/delete (got {op!r})"
-    path = (args.get("path") or "").strip()
+    path = str(args.get("path") or "").strip()
     if not path:
         return "ERROR: path is required"
     if read_only and not read_path_allowed(path):
@@ -116,15 +139,23 @@ def _rest_execute(
     config,
     headers,
     norm,
+    query_auth: str | None = None,
 ) -> str:
     """Perform the authenticated REST request and render the response."""
     params = args.get("params") if isinstance(args.get("params"), dict) else None
     body = args.get("body") if isinstance(args.get("body"), dict) else None
     try:
         base, tok = config()
+        # Query-param auth: the credential rides a query param (e.g. FRED's
+        # ``api_key``, Census's ``key``) rather than a header. Caller-supplied
+        # params win, so an agent can still override; missing -> we inject env.
+        if query_auth and tok:
+            params = {**(params or {}), query_auth: tok}
         url = f"{base}{norm(path)}"
         # Enterprise mode: a connector POSTs agent-supplied content to a
         # third-party SaaS host -- hold it to the egress boundary too.
+        if deny := _capability_egress_denial(url, args, name=name):
+            return f"ERROR: {deny}"
         from ..enterprise import enterprise_egress_denial
         deny = enterprise_egress_denial(url, tool=name)
         if deny:
@@ -168,6 +199,9 @@ def make_rest_tool(
     read_only: bool = False,
     allowed_read_paths: tuple[str, ...] | None = None,
     extra_headers_env: dict[str, str] | None = None,
+    keyless: bool = False,
+    query_auth: str | None = None,
+    default_base_url: str | None = None,
 ) -> Tool:
     """Build a thin authenticated-REST ``Tool``.
 
@@ -175,8 +209,19 @@ def make_rest_tool(
       - ``basic=True``  -> ``Authorization: Basic b64(token)`` (token is
         ``user:pass``; a bare token is treated as ``token:x``, the API-key
         convention used by Freshdesk / Greenhouse / Lever / BambooHR).
+      - ``keyless=True`` -> no credential is sent at all (public data APIs:
+        SEC EDGAR, the Federal Register, weather.gov, World Bank). Only the
+        base URL is required; ``token_env`` is ignored.
+      - ``query_auth="<param>"`` -> the credential rides a query parameter of
+        that name instead of a header (FRED ``api_key``, Census ``key``,
+        EIA ``api_key``). The key still comes from ``token_env``, never the
+        prompt, so it is not exposed to the model.
       - else ``{token_header}: {scheme} {token}`` (``scheme=""`` sends the raw
         token, e.g. Tableau's ``X-Tableau-Auth``).
+
+    ``default_base_url`` supplies a fixed public host so a keyless/public-data
+    connector works with zero config; an operator can still override it by
+    setting ``base_url_env``.
 
     ``extra_headers_env`` maps additional header names to env-var names for
     APIs that need a second credential alongside the token (Azure-APIM-style
@@ -194,9 +239,24 @@ def make_rest_tool(
     """
 
     def _config() -> tuple[str, str]:
-        return _env_config(name, base_url_env, token_env)
+        if not (keyless or query_auth or default_base_url):
+            return _env_config(name, base_url_env, token_env)
+        base = (os.environ.get(base_url_env, "").strip().rstrip("/")
+                or (default_base_url or ""))
+        if not base:
+            raise RuntimeError(f"{name} requires {base_url_env}.")
+        if keyless:
+            return base, ""
+        tok = os.environ.get(token_env, "").strip()
+        if not tok:
+            raise RuntimeError(f"{name} requires {token_env}.")
+        return base, tok
 
     def _headers(tok: str) -> dict[str, str]:
+        if keyless or query_auth:
+            # No auth header: the credential is either absent (public) or
+            # carried on the query string (query_auth), handled in _rest_execute.
+            return {"Accept": "application/json", "Content-Type": "application/json"}
         return _build_auth_headers(
             tok, basic=basic, token_header=token_header, scheme=scheme,
             extra_headers_env=extra_headers_env,
@@ -249,6 +309,7 @@ def make_rest_tool(
             config=_config,
             headers=_headers,
             norm=_norm,
+            query_auth=query_auth,
         )
 
     return Tool(name=name, description=description,
@@ -395,7 +456,8 @@ def make_graphql_tool(
         return _env_config(name, base_url_env, token_env)
 
     def _run(args: dict[str, Any]) -> str:
-        q = (args.get("query") or "").strip()
+        # Coerce to str: a non-string query must ERROR, not raise (see _rest_validate).
+        q = str(args.get("query") or "").strip()
         if not q:
             return "ERROR: query is required"
         try:

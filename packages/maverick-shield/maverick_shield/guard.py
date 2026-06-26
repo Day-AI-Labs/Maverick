@@ -16,6 +16,7 @@ but never fail-open SILENTLY; the constructor logs which backend is active.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -237,8 +238,67 @@ class Shield:
     def scan_input(self, text: str) -> ShieldVerdict:
         if not self._scan_input_enabled:
             return ShieldVerdict.allow()
-        verdict = self._scan_via_backend(text)
-        return self._apply_constitution(text, verdict)
+        verdict = self._apply_constitution(text, self._scan_via_backend(text))
+        # Decode pre-pass (C6): an attacker hides a payload from the literal
+        # detectors with base64 / hex / percent-encoding / Unicode homoglyphs.
+        # If the surface form was allowed, re-scan the de-obfuscated variants so
+        # an encoded ``rm -rf /`` is caught. Monotonic: only an allowed verdict
+        # is ever upgraded to a block, never the reverse. Runs under ANY active
+        # backend -- the variant scan goes through the LOCAL builtin floor
+        # (``_scan_builtin_floor``), so an SDK deployment also gets decode
+        # coverage without per-variant remote calls. (Previously skipped under
+        # the SDK backend, which left every encoding-evasion path uncovered on
+        # exactly the deployments that paid for the SDK.)
+        if verdict.allowed and self.backend != self.BACKEND_NONE:
+            decoded = self._scan_decoded_variants(text)
+            if decoded is not None:
+                return decoded
+        return verdict
+
+    def _scan_builtin_floor(self, text: str) -> ShieldVerdict:
+        """Scan ``text`` through the LOCAL builtin regex floor, regardless of the
+        active backend. The decode pre-pass uses this so de-obfuscated variants
+        are checked even under an SDK backend -- catching an encoded payload the
+        SDK only ever saw in obfuscated surface form -- WITHOUT multiplying the
+        SDK's (remote) calls by the variant count."""
+        if self.backend == self.BACKEND_NONE:
+            return ShieldVerdict.allow()
+        if not isinstance(text, str):
+            text = (bytes(text).decode("utf-8", "replace")
+                    if isinstance(text, (bytes, bytearray)) else str(text))
+        try:
+            blocked, severity, names = builtin_scan(
+                text, block_threshold=self.block_threshold)
+            if blocked:
+                return ShieldVerdict.block(
+                    severity=severity, reason="; ".join(names) or "builtin-rule")
+            return ShieldVerdict.allow()
+        except Exception as e:  # pragma: no cover -- detector bug must fail open
+            log.error("Shield builtin floor scan failed (fail-open): %s", e)
+            return ShieldVerdict.allow()
+
+    def _scan_decoded_variants(self, text: str) -> ShieldVerdict | None:
+        """Re-scan de-obfuscated variants of an allowed input through the local
+        builtin floor; return a BLOCK if any decoded layer trips a rule (the
+        payload the literal surface form hid), else ``None``. Fail-open: a
+        pre-pass error leaves the literal verdict standing. Escape hatch:
+        ``MAVERICK_SHIELD_NO_DECODE=1``."""
+        if (not isinstance(text, str)
+                or os.environ.get("MAVERICK_SHIELD_NO_DECODE", "").strip().lower()
+                in {"1", "true", "yes", "on"}):
+            return None
+        try:
+            from .deobfuscate import decoded_variants
+            for variant in decoded_variants(text):
+                v = self._apply_constitution(variant, self._scan_builtin_floor(variant))
+                if not v.allowed:
+                    return ShieldVerdict.block(
+                        severity=v.severity,
+                        reason="decoded-layer: " + "; ".join(v.reasons),
+                    )
+        except Exception as e:  # pragma: no cover -- pre-pass must never break scan
+            log.error("Shield decode pre-pass failed (fail-open): %s", e)
+        return None
 
     def _apply_constitution(self, text: str, verdict: ShieldVerdict) -> ShieldVerdict:
         """Compose operator-defined constitutional rules onto ``verdict``.
@@ -281,7 +341,16 @@ class Shield:
         # surface too -- the most dangerous sink. scan_input/scan_output do
         # this; omitting it here left the constitution unenforced exactly where
         # it matters most. Fail-open semantics preserved by _apply_constitution.
-        return self._apply_constitution(payload, verdict)
+        verdict = self._apply_constitution(payload, verdict)
+        # Decode pre-pass on the tool-call surface (C6): an encoded payload in a
+        # tool ARGUMENT must not bypass the detectors either. Same monotonic,
+        # local-builtin-floor, fail-open mechanism as scan_input; runs under any
+        # active backend.
+        if verdict.allowed and self.backend != self.BACKEND_NONE:
+            decoded = self._scan_decoded_variants(payload)
+            if decoded is not None:
+                return decoded
+        return verdict
 
     def scan_output(self, text: str, known_prompt: str | None = None) -> ShieldVerdict:
         if not self._scan_output_enabled:
@@ -332,13 +401,23 @@ class Shield:
                 extra_reasons += [f"constitution: {n}" for n in c_names]
 
         if not extra_reasons:
-            return verdict
-        if not verdict.allowed:
-            return ShieldVerdict.block(
+            final = verdict
+        elif not verdict.allowed:
+            final = ShieldVerdict.block(
                 severity=_max_severity(verdict.severity, extra_sev),
                 reason="; ".join(verdict.reasons + extra_reasons),
             )
-        return ShieldVerdict.block(severity=extra_sev, reason="; ".join(extra_reasons))
+        else:
+            final = ShieldVerdict.block(severity=extra_sev, reason="; ".join(extra_reasons))
+        # Decode pre-pass on the output surface too (C6): an encoded payload in
+        # tool OUTPUT must not bypass the detectors. Same monotonic,
+        # local-builtin-floor, fail-open mechanism as scan_input; runs under any
+        # active backend.
+        if final.allowed and self.backend != self.BACKEND_NONE:
+            decoded = self._scan_decoded_variants(text)
+            if decoded is not None:
+                return decoded
+        return final
 
 
 def _max_severity(a: str, b: str) -> str:

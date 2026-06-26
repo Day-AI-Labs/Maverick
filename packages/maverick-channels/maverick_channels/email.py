@@ -26,6 +26,7 @@ import email
 import email.utils
 import imaplib
 import logging
+import re
 import smtplib
 from email.message import EmailMessage
 
@@ -35,6 +36,35 @@ log = logging.getLogger(__name__)
 
 IMAP_TIMEOUT = 30.0
 SMTP_TIMEOUT = 30.0
+
+# Verdicts parsed out of the trusted `Authentication-Results` header the
+# receiving MX stamps on. We only act on an EXPLICIT negative (the strong spoof
+# signal); a domain that publishes no SPF/DKIM yields no verdict and is left to
+# the allowlist (that gap is inherent to IMAP -- there's no relay proof like the
+# Twilio/Meta HMAC channels have).
+_SPF_RE = re.compile(r"\bspf=(\w+)")
+_DKIM_RE = re.compile(r"\bdkim=(\w+)")
+
+
+def _authentication_verdict(msg) -> str:
+    """Classify a message's inbound authentication as 'pass' | 'fail' | 'none'.
+
+    'fail' means the receiving server evaluated SPF/DKIM and the result was an
+    explicit failure (spf=fail/softfail or dkim=fail) with nothing passing --
+    i.e. the From is very likely forged. 'none' covers no Authentication-Results
+    header, or only neutral/none results (a domain without published records).
+    """
+    headers = msg.get_all("Authentication-Results") or []
+    if not headers:
+        return "none"
+    text = " ".join(str(h).lower() for h in headers)
+    spf = _SPF_RE.findall(text)
+    dkim = _DKIM_RE.findall(text)
+    if "pass" in spf or "pass" in dkim:
+        return "pass"
+    if any(v in ("fail", "softfail") for v in spf) or "fail" in dkim:
+        return "fail"
+    return "none"
 
 
 class EmailChannel(Channel):
@@ -141,6 +171,17 @@ class EmailChannel(Channel):
                     mail.store(num, "+FLAGS", "\\Seen")
                 except Exception:  # pragma: no cover - flag store best-effort
                     log.warning("email: could not mark message %s seen", num)
+                # The allowlist downstream trusts the From address verbatim, but
+                # an IMAP From is unauthenticated and trivially forgeable. If the
+                # receiving server evaluated SPF/DKIM and it explicitly failed,
+                # the From is forged -- drop it before it can impersonate an
+                # allowlisted sender. (Marked \Seen above so it isn't re-fetched.)
+                if _authentication_verdict(m) == "fail":
+                    log.warning(
+                        "email: rejecting message with failed SPF/DKIM from=%s",
+                        from_addr,
+                    )
+                    continue
                 if from_addr and body:
                     out.append((from_addr, subject, body))
         return out

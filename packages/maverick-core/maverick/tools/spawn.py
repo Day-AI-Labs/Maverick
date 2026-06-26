@@ -683,12 +683,28 @@ def list_specialists_tool() -> Tool:
 
         domains = enabled_domains()
         flt = (args.get("suite") or "").strip()
+        query = (args.get("query") or "").strip()
+        # Query search: rank the WHOLE roster by relevance to the task, so an
+        # ambiguous or cross-suite request doesn't require guessing the suite.
+        if query:
+            from ..domain_router import rank_specialists
+            ranked = rank_specialists(query, k=12, domains=domains)
+            if flt:  # optionally scope the search to one suite/prefix
+                ranked = [(n, s) for n, s in ranked
+                          if (suite_for(n) or "other") == flt or n.startswith(flt)]
+            if not ranked:
+                return (f"No specialists matched query {query!r}. Call "
+                        "list_specialists (no arg) for the suites.")
+            rows = [f"- {n}: {(domains[n].description or '').strip()}" for n, _ in ranked]
+            return ("Most relevant specialists for the task (spawn the best fit with "
+                    "spawn_specialist):\n" + "\n".join(rows))
         if not flt:
             counts = Counter(suite_for(n) or "other" for n in domains)
             lines = [f"- {s}: {c}" for s, c in sorted(counts.items())]
             return (
-                "Specialist suites (call list_specialists with suite=<name> to list a "
-                "suite's packs, then spawn_specialist domain=<name>):\n" + "\n".join(lines)
+                "Specialist suites (search across all of them with "
+                "list_specialists query=<the task>, or list one with suite=<name>, "
+                "then spawn_specialist domain=<name>):\n" + "\n".join(lines)
             )
         rows = []
         for name in sorted(domains):
@@ -703,13 +719,20 @@ def list_specialists_tool() -> Tool:
         name="list_specialists",
         description=(
             "List the business-suite specialist domains you can spawn with "
-            "spawn_specialist. With no argument, returns each suite and its pack "
+            "spawn_specialist. Pass query=<the task> to SEARCH the whole roster "
+            "for the most relevant specialists (best for an ambiguous or cross-"
+            "suite request). With no argument, returns each suite and its pack "
             "count; pass suite=<name> (e.g. 'finance', 'legal') or a name prefix "
             "(e.g. 'gtm_') to list that suite's packs with descriptions."
         ),
         input_schema={
             "type": "object",
             "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The task in your own words; ranks the most "
+                                   "relevant specialists across all suites.",
+                },
                 "suite": {
                     "type": "string",
                     "description": "Optional: a suite name or pack-name prefix to filter by.",

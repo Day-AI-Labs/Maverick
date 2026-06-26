@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "data product lineage map"
+consumers = ["data_governance_lead", "data_engineering_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope product"
+instruction = "Identify the critical data product and its downstream consumers from source documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Trace upstream"
+instruction = "Trace each field back through transformations to its source tables by inspecting the production schema and queries."
+tools = ["sql_query"]
+[[workflow]]
+name = "Document hops"
+instruction = "Document every source, transformation, and freshness point of the end-to-end chain in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag undocumented hops, broken joins, or stale upstreams that break the chain."
+[[workflow]]
+name = "Hand to owner"
+instruction = "Route the lineage map to the data governance lead for review."
+gate = "review"

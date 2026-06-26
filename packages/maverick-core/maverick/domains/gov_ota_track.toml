@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "OTA milestone and deliverable status tracker"
+consumers = ["program_manager", "contracts_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull agreements"
+instruction = "Read the active other-transaction agreements and their milestone deliverable schedules from company records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map milestones"
+instruction = "Lay out each milestone's due date, payment trigger, and acceptance criteria in the tracker."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Assess status"
+instruction = "Compare reported progress against each milestone and flag slipping, at-risk, or unverified deliverables."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Surface actions"
+instruction = "List upcoming deliverables, payment events, and any modification triggers needing attention."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to PM"
+instruction = "Deliver the milestone status tracker to the program manager for review and sign-off."
+gate = "review"

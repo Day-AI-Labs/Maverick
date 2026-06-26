@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "layered audit findings & closure tracker"
+consumers = ["plant_manager", "quality_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Build schedule"
+instruction = "Pull the layered audit calendar and confirm which process layers and auditors are due this period."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Collect results"
+instruction = "Read completed audit checklists and capture pass, fail, and non-conformance observations per station."
+tools = ["read_file"]
+[[workflow]]
+name = "Track findings"
+instruction = "Tabulate open findings with severity, owner, due date, and aging against the closure target."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag overdue"
+instruction = "Highlight overdue or repeat findings and audits that were skipped or not signed off."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to management"
+instruction = "Send the findings and closure status to plant and quality management for review."
+gate = "review"

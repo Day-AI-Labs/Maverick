@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "buy-channel routing recommendation"
+consumers = ["procurement_manager", "category_buyer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture request"
+instruction = "Read the intake request and pull the item, quantity, requested supplier, and dollar value."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Check catalog"
+instruction = "Search knowledge and spend data for an existing catalog item or active contract that already covers this need."
+tools = ["knowledge_search", "sql_query", "spreadsheet"]
+[[workflow]]
+name = "Apply routing rules"
+instruction = "Compare the request against thresholds and contract coverage to decide catalog, contract, or sourcing as the channel."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Flag exceptions"
+instruction = "Surface any maverick spend, missing contract coverage, or threshold breach that forces a sourcing event."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route to buyer"
+instruction = "Hand the documented channel recommendation with cited evidence to the buyer who owns the award decision."
+gate = "review"

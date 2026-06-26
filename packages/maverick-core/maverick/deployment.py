@@ -160,6 +160,14 @@ def verify_deployment() -> list[GuaranteeCheck]:
     #    silently-absent or disabled shield means the boundary does not hold.
     checks.append(_verify_shield())
 
+    # 8. Data residency -- region pin coherence (#41). Passes (informational)
+    #    when residency strict mode is off, so this never breaks an enterprise
+    #    deployment that doesn't pin a region; only a strict + misconfigured pin
+    #    fails the guarantee (and aborts a required boot).
+    from .residency import check_residency
+    res_ok, res_detail = check_residency()
+    checks.append(GuaranteeCheck("Data residency", res_ok, res_detail))
+
     return checks
 
 

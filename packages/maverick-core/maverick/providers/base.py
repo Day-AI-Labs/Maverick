@@ -8,11 +8,41 @@ don't need to inherit from anything.
 """
 from __future__ import annotations
 
+import contextvars
 from collections.abc import Callable
 from typing import Any, Protocol
 
 from ..budget import Budget
 from ..llm import LLMResponse
+
+# Per-context sampling-temperature override. Best-of-N sets this per attempt so
+# each re-roll samples at a different temperature. A ContextVar -- not a process
+# -global env var -- so concurrent goals on one process never read each other's
+# temperature (the old os.environ["MAVERICK_TEMPERATURE"] approach raced). It is
+# copied across ``asyncio.to_thread``, so a sync provider running in a worker
+# thread still sees the value bound by the awaiting goal task.
+_sampling_temperature: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "maverick_sampling_temperature", default=None,
+)
+
+
+def sampling_temperature() -> float | None:
+    """The sampling temperature bound to the current context, or None."""
+    return _sampling_temperature.get()
+
+
+def set_sampling_temperature(value: float | None) -> contextvars.Token:
+    """Bind the sampling temperature for the current context; returns a token to
+    pass to :func:`reset_sampling_temperature`."""
+    return _sampling_temperature.set(value)
+
+
+def reset_sampling_temperature(token: contextvars.Token) -> None:
+    """Restore the temperature bound before ``set_sampling_temperature``."""
+    try:
+        _sampling_temperature.reset(token)
+    except (ValueError, LookupError):  # pragma: no cover -- stale/cross-context token
+        _sampling_temperature.set(None)
 
 
 def llm_http_timeout() -> Any | None:

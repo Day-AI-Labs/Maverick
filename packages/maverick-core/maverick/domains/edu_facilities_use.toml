@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "facility rental approval packet"
+consumers = ["facilities_manager", "risk_officer"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Intake request"
+instruction = "Read the rental request for requested space, date, group, headcount, and intended use."
+tools = ["read_file"]
+[[workflow]]
+name = "Check availability"
+instruction = "Check the requested space and time against the facility calendar and existing bookings for conflicts."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Verify policy"
+instruction = "Verify the use against facility-use policy and confirm required certificate of insurance, fees, and waivers are present."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag exceptions"
+instruction = "Flag any policy conflict, missing insurance, or fee discrepancy that blocks approval and note the required remedy."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Route the rental approval packet to the facilities manager to approve and confirm the booking."
+gate = "approval"

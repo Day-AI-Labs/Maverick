@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "store operational bulletin"
+consumers = ["store_manager", "store_associate"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Confirm change"
+instruction = "Read the source policy, promo, or operational change and confirm its effective date and scope."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Identify stores"
+instruction = "Query which stores and roles are affected so the bulletin targets the right recipients."
+tools = ["sql_query"]
+[[workflow]]
+name = "Draft bulletin"
+instruction = "Write a clear, action-oriented bulletin with what changed, what to do, and by when."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Track acknowledgment"
+instruction = "List the acknowledgment recipients and the deadline for confirmation."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Approve publish"
+instruction = "Route the final bulletin to store operations for approval before it is published."
+gate = "approval"

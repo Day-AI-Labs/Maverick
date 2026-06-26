@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "project closeout package"
+consumers = ["project_manager", "owner_rep"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull spec reqs"
+instruction = "Read the contract closeout specifications and submittal log to list every required O&M, warranty, and as-built deliverable."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Collect documents"
+instruction = "Gather submitted O&M manuals, warranties, and as-builts from project records and map each to its spec requirement."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Reconcile gaps"
+instruction = "Compare collected documents against the requirement list and flag every missing, expired, or unsigned closeout item."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build index"
+instruction = "Assemble the indexed closeout package with a table of contents tying each document to its spec section."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the assembled closeout package to the project manager for sign-off before transmittal to the owner."
+gate = "review"

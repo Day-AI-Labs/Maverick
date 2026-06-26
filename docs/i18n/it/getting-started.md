@@ -93,7 +93,7 @@ Riesegui la procedura guidata in qualsiasi momento:
 maverick init
 ```
 
-Oppure modifica direttamente `~/.maverick/config.toml`. La sezione `[models]` associa ogni ruolo di agente a una stringa `provider:model-id`. Per lo schema consulta [`configuration.md`](./configuration.md).
+Oppure modifica direttamente `~/.maverick/config.toml`. La sezione `[models]` associa ogni ruolo di agente a una stringa `provider:model-id`. Per lo schema consulta [`configuration.md`](../../configuration.md).
 
 ## Dove si trovano i dati
 

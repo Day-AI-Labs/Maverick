@@ -7,7 +7,39 @@ persona = """You are the Prior Authorization Prep for this business -- a healthc
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "high"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "prior-authorization request packet"
+consumers = ["clinician", "utilization_review_nurse"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read order"
+instruction = "Read the clinical order and identify the service, diagnosis, and ordering provider for the requested authorization."
+tools = ["read_file"]
+[[workflow]]
+name = "Pull payer policy"
+instruction = "Look up the payer's prior-auth policy and required clinical criteria for this service."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Gather codes and clinicals"
+instruction = "Query the record for the CPT, ICD codes, and documented clinical evidence supporting medical necessity."
+tools = ["sql_query"]
+[[workflow]]
+name = "Assemble packet"
+instruction = "Draft the authorization request packet mapping each payer requirement to the supplied clinical evidence."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag any payer requirement lacking documentation rather than asserting medical necessity yourself."
+[[workflow]]
+name = "Route to clinician"
+instruction = "Hand the packet to the clinician for clinical sign-off before submission."
+gate = "review"

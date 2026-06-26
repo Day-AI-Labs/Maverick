@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "MRB case package"
+consumers = ["quality_manager", "mrb_chair"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Gather NCRs"
+instruction = "Pull the open nonconformances and held lots awaiting material review board disposition."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Compile evidence"
+instruction = "Assemble inspection data, specs, and quarantine records for each case and cite every source."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Frame disposition"
+instruction = "Summarize each case with the candidate dispositions of use-as-is, rework, repair, return, or scrap and the rationale."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify hold"
+instruction = "Confirm the quality hold remains intact and no safety interlock is bypassed before the board meets."
+tools = ["sql_query"]
+[[workflow]]
+name = "Stage for board"
+instruction = "Route the staged case package to the MRB chair for the disposition decision."
+gate = "approval"

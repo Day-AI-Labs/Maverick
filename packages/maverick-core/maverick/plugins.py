@@ -56,10 +56,13 @@ Each plugin entry must conform to a contract:
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import re
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from .embeddable import no_cli
@@ -312,8 +315,180 @@ def _permission_violations(manifest, granted: set[str]) -> list[str]:
     return [r for r in requested if r not in granted]
 
 
+def _plugin_signing_policy() -> tuple[str | None, bool, set[str]]:
+    """Resolve the plugin-signing policy: ``(ca_root_pubkey, require, revoked)``.
+
+    Driven by ``[plugins] ca_root_pubkey`` / ``require_signing`` / ``ca_revoked``
+    in config, and forced on by enterprise mode. A configured root pubkey implies
+    verification is required (otherwise it would be set for nothing). Default
+    config sets none of these, so ``require`` is False and signing is a no-op --
+    behavior is unchanged unless an operator opts in.
+    """
+    root = ""
+    require = False
+    revoked: set[str] = set()
+    try:
+        from .config import load_config
+        cfg = (load_config() or {}).get("plugins") or {}
+        root = str(cfg.get("ca_root_pubkey") or "").strip()
+        require = bool(cfg.get("require_signing"))
+        rev = cfg.get("ca_revoked") or []
+        if isinstance(rev, (list, tuple)):
+            revoked = {str(s) for s in rev}
+    except Exception:  # pragma: no cover -- config never blocks discovery
+        pass
+    try:
+        from .enterprise import enterprise_enabled
+        if enterprise_enabled():
+            require = True
+    except Exception:  # pragma: no cover
+        pass
+    # Honor the CA's *signed* CRL (maverick plugin-ca revoke), not just the
+    # config list -- otherwise revoking a compromised publisher via the CA had
+    # zero effect at load time. A present-but-unverifiable CRL (tampered sig /
+    # bad JSON) is a security event: we can't prove a cert ISN'T revoked, so
+    # fail closed (revoked=None -> verify_artifact refuses every signed plugin).
+    # A genuinely-absent CRL just means "no CA revocations yet" -> config-only.
+    if root:
+        try:
+            from .plugin_ca import PluginCA
+            ca = PluginCA()
+            if ca._crl_path.exists():
+                revoked |= ca.revoked_serials(root_pub=root)
+        except Exception:
+            return (root or None, True, None)
+    return (root or None, require or bool(root), revoked)
+
+
+def _ep_module_name(ep) -> str:
+    module = (getattr(ep, "value", "") or "").split(":", 1)[0].strip()
+    if not module:
+        module = getattr(ep, "module", "") or ""
+    return module
+
+
+def _ep_module_file(ep):
+    """On-disk path of the entry point's module WITHOUT importing it."""
+    from pathlib import Path
+    module = _ep_module_name(ep)
+    dist = getattr(ep, "dist", None)
+    if not module or dist is None:
+        return None
+    rel = module.replace(".", "/")
+    candidates = {rel + ".py", rel + "/__init__.py"}
+    try:
+        files = list(dist.files or [])
+    except Exception:
+        return None
+    for f in files:
+        if str(f).replace("\\", "/") in candidates:
+            try:
+                return Path(dist.locate_file(f))
+            except Exception:
+                return None
+    return None
+
+
+def _ep_importable_files(ep) -> dict[str, str] | None:
+    """Return importable plugin Python files and sha256s without importing code."""
+    module = _ep_module_name(ep)
+    dist = getattr(ep, "dist", None)
+    if not module or dist is None:
+        return None
+    top = module.split(".", 1)[0]
+    module_rel = module.replace(".", "/")
+    try:
+        dist_files = list(dist.files or [])
+    except Exception:
+        return None
+    files: dict[str, str] = {}
+    for f in dist_files:
+        rel = str(f).replace("\\", "/")
+        is_module = rel in {module_rel + ".py", module_rel + "/__init__.py"}
+        is_package_file = rel.startswith(top + "/") and rel.endswith(".py")
+        if not (is_module or is_package_file):
+            continue
+        try:
+            data = Path(dist.locate_file(f)).read_bytes()
+        except Exception:
+            return None
+        files[rel] = hashlib.sha256(data).hexdigest()
+    if module_rel + ".py" not in files and module_rel + "/__init__.py" not in files:
+        return None
+    return dict(sorted(files.items()))
+
+
+def _plugin_manifest_digest(manifest: dict) -> str:
+    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _expected_plugin_signature_manifest(ep) -> dict | None:
+    files = _ep_importable_files(ep)
+    if not files:
+        return None
+    return {
+        "schema": "maverick-plugin-signature-manifest-v1",
+        "dist": _ep_dist_name(ep) or "",
+        "entry_point": getattr(ep, "name", "") or "",
+        "module": _ep_module_name(ep),
+        "files": files,
+    }
+
+
+def _ep_signature_bundle(ep):
+    """The plugin's signing bundle (plugin_ca: digest/sig/cert), or ``None``.
+
+    Convention: the publisher ships ``maverick_plugin.sig.json`` -- a
+    :func:`maverick.plugin_ca.sign_digest` bundle over a manifest that binds the
+    distribution, entry point, module path, and importable package file digests.
+    """
+    from pathlib import Path
+    dist = getattr(ep, "dist", None)
+    if dist is None:
+        return None
+    try:
+        files = list(dist.files or [])
+    except Exception:
+        return None
+    for f in files:
+        if Path(str(f)).name == "maverick_plugin.sig.json":
+            try:
+                import json
+                return json.loads(Path(dist.locate_file(f)).read_text("utf-8"))
+            except Exception:
+                return None
+    return None
+
+
+def _plugin_signature_ok(ep, root_pub: str | None, revoked: set[str]) -> bool:
+    """Fail-closed plugin-artifact verification against the configured CA root.
+
+    Returns True only when the plugin distribution carries a manifest bundle that
+    chains to ``root_pub`` (cert signed by root, unexpired, unrevoked, artifact
+    digest + signature valid). require_signing with no root anchor (``root_pub``
+    None) cannot be satisfied safely, so it returns False.
+    """
+    if not root_pub:
+        return False
+    from .plugin_ca import verify_digest
+    bundle = _ep_signature_bundle(ep)
+    manifest = _expected_plugin_signature_manifest(ep)
+    if not bundle or not manifest or bundle.get("manifest") != manifest:
+        return False
+    try:
+        res = verify_digest(
+            _plugin_manifest_digest(manifest), bundle, root_pub=root_pub, revoked=revoked
+        )
+    except Exception as e:  # pragma: no cover -- verifier bug must fail closed
+        log.warning("plugin signature verification error: %s", e)
+        return False
+    return bool(getattr(res, "ok", False))
+
+
 def _gate(ep, group: str, allow, name_dists, granted, enforce) -> bool:
-    """Decide whether ``ep`` may load: allowlist + name-squat + permission gate.
+    """Decide whether ``ep`` may load: allowlist + name-squat + permission +
+    signature gate.
 
     Returns True to load. Never invokes the entry point, so a rejected plugin's
     code never executes.
@@ -359,6 +534,22 @@ def _gate(ep, group: str, allow, name_dists, granted, enforce) -> bool:
     # plugin only), warned under "warn", ignored under "off" (default).
     from .plugin_lock import dist_allowed_by_lock
     if not dist_allowed_by_lock(dist):
+        return False
+    # Plugin signing CA ([plugins] ca_root_pubkey / require_signing, or enterprise
+    # mode): the entry point's module file must carry a bundle that chains to the
+    # configured root. Fail-closed -- a missing/invalid signature (or
+    # require_signing with no root anchor) refuses the load, so the plugin's code
+    # never runs. Default config enables none of this, so it's a no-op. This is
+    # the gate that makes plugin_ca.verify_artifact actually enforce trust.
+    root_pub, require_sig, revoked = _plugin_signing_policy()
+    if require_sig and not _plugin_signature_ok(ep, root_pub, revoked):
+        log.warning(
+            "plugin %s.%s (%s) failed signature verification; refusing to load. "
+            "Ship a signed maverick_plugin.sig.json bundle that chains to "
+            "[plugins] ca_root_pubkey, or disable require_signing for unsigned "
+            "plugins.",
+            group, name, dist or "unknown-dist",
+        )
         return False
     return True
 

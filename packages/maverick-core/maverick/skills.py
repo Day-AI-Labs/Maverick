@@ -100,7 +100,17 @@ class Skill:
             if not line:
                 continue
             if line.startswith("  - ") and current_key:
-                meta.setdefault(current_key, []).append(line[4:].strip())
+                bucket = meta.setdefault(current_key, [])
+                # A list item under a key that already holds a scalar value is
+                # malformed YAML (a key is a scalar OR a list, not both). Raise
+                # ValueError -- the documented failure mode for this function --
+                # rather than leaking AttributeError from str.append(), which an
+                # ``except ValueError`` around skill loading would not catch.
+                if not isinstance(bucket, list):
+                    raise ValueError(
+                        f"malformed skill frontmatter: '{current_key}:' has both a "
+                        "scalar value and a list item")
+                bucket.append(line[4:].strip())
             elif ":" in line:
                 k, _, v = line.partition(":")
                 k = k.strip()
@@ -262,7 +272,24 @@ def available_skills(skills_dir: Path = SKILLS_DIR) -> list[Skill]:
     if _builtin_skills_enabled():
         for s in load_builtin_skills():
             by_name[s.name] = s
+    # Re-verify signatures at LOAD when [skills] require_signed is set: a skill
+    # file dropped directly into SKILLS_DIR (or with its sig stripped after
+    # install) is attacker-writable and its body lands in the system prompt at
+    # recall. Install-time verification doesn't cover that. No-op in the default
+    # config (require_signed off); builtin (shipped) skills are trusted by
+    # packaging and exempt.
+    require_signed = False
+    try:
+        from . import config as _config
+        require_signed = bool(_config.get_skills().get("require_signed"))
+    except Exception:  # pragma: no cover -- never block recall on config
+        require_signed = False
     for s in load_skills(skills_dir):  # user dir wins on a name collision
+        if require_signed:
+            try:
+                _verify_skill_signature(s, require_signature=True)
+            except Exception:
+                continue  # unsigned/untrusted under require_signed -> not recalled
         by_name[s.name] = s
     return list(by_name.values())
 

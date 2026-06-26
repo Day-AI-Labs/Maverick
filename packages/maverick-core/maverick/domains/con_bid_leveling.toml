@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "bid leveling matrix"
+consumers = ["estimator", "project_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define scope baseline"
+instruction = "Read the bid package scope of work and drawings to establish the common scope every subcontractor must price."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Extract bid lines"
+instruction = "Pull each subcontractor's pricing, inclusions, exclusions, and qualifications into the leveling matrix."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Normalize scope"
+instruction = "Add or deduct for scope gaps, exclusions, and alternates so every bid reflects the identical baseline scope for fair comparison."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag outliers"
+instruction = "Identify bids that are abnormally low from missed scope or that carry disqualifying exclusions and assumptions."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Estimator review"
+instruction = "Route the leveled matrix with the apples-to-apples comparison to the estimator for award recommendation review."
+gate = "review"

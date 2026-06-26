@@ -1,13 +1,18 @@
 """The knowledge engine: ingest documents into a per-domain collection and
 retrieve relevant chunks.
 
-Ingestion is shield-scanned so a poisoned document is caught at the door -- RAG
+Ingestion is screened so a poisoned document is caught at the door -- RAG
 poisoning is precisely what the agent compartments defend against, so the
-knowledge layer scans on the way in rather than only at query time.
+knowledge layer scans on the way in rather than only at query time. A configured
+Shield does the heavy lifting; a built-in high-signal injection-marker screen
+ALWAYS runs too, so the common no-Shield default still rejects the obvious
+prompt-injection payloads (mirrors fleet_memory / memory_guard, which screen
+external writes regardless of whether a Shield is wired).
 """
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -17,6 +22,27 @@ from .parse import extract_text
 from .store import SqliteVectorStore
 
 log = logging.getLogger(__name__)
+
+# Built-in injection tripwire applied to every ingested chunk, even when no
+# Shield is configured. maverick-knowledge is standalone (no maverick-core dep),
+# so it can't reuse memory_guard.injection_markers; this is a deliberately small,
+# high-signal subset of the SAME phrases -- instruction-override, role-reassign,
+# fake role tags, secret-exfiltration, and safety-override. The shell/base64
+# patterns memory_guard also carries are intentionally OMITTED here: a knowledge
+# base legitimately ingests engineering docs full of `rm -rf` / `curl` / base64,
+# and silently dropping those would harm recall. A real Shield (when passed)
+# covers the rest.
+_INJECTION_RE = re.compile(
+    r"\b(?:ignore|disregard|forget)\b.{0,30}\b(?:previous|prior|above|earlier|all)\b"
+    r".{0,30}\b(?:instruction|message|context|prompt|rule)"
+    r"|\byou\s+are\s+now\b"
+    r"|\bnew\s+(?:system\s+)?(?:instruction|prompt|directive|rule)"
+    r"|</?\s*(?:system|assistant|developer)\s*>"
+    r"|\b(?:reveal|print|show|leak|exfiltrate)\b.{0,40}"
+    r"\b(?:system\s+prompt|your\s+instruction|secret|api[\s_-]?key|password|token|credential)"
+    r"|\boverride\b.{0,20}\b(?:safety|guard|shield|policy|governance)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -62,8 +88,14 @@ class KnowledgeBase:
         self.close()
 
     def _safe(self, text: str) -> bool:
-        """Shield-scan a chunk on the way in. Fail-open: a scanner error never
-        blocks ingestion, mirroring the kernel's shield contract."""
+        """Screen a chunk on the way in. The built-in injection-marker tripwire
+        ALWAYS runs (even with no Shield wired, the common default), so a poisoned
+        document can't ride into prompts via search_formatted. A configured Shield
+        runs in addition. Fail-open ONLY on a Shield scanner error, mirroring the
+        kernel's shield contract -- the marker screen itself never errors."""
+        if _INJECTION_RE.search(text):
+            log.warning("knowledge: dropping chunk with injection marker on ingest")
+            return False
         if self.shield is None:
             return True
         try:

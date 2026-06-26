@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "waste stream & disposal compliance log"
+consumers = ["ehs_manager", "facilities_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Gather manifests"
+instruction = "Pull waste stream records, disposal manifests, and vendor compliance documents from company files."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify vendor compliance"
+instruction = "Confirm each disposal vendor's permits and manifests against regulatory requirements for the relevant waste class."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Tabulate streams"
+instruction = "Compile a log of each waste stream with volume, disposal method, vendor, and manifest status."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag deficiencies"
+instruction = "Flag any waste stream with a missing manifest, expired vendor permit, or unverified disposal documentation."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for review"
+instruction = "Submit the compliance log and flagged deficiencies to the EHS manager before any regulatory filing."
+gate = "review"

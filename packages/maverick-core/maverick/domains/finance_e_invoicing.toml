@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "E-invoicing mandate matrix by entity"
+consumers = ["tax_manager", "accounting_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "List entities"
+instruction = "Read the legal-entity register and current invoicing setup from the company records."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Map mandates"
+instruction = "Map each entity's country e-invoicing mandate, format requirement, and effective date from sourced policy documents."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Compare current invoicing formats against each mandate and flag entities that are non-compliant or approaching a go-live date."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand off matrix"
+instruction = "Hand the mandate matrix to the tax manager for review before any filing or certification."
+gate = "review"

@@ -56,6 +56,31 @@ class TestGoals:
         assert called[0][1] == 1.0
 
 
+    def test_idempotency_key_dedups_create(self, monkeypatch):
+        # A retried POST carrying the same Idempotency-Key must return the
+        # ORIGINAL goal and dispatch only one run (no double-create/double-bill).
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+        import maverick.runner as runner_mod
+        called = []
+        monkeypatch.setattr(
+            runner_mod, "run_goal_in_thread",
+            lambda goal_id, *a, **k: called.append(goal_id),
+        )
+        headers = {"Idempotency-Key": "abc-123"}
+        r1 = client.post("/api/v1/goals", json={"title": "idem goal"}, headers=headers)
+        r2 = client.post("/api/v1/goals", json={"title": "idem goal"}, headers=headers)
+        assert r1.status_code == 201 and r2.status_code == 201
+        assert r1.json()["id"] == r2.json()["id"]   # same goal returned
+        assert len(called) == 1                      # only one run dispatched
+
+    def test_distinct_idempotency_keys_create_distinct_goals(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+        import maverick.runner as runner_mod
+        monkeypatch.setattr(runner_mod, "run_goal_in_thread", lambda *a, **k: None)
+        r1 = client.post("/api/v1/goals", json={"title": "g"}, headers={"Idempotency-Key": "k1"})
+        r2 = client.post("/api/v1/goals", json={"title": "g"}, headers={"Idempotency-Key": "k2"})
+        assert r1.json()["id"] != r2.json()["id"]
+
     def test_create_rejects_invalid_template_name(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
         resp = client.post("/api/v1/goals", json={

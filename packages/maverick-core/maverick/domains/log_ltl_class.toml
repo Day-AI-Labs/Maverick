@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "NMFC freight-class audit"
+consumers = ["transportation_manager", "billing_analyst"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull shipment specs"
+instruction = "Query billed shipments with declared class, weight, dimensions, and packaging for the audit set."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute density"
+instruction = "Calculate density in pounds per cubic foot for each item from its dimensions and weight in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify NMFC class"
+instruction = "Match computed density to the correct NMFC classification using the published class tables via knowledge_search."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Flag reclass risk"
+instruction = "Identify shipments where declared class diverges from verified class and estimate the reclass charge exposure."
+[[workflow]]
+name = "Route audit"
+instruction = "Send the freight-class audit with corrections to the transportation manager for review."
+gate = "review"

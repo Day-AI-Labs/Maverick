@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gtm"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "deal registration disposition log"
+consumers = ["channel_manager", "partner_account_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Read submission"
+instruction = "Pull the partner's deal registration submission with account, opportunity, and partner-of-record details."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Load program rules"
+instruction = "Retrieve the current deal registration program terms, eligibility windows, and tier rules from approved sources."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Conflict check"
+instruction = "Compare the submitted account against existing registrations and direct opportunities to detect overlap or duplicate claims."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Score eligibility"
+instruction = "Apply program rules to determine approve, deny, or contest and document the cited rule for each outcome."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route disposition"
+instruction = "Route the proposed registration disposition to the channel manager for approval before it is recorded."
+gate = "approval"

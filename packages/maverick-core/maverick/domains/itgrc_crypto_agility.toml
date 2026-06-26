@@ -18,3 +18,27 @@ deliverable = "Crypto-agility posture & CBOM"
 consumers = ["security_analyst", "ciso"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Inventory crypto"
+instruction = "Read the estate's crypto configurations and dependency manifests to inventory algorithms, ciphers, and cert chains."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check standards"
+instruction = "Compare in-use primitives against current NIST and PQC migration guidance for deprecated or quantum-vulnerable algorithms."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Assess agility"
+instruction = "Assess swap-readiness by surfacing hard-coded algorithms, pinned cert chains, and hybrid-KEM gaps."
+tools = ["read_file"]
+[[workflow]]
+name = "Build CBOM"
+instruction = "Compile the Cryptographic Bill of Materials and verify every entry traces back to a real configuration source."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Draft remediation"
+instruction = "Draft prioritized remediation recommendations for the human owner without changing any cipher or key configuration."
+[[workflow]]
+name = "Route to CISO"
+instruction = "Hand the posture report and CBOM to the security analyst and CISO for sign-off."
+gate = "review"

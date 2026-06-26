@@ -184,3 +184,10 @@ def test_legacy_lock_without_hashes_is_version_only(tmp_path, monkeypatch):
     # Even if current content "differs", there's no pinned hash to compare -> allowed.
     monkeypatch.setattr(pl, "_dist_content_hash", lambda d: "whatever")
     assert pl.dist_allowed_by_lock("acme-tools") is True
+
+
+def test_write_lock_leaves_no_temp_residue(tmp_path):
+    lock = tmp_path / "plugins.lock.json"
+    pl.write_lock(lock)
+    assert lock.exists()
+    assert list(tmp_path.glob("*.tmp")) == []  # unique temp + replace, no leftover

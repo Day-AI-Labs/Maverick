@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "forecast accuracy backtest report"
+consumers = ["analytics_lead", "finance_planning"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull forecasts"
+instruction = "Query the historical forecasts and the matching realized actuals for the backtest window."
+tools = ["sql_query"]
+[[workflow]]
+name = "Confirm definitions"
+instruction = "Ground each metric against its documented definition and freshness via knowledge_search and label assumptions."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute errors"
+instruction = "Compute error measures such as MAPE and bias per horizon and segment in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Attribute drivers"
+instruction = "Attribute error honestly to data, model, or business causes and flag overfit or look-ahead leakage."
+[[workflow]]
+name = "Hand to lead"
+instruction = "Route the accuracy report with assumptions and unknowns to the analytics lead for sign-off."
+gate = "review"

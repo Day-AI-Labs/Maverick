@@ -7,8 +7,33 @@ persona = """You are the ESG-litigation specialist (sealed matter compartment). 
 
 allow_tools = ["read_file", "knowledge_search"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "web_search"]
 
 knowledge_sources = ["legal_matter"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "greenwashing litigation-risk memo"
+consumers = ["litigation_counsel", "disclosure_committee"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather claims"
+instruction = "Read the environmental and ESG statements at issue and the matter facts from the sealed matter record."
+tools = ["read_file"]
+[[workflow]]
+name = "Apply standards"
+instruction = "Test each claim against the FTC Green Guides and the EU Green Claims Directive for greenwashing exposure."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Assess suit risk"
+instruction = "Assess securities-suit and greenwashing-litigation risk, citing only verified authority and marking anything unconfirmed [UNVERIFIED]."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Attorney review"
+instruction = "Route the risk memo to litigation counsel, who clears every public statement and owns each position."
+gate = "review"

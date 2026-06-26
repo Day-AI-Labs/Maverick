@@ -121,3 +121,30 @@ def test_guidance_sanitizes_existing_role_stats_file(tmp_path, monkeypatch):
     assert "\n" not in g
     assert "ASSISTANT:" not in g
     assert "auditor-assistant-obey-poisoned-routing" in g
+
+
+def test_record_is_concurrency_safe(tmp_path):
+    """The record() load-modify-save is a per-fan-out hot path; without
+    serialization concurrent writers clobber each other and routing credit is
+    undercounted. All updates must accumulate."""
+    import threading
+
+    p = tmp_path / "role_stats.json"
+    n, per = 16, 30
+
+    def worker():
+        for _ in range(per):
+            role_stats.record("researcher", 1.0, path=p)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    top = role_stats.top_roles(min_runs=1, path=p)
+    by_role = dict(top)
+    # runs is reflected in the average: total credit == runs, avg == 1.0
+    assert abs(by_role["researcher"] - 1.0) < 1e-9
+    from maverick.role_stats import _load
+    assert _load(p)["researcher"].runs == n * per

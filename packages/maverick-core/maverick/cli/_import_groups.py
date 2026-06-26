@@ -41,7 +41,14 @@ def _load_raws(from_file: str | None, source: str) -> list[dict]:
     from ..automation_import import get_importer
     if from_file:
         from pathlib import Path
-        data = _json.loads(Path(from_file).read_text(encoding="utf-8"))
+        try:
+            text = Path(from_file).read_text(encoding="utf-8")
+        except OSError as e:
+            raise click.ClickException(f"cannot read {from_file}: {e}") from e
+        try:
+            data = _json.loads(text)
+        except ValueError as e:
+            raise click.ClickException(f"{from_file} is not valid JSON: {e}") from e
         if isinstance(data, dict):
             # Accept either a bare definition or an API envelope {"data": [...]}.
             return data.get("data", [data]) if "data" in data else [data]
@@ -62,13 +69,14 @@ def _load_raws(from_file: str | None, source: str) -> list[dict]:
 @click.pass_context
 def import_run_cmd(ctx, source, from_file, dry_run, activate_schedules, as_json) -> None:
     """Import automations from SOURCE (e.g. ``n8n``) into Lightwork templates."""
-    from ..automation_import import ImporterError, enabled, materialize, translate_all
+    from ..automation_import import ImporterError, enabled, get_importer, materialize, translate_all
     if not enabled():
         raise click.ClickException(
             "automation import is off; enable [automation_import] in config.toml "
             "or set MAVERICK_AUTOMATION_IMPORT=1"
         )
-    try:
+    try:  # validate the source up-front so --from-file with a bad source is a
+        get_importer(source)  # clean error, not an uncaught ImporterError later
         raws = _load_raws(from_file, source)
     except ImporterError as e:
         raise click.ClickException(str(e)) from e

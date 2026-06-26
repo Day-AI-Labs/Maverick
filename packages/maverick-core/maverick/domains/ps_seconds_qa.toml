@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "second-partner review tracker"
+consumers = ["engagement_partner", "quality_lead"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Identify deliverables"
+instruction = "Query in-flight deliverables and screen them against the criteria that mandate a second-partner review."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Assemble review file"
+instruction = "Pull the deliverable and supporting workpapers needed for the reviewing partner to assess it."
+tools = ["read_file"]
+[[workflow]]
+name = "Route and log"
+instruction = "Assign each flagged item to an independent second partner and record the open review in the tracker."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Track sign-offs"
+instruction = "Monitor outstanding reviews and escalate any deliverable nearing release without a recorded sign-off."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Confirm clearance"
+instruction = "Confirm the second partner's sign-off is recorded before the deliverable is cleared for release."
+gate = "approval"

@@ -55,6 +55,15 @@ def test_referenced_files_exist():
 _URL_RE = re.compile(r"https?://[^\s\"'`)]+")
 
 
+def test_content_script_guards_message_sender():
+    # The page-context handler must reject messages whose sender is not THIS
+    # extension, so a future externally_connectable change can't let an attacker
+    # page harvest page context.
+    src = (EXT_DIR / "content.js").read_text(encoding="utf-8")
+    assert "chrome.runtime.id" in src, "content.js: no sender-id guard on onMessage"
+    assert "getPageContext" in src
+
+
 def test_no_remote_code_in_scripts():
     for js in EXT_DIR.glob("*.js"):
         src = js.read_text(encoding="utf-8")

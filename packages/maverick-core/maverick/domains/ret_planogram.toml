@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "planogram compliance audit"
+consumers = ["store_operations_lead", "category_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull planogram"
+instruction = "Retrieve the approved planogram and the submitted store-set photos and audit entries."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compare sets"
+instruction = "Compare the photographed shelf set against the planogram for facings, position, and product presence."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Score compliance"
+instruction = "Score each section, listing voids, misfacings, and unauthorized placements with severity."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Draft findings"
+instruction = "Summarize non-compliant fixtures and the specific corrective action each store should take."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Send the compliance audit to the store operations lead for review before distribution."
+gate = "review"

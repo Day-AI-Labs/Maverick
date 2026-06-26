@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "tuned size curve recommendations"
+consumers = ["buyer", "allocation_analyst"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull size sales"
+instruction = "Query size-level sell-through, stockout, and markdown data by style and store cluster."
+tools = ["sql_query"]
+[[workflow]]
+name = "Adjust for stockouts"
+instruction = "Correct demand for sizes that broke early so the curve reflects true demand, not lost sales."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Fit size curve"
+instruction = "Derive the recommended buy-curve percentage per size from the corrected demand signal."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Validate evidence"
+instruction = "Verify each recommended shift is backed by sufficient unit volume and cite the supporting data."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Route to buyer"
+instruction = "Hand the tuned size-curve recommendations to the buyer for review before they enter the next buy."
+gate = "review"

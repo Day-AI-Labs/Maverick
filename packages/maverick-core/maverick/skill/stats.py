@@ -9,10 +9,12 @@ that rarely helps and never wins can be evicted. This closes the learning
 loop — the library curates itself instead of only growing.
 
 Storage: ``~/.maverick/skill_stats.json`` (chmod 600), a flat map of
-``name -> {uses, wins, losses, last_used}``. Reads/writes go through a
-process lock and are fully fail-safe — stats are an optimization, never a
-correctness dependency, so any I/O error degrades to "no signal" (neutral
-weight) and never blocks a run.
+``name -> {uses, wins, losses, last_used}``. Writes are atomic (temp +
+``os.replace``) and the recording load-modify-save is serialized by an
+in-process lock **plus a cross-process flock** (the dashboard and serve are
+separate processes hitting this per run); they are fully fail-safe — stats are
+an optimization, never a correctness dependency, so any I/O error degrades to
+"no signal" (neutral weight) and never blocks a run.
 
 All recording is opt-in-friendly: disable the decay multiplier with
 ``MAVERICK_SKILL_DECAY=0`` and ranking falls back to relevance only.
@@ -95,15 +97,11 @@ def _load(path: Path) -> dict[str, SkillStat]:
 
 
 def _save(stats: dict[str, SkillStat], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({k: asdict(v) for k, v in stats.items()}),
-        encoding="utf-8",
-    )
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+    # Atomic temp+replace: a bare write_text truncates in place, so a concurrent
+    # _load() reader sees a half-written file -> its JSONDecodeError is swallowed
+    # as an empty store and the accumulated use/win/loss + eviction state is lost.
+    from ..file_lock import atomic_write_text
+    atomic_write_text(path, json.dumps({k: asdict(v) for k, v in stats.items()}))
 
 
 def record_use(names: list[str], path: Path | None = None) -> None:
@@ -111,7 +109,10 @@ def record_use(names: list[str], path: Path | None = None) -> None:
     if not _enabled() or not names:
         return
     path = _resolve(path)
-    with _lock:
+    # In-process lock + cross-process flock: hit per run from separate processes
+    # (dashboard + serve); without the flock two writers lose use/win/loss counts.
+    from ..file_lock import cross_process_lock
+    with _lock, cross_process_lock(path):
         try:
             stats = _load(path)
             now = time.time()
@@ -132,7 +133,8 @@ def record_outcome(
     if not _enabled() or not names:
         return
     path = _resolve(path)
-    with _lock:
+    from ..file_lock import cross_process_lock
+    with _lock, cross_process_lock(path):
         try:
             stats = _load(path)
             for n in names:

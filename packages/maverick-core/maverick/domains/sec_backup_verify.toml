@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "backup and restore verification report"
+consumers = ["security_manager", "infra_owner", "compliance_officer"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull job logs"
+instruction = "Query backup job logs and schedules to confirm every protected system ran within its required window."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Check against policy"
+instruction = "Compare job outcomes and retention against the backup policy and RPO targets to flag missed or partial runs."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify restore tests"
+instruction = "Confirm scheduled restore tests completed successfully and capture the integrity evidence for each."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Highlight failed jobs, stale backups, and overdue restore tests that break recoverability commitments."
+tools = ["sql_query"]
+[[workflow]]
+name = "Submit evidence"
+instruction = "Compile the verification report with evidence and gaps and route to the security manager for sign-off."
+gate = "review"

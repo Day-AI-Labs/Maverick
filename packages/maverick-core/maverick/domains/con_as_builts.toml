@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "as-built incorporation status log"
+consumers = ["project_manager", "cad_drafter"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Collect field markups"
+instruction = "Gather all field red-line markups submitted by trades against the current contract drawing set."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify coverage"
+instruction = "Check each markup against the drawing register to confirm every affected sheet has a corresponding as-built submission."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Track incorporation"
+instruction = "Log the status of each markup from field receipt through drafting into the record set in the tracking spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Identify sheets with closed-out work but missing or unincorporated as-built markups that would leave the record set incomplete."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the incorporation status log with outstanding gaps to the project manager for sign-off."
+gate = "review"

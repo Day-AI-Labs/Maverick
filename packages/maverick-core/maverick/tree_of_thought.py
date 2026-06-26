@@ -19,12 +19,11 @@ import logging
 import os
 from dataclasses import dataclass
 
+from ._envparse import env_bool
 from .budget import Budget, BudgetExceeded
 from .llm import LLM
 
 log = logging.getLogger(__name__)
-
-_TRUE = {"1", "true", "yes", "on"}
 
 
 def enabled() -> bool:
@@ -34,7 +33,7 @@ def enabled() -> bool:
     Turn it on with ``MAVERICK_TREE_OF_THOUGHT=1`` or
     ``[planning] mode = "tree_of_thought"`` in ``~/.maverick/config.toml``.
     """
-    if (os.environ.get("MAVERICK_TREE_OF_THOUGHT") or "").strip().lower() in _TRUE:
+    if env_bool("MAVERICK_TREE_OF_THOUGHT"):
         return True
     try:
         from .config import load_config

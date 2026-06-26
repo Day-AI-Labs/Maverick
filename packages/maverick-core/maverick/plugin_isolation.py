@@ -40,18 +40,37 @@ _MODES = ("none", "subprocess", "subinterpreter")
 _TIMEOUT_S = 60.0
 
 
+def _enterprise_default_mode() -> str:
+    """The isolation default when nothing is configured: ``subprocess`` (out-of-
+    process) under enterprise mode so a regulated deployment doesn't run third-
+    party plugin code in-process by default; ``none`` for single-tenant/dev."""
+    try:
+        from .enterprise import enterprise_enabled
+        return "subprocess" if enterprise_enabled() else "none"
+    except Exception:  # pragma: no cover -- never block plugin exec on a lookup
+        return "none"
+
+
 def isolation_mode() -> str:
-    """Configured isolation mode (default "none" = today's behavior)."""
+    """Configured isolation mode.
+
+    ``MAVERICK_PLUGIN_ISOLATION`` env wins over ``[plugins] isolation`` config.
+    When neither is set the default depends on the deployment profile: enterprise
+    mode defaults to ``subprocess`` (see :func:`_enterprise_default_mode`), dev to
+    ``none`` (today's in-process behavior). An explicit setting always wins."""
     env = os.environ.get("MAVERICK_PLUGIN_ISOLATION", "").strip().lower()
     if env in _MODES:
         return env
     try:
         from .config import load_config
-        mode = str(((load_config() or {}).get("plugins") or {})
-                   .get("isolation", "none")).strip().lower()
-        return mode if mode in _MODES else "none"
+        raw = ((load_config() or {}).get("plugins") or {}).get("isolation")
     except Exception:  # pragma: no cover -- config never blocks plugin exec
-        return "none"
+        return _enterprise_default_mode()
+    if raw is not None:
+        mode = str(raw).strip().lower()
+        if mode in _MODES:
+            return mode
+    return _enterprise_default_mode()
 
 
 def _subinterpreters_available() -> bool:

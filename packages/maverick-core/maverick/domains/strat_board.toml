@@ -7,6 +7,7 @@ persona = """You are the Board & Governance specialist (sealed, confidential): d
 
 allow_tools = ["read_file", "knowledge_search"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "web_search"]
 
 # Suite-level grounding fallback: docs uploaded to the "strat" collection
@@ -14,3 +15,31 @@ deny_tools = ["shell", "write_file", "web_search"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "board pre-read package"
+consumers = ["board_chair", "corporate_secretary", "ceo"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Confirm agenda"
+instruction = "Read the meeting agenda and prior minutes to scope which materials and governance follow-ups this board cycle requires."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather inputs"
+instruction = "Collect the underlying reports and decision items from the company's sealed documents to assemble the pre-reads."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Draft materials"
+instruction = "Draft the board deck, pre-reads, and minutes shells and reconcile every figure against its source document."
+tools = ["read_file"]
+[[workflow]]
+name = "Track actions"
+instruction = "Update the governance action log so prior board resolutions and open items are reflected without omission."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to secretary"
+instruction = "Deliver the pre-read package to the Corporate Secretary and Board Chair for sign-off before distribution."
+gate = "review"

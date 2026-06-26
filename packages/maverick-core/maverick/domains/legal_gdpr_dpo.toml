@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "DPO compliance register update"
+consumers = ["data_protection_officer", "general_counsel"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull processing records"
+instruction = "Read the current RoPA, DPIA log, and any open breach tickets from the company's legal knowledge base."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile activities"
+instruction = "Verify each processing activity against its RoPA entry and flag missing, stale, or undocumented data flows."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check breach clocks"
+instruction = "Compute the 72-hour notification clock for each open breach and cite the governing GDPR article and jurisdiction assumption."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Track DPIA status"
+instruction = "List each high-risk activity's DPIA status and flag any requiring assessment before processing begins."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route to DPO"
+instruction = "Compile the register update with citations and open items and route to the DPO for sign-off."
+gate = "review"

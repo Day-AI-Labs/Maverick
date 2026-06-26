@@ -10,3 +10,32 @@ max_risk = "medium"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["platform"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "EVOLVE transition recommendation packet"
+consumers = ["evolve_operator", "platform_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Read loop records"
+instruction = "Pull the dreaming, hindsight, and proof records for the candidate transition from the loop's own logs."
+tools = ["knowledge_search", "read_file", "sql_query"]
+[[workflow]]
+name = "Verify proof"
+instruction = "Check that proof artifacts are present, signed, and tied to the exact change under consideration."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Confirm snapshot"
+instruction = "Confirm a rollback snapshot exists for the current state so the transition is reversible."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Audit integrity"
+instruction = "Verify the signed learning audit chain is complete and unbroken up to this point and stop if evidence is incomplete."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Stage transition"
+instruction = "Stage the promotion or rollback with its cited evidence and route it to the human gate without promoting it yourself."
+tools = ["spreadsheet"]
+gate = "approval"

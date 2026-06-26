@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "performance improvement plan draft"
+consumers = ["people_manager", "hr_business_partner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather evidence"
+instruction = "Read the employee's role expectations, prior reviews, and documented performance gaps to ground the plan."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Confirm standards"
+instruction = "Verify the cited expectations against the current job description and PIP policy so the bar is job-related and consistent."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft plan"
+instruction = "Draft specific, measurable improvement goals, support resources, and a review timeline using only job-related criteria."
+[[workflow]]
+name = "Bias screen"
+instruction = "Scan the draft for protected-class proxies and emotion-inference language and strip anything not tied to documented performance."
+[[workflow]]
+name = "Route to manager"
+instruction = "Hand the PIP draft to the people manager and HRBP for delivery and legal review of any termination path."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "permit obligation deadline tracker"
+consumers = ["ehs_manager", "compliance_officer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory permits"
+instruction = "Read every active environmental permit and registration from the company's document store."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Extract obligations"
+instruction = "Pull each reporting obligation, condition, and renewal date out of the permit text verbatim."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build deadline grid"
+instruction = "Tabulate obligations by due date and compute days-remaining and lead-time status."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag at-risk"
+instruction = "Surface obligations with no evidence of filing or with deadlines inside the warning window."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to EHS"
+instruction = "Hand the deadline tracker and at-risk list to the EHS manager for sign-off."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "cross-team launch readiness checklist"
+consumers = ["product_marketing_manager", "launch_owner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope launch"
+instruction = "Read the launch brief and timeline to enumerate every required asset, doc, and enablement deliverable per team."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map owners"
+instruction = "Build a checklist tracking each item, its owner, due date, and dependency in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify readiness"
+instruction = "Confirm each asset and doc against approved source material and brand guidelines, marking anything unverified."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag blockers"
+instruction = "Surface missing, late, or non-compliant items that would slip the launch date and quantify the gap."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to launch owner"
+instruction = "Present the readiness checklist with open blockers to the launch owner for go or no-go sign-off."
+gate = "review"

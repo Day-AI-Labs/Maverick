@@ -19,6 +19,23 @@ from maverick.sandbox import LocalBackend
 from maverick.world_model import WorldModel
 
 
+class TestReflexionModelId:
+    def test_model_id_round_trips(self, tmp_path):
+        p = tmp_path / "r.ndjson"
+        reflexion.record("a goal", "timeout", "timed out", "lesson",
+                         model_id="anthropic:claude-x", path=p)
+        rec = reflexion.list_recent(limit=5, path=p)[0]
+        assert rec.model_id == "anthropic:claude-x"
+
+    def test_legacy_line_without_model_id_loads_as_none(self, tmp_path):
+        # A pre-self-harness reflexion line (no model_id key) must still load.
+        p = tmp_path / "r.ndjson"
+        p.write_text('{"ts": 1, "goal_text": "g", "failure_class": "timeout", '
+                     '"failure_msg": "m", "reflection": "r"}\n', encoding="utf-8")
+        rec = reflexion.list_recent(limit=5, path=p)[0]
+        assert rec.model_id is None and rec.failure_class == "timeout"
+
+
 class TestReflexionHelpers:
     def test_disabled_by_default(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_REFLEXION", raising=False)

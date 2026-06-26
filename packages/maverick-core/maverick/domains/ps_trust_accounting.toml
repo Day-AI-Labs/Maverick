@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "trust three-way reconciliation"
+consumers = ["controller", "managing_partner"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull ledgers"
+instruction = "Read the trust bank statement, the firm trust ledger, and the per-client matter ledgers for the period."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Stage entries"
+instruction = "Prepare trust ledger entries for receipts and disbursements coded to the correct client matter."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Three-way recon"
+instruction = "Reconcile bank balance to the trust ledger to the sum of client matter balances and flag any variance."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag violations"
+instruction = "Surface negative client balances, commingling, or unidentified items that breach trust accounting rules."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Controller review"
+instruction = "Route the reconciliation with all exceptions and assumptions to the controller for sign-off."
+gate = "review"

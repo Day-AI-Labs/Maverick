@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "PM schedule compliance tracker"
+consumers = ["maintenance_planner", "plant_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull PM plan"
+instruction = "Query the asset PM schedule and the maintenance log for tasks due in the reporting window."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Match completions"
+instruction = "Match each due PM task to its completion record and attached evidence and flag the gaps."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Flag overdue"
+instruction = "Surface overdue PMs on safety-critical or interlocked assets that must not be deferred without sign-off."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compile tracker"
+instruction = "Build the compliance tracker showing on-time, overdue, and missing-evidence PMs by asset."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Planner review"
+instruction = "Route the tracker to the maintenance planner to confirm deferrals and schedule the overdue work."
+gate = "review"

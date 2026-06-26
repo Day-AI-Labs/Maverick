@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "realization & leakage analysis"
+consumers = ["engagement_partner", "billing_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull billing data"
+instruction = "Query billed, written-down, and collected amounts against standard value for the engagements in scope."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Compute realization"
+instruction = "Calculate billing and collection realization rates and rank engagements by leakage."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Diagnose leaks"
+instruction = "Trace each material write-down or collection shortfall to its root cause using engagement records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft findings"
+instruction = "Summarize the realization picture and remediation recommendations, citing the figures behind each leak."
+[[workflow]]
+name = "Partner review"
+instruction = "Route the realization analysis to the engagement partner for review before it drives billing action."
+gate = "review"

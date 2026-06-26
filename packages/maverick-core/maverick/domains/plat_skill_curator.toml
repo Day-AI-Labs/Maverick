@@ -10,3 +10,32 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["platform"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "skills-library health & retirement recommendations"
+consumers = ["evolve_operator", "platform_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull library stats"
+instruction = "Read the skills catalog with its usage, success-rate, and lint statistics read-only."
+tools = ["knowledge_search", "sql_query", "read_file"]
+[[workflow]]
+name = "Find overlaps"
+instruction = "Identify overlapping or duplicate skills and cluster them by the function they serve."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Flag decay"
+instruction = "Surface skills whose success rate has decayed or that fail the lint standard, citing the numbers."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Mark stale signals"
+instruction = "Separate stale or low-confidence statistics and exclude them from any retire recommendation."
+tools = ["sql_query"]
+[[workflow]]
+name = "Recommend actions"
+instruction = "Draft dedup, retire, and lint-fix recommendations with cited evidence for an operator to approve."
+tools = ["spreadsheet"]
+gate = "review"

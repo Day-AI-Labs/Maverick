@@ -7,6 +7,35 @@ persona = """You are the Forecast Hygiene Agent for this business -- a go-to-mar
 allow_tools = ["read_file", "web_search", "knowledge_search", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "sql_query"]
 max_risk = "low"
+effort = "low"
 
 knowledge_sources = ["gtm"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "pipeline hygiene audit report"
+consumers = ["sales_manager", "revops_analyst"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull pipeline"
+instruction = "Read the open pipeline export for the forecast period including stage, close date, amount, and next-step fields."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Load hygiene rules"
+instruction = "Retrieve the company's forecast hygiene standards and stage-entry criteria from approved sources."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag anomalies"
+instruction = "Scan opportunities for stale close dates, missing next steps, stage-amount mismatches, and overdue activity."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Summarize gaps"
+instruction = "Aggregate flags into a cleanup list ranked by forecast impact and owner, stating any assumptions plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to reps"
+instruction = "Route the hygiene audit to the sales manager for rep cleanup ahead of the forecast call."
+gate = "review"

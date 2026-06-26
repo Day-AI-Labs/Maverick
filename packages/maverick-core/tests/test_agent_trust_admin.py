@@ -122,3 +122,58 @@ def test_cli_show_unknown_errors():
 def test_cli_status_runs():
     r = _run("trust", "status")
     assert r.exit_code == 0 and "agent trust plane" in r.output
+
+
+# ---- concurrency: the registry mutators must not lose updates --------------
+
+def test_concurrent_puts_do_not_lose_agents():
+    """put_agent does a lock-free load-modify-save; without serialization two
+    concurrent puts both load the same registry and the second save clobbers
+    the first -- a registered agent silently vanishes. All N must survive."""
+    import threading
+
+    n = 24
+    errors: list[Exception] = []
+
+    def make(i: int):
+        try:
+            agent_trust.put_agent({"id": f"agent{i:03d}", "max_risk": "low"})
+        except (agent_trust.AgentTrustError, OSError) as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=make, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, errors[:3]
+    ids = {e.get("id") for e in agent_trust._load_managed()}
+    assert len([i for i in ids if i and i.startswith("agent")]) == n
+
+
+def test_concurrent_revoke_is_not_lost_against_a_put():
+    """A set_revoked(True) racing a put_agent on a DIFFERENT id must not be
+    clobbered -- a lost revoke leaves a revoked external agent trusted."""
+    import threading
+
+    agent_trust.put_agent({"id": "vega", "pubkey": "ab" * 32})
+    barrier = threading.Barrier(2)
+
+    def revoke():
+        barrier.wait()
+        agent_trust.set_revoked("vega", True)
+
+    def other_put():
+        barrier.wait()
+        agent_trust.put_agent({"id": "rigel", "max_risk": "low"})
+
+    ts = [threading.Thread(target=revoke), threading.Thread(target=other_put)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+
+    by_id = {e.get("id"): e for e in agent_trust._load_managed()}
+    assert by_id["vega"].get("revoked") is True   # the revoke survived
+    assert "rigel" in by_id                        # and so did the concurrent add

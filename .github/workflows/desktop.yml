@@ -90,9 +90,9 @@ jobs:
         run: pnpm tauri icon src-tauri/icons/icon.png
 
       - name: Sync bundle version to the release tag
-        # Bundle filenames are Maverick_<version>_*, where <version> comes
-        # from tauri.conf.json. That value used to be hand-bumped and
-        # drifted (the v0.1.4 release shipped bundles named
+        # Bundle filenames are Lightwork_<version>_*, where <version> comes
+        # from tauri.conf.json (productName "Lightwork"). That value used to be
+        # hand-bumped and drifted (the v0.1.4 release shipped bundles named
         # Maverick_0.1.3_*). Derive it from the tag so the installer version
         # can never disagree with the GitHub Release again. Non-tag runs
         # keep the committed version (local/dev builds only).

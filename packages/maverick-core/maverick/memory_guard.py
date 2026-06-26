@@ -31,14 +31,13 @@ memory immediately.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 
-log = logging.getLogger(__name__)
+from ._envparse import env_bool
 
-_TRUE = {"1", "true", "yes", "on"}
+log = logging.getLogger(__name__)
 
 
 class TrustTier(IntEnum):
@@ -83,7 +82,7 @@ def enabled() -> bool:
 
     Turn on with ``MAVERICK_MEMORY_GUARD=1`` or ``[memory_guard] enable = true``.
     """
-    if (os.environ.get("MAVERICK_MEMORY_GUARD") or "").strip().lower() in _TRUE:
+    if env_bool("MAVERICK_MEMORY_GUARD"):
         return True
     try:
         from .config import get_memory_guard

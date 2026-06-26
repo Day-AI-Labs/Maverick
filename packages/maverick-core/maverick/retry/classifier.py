@@ -18,6 +18,7 @@ already implements exponential backoff; this gives it shape.
 from __future__ import annotations
 
 import logging
+import random
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -121,14 +122,23 @@ def should_retry(exc: BaseException, *, attempts_so_far: int) -> bool:
 
 
 def next_delay(exc: BaseException, *, attempts_so_far: int) -> float:
-    """Compute the next backoff delay for the given exception class."""
+    """Compute the next backoff delay for the given exception class.
+
+    Includes equal-jitter (50-100% of the computed delay), matching the LLM
+    retry path (``retry.__init__._compute_delay``). Without it the backoff is
+    fully deterministic, so a provider-wide 429/5xx makes every retry-safe
+    caller (this feeds ``tool_reliability.run_with_retry``, the chokepoint for
+    ~80 tools) compute the identical 10/20/40/80/120s schedule and re-fire in
+    lockstep -- a synchronized retry storm against the recovering dependency.
+    Decorrelating the sleeps spreads the herd."""
     pol = policy_for(exc)
     if not pol.retry:
         return 0.0
     # Clamp the exponent before the power: attempts_so_far is caller-supplied
     # and unbounded, and 2.0 ** big raises OverflowError before the min() clamp.
     delay = pol.initial_delay_seconds * (pol.backoff_multiplier ** min(attempts_so_far, 32))
-    return min(delay, pol.max_delay_seconds)
+    delay = min(delay, pol.max_delay_seconds)
+    return delay * (0.5 + random.random() * 0.5)
 
 
 __all__ = [

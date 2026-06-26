@@ -10,3 +10,29 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "signature authority register"
+consumers = ["general_counsel", "corporate_secretary"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull instruments"
+instruction = "Retrieve powers of attorney and signature authority instruments from the company's own documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Extract terms"
+instruction = "Capture each grantee, scope of authority, limits, and expiration date, citing the exact clause and never altering the original."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check status"
+instruction = "Compare expiration dates to the current date and flag authorities that are expired or expiring soon."
+[[workflow]]
+name = "Flag conflicts"
+instruction = "Note scope overlaps, gaps, or conflicting authorities and state any assumptions plainly."
+[[workflow]]
+name = "Counsel review"
+instruction = "Route the register and flagged items to the general counsel for sign-off."
+gate = "review"

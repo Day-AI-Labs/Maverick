@@ -128,6 +128,20 @@ SCHEMA: list[str] = [
     "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_by TEXT;",
     "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_at DOUBLE PRECISION;",
     "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS decided_by TEXT;",
+    # N-of-M dual control (mirrors SQLite v21).
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approvals_required "
+    "INTEGER NOT NULL DEFAULT 1;",
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS requested_by TEXT;",
+    """
+    CREATE TABLE IF NOT EXISTS approval_signoffs (
+      approval_id INTEGER NOT NULL,
+      approver    TEXT NOT NULL,
+      decision    TEXT NOT NULL,
+      decided_at  DOUBLE PRECISION NOT NULL,
+      note        TEXT,
+      PRIMARY KEY (approval_id, approver)
+    );
+    """,
     "CREATE INDEX IF NOT EXISTS idx_pg_approvals_status ON approvals(status, id);",
     """
     CREATE TABLE IF NOT EXISTS conversations (
@@ -203,6 +217,14 @@ SCHEMA: list[str] = [
 # approvals/processed_messages), with v11 making their global UNIQUE constraints
 # tenant-aware so one tenant's upsert can't clobber another's row.
 _TENANT_TABLES = ("goals", "facts", "conversations", "approvals", "processed_messages")
+# Tables that carry their own ``tenant_id`` and so get a DB-enforced RLS policy.
+# Superset of _TENANT_TABLES (which also drives the v10 column-add migration):
+# ``projects`` (v15) and ``fact_history`` (v18) gained ``tenant_id`` in their own
+# later migrations, so they can't ride the v10 ALTER but MUST still be RLS-scoped
+# -- otherwise a PG deployment relying on "the database enforces the boundary"
+# leaves those two tables app-layer-only. Child tables (episodes/turns/...) carry
+# no tenant_id and remain FK-scoped through their parent goal.
+_RLS_TABLES = (*_TENANT_TABLES, "projects", "fact_history")
 _TENANT_MIGRATION: list[str] = [
     f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS tenant_id TEXT;" for t in _TENANT_TABLES
 ] + [
@@ -398,6 +420,45 @@ _RATE_EVENTS_MIGRATION: list[str] = [
 ]
 
 
+# v21 N-of-M dual control: quorum + requester columns on approvals, and the
+# per-(approval, approver) signoff table. Mirrors the SQLite v21 migration.
+_DUAL_CONTROL_MIGRATION: list[str] = [
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approvals_required "
+    "INTEGER NOT NULL DEFAULT 1;",
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS requested_by TEXT;",
+    """
+    CREATE TABLE IF NOT EXISTS approval_signoffs (
+      approval_id INTEGER NOT NULL,
+      approver    TEXT NOT NULL,
+      decision    TEXT NOT NULL,
+      decided_at  DOUBLE PRECISION NOT NULL,
+      note        TEXT,
+      PRIMARY KEY (approval_id, approver)
+    );
+    """,
+]
+
+
+# v22 cluster-wide killswitch: an untenanted single-row global halt the
+# dashboard arms and every replica's killswitch consults (shared-Postgres
+# deployments). Not RLS-scoped on purpose -- a global emergency stop is not
+# per-tenant.
+_HALT_MIGRATION = [
+    "CREATE TABLE IF NOT EXISTS halt ("
+    " scope TEXT PRIMARY KEY, reason TEXT, source TEXT, armed_by TEXT,"
+    " armed_at DOUBLE PRECISION NOT NULL)",
+]
+
+# v23 cluster-wide provider spend ledger: one authoritative per-(period,
+# provider) total so provider_cost_cap's ceiling holds across the fleet. Not
+# tenant-scoped -- a provider cap is a deployment-wide spend ceiling.
+_PROVIDER_SPEND_MIGRATION = [
+    "CREATE TABLE IF NOT EXISTS provider_spend ("
+    " period_key TEXT NOT NULL, provider TEXT NOT NULL,"
+    " dollars DOUBLE PRECISION NOT NULL DEFAULT 0,"
+    " PRIMARY KEY (period_key, provider))",
+]
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
@@ -409,6 +470,9 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (17, _SHARE_SIGNOFF_ORIGIN_MIGRATION),
     (18, _FACT_HISTORY_MIGRATION),
     (19, _RATE_EVENTS_MIGRATION),
+    (21, _DUAL_CONTROL_MIGRATION),
+    (22, _HALT_MIGRATION),
+    (23, _PROVIDER_SPEND_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -453,39 +517,83 @@ def _active_tenant() -> str | None:
         return None
 
 
-def _strict_tenant_isolation() -> bool:
-    """Strict per-tenant reads (default off). When on, a tenant sees **only** its
-    own rows -- legacy ``NULL`` rows are no longer visible. Enable only after the
-    legacy rows have been backfilled with a tenant_id. ``MAVERICK_STRICT_TENANT_
-    ISOLATION`` env wins over ``[world_model] strict_tenant_isolation``."""
-    env = os.environ.get("MAVERICK_STRICT_TENANT_ISOLATION")
+def _truthy(value: object) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _explicit_toggle(env_var: str, cfg_key: str) -> bool | None:
+    """Resolve an explicitly-set tenant-isolation toggle, or ``None`` if unset.
+
+    Env (``env_var``) wins over ``[world_model] <cfg_key>`` config. Returns
+    ``None`` only when neither the env var nor the config key is present, so the
+    caller can distinguish "operator chose off" from "operator said nothing" --
+    the distinction the enterprise auto-on + boot preflight rely on.
+    """
+    env = os.environ.get(env_var)
     if env is not None and env.strip() != "":
-        return env.strip().lower() in {"1", "true", "yes", "on"}
+        return _truthy(env)
     try:
         from ..config import load_config
-        v = (load_config() or {}).get("world_model", {}).get("strict_tenant_isolation")
-    except Exception:  # pragma: no cover -- config never blocks a query
+        cfg = (load_config() or {}).get("world_model") or {}
+    except Exception:  # pragma: no cover -- config never blocks construction
+        return None
+    if cfg_key in cfg:
+        v = cfg.get(cfg_key)
+        return _truthy(v) if isinstance(v, str) else bool(v)
+    return None
+
+
+def _enterprise_default() -> bool:
+    """Enterprise mode auto-enables tenant isolation (off otherwise).
+
+    Lazy + defensive: a missing/raising enterprise module never blocks
+    construction of a single-tenant store, it just means "not enterprise".
+    """
+    try:
+        from ..enterprise import enterprise_enabled
+        return bool(enterprise_enabled())
+    except Exception:  # pragma: no cover -- enterprise never blocks construction
         return False
-    return str(v).strip().lower() in {"1", "true", "yes", "on"} if isinstance(v, str) else bool(v)
+
+
+def _strict_tenant_isolation() -> bool:
+    """Strict per-tenant reads. When on, a tenant sees **only** its own rows --
+    legacy ``NULL`` rows are no longer visible; safe only after the legacy rows
+    have been backfilled with a tenant_id.
+
+    Resolution: ``MAVERICK_STRICT_TENANT_ISOLATION`` env wins over
+    ``[world_model] strict_tenant_isolation`` config, which wins over enterprise
+    mode (auto-on, #51/#57). Off for the default single-tenant install."""
+    explicit = _explicit_toggle("MAVERICK_STRICT_TENANT_ISOLATION", "strict_tenant_isolation")
+    if explicit is not None:
+        return explicit
+    return _enterprise_default()
 
 
 def _rls_enabled() -> bool:
-    """DB-native Row-Level Security (default off). When on, the tenant-scoped
-    tables get a Postgres RLS policy keyed on the ``maverick.tenant`` session
-    GUC, so the database enforces the tenant boundary even if an app-layer
-    predicate is ever missed — defense in depth over ``_tenant_scope``. Opt-in
-    because it implies the legacy ``NULL`` rows have been backfilled (RLS scopes
-    strictly to the active tenant). ``MAVERICK_PG_RLS`` env wins over
-    ``[world_model] rls``."""
-    env = os.environ.get("MAVERICK_PG_RLS")
-    if env is not None and env.strip() != "":
-        return env.strip().lower() in {"1", "true", "yes", "on"}
-    try:
-        from ..config import load_config
-        v = (load_config() or {}).get("world_model", {}).get("rls")
-    except Exception:  # pragma: no cover -- config never blocks construction
-        return False
-    return str(v).strip().lower() in {"1", "true", "yes", "on"} if isinstance(v, str) else bool(v)
+    """DB-native Row-Level Security. When on, the tenant-scoped tables get a
+    Postgres RLS policy keyed on the ``maverick.tenant`` session GUC, so the
+    database enforces the tenant boundary even if an app-layer predicate is ever
+    missed — defense in depth over ``_tenant_scope``. Implies the legacy
+    ``NULL`` rows have been backfilled (RLS scopes strictly to the active
+    tenant), which is why enterprise auto-on is gated by a boot preflight.
+
+    Resolution: ``MAVERICK_PG_RLS`` env wins over ``[world_model] rls`` config,
+    which wins over enterprise mode (auto-on, #51/#57). Off otherwise."""
+    explicit = _explicit_toggle("MAVERICK_PG_RLS", "rls")
+    if explicit is not None:
+        return explicit
+    return _enterprise_default()
+
+
+def _rls_explicitly_set() -> bool:
+    """True when the operator explicitly chose the RLS toggle (env or config).
+
+    The boot preflight only *refuses* to start on legacy ``NULL`` rows when RLS
+    was auto-enabled by enterprise mode; an operator who set ``MAVERICK_PG_RLS=1``
+    has opted into the strict boundary knowingly, so we keep the existing
+    fail-closed install path for them rather than blocking boot."""
+    return _explicit_toggle("MAVERICK_PG_RLS", "rls") is not None
 
 
 def _pool_size() -> int:
@@ -568,10 +676,12 @@ def _dec_approval_row(r):
     """Build an Approval, unsealing action/scope/detail (provenance is trusted
     plaintext metadata, sealed neither here nor in SQLite). Row order: id,
     action, risk, scope, detail, provenance, status, requested_at, decided_at,
-    claimed_by, claimed_at, decided_by."""
+    claimed_by, claimed_at, decided_by, approvals_required, requested_by."""
     from ..world_model import Approval
     return Approval(r[0], _unseal(r[1]), r[2], _unseal(r[3]), _unseal(r[4]),
-                    r[5], r[6], r[7], r[8], r[9], r[10], r[11])
+                    r[5], r[6], r[7], r[8], r[9], r[10], r[11],
+                    int(r[12]) if len(r) > 12 and r[12] is not None else 1,
+                    r[13] if len(r) > 13 else None)
 
 
 def _dec_question_row(r):
@@ -637,6 +747,7 @@ class PostgresWorldModel:
         self._lock = threading.RLock()
         self._migrate()
         if self._rls:
+            self._preflight_rls_or_die()
             self._apply_rls()
 
     def __enter__(self) -> PostgresWorldModel:
@@ -696,6 +807,49 @@ class PostgresWorldModel:
         # SET LOCAL — transaction-scoped, cleared at commit/rollback.
         cur.execute("SELECT set_config('maverick.tenant', %s, true)", (value,))
 
+    def _preflight_rls_or_die(self) -> None:
+        """Refuse to boot when enterprise auto-on RLS would silently hide rows.
+
+        When the operator explicitly enabled RLS (``MAVERICK_PG_RLS=1`` /
+        ``[world_model] rls = true``) they have knowingly opted into the strict
+        boundary, so we skip this gate and let ``_apply_rls`` install the
+        fail-closed policy as before. But when RLS was *auto-enabled* by
+        enterprise mode (#51/#57), forcing the policy on a store that still holds
+        legacy ``tenant_id IS NULL`` rows would freeze those rows invisibly --
+        data loss by side effect. So we run the read-only :func:`pg_rls.preflight`
+        and raise with a remediation pointer instead of booting.
+
+        Ownership problems are left to ``_apply_rls`` (it tolerates a non-owner
+        connection when the policy is already installed); this gate is strictly
+        about the NULL-tenant data-safety hazard.
+        """
+        if _rls_explicitly_set():
+            return
+        from . import pg_rls
+        try:
+            if self._pool is not None:
+                with self._pool.connection() as conn:
+                    report = pg_rls.preflight(conn)
+            else:
+                report = pg_rls.preflight(self.conn)
+        except Exception as e:  # pragma: no cover -- preflight never blocks an explicit opt-in
+            log.warning("RLS preflight could not run (%s); proceeding to _apply_rls", e)
+            return
+        offenders = {
+            t: info["null_tenant_rows"]
+            for t, info in report.get("tables", {}).items()
+            if info.get("null_tenant_rows")
+        }
+        if offenders:
+            detail = ", ".join(f"{t}={n}" for t, n in sorted(offenders.items()))
+            raise RuntimeError(
+                "Enterprise mode auto-enabled Postgres RLS, but legacy rows with "
+                f"tenant_id IS NULL would be hidden and frozen ({detail}). Assign "
+                "them to a tenant first: `maverick tenant backfill <tenant_id>` "
+                "(preview with `maverick tenant rls-preflight`). To opt into RLS "
+                "knowingly without backfilling, set MAVERICK_PG_RLS=1 explicitly."
+            )
+
     def _apply_rls(self) -> None:
         """Enable Postgres Row-Level Security on the tenant-scoped tables.
 
@@ -709,7 +863,7 @@ class PostgresWorldModel:
         fail-closed policy; otherwise RLS startup raises instead of silently
         running without database-enforced tenant isolation.
         """
-        for table in _TENANT_TABLES:
+        for table in _RLS_TABLES:
             try:
                 with self._tx() as cur:
                     cur.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
@@ -948,7 +1102,8 @@ class PostgresWorldModel:
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
-            "requested_at, decided_at, claimed_by, claimed_at, decided_by "
+            "requested_at, decided_at, claimed_by, claimed_at, decided_by, "
+            "approvals_required, requested_by "
             "FROM approvals"
         )
         p: list = list(params) if frag else []
@@ -1129,22 +1284,46 @@ class PostgresWorldModel:
                 (int(goal_id), title or ""),
             )
             version = int(cur.fetchone()[0]) + 1
-            cur.execute(
-                "INSERT INTO artifacts(goal_id, kind, title, content, version, "
-                "created_at) VALUES(%s, %s, %s, %s, %s, %s) RETURNING id",
-                (int(goal_id), str(kind or "text"), title or "", _seal(content),
-                 version, time.time()),
-            )
-            return int(cur.fetchone()[0])
+            # Gate the write on the parent goal being in the active tenant (see
+            # start_episode) so a write against another tenant's goal_id can't
+            # plant a deliverable. Single-tenant (empty frag) keeps the direct
+            # insert.
+            frag, fparams = _tenant_scope()
+            if frag:
+                cur.execute(
+                    "INSERT INTO artifacts(goal_id, kind, title, content, version, "
+                    "created_at) SELECT %s, %s, %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") RETURNING id",
+                    (int(goal_id), str(kind or "text"), title or "", _seal(content),
+                     version, time.time(), int(goal_id), *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO artifacts(goal_id, kind, title, content, version, "
+                    "created_at) VALUES(%s, %s, %s, %s, %s, %s) RETURNING id",
+                    (int(goal_id), str(kind or "text"), title or "", _seal(content),
+                     version, time.time()),
+                )
+            row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"unknown goal_id {goal_id!r} for the active tenant")
+        return int(row[0])
 
     def artifacts_for_goal(self, goal_id: int) -> list[dict]:
         """Every artifact version for a goal, ordered by title then version."""
+        # Defense-in-depth: artifacts has no tenant_id (FK-scoped via the goal).
+        # Callers already assert goal access, but bound the read to the active
+        # tenant's goals at the DB layer too so a future caller can't leak.
+        frag, fparams = _tenant_scope()
+        sql = ("SELECT id, goal_id, kind, title, content, version, created_at "
+               "FROM artifacts WHERE goal_id=%s")
+        params: list = [int(goal_id)]
+        if frag:
+            sql += " AND goal_id IN (SELECT id FROM goals WHERE " + frag + ")"
+            params += fparams
+        sql += " ORDER BY title, version"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, goal_id, kind, title, content, version, created_at "
-                "FROM artifacts WHERE goal_id=%s ORDER BY title, version",
-                (int(goal_id),),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return [{"id": r[0], "goal_id": r[1], "kind": r[2], "title": r[3] or "",
                  "content": _unseal(r[4]) or "", "version": r[5], "created_at": r[6]}
@@ -1170,26 +1349,48 @@ class PostgresWorldModel:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         now = time.time()
         exp = now + float(ttl_seconds) if ttl_seconds else None
+        # Gate the write on the parent goal being in the active tenant (see
+        # start_episode): a tenant must not mint a share link over another
+        # tenant's goal_id. Single-tenant (empty frag) keeps the direct insert.
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO share_links(goal_id, token_sha256, created_by, "
-                "created_at, expires_at) VALUES(%s, %s, %s, %s, %s) RETURNING id",
-                (int(goal_id), token_hash, created_by or "", now, exp),
-            )
-            return int(cur.fetchone()[0]), token
+            if frag:
+                cur.execute(
+                    "INSERT INTO share_links(goal_id, token_sha256, created_by, "
+                    "created_at, expires_at) SELECT %s, %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") RETURNING id",
+                    (int(goal_id), token_hash, created_by or "", now, exp,
+                     int(goal_id), *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO share_links(goal_id, token_sha256, created_by, "
+                    "created_at, expires_at) VALUES(%s, %s, %s, %s, %s) RETURNING id",
+                    (int(goal_id), token_hash, created_by or "", now, exp),
+                )
+            row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"unknown goal_id {goal_id!r} for the active tenant")
+        return int(row[0]), token
 
     def resolve_share_link(self, token: str) -> int | None:
         """The goal_id a token grants read access to, or None if unknown/revoked/
-        expired. Lookup is by hash -- the clear token is never stored."""
+        expired. Lookup is by hash -- the clear token is never stored.
+
+        Scoped to the active tenant's goals: a share link minted (or planted)
+        over another tenant's goal must not resolve cross-tenant."""
         if not token:
             return None
         token_hash = hashlib.sha256(token.encode()).hexdigest()
+        frag, fparams = _tenant_scope("g.tenant_id")
+        sql = ("SELECT s.goal_id, s.expires_at, s.revoked FROM share_links s "
+               "JOIN goals g ON g.id = s.goal_id WHERE s.token_sha256=%s")
+        params: list = [token_hash]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
         with self._tx() as cur:
-            cur.execute(
-                "SELECT goal_id, expires_at, revoked FROM share_links "
-                "WHERE token_sha256=%s",
-                (token_hash,),
-            )
+            cur.execute(sql, tuple(params))
             row = cur.fetchone()
         if not row or row[2]:
             return None
@@ -1200,12 +1401,16 @@ class PostgresWorldModel:
     def share_links_for_goal(self, goal_id: int) -> list[dict]:
         """Share links for a goal (manage UI), newest first. Tokens are NOT
         returned (only the hash exists); each row carries its lifecycle state."""
+        frag, fparams = _tenant_scope()  # defense-in-depth: bound to active tenant's goals
+        sql = ("SELECT id, created_by, created_at, expires_at, revoked "
+               "FROM share_links WHERE goal_id=%s")
+        params: list = [int(goal_id)]
+        if frag:
+            sql += " AND goal_id IN (SELECT id FROM goals WHERE " + frag + ")"
+            params += fparams
+        sql += " ORDER BY id DESC"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, created_by, created_at, expires_at, revoked "
-                "FROM share_links WHERE goal_id=%s ORDER BY id DESC",
-                (int(goal_id),),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         now = time.time()
         out = []
@@ -1221,15 +1426,25 @@ class PostgresWorldModel:
 
     def revoke_share_link(self, link_id: int, *, goal_id: int | None = None) -> bool:
         """Revoke a share link (optionally only if it belongs to ``goal_id``).
-        Returns whether a row was changed."""
+        Returns whether a row was changed.
+
+        Both branches are scoped to the active tenant's goals so a tenant can't
+        revoke (deny access to) another tenant's link by guessing a sequential
+        ``link_id``. Single-tenant (empty frag) keeps the direct update."""
+        frag, fparams = _tenant_scope("g.tenant_id")
+        tcond = ""
+        if frag:
+            tcond = (" AND goal_id IN (SELECT g.id FROM goals g WHERE " + frag + ")")
         with self._tx() as cur:
             if goal_id is None:
                 cur.execute(
-                    "UPDATE share_links SET revoked=1 WHERE id=%s", (int(link_id),))
+                    "UPDATE share_links SET revoked=1 WHERE id=%s" + tcond,
+                    (int(link_id), *fparams))
             else:
                 cur.execute(
-                    "UPDATE share_links SET revoked=1 WHERE id=%s AND goal_id=%s",
-                    (int(link_id), int(goal_id)))
+                    "UPDATE share_links SET revoked=1 WHERE id=%s AND goal_id=%s"
+                    + tcond,
+                    (int(link_id), int(goal_id), *fparams))
             return cur.rowcount > 0
 
     # ---- Sign-offs (migration v17) ------------------------------------------
@@ -1239,17 +1454,34 @@ class PostgresWorldModel:
         note: str | None = None,
     ) -> None:
         """Record a human's certify/reject decision on a deliverable. One row per
-        goal (a later decision replaces an earlier one)."""
+        goal (a later decision replaces an earlier one).
+
+        Gated on the parent goal being in the active tenant (see start_episode):
+        a tenant must not forge a sign-off (``decided_by``) on another tenant's
+        goal. Single-tenant (empty frag) keeps the direct insert."""
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO signoffs(goal_id, decision, decided_by, note, "
-                "created_at) VALUES(%s, %s, %s, %s, %s) "
-                "ON CONFLICT (goal_id) DO UPDATE SET decision=EXCLUDED.decision, "
-                "decided_by=EXCLUDED.decided_by, note=EXCLUDED.note, "
-                "created_at=EXCLUDED.created_at",
-                (int(goal_id), str(decision), str(decided_by or ""), _seal(note),
-                 time.time()),
-            )
+            if frag:
+                cur.execute(
+                    "INSERT INTO signoffs(goal_id, decision, decided_by, note, "
+                    "created_at) SELECT %s, %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") "
+                    "ON CONFLICT (goal_id) DO UPDATE SET decision=EXCLUDED.decision, "
+                    "decided_by=EXCLUDED.decided_by, note=EXCLUDED.note, "
+                    "created_at=EXCLUDED.created_at",
+                    (int(goal_id), str(decision), str(decided_by or ""), _seal(note),
+                     time.time(), int(goal_id), *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO signoffs(goal_id, decision, decided_by, note, "
+                    "created_at) VALUES(%s, %s, %s, %s, %s) "
+                    "ON CONFLICT (goal_id) DO UPDATE SET decision=EXCLUDED.decision, "
+                    "decided_by=EXCLUDED.decided_by, note=EXCLUDED.note, "
+                    "created_at=EXCLUDED.created_at",
+                    (int(goal_id), str(decision), str(decided_by or ""), _seal(note),
+                     time.time()),
+                )
 
     def signoff_for(self, goal_id: int) -> dict | None:
         """The current sign-off on a goal's deliverable, or None if unreviewed."""
@@ -1271,49 +1503,88 @@ class PostgresWorldModel:
         ids = [int(g) for g in goal_ids]
         if not ids:
             return {}
+        frag, fparams = _tenant_scope()  # defense-in-depth: only this tenant's goals
+        sql = "SELECT goal_id, decision FROM signoffs WHERE goal_id = ANY(%s)"
+        params: list = [ids]
+        if frag:
+            sql += " AND goal_id IN (SELECT id FROM goals WHERE " + frag + ")"
+            params += fparams
         with self._tx() as cur:
-            cur.execute(
-                "SELECT goal_id, decision FROM signoffs WHERE goal_id = ANY(%s)",
-                (ids,),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return {r[0]: r[1] for r in rows}
 
     # ---- Goal origins (migration v17) ---------------------------------------
 
     def record_goal_origin(self, goal_id: int, kind: str, ref: str) -> None:
-        """Record which automation spawned a goal (one row per goal)."""
+        """Record which automation spawned a goal (one row per goal).
+
+        Gated on the parent goal being in the active tenant (see start_episode)
+        so a write against another tenant's goal_id can't land. Single-tenant
+        (empty frag) keeps the direct insert."""
+        frag, fparams = _tenant_scope()
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO goal_origins(goal_id, kind, ref, created_at) "
-                "VALUES(%s, %s, %s, %s) "
-                "ON CONFLICT (goal_id) DO UPDATE SET kind=EXCLUDED.kind, "
-                "ref=EXCLUDED.ref, created_at=EXCLUDED.created_at",
-                (int(goal_id), str(kind), str(ref), time.time()),
-            )
+            if frag:
+                cur.execute(
+                    "INSERT INTO goal_origins(goal_id, kind, ref, created_at) "
+                    "SELECT %s, %s, %s, %s WHERE EXISTS "
+                    "(SELECT 1 FROM goals WHERE id=%s AND " + frag + ") "
+                    "ON CONFLICT (goal_id) DO UPDATE SET kind=EXCLUDED.kind, "
+                    "ref=EXCLUDED.ref, created_at=EXCLUDED.created_at",
+                    (int(goal_id), str(kind), str(ref), time.time(),
+                     int(goal_id), *fparams),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO goal_origins(goal_id, kind, ref, created_at) "
+                    "VALUES(%s, %s, %s, %s) "
+                    "ON CONFLICT (goal_id) DO UPDATE SET kind=EXCLUDED.kind, "
+                    "ref=EXCLUDED.ref, created_at=EXCLUDED.created_at",
+                    (int(goal_id), str(kind), str(ref), time.time()),
+                )
 
     def goals_for_origin(self, kind: str, ref: str, *, limit: int = 20) -> list[PGGoal]:
-        """Goals an automation spawned, most-recent first."""
+        """Goals an automation spawned, most-recent first.
+
+        Scoped to the active tenant's goals: a trigger/schedule ``ref`` can
+        collide across tenants, so this row-returning read must not span them
+        (its sibling ``origin_status_counts`` is scoped the same way). Without
+        the predicate, a tenant could read another tenant's decrypted goal
+        content by guessing a colliding automation ``ref``.
+        """
+        frag, fparams = _tenant_scope("g.tenant_id")
+        sql = ("SELECT g.id, g.parent_id, g.title, g.description, g.status, "
+               "g.created_at, g.updated_at, g.deadline, g.result FROM goals g "
+               "JOIN goal_origins o ON o.goal_id = g.id "
+               "WHERE o.kind=%s AND o.ref=%s")
+        params: list = [str(kind), str(ref)]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " ORDER BY g.id DESC LIMIT %s"
+        params.append(max(1, int(limit)))
         with self._tx() as cur:
-            cur.execute(
-                "SELECT g.id, g.parent_id, g.title, g.description, g.status, "
-                "g.created_at, g.updated_at, g.deadline, g.result FROM goals g "
-                "JOIN goal_origins o ON o.goal_id = g.id "
-                "WHERE o.kind=%s AND o.ref=%s ORDER BY g.id DESC LIMIT %s",
-                (str(kind), str(ref), max(1, int(limit))),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return [_dec_goal_row(r) for r in rows]
 
     def origin_status_counts(self, kind: str, ref: str) -> dict[str, int]:
-        """An automation's spawned-goal counts keyed by status (run summary)."""
+        """An automation's spawned-goal counts keyed by status (run summary).
+
+        Scoped to the active tenant's goals: a trigger/schedule ``ref`` can
+        collide across tenants, so the aggregate must not span them (the
+        dashboard owner-scopes too; this is the DB-layer backstop)."""
+        frag, fparams = _tenant_scope("g.tenant_id")
+        sql = ("SELECT g.status, COUNT(*) FROM goals g "
+               "JOIN goal_origins o ON o.goal_id = g.id "
+               "WHERE o.kind=%s AND o.ref=%s")
+        params: list = [str(kind), str(ref)]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " GROUP BY g.status"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT g.status, COUNT(*) FROM goals g "
-                "JOIN goal_origins o ON o.goal_id = g.id "
-                "WHERE o.kind=%s AND o.ref=%s GROUP BY g.status",
-                (str(kind), str(ref)),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return {r[0]: int(r[1]) for r in rows}
 
@@ -2141,18 +2412,23 @@ class PostgresWorldModel:
         scope: str | None = None,
         detail: str | None = None,
         provenance: str | None = None,
+        approvals_required: int = 1,
+        requested_by: str | None = None,
     ) -> int:
         """Park a high-risk action for out-of-band (dashboard) approval.
 
         ``provenance`` is trusted caller-supplied metadata for operator UIs; it
-        is not inferred from ``detail`` (which may carry untrusted text)."""
+        is not inferred from ``detail`` (which may carry untrusted text).
+        ``approvals_required`` is the N-of-M quorum; ``requested_by`` the
+        requester (so a multi-party approval can bar self-approval)."""
         with self._tx() as cur:
             cur.execute(
                 "INSERT INTO approvals(action, risk, scope, detail, provenance, status, "
-                "requested_at, tenant_id) VALUES(%s, %s, %s, %s, %s, 'pending', %s, %s) "
-                "RETURNING id",
+                "requested_at, tenant_id, approvals_required, requested_by) "
+                "VALUES(%s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s) RETURNING id",
                 (_seal(action), risk, _seal(scope), _seal(detail), provenance,
-                 time.time(), _active_tenant()),
+                 time.time(), _active_tenant(), max(1, int(approvals_required)),
+                 (requested_by or None)),
             )
             row = cur.fetchone()
         return int(row[0])
@@ -2161,7 +2437,8 @@ class PostgresWorldModel:
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
-            "requested_at, decided_at, claimed_by, claimed_at, decided_by "
+            "requested_at, decided_at, claimed_by, claimed_at, decided_by, "
+            "approvals_required, requested_by "
             "FROM approvals WHERE id = %s"
         )
         p: list = [approval_id]
@@ -2177,7 +2454,8 @@ class PostgresWorldModel:
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
-            "requested_at, decided_at, claimed_by, claimed_at, decided_by "
+            "requested_at, decided_at, claimed_by, claimed_at, decided_by, "
+            "approvals_required, requested_by "
             "FROM approvals WHERE status = 'pending'"
         )
         if frag:
@@ -2190,29 +2468,91 @@ class PostgresWorldModel:
 
     def decide_approval(self, approval_id: int, status: str,
                         decided_by: str | None = None) -> bool:
-        """Flip a pending approval to 'approved'/'denied'. Returns True only if a
-        pending row transitioned (unknown id or already-decided -> False, so a
-        double-click is a no-op). ``decided_by`` records which supervisor
-        decided (collaborative supervision); None = legacy unattributed."""
+        """Record one approver's decision (N-of-M dual control; mirrors SQLite).
+
+        Single-approver (``approvals_required <= 1``): flips the row atomically.
+        N-of-M: records a distinct sign-off, denies on the first deny, bars the
+        requester from self-approving (unless allowed), and flips to 'approved'
+        only at quorum. Tenant-scoped like get_approval. Returns True when the
+        vote was accepted, False on unknown/decided id, a barred self-approval,
+        or a multi-party vote with no approver identity."""
         if status not in ("approved", "denied"):
             raise ValueError("status must be 'approved' or 'denied'")
-        # Tenant-scope the write like get_approval/pending_approvals: the
-        # dashboard approve/deny endpoints pass a raw URL id with no ownership
-        # gate, so without this a tenant could decide another tenant's parked
-        # high-risk action by enumerating ids it can't even see.
+        appr = self.get_approval(approval_id)   # already tenant-scoped
+        if appr is None or appr.status != "pending":
+            return False
+        required = max(1, int(getattr(appr, "approvals_required", 1) or 1))
+        # Tenant-scope the write so a tenant can't decide another's parked action
+        # by enumerating ids it can't see.
         frag, params = _tenant_scope()
-        sql = (
-            "UPDATE approvals SET status = %s, decided_at = %s, decided_by = %s "
-            "WHERE id = %s AND status = 'pending'"
-        )
-        p: list = [status, time.time(), decided_by, approval_id]
+        if required <= 1:
+            sql = ("UPDATE approvals SET status = %s, decided_at = %s, "
+                   "decided_by = %s WHERE id = %s AND status = 'pending'")
+            p: list = [status, time.time(), decided_by, approval_id]
+            if frag:
+                sql += " AND " + frag
+                p += params
+            with self._tx() as cur:
+                cur.execute(sql, tuple(p))
+                return cur.rowcount > 0
+
+        approver = (decided_by or "").strip()
+        if not approver:
+            return False
+        if (status == "approved" and appr.requested_by
+                and approver == appr.requested_by):
+            from ..safety.dual_control import allow_self_approval
+            if not allow_self_approval():
+                return False
+        now = time.time()
+        upd = ("UPDATE approvals SET status = %s, decided_at = %s, decided_by = %s "
+               "WHERE id = %s AND status = 'pending'")
+        up: list = [None, now, approver, approval_id]   # status filled below
         if frag:
-            sql += " AND " + frag
-            p += params
+            upd += " AND " + frag
         with self._tx() as cur:
-            cur.execute(sql, tuple(p))
-            affected = cur.rowcount
-        return affected > 0
+            cur.execute(
+                "INSERT INTO approval_signoffs(approval_id, approver, decision, "
+                "decided_at) VALUES(%s, %s, %s, %s) "
+                "ON CONFLICT (approval_id, approver) DO UPDATE SET "
+                "decision = EXCLUDED.decision, decided_at = EXCLUDED.decided_at",
+                (approval_id, approver, status, now),
+            )
+            if status == "denied":
+                up[0] = "denied"
+                cur.execute(upd, tuple(up + (params if frag else [])))
+                return True
+            cur.execute(
+                "SELECT COUNT(*) FROM approval_signoffs "
+                "WHERE approval_id = %s AND decision = 'approved'",
+                (approval_id,),
+            )
+            approved = int(cur.fetchone()[0])
+            if approved >= required:
+                up[0] = "approved"
+                cur.execute(upd, tuple(up + (params if frag else [])))
+            return True
+
+    def approval_state(self, approval_id: int) -> dict | None:
+        """Quorum progress for an approval (tenant-scoped), or None if unknown.
+        Mirrors the SQLite backend's shape."""
+        appr = self.get_approval(approval_id)
+        if appr is None:
+            return None
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT approver, decision FROM approval_signoffs "
+                "WHERE approval_id = %s ORDER BY decided_at", (approval_id,),
+            )
+            rows = cur.fetchall()
+        approvers = [r[0] for r in rows if r[1] == "approved"]
+        return {
+            "status": appr.status,
+            "approvals_required": max(1, int(appr.approvals_required or 1)),
+            "approved_count": len(approvers),
+            "approvers": approvers,
+            "requested_by": appr.requested_by,
+        }
 
     def claim_approval(self, approval_id: int, principal: str) -> bool:
         """Atomically claim a pending approval (collaborative supervision).
@@ -2655,6 +2995,63 @@ class PostgresWorldModel:
         if row is None:
             return None
         return row[0] if row[0] is not None else 0
+
+    # ----- cluster-wide killswitch (v22) -----
+    # Untenanted single-row global emergency stop; on shared Postgres every
+    # replica's killswitch.check() consults this so a halt stops the whole fleet.
+    def arm_halt(self, reason: str = "", source: str = "manual",
+                 armed_by: str = "") -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO halt(scope, reason, source, armed_by, armed_at) "
+                "VALUES('', %s, %s, %s, %s) "
+                "ON CONFLICT(scope) DO UPDATE SET reason=EXCLUDED.reason, "
+                "source=EXCLUDED.source, armed_by=EXCLUDED.armed_by, "
+                "armed_at=EXCLUDED.armed_at",
+                (reason or "", source or "manual", armed_by or "", time.time()),
+            )
+
+    def disarm_halt(self) -> None:
+        with self._tx() as cur:
+            cur.execute("DELETE FROM halt WHERE scope = ''")
+
+    def active_halt(self) -> dict | None:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT reason, source, armed_by, armed_at FROM halt WHERE scope = ''")
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return {"reason": row[0] or "", "source": row[1] or "",
+                "armed_by": row[2] or "", "armed_at": row[3]}
+
+    # ----- cluster-wide provider spend ledger (v23) -----
+    def add_provider_spend(self, period_key: str, provider: str,
+                           amount: float) -> float:
+        """Atomically add ``amount`` and return the new running total. The single
+        authoritative spend total on shared Postgres so N replicas can't each
+        spend up to the provider cap (ON CONFLICT increment is row-atomic)."""
+        amt = max(0.0, float(amount or 0.0))
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO provider_spend(period_key, provider, dollars) "
+                "VALUES(%s, %s, %s) ON CONFLICT(period_key, provider) "
+                "DO UPDATE SET dollars = provider_spend.dollars + EXCLUDED.dollars "
+                "RETURNING dollars",
+                (period_key, provider, amt),
+            )
+            row = cur.fetchone()
+        return float(row[0]) if row else amt
+
+    def get_provider_spend(self, period_key: str, provider: str) -> float:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT dollars FROM provider_spend "
+                "WHERE period_key = %s AND provider = %s",
+                (period_key, provider),
+            )
+            row = cur.fetchone()
+        return float(row[0]) if row else 0.0
 
     # ----- pruning -----
 

@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Periodic emissions compliance report"
+consumers = ["ehs_manager", "environmental_compliance_lead"]
+cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Gather monitoring"
+instruction = "Read CEMS logs, fuel-use records, and permit limits for the reporting period."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Confirm methods"
+instruction = "Verify the applicable emission factors and calculation methods against the current permit and regulation."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Reconcile totals"
+instruction = "Compute period emissions in the spreadsheet and reconcile every total back to source monitoring data."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag exceedances"
+instruction = "Flag any value over a permit limit or any monitoring gap, and document the deviation verbatim with assumptions stated."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Route to EHS"
+instruction = "Route the reconciled emissions report to the accountable EHS manager for approval before regulatory submission."
+gate = "approval"

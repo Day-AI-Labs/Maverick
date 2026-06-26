@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "prioritized SEO audit & fix backlog"
+consumers = ["content_marketing_manager", "web_engineering_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Scope pages"
+instruction = "Pull the target URLs, current rankings, and traffic data from approved analytics and company documents."
+tools = ["read_file", "knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Audit on-page"
+instruction = "Inspect titles, meta, headings, internal links, and intent match for each page against the target query."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Prioritize fixes"
+instruction = "Rank issues by estimated traffic impact versus effort and document the rationale for each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify cited"
+instruction = "Confirm every recommendation traces to a source and flag any assumption or unknown plainly."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Hand to lead"
+instruction = "Route the prioritized fix backlog to the content and engineering leads for sign-off before any change ships."
+gate = "review"
