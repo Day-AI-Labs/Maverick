@@ -157,6 +157,23 @@ class TestWriteRecord:
         path = write_record(rec, outbox=tmp_path)
         assert path is None
 
+    def test_record_persists_goal_id_for_world_join(self, tmp_path, monkeypatch):
+        """training.ingest / export_texts join a record to the world DB by
+        goal_id; it must survive into the written payload. It used to be absent
+        from the dataclass entirely, so the join hit goal_id=0, fetched no
+        goal_events, and every trajectory came back step-less + transcript-less.
+        """
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: False)
+        rec = TrajectoryRecord(
+            task_brief_hash="abc", goal_id=42, outcome="success",
+            verifier_confidence=0.9, disagreement_entropy=0.7,
+        )
+        path = write_record(rec, outbox=tmp_path)
+        assert path is not None
+        payload = json.loads(path.read_text())
+        assert payload["goal_id"] == 42
+
 
 class TestConfigurableThresholds:
     """The donation bar is configurable via ``[telemetry]``.
