@@ -219,9 +219,9 @@ def test_encrypted_field_opaque_across_tenants(monkeypatch):
     assert "alice@example.com" not in (blob if isinstance(blob, str) else blob.decode("latin-1"))
 
 
-def test_tenant_world_cache_evicts_lru_not_raises(monkeypatch, tmp_path):
-    # M7: reaching MAX_TENANT_WORLDS evicts the least-recently-used tenant
-    # instead of hard-failing the next one. Shrink the cap for the test.
+def test_tenant_world_cache_rejects_new_tenant_at_cap(monkeypatch, tmp_path):
+    # Reaching MAX_TENANT_WORLDS rejects new tenant creation so tenant_by_user
+    # cannot create unbounded tenant world.db files. Shrink the cap for the test.
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
     from maverick import world_model
@@ -230,20 +230,23 @@ def test_tenant_world_cache_evicts_lru_not_raises(monkeypatch, tmp_path):
 
     w_a = world_model.world_for_tenant("a")
     world_model.world_for_tenant("b")
-    world_model.world_for_tenant("c")          # cache full (3)
-    # Touch "a" so it is most-recently-used; "b" is now the LRU.
+    world_model.world_for_tenant("c")          # tenant cache full (3)
+    # Existing cached tenants are still returned.
     assert world_model.world_for_tenant("a") is w_a
-    world_model.world_for_tenant("d")          # over cap -> evict LRU ("b")
+    with pytest.raises(world_model.TenantWorldLimitError):
+        world_model.world_for_tenant("d")
 
     keys = list(world_model._tenant_worlds)
     assert len(world_model._tenant_worlds) == 3
-    assert not any(k.endswith("b/world.db") for k in keys)   # b evicted
-    assert any(k.endswith("a/world.db") for k in keys)       # a kept (recently used)
-    assert any(k.endswith("d/world.db") for k in keys)       # d added
+    assert any(k.endswith("a/world.db") for k in keys)
+    assert any(k.endswith("b/world.db") for k in keys)
+    assert any(k.endswith("c/world.db") for k in keys)
+    assert not any(k.endswith("d/world.db") for k in keys)
+    assert not data_dir("world.db", tenant="d").exists()
     world_model._tenant_worlds.clear()
 
 
-def test_tenant_world_cache_never_evicts_shared(monkeypatch, tmp_path):
+def test_tenant_world_cap_excludes_shared(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
     from maverick import world_model
@@ -252,10 +255,13 @@ def test_tenant_world_cache_never_evicts_shared(monkeypatch, tmp_path):
 
     world_model.world_for_tenant(None)         # the shared world
     world_model.world_for_tenant("t1")
-    world_model.world_for_tenant("t2")         # at cap; next evicts a TENANT
-    world_model.world_for_tenant("t3")
+    world_model.world_for_tenant("t2")         # tenant cap reached
 
     from maverick.paths import data_dir
     shared_key = str(data_dir("world.db", tenant=None))
-    assert shared_key in world_model._tenant_worlds  # shared never evicted
+    assert shared_key in world_model._tenant_worlds
+    assert len(world_model._tenant_worlds) == 3  # shared + two tenants
+    with pytest.raises(world_model.TenantWorldLimitError):
+        world_model.world_for_tenant("t3")
+    assert shared_key in world_model._tenant_worlds
     world_model._tenant_worlds.clear()
