@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "OSHA 300 log & posting package"
+consumers = ["safety_manager", "project_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Collect incidents"
+instruction = "Read incident reports and first-aid records to identify cases that meet OSHA recordability criteria."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Classify cases"
+instruction = "Classify each recordable case by outcome and verify column entries against the current OSHA recordkeeping rule."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Update 300 log"
+instruction = "Enter each recordable case on the OSHA 300 log with case number, classification, and days away or restricted."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check deadlines"
+instruction = "Confirm the 300A summary totals and flag the February 1 posting and electronic submission deadlines."
+tools = ["spreadsheet", "web_search"]
+[[workflow]]
+name = "Safety review"
+instruction = "Route the 300 log and 300A posting package to the safety manager for review before it is posted or submitted."
+gate = "review"

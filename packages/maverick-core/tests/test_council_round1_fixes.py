@@ -208,7 +208,7 @@ def test_run_goal_rescans_routed_description_before_agent_brief(tmp_path, monkey
 # --- REL-8: the LLM cache must not evict the row it just stored ---
 
 def test_llm_cache_keeps_just_stored_entry(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
 
     c = LLMCache(tmp_path / "c.db", max_rows=3)
     for i in range(3):

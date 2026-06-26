@@ -11,3 +11,25 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "cited policy answer"
+consumers = ["requesting_employee", "security_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame question"
+instruction = "Restate the policy question and identify the specific control domain it falls under."
+[[workflow]]
+name = "Locate control"
+instruction = "Search the policy library for the exact control or standard that governs the question."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft answer"
+instruction = "Write the answer quoting the control text verbatim with its policy identifier and section."
+[[workflow]]
+name = "Flag gaps"
+instruction = "If no control covers the question or controls conflict, mark it a policy gap and route it to the security lead."
+gate = "review"

@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Fleet oversight action recommendations"
+consumers = ["it_manager", "risk_officer"]
+cadence = "daily"
+gate = "approval"
+
+[[workflow]]
+name = "Observe fleet"
+instruction = "Read the live state of the running agent fleet including active sessions, capabilities exercised, and recent decisions."
+tools = ["read_file"]
+[[workflow]]
+name = "Evaluate policy"
+instruction = "Evaluate observed agent behavior against org policy and identify violations, drift, or anomalous activity."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Triage incidents"
+instruction = "Triage flagged agents by severity and confirm the violation against authoritative policy before recommending action."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft actions"
+instruction = "Draft a prioritized approve, deny, pause, kill, or quarantine recommendation for each flagged agent with its justification."
+tools = ["read_file"]
+[[workflow]]
+name = "Operator decides"
+instruction = "Route the recommendations to the human operator, who alone executes any pause, kill, or quarantine."
+gate = "approval"

@@ -1,6 +1,9 @@
 """The Operating Record: decisions as a system of record + signed capsule."""
 from __future__ import annotations
 
+import os
+import stat
+
 import pytest
 from maverick import operating_record as orec
 from maverick.world_model import WorldModel
@@ -43,9 +46,19 @@ def test_capsule_roundtrip_and_tamper_detection(world, tmp_path, monkeypatch):
     pytest.importorskip("cryptography")
     import maverick.audit.signing as signing
     monkeypatch.setattr(signing, "KEY_DIR", tmp_path / "keys")
-    out = orec.export_capsule(world, tmp_path / "mind.capsule.json", now=5.0)
+    out_path = tmp_path / "mind.capsule.json"
+    out_path.write_text("old private capsule", encoding="utf-8")
+    out_path.chmod(0o600)
+    old_umask = os.umask(0o022)
+    try:
+        out = orec.export_capsule(world, out_path, now=5.0)
+    finally:
+        os.umask(old_umask)
     ok, reason = orec.verify_capsule(out)
     assert ok, reason
+    # Written atomically (temp + replace): no .tmp sibling left behind.
+    assert not out.with_name(out.name + ".tmp").exists()
+    assert stat.S_IMODE(os.stat(out).st_mode) == 0o600
     # Tamper with one decision: the capsule must fail verification.
     text = out.read_text(encoding="utf-8").replace(
         "Reconcile the quarterly ledger", "Reconcile the doctored ledger")

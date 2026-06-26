@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Maverick · overview{% endblock %}
+{% block title %}Lightwork · overview{% endblock %}
 {% block content %}
   <div id="tour" role="region" aria-label="How to start a goal" hidden
        class="panel" style="position: relative; border-color: var(--brand);">
@@ -25,12 +25,12 @@
     <div class="panel empty">
       <h2 class="empty__title">Start your first goal</h2>
       <p class="muted" style="max-width: 540px; margin: 0 auto 1.75rem;">
-        Maverick will plan a sub-agent swarm, run it under a budget cap, and
+        Lightwork will plan a sub-agent swarm, run it under a budget cap, and
         stream results back here.
       </p>
       <form method="post" action="/chat/send" style="display: flex; gap: 0.5rem; max-width: 580px; margin: 0 auto; flex-wrap: wrap;">
         <input type="text" name="title" required autofocus
-               aria-label="Describe a goal for Maverick to run"
+               aria-label="Describe a goal for Lightwork to run"
                placeholder="Plan a 2-week trip to Japan"
                class="input" style="flex: 1 1 320px;" />
         <button type="submit" class="btn btn--primary">

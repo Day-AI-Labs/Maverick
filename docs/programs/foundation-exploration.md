@@ -5,7 +5,7 @@
 governance v2 launch (elected TSC)" rows are *contingent* on this memo's
 outcome — exploration may legitimately conclude "no").
 **Status:** the exploration framework, complete. **The decision is the
-founder's** — Maverick is solo-maintained under BDFL governance
+founder's** — Lightwork is solo-maintained under BDFL governance
 ([`MAINTAINERS.md`](../../MAINTAINERS.md)), the copyright is held by the
 Licensor, and no committee output of this memo binds him.
 
@@ -13,7 +13,7 @@ Licensor, and no committee output of this memo binds him.
 
 Foundations (Linux Foundation, Apache, Eclipse model) exist primarily to
 hold **open-source** assets neutrally: trademark, copyright/license
-stewardship, and vendor-neutral governance. Maverick is **proprietary,
+stewardship, and vendor-neutral governance. Lightwork is **proprietary,
 commercially licensed** software ([`LICENSE`](../../LICENSE)) whose
 copyright concentration — via the [CLA](../../CLA.md) — is a deliberate
 commercial asset, and whose roadmap explicitly keeps the
@@ -23,12 +23,12 @@ applicable* as-is, and this memo says so rather than pretending otherwise.
 
 What a foundation **would** change for a proprietary product:
 
-- **Standards neutrality.** Interop surfaces Maverick *implements* but
+- **Standards neutrality.** Interop surfaces Lightwork *implements* but
   shouldn't *own* — the plugin manifest format, the federation protocol
   (`maverick-federation/1`), a skill-package format — could live under
   neutral stewardship so competitors and partners adopt them without
   adopting us. (Precedent: MCP and A2A are exactly such ecosystem specs;
-  Maverick deliberately adopted A2A's Agent Card and *cut* its homegrown
+  Lightwork deliberately adopted A2A's Agent Card and *cut* its homegrown
   equivalent — see
   [`docs/specs/a2a-vs-acd-decision.md`](../specs/a2a-vs-acd-decision.md).
   That decision is an argument for *joining* existing bodies, not founding

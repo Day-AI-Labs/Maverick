@@ -16,3 +16,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_quality", "ops_regulatory"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "temperature-excursion & traceability investigation"
+consumers = ["quality_manager", "regulatory_affairs"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull telemetry"
+instruction = "Read temperature telemetry and shipment records for the affected lots and serials across the cold chain."
+tools = ["samsara_read", "flexport_read", "read_file"]
+[[workflow]]
+name = "Verify traceability"
+instruction = "Reconcile lot/serial and aggregation data against DSCSA and FSMA 204 requirements and flag any traceability gap."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Characterize excursion"
+instruction = "Quantify each temperature excursion against the product stability profile and assess safety impact."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft disposition"
+instruction = "Draft the proposed product disposition and recall/escalation recommendation treating any gap as a potential safety event."
+[[workflow]]
+name = "Escalate for sign-off"
+instruction = "Route the disposition and any regulatory filing to quality and regulatory affairs for human authorization."
+gate = "approval"

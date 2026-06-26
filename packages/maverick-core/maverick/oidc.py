@@ -39,6 +39,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from ._envparse import is_truthy
+
 # Asymmetric signature algorithms only. HMAC (HS*) and "none" are
 # deliberately absent and additionally hard-rejected below, regardless of
 # config, so a misconfigured `[auth.oidc].algorithms` can never reopen the
@@ -47,9 +49,6 @@ DEFAULT_ALGORITHMS = ["RS256", "ES256"]
 _ALLOWED_ASYMMETRIC = frozenset(
     {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512", "EdDSA"}
 )
-_TRUE_VALUES = {"1", "true", "yes", "on"}
-
-
 class OIDCError(Exception):
     """Raised on any OIDC verification or configuration failure.
 
@@ -111,7 +110,7 @@ def _env_flag(name: str) -> bool | None:
     raw = os.environ.get(name)
     if raw is None:
         return None
-    return raw.strip().lower() in _TRUE_VALUES
+    return is_truthy(raw)
 
 
 def _load_oidc_section() -> dict:
@@ -170,13 +169,17 @@ def load_oidc_config() -> OIDCConfig:
     client_id = os.environ.get("MAVERICK_OIDC_CLIENT_ID") or str(
         section.get("client_id", "") or ""
     )
-    client_secret = os.environ.get("MAVERICK_OIDC_CLIENT_SECRET") or str(
+    # OIDC client/session secrets route through the secret provider (#54) so a
+    # mounted vault file can supply them without putting the secret in the
+    # process env; default backend reads env exactly as before.
+    from .secret_provider import get_secret
+    client_secret = get_secret("MAVERICK_OIDC_CLIENT_SECRET") or str(
         section.get("client_secret", "") or ""
     )
     redirect_uri = os.environ.get("MAVERICK_OIDC_REDIRECT_URI") or str(
         section.get("redirect_uri", "") or ""
     )
-    session_secret = os.environ.get("MAVERICK_OIDC_SESSION_SECRET") or str(
+    session_secret = get_secret("MAVERICK_OIDC_SESSION_SECRET") or str(
         section.get("session_secret", "") or ""
     )
     authorization_endpoint = os.environ.get(
@@ -324,7 +327,7 @@ def _require_pyjwt():
         raise OIDCError(
             "OIDC verification requires PyJWT, which isn't installed. "
             "Install the optional extra:  pip install 'maverick-agent[oidc]'  "
-            "(or  pip install 'pyjwt[crypto]>=2.8' )."
+            "(or  pip install 'pyjwt[crypto]>=2.13.0' )."
         ) from e
 
 

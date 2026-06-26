@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from maverick import skill_stats
 from maverick.orchestrator import _record_skill_outcome
+from maverick.skill import stats as skill_stats
 
 
 def test_swarmcontext_has_skills_used_set():

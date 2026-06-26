@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "marketplace performance & action report"
+consumers = ["marketplace_manager", "merchandising_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull metrics"
+instruction = "Query marketplace listings, order flow, and seller performance metrics for the period."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Check policy"
+instruction = "Verify listings and metrics against each marketplace's policy thresholds and the company's pricing rules."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Diagnose issues"
+instruction = "Identify suppressed listings, late shipments, and metric breaches that threaten account standing."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Propose actions"
+instruction = "Draft corrective actions per marketplace with the threshold and source behind each."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Send the performance report and proposed actions to the marketplace manager for review."
+gate = "review"

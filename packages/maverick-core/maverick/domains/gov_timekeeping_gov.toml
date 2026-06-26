@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "timekeeping compliance audit findings"
+consumers = ["dcaa_liaison", "controller"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull timecards"
+instruction = "Retrieve the period's timecards and the active contract and task charge codes from company records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Check charging standards"
+instruction = "Confirm the labor-charging and documentation standards required against the cited contract and DCAA criteria."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Test charges"
+instruction = "Test each charge for valid code, allowability, and supporting documentation and tabulate exceptions in a worksheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag mischarges"
+instruction = "Identify mischarges, missing approvals, or late corrections that breach timekeeping standards."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route findings"
+instruction = "Hand the audit findings with cited standards to the authorized human for review and corrective action."
+gate = "review"

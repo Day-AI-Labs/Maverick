@@ -12,6 +12,7 @@ class _Goal:
     id: int
     status: str = "pending"
     result: str | None = None
+    owner: str = ""
 
 
 @dataclass
@@ -30,10 +31,10 @@ class _FakeWorld:
     def __init__(self, shared: dict):
         self.s = shared  # shared across the fresh-per-call instances
 
-    def create_goal(self, title, description=""):
+    def create_goal(self, title, description="", *, owner=""):
         self.s["seq"] += 1
         gid = self.s["seq"]
-        self.s["goals"][gid] = _Goal(id=gid)
+        self.s["goals"][gid] = _Goal(id=gid, owner=owner)
         self.s["titles"][gid] = title
         return gid
 

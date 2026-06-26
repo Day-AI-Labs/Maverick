@@ -30,8 +30,21 @@ _ALWAYS_STRIP_ENV = (
     "GITHUB_TOKEN",
     "GH_TOKEN",
     "GITLAB_TOKEN",
+    # The SWE-bench gold patch: "GOLD_PATCH" matches no secret keyword in
+    # _SECRET_ENV_RE, so without this a `printenv` in a non-opaque child leaks
+    # the benchmark answer. shell.py only popped it for opaque runs.
+    "MAVERICK_GOLD_PATCH",
 )
 
+
+# Git reads env-based config injection as an ATOMIC protocol: GIT_CONFIG_COUNT=N
+# declares exactly N (GIT_CONFIG_KEY_i, GIT_CONFIG_VALUE_i) pairs. Used widely by
+# CI/dev hosts (GitHub Actions, Codespaces, devcontainers) for url.insteadOf
+# credential rewriting. Tracked separately because _SECRET_ENV_RE strips the
+# KEY_* members (they match "KEY") but NOT COUNT/VALUE_*, which would leave git a
+# dangling COUNT and abort every command with "missing config key
+# GIT_CONFIG_KEY_0" (exit 128). The family must be kept all-or-nothing.
+_GIT_CONFIG_INJECT_RE = re.compile(r"^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$")
 
 _TRUE = {"1", "true", "yes", "on"}
 
@@ -80,6 +93,14 @@ def scrub_env(source: dict | None = None) -> dict:
         if k in _ALWAYS_STRIP_ENV or _SECRET_ENV_RE.search(k):
             continue
         out[k] = v
+    # Keep git's COUNT/KEY_*/VALUE_* config-injection family all-or-nothing: if
+    # the secret filter dropped any member (it strips KEY_* but not COUNT/VALUE_*),
+    # the survivors form a corrupt injection that aborts every git command with
+    # exit 128. Drop the whole family so git cleanly falls back to file config.
+    git_family = {k for k in src if _GIT_CONFIG_INJECT_RE.match(k)}
+    if git_family - out.keys():  # at least one member was scrubbed
+        for k in git_family:
+            out.pop(k, None)
     return out
 
 

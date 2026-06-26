@@ -103,14 +103,14 @@ async def relay_endpoint(req: Request, authorization: str | None = Header(defaul
 Run it with any ASGI server (`uvicorn yourmodule:app`), behind your own TLS,
 and require callers to send `Authorization: Bearer <inbound_auth_token>`. The
 inbound bearer token is deliberately separate from the outbound webhook signing
-secret so an exposed relay cannot be used as a confused deputy. It points at the Maverick instance's `POST /webhook/start`; nothing is hosted by us.
+secret so an exposed relay cannot be used as a confused deputy. It points at the Lightwork instance's `POST /webhook/start`; nothing is hosted by us.
 
 ## Run it as a Cloudflare Worker
 
 The same decision logic, ported to the Worker fetch handler. Store a separate
 `RELAY_INBOUND_TOKEN` secret in the Worker environment and reject requests that
 do not present it. The Worker holds no
-agent — it classifies, acks, and forwards to your self-hosted Maverick's
+agent — it classifies, acks, and forwards to your self-hosted Lightwork's
 `POST /webhook/start`, then lets the run deliver to the secondary channel.
 
 ```js

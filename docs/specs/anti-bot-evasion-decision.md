@@ -19,7 +19,7 @@ actively block automation?
 up. A config flag does not change that: the value of an evasion kit is
 precisely that it circumvents a site's stated "no automated access"
 boundary, which is detection evasion against a third party. Shipping it —
-even default-OFF, even labelled "use responsibly" — would make Maverick a
+even default-OFF, even labelled "use responsibly" — would make Lightwork a
 turnkey tool for ToS violation, scraping past rate limits, and CAPTCHA
 farming, and would put that capability one toggle away for every operator
 regardless of intent. That is not a posture we can stand behind in a

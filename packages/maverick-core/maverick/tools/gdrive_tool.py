@@ -72,8 +72,12 @@ def _get(path: str, params: dict | None = None) -> tuple[int, Any]:
 
 def _get_raw(url: str, params: dict | None = None, max_bytes: int = 4096) -> tuple[int, str]:
     import httpx
+    # follow_redirects=False: the OAuth Bearer token is replayed by httpx across
+    # a cross-origin 30x (it strips only the `auth=` param, not header creds), so
+    # a redirect off the Drive API host would leak the access token. A genuine
+    # download/export redirect surfaces as its 3xx code rather than leaking.
     r = httpx.get(url, headers={"Authorization": f"Bearer {_token()}"},
-                  params=params or {}, timeout=30.0, follow_redirects=True)
+                  params=params or {}, timeout=30.0, follow_redirects=False)
     if r.status_code >= 400:
         return r.status_code, r.text[:300]
     return r.status_code, r.content[:max_bytes].decode("utf-8", errors="replace")

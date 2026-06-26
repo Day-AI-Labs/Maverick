@@ -172,19 +172,98 @@ def test_rate_limit_per_peer_with_injected_clock():
     handled: list = []
     now = {"t": 0.0}
     bucket = TokenBucket(rate_per_min=60, burst=2, clock=lambda: now["t"])
-    env = _envelope()
-    applier = _applier(handled, env, limiter=bucket)
-    assert applier.apply(env)["applied"]
-    assert applier.apply(env)["applied"]
-    out = applier.apply(env)  # burst of 2 exhausted
+    # Distinct envelopes (distinct signatures) so we exercise the rate limiter,
+    # not the replay guard. A rate-limited envelope must NOT be recorded as seen,
+    # so its retry succeeds once the bucket refills (checked below).
+    envs = [_envelope(text=f"msg-{i}") for i in range(3)]
+    applier = _applier(handled, envs[0], limiter=bucket)
+    assert applier.apply(envs[0])["applied"]
+    assert applier.apply(envs[1])["applied"]
+    out = applier.apply(envs[2])  # burst of 2 exhausted
     assert not out["applied"] and "rate limited" in out["reason"]
-    now["t"] += 1.0  # 60/min -> one token per second
-    assert applier.apply(env)["applied"]
+    now["t"] += 1.0  # 60/min -> one token per second; retry the dropped one
+    assert applier.apply(envs[2])["applied"]  # not poisoned by the rate-limit drop
     assert len(handled) == 3
+
+
+def test_inbound_rejects_replayed_envelope():
+    """A captured envelope replayed at the SAME peer is rejected the second time
+    (the `to` check only stops cross-peer replay)."""
+    handled: list = []
+    env = _envelope(text="transfer funds")
+    applier = _applier(handled, env)
+    assert applier.apply(env)["applied"]          # first delivery handled
+    out = applier.apply(env)                       # exact replay
+    assert not out["applied"] and out["reason"] == "replayed envelope"
+    assert len(handled) == 1                        # handler ran exactly once
+
+
+def test_inbound_rejects_stale_envelope():
+    """An envelope older than the freshness window is refused — bounds how long
+    a captured envelope stays replayable."""
+    handled: list = []
+    old_env = _envelope(text="old", now=1000.0)     # created_at far in the past
+    # wall_clock is well beyond the freshness window from created_at.
+    applier = _applier(handled, old_env, max_age_seconds=300.0,
+                       wall_clock=lambda: 1000.0 + 10_000)
+    out = applier.apply(old_env)
+    assert not out["applied"] and "stale" in out["reason"]
+    assert handled == []
+
+
+def test_inbound_rejects_future_dated_envelope():
+    handled: list = []
+    env = _envelope(text="from the future", now=50_000.0)
+    applier = _applier(handled, env, max_age_seconds=300.0,
+                       wall_clock=lambda: 1000.0)   # created_at is far ahead
+    out = applier.apply(env)
+    assert not out["applied"] and "future-dated" in out["reason"]
+
+
+def test_replay_nonce_pruned_by_age():
+    """Once an envelope ages out of the window it's no longer in the replay
+    cache, so the cache doesn't grow without bound."""
+    handled: list = []
+    env = _envelope(text="hi", now=1000.0)
+    applier = _applier(handled, env, max_age_seconds=300.0,
+                       wall_clock=lambda: 1000.0)
+    assert applier.apply(env)["applied"]
+    assert env["sig"] in applier._seen_sigs
+    # A later, fresh envelope prunes the aged-out nonce.
+    later = _envelope(text="later", now=1000.0 + 10_000)
+    applier._wall = lambda: 1000.0 + 10_000
+    assert applier.apply(later)["applied"]
+    assert env["sig"] not in applier._seen_sigs
 
 
 def test_apply_many_iterates_injected_receive():
     handled: list = []
-    env = _envelope()
-    results = _applier(handled, env).apply_many(iter([env, "junk", env]))
+    env1 = _envelope(text="one")
+    env2 = _envelope(text="two")  # distinct sig so it isn't seen as a replay
+    results = _applier(handled, env1).apply_many(iter([env1, "junk", env2]))
     assert [r["applied"] for r in results] == [True, False, True]
+
+
+def test_append_is_concurrency_safe(tmp_path):
+    """Concurrent appends do a load-modify-save; without the lock two writers
+    both load the same items and the second save clobbers the first -- an
+    enqueued envelope vanishes. All N must survive (queue large enough to not
+    bound)."""
+    import threading
+
+    q = OutboundQueue(path=tmp_path / "outbox.json", max_len=10_000)
+    n, per = 12, 30
+
+    def worker(w: int):
+        for i in range(per):
+            q.append({"w": w, "i": i})
+
+    threads = [threading.Thread(target=worker, args=(w,)) for w in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(q) == n * per
+    # No fixed-temp droppings from concurrent writers.
+    assert list(tmp_path.glob("*.tmp")) == []

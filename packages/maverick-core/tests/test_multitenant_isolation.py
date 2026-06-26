@@ -170,7 +170,7 @@ def test_calibration_samples_and_freeze_are_per_tenant(monkeypatch):
 # ---- per-tenant KMS isolation ----
 
 def test_tenant_dek_distinct_and_non_transferable():
-    from maverick.tenant_kms import tenant_dek
+    from maverick.tenant.kms import tenant_dek
     dek_a = tenant_dek("acme")
     dek_b = tenant_dek("globex")
     assert dek_a != dek_b
@@ -182,7 +182,7 @@ def test_tenant_dek_distinct_and_non_transferable():
 
 def test_wrapped_dek_does_not_unwrap_cross_tenant():
     from maverick.crypto_at_rest import EncryptionUnavailable
-    from maverick.tenant_kms import LocalKMS, tenant_dek
+    from maverick.tenant.kms import LocalKMS, tenant_dek
     kms = LocalKMS()
     dek = tenant_dek("acme")
     wrapped = kms.wrap(dek, context=b"tenant:acme")
@@ -231,30 +231,36 @@ def test_llm_provider_client_cache_is_tenant_aware(tmp_path, monkeypatch):
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.toml").write_text("[providers.openai]\n", encoding="utf-8")
 
-    for tenant, key, base_url in (
-        ("tenant-a", "tenant-a-key", "https://tenant-a.example/v1"),  # pragma: allowlist secret
-        ("tenant-b", "tenant-b-key", "https://tenant-b.example/v1"),  # pragma: allowlist secret
+    for tenant, key, base_url, headers in (
+        # tenant-a pins a data-residency header; tenant-b sets none.
+        ("tenant-a", "tenant-a-key", "https://tenant-a.example/v1",  # pragma: allowlist secret
+         'default_headers = { "X-Data-Residency" = "eu" }\n'),
+        ("tenant-b", "tenant-b-key", "https://tenant-b.example/v1", ""),  # pragma: allowlist secret
     ):
         tenant_dir = data_dir(tenant=tenant)
         tenant_dir.mkdir(parents=True, exist_ok=True)
         (tenant_dir / "config.toml").write_text(
             "[providers.openai]\n"
             f'api_key = "{key}"\n'  # pragma: allowlist secret
-            f'base_url = "{base_url}"\n',
+            f'base_url = "{base_url}"\n'
+            f"{headers}",
             encoding="utf-8",
         )
 
     class FakeProviderClient:
-        def __init__(self, name, api_key=None, base_url=None):
+        def __init__(self, name, api_key=None, base_url=None, default_headers=None):
             self.name = name
             self.api_key = api_key
             self.base_url = base_url
+            self.default_headers = default_headers
 
     calls = []
 
-    def fake_get_provider_client(name, api_key=None, base_url=None):
+    def fake_get_provider_client(name, api_key=None, base_url=None, default_headers=None):
         calls.append((name, api_key, base_url))
-        return FakeProviderClient(name, api_key=api_key, base_url=base_url)
+        return FakeProviderClient(
+            name, api_key=api_key, base_url=base_url, default_headers=default_headers
+        )
 
     import maverick.providers as providers_mod
     monkeypatch.setattr(providers_mod, "get_provider_client", fake_get_provider_client)
@@ -277,7 +283,52 @@ def test_llm_provider_client_cache_is_tenant_aware(tmp_path, monkeypatch):
     assert client_a.base_url == "https://tenant-a.example/v1"
     assert client_b.api_key == "tenant-b-key"  # pragma: allowlist secret
     assert client_b.base_url == "https://tenant-b.example/v1"
+    # Data-residency / ZDR headers must survive the tenant-aware cache refactor.
+    assert client_a.default_headers == {"X-Data-Residency": "eu"}
+    assert client_b.default_headers is None
     assert calls == [
         ("openai", "tenant-a-key", "https://tenant-a.example/v1"),  # pragma: allowlist secret
         ("openai", "tenant-b-key", "https://tenant-b.example/v1"),  # pragma: allowlist secret
     ]
+
+
+def test_tenant_world_cache_evicts_lru_not_raises(monkeypatch, tmp_path):
+    # M7: reaching MAX_TENANT_WORLDS evicts the least-recently-used tenant
+    # instead of hard-failing the next one. Shrink the cap for the test.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    from maverick import world_model
+    world_model._tenant_worlds.clear()
+    monkeypatch.setattr(world_model, "MAX_TENANT_WORLDS", 3)
+
+    w_a = world_model.world_for_tenant("a")
+    world_model.world_for_tenant("b")
+    world_model.world_for_tenant("c")          # cache full (3)
+    # Touch "a" so it is most-recently-used; "b" is now the LRU.
+    assert world_model.world_for_tenant("a") is w_a
+    world_model.world_for_tenant("d")          # over cap -> evict LRU ("b")
+
+    keys = list(world_model._tenant_worlds)
+    assert len(world_model._tenant_worlds) == 3
+    assert not any(k.endswith("b/world.db") for k in keys)   # b evicted
+    assert any(k.endswith("a/world.db") for k in keys)       # a kept (recently used)
+    assert any(k.endswith("d/world.db") for k in keys)       # d added
+    world_model._tenant_worlds.clear()
+
+
+def test_tenant_world_cache_never_evicts_shared(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    from maverick import world_model
+    world_model._tenant_worlds.clear()
+    monkeypatch.setattr(world_model, "MAX_TENANT_WORLDS", 2)
+
+    world_model.world_for_tenant(None)         # the shared world
+    world_model.world_for_tenant("t1")
+    world_model.world_for_tenant("t2")         # at cap; next evicts a TENANT
+    world_model.world_for_tenant("t3")
+
+    from maverick.paths import data_dir
+    shared_key = str(data_dir("world.db", tenant=None))
+    assert shared_key in world_model._tenant_worlds  # shared never evicted
+    world_model._tenant_worlds.clear()

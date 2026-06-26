@@ -9,7 +9,7 @@ Quick triage for the alerts in `prometheus-rules.yaml`. Pair with
 |-------|---------|
 | `GET /livez` | process accepts TCP (liveness) |
 | `GET /healthz` | deep check: DB writable, provider key present, runner alive — 503 when degraded |
-| `GET /readyz` | readiness (alias of `/healthz` today) |
+| `GET /readyz` | readiness: the `/healthz` checks PLUS deep checks (client binding, shield-required, agent-trust registry) — 503 when not ready to serve |
 | `GET /metrics` | Prometheus series (bearer-gated when a dashboard token is set) |
 
 ## Alert: MaverickDown

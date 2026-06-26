@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "load consolidation & cube plan"
+consumers = ["transportation_planner", "operations_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather orders"
+instruction = "Query open orders with weights, dimensions, ship dates, and destinations for the planning horizon."
+tools = ["sql_query"]
+[[workflow]]
+name = "Confirm constraints"
+instruction = "Read equipment cube, weight limits, stackability, and delivery-window rules via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build consolidation"
+instruction = "Group compatible orders and compute cube and weight utilization per load in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check feasibility"
+instruction = "Verify each proposed load respects axle, cube, and appointment constraints and flag any overage."
+[[workflow]]
+name = "Route load plan"
+instruction = "Send the proposed consolidation and cube plan to the transportation planner for review before booking."
+gate = "review"

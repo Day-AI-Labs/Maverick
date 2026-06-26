@@ -1,6 +1,6 @@
-# Maverick performance SLA (self-hosted)
+# Lightwork performance SLA (self-hosted)
 
-Maverick is self-hosted, so this SLA is not a hosted-service uptime promise —
+Lightwork is self-hosted, so this SLA is not a hosted-service uptime promise —
 it is the set of **measurable performance properties each release certifies
 on reference hardware**, with the harness that proves them
 (`python -m maverick.perf_sla --ci`, run in CI). A release that regresses a

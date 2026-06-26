@@ -8,6 +8,7 @@
 
 use unicode_normalization::UnicodeNormalization;
 
+pub mod phash;
 pub mod pii;
 pub mod secret;
 

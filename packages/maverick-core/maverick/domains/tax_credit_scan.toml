@@ -7,6 +7,30 @@ persona = """You are the Credit Eligibility Agent for this business -- a tax pre
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "high"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "credit eligibility screen"
+consumers = ["tax_preparer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read workpaper"
+instruction = "Pull the workpaper facts that drive credits, including dependents, 1098-T tuition, and energy receipts."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Screen credits"
+instruction = "Test each candidate credit against its eligibility criteria, including child tax credit phaseout and education and energy thresholds."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "List substantiation"
+instruction = "For each likely credit, list the criteria met, criteria missing, and the substantiation required before claiming it."
+[[workflow]]
+name = "Hand to preparer"
+instruction = "Route the cited eligibility screen to the credentialed preparer for review."
+gate = "review"

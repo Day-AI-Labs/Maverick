@@ -11,10 +11,14 @@ checked in. With the ``[grpc]`` extra installed, ``serve()`` just works.
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
 import os
+import threading
+import time
+from collections import deque
 from concurrent import futures
 from pathlib import Path
 
@@ -99,7 +103,57 @@ def _abort(context, code, details: str):
 
 
 def _require_authorized(context, bearer_token: str) -> None:
-    _authorize_caller(context, bearer_token)
+    agent = _authorize_caller(context, bearer_token)
+    _trust_capability(context, agent)
+
+
+# --- per-caller request rate limiting (sliding 60s window) -------------------
+_GRPC_RATE_LOCK = threading.Lock()
+_GRPC_RATE_HITS: dict[str, deque] = {}
+# Bound the tracked-caller map; idle buckets are swept when it grows large so a
+# long-running server can't leak one entry per distinct agent/peer forever.
+_GRPC_RATE_MAX_KEYS = 8192
+
+
+def _grpc_rate_limit_per_min() -> int:
+    """Requests/minute per caller. Default 600; 0 disables. Complements
+    maximum_concurrent_rpcs (in-flight cap) with a request-rate cap."""
+    try:
+        return max(0, int(os.environ.get("MAVERICK_GRPC_RATE_LIMIT", "600")))
+    except ValueError:
+        return 600
+
+
+def _grpc_rate_key(context, agent) -> str:
+    """Bucket by per-caller agent id when present, else by hashed peer."""
+    if agent is not None and getattr(agent, "id", None):
+        return "agent:" + str(agent.id)
+    peer = ""
+    try:
+        peer = context.peer() or ""
+    except Exception:  # pragma: no cover - context always has peer() in practice
+        peer = ""
+    return "peer:" + hashlib.sha256(peer.encode("utf-8")).hexdigest()[:16]
+
+
+def _grpc_rate_ok(key: str) -> bool:
+    limit = _grpc_rate_limit_per_min()
+    if limit <= 0:
+        return True
+    now = time.monotonic()
+    with _GRPC_RATE_LOCK:
+        cutoff = now - 60.0
+        dq = _GRPC_RATE_HITS.setdefault(key, deque())
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(_GRPC_RATE_HITS) > _GRPC_RATE_MAX_KEYS:
+            for k in [k for k, d in _GRPC_RATE_HITS.items()
+                      if k != key and (not d or d[-1] < cutoff)]:
+                del _GRPC_RATE_HITS[k]
+        if len(dq) >= limit:
+            return False
+        dq.append(now)
+        return True
 
 
 def _authorize_caller(context, bearer_token: str):
@@ -109,26 +163,34 @@ def _authorize_caller(context, bearer_token: str):
     shared principal) OR a per-caller ``[agent_trust] grpc_token`` (returns the
     resolved :class:`TrustedAgent`). Aborts UNAUTHENTICATED when neither matches,
     so per-caller tokens are first-class without weakening the shared-bearer path.
+    Applies a per-caller request-rate limit after auth (RESOURCE_EXHAUSTED).
     """
     supplied = _metadata_bearer_token(context)
+    identity = None  # None == the shared operator principal
+    authorized = False
     if supplied and bearer_token and hmac.compare_digest(
         supplied.encode(), bearer_token.encode()
     ):
-        return None
-    if supplied:
+        authorized = True
+    elif supplied:
         try:
             from ..agent_trust import agent_for_token
             agent = agent_for_token(supplied, "grpc")
         except Exception:  # pragma: no cover - never break auth on a read error
             agent = None
         if agent is not None:
-            return agent
-    _abort(context, _grpc_code().UNAUTHENTICATED, "missing or invalid bearer token")
+            identity = agent
+            authorized = True
+    if not authorized:
+        _abort(context, _grpc_code().UNAUTHENTICATED, "missing or invalid bearer token")
+    if not _grpc_rate_ok(_grpc_rate_key(context, identity)):
+        _abort(context, _grpc_code().RESOURCE_EXHAUSTED, "rate limit exceeded")
+    return identity
 
 
 def _trust_capability(context, agent):
-    """Agent Trust Plane gate for a goal-CREATING RPC. Returns the capability
-    ceiling to intersect into the run (``None`` when disengaged). Aborts
+    """Agent Trust Plane gate for an inbound gRPC RPC. Returns the capability
+    ceiling to intersect into goal execution (``None`` when disengaged). Aborts
     PERMISSION_DENIED when the caller isn't a permitted inbound agent.
 
     A per-caller token gates on that agent's entry; a shared-operator-bearer

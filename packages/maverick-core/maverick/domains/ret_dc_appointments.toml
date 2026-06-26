@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "DC inbound appointment schedule"
+consumers = ["dc_operations_manager", "inbound_supervisor"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull inbound"
+instruction = "Query expected inbound loads with PO, carrier, pallet count, and requested delivery dates."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check compliance"
+instruction = "Verify each load against routing guide, ASN, and appointment-window rules and flag noncompliant shipments."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build schedule"
+instruction = "Sequence appointment slots against dock capacity and labor to avoid detention and overbooking."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag conflicts"
+instruction = "Flag dock overbooks, capacity gaps, and late or missing ASNs that jeopardize the schedule."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Ops review"
+instruction = "Hand the inbound appointment schedule to the DC operations manager for sign-off before slots are confirmed."
+gate = "review"

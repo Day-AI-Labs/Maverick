@@ -33,6 +33,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .config import env_flag
+
 log = logging.getLogger(__name__)
 
 _MAX_ROWS = 100_000
@@ -40,11 +42,9 @@ _MAX_ROWS = 100_000
 
 def enabled() -> bool:
     """Whether the data-engine join should prefer real outcomes. OFF by default."""
-    env = os.environ.get("MAVERICK_CONSEQUENCE", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_CONSEQUENCE")
+    if _v is not None:
+        return _v
     try:
         from .config import get_consequence
 

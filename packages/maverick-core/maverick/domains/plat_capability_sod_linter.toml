@@ -10,3 +10,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["platform"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "SoD conflict findings report"
+consumers = ["platform_reviewer", "security_officer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Load manifests"
+instruction = "Read the synthesized fleet's capability grant manifests for every pack queued for promotion."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Load SoD policy"
+instruction = "Search platform knowledge for the separation-of-duties policy and the least-privilege baseline to lint against."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Lint grants"
+instruction = "Cross-check each grant for SoD conflicts, toxic capability combinations, and over-grant against the baseline."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag unclear grants"
+instruction = "Flag any grant you cannot fully reason about rather than passing it, citing the specific conflicting capabilities."
+[[workflow]]
+name = "Emit findings"
+instruction = "Emit the findings report to a human reviewer and never tighten or approve any grant yourself."
+gate = "review"

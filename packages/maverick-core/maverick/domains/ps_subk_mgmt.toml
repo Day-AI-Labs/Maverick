@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "subcontractor compliance & invoice register"
+consumers = ["engagement_partner", "accounts_payable"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "List subks"
+instruction = "Read active subcontractor agreements and their engagement assignments for the period."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Check insurance"
+instruction = "Verify each subcontractor's insurance certificates and agreement terms are current against the documents on file."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Reconcile invoices"
+instruction = "Match submitted subcontractor invoices to contracted rates and approved hours and flag overbilling or rate variances."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag exposures"
+instruction = "Surface expired insurance, missing agreements, or scope overruns that create client or liability exposure."
+tools = ["sql_query"]
+[[workflow]]
+name = "Partner review"
+instruction = "Route the compliance and invoice register with exceptions to the engagement partner for approval."
+gate = "review"

@@ -1,8 +1,8 @@
-# Embedding Maverick
+# Embedding Lightwork
 
-How to drive Maverick from inside another application — Python web frameworks
+How to drive Lightwork from inside another application — Python web frameworks
 (FastAPI / Django / Flask), chat channels (Slack / Discord / Telegram), or any
-language over MCP. Maverick is a library first; the CLI is just one caller.
+language over MCP. Lightwork is a library first; the CLI is just one caller.
 
 > **One rule that bites everyone:** `run_goal_sync()` is **blocking** and runs
 > its own event loop internally (`asyncio.run`). In an async app (FastAPI,
@@ -45,7 +45,7 @@ for the CLI (`ANTHROPIC_API_KEY`, etc.).
 
 ## Web-framework endpoints
 
-> **Security boundary:** Maverick goals can consume provider budget and may drive
+> **Security boundary:** Lightwork goals can consume provider budget and may drive
 > configured tools (including shell-capable sandboxes). Treat any HTTP endpoint
 > that starts a goal as a privileged remote-execution surface. Do **not** expose
 > these routes on a public network unless your application enforces
@@ -158,7 +158,7 @@ Discord, Telegram, SMS/Twilio, Email, Matrix, and more ship the same way — one
 
 ## Any language, or another agent (MCP / A2A)
 
-- **MCP** — Maverick's official cross-language surface. Run `maverick mcp` (stdio)
+- **MCP** — Lightwork's official cross-language surface. Run `maverick mcp` (stdio)
   or `maverick mcp --http` and drive it from TypeScript / Go / Rust / .NET / JVM,
   or any MCP-speaking IDE client. See [`docs/clients/`](./clients/) for ~20-line
   quickstarts.

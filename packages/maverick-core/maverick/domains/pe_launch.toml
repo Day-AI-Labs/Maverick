@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "launch plan & release notes package"
+consumers = ["gtm_lead", "product_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather scope"
+instruction = "Read the PRD, ship date, and feature scope and search knowledge for prior launch playbooks."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check flag state"
+instruction = "Read the LaunchDarkly and Split rollout flags to confirm the targeting and percentage match the planned launch ramp."
+tools = ["launchdarkly_read", "split_read"]
+[[workflow]]
+name = "Draft release notes"
+instruction = "Draft customer-facing release notes and an internal launch plan with timeline, owners, and rollback triggers."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Verify readiness"
+instruction = "Cross-check that every launch dependency and GTM asset is committed and flag the gaps that would slip the date."
+[[workflow]]
+name = "GTM sign-off"
+instruction = "Route the launch package to the GTM lead and product manager for sign-off before any external comms go out."
+gate = "review"

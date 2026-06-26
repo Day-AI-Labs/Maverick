@@ -38,6 +38,31 @@ def ledger(tmp_path):
 
 # --- record / check math -----------------------------------------------------
 
+def test_record_is_concurrency_safe(ledger):
+    """The record() load-modify-save must not lose updates under concurrency.
+    Without serialization two writers load the same total and the second save
+    clobbers the first -- spend is undercounted and a provider slips past its
+    cap. (The flock serializes even across processes; threads exercise the same
+    sidecar lock.)"""
+    import threading
+
+    n, per = 16, 40
+    amount = 0.25
+
+    def worker():
+        for _ in range(per):
+            pcc.record("anthropic", amount, now=T0, path=ledger)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    spent = pcc.check("anthropic", now=T0, path=ledger).spent
+    assert spent == pytest.approx(n * per * amount), spent
+
+
 def test_record_and_check_math(caps_config, ledger):
     pcc.record("anthropic", 10.0, now=T0, path=ledger)
     pcc.record("anthropic", 5.5, now=T0, path=ledger)

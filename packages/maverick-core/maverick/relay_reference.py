@@ -217,11 +217,17 @@ class Relay:
         surface as a 500 to a user who got no reply.
         """
         ack = self.config.ack_template.format(channel=self.config.secondary_channel)
+        # Protected keys are set AFTER the context spread so inbound data can
+        # never override them. The old order spread `context` last, so a context
+        # carrying `deliver_to`/`goal` overwrote them -- letting inbound request
+        # data redirect a finished long-task result to an attacker-chosen channel
+        # or decouple the acked goal from what runs. Only `source` was guarded.
+        _protected = ("goal", "deliver_to", "source")
         payload = {
+            **{k: v for k, v in context.items() if k not in _protected},
             "goal": text,
             "deliver_to": self.config.secondary_channel,
             "source": context.get("source", "relay"),
-            **{k: v for k, v in context.items() if k != "source"},
         }
         meta: dict[str, Any] = {"deliver_to": self.config.secondary_channel}
         if reason:

@@ -1,7 +1,7 @@
 # External security audit — readiness & scope
 
 This document is the entry point for an **independent penetration test or
-security review** of Maverick. It defines what to attack, what the existing
+security review** of Lightwork. It defines what to attack, what the existing
 controls are and how to verify them, what we already test, and where the
 known residual risks are. It is the operational companion to two existing
 docs — read those first:
@@ -156,8 +156,10 @@ hardened config; an auditor should still try to escalate each.
   README"); a false-positive-tuning pass is outstanding.
 - **Audit tamper-evidence is opt-in.** Plain NDJSON unless `[audit] sign =
   true`; third-party attribution requires an externally-held pubkey.
-- **Plugin permissions are a soft signal.** The manifest is advisory; the
-  enforcement boundary is the default-deny allowlist, not the manifest.
+- **Plugin permissions are enforced by default.** A plugin requesting an
+  ungranted permission is skipped (not loaded) unless `enforce_permissions =
+  false` downgrades it to advisory; the default-deny load allowlist is a second,
+  independent gate.
 
 ---
 

@@ -2,7 +2,7 @@
 
 A single self-contained JavaScript file (`maverick-widget.js` — no
 framework, no CDN, no build step) that customers drop into any page to get
-a floating Maverick status pill. Clicking it expands a panel with
+a floating Lightwork status pill. Clicking it expands a panel with
 **active / done / failed** counts and the most recent finished result.
 
 ```html

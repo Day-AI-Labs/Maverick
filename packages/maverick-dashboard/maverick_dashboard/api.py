@@ -30,7 +30,12 @@ from maverick.runner import (
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
-from ._shared import _any_provider_key_set, _world
+from ._shared import (
+    _any_provider_key_set,
+    _get_sse_semaphore,
+    _world,
+    require_provider_or_400,
+)
 from ._shared import _world_cache as _world_cache  # re-export: tests clear api._world_cache
 from .api_schemas import (
     AgentOverrideIn,
@@ -48,6 +53,8 @@ from .api_schemas import (
     GoalIn,
     GoalOut,
     HaltIn,
+    ImportRunIn,
+    ImportRunOut,
     OutcomeIn,
     RedactIn,
     ReparentIn,
@@ -73,15 +80,44 @@ from .api_schemas import (
 from .auth import (
     assert_goal_access,
     caller_principal,
+    can_access_goal,
     execution_user_id_from_request,
     goal_owner_filter,
     is_dashboard_admin,
+    require_global_permission,
     require_permission,
 )
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
+
+# Shared-store channel for Idempotency-Key dedup on goal creation (see
+# create_goal). Distinct from the channel/webhook idempotency namespaces.
+_IDEMPOTENCY_CHANNEL = "idempotency:api:goals"
+
+
+def _shared_halt_backend() -> bool:
+    """Whether the cluster-wide (shared-store) halt is in play. Only on a shared
+    backend (Postgres); on single-host SQLite the local HALT file is the whole
+    mechanism and the killswitch never consults the shared row, so the dashboard
+    leaves it untouched (keeps single-host behavior unchanged)."""
+    try:
+        from maverick.world_model_backends import is_postgres_configured
+        return bool(is_postgres_configured())
+    except Exception:
+        return False
+
+
+def _require_halt_permission(request: Request) -> None:
+    """Gate dashboard halt toggles at the correct blast radius.
+
+    In local/SQLite mode the halt is process-local and remains an operator action.
+    In shared Postgres mode the halt row is fleet-wide and untenanted, so toggling
+    it is a global control-plane action reserved for dashboard admins.
+    """
+    require_permission(request, "admin" if _shared_halt_backend() else "operate")
+
 
 _PERF_SLA_CACHE_TTL_SECONDS = 60.0
 _PERF_SLA_LOCK = asyncio.Lock()
@@ -130,7 +166,7 @@ def _to_tenant_out(rec) -> TenantOut:
 
 
 def _get_tenant_or_404(tenant_id: str):
-    from maverick import tenant_registry
+    from maverick.tenant import registry as tenant_registry
     rec = tenant_registry.get_tenant(tenant_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="no such tenant")
@@ -139,15 +175,49 @@ def _get_tenant_or_404(tenant_id: str):
 
 @router.get("/admin/tenants", response_model=list[TenantOut])
 async def list_tenants(request: Request) -> list[TenantOut]:
-    require_permission(request, "admin")
-    from maverick import tenant_registry
+    require_global_permission(request, "admin")
+    from maverick.tenant import registry as tenant_registry
     return [_to_tenant_out(r) for r in tenant_registry.list_tenants()]
+
+
+@router.get("/workforce/posture")
+async def workforce_posture(request: Request) -> dict:
+    """The workforce autonomy dial: fleet posture + graduation candidates.
+
+    Read-only surface for the dashboard -- whether per-agent autonomy levels are
+    on, the distribution of baseline authority rungs across the roster, how many
+    hires are still onboarding, and which have earned graduation from a clean
+    approval record (advisory; the client lifts onboarding to act on it).
+    """
+    require_permission(request, "view")
+    from maverick.agent_autonomy import graduation_candidates, levels_enabled
+    from maverick.domain_audit import audit_roster, summarize
+    s = summarize(audit_roster())
+    out: dict = {
+        "levels_enabled": levels_enabled(),
+        "autonomy_posture": s.get("autonomy_posture", {}),
+        "packs_onboarding": s.get("packs_onboarding", 0),
+        "graduation_candidates": [],
+    }
+    try:
+        from maverick.domain import available_domains
+        from maverick.world_model import DEFAULT_DB, WorldModel
+        wm = WorldModel(DEFAULT_DB)
+        cands = graduation_candidates(wm.list_approvals(limit=5000), sorted(available_domains()))
+        out["graduation_candidates"] = [
+            {"name": c.name, "sample": c.sample, "approve_rate": c.approve_rate,
+             "confidence": c.confidence, "reason": c.reason}
+            for c in cands
+        ]
+    except Exception:  # pragma: no cover -- no DB / empty install -> empty list
+        pass
+    return out
 
 
 @router.post("/admin/tenants", response_model=TenantOut, status_code=201)
 async def create_tenant(request: Request, body: TenantCreateIn) -> TenantOut:
-    require_permission(request, "admin")
-    from maverick import tenant_registry
+    require_global_permission(request, "admin")
+    from maverick.tenant import registry as tenant_registry
     try:
         rec = tenant_registry.create_tenant(
             body.id, plan=body.plan, display_name=body.display_name,
@@ -161,22 +231,22 @@ async def create_tenant(request: Request, body: TenantCreateIn) -> TenantOut:
 
 @router.get("/admin/tenants/{tenant_id}", response_model=TenantOut)
 async def get_tenant(request: Request, tenant_id: str) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     return _to_tenant_out(_get_tenant_or_404(tenant_id))
 
 
 @router.post("/admin/tenants/{tenant_id}/suspend", response_model=TenantOut)
 async def suspend_tenant(request: Request, tenant_id: str) -> TenantOut:
-    require_permission(request, "admin")
-    from maverick import tenant_registry
+    require_global_permission(request, "admin")
+    from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.suspend_tenant(tenant_id))
 
 
 @router.post("/admin/tenants/{tenant_id}/resume", response_model=TenantOut)
 async def resume_tenant(request: Request, tenant_id: str) -> TenantOut:
-    require_permission(request, "admin")
-    from maverick import tenant_registry
+    require_global_permission(request, "admin")
+    from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.resume_tenant(tenant_id))
 
@@ -185,8 +255,8 @@ async def resume_tenant(request: Request, tenant_id: str) -> TenantOut:
 async def set_tenant_plan(
     request: Request, tenant_id: str, body: TenantPlanIn,
 ) -> TenantOut:
-    require_permission(request, "admin")
-    from maverick import tenant_registry
+    require_global_permission(request, "admin")
+    from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.set_plan(tenant_id, body.plan))
 
@@ -195,8 +265,8 @@ async def set_tenant_plan(
 async def set_tenant_quota(
     request: Request, tenant_id: str, body: TenantQuotaIn,
 ) -> TenantOut:
-    require_permission(request, "admin")
-    from maverick import tenant_registry
+    require_global_permission(request, "admin")
+    from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(
         tenant_registry.set_quota(tenant_id, body.max_daily_dollars)
@@ -207,8 +277,8 @@ async def set_tenant_quota(
 async def delete_tenant(
     request: Request, tenant_id: str, purge: bool = False,
 ) -> Response:
-    require_permission(request, "admin")
-    from maverick import tenant_registry
+    require_global_permission(request, "admin")
+    from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     tenant_registry.delete_tenant(tenant_id, purge=purge)
     return Response(status_code=204)
@@ -218,9 +288,31 @@ async def delete_tenant(
 # memberships override the global role for that tenant only (bootstrap admins
 # stay globally admin). Managed admin-only.
 
+def _reject_tenant_role_assignment_under_per_user_tenancy() -> None:
+    """Per-tenant RBAC keys on the request's active tenant, but per-user tenancy
+    (``MAVERICK_TENANT_BY_USER``) force-pins every request to the caller's own
+    isolated tenant (``api:<principal>``) -- so a role assigned to any named
+    tenant can never be the active tenant and would be stored but DEAD. Reject
+    the mutation so the silent no-op becomes an explicit error instead of a
+    footgun (an admin thinking they scoped a user when they did not). Use the
+    global per-user role assignment (``POST /users/set``) in that mode.
+
+    Deletions remain allowed: stale roles for generated ``api:<principal>``
+    tenants can still be active under the read path and must be revocable.
+    """
+    from maverick.paths import tenant_by_user_enabled
+    if tenant_by_user_enabled():
+        raise HTTPException(
+            status_code=409,
+            detail="per-tenant roles do not apply under per-user tenancy "
+                   "(MAVERICK_TENANT_BY_USER): each user is isolated in their own "
+                   "tenant. Assign a global role via POST /users/set instead.",
+        )
+
+
 @router.get("/admin/tenants/{tenant_id}/roles", response_model=dict[str, str])
 async def list_tenant_roles(request: Request, tenant_id: str) -> dict[str, str]:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     return rbac.list_tenant_roles(tenant_id)
@@ -230,7 +322,8 @@ async def list_tenant_roles(request: Request, tenant_id: str) -> dict[str, str]:
 async def set_tenant_role(
     request: Request, tenant_id: str, principal: str, body: TenantRoleIn,
 ) -> Response:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
+    _reject_tenant_role_assignment_under_per_user_tenancy()
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     rbac.set_tenant_role(tenant_id, principal, body.role)
@@ -241,7 +334,7 @@ async def set_tenant_role(
 async def remove_tenant_role(
     request: Request, tenant_id: str, principal: str,
 ) -> Response:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     rbac.remove_tenant_role(tenant_id, principal)
@@ -251,16 +344,7 @@ async def remove_tenant_role(
 @router.post("/goals", response_model=GoalOut, status_code=201)
 async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
     require_permission(request, "operate")
-    if not _any_provider_key_set():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No LLM provider key or endpoint configured. Run 'maverick "
-                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
-                "GEMINI_API_KEY, or add a [providers.<name>] api_key/base_url "
-                "to ~/.maverick/config.toml before starting the dashboard."
-            ),
-        )
+    require_provider_or_400()
     # Shared sliding-window cap across /chat/send + this route, so a
     # runaway loop can't spawn unbounded (paid) goals.
     from maverick_dashboard.app import check_goal_rate_limit
@@ -274,7 +358,12 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except FileNotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e)) from e
+            # Don't echo the raw error: its str() carries the absolute on-disk
+            # template path. Reflect the caller's own template name instead; the
+            # original (with path) stays chained for server-side logs.
+            raise HTTPException(
+                status_code=404, detail=f"template not found: {payload.template!r}"
+            ) from e
         try:
             title, description = tpl.render(**(payload.params or {}))
         except ValueError as e:
@@ -283,7 +372,33 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
     w = _world()
+    # Idempotency-Key (optional, RFC-style): a client whose POST times out at the
+    # LB and retries must not double-create / double-bill a paid run -- and on a
+    # multi-replica deployment the retry can land on a different replica, so the
+    # dedup must be in the shared store (reusing the backend-agnostic
+    # mark/lookup_processed_message primitive). The key is scoped to the caller so
+    # it can't collide across principals. A replay returns the ORIGINAL goal and
+    # dispatches no second run.
+    idem_key = (request.headers.get("Idempotency-Key") or "").strip()
+    idem_ext = ""
+    if idem_key:
+        if len(idem_key) > 255:
+            raise HTTPException(status_code=400, detail="Idempotency-Key too long (max 255)")
+        idem_ext = f"{caller_principal(request) or ''}:{idem_key}"
+        prior = w.lookup_processed_message(_IDEMPOTENCY_CHANNEL, idem_ext)
+        if prior is not None:
+            g0 = w.get_goal(prior)
+            if g0 is not None:
+                return _to_goal_out(g0)  # replay: original goal, no new run
     goal_id = w.create_goal(title[:200], description, owner=caller_principal(request) or "")
+    if idem_key and not w.mark_message_processed(
+        _IDEMPOTENCY_CHANNEL, idem_ext, goal_id=goal_id
+    ):
+        # Lost a concurrent race on the same key: return the winner's goal and do
+        # NOT dispatch a run for this (now-orphaned, never-run) goal row.
+        prior = w.lookup_processed_message(_IDEMPOTENCY_CHANNEL, idem_ext)
+        g0 = w.get_goal(prior) if prior is not None else None
+        return _to_goal_out(g0 or w.get_goal(goal_id))
     from maverick.runner import run_goal_in_thread
     # Enforce server-side execution caps even when callers request larger values.
     max_dollars = min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
@@ -394,22 +509,10 @@ _TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled", "blocked", "error
 # ----- v1 SSE stream resource limits -----
 # Match the legacy dashboard stream hardening: open SSE streams hold an async
 # task and repeatedly poll SQLite, so cap concurrency, enforce a finite stream
-# lifetime, and use a server-controlled polling cadence with idle backoff.
-def _max_sse_streams() -> int:
-    try:
-        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_SSE", "64")))
-    except ValueError:
-        return 64
-
-
-_sse_semaphore: asyncio.Semaphore | None = None
-
-
-def _get_sse_semaphore() -> asyncio.Semaphore:
-    global _sse_semaphore
-    if _sse_semaphore is None:
-        _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
-    return _sse_semaphore
+# lifetime, and use a server-controlled polling cadence with idle backoff. The
+# semaphore lives in _shared so app and api share ONE process-wide cap (was a
+# duplicate definition here -> two independent caps). _get_sse_semaphore is
+# imported above.
 
 
 _SSE_POLL_INTERVAL = 0.5
@@ -499,6 +602,7 @@ async def answer_question(request: Request, goal_id: int, payload: AnswerIn) -> 
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
+    require_permission(request, "operate")
     answer = (payload.answer or "").strip()
     if not answer:
         raise HTTPException(status_code=400, detail="answer is required")
@@ -524,6 +628,7 @@ async def upload_attachment(
     `list_attachments` tool exposes the uploaded set, and image
     attachments are auto-embedded as vision blocks on the first message.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -625,7 +730,7 @@ async def record_outcome(request: Request, payload: OutcomeIn) -> None:
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
-    if not any(ep.id == episode_id for ep in w.list_episodes(goal_id=goal_id, limit=100_000)):
+    if not w.episode_exists(goal_id, episode_id):
         raise HTTPException(status_code=404, detail="no such episode")
     from maverick.consequence import record_outcome as _rec
     _rec(goal_id, episode_id, float(payload.value), kind=(payload.kind or ""))
@@ -693,7 +798,7 @@ def _require_skill_install_opt_in() -> None:
 
 
 @router.post("/skills", response_model=SkillOut, status_code=201)
-async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
+async def install_skill_endpoint(request: Request, payload: SkillInstallIn) -> SkillOut:
     """Install a skill from a URL or ``gh:org/repo[:path]``.
 
     Skill install runs untrusted code at the next agent invocation. The
@@ -702,7 +807,13 @@ async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
     operator opting in is taking explicit ownership of the supply
     chain. CLI ``maverick skill install`` remains available without
     the flag because it requires shell access on the host.
+
+    RBAC: this is a control-plane change to the code the agent loads, so it
+    requires ``admin`` -- matching ``/plugins/install``. The opt-in flag is
+    process-wide, not per-user, so it can't stand in for a role check (a
+    view-only principal must not install/replace agent code).
     """
+    require_permission(request, "admin")
     _require_skill_install_opt_in()
     from maverick.skills import install_skill
     try:
@@ -713,14 +824,16 @@ async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
 
 
 @router.post("/skills/create", response_model=SkillOut, status_code=201)
-async def create_skill_endpoint(payload: SkillCreateIn) -> SkillOut:
+async def create_skill_endpoint(request: Request, payload: SkillCreateIn) -> SkillOut:
     """Author a skill from the dashboard form (name / triggers / tools /
     instructions) and install it.
 
     Lower risk than installing a remote source -- the content is the body the
     author typed, not fetched code -- but it still lands in agent prompts and is
     secret/shield-scanned, so it shares the same ``MAVERICK_ALLOW_SKILL_INSTALL``
-    opt-in as install. 422 on invalid input (no trigger, empty body, ...)."""
+    opt-in as install. 422 on invalid input (no trigger, empty body, ...).
+    Requires ``admin`` (installs agent-loaded code), like install."""
+    require_permission(request, "admin")
     _require_skill_install_opt_in()
     from maverick.skills import create_skill
     try:
@@ -748,8 +861,8 @@ async def marketplace_stats() -> dict:
     """Aggregate stats over the local ratings ledger (total / average / 1–5★
     distribution / per-kind / top-rated). Self-host-first: the operator's own
     ratings, the JSON face of the marketplace stats view."""
-    from maverick.marketplace_ratings import RatingsLedger
-    from maverick.marketplace_stats import summarize
+    from maverick.marketplace.ratings import RatingsLedger
+    from maverick.marketplace.stats import summarize
     return summarize(RatingsLedger())
 
 
@@ -804,11 +917,32 @@ async def voice_captions(
     except (TypeError, ValueError):
         max_chars = 160
 
+    # Bound concurrent caption streams and release the slot on disconnect/error,
+    # exactly like the goal-events stream. A live caption source never exhausts
+    # on its own, so without this an abandoned (or maliciously opened-and-never-
+    # read) connection would pin an async task + fd indefinitely, and unlimited
+    # such connections would exhaust the event loop. Shares the SSE semaphore.
+    sem = _get_sse_semaphore()
+    if sem.locked():
+        raise HTTPException(
+            status_code=503,
+            detail="too many concurrent caption streams; retry shortly",
+            headers={"Retry-After": "5"},
+        )
+    await sem.acquire()
+
     async def _gen():
-        yield ": captions\n\n"
-        async for frame in caption_stream(factory(), max_chars=max_chars):
-            yield f"data: {json.dumps(frame)}\n\n"
-        yield "event: end\ndata: {}\n\n"
+        try:
+            yield ": captions\n\n"
+            async for frame in caption_stream(factory(), max_chars=max_chars):
+                if await request.is_disconnected():
+                    return
+                yield f"data: {json.dumps(frame)}\n\n"
+            yield "event: end\ndata: {}\n\n"
+        except asyncio.CancelledError:
+            return
+        finally:
+            sem.release()
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
 
@@ -831,13 +965,14 @@ async def catalog_list(kind: str) -> dict:
 
 
 @router.post("/catalog/skills/install", response_model=SkillOut, status_code=201)
-async def catalog_install_skill(payload: CatalogInstallIn) -> SkillOut:
+async def catalog_install_skill(request: Request, payload: CatalogInstallIn) -> SkillOut:
     """Install a catalog skill by name.
 
     Catalog metadata (source + hash) can come from remote indexes, so
     this endpoint keeps the same operator opt-in gate as free-text skill
-    installs.
+    installs. Requires ``admin`` (installs agent-loaded code), like install.
     """
+    require_permission(request, "admin")
     _require_skill_install_opt_in()
     from maverick.skills import install_from_catalog
     try:
@@ -848,7 +983,10 @@ async def catalog_install_skill(payload: CatalogInstallIn) -> SkillOut:
 
 
 @router.delete("/skills/{name}", status_code=204)
-async def remove_skill_endpoint(name: str) -> None:
+async def remove_skill_endpoint(request: Request, name: str) -> None:
+    # Removing an installed skill is a control-plane mutation of agent-loaded
+    # code; require admin (a view-only principal must not pull skills).
+    require_permission(request, "admin")
     from maverick.skills import remove_skill
     if not remove_skill(name):
         raise HTTPException(status_code=404, detail="no such skill")
@@ -919,7 +1057,7 @@ async def learned_api() -> dict:
 
 
 @router.delete("/generated-tools/{name}", status_code=204)
-async def remove_generated_tool(name: str) -> None:
+async def remove_generated_tool(request: Request, name: str) -> None:
     """Delete a persisted generated tool so a bad one can be pulled.
 
     The valuable mutation of #427: removes ~/.maverick/generated_tools/<name>
@@ -927,8 +1065,10 @@ async def remove_generated_tool(name: str) -> None:
     generated-tools dir (see ``_resolve_generated_tool``) so traversal /
     absolute / out-of-dir names are refused. Auth/same-origin is enforced
     centrally by the dashboard's bearer_auth middleware (DELETE is a
-    mutating method, so the same-origin check applies).
+    mutating method, so the same-origin check applies), and RBAC requires
+    ``admin`` -- deleting agent-loaded code is not a view-only action.
     """
+    require_permission(request, "admin")
     target = _resolve_generated_tool(name)
     if not target.is_file():
         raise HTTPException(status_code=404, detail="no such generated tool")
@@ -1090,6 +1230,20 @@ async def halt_status() -> dict:
             out["armed_at"] = p.stat().st_mtime
         except OSError:
             pass
+    # Reflect the cluster-wide halt too: on a shared backend it may be armed by
+    # another replica with no local file here. Postgres only; best-effort.
+    shared = None
+    if _shared_halt_backend():
+        try:
+            shared = _world().active_halt()
+        except Exception:
+            shared = None
+    if shared:
+        out["active"] = True
+        out["cluster_halt"] = True
+        out["reason"] = out["reason"] or (shared.get("reason") or None)
+        out["armed_at"] = out["armed_at"] or shared.get("armed_at")
+        out["armed_by"] = shared.get("armed_by") or None
     return out
 
 
@@ -1100,20 +1254,33 @@ async def halt_set(request: Request, payload: HaltIn) -> None:
     Honoured by every agent at the next tool-call boundary. Use the
     DELETE endpoint or ``rm ~/.maverick/HALT`` to clear.
     """
-    require_permission(request, "operate")
+    _require_halt_permission(request)
     from maverick.killswitch import _halt_file_path
+    reason = payload.reason or "manual via dashboard"
     p = _halt_file_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text((payload.reason or "manual via dashboard") + "\n")
+        p.write_text(reason + "\n")
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"cannot write halt file: {e}") from e
+    # Also arm the cluster-wide halt in the shared store so the stop propagates
+    # to every replica (the file only halts this one). Only on a shared backend
+    # (Postgres): on single-host SQLite the file halt is the whole mechanism and
+    # the killswitch doesn't consult the shared row. Best-effort -- a shared-store
+    # error must not fail the local arm, which already took effect above.
+    if _shared_halt_backend():
+        try:
+            _world().arm_halt(reason, source="dashboard",
+                              armed_by=caller_principal(request) or "")
+        except Exception:
+            log.warning("cluster-wide halt arm failed (local file halt still set)",
+                        exc_info=True)
 
 
 @router.delete("/halt", status_code=204)
 async def halt_clear(request: Request) -> None:
     """Clear the killswitch (delete ~/.maverick/HALT)."""
-    require_permission(request, "operate")
+    _require_halt_permission(request)
     from maverick.killswitch import _halt_file_path, clear
     p = _halt_file_path()
     if p.exists():
@@ -1122,6 +1289,13 @@ async def halt_clear(request: Request) -> None:
         except OSError as e:
             raise HTTPException(status_code=500, detail=f"cannot remove halt file: {e}") from e
     clear()
+    # Clear the cluster-wide halt too (Postgres only; see halt_set). Best-effort
+    # so a shared-store error doesn't block clearing the local halt.
+    if _shared_halt_backend():
+        try:
+            _world().disarm_halt()
+        except Exception:
+            log.warning("cluster-wide halt clear failed", exc_info=True)
 
 
 @router.post("/goals/{goal_id}/cancel", status_code=204)
@@ -1412,8 +1586,7 @@ async def list_tools() -> dict:
     try:
         from maverick.sandbox import build_sandbox
         from maverick.tools import base_registry
-        from maverick.world_model import DEFAULT_DB, WorldModel
-        wm = WorldModel(DEFAULT_DB)
+        wm = _world()  # honor the configured backend (SQLite or Postgres)
         sb = build_sandbox()
         reg = base_registry(world=wm, sandbox=sb)
     except Exception as e:
@@ -1488,7 +1661,12 @@ async def create_schedule(request: Request, payload: ScheduleIn) -> ScheduleOut:
         except ValueError as e:           # unknown template / missing params
             raise HTTPException(status_code=400, detail=str(e)) from e
         except FileNotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e)) from e
+            # Don't echo the raw error: its str() carries the absolute on-disk
+            # template path. Reflect the caller's own template name instead; the
+            # original (with path) stays chained for server-side logs.
+            raise HTTPException(
+                status_code=404, detail=f"template not found: {payload.template!r}"
+            ) from e
         text, title = body, (title or rtitle)
     else:
         text = (payload.text or "").strip()
@@ -1537,6 +1715,48 @@ async def delete_schedule(request: Request, job_id: int) -> dict:
 # it runs only an operator-registered template, never arbitrary text.
 
 _WEBHOOK_RUN_PATH = "/webhook/run"
+_IMPORT_MAX_DEFINITIONS = 25
+_IMPORT_MAX_DEFINITION_BYTES = 64_000
+_IMPORT_MAX_TOTAL_DEFINITION_BYTES = 512_000
+_IMPORT_MAX_RENDERED_BODY_CHARS = 16_000
+
+
+def _definition_size(raw: dict) -> int:
+    return len(json.dumps(raw, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def _bounded_import_definitions(raws: list[dict]) -> list[dict]:
+    if len(raws) > _IMPORT_MAX_DEFINITIONS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"too many import definitions (max {_IMPORT_MAX_DEFINITIONS})",
+        )
+    total = 0
+    for raw in raws:
+        size = _definition_size(raw)
+        if size > _IMPORT_MAX_DEFINITION_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=("import definition is too large "
+                        f"(max {_IMPORT_MAX_DEFINITION_BYTES} bytes)"),
+            )
+        total += size
+        if total > _IMPORT_MAX_TOTAL_DEFINITION_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=("import definitions are too large "
+                        f"(max {_IMPORT_MAX_TOTAL_DEFINITION_BYTES} bytes total)"),
+            )
+    return raws
+
+
+def _ensure_import_body_size(body: str) -> None:
+    if len(body) > _IMPORT_MAX_RENDERED_BODY_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=("rendered import template is too large "
+                    f"(max {_IMPORT_MAX_RENDERED_BODY_CHARS} characters)"),
+        )
 
 
 def _require_triggers() -> None:
@@ -1577,7 +1797,11 @@ async def create_trigger(request: Request, payload: TriggerIn) -> TriggerOut:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        # Reflect the caller's template name, not the raw error (it carries the
+        # absolute on-disk path). Original stays chained for server logs.
+        raise HTTPException(
+            status_code=404, detail=f"template not found: {payload.template!r}"
+        ) from e
     from maverick_dashboard import triggers_store
     try:
         rec = triggers_store.set_trigger(
@@ -1600,13 +1824,128 @@ async def delete_trigger_endpoint(request: Request, name: str) -> dict:
     return {"deleted": name}
 
 
+# ---- automation import: pull clients' existing automations into Lightwork -----
+
+
+def _require_automation_import() -> None:
+    from maverick.automation_import import enabled
+    if not enabled():
+        raise HTTPException(
+            status_code=403,
+            detail=("automation import is off; enable [automation_import] in "
+                    "config.toml or set MAVERICK_AUTOMATION_IMPORT=1"),
+        )
+
+
+@router.get("/import/sources")
+async def import_sources_endpoint() -> dict:
+    """Automation platforms Lightwork can import from + each one's mode."""
+    from maverick.automation_import import available_sources, get_importer
+    sources = []
+    for s in available_sources():
+        imp = get_importer(s)
+        sources.append({
+            "source": s,
+            "mode": "definition-import" if imp.can_fetch_definitions else "connect-and-trigger",
+        })
+    return {"sources": sources}
+
+
+@router.post("/import/run", response_model=ImportRunOut)
+async def import_run_endpoint(request: Request, payload: ImportRunIn) -> ImportRunOut:
+    require_permission(request, "operate")
+    _require_automation_import()
+    from maverick.automation_import import ImporterError, get_importer, materialize, translate_all
+
+    try:  # validate the source name -> 400, not a scrubbed 500
+        get_importer(payload.source)
+    except ImporterError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Definitions from the request (offline/connect) or a live fetch (env creds).
+    if payload.definitions is not None:
+        raws = _bounded_import_definitions([
+            d for d in payload.definitions if isinstance(d, dict)
+        ])
+    else:
+        try:
+            fetched = await run_in_threadpool(get_importer(payload.source).fetch)
+        except ImporterError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        raws = _bounded_import_definitions([
+            d for d in fetched if isinstance(d, dict)
+        ])
+
+    automations = translate_all(payload.source, raws)
+    if not automations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"no importable automations found from {payload.source!r}",
+        )
+
+    queue = None
+    if payload.activate_schedules and not payload.dry_run:
+        from maverick.job_queue import JobQueue
+        queue = JobQueue()
+
+    from maverick.config import get_features
+    triggers_on = get_features().get("triggers", True)
+    from maverick_dashboard import triggers_store
+    owner = caller_principal(request) or ""
+    user_id = execution_user_id_from_request(request)
+    channel = "api" if user_id else None
+
+    results: list[dict] = []
+    for a in automations:
+        _, body = a.render()
+        _ensure_import_body_size(body)
+        res = materialize(
+            a,
+            save=not payload.dry_run,
+            queue=queue,
+            owner=owner,
+            channel=channel,
+            user_id=user_id,
+        )
+        webhook_trigger = None
+        # Wire the inbound webhook trigger when asked and the automation is
+        # webhook-triggered (the one step the CLI can't do: triggers_store is
+        # dashboard-side). Respect the [features] triggers gate -- if the
+        # operator disabled triggers, don't silently create ones that bypass
+        # that decision; import the template and say so.
+        sug = res.suggested_trigger or {}
+        want_webhook = (payload.create_webhook_triggers and not payload.dry_run
+                        and res.created_template and sug.get("kind") == "webhook")
+        if want_webhook and not triggers_on:
+            res.notes.append("webhook trigger not created: [features] triggers is off")
+        elif want_webhook:
+            try:
+                rec = triggers_store.set_trigger(res.template_name, res.template_name)
+                webhook_trigger = rec["name"]
+            except ValueError as e:
+                res.notes.append(f"could not create webhook trigger: {e}")
+        results.append({
+            "source": a.source, "name": a.name, "template": res.template_name,
+            "created": res.created_template, "trigger": a.trigger.kind,
+            "webhook_trigger": webhook_trigger, "schedule": res.schedule,
+            "tools": res.tool_hints, "notes": res.notes,
+        })
+
+    return ImportRunOut(
+        imported=results,
+        dry_run=payload.dry_run,
+        webhook_url=_WEBHOOK_RUN_PATH,
+        secret_configured=_inbound_secret_set(),
+    )
+
+
 # ---- automation run history (provenance): goals a schedule/trigger spawned ---
 # Read-only, behind the dashboard middleware like the other GETs. Powers the
 # "last N runs · X done / Y failed" summary on the Automations page.
 
 
 @router.get("/automation-runs")
-async def automation_runs(kind: str, ref: str, limit: int = 8) -> dict:
+async def automation_runs(request: Request, kind: str, ref: str, limit: int = 8) -> dict:
     """Recent goals an automation spawned + a status summary. ``kind`` is
     'schedule' or 'trigger'; ``ref`` is the schedule_id or trigger name."""
     if kind not in ("schedule", "trigger"):
@@ -1615,13 +1954,29 @@ async def automation_runs(kind: str, ref: str, limit: int = 8) -> dict:
     if not ref:
         return {"runs": [], "summary": {}}
     w = _world()
-    goals = w.goals_for_origin(kind, ref, limit=max(1, min(int(limit), 50)))
+    capped = max(1, min(int(limit), 50))
+    # Owner-scope: a trigger name (enumerable via GET /triggers) is shared across
+    # tenants, so an authenticated non-admin must not read another owner's goal
+    # titles/history -- nor the cross-owner aggregate from origin_status_counts.
+    # Auth-off / admin keep the original (unscoped) behaviour exactly.
+    if goal_owner_filter(request) is None:
+        goals = w.goals_for_origin(kind, ref, limit=capped)
+        summary = w.origin_status_counts(kind, ref)
+    else:
+        accessible = [
+            g for g in w.goals_for_origin(kind, ref, limit=10_000)
+            if can_access_goal(request, g)
+        ]
+        summary = {}
+        for g in accessible:
+            summary[g.status] = summary.get(g.status, 0) + 1
+        goals = accessible[:capped]
     runs = [
         {"goal_id": g.id, "title": g.title, "status": g.status,
          "created_at": g.created_at}
         for g in goals
     ]
-    return {"runs": runs, "summary": w.origin_status_counts(kind, ref)}
+    return {"runs": runs, "summary": summary}
 
 
 # ---- agents (domain packs): per-client view + override editor ---------------
@@ -1663,8 +2018,13 @@ async def get_agent_endpoint(name: str) -> dict:
 
 
 @router.post("/agents/{name}/validate")
-async def validate_agent_override(name: str, payload: AgentOverrideIn) -> dict:
+async def validate_agent_override(
+    request: Request, name: str, payload: AgentOverrideIn
+) -> dict:
     """Lint the merged result of a proposed override without persisting it."""
+    # Same gate as save/delete override: pack editing is admin-only, so the
+    # lint helper that previews a pack edit must not be reachable unauthenticated.
+    _require_pack_editing(request)
     from maverick.domain_edit import validate_override
     errors, warnings = validate_override(name, payload.model_dump(exclude_unset=True))
     return {"ok": not errors, "errors": errors, "warnings": warnings}
@@ -1775,8 +2135,15 @@ async def list_channels() -> dict:
 
 
 @router.get("/audit/tail")
-async def audit_tail(n: int = 100, day: str | None = None) -> dict:
-    """Tail the audit log (NDJSON at ~/.maverick/audit/YYYY-MM-DD.ndjson)."""
+async def audit_tail(request: Request, n: int = 100, day: str | None = None) -> dict:
+    """Tail the audit log (NDJSON at ~/.maverick/audit/YYYY-MM-DD.ndjson).
+
+    Audit-gated: the audit trail is the who-did-what-when record (it can name
+    principals, tool inputs, costs), so reading it requires the "audit"
+    permission -- held by the admin role and the dedicated read-only "auditor"
+    role (separation of duties), never by operator/viewer. It is not an
+    unauthenticated/operator surface."""
+    require_permission(request, "audit")
     from maverick.audit import default_audit_log
 
     from maverick_dashboard.app import safe_audit_day
@@ -1785,14 +2152,16 @@ async def audit_tail(n: int = 100, day: str | None = None) -> dict:
 
 
 @router.get("/audit/grep")
-async def audit_grep(pattern: str, day: str | None = None) -> dict:
+async def audit_grep(request: Request, pattern: str, day: str | None = None) -> dict:
     """Search recent audit events for the given literal pattern.
 
-    Intentionally uses bounded, literal (case-insensitive) matching rather
-    than a user-supplied regex: a regex over the HTTP surface invites
-    catastrophic-backtracking ReDoS that blocks the dashboard event loop.
-    Bounds the scan to the most recent 1000 events and caps results at 200.
+    Audit-gated (see :func:`audit_tail`). Intentionally uses bounded, literal
+    (case-insensitive) matching rather than a user-supplied regex: a regex over
+    the HTTP surface invites catastrophic-backtracking ReDoS that blocks the
+    dashboard event loop. Bounds the scan to the most recent 1000 events and
+    caps results at 200.
     """
+    require_permission(request, "audit")
     if not pattern:
         raise HTTPException(status_code=400, detail="pattern is required")
     if len(pattern) > 200:
@@ -1807,6 +2176,80 @@ async def audit_grep(pattern: str, day: str | None = None) -> dict:
         if needle in json.dumps(e, ensure_ascii=False).lower()
     ]
     return {"events": matches[:200]}
+
+
+@router.get("/replay/{goal_id}")
+async def replay_json(request: Request, goal_id: int) -> dict:
+    """Flight-recorder timeline + chain-verification verdict for one run."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from .control_plane import build_replay, evidence_packet
+    replay = build_replay(goal_id, window=(g.created_at, g.updated_at))
+    return evidence_packet(g, replay)
+
+
+@router.get("/replay/{goal_id}/evidence")
+async def replay_evidence(request: Request, goal_id: int) -> Response:
+    """Download the run's evidence packet as a standalone JSON artifact."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from .control_plane import build_replay, evidence_packet
+    replay = build_replay(goal_id, window=(g.created_at, g.updated_at))
+    body = json.dumps(
+        evidence_packet(g, replay), indent=2, ensure_ascii=False, default=str,
+    )
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="evidence-goal-{goal_id}.json"',
+        },
+    )
+
+
+@router.get("/trust/agents")
+async def trust_agents(request: Request) -> dict:
+    """The Agent Trust Plane registry: external agents + their tool/risk/budget
+    ceilings and lifecycle status (the cross-agent permission graph as JSON)."""
+    from .control_plane import trust_overview
+    return trust_overview()
+
+
+@router.get("/discovery")
+async def discovery(request: Request) -> dict:
+    """Inventory of governable surfaces: tools (by risk), MCP servers (with
+    supply-chain pins), configured providers, channels, and external agents."""
+    from .control_plane import discovery_overview
+    return discovery_overview()
+
+
+@router.get("/simulate")
+async def simulate(request: Request, surface: str, action: str, target: str = "") -> dict:
+    """Dry-run a proposed action: classify its risk + report whether it would be
+    gated, without executing it. surface = computer | browser | tool."""
+    from .control_plane import simulate_action
+    return simulate_action(surface, action, target)
+
+
+@router.get("/compliance/packet")
+async def compliance_packet_download(request: Request) -> Response:
+    """Download a one-click compliance evidence bundle (SOC 2 control snapshot +
+    GDPR/EU-AI-Act control report + audit-chain verdict) as a JSON artifact."""
+    from .control_plane import compliance_packet
+    body = json.dumps(compliance_packet(), indent=2, ensure_ascii=False, default=str)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="maverick-compliance-packet.json"',
+        },
+    )
 
 
 @router.get("/permissions")
@@ -1885,22 +2328,68 @@ def _supervisor(request: Request) -> str:
     return caller_principal(request) or "operator"
 
 
+def _audit_approval_decision(approval_id: int, status: str, decided_by: str) -> None:
+    """Anchor a human approve/deny in the signed audit chain (audit H28).
+
+    The decision's integrity must not rest on the mutable `approvals` row alone;
+    record it in the tamper-evident Ed25519 chain. Best-effort: an audit-write
+    failure never blocks the oversight decision that already committed."""
+    try:
+        from maverick.audit import EventKind, record
+        record(EventKind.APPROVAL_DECISION, approval_id=int(approval_id),
+               status=status, decided_by=decided_by or "")
+    except Exception:  # pragma: no cover - audit failure must not break the decision
+        pass
+
+
+def _record_vote_or_raise(world, approval_id: int, status: str, who: str) -> None:
+    """Apply one approver's vote, mapping rejection to the right HTTP error.
+
+    Under N-of-M dual control a vote can be refused for segregation-of-duties
+    reasons (the requester can't self-approve, or an approver identity is needed)
+    -- distinguish that (403) from an unknown/already-decided approval (404)."""
+    if world.decide_approval(approval_id, status, decided_by=who):
+        return
+    st = world.approval_state(approval_id)
+    if st is None or st.get("status") != "pending":
+        raise HTTPException(status_code=404, detail="no such pending approval")
+    raise HTTPException(
+        status_code=403,
+        detail="vote not accepted: the requester can't approve their own request "
+               "(segregation of duties), or an approver identity is required for "
+               "multi-party approval",
+    )
+
+
 @router.post("/approvals/{approval_id}/approve", status_code=204)
 async def approve_approval(request: Request, approval_id: int) -> None:
-    """Approve a parked action; the polling consent path then proceeds."""
+    """Record an approval vote; once the required quorum of distinct approvers is
+    met the polling consent path proceeds (N-of-M dual control)."""
     require_permission(request, "operate")
-    if not _world().decide_approval(approval_id, "approved",
-                                    decided_by=_supervisor(request)):
-        raise HTTPException(status_code=404, detail="no such pending approval")
+    who = _supervisor(request)
+    _record_vote_or_raise(_world(), approval_id, "approved", who)
+    _audit_approval_decision(approval_id, "approved", who)
 
 
 @router.post("/approvals/{approval_id}/deny", status_code=204)
 async def deny_approval(request: Request, approval_id: int) -> None:
-    """Deny a parked action; the polling consent path then refuses it."""
+    """Deny a parked action (a single deny rejects it); the polling consent path
+    then refuses it."""
     require_permission(request, "operate")
-    if not _world().decide_approval(approval_id, "denied",
-                                    decided_by=_supervisor(request)):
-        raise HTTPException(status_code=404, detail="no such pending approval")
+    who = _supervisor(request)
+    _record_vote_or_raise(_world(), approval_id, "denied", who)
+    _audit_approval_decision(approval_id, "denied", who)
+
+
+@router.get("/approvals/{approval_id}/state")
+async def approval_state(request: Request, approval_id: int) -> dict:
+    """N-of-M quorum progress for an approval (status, approvers so far vs.
+    required) — the operator view of an in-flight multi-party decision."""
+    require_permission(request, "operate")
+    st = _world().approval_state(approval_id)
+    if st is None:
+        raise HTTPException(status_code=404, detail="no such approval")
+    return st
 
 
 @router.post("/approvals/{approval_id}/claim")
@@ -1909,6 +2398,10 @@ async def claim_approval(request: Request, approval_id: int) -> dict:
 
     Marks "I'm handling this" so two supervisors don't double-work the same
     review. 409 when another supervisor already holds the claim."""
+    # Same governance gate as approve/deny: claiming/releasing mutates the
+    # human-oversight queue, so a read-only `viewer` must not be able to lock
+    # pending approvals (or learn the claiming supervisor's identity via the 409).
+    require_permission(request, "operate")
     who = _supervisor(request)
     if _world().claim_approval(approval_id, who):
         return {"claimed_by": who}
@@ -1922,6 +2415,7 @@ async def claim_approval(request: Request, approval_id: int) -> dict:
 @router.post("/approvals/{approval_id}/release")
 async def release_approval(request: Request, approval_id: int) -> dict:
     """Release a claim you hold. 409 when you don't hold it."""
+    require_permission(request, "operate")
     who = _supervisor(request)
     if _world().release_approval(approval_id, who):
         return {"released": True}
@@ -2045,6 +2539,12 @@ async def run_fleet_agent(
     only the fleet's owner -- or an admin / auth-off caller -- may dispatch; a
     cross-owner (or missing) fleet 404s, never revealing existence.
     """
+    # Dispatching a fleet agent queues a governed goal that spends provider
+    # money and runs tools -- an "operate" action, exactly like compose/resume
+    # and POST /goals. Gate on role BEFORE any provider/rate/owner check so a
+    # read-only viewer is 403'd up front (owner-scoping alone is not authz: a
+    # viewer can own a fleet yet must never run one).
+    require_permission(request, "operate")
     if not _any_provider_key_set():
         raise HTTPException(
             status_code=400,
@@ -2098,6 +2598,15 @@ async def run_fleet_agent(
             allow_paths=caller_cap.allow_paths or None,
             allow_hosts=caller_cap.allow_hosts or None,
         )
+    # Department-deployed agents carry their specialist pack: bind the run to
+    # that pack's capability envelope (least privilege per domain), on top of
+    # the role + caller grants. domain_capability only narrows (never broadens),
+    # and an unknown/disabled pack leaves the grant unchanged.
+    if agent.domain:
+        from maverick.domain import available_domains, domain_capability
+        prof = available_domains().get(agent.domain)
+        if prof is not None:
+            cap = domain_capability(prof, cap, agent_principal)
     max_dollars = (
         min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
         if payload.max_dollars is not None else DEFAULT_MAX_DOLLARS
@@ -2106,9 +2615,14 @@ async def run_fleet_agent(
     w = _world()
     goal_id = w.create_goal(prompt[:200], prompt, owner=fleet.owner)
     record_run(fleet_name, agent.name, goal_id)
+    # Schedule against the authenticated caller (or the shared anonymous lane
+    # when auth is off), not the fleet-agent audit principal.  Agent names are
+    # user-created, so using them as scheduler principals lets one caller mint
+    # many lanes and bypass MAVERICK_MAX_CONCURRENT_GOALS_PER_PRINCIPAL.
     bg.add_task(
         run_goal_in_thread, goal_id, max_dollars,
         channel="fleet", user_id=agent_principal, capability=cap,
+        concurrency_principal=principal,
     )
     return {"goal_id": goal_id, "principal": agent_principal, "role": agent.role}
 
@@ -2126,6 +2640,10 @@ async def create_fleet(request: Request, payload: FleetCreateIn) -> dict:
     reveals it). Blank agent rows are dropped; each agent needs a valid name
     and a configured RBAC role when roles are configured.
     """
+    # Mutating fleet config is an "operate" action; owner-scoping decides WHOSE
+    # fleet, not WHETHER the role may write one. A read-only viewer must be 403'd
+    # (otherwise it could self-own a fleet here and then run it).
+    require_permission(request, "operate")
     from maverick.capability import configured_roles
     from maverick.fleet import Fleet, FleetAgent, load_fleet, save_fleet, valid_name
 
@@ -2165,6 +2683,8 @@ async def create_fleet(request: Request, payload: FleetCreateIn) -> dict:
 @router.delete("/fleets/{fleet_name}", status_code=204)
 async def delete_fleet(request: Request, fleet_name: str) -> None:
     """Remove a fleet. Owner-scoped: a cross-owner or missing fleet 404s."""
+    # Deleting a fleet is an "operate" action; gate on role before owner-scoping.
+    require_permission(request, "operate")
     from maverick.fleet import load_fleet, remove_fleet
 
     fleet = load_fleet(fleet_name)
@@ -2248,7 +2768,7 @@ async def compliance_report_csv(framework: str = "all") -> Response:
 
 
 @router.post("/redact/preview")
-async def redact_preview(payload: RedactIn) -> dict:
+async def redact_preview(request: Request, payload: RedactIn) -> dict:
     """Granular redaction preview: per-finding spans + kinds, nothing stored.
 
     ``kinds`` filters which detector classes to act on (e.g. only
@@ -2256,6 +2776,9 @@ async def redact_preview(payload: RedactIn) -> dict:
     The response carries each finding (kind + a safe preview of WHERE, never
     the raw value) and the fully-redacted text for the selected kinds.
     """
+    # Gate behind auth: this runs the detector pipeline on caller-supplied text,
+    # so it must not be an unauthenticated compute/probe surface.
+    require_permission(request, "operate")
     from maverick.provable_redaction import redact_proven, verify_redacted
     from maverick.safety import pii_detector, secret_detector
 
@@ -2478,6 +3001,7 @@ async def retitle_goal(request: Request, goal_id: int, payload: RetitleIn) -> No
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
+    require_permission(request, "operate")
     title = (payload.title or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
@@ -2503,6 +3027,7 @@ async def reparent_goal(request: Request, goal_id: int, payload: ReparentIn) -> 
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
+    require_permission(request, "operate")
     new_parent = payload.parent_id
     if new_parent is not None:
         if new_parent == goal_id:
@@ -2538,6 +3063,7 @@ async def create_child_goal(request: Request, goal_id: int, payload: ChildIn) ->
     run — start it later via chat or POST /api/v1/goals. It inherits the
     parent's owner so the subtree stays visible to the same principal.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -2575,16 +3101,7 @@ async def compose_goal(request: Request, payload: ComposeIn, bg: BackgroundTasks
     ``max_dollars`` cap. Steps become a markdown checklist.
     """
     require_permission(request, "operate")
-    if not _any_provider_key_set():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No LLM provider key or endpoint configured. Run 'maverick "
-                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
-                "GEMINI_API_KEY, or add a [providers.<name>] api_key/base_url "
-                "to ~/.maverick/config.toml before starting the dashboard."
-            ),
-        )
+    require_provider_or_400()
     from maverick_dashboard.app import check_goal_rate_limit
     check_goal_rate_limit(request)
     title = (payload.title or "").strip()
@@ -2820,7 +3337,7 @@ async def benchmarks_api() -> dict:
 def _walkthroughs_dir():
     """Where the dashboard's exported walkthrough videos live.
 
-    ``maverick.replay_video.render`` writes wherever the caller points it
+    ``maverick.replay.video.render`` writes wherever the caller points it
     (there is no fixed dir in core), so the dashboard standardises on
     ``<maverick home>/walkthroughs`` for everything the /walkthroughs page
     lists and serves.
@@ -2856,12 +3373,13 @@ def _vtt_for_frames(frames) -> str:
 async def export_walkthrough(request: Request, goal_id: int) -> dict:
     """Export a run's replay video into the walkthroughs dir.
 
-    Uses the real machinery (``maverick.replay_video.render``): always writes
+    Uses the real machinery (``maverick.replay.video.render``): always writes
     the frame manifest + a WebVTT captions track derived from the storyboard;
     the MP4 encode itself needs Pillow + ffmpeg and the response says honestly
     whether it happened (``encoded``/``detail``) and carries the exact ffmpeg
     command for out-of-band encoding when it didn't.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -2876,7 +3394,7 @@ async def export_walkthrough(request: Request, goal_id: int) -> dict:
             status_code=400,
             detail="no events recorded for this goal — run it first, then export",
         )
-    from maverick.replay_video import render, storyboard
+    from maverick.replay.video import render, storyboard
     out_dir = _walkthroughs_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     frames = storyboard(goal_id, events=events)
@@ -2930,3 +3448,166 @@ async def resume_goal(goal_id: int, request: Request, bg: BackgroundTasks) -> No
         bg.add_task(run_goal_in_thread, goal_id, channel="api", user_id=user_id)
     else:
         bg.add_task(run_goal_in_thread, goal_id)
+
+
+# ---------------------------------------------------------------------------
+# Workforce packaging: departments, outcomes, marketplace, reviews.
+#
+# Read-only JSON over capabilities that already ship (maverick.departments /
+# .outcomes / .worker_review / .marketplace.storefront). These present the
+# 1,000+ specialist packs as buyable teams with delivery and a governed review
+# — the buyer-facing surfaces, not new platform. No mutation, so no extra
+# permission gate beyond the dashboard's read access (cf. /overview).
+# ---------------------------------------------------------------------------
+def _department_request_tenant() -> str | None:
+    """Tenant id for department entitlement checks in dashboard requests."""
+    try:
+        from maverick.paths import current_tenant_id
+        return current_tenant_id()
+    except Exception:  # pragma: no cover - tenant lookup must not break self-host
+        return None
+
+
+def _has_managed_tenant_roster() -> bool:
+    """Whether this install has provisioned tenants but no request tenant."""
+    try:
+        from maverick.tenant import registry as tenant_registry
+        return bool(tenant_registry.list_tenants())
+    except Exception:  # pragma: no cover - registry lookup must not break self-host
+        return False
+
+
+def _department_entitled_for_request(key: str) -> bool:
+    """Department entitlement for this dashboard request.
+
+    No active tenant remains fail-open for legacy self-host installs. Once a
+    tenant roster exists, however, a dashboard request with no pinned tenant is
+    an ambiguous managed request; report the paid add-on as unavailable rather
+    than letting the core billing gate treat it as self-hosted.
+    """
+    from maverick.departments import department_entitled
+    tenant = _department_request_tenant()
+    if tenant is None and _has_managed_tenant_roster():
+        return False
+    return department_entitled(key, tenant=tenant)
+
+
+@router.get("/departments")
+async def list_departments_api(request: Request) -> list[dict]:
+    """Departments (suites) as deployable teams: title, charter, headcount.
+
+    Each entry carries ``entitled`` — whether the active tenant's plan includes
+    the paid ``departments`` add-on, so the UI shows Deploy vs. Add-on-required.
+    """
+    from maverick.departments import list_departments
+    out = []
+    for d in list_departments():
+        row = d.to_dict()
+        row["entitled"] = _department_entitled_for_request(d.key)
+        out.append(row)
+    return out
+
+
+@router.get("/departments/{key}")
+async def get_department_api(request: Request, key: str) -> dict:
+    """One department with its specialist roster (name + description + risk)."""
+    from maverick.departments import get_department, roster
+    dept = get_department(key)
+    if dept is None:
+        raise HTTPException(status_code=404, detail="no such department")
+    out = dept.to_dict()
+    out["entitled"] = _department_entitled_for_request(key)
+    out["roster"] = [
+        {"name": p.name, "description": p.description or "",
+         "max_risk": p.max_risk or "low"}
+        for p in roster(key)
+    ]
+    return out
+
+
+@router.post("/departments/{key}/deploy", status_code=201)
+async def deploy_department_api(request: Request, key: str) -> dict:
+    """Deploy a department as a fleet of its specialists — a PAID ADD-ON.
+
+    Gated three ways: ``operate`` RBAC (a viewer is 403'd), owner-scoping (you
+    cannot clobber another owner's fleet — that 404s), and the ``departments``
+    entitlement (a tenant without the add-on is 402'd). Mirrors
+    ``maverick.departments.deploy_department`` so the CLI enforces the same gate.
+    """
+    require_permission(request, "operate")
+    from maverick.departments import (
+        EntitlementError,
+        deploy_department,
+        fleet_name_for,
+        get_department,
+    )
+    from maverick.fleet import load_fleet
+
+    if get_department(key) is None:
+        raise HTTPException(status_code=404, detail="no such department")
+
+    principal = caller_principal(request)
+    owner = principal or ""
+    fleet_name = fleet_name_for(key, owner)
+    existing = load_fleet(fleet_name)
+    if (
+        existing is not None and existing.owner != owner
+        and principal is not None and not is_dashboard_admin(principal)
+    ):
+        raise HTTPException(status_code=404, detail="no such fleet")
+
+    tenant = _department_request_tenant()
+    if tenant is None and _has_managed_tenant_roster():
+        raise HTTPException(
+            status_code=402,
+            detail="departments add-on requires an active tenant",
+        )
+
+    try:
+        fleet = deploy_department(key, owner, tenant=tenant)
+    except EntitlementError as e:
+        raise HTTPException(status_code=402, detail=str(e)) from e
+    if fleet is None:  # suite disabled between the check and the deploy
+        raise HTTPException(status_code=404, detail="no such department")
+    return {"fleet": fleet.to_dict()}
+
+
+@router.get("/departments/{key}/review")
+async def department_review_api(request: Request, key: str) -> dict:
+    """A governed performance review: delivery + authority + learning."""
+    from maverick.worker_review import review
+    r = review(_world(), key, owner=goal_owner_filter(request))
+    if r is None:
+        raise HTTPException(status_code=404, detail="no such department")
+    return r
+
+
+@router.get("/outcomes")
+async def outcomes_api(request: Request, top: int = 0) -> dict:
+    """Per-worker delivery cards + a firm-wide rollup, from the Operating Record."""
+    from maverick.operating_record import assemble
+    from maverick.outcomes import firm_totals, worker_cards
+    w = _world()
+    owner = goal_owner_filter(request)
+    cards = worker_cards(w, top=(max(0, int(top)) or None), owner=owner)
+    return {
+        "firm": firm_totals(assemble(w, owner=owner)).to_dict(),
+        "workers": [c.to_dict() for c in cards],
+    }
+
+
+@router.get("/marketplace/packs")
+async def marketplace_packs_api(request: Request, q: str = "") -> dict:
+    """Pack marketplace grouped by department, or a flat search when ``q`` set."""
+    from maverick.marketplace.storefront import pack_marketplace, search_packs
+    query = (q or "").strip()
+    if query:
+        return {"query": query, "results": search_packs(query)}
+    return {"departments": pack_marketplace()}
+
+
+@router.get("/marketplace/connectors")
+async def marketplace_connectors_api(request: Request, q: str = "") -> dict:
+    """Connector marketplace: honest total + optional substring search."""
+    from maverick.marketplace.storefront import connector_marketplace
+    return connector_marketplace(q or None)

@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "carrier performance scorecard"
+consumers = ["logistics_manager", "procurement_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull delivery data"
+instruction = "Query shipment, delivery, and exception records by carrier for the scoring period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Load scoring rubric"
+instruction = "Retrieve the scorecard metric definitions and weightings from the company knowledge base."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compute metrics"
+instruction = "Calculate on-time, claims, tender-acceptance, and billing-accuracy metrics per carrier against the rubric."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Validate outliers"
+instruction = "Spot-check carriers whose scores swung sharply against the underlying delivery records to rule out data errors."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route scorecard"
+instruction = "Hand the finalized scorecard to the logistics manager for sign-off ahead of carrier business reviews."
+gate = "review"

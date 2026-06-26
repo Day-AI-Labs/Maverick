@@ -1,12 +1,12 @@
 # Press kit
 
-Boilerplate, key facts, and naming rules for writing about Maverick. Counts
+Boilerplate, key facts, and naming rules for writing about Lightwork. Counts
 and capability claims on this page are grounded in
 [`FEATURES.md`](./FEATURES.md), the catalogue of shipped features.
 
 ## Boilerplate
 
-Maverick is a proprietary, commercially licensed agent runtime for enterprises
+Lightwork is a proprietary, commercially licensed agent runtime for enterprises
 and regulated teams that need AI agents they can govern, audit, and run
 entirely in their own environment. Hand it a goal and its orchestrator
 decomposes the work and spawns specialist sub-agents — researcher, coder,
@@ -15,24 +15,24 @@ tool-call caps, with every input, tool call, and output screened by the Agent
 Shield safety layer and every action recorded in a signed, append-only audit
 log. The runtime is self-hosted — laptop, Docker, VPS, Kubernetes, or
 air-gapped — and model-agnostic: 12 LLM providers, routable per role, so
-customers pick the models. It ships 100+ built-in tools, 14
-messaging/voice/wearable channels, and 7 sandbox backends, and can be driven
-from other languages over MCP and gRPC. Maverick is developed by Day AI Labs.
+customers pick the models. It ships 286 built-in tool modules, 17
+messaging/voice/wearable channels, and 9 sandbox backends, and can be driven
+from other languages over MCP and gRPC. Lightwork is developed by Day AI Labs.
 
 ### 50-word version
 
-Maverick is a proprietary, commercially licensed, self-hosted AI agent runtime
+Lightwork is a proprietary, commercially licensed, self-hosted AI agent runtime
 for enterprises. A recursive orchestrator decomposes goals and spawns
 specialist sub-agents that work in parallel under hard budget caps, behind a
-safety shield, with a signed audit log. It ships 1,118 prebuilt specialist
-agents across 26 business suites (every pack lint-audited for least-privilege
+safety shield, with a signed audit log. It ships 2,020 prebuilt specialist
+agents across 53 business suites (every pack lint-audited for least-privilege
 envelopes), a closed learning lifecycle — agents consolidate experience,
 provably improve, and every learned change is audited and reversible — plus
-100+ tools, 14 channels, 7 sandbox backends, and 12 LLM providers.
+286 built-in tool modules, 514 reusable skills, 17 channels, 9 sandbox backends, and 12 LLM providers.
 
 ### 25-word version
 
-Maverick is a proprietary, self-hosted multi-agent runtime for enterprises: a
+Lightwork is a proprietary, self-hosted multi-agent runtime for enterprises: a
 recursive swarm under hard budget caps, a safety shield, and a signed,
 append-only audit log.
 
@@ -51,9 +51,14 @@ append-only audit log.
   retries, and a graded critic.
 - **Safety**: the Agent Shield layer screens at three chokepoints (input,
   tool call, output); hard budget caps and a killswitch bound every run.
-- **Surface area** (counts from `FEATURES.md`): 100+ built-in tools, including
-  ~47 SaaS connectors; 14 wired channels; 7 sandbox backends; 12 LLM
-  providers, routable per role.
+- **Surface area** (counts from `FEATURES.md`): 286 built-in tool modules and
+  514 reusable skills; 214 write-capable enterprise REST/GraphQL connectors
+  plus 37 read-only primary-source / public-data connectors (SEC EDGAR, FRED,
+  Treasury, World Bank, FDIC, Census, BLS, EIA, openFDA, NPPES,
+  ClinicalTrials, USAspending, SAM.gov, CourtListener, Federal Register,
+  GLEIF, OpenCorporates, NWS/NOAA, EPA, ...) and dedicated-module connectors
+  (Salesforce, HubSpot, Stripe, ServiceNow, Snowflake, ...); 17 wired
+  channels; 9 sandbox backends; 12 LLM providers, routable per role.
 - **Auditability**: signed, append-only audit log (`maverick audit verify`),
   SIEM export, encryption-at-rest, DSAR, data-retention enforcement.
 - **Distribution**: 8 packages on PyPI, a GHCR Docker image, PyInstaller
@@ -63,23 +68,23 @@ append-only audit log.
 
 ## Naming and trademark usage
 
-"Maverick", the Maverick name, and the Maverick logo are trademarks of
+"Lightwork", the Lightwork name, and the Lightwork logo are trademarks of
 Christopher Day / Day AI Labs and are **not** licensed under the software
 [`LICENSE`](../LICENSE). The full policy is
 [`TRADEMARK.md`](../TRADEMARK.md); the short version for writers:
 
-- **Product name**: "Maverick", capital M. The CLI command is lowercase
+- **Product name**: "Lightwork", capital M. The CLI command is lowercase
   `maverick`; the PyPI distribution is `maverick-agent`.
 - **Permitted without asking**: nominative, factual references — naming
-  Maverick in an article, review, or comparison, or saying something is
-  "compatible with Maverick" — where no endorsement or affiliation is implied.
+  Lightwork in an article, review, or comparison, or saying something is
+  "compatible with Lightwork" — where no endorsement or affiliation is implied.
 - **Not permitted without written permission**: using the marks (or
   confusingly similar names/logos) for your own product, service, fork, or
   distribution; in domain names, package names, company names, or advertising;
-  or describing any build as the "official" Maverick.
+  or describing any build as the "official" Lightwork.
 
 For permission requests, contact the licensor via
-[github.com/Day-AI-Labs/Maverick](https://github.com/Day-AI-Labs/Maverick).
+[github.com/Day-AI-Labs/Lightwork](https://github.com/Day-AI-Labs/Lightwork).
 
 ## Logos and assets
 
@@ -98,4 +103,4 @@ For permission requests, contact the licensor via
 
 > **Placeholder — maintainers: add a press email/contact here.** Until a
 > dedicated press contact is published, reach the project via
-> [github.com/Day-AI-Labs/Maverick](https://github.com/Day-AI-Labs/Maverick).
+> [github.com/Day-AI-Labs/Lightwork](https://github.com/Day-AI-Labs/Lightwork).

@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Mexico LFT compliance brief"
+consumers = ["hr_business_partner", "local_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame request"
+instruction = "Identify the LFT, profit-sharing (PTU), or termination matter at hand and the employees or entities it covers."
+tools = ["read_file"]
+[[workflow]]
+name = "Gather records"
+instruction = "Pull the company's contracts, payroll, and termination documentation from internal records and cite each source used."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check LFT rules"
+instruction = "Verify the practice against current Ley Federal del Trabajo requirements and confirm PTU and severance figures in a worksheet."
+tools = ["web_search", "spreadsheet"]
+[[workflow]]
+name = "Draft brief"
+instruction = "Summarize obligations, required documentation, and computed amounts, stating assumptions and unknowns plainly."
+[[workflow]]
+name = "Counsel review"
+instruction = "Route jurisdiction-specific positions to local Mexican counsel for review before reliance."
+gate = "review"

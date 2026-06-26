@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "state privacy duty tracker"
+consumers = ["privacy_counsel", "general_counsel"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Scan statutes"
+instruction = "Review Colorado, Virginia, and emerging state privacy statutes and rulemakings for new or changed duties."
+tools = ["web_search"]
+[[workflow]]
+name = "Map to operations"
+instruction = "Cross-reference each duty against the company's own privacy documents and current practices."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Identify gaps"
+instruction = "Flag compliance gaps and effective dates, citing the exact section and noting jurisdiction assumptions."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft tracker"
+instruction = "Compile the obligations into a state-by-state duty tracker with assumptions and unknowns stated plainly."
+[[workflow]]
+name = "Route to counsel"
+instruction = "Hand the tracker to privacy counsel for review and prioritization."
+gate = "review"

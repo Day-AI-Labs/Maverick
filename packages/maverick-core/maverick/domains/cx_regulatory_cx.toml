@@ -10,3 +10,29 @@ max_risk = "low"
 
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "commission-ready complaint file"
+consumers = ["compliance_officer", "regulatory_affairs_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Intake complaint"
+instruction = "Read the complaint, account history, and prior correspondence to scope the regulated issue and its commission filing deadline."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Ground in policy"
+instruction = "Retrieve the governing tariff, license terms, and regulatory rules that apply and cite each source used."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Assess against rules"
+instruction = "Compare the company conduct to the cited obligations and state plainly where it complied, breached, or remains unknown."
+[[workflow]]
+name = "Draft case file"
+instruction = "Draft the commission-ready chronology, findings, and proposed resolution without promising refunds or exceptions."
+[[workflow]]
+name = "Compliance signoff"
+instruction = "Route the assembled file to the compliance officer for review before any regulator submission."
+gate = "review"

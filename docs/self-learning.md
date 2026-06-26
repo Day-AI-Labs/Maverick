@@ -7,7 +7,7 @@
 > plane — is catalogued in [`FEATURES.md`](./FEATURES.md) under
 > *Dreaming*, *Hindsight engine*, and *Fleet memory*.
 
-When you ask Maverick to do something it doesn't yet have the capability
+When you ask Lightwork to do something it doesn't yet have the capability
 for, it can **acquire the capability itself** — install a skill, drive a
 REST API, or generate a brand-new tool — instead of giving up. It can also
 *propose* a curated MCP server, but only one from the hash-pinned catalog and
@@ -64,6 +64,24 @@ realises mid-task that it's missing something, it calls this tool:
 
 Anything acquired is registered into the **live** tool registry, so the
 agent can use it on its very next turn — no restart.
+
+**3. At pack birth (the agent factory).** The same acquisition engine also
+runs *ahead* of any run, when a new specialist pack is created. Instead of an
+agent discovering a capability hole mid-task, the
+**agent factory** closes it at creation time:
+`provision.analyze_profile` diffs a draft pack's workflow and declared
+`allow_tools` against the installed skills and the live tool registry
+(`tools.base_tool_names()`), surfaces the gaps at the approval gate, and on
+approval `provision.apply_plan` reuses the **same governed paths** —
+`self_learning.acquire_skill` for catalog skills (hash-pinned) and
+`self_learning.write_generated_tool` for the missing declared tools
+(stdlib-only, import-validated out-of-host, consent-gated). Wired into
+`maverick onboard` and the `maverick learn-demo` (programming-by-demonstration)
+flow. Provisioning **never widens** the pack's already-clamped envelope: it
+only satisfies tools already inside `allow_tools` and installs skills (which
+carry no tool grant of their own). It's gated by the same `[self_learning]
+enable` switch plus a `provision_packs` sub-knob (default on once self-learning
+is accepted) and the same human approval `save_profile` requires.
 
 ## What persists
 
@@ -138,6 +156,36 @@ paths (skills / APIs). For untrusted goals, also run with a real `[sandbox]`
 backend (docker/podman): the out-of-host import check is then a true sandbox,
 not just process isolation.
 
+## Self-improving factory
+
+Pack-birth provisioning produces a signal nothing else captures: which
+capabilities the factory's drafts keep *missing* — a tool a finance pack kept
+declaring but the factory kept omitting, a skill a workflow kept needing, an
+envelope a human kept having to widen at approval. `factory_learning.py` closes
+that loop back onto *generation quality* instead of letting it die in a log.
+
+Provisioning/approval gaps are attributed to the pack's suite and signal, mined
+into proposer **corrections**, and each is promoted through the **existing
+`SelfImprovementController`** — on the `prompt` rung, since the correction is
+guidance text that widens no capability (so it needs only the evidence and
+calibration gates, not the escalation proof / human sign-off a capability
+change would). A promoted correction is folded into future pack generation via
+`augment_system_prompt`, scope-matched per suite, so the next pack the factory
+writes already knows the pattern the last several taught it.
+
+It's **off by default and byte-identical to before while off** — recording
+writes nothing, mining reads nothing, and `augment_system_prompt` returns the
+base prompt unchanged. Turn it on with `[self_improvement] enable` plus the
+`factory_learning` sub-knob (default on once self-improvement is accepted), or
+force it for one run with `MAVERICK_FACTORY_LEARNING=1`. The ledger is bounded
+(oldest rows roll off), outcome text is secret-redacted before it's persisted,
+and — like provisioning — a correction is never a tool grant, so it widens no
+pack's envelope. Mine and preview the corrections without applying them:
+
+```bash
+maverick factory-learn --dry-run
+```
+
 ## MCP-server acquisition
 
 PR #378 once let the agent add and hot-start an MCP server from a
@@ -173,6 +221,6 @@ master switch. With it off, `op=add_mcp_server` returns the same informative
 "disabled" error as before.
 
 > Note: catalog `mcp` entries encode their launch command in the entry's
-> `source` field (e.g. `source = "npx -y @scope/server"`); Maverick splits it
+> `source` field (e.g. `source = "npx -y @scope/server"`); Lightwork splits it
 > into `command` + `args`. The entry's `sha256` becomes the server's
 > `pin_sha256`.

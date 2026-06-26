@@ -17,3 +17,25 @@ deliverable = "CTR filing batch"
 consumers = ["bsa_officer", "compliance_officer"]
 cadence = "daily"
 gate = "approval"
+
+[[workflow]]
+name = "Identify reportable"
+instruction = "Query the day's cash transactions and aggregate by customer to surface activity over the CTR threshold."
+tools = ["sql_query"]
+[[workflow]]
+name = "Verify identities"
+instruction = "Confirm each conductor and beneficiary's name, address, and ID details against the customer record on file."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check aggregation"
+instruction = "Apply same-day same-person aggregation and multiple-transaction rules so no reportable total is split or missed."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Validate fields"
+instruction = "Ensure every required CTR field is complete and correctly formatted and cite the source for each populated value."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Route for filing"
+instruction = "Stage the completed CTR batch for the BSA officer to approve before filing with FinCEN."
+tools = ["spreadsheet"]
+gate = "approval"

@@ -7,7 +7,35 @@ persona = """You are the Board Governance Support for this business -- a educati
 allow_tools = ["read_file", "web_search", "knowledge_search", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "sql_query"]
 max_risk = "low"
+effort = "high"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "board meeting packet"
+consumers = ["board_secretary", "executive_director"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Gather inputs"
+instruction = "Read the prior minutes, agenda requests, committee reports, and the policy review calendar."
+tools = ["read_file"]
+[[workflow]]
+name = "Verify governance"
+instruction = "Search bylaws and governance policy to confirm quorum, required approvals, and which policies are due for review."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build calendar"
+instruction = "Compile the policy review and approvals calendar and note any items overdue or missing required documentation."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Assemble packet"
+instruction = "Draft the agenda, consent items, and minutes shell into a single board packet with cited supporting materials."
+[[workflow]]
+name = "Secretary review"
+instruction = "Route the board meeting packet to the board secretary for sign-off before distribution to directors."
+gate = "review"

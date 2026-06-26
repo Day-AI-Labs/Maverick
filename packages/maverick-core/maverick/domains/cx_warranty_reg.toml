@@ -10,3 +10,26 @@ max_risk = "low"
 
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "validated product registration record"
+consumers = ["registration_clerk", "quality_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Intake registration"
+instruction = "Read the submitted registration with serial, model, purchase date, and owner contact details."
+tools = ["read_file"]
+[[workflow]]
+name = "Validate serial"
+instruction = "Check the serial and model against the product catalog and flag invalid or duplicate entries."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Confirm contactability"
+instruction = "Verify the owner contact fields are complete and well-formed so recall outreach can actually reach them."
+[[workflow]]
+name = "Stage record"
+instruction = "Assemble the clean registration record and route it to the clerk to confirm before it enters the registry."
+gate = "review"

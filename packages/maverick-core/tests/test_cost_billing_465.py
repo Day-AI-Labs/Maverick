@@ -80,7 +80,7 @@ def test_openai_provider_passes_openai_cache_mult():
 # --- Task 2: cost_router ids all resolve in MODEL_PRICES -------------------
 
 def test_router_pricing_ids_resolve_in_model_prices():
-    from maverick.cost_router import _PRICING
+    from maverick.cost.router import _PRICING
     from maverick.llm import MODEL_PRICES
     for provider, mid, _tier, in_rate, out_rate in _PRICING:
         assert mid in MODEL_PRICES, f"{provider}:{mid} not in MODEL_PRICES"
@@ -89,7 +89,7 @@ def test_router_pricing_ids_resolve_in_model_prices():
 
 
 def test_price_for_model_matches_canonical_catalog():
-    from maverick.cost_router import _PRICING, price_for_model
+    from maverick.cost.router import _PRICING, price_for_model
     from maverick.llm import MODEL_PRICES
     for _provider, mid, *_ in _PRICING:
         assert price_for_model(mid) == MODEL_PRICES[mid]
@@ -159,7 +159,7 @@ def test_unhealthy_cheap_model_excluded(_route_env, monkeypatch):
     # the premium gpt-5.4-pro which also qualifies for base-tier filtering).
     monkeypatch.setenv("OPENAI_API_KEY", "x")
 
-    from maverick.cost_router import TIER_BASE, CostSignal, pick
+    from maverick.cost.router import TIER_BASE, CostSignal, pick
     from maverick.provider_health import get
 
     # The cheapest base-tier openai model (gpt-5.4) is down: 5 errors (100%).
@@ -180,7 +180,7 @@ def test_healthy_cheap_provider_still_wins(_route_env, monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
     monkeypatch.setenv("OPENAI_API_KEY", "x")
 
-    from maverick.cost_router import TIER_BASE, CostSignal, pick
+    from maverick.cost.router import TIER_BASE, CostSignal, pick
     from maverick.provider_health import get
 
     # deepseek healthy (errors below threshold) -> still the cheapest pick.
@@ -196,7 +196,7 @@ def test_single_early_error_does_not_exclude(_route_env, monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
     monkeypatch.setenv("OPENAI_API_KEY", "x")
 
-    from maverick.cost_router import TIER_BASE, CostSignal, pick
+    from maverick.cost.router import TIER_BASE, CostSignal, pick
     from maverick.provider_health import get
 
     # 1/1 = 100% error rate, but below the min sample count -> not excluded.
@@ -211,7 +211,7 @@ def test_error_rate_threshold_config_knob(_route_env, monkeypatch):
     # Tighten the ceiling to 20%; a 40% error rate now excludes deepseek.
     monkeypatch.setenv("MAVERICK_ROUTING_MAX_ERROR_RATE", "0.2")
 
-    from maverick.cost_router import TIER_BASE, CostSignal, pick
+    from maverick.cost.router import TIER_BASE, CostSignal, pick
     from maverick.provider_health import get
 
     h = get()

@@ -2,7 +2,7 @@
   "name": "@maverick/installer-desktop",
   "version": "0.1.4",
   "private": true,
-  "description": "Tauri-based GUI installer for Maverick",
+  "description": "Tauri-based GUI installer for Lightwork",
   "type": "module",
   "scripts": {
     "dev": "vite",

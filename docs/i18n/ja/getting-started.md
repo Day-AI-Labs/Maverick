@@ -93,7 +93,7 @@ maverick resume
 maverick init
 ```
 
-または、`~/.maverick/config.toml` を直接編集してください。`[models]` セクションは、各エージェントロールを `provider:model-id` 形式の文字列に対応付けます。スキーマの詳細は [`configuration.md`](./configuration.md) を参照してください。
+または、`~/.maverick/config.toml` を直接編集してください。`[models]` セクションは、各エージェントロールを `provider:model-id` 形式の文字列に対応付けます。スキーマの詳細は [`configuration.md`](../../configuration.md) を参照してください。
 
 ## データの保存場所
 

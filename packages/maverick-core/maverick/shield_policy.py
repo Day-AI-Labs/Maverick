@@ -21,9 +21,9 @@ from __future__ import annotations
 
 import logging
 
-log = logging.getLogger(__name__)
+from ._envparse import coerce_bool, is_truthy
 
-_TRUE = {"1", "true", "yes", "on"}
+log = logging.getLogger(__name__)
 
 
 def shield_required() -> bool:
@@ -31,7 +31,7 @@ def shield_required() -> bool:
     import os
     env = os.environ.get("MAVERICK_REQUIRE_SHIELD")
     if env is not None and env.strip() != "":
-        return env.strip().lower() in _TRUE
+        return is_truthy(env)
     try:
         from .enterprise import enterprise_enabled
         if enterprise_enabled():
@@ -40,8 +40,7 @@ def shield_required() -> bool:
         pass
     try:
         from .config import load_config
-        return str(((load_config() or {}).get("safety") or {}).get("require_shield")
-                   or "").strip().lower() in _TRUE
+        return coerce_bool(((load_config() or {}).get("safety") or {}).get("require_shield"))
     except Exception:
         return False
 

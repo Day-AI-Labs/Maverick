@@ -11,3 +11,29 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "certificate & key expiry watchlist"
+consumers = ["security_operations_lead", "platform_engineer"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory certs"
+instruction = "Query the certificate and key inventory for every issued cert, owner, and not-after date."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Compute windows"
+instruction = "Calculate days-to-expiry for each entry and bucket them into renew-now, soon, and watch tiers."
+[[workflow]]
+name = "Confirm ownership"
+instruction = "Match each expiring cert to its documented owner and renewal runbook in the company's records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft renewal tasks"
+instruction = "Draft a renewal task list with owner, deadline, and dependency for each at-risk certificate and key."
+[[workflow]]
+name = "Route to ops"
+instruction = "Hand the watchlist and renewal tasks to the security operations lead to schedule and execute renewals."
+gate = "review"

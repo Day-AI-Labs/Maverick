@@ -103,3 +103,53 @@ def test_acl_overlay_filters_registry(monkeypatch, tmp_path):
     reg = base_registry(world=MagicMock(), sandbox=MagicMock(__class__=type("Local", (), {})))
     names = {t.name for t in reg.all()}
     assert "shell" not in names, "overlay-denied tool still in registry"
+
+
+def test_concurrent_disables_do_not_lose_tools(monkeypatch, tmp_path):
+    """Every mutator re-reads the whole overlay and rewrites it; without
+    serialization two concurrent writes lose one change. N concurrent
+    disable_tool calls must all land on the deny-list (a dropped denied_tools
+    update would silently re-enable a tool the operator just disabled)."""
+    import threading
+
+    ro = _point_overlay(monkeypatch, tmp_path)
+    names = [f"tool{i:02d}" for i in range(24)]
+
+    def disable(n: str):
+        ro.disable_tool(n)
+
+    threads = [threading.Thread(target=disable, args=(n,)) for n in names]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert ro.denied_tools() == set(names)
+    # No fixed-temp droppings from concurrent writers.
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_disable_racing_set_budget_keeps_both(monkeypatch, tmp_path):
+    """A disable_tool racing a set_budget (a DIFFERENT surface in the same
+    file) must not have either change clobbered by a stale re-read."""
+    import threading
+
+    ro = _point_overlay(monkeypatch, tmp_path)
+    barrier = threading.Barrier(2)
+
+    def do_disable():
+        barrier.wait()
+        ro.disable_tool("shell")
+
+    def do_budget():
+        barrier.wait()
+        ro.set_budget(12.5)
+
+    ts = [threading.Thread(target=do_disable), threading.Thread(target=do_budget)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+
+    assert ro.denied_tools() == {"shell"}
+    assert ro.budget_override() == 12.5

@@ -7,6 +7,7 @@ persona = """You are the Reinsurance Recoverable specialist (ins_controllership 
 
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["ins"]
@@ -17,4 +18,25 @@ shape = "report"
 deliverable = "Reinsurance recoverable allowance"
 consumers = ["controller", "actuary", "risk_officer"]
 cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull ceded records"
+instruction = "Read the ceded paid and unpaid loss records and reinsurer balances for the period from the company records."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Build roll-forward"
+instruction = "Build the ceded recoverable roll-forward across paid and unpaid losses and reconcile the closing balance to the ledger."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Age by reinsurer"
+instruction = "Age recoverable balances by reinsurer and attach current reinsurer ratings cited via knowledge_search."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Estimate allowance"
+instruction = "Estimate the credit allowance for uncollectible recoverables and draft the Schedule F provision and penalty as a finding, not a posting."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand off allowance"
+instruction = "Assemble the recoverable allowance package and route it to the controller for review."
 gate = "review"

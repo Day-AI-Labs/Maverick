@@ -1,6 +1,6 @@
-# Maverick — Shipped Features
+# Lightwork — Shipped Features
 
-What Maverick **does today**, grounded in the code on `main`. This is the
+What Lightwork **does today**, grounded in the code on `main`. This is the
 catalogue of built features and tools; the forward backlog (what's *not* done
 yet) lives in [`ROADMAP.md`](./ROADMAP.md). When a roadmap item ships, it moves
 here.
@@ -46,13 +46,13 @@ here.
 - **Context lifecycle** — deferred tool loading + `find_tools`, cross-session
   `memory` tool (`tools/memory.py`), programmatic tool calling
   (`tools/code_exec.py`), structural/retrieval-augmented compaction
-  (`compaction.py`, `context_compactor.py`), and a **long-context retrieval
+  (`compaction/__init__.py`, `context_compactor.py`), and a **long-context retrieval
   router** (`long_context_router.py`) that shards an oversized payload (e.g. a
   document pasted into a goal) and keeps only the query-relevant shards instead
   of overflowing the model window — zero-dep lexical ranking by default, an
   injected Chroma/Qdrant store for embedding-quality retrieval; opt-in via
   `[context] retrieval_router`.
-- **Compaction plug-in API** (`compaction_plugins.py`) — register a custom
+- **Compaction plug-in API** (`compaction/plugins.py`) — register a custom
   context-compaction strategy (graph-structured, domain summarizer, a learned
   model) under a name and select it via `[context] compaction_strategy`; the
   shipping heuristic registers as the default `"heuristic"`, and `compact_with`
@@ -86,6 +86,19 @@ here.
   Reflexions also carry the recording run's department (`reflexion.py`
   `domain` field), and same-department lessons outrank equally-similar
   generic ones at recall time.
+- **Self-harness (model-specific harness learning)** — `maverick self-harness`
+  (`self_harness.py`, opt-in `[self_harness] enable`) mines one model's
+  recurring failure reflexions into weakness *signatures*, proposes a *minimal*
+  operating-guidance line for each, and regression-validates it on held-in AND
+  held-out cases (rejecting an edit that overfits its own examples). Survivors
+  are gated through the self-improvement ladder on the `prompt` rung — so
+  promotion inherits the evidence floor, the calibration-freeze interlock,
+  reversibility, and the signed audit, and **requires `[self_improvement]
+  enable`**. An accepted line is recalled into the system prompt for *that model
+  only* (`recall_addendum`, keyed on the agent's resolved model), never a
+  kernel-template mutation. Reflexions now carry a `model_id` for the per-model
+  mining. After *Self-Harness: Harnesses That Improve Themselves* (arXiv
+  2606.09498); design in [`docs/proposals/self-harness.md`](./proposals/self-harness.md).
 - **Shared generic insight promotion** — when explicitly enabled with
   `[dreaming] promote_shared`, only recurring *unscoped* failures can become
   shared insights. Department-scoped failures remain compartment-local and are
@@ -198,8 +211,14 @@ here.
   default `high`), and **lineage-tracked** (a tamper-evident hash chain from
   outcome → action → inputs/sources/skills; `verify_lineage` / `trace`).
   `Connector`s expose a system of record as `<sys>.read` (low risk) /
-  `<sys>.write` (high) governed Actions. Palantir-style action governance, for
-  self-improving agents (see `docs/palantir-playbook.md`).
+  `<sys>.write` (high) governed Actions. `governed_rest.py` adapts the LIVE
+  enterprise REST connectors (Salesforce, ServiceNow) into this surface — the
+  write previews its effect without a network call, hits the approval floor,
+  commits through the same SSRF-safe / egress-guarded path the tool form uses,
+  and records lineage — so a real system-of-record write is governed, not just
+  a confirm-gated tool call. Opt-in via `[governed_connectors] enable` +
+  `connectors` (`MAVERICK_GOVERNED_CONNECTORS`; wizard step). Palantir-style
+  action governance, for self-improving agents (see `docs/palantir-playbook.md`).
 - **Governed learning at scale** (`access_policy.py`, `learning_rollout.py`;
   opt-in, additive) — **PBAC**: a skill declares `purposes:` and
   `relevant_skills` recalls it only under a matching run purpose
@@ -216,8 +235,30 @@ here.
   maker-checker + SoD, legal privilege, HR PII-minimization, IT/GRC
   chain-of-custody, ops safety interlocks, engineering tests-first, GTM
   no-overpromising, strategy source-grounding). One implementation point
-  upgrades all 1,118 built-in packs AND operator/intake-generated packs;
+  upgrades all 2,020 built-in packs AND operator/intake-generated packs;
   prompts only — hard limits stay with capabilities/governance.
+- **Hard refusals** (`domain_refusals.py`, always on — a prohibited use is not
+  an operator preference) — every pack's prompt carries a non-negotiable
+  refusal block with **no approval path**: the EU AI Act Art-5 prohibitions for
+  HR (workplace emotion inference, biometric categorization, social scoring),
+  safety-critical actuation/interlock-override refusals for ops/manufacturing/
+  utilities/logistics, autonomous clinical/insurance/banking adjudication,
+  MNPI-crossing for capital-markets/strategy, and counsel-of-record for legal,
+  plus a universal "never disable your own controls / impersonate a human".
+  Packs add their own via a `refuse = [...]` field; the rails (capability /
+  governance / Shield) still enforce independently — this makes the agent
+  refuse *before* a rail is tested.
+- **Pack consumption surface** — every one of the 2,020 packs now declares an
+  `[output]` contract (deliverable shape, consumers, cadence, sign-off gate) and
+  an editable `[[workflow]]` playbook (the ordered procedure, each step naming
+  only the pack's own tools and ending in the human gate). Rendered into the
+  spawn prompt and the dashboard; intake-generated packs get them too.
+- **Reasoning-effort right-sizing** (`effort` pack field, applied only when
+  `[effort]` is enabled) — high-stakes judgment packs (SOX, AML/SAR, valuation,
+  prior-auth, litigation, incident response, pharma) run deep; clerical
+  high-throughput packs (status pages, chasers, hygiene) run light; the rest
+  inherit the operator default. A pack tier beats the global default but defers
+  to any per-role/env override, and never turns the feature on.
 - **Department memory at every spawn depth** — `agent_from_profile` appends
   the department's recalled lessons (same-department reflexions + dream
   insights) to a specialist's brief, so a `spawn_specialist` child starts
@@ -225,10 +266,50 @@ here.
   no-op unless those loops are enabled).
 - **Pack quality gate** — `maverick domains-lint [--ci --warnings]`
   (`domain.lint_profile`): errors for envelope holes (empty tool allowlist
-  = ALL tools, missing/unknown `max_risk`), warnings for quality gaps
-  (thin persona, allow∩deny overlap, no knowledge sources, no deny list).
-  All built-in packs lint clean; every pack now carries at least a
+  = ALL tools, missing/unknown `max_risk`, invalid `effort` tier), warnings
+  for quality gaps (thin persona, allow∩deny overlap, no knowledge sources, a
+  read-only pack not explicitly denying the `shell`/`write_file` floor, an
+  `output.gate` lighter than the playbook's final sign-off). All 2,020 built-in
+  packs lint clean (0 errors, 0 warnings); every pack carries at least a
   suite-level `knowledge_sources` grounding fallback.
+- **Governance-posture audit** — `maverick domains-audit [--json <path>
+  --suite <name>]` (`domain_audit.py`): the auditable inventory of "what can
+  these agents do, and what stops them?" — per pack the compartment seal, risk
+  ceiling, whether any state-mutating tool is *reachable* (0 across the drafting
+  roster), which irreversible actions it denies (segregation of duties), its
+  refusals, and the human sign-off on its deliverable. Flags + exits non-zero if
+  a drafting pack could reach a mutator; `--json` exports for a GRC system.
+- **Per-pack behavioral evals** — `maverick domains-eval [--check]`
+- **Roster-wide governance invariant suite** (verified across ALL 2,020 packs,
+  fault-injected at 1,000,000 iterations) — six invariants proven non-vacuously
+  (each carries a fault-injection control that fails when the guarantee is
+  removed): (1) **tool-reachability** — no drafting/non-builder agent can reach
+  a state-mutating tool; (2) **autonomy dial** — an onboarding agent is never
+  autonomous, and a high-risk action is never autonomous even once a pack is
+  graduated; (3) **capability attenuation** — a spawned child can never exceed
+  its parent's grant (no privilege escalation); (4) **compartment isolation** —
+  a quarantine seal never bleeds across compartments/suites; (5) **hard
+  refusals** — the universal refusal floor is unstrippable; (6) **budget caps**
+  — no cap is ever silently exceeded. Plus hostile-argument fuzzing of every
+  connector and tool.
+- **Robustness hardening** (bugs found by the stress sweep and fixed) —
+  connectors no longer raise on a non-string op/path/query (they return an
+  ERROR string); `Skill.parse` raises `ValueError` (not `AttributeError`) on
+  malformed/untrusted frontmatter; `format_money` degrades gracefully on a
+  None/empty currency.
+  (`domain_eval.py`): golden cases that test a specialist's load-bearing
+  behavior (AP catches a duplicate and never pays; legal cites or marks
+  unverified; HR refuses emotion inference; ops refuses an interlock override).
+  A deterministic rubric scorer (include/exclude/refuse/cite) plus an injected
+  runner; `--check` lints the suite against the roster (key-free CI gate) while
+  `run_eval(cases, runner)` scores live when a provider key is present.
+- **Specialist routing** (`domain_router.py`, wired into `list_specialists
+  query=<task>`) — a pre-filter that ranks the whole 2,020-pack roster for a
+  task so the orchestrator picks from a shortlist, not a haystack: lexical
+  TF-IDF blended with sentence-transformer cosine when `fastembed` is installed
+  (paraphrase-aware), graceful lexical-only fallback otherwise. A 25-case
+  benchmark floors recall@10 ≥ 80% so a pack/persona edit can't silently degrade
+  routing.
 - **Hindsight engine** (`hindsight.py`, `maverick hindsight [--strict
   --ledger]`) — replays past goals against learned-state snapshots to detect
   when the forgetting loops silently cost coverage: gained / regressed /
@@ -239,16 +320,16 @@ here.
   cost avoided + ROI, the capability improvement curve from the hindsight
   ledger, and governance evidence, per department (and per external vendor
   with `--fleet`). Read-only; the POC-closing artifact.
-- **1,118-agent specialist portfolio across 26 suites** — the original 8
+- **2,020-agent specialist portfolio across 53 suites** — the original 8
   business suites plus customer experience, marketing, procurement,
   data & analytics, security ops, executive office, facilities/EHS, tax
-  preparation, and 10 industry verticals (healthcare, insurance, banking,
+  preparation, and 30+ industry verticals (healthcare, insurance, banking,
   retail, manufacturing, construction, logistics, professional services,
   government contracting, education/nonprofit), with jurisdiction packs
   (country employment law, GDPR/CCPA/PIPL/EU-AI-Act regimes, indirect-tax
   regimes). Quality gate: `maverick domains-lint [--ci]` — every pack has
   a bounded persona, least-privilege allow list, explicit deny list, and
-  risk ceiling; 0 errors, 0 warnings across all 1,118.
+  risk ceiling; 0 errors, 0 warnings across all 2,020.
 - **Tax preparation pipeline** (`tax_prep.py`, `maverick tax prepare
   <docs-dir>`; the 19-pack `tax_` suite) — a CPA firm's docs-to-draft
   workflow: uploaded client documents are classified and extracted
@@ -285,7 +366,7 @@ here.
   opt-in `[fleet_memory] enable`; MCP tools `maverick_fleet_ingest` /
   `maverick_fleet_recall`; CLI `maverick fleet-memory`) — ANY external agent
   (Agentforce, Copilot, custom, OSS runtimes) deposits experience into and
-  recalls from Maverick's governed memory: roster-gated (fail-closed),
+  recalls from Lightwork's governed memory: roster-gated (fail-closed),
   Shield-scanned, provenance-tagged (`vendor:agent_id`), tenant-isolated,
   every read audited. Successes/failures consolidate through the dream
   cycle; `maverick proof --fleet` breaks value out per vendor.
@@ -387,13 +468,13 @@ here.
 
 ## Tools
 
-100+ built-in tools. Highlights by group (all under `tools/`):
+286 built-in tool modules. Highlights by group (all under `tools/`):
 
 - **Code & files** — `fs`, `str_edit`, `ast_edit` (tree-sitter), `apply_patch`
   (atomic multi-file), `repo_map`, `dep_graph`, `test_impact` (coverage-guided),
   `reviewer` (diff review), `file_watcher`, `notebook_exec` (run a .ipynb's code
   cells in the sandbox), `self_edit` (human-gated, path-confined edits to
-  Maverick's own code/config), `html_to_app` (scaffold a starter app from an HTML
+  Lightwork's own code/config), `html_to_app` (scaffold a starter app from an HTML
   mockup).
 - **Data** — `sql_query` (read-only by default), `pandas_query`, `spreadsheet`
   (CSV/XLSX, write-capable), `compute` (SymPy), `embeddings`.
@@ -428,7 +509,32 @@ here.
   TrueLayer (EU/UK open banking),
   Twilio, Zoom, S3, DynamoDB, MongoDB, Redis, Elasticsearch, Datadog, Sentry,
   PagerDuty, Mixpanel, PostHog, Plausible, GA4, Home Assistant, Cloudflare,
-  Vercel, AWS Lambda/SES/SNS, Microsoft Graph, and more.
+  Vercel, AWS Lambda/SES/SNS, Microsoft Graph, and more — plus a long-tail of
+  214 write-capable token-authed REST/GraphQL connectors
+  (`enterprise_connectors.py`, built on `make_rest_tool`) covering CRM, ERP,
+  ITSM, HRIS, security, and data systems.
+- **Primary-source data connectors (37, read-only, low-risk)** — authoritative
+  government and public data APIs that ground the analyst-style packs in
+  primary sources instead of model memory: SEC EDGAR, FRED, U.S. Treasury,
+  World Bank, IMF, FDIC, BEA, Census, BLS, EIA, Alpha Vantage, Finnhub,
+  Polygon, OpenFIGI (finance/markets); Federal Register, eCFR, Regulations.gov,
+  CourtListener, GovInfo, USAspending, SAM.gov, Open States, PatentsView
+  (legal/regulatory/gov); GLEIF, OpenCorporates, UK Companies House (entity
+  registries); openFDA, NPPES/NPI, ClinicalTrials.gov, RxNorm, PubMed (health);
+  NWS, NOAA Climate, OpenWeather, EPA Envirofacts, Climatiq, Carbon Interface
+  (weather/energy/ESG). All GET-only and confirm-free — they read public
+  reference data, mutate nothing, and carry no tenant secrets. Most are keyless
+  (a fixed public host, zero config); the rest take a free API key from env,
+  delivered as a header or query param (never from the prompt). Built on three
+  new `make_rest_tool` auth modes: `keyless`, `query_auth`, `default_base_url`.
+  **Auto-wired by suite** (`SUITE_DATA_CONNECTORS`): each analyst pack is granted
+  its suite's relevant sources in `domain_capability` (e.g. FDIC/FRED → banking,
+  openFDA/NPI → healthcare, USAspending/SAM.gov → gov-contracting, EIA/EPA →
+  utilities, NWS/NOAA → insurance & agriculture), so the agent reaches for the
+  right primary source by default. Additive and deferred (no context cost); a
+  host-restricted pack's egress is never silently widened. On by default with a
+  kill-switch — `[workforce] data_grounding = false` /
+  `MAVERICK_WORKFORCE_DATA_GROUNDING=off` (installer wizard step).
 - **System** — `shell` (sandbox-mediated), `wasm_run` (**WASM sandbox**:
   execute a WebAssembly/WASI module under wasmtime — capability-grant
   isolation where the module sees ONLY the preopened dirs/env/args given;
@@ -446,8 +552,10 @@ here.
   (classify deps + flag copyleft), `self_capability` (report the run's capability
   grant), `oidc` (OIDC authorization-code client), `oauth_helper` (generic OAuth2 for
   any provider — PKCE authorize URL / code exchange / refresh; token responses
-  summarised with a sha fingerprint and never echoed into context, full tokens
-  land in a 0600 MAVERICK_OAUTH_OUT file), `cost_curve` (per-provider cost
+  summarised with a sha fingerprint and never echoed into context; full tokens
+  seal into the per-tenant OAuth vault — `oauth_vault.py`, AES-256-GCM under the
+  tenant DEK, refresh-aware via a caller-supplied refresher — when `[oauth] vault`
+  is on, else a 0600 MAVERICK_OAUTH_OUT file), `cost_curve` (per-provider cost
   model), `bench_track` (record benchmark scores + flag regressions), `teams`
   (Microsoft Teams webhook), `knowledge_graph` (extract/query/render
   subject-relation-object triples; no external graph DB), `cross_repo_deps`
@@ -619,6 +727,27 @@ here.
   unsigned, mis-signed, tampered, downgraded, or un-anchored bundles are
   refused, and a verified bundle stages `shield_rules.json` (0600) atomically —
   the kernel never imports the shield itself (rule 1).
+  **Shield decode/defang pre-pass** (`maverick_shield/deobfuscate.py`): on every
+  scan surface — input, tool-call arguments, and tool output — the shield decodes
+  base64/hex/percent encodings and folds Unicode homoglyphs (Cyrillic/Greek
+  lookalikes NFKC leaves alone), then re-scans every de-obfuscated variant — so an
+  encoded `rm -rf /` is blocked even though the literal surface form hid it.
+  Monotonic (only upgrades an allowed verdict to a block), bounded against decode
+  bombs, and fail-open; escape hatch `MAVERICK_SHIELD_NO_DECODE=1`.
+  **Trained cheap-probe seam + offline trainer** (`probe_model.probe_features`
+  n-gram extension + `maverick_shield/probe_train.py`, `python -m
+  maverick_shield.probe_train --corpus … --out model.json`): `probe_features`
+  now additively emits deterministic hashed char n-gram features (`ng:<bucket>`,
+  blake2b — stable across processes) when `ngram_buckets > 0`, so a model can
+  carry lexical content the 7 hand-named signals can't; `ngram_buckets = 0` keeps
+  the original contract, so every existing artifact is byte-for-byte unaffected.
+  The pure-stdlib trainer (no numpy/sklearn) fits an L2 logistic regression over
+  the SAME extractor inference uses (train/serve parity), selects a threshold at a
+  configurable benign false-positive ceiling (`--max-fp`, default 1%), and exports
+  the `{bias, weights, threshold, ngram_buckets, ngram_sizes}` JSON the shield
+  already loads. Still OFF by default and MAX-ensembled with the heuristic (can
+  only raise recall). Recommended datasets/model and the ship-gate are in
+  [`docs/research/shield-model-recommendation.md`](research/shield-model-recommendation.md).
   **Annual safety report generator** (`safety_report.py`, `python -m
   maverick.safety_report --since --until`): aggregates what the deployment
   actually recorded — shield blocks, capability denials, killswitch
@@ -712,7 +841,7 @@ carry their platform `message_id` and adapters expose `send_threaded`
 `reply_to_message_id`; base falls back to a plain send) so long-running
 answers land under the message that asked. **Email v2** adds IMAP IDLE (push
 instead of poll) + conversation threading from Message-ID/In-Reply-To/References
-(`email_v2.py`). **Discord Stages voice v2** (`discord_stages.py`): drive Maverick from a
+(`email_v2.py`). **Discord Stages voice v2** (`discord_stages.py`): drive Lightwork from a
 Stage channel — per-speaker utterance assembly over an injected transcriber,
 the same `DISCORD_ALLOWED_USER_IDS` speaker allowlist as Discord text,
 optional wake-word gating, replies spoken when the bot holds a speaker slot
@@ -736,8 +865,9 @@ dispatch path so a v2 handler works everywhere unchanged.
 
 ## Sandboxes
 
-7 run-to-completion backends (`sandbox/`): local subprocess, Docker, SSH, Podman,
-devcontainer, Firecracker microVM, Kubernetes. Selected via `[sandbox] backend`.
+9 run-to-completion backends (`sandbox/`): local subprocess, Docker, gVisor, SSH,
+Podman, devcontainer, Firecracker microVM, Kubernetes, and Modal cloud (below).
+Selected via `[sandbox] backend`.
 **Modal sandbox backend** (`sandbox/modal_backend.py`, `[sandbox] backend =
 "modal"`, `[modal]` extra): run agent shell in ephemeral Modal cloud sandboxes
 (per-exec container, image/cpu/memory/timeout plumbed, torn down after the
@@ -905,13 +1035,13 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   to the community one (`catalog.py`, pinned by test).
 - **IDE protocol unification** — one MCP server (stdio + Streamable HTTP) is
   the editor protocol: any MCP-speaking editor (VS Code, JetBrains, Zed,
-  Cursor) drives Maverick through it; the editor-specific packages
+  Cursor) drives Lightwork through it; the editor-specific packages
   (`apps/vscode-extension`, `apps/emacs`, `apps/nvim`) are thin CLI fronts,
   not parallel protocols.
 - **A2A** (`a2a.py`, `a2a_tasks.py`) — Agent Card discovery + delegation, with
   the **interop consuming half** (`validate_agent_card` spec-shape lint,
   `parse_remote_card` normalization that refuses a non-conformant card before
-  anything delegates against it) proven both ways by interop tests: Maverick's
+  anything delegates against it) proven both ways by interop tests: Lightwork's
   own card passes its own validator, and third-party-shaped fixture cards
   (rich + minimal) parse correctly.
 - **Swarm federation** (`federation.py` + `grpc_api/federation.proto`,
@@ -979,7 +1109,7 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   the gate — a breaking change requires a `maverick.v2` package. The gate is a
   dependency-free proto parser, so it runs in CI without grpcio.
 - **gRPC dispatch** (`grpc_dispatcher.py`, opt-in `[grpc_dispatch] target`)
-  — execute goals on a remote Maverick worker over gRPC: a `RunGoal` RPC runs
+  — execute goals on a remote Lightwork worker over gRPC: a `RunGoal` RPC runs
   an existing goal row to completion (API and worker share the Postgres world
   DB, same contract as the arq queue), and `GrpcDispatcher` plugs into the
   runner's Dispatcher seam with no caller changes; queue backend wins when
@@ -992,12 +1122,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `maverick.proto`. Behind the `[grpc]` extra; run via `python -m maverick.grpc_api`.
 - **Cross-language quickstarts** — TypeScript, Go, Rust, C#, Java (`docs/clients/`).
 - **LangChain / LangGraph interop** (`langchain_adapter.py`, `[langchain]` extra)
-  — expose the Maverick swarm as a LangChain `StructuredTool`, and wrap any
-  LangChain `BaseTool` as a Maverick tool. **AutoGen + CrewAI adapters**
+  — expose the Lightwork swarm as a LangChain `StructuredTool`, and wrap any
+  LangChain `BaseTool` as a Lightwork tool. **AutoGen + CrewAI adapters**
   (`agent_framework_adapters.py`): the same two directions for both frameworks
-  — Maverick as an AutoGen `FunctionTool` (or a dependency-free typed
+  — Lightwork as an AutoGen `FunctionTool` (or a dependency-free typed
   callable) and as a CrewAI `BaseTool`; `wrap_autogen_tool` /
-  `wrap_crewai_tool` adapt their tools into Maverick `Tool`s (duck-typed,
+  `wrap_crewai_tool` adapt their tools into Lightwork `Tool`s (duck-typed,
   lazy imports, actionable install hints).
 - **MCP-client language analytics** (`mcp_analytics.py`) — opt-in, consent-gated
   tally of client language (from the User-Agent) that feeds the language-bindings
@@ -1006,6 +1136,14 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 
 ## Safety & security
 
+- **Secure by default** (`security_defaults.py`, `MAVERICK_SECURE_DEFAULT` /
+  `[security] secure_defaults`) — the protective controls that don't break the
+  happy path ship **on**: at-rest encryption (auto-key), audit-log signing
+  (auto-key), fail-closed consent for high/critical-risk actions, and a `high`
+  tool-risk ceiling (CRITICAL needs an explicit raise). Precedence: compliance
+  floor > explicit arg > env > config > the secure-by-default switch; opt out per
+  control or flip the whole posture off. OIDC, the egress lock, and Postgres RLS
+  stay opt-in; the Shield stays fail-open. See `docs/security-hardening.md`.
 - **Shield** at 3 chokepoints (input / tool-call / output); built-in rule set
   fail-open if the SDK isn't installed.
 - **Floors** — secret detector, PII detector, jailbreak heuristics, unicode /
@@ -1014,7 +1152,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   + deceptive-link heuristics, composed into `Shield.scan_output`),
   **operator-defined constitutional rules** (custom regex policy via `[safety]
   constitution`, `maverick_shield/constitutional.py`),
-  Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`),
+  Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`) — whose
+  heuristic cheap probe can now ensemble a **trained classifier**
+  (`maverick_shield/probe_model.py`): plain-JSON linear weights over the probe's
+  named features (no pickle → loading an operator model can't execute code),
+  combined by MAX so the model only raises recall, opt-in via `[shield]
+  probe_model` / `MAVERICK_SHIELD_PROBE_MODEL`,
   **voice safety pass** (`safety/voice_safety.py`): transcript screen for
   wake-word stuffing + spoken role-switch before an utterance drives the
   agent, and redact-before-speak (secrets/PII never read aloud) wired into
@@ -1031,7 +1174,7 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   deployment can verify (and gate on) hardware memory encryption; exits non-zero
   when not confidential.
 - **Air-gap preflight** (`air_gap.py`, `maverick airgap check`) — verifies a
-  deployment has no outbound path in *Maverick's own config*: a remote model
+  deployment has no outbound path in *Lightwork's own config*: a remote model
   provider, a non-deny-all egress policy, or a sandbox with network access — and
   exits non-zero on any finding so it can gate a deployment. (OS-level air-gap
   is the operator's job; this catches the application-layer leaks.)
@@ -1086,7 +1229,11 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   every cross-node reference is *reciprocated* (a node can't drop its half to
   hide an action) on top of each node's own chain/anchor check; an
   unreciprocated or forged link is reported with the missing counterpart,
-  date-windowed **SIEM export**, encryption-at-rest (`crypto_at_rest.py`,
+  date-windowed **SIEM export**, **WORM export** (`audit/worm.py`, `maverick audit
+  worm push`) — ships closed day-files to S3 Object-Lock (COMPLIANCE/GOVERNANCE)
+  or a local read-only mirror with a retention lock, so the historical trail is
+  *immutable*, not just tamper-evident; `maverick audit worm verify` proves every
+  closed file is durably shipped, encryption-at-rest (`crypto_at_rest.py`,
   `maverick encryption migrate`), SOC2 readiness (`soc2.py`), DSAR (`dsar.py`),
   **differential erasure verification** (`erasure_verify.py`, `maverick
   erase-verify`) — a right-to-erasure *proof*: reuses the DSAR export (whose
@@ -1189,6 +1336,43 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 
 - **Conversational intake** — interviews a user, collects docs, and proposes a
   domain configuration (intake agent + LLM proposer + `run_intake`).
+- **Capability provisioning** (`provision.py`) — the agent factory equips a
+  pack *at birth*, not reactively mid-run: `analyze_profile` diffs a draft's
+  workflow + declared `allow_tools` against the installed skills and live tool
+  registry (`tools.base_tool_names()`) and surfaces the gaps at the approval gate;
+  on approval, `apply_plan` installs the matching catalog skills
+  (`self_learning.acquire_skill`) and synthesizes any missing declared tools
+  (`self_learning.write_generated_tool` — stdlib-only, import-validated
+  out-of-host, consent-gated). Analysis is read-only and always safe; applying
+  it is gated on `[self_learning] enable` + the new `provision_packs` sub-knob
+  (wizard step) + the same human approval `save_profile` requires, and never
+  widens the pack's already-clamped envelope.
+- **Programming by demonstration** (`demonstration.py`) — the factory's second
+  front door: watch a person do their job, then build the agent that does it. A
+  `Demonstration` is an ordered record of observed actions + narration (from any
+  capture front-end), ingested by `parse_demonstration`/`load_demonstration`
+  (JSONL or prefixed text like `ACTION[email]: send digest -> ops@`;
+  secret-redacted at the door, byte/step-bounded, and fail-soft — a malformed
+  or oversized capture drops bad lines rather than raising).
+  `induce_profile` turns it into a `DomainProfile`
+  by reusing the intake pipeline wholesale — it builds the same
+  `propose(spec) -> dict` and routes through `generate_profile` →
+  `validate_profile`, so a demonstrated pack inherits the identical envelope
+  clamp + persona shield-scan as a described one. LLM path (model proposes from
+  the transcript) and deterministic path (workflow mirrors the steps, tools =
+  what the person used) both supported; a human review gate is always appended.
+  CLI: `maverick learn-demo <file>` → induce → approve → save → provision.
+- **Self-improving factory** (`factory_learning.py`) — closes the loop back onto
+  *generation quality*. Provisioning/approval gaps (a tool a draft kept omitting,
+  a skill its workflow kept needing) are attributed to the pack's suite and
+  mined into proposer **corrections**; each is promoted through the existing
+  `SelfImprovementController` on the `prompt` rung (guidance text widens no
+  capability, so no escalation proof or human sign-off is required — only the
+  evidence + calibration gates), and promoted guidance is folded into future
+  pack generation (`augment_system_prompt`, scope-matched per suite). OFF by
+  default and byte-identical to before while off; gated by `[self_improvement]
+  enable` + the `factory_learning` sub-knob (wizard step) or
+  `MAVERICK_FACTORY_LEARNING`. CLI: `maverick factory-learn [--dry-run]`.
 - **Domain packs** — spawn domain agents from profiles (legal / privacy / generic
   packs) on the sector-seal foundation.
 - **Pack output contract** — a pack's optional `[output]` block declares the
@@ -1287,9 +1471,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   re-keyed by hand. The goal page grows a sign-off panel (Approve / Reject + note,
   then the decision + hand-off download); a signed-off deliverable drops out of
   the persona inbox's "awaiting sign-off" queue. Agents draft; humans certify.
-- **System-of-record routing** — when a deliverable is approved, Maverick POSTs
+- **System-of-record routing** — when a deliverable is approved, Lightwork POSTs
   it to a configured downstream endpoint (treasury / GL / Jira), so "approved in
-  Maverick" lands in the system of record automatically instead of being
+  Lightwork" lands in the system of record automatically instead of being
   re-keyed. Opt-in via `[deliverables] handoff_webhook` (a wizard step;
   env-referenceable URL), signed with the existing `[webhooks]` HMAC secret and
   delivered over the SSRF-safe webhook path. Best-effort and never blocks the
@@ -1328,6 +1512,27 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `embedding_types`), local, or deterministic — fails loud rather than silently
   degrading.
 - **Reverse-proxy SSO** — trusted forwarded-identity header for enterprise auth.
+- **SAML 2.0 SSO** (`maverick_dashboard/saml.py`, the `[saml]` extra / pysaml2) —
+  a SAML SP browser-login front-end (`/saml/metadata`/`login`/`acs`) for IdPs that
+  mandate SAML over OIDC. The IdP's signed assertion is verified by pysaml2 (no
+  hand-rolled XML-dsig) and mints the SAME `mvk_session` cookie as the OIDC login,
+  so a SAML user flows through RBAC / `require_principal` identically
+  (`user:<NameID>`); open-redirect-safe RelayState; off by default (404s until
+  `[auth.saml]` is set). pysaml2 calls are isolated + unit-tested; certify a live
+  IdP round-trip before production.
+- **SCIM 2.0 provisioning** (`maverick_dashboard/scim.py`) — the RFC 7643/7644
+  `/scim/v2` surface (Users CRUD + `ServiceProviderConfig`/`ResourceTypes`, the
+  `userName eq` filter, Okta/Azure PATCH-deprovision forms) so an enterprise IdP
+  drives user lifecycle automatically: a SCIM user provisions a backing tenant,
+  `active=false`/DELETE suspends/removes it. Carries its own static IdP bearer
+  (`MAVERICK_SCIM_TOKEN`, constant-time compare), exempt from the dashboard-token
+  middleware and OIDC gate; 404s when unset, so it's inert off by default.
+  Deprovision also **force-revokes live sessions**, not just future logins: a
+  per-principal revocation epoch (`session_revocation.py`, fail-closed on a
+  damaged store) rejects any credential issued before it, and a login-time
+  **subject directory** (`subject_directory.py`, sha256-keyed for privacy)
+  reaches a session even when the IdP issues a pairwise/per-app OIDC `sub`
+  (Entra) that's in no SCIM attribute. "Log out everywhere" bumps the same epoch.
 - **Tenant-aware persistence** — workspaces wall each tenant into
   `~/.maverick/tenants/<t>/` (`workspace.py`, `paths.py`), with a per-tenant
   world DB and `data_dir()`-routed audit / quotas / DSAR / fleets. The shared
@@ -1335,8 +1540,10 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   **versioned migration runner** (the world-model `MIGRATIONS` ledger), a
   `tenant_id` on every root table (write-stamped, read-scoped), **tenant-aware
   UNIQUE constraints**, a **strict-isolation mode** (`[world_model]
-  strict_tenant_isolation`), opt-in **database-native Row-Level Security**
-  (`[world_model] rls` / `MAVERICK_PG_RLS`: a FORCE-RLS policy on every
+  strict_tenant_isolation`), **database-native Row-Level Security**
+  (`[world_model] rls` / `MAVERICK_PG_RLS`, **auto-on under enterprise mode**
+  with a boot preflight that refuses to start on legacy NULL-tenant rows: a
+  FORCE-RLS policy on every
   tenant-scoped table keyed on a transaction-local `maverick.tenant` GUC, so
   the database — not just the app-layer predicate — enforces the boundary; the
   policy fails closed when the tenant GUC is unset/empty and startup fails if
@@ -1347,23 +1554,44 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `MAVERICK_PG_POOL_SIZE`) that hands each transaction its own pooled
   connection for horizontal scale (default 0 = the original single-connection
   model, unchanged).
-- **Online-migration preflight** — `schema_migrations.py` + `maverick
+- **Per-tenant KMS at fleet scale** — envelope encryption with a per-tenant DEK
+  wrapped by a KEK in a pluggable `KMS` (`tenant/kms.py`; LocalKMS or AWS/GCP/
+  Vault BYOK via `kms_backends.py`). **Deterministic per-tenant BYOK**:
+  `get_kms(tenant_id)` reads each tenant's own `[kms]` overlay independent of the
+  active context. A **DEK-cache TTL** (`MAVERICK_KMS_DEK_CACHE_TTL`) bounds how
+  long a revoked cloud key keeps opening data. **Fleet KEK rotation** is operable
+  and resumable: `maverick tenant kms-rotate --old-kek --new-kek [--dry-run]`
+  skips tenants already on the new KEK (re-run finishes an interrupted rotation)
+  and refuses success while any tenant is still on the old KEK (re-wrap only — no
+  data re-encrypted).
+- **Online-migration preflight + governance** — `schema_migrations.py` + `maverick
   schema-plan`: the *operations* view over that ledger. It classifies each
   pending statement `online` (cheap/non-blocking: `ADD COLUMN`, `CREATE INDEX IF
   NOT EXISTS`, FTS rebuild) or `offline` (table rewrite / long write lock),
   `plan(current, target)` lists the pending steps, and `online_only()` gates a
   hot deploy — failing **closed** on any unclassifiable statement so an unknown
-  migration is reviewed before it runs against a live, high-traffic world.
+  migration is reviewed before it runs against a live, high-traffic world. On top
+  of it, **`migration_governance.py`** is the integrity ratchet (CI-gated):
+  per-version sha256 checksums pinned in `migrations.lock.json` make released
+  migrations immutable, new ones must be additive (no `DROP`/`RENAME`), and both
+  backend ladders (SQLite + Postgres) must stay at the same declared head.
+- **Proven control/data-plane split** — the dispatcher seam hands goal execution
+  to a separate worker (`queue_dispatcher.py` arq/Redis, `grpc_dispatcher.py`
+  gRPC, both installed at startup). Two CI-gated proofs back the claim:
+  `control_data_plane_e2e.py` (one goal provably runs out-of-process, with a JSON
+  evidence artifact) and `control_data_plane_soak.py` (many goals under
+  concurrent workers reach `done` zero-loss and **exactly-once** — the contention
+  test of `JobQueue.claim`'s `WHERE status='pending'` guard).
 - **Process table** — `maverick ps` (unified view of runs/workers).
 - **Scheduling** — recurring autonomous goals from a prompt; `worker --once`
   cron-friendly drain (`scheduler.py`, `job_queue.py`, `worker.py`).
 
 ## Hosted control plane & multi-tenancy
 
-The backend for running Maverick as a governed, multi-tenant platform (each piece
+The backend for running Lightwork as a governed, multi-tenant platform (each piece
 opt-in; single-tenant/self-hosted deployments are unaffected):
 
-- **Tenant lifecycle / provisioning** — `tenant_registry.py` + `maverick tenant
+- **Tenant lifecycle / provisioning** — `tenant/registry.py` + `maverick tenant
   create/list/suspend/resume/quota/delete`: a roster of tenants with status,
   plan, and per-tenant daily spend quota; `assert_tenant_active` refuses a
   suspended tenant.
@@ -1371,10 +1599,11 @@ opt-in; single-tenant/self-hosted deployments are unaffected):
   invoice/entitlements`: rate the usage ledger (pass-through+markup or
   token-priced) into per-period invoices; plan → feature/limit entitlements
   (`tenant_entitled`).
-- **Per-tenant envelope encryption** — `tenant_kms.py`: a DEK per tenant, wrapped
-  by a KMS KEK (LocalKMS default; cloud KMS is a drop-in `wrap`/`unwrap`); one
-  tenant's DEK can't open another's data; instant KEK rotation.
-- **Per-tenant egress plane** — `tenant_egress.py`: a per-tenant allow/deny
+- **Per-tenant envelope encryption** — `tenant/kms.py` (fleet KEK rotation in
+  `tenant/kms_fleet.py`): a DEK per tenant, wrapped by a KMS KEK (LocalKMS
+  default; cloud KMS is a drop-in `wrap`/`unwrap`); one tenant's DEK can't open
+  another's data; instant KEK rotation.
+- **Per-tenant egress plane** — `tenant/egress.py`: a per-tenant allow/deny
   egress policy composed (AND) with the per-tool policy at the egress chokepoint.
 - **Multi-tenant `maverick serve`** — the channel server enforces the tenant
   roster at the door: with per-user tenancy on and tenants provisioned, a
@@ -1679,6 +1908,15 @@ tested without spawning py-spy.
   assign an issue to the bot, get a goal (`X-Gitlab-Token` constant-time
   verify, `X-Gitlab-Event-UUID` replay dedup), completing the
   Linear/Jira/GitHub/GitLab issue-trigger family (`issue_webhooks.py`).
+- **N-of-M dual control** (`safety/dual_control.py`, `WorldModel.decide_approval`
+  / `approval_signoffs`) — the **two-person rule** / segregation of duties: a
+  high/critical-risk action needs N **distinct** approvers before it's granted
+  (`[security] approvals_required`, flat or per-risk), and the requester can't
+  approve their own request (`allow_self_approval = false`). Each dashboard
+  approve is a vote by a verified principal; a single deny rejects; a repeat vote
+  counts once (enforced by the `(approval_id, approver)` PK); `GET
+  /approvals/{id}/state` shows quorum progress; a barred self-approval is 403.
+  Off by default (`required = 1` = legacy single approver); SQLite migration v21.
 - **Web dashboard** — run list, plan-tree, chat at `/chat`, approval queue with
   **collaborative supervision** (claim/release endpoints so two supervisors
   never double-handle a review — atomic claims, 409 on conflicts, claims
@@ -1921,7 +2159,7 @@ tested without spawning py-spy.
   exactly which digests differ and calls runs "comparable" only when
   config+inputs match; `audit_report()` sweeps the stored history. Two
   runs with differing digests are never claimed comparable.
-- **Compaction v6 hybrid** (`compaction_hybrid.py`): the strategy picker
+- **Compaction v6 hybrid** (`compaction/hybrid.py`): the strategy picker
   learned from this deployment's own outcomes — deterministic features
   over the message window, a per-(feature-bucket, strategy) outcome ledger
   (atomic 0600), epsilon-greedy with an injected PRNG, and an optional
@@ -2088,7 +2326,7 @@ tested without spawning py-spy.
   mobile browser, and a Kivy shell + buildozer.spec for Android — store
   builds are maintainer acts; the hard limits (no sandbox/subprocess on
   mobile, relay for network) are documented, not papered over.
-- **RFCs** — [RFC 0001: Maverick 2.0](./rfcs/0001-maverick-2.0.md) (config
+- **RFCs** — [RFC 0001: Lightwork 2.0](./rfcs/0001-maverick-2.0.md) (config
   schema v2 + async-only channel SDK + connector re-homing, migration story
   riding `maverick migrate`) and [RFC 0002: Plugin API v2](./rfcs/0002-plugin-api-v2.md)
   (static manifests discovered without importing plugin code, lifecycle hooks,
@@ -2109,9 +2347,9 @@ tested without spawning py-spy.
 - **Docs** — MkDocs site, [getting started](./getting-started.md), 30-recipe
   [cookbook](./cookbook/), [architecture](./architecture.md),
   [embedding guide](./embedding.md), [security hardening](./security-hardening.md),
-  [comparison page](./comparison.md) (Maverick vs the field, claims grounded in
+  [comparison page](./comparison.md) (Lightwork vs the field, claims grounded in
   this catalogue), [press kit](./press-kit.md), [showcase wall](./showcase.md)
-  (built-with-Maverick submissions by PR), and a self-serve
+  (built-with-Lightwork submissions by PR), and a self-serve
   [observability integrations guide](./integrations/observability-partners.md)
   (OpenRouter provider, OTLP-generic tracing incl. LangSmith, Helicone via
   base_url override).

@@ -184,3 +184,27 @@ def test_healthz_full_payload_without_token(monkeypatch, tmp_path):
     body = r.json()
     assert "checks" in body
     assert "llm_key" in body["checks"]
+
+
+def test_rate_limit_dict_does_not_grow_unbounded(monkeypatch, tmp_path):
+    # A stream of distinct one-shot rate-limit keys (many principals / direct
+    # client IPs) must not grow _goal_times without bound: the per-call sweep
+    # prunes every key whose window has fully expired, not just already-empty ones.
+    _setup(monkeypatch, tmp_path)
+    _reset_rl()
+    monkeypatch.setenv("MAVERICK_DASHBOARD_MAX_GOALS_PER_MIN", "100")
+    monkeypatch.setenv("MAVERICK_DASHBOARD_MAX_GOALS_GLOBAL_PER_MIN", "100000")
+    from maverick_dashboard import app as dash_app
+
+    clock = [1000.0]
+    monkeypatch.setattr(dash_app.time, "monotonic", lambda: clock[0])
+
+    for i in range(50):
+        dash_app.check_goal_rate_limit(source=f"client-{i}")
+    assert len(dash_app._goal_times) == 50
+
+    # Advance past the 60s window so every prior entry is stale, then one more
+    # distinct call: the sweep prunes the 50 now-empty keys.
+    clock[0] = 1100.0
+    dash_app.check_goal_rate_limit(source="client-new")
+    assert len(dash_app._goal_times) == 1  # only the live key remains

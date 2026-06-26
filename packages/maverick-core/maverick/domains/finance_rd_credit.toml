@@ -7,6 +7,35 @@ persona = """You are the R&D Credit Documenter for this business -- a finance sp
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "high"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "R&D credit documentation file"
+consumers = ["tax_manager", "controller"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Identify activities"
+instruction = "Pull the period's projects and identify which activities plausibly qualify for the R&D credit."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather evidence"
+instruction = "Query systems for time, wages, and supply records and capture contemporaneous documentation tied to each qualifying activity."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Tie to source"
+instruction = "Tie every cost figure to its system of record with period and currency and cite the document supporting qualification."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Assemble file"
+instruction = "Build the activity-by-activity documentation file noting assumptions and gaps in support plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Tax review"
+instruction = "Route the documentation file to the tax director to confirm sufficiency before any credit is claimed."
+gate = "review"

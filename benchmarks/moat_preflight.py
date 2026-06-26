@@ -88,7 +88,7 @@ def grader_self_test() -> tuple[bool, str]:
 def distill_mechanism_ok() -> tuple[bool, str]:
     """Two synthetic successful trajectories must produce a saved skill, so the
     populate phase will distill given >=2 successes."""
-    from maverick import skill_distillation_v2 as v2
+    from maverick.skill import distillation_v2 as v2
     trajs = [{"goal": "reconcile the general ledger to the bank statement",
               "success": True, "tools": ["read_file"], "t": 2},
              {"goal": "reconcile the quarterly ledger against bank records",

@@ -1,6 +1,6 @@
-# Maverick — Security & Compliance Overview
+# Lightwork — Security & Compliance Overview
 
-Maverick is a **governed, self-hostable AI agent runtime** built to run on
+Lightwork is a **governed, self-hostable AI agent runtime** built to run on
 private and regulated data (PHI / PCI / PII / EU / classified) without that data
 leaving your boundary. This page summarizes the security architecture for
 technical and security reviewers. It describes the product as built; capabilities
@@ -10,8 +10,11 @@ are cited to the modules that enforce them.
 
 The kernel ships fail-open and cloud-capable by design — the right default for a
 personal agent, the wrong one for sensitive data. **Enterprise mode is one opt-in
-switch** (`MAVERICK_ENTERPRISE=1`, `[enterprise] mode = true`, or the installer)
-that flips the defaults fail-closed (`maverick/enterprise.py`):
+switch** (`MAVERICK_ENTERPRISE=1`, `[enterprise] mode = true`, or the installer) —
+or, simplest, the named **deployment profile** `MAVERICK_PROFILE=enterprise`
+(`maverick/profile.py`), which composes enterprise mode *and* the
+deployment-specific secure defaults below in one knob — that flips the defaults
+fail-closed (`maverick/enterprise.py`):
 
 - **Egress lock.** Every LLM call is pinned to a local / self-hosted provider
   (Ollama / vLLM / TGI, or an allow-listed endpoint). A call routed to a cloud
@@ -24,8 +27,22 @@ that flips the defaults fail-closed (`maverick/enterprise.py`):
 - **Encryption at rest.** The world model and cross-session memory are sealed with
   AES-256-GCM (`crypto_at_rest.py`); `maverick encryption migrate` seals
   pre-existing plaintext.
+- **Container-default sandbox.** A `local`/unset sandbox backend is upgraded to an
+  available container runtime (docker → podman) instead of running `shell=True` on
+  the host; if no container runtime is installed it fails closed rather than
+  running agent-generated commands unsandboxed (`sandbox/__init__.py`).
+- **Plugin supply-chain checks.** Plugin tool calls can be proxied through the
+  configured isolation backend, and plugin distributions can be checked against
+  a **content-hash lockfile** when lock enforcement is enabled. Plugin discovery,
+  imports, tool factories, channel plugins, skill plugins, and persona plugins
+  still run in the Maverick process; install only trusted plugins, and generate a
+  lockfile before relying on drift enforcement (`plugins.py`,
+  `plugin_isolation.py`, `plugin_lock.py`).
 
 **Prove it, don't trust the flag.** `maverick enterprise verify`
+
+**Governance invariants proven across the whole roster.** Beyond per-deployment checks, a roster-wide invariant test suite verifies six safety invariants across **all 2,020 specialist packs**, each fault-injected at 1,000,000 iterations with a non-vacuity control: (1) **tool-reachability** — no drafting/non-builder agent can reach a state-mutating tool; (2) **autonomy dial** — an onboarding agent is never autonomous and a high-risk action is never autonomous even when graduated; (3) **capability attenuation** — a spawned child can never exceed its parent's grant; (4) **compartment isolation** — a quarantine seal never bleeds across compartments/suites; (5) **hard refusals** — the universal refusal floor is unstrippable; (6) **budget caps** — no cap is ever silently exceeded. Hostile-argument fuzzing covers all connectors and tools.
+
 (`deployment.py`) *actively exercises* the load-bearing guarantees — it confirms
 the egress lock refuses a cloud provider and that at-rest sealing round-trips on
 the host — so a pass means the boundary holds, not merely that a config flag reads
@@ -57,7 +74,10 @@ the host — so a pass means the boundary holds, not merely that a config flag r
 - **Data subject rights.** DSAR export (`dsar.py`) and data-retention enforcement
   (`audit/retention.py`, GDPR Art. 5(1)(e) storage limitation).
 - **Supply chain.** A CycloneDX SBOM is produced in CI; dependencies are scanned
-  (`pip-audit`).
+  (`pip-audit`). Plugin tool calls can be isolation-proxied and plugin distributions can be
+  lockfile-checked under the enterprise profile, but plugin import/discovery code
+  still runs in-process; treat plugins as trusted code (see the data-boundary
+  guarantees above).
 
 ## Compliance posture
 
@@ -86,13 +106,19 @@ the host — so a pass means the boundary holds, not merely that a config flag r
 ```
 
 Deployable on a laptop, a VPC, Kubernetes, or a disconnected/air-gapped network.
-No hyperscaler dependency; Maverick emits no telemetry of its own.
+No hyperscaler dependency; Lightwork emits no telemetry of its own.
 
 ## Roadmap (not yet built)
 
-SCIM / SAML provisioning (OIDC ships today), hosted multi-tenant SaaS with
-data-plane RLS (self-host per-tenant ships today), and external SOC 2 Type II /
-penetration-test attestations.
+A **managed multi-tenant SaaS** offering (the self-host per-tenant substrate —
+Postgres tenancy with fail-closed RLS, per-tenant KMS/DEK, the out-of-process
+control/data-plane split — ships today), external **SOC 2 Type II /
+penetration-test** attestations, and a **live-IdP certification** of the built-in
+SAML SSO.
 
-> Licensing: Maverick is proprietary, commercially licensed software
+OIDC SSO, **SAML SSO** (via pysaml2, off by default), and **SCIM 2.0**
+provisioning + deprovisioning all ship today; SCIM deprovision force-revokes live
+sessions, including pairwise-`sub` IdPs (Entra) via a login-time subject directory.
+
+> Licensing: Lightwork is proprietary, commercially licensed software
 > ([`../../LICENSE`](../../LICENSE)). Contact us for evaluation or enterprise access.

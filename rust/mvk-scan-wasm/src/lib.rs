@@ -20,6 +20,51 @@ pub fn has_dangerous_unicode(text: &str) -> bool {
     mvk_scan::has_dangerous_unicode(text)
 }
 
+/// `averageHashFromPixels(rgb, width, height): string` — 16 hex chars.
+///
+/// `rgb` is a flat row-major `[r, g, b, r, g, b, ...]` array (length
+/// `width * height * 3`), matching `extensions/webgpu-vision/ahash.js`. Throws
+/// on a length/dimension mismatch.
+#[wasm_bindgen(js_name = averageHashFromPixels)]
+pub fn average_hash_from_pixels(
+    rgb: &[i32],
+    width: usize,
+    height: usize,
+) -> Result<String, JsValue> {
+    if rgb.len() != width.saturating_mul(height).saturating_mul(3) {
+        return Err(JsValue::from_str(&format!(
+            "expected {} rgb components, got {}",
+            width * height * 3,
+            rgb.len()
+        )));
+    }
+    let pixels: Vec<(i64, i64, i64)> = rgb
+        .chunks_exact(3)
+        .map(|c| (c[0] as i64, c[1] as i64, c[2] as i64))
+        .collect();
+    mvk_scan::phash::average_hash_from_pixels(&pixels, width, height)
+        .map_err(|e| JsValue::from_str(&e))
+}
+
+/// `averageHashFromRgbBytes(rgb, width, height): string` — like
+/// `averageHashFromPixels` but takes a flat `Uint8Array` of RGB bytes
+/// (length `width * height * 3`), which is what a canvas readback yields.
+#[wasm_bindgen(js_name = averageHashFromRgbBytes)]
+pub fn average_hash_from_rgb_bytes(
+    rgb: &[u8],
+    width: usize,
+    height: usize,
+) -> Result<String, JsValue> {
+    mvk_scan::phash::average_hash_from_rgb_bytes(rgb, width, height)
+        .map_err(|e| JsValue::from_str(&e))
+}
+
+/// `hamming(a, b): number` — bit distance between two 16-hex-char hashes.
+#[wasm_bindgen]
+pub fn hamming(a: &str, b: &str) -> Result<u32, JsValue> {
+    mvk_scan::phash::hamming(a, b).map_err(|e| JsValue::from_str(&e))
+}
+
 /// `normalize(text, nfkc?): { cleaned, removedCodepoints, categories }`
 #[wasm_bindgen]
 pub fn normalize(text: &str, nfkc: Option<bool>) -> Result<JsValue, JsValue> {

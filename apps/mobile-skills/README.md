@@ -1,6 +1,6 @@
 # maverick-mobile-skills
 
-An **honest feasibility scaffold** for running Maverick *skill logic* on
+An **honest feasibility scaffold** for running Lightwork *skill logic* on
 iOS/Android. Two paths, both executing the same real pure-Python module
 from `maverick-core`:
 
@@ -15,7 +15,7 @@ Both paths run `packages/maverick-core/maverick/disagreement.py`
 (`answer_entropy`: the proposer-disagreement signal the swarm posts to the
 blackboard). It was picked by reading the candidates: **zero intra-package
 imports, stdlib only** (`math`, `re`, `collections`), so it loads by file
-path with no Maverick install, no pip, no native code. The test
+path with no Lightwork install, no pip, no native code. The test
 (`test_mobile_skills.py`) imports it in isolation in a subprocess to keep
 that property pinned.
 
@@ -54,10 +54,10 @@ instruction message instead of silently breaking.
 
 ## Hard limits — why this is skills-only, not the agent
 
-Read this before promising "Maverick on mobile":
+Read this before promising "Lightwork on mobile":
 
 - **No sandbox, no subprocess.** Mobile OSes (and Pyodide's WASM runtime)
-  do not allow spawning processes. Maverick's house rule is that all shell
+  do not allow spawning processes. Lightwork's house rule is that all shell
   goes through `sandbox.exec()` — there is **no mobile backend** for it, so
   every shell-using tool is off the table. Only pure-computation skill
   logic (like this one) runs.

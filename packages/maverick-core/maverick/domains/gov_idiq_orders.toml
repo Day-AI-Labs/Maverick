@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "IDIQ task-order ceiling & funding tracker"
+consumers = ["program_manager", "contracts_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Load order portfolio"
+instruction = "Read each active task order with its ceiling value, obligated funding, and period of performance dates."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull burn data"
+instruction = "Read the latest invoiced and incurred costs per task order to compute funds consumed to date."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Compute headroom"
+instruction = "Calculate remaining ceiling, unfunded balance, and days left in the period of performance for each order."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag thresholds"
+instruction = "Flag orders nearing the 75 percent funding limitation, ceiling exhaustion, or PoP expiry that need a mod or LoF notice."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the ceiling and funding tracker to the program manager to confirm actions on at-risk orders."
+gate = "review"

@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "customer incident notice"
+consumers = ["incident_commander", "support_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Gather incident facts"
+instruction = "Collect the confirmed engineering facts on scope, impact, and timeline from the incident record and runbooks."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Confirm impact scope"
+instruction = "Verify which services and customer segments are affected against the source data before describing impact."
+tools = ["sql_query"]
+[[workflow]]
+name = "Draft notice"
+instruction = "Write a customer-facing incident notice stating only confirmed facts and the next-update time, with no speculation on cause."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Scrub speculation"
+instruction = "Review the draft to strip any unconfirmed cause, ETA, or blame language not backed by engineering facts."
+[[workflow]]
+name = "Route for approval"
+instruction = "Send the notice to the incident commander for approval before it is published to customers."
+gate = "approval"

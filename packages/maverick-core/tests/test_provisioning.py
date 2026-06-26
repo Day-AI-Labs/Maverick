@@ -54,6 +54,54 @@ def test_init_from_file_installs(monkeypatch, tmp_path):
     assert stat.S_IMODE(dst.stat().st_mode) == 0o600
 
 
+def test_init_from_file_is_0600_at_creation_not_world_readable(monkeypatch, tmp_path):
+    """Regression: the config must be created mode-0600 at creation time.
+
+    The old shutil.copyfile path created the file world-readable (0644 & ~umask)
+    and only chmod'd it AFTER the whole body -- which can carry inline provider
+    api_keys -- was on disk, a window a co-located user could read. The file must
+    be created via os.open with mode 0o600, and ~/.maverick tightened to 0700."""
+    import os
+
+    from click.testing import CliRunner
+    from maverick.cli import main
+
+    src = tmp_path / "prod.toml"
+    src.write_text(
+        '[providers.anthropic]\n'
+        'api_key = "sk-do-not-leak"  # pragma: allowlist secret\n'
+    )
+    dst = tmp_path / "installed" / "config.toml"
+    monkeypatch.setenv("MAVERICK_CONFIG", str(dst))
+
+    seen: dict = {}
+    real_open = os.open
+
+    def spy_open(path, flags, mode=0o777):
+        if str(path) == str(dst):
+            seen["mode"] = mode
+            seen["creat"] = bool(flags & os.O_CREAT)
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(os, "open", spy_open)
+    # A permissive umask would expose a copyfile/write_text path as 0644/0666;
+    # mode-at-creation 0o600 is unaffected by it.
+    old_umask = os.umask(0)
+    try:
+        r = CliRunner().invoke(main, ["init", "--from-file", str(src)])
+    finally:
+        os.umask(old_umask)
+
+    assert r.exit_code == 0
+    # Created via os.open(..., O_CREAT, 0o600) -- not copyfile.
+    assert seen.get("creat") is True
+    assert seen.get("mode") == 0o600
+    # Final perms 0600, content byte-preserved, parent dir tightened to 0700.
+    assert stat.S_IMODE(dst.stat().st_mode) == 0o600
+    assert dst.read_text() == src.read_text()
+    assert stat.S_IMODE(dst.parent.stat().st_mode) == 0o700
+
+
 def test_init_from_file_missing(monkeypatch, tmp_path):
     from click.testing import CliRunner
     from maverick.cli import main

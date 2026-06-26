@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from maverick import tool_cache
+from maverick.cache import tool as tool_cache
 from maverick.tools import Tool, ToolRegistry
 
 
@@ -133,7 +133,7 @@ class TestWarmOnStart:
         return types.SimpleNamespace(name="repo_map", parallel_safe=True)
 
     def test_snapshot_roundtrip(self, monkeypatch, tmp_path):
-        from maverick import tool_cache as tc
+        from maverick.cache import tool as tc
         snap = tmp_path / "snap.jsonl"
         monkeypatch.setenv("MAVERICK_TOOL_CACHE", "1")
         monkeypatch.setenv("MAVERICK_TOOL_CACHE_SNAPSHOT", "1")
@@ -149,7 +149,7 @@ class TestWarmOnStart:
         tc.reset()
 
     def test_snapshot_off_means_no_warm(self, monkeypatch, tmp_path):
-        from maverick import tool_cache as tc
+        from maverick.cache import tool as tc
         snap = tmp_path / "snap.jsonl"
         snap.write_text('{"k": "repo_map:abc", "v": "x", "t": 0}\n')
         monkeypatch.setenv("MAVERICK_TOOL_CACHE", "1")
@@ -163,7 +163,7 @@ class TestWarmOnStart:
         import json as _json
         import time as _time
 
-        from maverick import tool_cache as tc
+        from maverick.cache import tool as tc
         snap = tmp_path / "snap.jsonl"
         fresh = {"k": "repo_map:fresh", "v": "ok", "t": _time.time()}
         stale = {"k": "repo_map:stale", "v": "old", "t": _time.time() - 9999}
@@ -184,7 +184,7 @@ class TestWarmOnStart:
         import json as _json
         import time as _time
 
-        from maverick import tool_cache as tc
+        from maverick.cache import tool as tc
         snap = tmp_path / "snap.jsonl"
         snap.write_text(_json.dumps({"k": "a:1", "v": "x", "t": _time.time()}) + "\n")
         monkeypatch.setenv("MAVERICK_TOOL_CACHE", "1")

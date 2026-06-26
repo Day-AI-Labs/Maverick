@@ -14,3 +14,27 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "Salesforce fix brief with remediation steps"
+consumers = ["revops_lead", "salesforce_admin"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture symptom"
+instruction = "Read the error, failing Flow/Apex/SOQL, and the affected sharing or CPQ configuration to reproduce the issue."
+tools = ["read_file"]
+[[workflow]]
+name = "Diagnose root cause"
+instruction = "Trace the failure to its source such as a governor limit, sharing rule, deployment gap, or CPQ-to-Revenue Cloud mapping."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft remediation"
+instruction = "Write the proposed fix with config changes and a rollback note, without applying anything to the org."
+tools = ["read_file"]
+[[workflow]]
+name = "Hand off for change"
+instruction = "Route the remediation brief to a human admin to review and deploy through the change-management process."
+gate = "review"

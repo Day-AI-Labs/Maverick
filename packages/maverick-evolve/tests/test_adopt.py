@@ -67,6 +67,40 @@ def test_adopt_writes_valid_toml_and_backs_up(tmp_path):
     assert dest.with_suffix(".toml.bak").exists()
 
 
+def test_inplace_adoption_preserves_original_in_bak(tmp_path):
+    # With the default out_dir the pack is edited in place. The .bak must always
+    # hold the PRISTINE original, even after adopting repeatedly -- a second
+    # adoption must NOT clobber the original backup with the first adopted copy
+    # (which used to make the shipped pack unrecoverable).
+    apath, pack = _setup(tmp_path, {"persona": "V1 persona."})
+    original = pack.read_text(encoding="utf-8")
+    bak = pack.with_suffix(".toml.bak")
+
+    # First in-place adoption: pack -> V1, .bak = original.
+    assert adopt_best(apath, pack) == pack
+    assert bak.read_text(encoding="utf-8") == original
+
+    # New best, second in-place adoption: pack -> V2, .bak STILL = the original.
+    archive = Archive.load(apath)
+    archive.add(Candidate(config={"persona": "V2 persona."}, score=0.99))
+    archive.save(apath)
+    assert adopt_best(apath, pack) == pack
+    assert tomllib.loads(pack.read_text(encoding="utf-8"))["persona"] == "V2 persona."
+    assert bak.read_text(encoding="utf-8") == original  # original still recoverable
+
+
+def test_adopt_writes_atomically_no_temp_left(tmp_path):
+    # The pack is written via a temp sibling + os.replace (matching
+    # Archive.save) so a crash can't leave a half-written pack. After a clean
+    # adoption no ``.tmp`` artifact should remain next to the destination.
+    apath, pack = _setup(tmp_path, {"persona": "New persona."})
+    out = tmp_path / "user-domains"
+    dest = adopt_best(apath, pack, out_dir=out)
+    assert dest is not None
+    assert not dest.with_name(dest.name + ".tmp").exists()
+    assert list(out.glob("*.tmp")) == []
+
+
 def test_render_pack_roundtrips_tables(tmp_path):
     text = render_pack({
         "name": "x", "persona": 'line "quoted"\nsecond',
@@ -75,3 +109,30 @@ def test_render_pack_roundtrips_tables(tmp_path):
     data = tomllib.loads(text)
     assert data["models"] == {"orchestrator": "m1"}
     assert 'quoted' in data["persona"] and "\n" in data["persona"]
+
+
+def test_concurrent_adopt_keeps_one_bak_and_no_temp(tmp_path):
+    """The .bak guard (exists() and not bak.exists()) was a TOCTOU and the write
+    used a fixed ".tmp"; serialized under a lock, concurrent adoptions leave the
+    dest valid, exactly one .bak, and no temp residue."""
+    import threading
+
+    apath, pack = _setup(tmp_path, {
+        "persona": "You are a SOX specialist; verify evidence twice.",
+    })
+    out = tmp_path / "out"
+    n = 10
+
+    def worker():
+        adopt_best(apath, pack, out_dir=out)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    dest = out / pack.name
+    assert dest.exists() and "SOX specialist" in dest.read_text()
+    assert (out / (pack.name + ".bak")).exists()
+    assert list(out.glob("*.tmp")) == []

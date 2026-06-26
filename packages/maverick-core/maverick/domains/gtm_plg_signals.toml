@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "PQL/PQA scored signal queue"
+consumers = ["revops_analyst", "account_executive", "customer_success_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull telemetry"
+instruction = "Read product usage telemetry and account context for the scoring window."
+tools = ["read_file"]
+[[workflow]]
+name = "Load scoring model"
+instruction = "Retrieve the approved PQL/PQA scoring criteria and activation thresholds from company sources."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Score accounts"
+instruction = "Score leads and accounts against the model using only signals the telemetry actually supports."
+tools = ["read_file"]
+[[workflow]]
+name = "Classify signals"
+instruction = "Tag each scored account as activation or expansion and assign the recommended owner."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route signals"
+instruction = "Route the scored signal queue to the owners for sign-off, honoring the consent and suppression floor before any triggered send."
+gate = "review"

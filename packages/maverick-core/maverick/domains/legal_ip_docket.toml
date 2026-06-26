@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "IP deadline docket & renewal schedule"
+consumers = ["ip_counsel", "paralegal"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull portfolio"
+instruction = "Read the patent and trademark portfolio records and their filing and registration dates from the knowledge base."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compute deadlines"
+instruction = "Calculate upcoming renewal, annuity, and office-action deadlines per jurisdiction and cite the source rule for each."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Flag at-risk dates"
+instruction = "Flag any deadline inside its grace window or lacking a docketed renewal instruction."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Prepare instructions"
+instruction = "Draft renewal instructions for each due item without altering any original document."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to counsel"
+instruction = "Route the docket and renewal schedule to IP counsel for sign-off before any filing."
+gate = "review"

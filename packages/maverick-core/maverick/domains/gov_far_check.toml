@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "FAR/DFARS clause compliance matrix"
+consumers = ["contracts_manager", "proposal_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Extract clauses"
+instruction = "Read the solicitation or contract and extract every FAR and DFARS clause cited, including those incorporated by reference."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify text"
+instruction = "Pull the authoritative clause text for each citation and confirm the prescription and applicability rather than relying on memory."
+tools = ["read_file", "web_search", "knowledge_search"]
+[[workflow]]
+name = "Assess compliance"
+instruction = "Assess each clause against the company's actual position and mark compliant, gap, or flow-down required."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Flag deal-breakers"
+instruction = "Flag any clause that creates an unacceptable risk or requires a representation the company cannot make truthfully."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Contracts review"
+instruction = "Route the clause compliance matrix to the contracts manager for review before bid or signature."
+gate = "review"

@@ -16,3 +16,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "conflicts check & wall recommendation"
+consumers = ["attorney", "general_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture parties"
+instruction = "Read the intake to identify the prospective client, adverse parties, and related entities."
+tools = ["read_file"]
+[[workflow]]
+name = "Search prior matters"
+instruction = "Search firm records and public sources for prior or current representations touching these parties."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Analyze under rules"
+instruction = "Assess each hit under Model Rules 1.7, 1.9, 1.10, 1.11, and 1.18, including imputation."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Surface conflicts"
+instruction = "List every potential conflict including marginal ones and propose the ethical-wall and screening setup."
+[[workflow]]
+name = "Route for clearance"
+instruction = "Hand the conflicts analysis to the attorney or GC, who alone clears the conflict."
+gate = "review"

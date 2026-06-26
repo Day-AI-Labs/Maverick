@@ -81,3 +81,49 @@ def test_ledger_bounded(tmp_path):
     for _ in range(pv._LEDGER_CAP + 50):
         reg.push("x", hour=12, send=_sender(sent))
     assert len(reg.deliveries()) == pv._LEDGER_CAP
+
+
+def test_concurrent_registers_do_not_lose_devices(tmp_path):
+    """register() does a load-modify-save; without the lock two concurrent
+    registers both load the same registry and the second drops the first's
+    device. All N must survive."""
+    import threading
+
+    reg = _reg(tmp_path)
+    n = 24
+
+    def add(i: int):
+        reg.register(Device(f"dev{i:03d}", "ntfy"))
+
+    threads = [threading.Thread(target=add, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len({d.name for d in reg.devices()}) == n
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_concurrent_pushes_do_not_lose_ledger_rows(tmp_path):
+    """Each push() fan-out appends to the shared delivery ledger via a
+    read-append-write; without the lock concurrent fan-outs lose rows."""
+    import threading
+
+    reg = _reg(tmp_path)
+    reg.register(Device("phone", "ntfy"))
+    n, per = 8, 20
+
+    def worker():
+        for _ in range(per):
+            reg.push("hi", priority="default", hour=12, send=_sender([]))
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # Each push records exactly one delivery row (one eligible device); none lost
+    # (capped at the ledger bound, which n*per stays under).
+    assert len(reg.deliveries()) == n * per

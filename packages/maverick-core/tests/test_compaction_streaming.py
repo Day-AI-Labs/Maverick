@@ -7,7 +7,7 @@ import re
 import stat
 from types import SimpleNamespace
 
-from maverick.compaction_streaming import (
+from maverick.compaction.streaming import (
     StreamingCompactor,
     _default_key,
     compact_streaming,
@@ -295,3 +295,30 @@ class TestCompactStreamingStrategy:
         c = [{"role": "user", "content": "other brief"}]
         assert _default_key(a) == _default_key(b)
         assert _default_key(a) != _default_key(c)
+
+
+def test_concurrent_folds_on_different_conversations_all_persist(tmp_path):
+    """The sidecar holds every conversation in one dict; without the flock two
+    concurrent folds on DIFFERENT conversations clobber each other's entry. All
+    N conversations must survive."""
+    import threading
+
+    p = tmp_path / "sidecar.json"
+    n = 12
+    turns = [{"role": "user", "content": "hello there"},
+             {"role": "assistant", "content": "hi back"}]
+
+    def worker(i: int):
+        comp = StreamingCompactor(llm=ConcatLLM(), path=p)
+        comp.fold(f"conv{i:03d}", turns)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    final = StreamingCompactor(llm=ConcatLLM(), path=p)
+    survived = sum(1 for i in range(n) if final.state(f"conv{i:03d}")[0] > 0)
+    assert survived == n
+    assert list(tmp_path.glob("*.tmp")) == []

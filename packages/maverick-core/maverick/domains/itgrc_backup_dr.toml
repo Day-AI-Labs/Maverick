@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Backup & DR readiness assessment"
+consumers = ["it_manager", "ciso"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Gather policy"
+instruction = "Read current backup policy, schedules, and retention to map what is protected and how often."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check RPO/RTO"
+instruction = "Verify PITR, immutability, and air-gap settings against the stated RPO/RTO targets and flag systems out of tolerance."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Review drill evidence"
+instruction = "Examine the most recent restore and failover drill results to confirm recoverability was actually proven, not just configured."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Draft readiness"
+instruction = "Draft the readiness assessment with gaps, untested systems, and recommended DR-drill actions for the owner."
+[[workflow]]
+name = "ITOps review"
+instruction = "Route the assessment to the ITOps lead for review since any restore or failover is human-gated."
+gate = "review"

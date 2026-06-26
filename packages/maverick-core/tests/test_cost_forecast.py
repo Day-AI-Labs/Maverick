@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from click.testing import CliRunner
 from maverick.cli import main
-from maverick.cost_forecast import CostForecast, forecast, gather_samples, render
+from maverick.cost.forecast import CostForecast, forecast, gather_samples, render
 
 
 def test_no_history_returns_none_basis():

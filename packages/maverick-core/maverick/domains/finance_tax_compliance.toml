@@ -15,7 +15,7 @@ allow_tools = [
     "gl_read_subledger", "prepare_return", "validate_nexus",
     "avalara_read",   # read seat (low) -- pull vendor data
 ]
-deny_tools = ["file_return", "remit_tax", "file_tax_return"]
+deny_tools = ["file_return", "remit_tax", "file_tax_return", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.avalara.com", "*.vertexinc.com", "*.sovos.com"]
 mcp_servers = ["Tax_Avalara"]
@@ -27,4 +27,29 @@ shape = "report"
 deliverable = "Tax return workpapers & calendar"
 consumers = ["tax_analyst", "cfo"]
 cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Pull subledger"
+instruction = "Read the relevant subledger and vendor tax data for the period across the applicable jurisdictions."
+tools = ["gl_read_subledger", "avalara_read"]
+[[workflow]]
+name = "Validate nexus"
+instruction = "Validate nexus and taxability for each jurisdiction, citing the rule behind every determination."
+tools = ["validate_nexus", "knowledge_search"]
+[[workflow]]
+name = "Reconcile tax"
+instruction = "Reconcile tax collected versus tax remitted and investigate any variances before preparing returns."
+tools = ["read_file"]
+[[workflow]]
+name = "Prepare returns"
+instruction = "Prepare the income, sales-use, VAT, and GST returns and assemble the supporting filing workpapers."
+tools = ["prepare_return"]
+[[workflow]]
+name = "Flag deadlines"
+instruction = "Escalate any return with deadline risk and confirm the filing calendar is complete."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route for filing"
+instruction = "Route the return workpapers and calendar to the tax analyst and CFO, who file and remit."
 gate = "approval"

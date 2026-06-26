@@ -34,7 +34,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .local import ExecResult
+from ..paths import data_dir
+from .local import ExecResult, scrub_env
 
 log = logging.getLogger(__name__)
 
@@ -189,16 +190,18 @@ class FirecrackerBackend:
         """Run a one-shot command via firectl. Scaffold."""
         # firectl invocation pattern (kernel + rootfs paths come from
         # ~/.maverick/firecracker/{kernel,rootfs}.img by convention).
-        kernel = Path.home() / ".maverick" / "firecracker" / "kernel.img"
-        rootfs = Path.home() / ".maverick" / "firecracker" / "rootfs.img"
+        kernel = data_dir("firecracker", "kernel.img")
+        rootfs = data_dir("firecracker", "rootfs.img")
         if not kernel.exists() or not rootfs.exists():
             return ExecResult(
                 exit_code=127,
                 stdout="",
                 stderr=(
                     f"firecracker kernel/rootfs not found at "
-                    f"{kernel} / {rootfs}. Run `maverick init --target=vps` "
-                    "(future) or follow deploy/firecracker/README.md."
+                    f"{kernel} / {rootfs}. Build them with "
+                    "deploy/firecracker/fetch-kernel.sh + "
+                    "deploy/firecracker/build-rootfs.sh (see "
+                    "deploy/firecracker/README.md)."
                 ),
             )
         args = [
@@ -223,8 +226,12 @@ class FirecrackerBackend:
             )
         args += ["--", "/bin/sh", "-c", cmd]
         try:
+            # Scrub secrets from the host firectl invocation, matching every
+            # other backend's host-CLI calls (docker/podman/k8s/ssh) -- the
+            # CLI shouldn't inherit ANTHROPIC_API_KEY et al.
             proc = subprocess.run(
                 args, capture_output=True, text=True, timeout=self.timeout,
+                env=scrub_env(),
             )
         except subprocess.TimeoutExpired:
             return ExecResult(exit_code=124, stdout="", stderr="firecracker timeout")
@@ -258,6 +265,7 @@ class FirecrackerBackend:
         try:
             proc = subprocess.run(
                 args, capture_output=True, text=True, timeout=self.timeout,
+                env=scrub_env(),
             )
         except subprocess.TimeoutExpired:
             return ExecResult(exit_code=124, stdout="", stderr="docker timeout")
@@ -324,12 +332,25 @@ class FirecrackerBackend:
                         exit_code=126, stdout="",
                         stderr=f"e2b sandbox create failed: {status}",
                     )
-                run = self._e2b_process(client, sb_id, cmd)
-                client.delete(
-                    f"https://api.e2b.dev/sandboxes/{sb_id}",
-                    headers=self._e2b_headers(),
-                )
-                return self._e2b_exec_result(run)
+                # Tear the microVM down in a finally: if _e2b_process raises (a
+                # transient ReadTimeout/ConnectError -- exactly the failures this
+                # system retries), skipping the DELETE would orphan a *billable*
+                # sandbox until E2B's idle TTL reaps it. The delete is best-effort
+                # so a teardown failure never masks the real exec error.
+                try:
+                    run = self._e2b_process(client, sb_id, cmd)
+                    return self._e2b_exec_result(run)
+                finally:
+                    try:
+                        client.delete(
+                            f"https://api.e2b.dev/sandboxes/{sb_id}",
+                            headers=self._e2b_headers(),
+                        )
+                    except Exception:  # noqa: BLE001 - cleanup must not raise
+                        log.warning(
+                            "e2b sandbox %s delete failed; relying on idle TTL",
+                            sb_id,
+                        )
         except Exception as e:
             return ExecResult(exit_code=125, stdout="", stderr=f"e2b error: {e}")
 

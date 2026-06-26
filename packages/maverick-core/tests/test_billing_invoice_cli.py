@@ -27,7 +27,7 @@ def _isolate(monkeypatch, tmp_path):
 
 
 def _provision(tenant_id: str, **kw) -> None:
-    from maverick import tenant_registry as tr
+    from maverick.tenant import registry as tr
     tr.create_tenant(tenant_id, **kw)
 
 
@@ -95,7 +95,7 @@ def test_deleted_but_unpurged_tenant_still_invoices_final():
     # ledger; that surviving usage must still bill a final time (line items
     # present => never the typo branch), even though it is no longer in the
     # roster (a sibling tenant keeps the roster non-empty).
-    from maverick import tenant_registry as tr
+    from maverick.tenant import registry as tr
     _provision("acme", plan="pro")
     _provision("beta", plan="free")
     _record_usage("acme", day="2026-05-15")

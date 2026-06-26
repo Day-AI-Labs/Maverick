@@ -1,6 +1,30 @@
 # 09 — SaaS Architecture Readiness: Adversarial Teardown
 
-> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,118 lint-clean agents across 26 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../../FEATURES.md).
+> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 2,020 lint-clean agents across 53 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../../FEATURES.md).
+>
+> **Substrate status — superseded by a code-level re-audit.** This teardown's
+> three "structural facts" (no data-plane tenant boundary, controls fail-open,
+> single-process isolation) described `main` at the time of writing. A
+> file-by-file re-audit since then found the multi-tenant substrate *largely
+> built and shipping*: a tenant-aware Postgres backend with fail-closed RLS
+> (`world_model_backends/postgres.py`, `pg_rls.py`), per-tenant world-DB isolation
+> + KMS/DEK flooring (`tenant/kms.py`), a unified enterprise/REGULATED profile
+> that flips the controls **closed** (`deployment.py`, `secure_by_default()`), and
+> an out-of-process dispatcher seam (arq + gRPC). The remaining opt-in gaps —
+> enterprise-default RLS, session revocation, a secrets-vault seam, a SIEM
+> forwarder, residency pinning, budget/cap coordination, gRPC dispatcher startup
+> wiring — have since landed, **as have the three formerly-"large" items**:
+> per-tenant KMS at fleet scale (BYOK + DEK-cache TTL + a resumable
+> `maverick tenant kms-rotate`), Alembic-grade migration governance (a
+> checksum-locked CI gate), and a proven control/data-plane split (an
+> out-of-process e2e harness + a concurrency soak asserting zero-loss /
+> exactly-once, both CI-gated). All of it was then **adversarially hardened**
+> (11 verified bugs fixed, incl. a fail-open revocation store and a residency
+> bypass), and SCIM deprovision was extended to revoke pairwise-`sub` (Entra)
+> sessions. SAML SSO (pysaml2) and SCIM also ship. See
+> [`docs/research/lightwork-purchase-blockers.md`](../lightwork-purchase-blockers.md)
+> (resolution summary). Read the teardown below as the *original cold-water
+> analysis*, not the current state.
 
 
 > Teardown for the pivot from a **local, single-user kernel** to a **multi-tenant
@@ -12,7 +36,7 @@
 
 ## Bottom line
 
-Maverick's governance *primitives* (signed audit, attenuating capabilities,
+Lightwork's governance *primitives* (signed audit, attenuating capabilities,
 consent ledger, PII/secret redaction) are genuinely strong and reusable. But the
 **runtime substrate underneath them was designed for exactly one trust domain:
 one user, one machine, one process, fail-open by default.** Three structural
@@ -135,7 +159,7 @@ exactly backwards: a config error must fail **closed**.
   audit query, quotas — stateless, horizontally scalable) and a **data plane**
   (goal execution workers behind a real queue — Celery/arq/Temporal — with
   per-tenant concurrency + spend quotas replacing the global semaphore). Workers
-  must run in **isolated sandboxes per run** (Maverick already has the sandbox
+  must run in **isolated sandboxes per run** (Lightwork already has the sandbox
   abstraction — `sandbox/`), never as threads sharing one host's filesystem/env.
 - **Identity + authz.** Replace the shared bearer with **SSO/OIDC + per-tenant
   RBAC**, mapping a federated principal onto `Capability.principal` and the

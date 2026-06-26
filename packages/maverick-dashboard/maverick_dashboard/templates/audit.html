@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}audit log · Maverick{% endblock %}
+{% block title %}audit log · Lightwork{% endblock %}
 {% block content %}
   <h1 class="page-title">Audit</h1>
   <p class="page-subtitle">The complete, append-only audit log — filter and full-text search every recorded event.</p>
@@ -124,7 +124,7 @@
       </table>
     {% else %}
       <p class="muted">
-        No audit events for the selected day. Maverick writes to
+        No audit events for the selected day. Lightwork writes to
         <code>~/.maverick/audit/YYYY-MM-DD.ndjson</code>; run a goal first.
       </p>
     {% endif %}

@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "freight overcharge claim register"
+consumers = ["logistics_manager", "accounts_payable"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull invoices"
+instruction = "Query freight invoices, bills of lading, and shipment records for the audit period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Load rate tables"
+instruction = "Retrieve contracted carrier rates, accessorial schedules, and fuel terms from company documents and cite them."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Recompute charges"
+instruction = "Recalculate expected charges per shipment and compute the variance against each billed amount."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag overcharges"
+instruction = "Isolate billing errors and overcharges above routine value, documenting the contract basis for each claim."
+[[workflow]]
+name = "Route claims"
+instruction = "Route the overcharge claim register to the logistics manager to approve before disputes are filed with carriers."
+gate = "review"

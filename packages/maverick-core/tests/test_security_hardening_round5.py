@@ -27,7 +27,7 @@ def _isolate(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("bad", ["nan", "inf", "-inf"])
 def test_tenant_quota_rejects_non_finite(bad):
-    from maverick import tenant_registry as tr
+    from maverick.tenant import registry as tr
     tr.create_tenant("acme")
     res = CliRunner().invoke(main, ["tenant", "quota", "acme", "--", bad])
     assert res.exit_code == 2, res.output
@@ -93,7 +93,7 @@ def test_cli_start_refuses_suspended_tenant(monkeypatch):
     # The server path enforced assert_tenant_active; the CLI start path did not,
     # so a suspended tenant ran goals freely (user-testing finding). The guard
     # fires before goal creation / the kernel, so no provider key is needed.
-    from maverick import tenant_registry as tr
+    from maverick.tenant import registry as tr
     tr.create_tenant("acme")
     tr.suspend_tenant("acme")
     monkeypatch.setenv("MAVERICK_TENANT", "acme")

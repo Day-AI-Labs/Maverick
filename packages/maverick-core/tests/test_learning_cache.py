@@ -5,7 +5,7 @@ no real-looking credential is committed."""
 from __future__ import annotations
 
 import pytest
-from maverick import learning_cache as lc
+from maverick.cache import learning as lc
 
 
 @pytest.fixture

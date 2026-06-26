@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "detractor follow-up case log"
+consumers = ["support_lead", "cx_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull detractors"
+instruction = "Query recent survey responses to list detractor cases with their scores, verbatims, and linked tickets."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconstruct history"
+instruction = "Read each detractor's ticket and account history to understand what went wrong and what was already attempted."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Find resolution path"
+instruction = "Match the complaint to documented policy and known fixes via the knowledge base, citing the article used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft outreach"
+instruction = "Draft a personalized follow-up acknowledging the issue and offering a documented next step, with any credit flagged for approval."
+[[workflow]]
+name = "Log for review"
+instruction = "Compile the resolution attempts into a case log and route it to the support lead for sign-off before customer contact."
+gate = "review"

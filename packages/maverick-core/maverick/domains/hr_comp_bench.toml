@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "market benchmark table by role"
+consumers = ["comp_analyst", "hr_director"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Gather roles"
+instruction = "Read the role list and existing benchmark sheet to identify which roles need refreshed market data."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Source market data"
+instruction = "Pull market pay points per role from the company's licensed survey documents and note each source."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Note aging"
+instruction = "Record the survey date and age of each data point and flag benchmarks past their freshness threshold."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route review"
+instruction = "Hand the benchmark table with cited sources and aging notes to the comp analyst for review."
+gate = "review"

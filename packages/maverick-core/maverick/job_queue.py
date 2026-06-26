@@ -38,10 +38,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from .paths import data_dir
+
 log = logging.getLogger(__name__)
 
 
-DEFAULT_DB = Path.home() / ".maverick" / "jobs.db"
+DEFAULT_DB = data_dir("jobs.db")
 
 
 @dataclass

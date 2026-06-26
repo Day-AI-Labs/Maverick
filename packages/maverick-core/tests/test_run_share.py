@@ -8,7 +8,8 @@ import pytest
 
 
 def test_build_gist_payload_is_private_and_named(monkeypatch):
-    from maverick import replay_export, run_share
+    from maverick import run_share
+    from maverick.replay import export as replay_export
 
     def _fake_export(goal_id, out_path):
         Path(out_path).write_text(

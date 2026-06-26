@@ -26,15 +26,45 @@ import email
 import email.utils
 import imaplib
 import logging
+import re
 import smtplib
 from email.message import EmailMessage
 
-from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
+from .base import Channel, IncomingMessage, backoff_delay, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
 IMAP_TIMEOUT = 30.0
 SMTP_TIMEOUT = 30.0
+
+# Verdicts parsed out of the trusted `Authentication-Results` header the
+# receiving MX stamps on. We only act on an EXPLICIT negative (the strong spoof
+# signal); a domain that publishes no SPF/DKIM yields no verdict and is left to
+# the allowlist (that gap is inherent to IMAP -- there's no relay proof like the
+# Twilio/Meta HMAC channels have).
+_SPF_RE = re.compile(r"\bspf=(\w+)")
+_DKIM_RE = re.compile(r"\bdkim=(\w+)")
+
+
+def _authentication_verdict(msg) -> str:
+    """Classify a message's inbound authentication as 'pass' | 'fail' | 'none'.
+
+    'fail' means the receiving server evaluated SPF/DKIM and the result was an
+    explicit failure (spf=fail/softfail or dkim=fail) with nothing passing --
+    i.e. the From is very likely forged. 'none' covers no Authentication-Results
+    header, or only neutral/none results (a domain without published records).
+    """
+    headers = msg.get_all("Authentication-Results") or []
+    if not headers:
+        return "none"
+    text = " ".join(str(h).lower() for h in headers)
+    spf = _SPF_RE.findall(text)
+    dkim = _DKIM_RE.findall(text)
+    if "pass" in spf or "pass" in dkim:
+        return "pass"
+    if any(v in ("fail", "softfail") for v in spf) or "fail" in dkim:
+        return "fail"
+    return "none"
 
 
 class EmailChannel(Channel):
@@ -73,18 +103,22 @@ class EmailChannel(Channel):
 
     async def start(self) -> None:
         log.info("Email channel polling %s every %ds", self.imap_host, self.poll_interval)
+        errors = 0
         while not self._stop:
             try:
                 messages = await asyncio.wait_for(
                     asyncio.to_thread(self._fetch_unseen),
                     timeout=IMAP_TIMEOUT * 2,
                 )
+                errors = 0
             except asyncio.TimeoutError:
                 log.warning("IMAP poll timed out; continuing")
                 messages = []
+                errors += 1
             except Exception:  # pragma: no cover
                 log.exception("email poll failed")
                 messages = []
+                errors += 1
             for from_addr, subject, body in messages:
                 if not is_allowed((from_addr or "").lower(), self.allowed_user_ids):
                     log.warning("unauthorized email access: from=%s", from_addr)
@@ -95,9 +129,11 @@ class EmailChannel(Channel):
                 )
                 try:
                     reply = await self.dispatch_text(msg)
-                except Exception as e:  # pragma: no cover
+                except Exception:  # pragma: no cover
+                    # Generic reply; raw exception detail (possible secret) is
+                    # logged above, not emailed back to the sender.
                     log.exception("handler error")
-                    reply = f"⚠ error: {e}"
+                    reply = "⚠ An internal error occurred."
                 reply_subject = f"Re: {subject}" if subject else "Maverick"
                 # A single SMTP send failure must not abort the batch —
                 # otherwise already-handled messages get reprocessed (and
@@ -106,7 +142,7 @@ class EmailChannel(Channel):
                     await self.send(from_addr, reply, subject=reply_subject)
                 except Exception:
                     log.exception("email send failed for %s", from_addr)
-            await asyncio.sleep(self.poll_interval)
+            await asyncio.sleep(backoff_delay(self.poll_interval, errors))
 
     def _fetch_unseen(self) -> list[tuple[str, str, str]]:
         out: list[tuple[str, str, str]] = []
@@ -115,7 +151,10 @@ class EmailChannel(Channel):
             mail.select("INBOX")
             _, data = mail.search(None, "UNSEEN")
             for num in data[0].split():
-                _, msg_data = mail.fetch(num, "(RFC822)")
+                # BODY.PEEK does NOT implicitly set \Seen; we mark it explicitly
+                # below so the message is never re-fetched by a second poller or
+                # after a restart (which would re-drive the swarm at real cost).
+                _, msg_data = mail.fetch(num, "(BODY.PEEK[])")
                 if not msg_data or not msg_data[0]:
                     continue
                 payload = msg_data[0][1]
@@ -125,6 +164,24 @@ class EmailChannel(Channel):
                 from_addr = email.utils.parseaddr(m.get("From", ""))[1]
                 subject = m.get("Subject", "")
                 body = self._extract_body(m)
+                # Claim the message before handing it off: at-most-once delivery
+                # (a crash mid-dispatch drops one message rather than looping the
+                # swarm forever). Mirrors the dedup the other channels do.
+                try:
+                    mail.store(num, "+FLAGS", "\\Seen")
+                except Exception:  # pragma: no cover - flag store best-effort
+                    log.warning("email: could not mark message %s seen", num)
+                # The allowlist downstream trusts the From address verbatim, but
+                # an IMAP From is unauthenticated and trivially forgeable. If the
+                # receiving server evaluated SPF/DKIM and it explicitly failed,
+                # the From is forged -- drop it before it can impersonate an
+                # allowlisted sender. (Marked \Seen above so it isn't re-fetched.)
+                if _authentication_verdict(m) == "fail":
+                    log.warning(
+                        "email: rejecting message with failed SPF/DKIM from=%s",
+                        from_addr,
+                    )
+                    continue
                 if from_addr and body:
                     out.append((from_addr, subject, body))
         return out

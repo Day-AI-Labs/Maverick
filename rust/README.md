@@ -1,4 +1,4 @@
-# Maverick native core (`rust/`)
+# Lightwork native core (`rust/`)
 
 The Rust "engine" carve. Per the architecture review (Karpathy / Cloudflare /
 Pydantic / ServiceNow / Palo Alto): **rewrite the hot engine in Rust, keep the
@@ -67,6 +67,30 @@ Core unit tests: `cd rust && cargo test -p mvk-scan`.
 | `unicode` | accelerator | **wired in** (3–50× faster) | `unicode-normalization` |
 | `secret` | edge/TS + parity | **pure `re`** (native was slower) | `fancy-regex` |
 | `pii` | edge/TS + parity | **pure `re`** (native ~break-even) | `fancy-regex` |
+| `phash` | accelerator | **wired in** (~28× on the file path) | pure int math |
+
+### `phash` — perceptual image hash (carve #3)
+
+`maverick.perceptual_hash` runs on **every screenshot** in computer-use: an 8×8
+average-hash, pure integer arithmetic, with a per-pixel Python luma loop — the
+same shape that made the unicode scanner a win. It's a faithful port (the
+`GRADIENT_HASH` reference value is asserted identically in Rust, Python, and
+`extensions/webgpu-vision/ahash.js`), with the Python kept as a fallback shim.
+
+The lesson here was about the **FFI boundary**, not the loop. Handing the native
+side a list of `width*height` Python tuples made it only ~1.4× (marshalling
+dominated). The real hot path — `average_hash_file` — gets pixels from PIL, so
+`average_hash_from_rgb_bytes` takes the raw `Image.tobytes()` buffer instead: the
+whole image crosses FFI as one `bytes` object. Measured on the same machine:
+
+| call | input | pure-Python | native | speedup |
+|---|---|---|---|---|
+| `average_hash_from_pixels` | 1280×800, list of tuples | 144 ms | 102 ms | 1.4× |
+| `average_hash_from_rgb_bytes` | 1280×800, `bytes` buffer | 144 ms | 5.0 ms | **28×** |
+
+So the tuple API stays the cross-language reference, and the **bytes** API is the
+accelerator the file path uses. `test_native_phash_parity.py` keeps both
+byte-for-byte identical to pure Python.
 
 The secret/PII carve is **carve #2**, and it taught a real lesson: not every hot
 CPU module is a Rust win. Unlike the unicode scanner (a per-char *Python* loop),
@@ -97,6 +121,8 @@ byte offsets, so redaction is byte-identical on non-ASCII text.
 - `tests/test_native_detect_parity.py` — the native extension's secret + PII
   output == pure-Python `scan`, plus a deterministic differential fuzz (an
   offline run over 24k inputs found zero mismatches).
+- `tests/test_native_phash_parity.py` — native average-hash (tuple and bytes
+  paths) == pure Python across a spread of shapes; falls back on bad dimensions.
 - `mvk-scan-wasm/test/{parity,detect.parity}.test.mjs` — the WASM path == pure
   Python too.
 

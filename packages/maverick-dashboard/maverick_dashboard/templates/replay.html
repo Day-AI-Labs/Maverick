@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Replay · Lightwork{% endblock %}
+{% block content %}
+{% if goal %}
+  <h1 class="page-title">Run replay · #{{ goal.id }}</h1>
+  <p class="page-subtitle">{{ goal.title }}</p>
+
+  <div class="panel">
+    {% set _cs = replay.chain.status %}
+    <div class="grid">
+      <div class="stat">
+        <span class="muted">Audit chain</span><br>
+        <span class="badge {{ 'active' if _cs == 'verified' else ('danger' if _cs == 'broken' else '') }}">
+          {%- if _cs == 'verified' %}Verified ✓
+          {%- elif _cs == 'broken' %}Broken · {{ replay.chain.break_count }} break(s)
+          {%- elif _cs == 'unsigned' %}Unsigned (signing off)
+          {%- else %}No signed log{% endif -%}
+        </span>
+      </div>
+      <div class="stat"><strong>{{ replay.summary.tool_calls }}</strong> <span class="muted">tool calls</span></div>
+      <div class="stat"><strong>{{ replay.summary.approved }}/{{ replay.summary.approvals }}</strong> <span class="muted">approvals granted</span></div>
+      <div class="stat"><strong>{{ replay.summary.denied }}</strong> <span class="muted">denied</span></div>
+      <div class="stat"><strong>{{ replay.summary.blocks }}</strong> <span class="muted">governance blocks</span></div>
+    </div>
+    <p style="margin-top:1rem">
+      <a class="btn btn--primary" href="/api/v1/replay/{{ goal.id }}/evidence">⬇ Export evidence packet (JSON)</a>
+    </p>
+  </div>
+
+  <div class="panel">
+    {% if replay.entries %}
+    <table>
+      <thead><tr><th>Time (UTC)</th><th>Event</th><th>Detail</th><th>Flags</th></tr></thead>
+      <tbody>
+        {% for e in replay.entries %}
+        <tr>
+          <td class="muted" style="white-space:nowrap">{{ e.time }}</td>
+          <td><span class="badge">{{ e.lane }}</span> {{ e.label }}</td>
+          <td>{{ e.summary }}</td>
+          <td>
+            {% if e.risk %}<span class="badge {{ 'danger' if e.risk == 'high' else '' }}">{{ e.risk }}</span>{% endif %}
+            {% if e.decision %}<span class="badge {{ 'active' if e.decision == 'approve' else 'danger' }}">{{ e.decision }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No audit events recorded for this run yet.</p>
+    {% endif %}
+  </div>
+{% else %}
+  <h1 class="page-title">Run replay</h1>
+  <p class="page-subtitle">Reconstruct any run's action timeline from the signed audit log, verify the tamper-evident hash chain, and export a cryptographic evidence packet.</p>
+  <div class="panel">
+    {% if goals %}
+    <table>
+      <thead><tr><th>#</th><th>Title</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for g in goals %}
+        <tr>
+          <td>{{ g.id }}</td>
+          <td>{{ g.title }}</td>
+          <td><span class="badge">{{ g.status }}</span></td>
+          <td><a class="btn" href="/replay?goal={{ g.id }}">Replay →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No runs yet. Start a goal, then return here to replay it.</p>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

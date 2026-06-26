@@ -7,7 +7,7 @@ exports a run's annotations to two portable formats:
 * **markdown** — a review document (one section per note, with the annotated
   event's excerpt for context), pasteable into a PR or incident doc;
 * **srt** — an SRT-style timed caption track (cue times relative to the run
-  start), so notes overlay a replay video (``maverick.replay_video``) or any
+  start), so notes overlay a replay video (``maverick.replay.video``) or any
   player that takes ``.srt``.
 
 ``seq`` indexes the goal's ordered event list (the replay steps the trajectory

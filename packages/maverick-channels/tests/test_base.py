@@ -80,6 +80,32 @@ def test_public_url_for_falls_back_to_raw_url(monkeypatch):
     assert public_url_for(req) == "https://direct.example.com/webhook/sms"
 
 
+# --- backoff_delay: poll loops slow down on repeated upstream failures -----
+
+
+def test_backoff_delay_no_errors_is_base_interval():
+    from maverick_channels.base import backoff_delay
+
+    assert backoff_delay(30.0, 0) == 30.0
+    assert backoff_delay(30.0, -1) == 30.0  # defensive: never below base
+
+
+def test_backoff_delay_doubles_per_consecutive_error():
+    from maverick_channels.base import backoff_delay
+
+    assert backoff_delay(30.0, 1) == 60.0
+    assert backoff_delay(30.0, 2) == 120.0
+    assert backoff_delay(30.0, 3) == 240.0
+
+
+def test_backoff_delay_is_capped():
+    from maverick_channels.base import backoff_delay
+
+    # A persistently failing upstream tops out at the cap, not 2**n forever.
+    assert backoff_delay(30.0, 50) == 300.0
+    assert backoff_delay(10.0, 100, cap=120.0) == 120.0
+
+
 def test_incoming_message_principal_id_prefers_sender_id():
     room_msg = IncomingMessage(
         user_id="CROOM", text="hello", channel="slack", sender_id="UALICE",

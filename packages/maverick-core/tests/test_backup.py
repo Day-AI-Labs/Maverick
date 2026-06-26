@@ -73,6 +73,27 @@ def test_restore_refuses_cross_client(monkeypatch):
     backup.restore_backup(tar, force=True)
 
 
+def test_restore_rejects_file_not_in_manifest(tmp_path):
+    # The manifest is an exhaustive allow-list. A payload file with no manifest
+    # entry (and thus no recorded SHA-256) is a corrupt/tampered archive trying
+    # to write an unverified file into the live root; restore must reject it,
+    # not silently pass it through (the old `want is not None` guard skipped it).
+    from maverick.paths import data_dir
+    _seed(data_dir())
+    tar = backup.create_backup()
+
+    tampered = tmp_path / "tampered.tgz"
+    extra = tmp_path / "sneaky"
+    extra.write_text("unverified payload")
+    with tarfile.open(tar, "r:gz") as src, tarfile.open(tampered, "w:gz") as dst:
+        for m in src.getmembers():
+            dst.addfile(m, src.extractfile(m) if m.isfile() else None)
+        dst.add(extra, arcname="data/sneaky.txt")
+
+    with pytest.raises(backup.BackupError, match="not in the manifest"):
+        backup.restore_backup(tampered)
+
+
 def test_restore_rejects_path_traversal(tmp_path):
     # Hand-craft a malicious tarball with a ../ member.
     bad = tmp_path / "evil.tgz"

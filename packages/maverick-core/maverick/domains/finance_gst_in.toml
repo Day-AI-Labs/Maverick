@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "GSTR filing & e-invoice tracker"
+consumers = ["tax_manager", "controller"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull obligations"
+instruction = "Read the GSTR filing calendar, e-invoice obligations, and GSTIN registrations from company records via knowledge_search."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Extract transactions"
+instruction = "Query outward and inward supplies, IRN-stamped e-invoices, and input-tax-credit ledgers for the return period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile GSTR-2B"
+instruction = "Reconcile booked input tax credit against GSTR-2B auto-populated data and label each figure with period and GSTIN."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag deadline risk"
+instruction = "Flag missing e-invoices, ITC mismatches, and any GSTR-1, GSTR-3B, or GSTR-9 filing approaching its statutory due date."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand to filer"
+instruction = "Route the GSTR filing and e-invoice tracker to the tax manager to review and file on the GST portal."
+gate = "review"

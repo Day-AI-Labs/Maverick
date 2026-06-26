@@ -17,3 +17,24 @@ deliverable = "Debt-covenant compliance schedule"
 consumers = ["treasurer", "cfo"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Read agreements"
+instruction = "Read each credit agreement to extract every covenant definition, threshold, and required calculation."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull financials"
+instruction = "Query the period financials and supporting balances needed for each covenant ratio tied to its system of record."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute headroom"
+instruction = "Calculate each covenant ratio versus its threshold and the headroom or breach margin with period and currency labeled."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag breaches"
+instruction = "Identify any covenant within warning distance or in breach and document the assumption behind each tight calculation."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Treasurer review"
+instruction = "Deliver the compliance schedule with breach alerts to the treasurer and CFO for review before any lender communication."
+gate = "review"

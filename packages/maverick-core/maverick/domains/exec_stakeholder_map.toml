@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "stakeholder influence map"
+consumers = ["executive", "chief_of_staff"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope initiative"
+instruction = "Read the initiative brief and identify the decision being driven and the parties who can influence it."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather stances"
+instruction = "Pull current positions, interests, and interaction history for each stakeholder from company documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Map influence"
+instruction = "Plot each stakeholder by influence and current stance in the mapping spreadsheet with supporting evidence."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify currency"
+instruction = "Confirm each recorded stance is sourced and dated and flag any stale or unverified position."
+tools = ["read_file"]
+[[workflow]]
+name = "Executive review"
+instruction = "Route the stakeholder map to the executive for review before it informs engagement strategy."
+gate = "review"

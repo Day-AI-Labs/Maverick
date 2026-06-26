@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "three-way match exception worklist"
+consumers = ["ap_manager", "procurement_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull exceptions"
+instruction = "Query held invoices and pull the matching PO and receipt records for each blocked transaction."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Three-way match"
+instruction = "Compare invoice line, PO, and receipt on quantity, price, and unit to isolate the exact variance."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Trace root cause"
+instruction = "Check contract pricing and policy to classify each variance as price, quantity, receipt timing, or missing PO."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Document evidence"
+instruction = "Attach the cited PO, receipt, and contract evidence to each exception with a proposed resolution."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to AP"
+instruction = "Hand the documented exception worklist to AP for the release or rejection decision."
+gate = "review"

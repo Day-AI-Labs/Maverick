@@ -12,7 +12,12 @@
 # First run drops you into `maverick init` so the wizard can set up the
 # config inside the mounted ~/.maverick directory.
 
-FROM python:3.12-slim AS base
+# Pin the base by digest for a reproducible build: override on the build command
+# with --build-arg PYTHON_DIGEST=@sha256:<digest> (resolve it for your target
+# arch via `docker buildx imagetools inspect python:3.12-slim`). Left as the
+# floating tag by default so the public quickstart still builds unchanged.
+ARG PYTHON_DIGEST=
+FROM python:3.12-slim${PYTHON_DIGEST} AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -65,6 +70,14 @@ RUN groupadd --gid 1000 maverick \
 ENV HOME=/home/maverick
 USER maverick
 WORKDIR /workspace
+
+# Container-native liveness: probe the dashboard's auth-exempt /livez when the
+# image is run as the dashboard. Harmless for the CLI/`start` use (the probe
+# just reports unhealthy with no server listening); orchestrators that run the
+# dashboard get a real health signal without a separate sidecar. Uses stdlib
+# only (no curl in the slim base).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/livez', timeout=3).status==200 else 1)" || exit 1
 
 # Default entrypoint is the maverick CLI. First run — if config is missing —
 # helpfully points the user at `maverick init`.

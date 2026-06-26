@@ -40,6 +40,39 @@ def test_cookie_store_round_trip(tmp_path, monkeypatch):
     assert "saved_at" in loaded
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX mode bits are meaningless on NTFS; the temp-file window check "
+           "only applies where chmod is real.",
+)
+def test_cookie_store_no_world_readable_window(tmp_path, monkeypatch):
+    """The session blob must never exist on disk at a loose mode, even for an
+    instant. Under a permissive umask, a write_text()+chmod() approach would
+    create the temp file 0o666 and write the secret into it before tightening;
+    mode-at-creation keeps the temp 0o600 the whole time. We snapshot the temp
+    file's mode at the moment of the atomic rename (secret fully written)."""
+    from pathlib import Path
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from maverick.session_providers import cookie_store
+
+    captured: dict[str, int] = {}
+    real_replace = Path.replace
+
+    def _spy_replace(self, target):
+        captured["tmp_mode"] = stat.S_IMODE(self.stat().st_mode)
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", _spy_replace)
+    old_umask = os.umask(0o000)  # most permissive: naive create would be 0o666
+    try:
+        cookie_store.save_session("chatgpt-session", {"cookies": {"k": "secret"}})
+    finally:
+        os.umask(old_umask)
+
+    assert captured["tmp_mode"] == 0o600  # never world/group readable mid-write
+
+
 def test_cookie_store_no_session_returns_none(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     from maverick.session_providers import cookie_store

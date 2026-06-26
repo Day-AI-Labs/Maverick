@@ -1,16 +1,18 @@
 # The self-extending agent factory — agent & skill genesis
 
-> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,118 lint-clean agents across 26 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
+> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 2,020 lint-clean agents across 53 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
+
+> **Status: Implemented** — the self-extending factory has shipped to main: capability provisioning at pack-birth (`maverick/provision.py`), programming by demonstration (`maverick/demonstration.py`), and the self-improving factory loop (`maverick/factory_learning.py`); CLI `maverick learn-demo` / `maverick factory-learn`.
 
 
-**Status:** design / roadmap — a load-bearing differentiator. Companion to the eight
+**Status:** implemented (see the banner above) — was design / roadmap; a load-bearing differentiator. Companion to the eight
 agent suites ([`agent-suites-overview.md`](agent-suites-overview.md)) and the
 [agent-to-agent protocol](agent-to-agent-protocol.md). Builds on
 [`../enterprise/architecture.md`](../enterprise/architecture.md).
 
 > **The thesis, from first principles.** Every other "agent platform" ships a *fixed*
 > roster — a human writes each agent by hand, forever. That doesn't scale to "every
-> business function for every customer," and it isn't of the future. Maverick's
+> business function for every customer," and it isn't of the future. Lightwork's
 > difference: **the platform engineers its own agents and skills.** It studies a
 > customer, *synthesizes* the agents and skills that customer needs, *proves* they're
 > safe, and routes them to a human to **promote to production** — then watches them in
@@ -45,7 +47,7 @@ the same **without a human hand-authoring each of the ~346 agents per customer**
 manual roster (the eight suites) is the *seed stock*; the factory is what turns a seed
 into a living, customer-specific org that adapts.
 
-The head-turning claim is narrow and defensible: **Maverick writes, tests, and proposes
+The head-turning claim is narrow and defensible: **Lightwork writes, tests, and proposes
 its own workforce, and improves it from its own track record — under a human's signature.**
 Not an "AI-native OS," not a chatbot that "has agents." A self-extending system with the
 safety rails built into the substrate.
@@ -59,7 +61,7 @@ it's credible rather than vaporware.
 
 | Capability | Module / surface | Status | Role in the factory |
 |---|---|---|---|
-| **Generated-profile authoring** | `domain.py` — `DomainProfile(authoring="generated")`, `agent_from_profile`, `load_domains` | **Shipped** | The output format: a synthesized agent *is* a generated pack |
+| **Generated-profile authoring** | `domain.py` — `DomainProfile(authoring="generated")`, `agent_from_profile`, `load_domains`; `intake.py` parity | **Shipped** | The output format: a synthesized agent *is* a generated pack — at parity with built-ins (intake emits `[output]`/`[[workflow]]`/`effort`/`refuse`, all sanitized lint-clean) |
 | **Customer intake** | `assessment.py` (`start`→`answer`→`finalize`) | **Shipped** | Produces the customer's Operating Profile (§6) |
 | **Skill distillation** | `skills.py` — `distill(trajectory)→SKILL.md`, `validate_skill_file`, `install`, Ed25519 `sig` + `trusted_pubkeys` | **Shipped** | The skill side of synthesis: author/validate/sign new skills |
 | **Performance signal (selection)** | `skill_stats.decay_weights`, `skill_embeddings` | **Shipped** | The fitness function — what's earning its keep vs decaying |
@@ -177,7 +179,7 @@ The whole point is autonomy *up to* the gate. Five rails make that safe:
    customer's Operating-Profile ceiling; a synthesized agent can never out-scope what the
    customer authorized.
 4. **The self-modification floor.** The factory never authors/edits the kernel, safety,
-   capability, or governance. This single line is what separates Maverick's
+   capability, or governance. This single line is what separates Lightwork's
    self-extension from the unsafe kind; it is enforced as a denied tool surface, not a
    policy promise.
 5. **Signed provenance + instant containment.** Every synthesis and promotion is signed

@@ -27,9 +27,9 @@ Pure + OFF by default. ``propose`` on no failures / no memories returns ``[]``;
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
+from .config import env_flag
 from .counterfactual_rollout import estimate_effect_via_rollout
 
 
@@ -60,11 +60,9 @@ class SimResult:
 
 def enabled() -> bool:
     """Whether the Operations Scientist may run. OFF by default."""
-    env = os.environ.get("MAVERICK_OPERATIONS_SCIENTIST", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_OPERATIONS_SCIENTIST")
+    if _v is not None:
+        return _v
     try:
         from .config import get_operations_scientist
 

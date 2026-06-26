@@ -59,3 +59,18 @@ def test_proxy_disabled_is_noop(monkeypatch):
     monkeypatch.setattr(auth, "oidc_enabled", lambda: False)
     req = _req(headers={"X-Forwarded-User": "alice"})
     assert auth.require_principal(req) is None
+
+
+def test_require_auth_proxy_without_header_fails_closed(monkeypatch):
+    monkeypatch.setenv("MAVERICK_DASHBOARD_REQUIRE_AUTH", "1")
+    monkeypatch.setattr(auth, "proxy_auth_enabled", lambda: True)
+    monkeypatch.setattr(auth, "proxy_trusts", lambda host: True)
+    monkeypatch.setattr(auth, "proxy_header_name", lambda: "X-Forwarded-User")
+    monkeypatch.setattr(auth, "oidc_enabled", lambda: False)
+
+    try:
+        auth.require_principal(_req(headers={}, host="127.0.0.1"))
+    except auth.HTTPException as exc:
+        assert exc.status_code == 401
+    else:  # pragma: no cover - assertion clarity
+        raise AssertionError("missing proxy identity header should fail closed")

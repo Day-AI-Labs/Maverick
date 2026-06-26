@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "customer feedback themes & signal brief"
+consumers = ["product_manager", "design_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Gather feedback"
+instruction = "Pull the period's reviews, support tickets, and feedback verbatims from source files and company docs."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Cluster themes"
+instruction = "Group verbatims into recurring themes and tag each with sentiment and the underlying customer job."
+[[workflow]]
+name = "Validate signal"
+instruction = "Cross-check each theme against ticket volume and external context so a loud minority is not mistaken for a real product signal."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft brief"
+instruction = "Write the prioritized themes-and-signals brief with evidence quotes and explicit confidence per theme."
+[[workflow]]
+name = "PM review"
+instruction = "Route the brief to the product manager for sign-off before it informs the roadmap."
+gate = "review"

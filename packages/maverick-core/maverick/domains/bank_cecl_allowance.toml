@@ -7,6 +7,7 @@ persona = """You are the CECL Allowance specialist (bank_controllership seal). Y
 
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 max_risk = "medium"
+effort = "high"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["bank"]
@@ -17,4 +18,29 @@ shape = "report"
 deliverable = "CECL allowance memo & roll-forward"
 consumers = ["controller", "credit_officer", "risk_officer"]
 cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Segment portfolio"
+instruction = "Pull the loan and lease book and segment it by pool, product, and risk characteristics per CECL policy."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Gather loss data"
+instruction = "Retrieve historical loss experience, current risk ratings, and the reasonable-and-supportable forecast inputs for each segment."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Model allowance"
+instruction = "Apply the PD/LGD, DCF, or WARM methodology with reversion to compute the modeled allowance by pool."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Apply Q-factors"
+instruction = "Document qualitative Q-factor adjustments with supporting rationale and reconcile to portfolio trends."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Build roll-forward"
+instruction = "Assemble the ACL roll-forward tying beginning balance, charge-offs, recoveries, and provision to the new indication."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Controller approval"
+instruction = "Route the allowance memo and roll-forward to the controller for the provision approval decision."
 gate = "approval"

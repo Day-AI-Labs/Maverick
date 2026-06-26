@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "balanced performance review summary"
+consumers = ["people_manager", "hr_business_partner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather inputs"
+instruction = "Read the documented, job-related performance inputs including goals, feedback, and notes for the review cycle."
+tools = ["read_file", "lattice_read"]
+[[workflow]]
+name = "Confirm standards"
+instruction = "Look up the company's competency framework and review-writing standards to anchor the summary."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft summary"
+instruction = "Write a balanced summary in neutral, bias-aware language covering strengths and development areas without assigning any rating."
+[[workflow]]
+name = "Bias check"
+instruction = "Re-read the draft to strip subjective or protected-class-tinged language and ensure every statement traces to documented evidence."
+[[workflow]]
+name = "Route to manager"
+instruction = "Hand the draft review summary to the people manager, who assigns the rating and owns the outcome."
+gate = "review"

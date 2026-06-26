@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "volunteer schedule & screening status roster"
+consumers = ["volunteer_manager", "program_director"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull roster"
+instruction = "Read the active volunteer roster with assigned shifts, screening records, and logged hours from program files."
+tools = ["read_file"]
+[[workflow]]
+name = "Verify screening"
+instruction = "Confirm each volunteer's background screening status against the organization's documented clearance requirements."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Reconcile hours"
+instruction = "Tally logged volunteer hours per person and match them to scheduled shifts to surface gaps or overages."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag unscreened"
+instruction = "Flag any volunteer scheduled for a shift without a current clearance so they are pulled before serving."
+[[workflow]]
+name = "Coordinator review"
+instruction = "Route the schedule and screening roster to the program director for sign-off before assignments are confirmed."
+gate = "review"

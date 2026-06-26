@@ -226,7 +226,6 @@ def _resolve_model_for_role(role: str) -> str:
     say when no model was pinned, and it returns None (defers to 5) unless
     the operator opted in. This keeps "users own model choice" intact.
     """
-    import os
     override = os.environ.get(f"MAVERICK_MODEL_OVERRIDE_{role.upper()}")
     if override:
         return override
@@ -270,7 +269,7 @@ def _resolve_model_for_role(role: str) -> str:
     # disabled or when no provider is configured, so this is a no-op for the
     # default install.
     try:
-        from .cost_router import pick, signal_for_role
+        from .cost.router import pick, signal_for_role
         routed = pick(signal_for_role(role))
         if routed:
             return routed
@@ -308,6 +307,27 @@ def model_for_role(role: str) -> str:
     return final
 
 
+def _allowlist_filter_fallbacks(models: list[str]) -> list[str]:
+    """Drop failover fallbacks outside the admin allow-list (no-op when none set).
+
+    ``model_for_role`` enforces the ``[access] allowed_models`` cap on role
+    resolution, but provider-failover chains are dispatched straight from config
+    without passing back through it -- so a transient error on the primary could
+    fail over to a model the operator's "hard cap" forbids (a governance bypass).
+    Failover must not introduce a disallowed model the base call wouldn't run, so
+    we filter the *fallbacks*; the primary is left untouched (it is what the
+    non-failover path runs anyway).
+    """
+    try:
+        from .runtime_overrides import allowed_models
+        allow = allowed_models()
+    except Exception:  # pragma: no cover -- allow-list never blocks a call
+        return models
+    if not allow:
+        return models
+    return [m for m in models if m in allow]
+
+
 def _record_provider_call(provider: str) -> None:
     """Feed the proactive rate-limit predictor one call timestamp. Cheap
     in-memory ring buffer; powers ``maverick diag ratelimits`` and lets the
@@ -328,6 +348,32 @@ def _feed_circuit(provider: str, error: bool) -> None:
         br = get(f"llm:{provider}")
         br.record_failure() if error else br.record_success()
     except Exception:  # pragma: no cover -- breaker never blocks a call
+        pass
+
+
+def _enforce_provider_cap(provider: str) -> None:
+    """Deployment-wide provider spend ceiling gate ([budget.provider_caps]).
+
+    Raises ``ProviderCapExceeded`` when the provider's period spend has reached
+    its cap -- so a failover chain moves to the next provider, or (no chain) the
+    call fails closed. A NO-OP unless a cap is configured for this provider, so
+    the default install is unchanged. ProviderCapExceeded is deliberately NOT
+    caught here: it must propagate. Only a missing module is swallowed."""
+    try:
+        from .provider_cost_cap import enforce
+    except ImportError:  # pragma: no cover -- module always present
+        return
+    enforce(provider)
+
+
+def _record_provider_spend(provider: str, dollars: float) -> None:
+    """Add one call's spend to the provider's period ledger (the data the cap
+    enforces against). Fail-soft -- accounting never crashes the run that
+    produced the spend; no-op for non-positive amounts inside record()."""
+    try:
+        from .provider_cost_cap import record
+        record(provider, dollars)
+    except Exception:  # pragma: no cover -- accounting never blocks a call
         pass
 
 
@@ -405,16 +451,8 @@ def _provider_api_key(provider: str, anthropic_api_key: str | None) -> str | Non
     key = _configured_provider_api_key(provider)
     if key:
         return key
-    env_keys = {
-        "anthropic": ("ANTHROPIC_API_KEY",),
-        "openai": ("OPENAI_API_KEY",),
-        "deepseek": ("DEEPSEEK_API_KEY",),
-        "moonshot": ("MOONSHOT_API_KEY",),
-        "xai": ("XAI_API_KEY", "GROK_API_KEY"),
-        "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
-        "openrouter": ("OPENROUTER_API_KEY",),
-    }
-    for env_key in env_keys.get(provider, ()):
+    from .config import PROVIDER_KEY_ENV_MAP
+    for env_key in PROVIDER_KEY_ENV_MAP.get(provider, ()):
         value = os.environ.get(env_key, "").strip()
         if value:
             return value
@@ -472,6 +510,27 @@ def _estimate_call_cost(model_id, system, messages, tools, max_tokens) -> float:
     return (chars / 4 / 1_000_000) * in_rate + (max_tokens / 1_000_000) * out_rate
 
 
+def _openai_cached_tokens(usage) -> int:
+    """Cached-prompt token count from an OpenAI-family usage object.
+
+    Mirrors the OpenAI provider's billing read: ``prompt_tokens_details.
+    cached_tokens`` (OpenAI / Gemini OpenAI-compat) or ``prompt_cache_hit_tokens``
+    (DeepSeek). Returns 0 for Anthropic usage (which has neither). These tokens
+    are INCLUDED in ``prompt_tokens``, so the caller subtracts them before
+    pricing the remainder at the full input rate.
+    """
+    if usage is None:
+        return 0
+    details = getattr(usage, "prompt_tokens_details", None)
+    n = getattr(details, "cached_tokens", 0) if details is not None else 0
+    if not n:
+        n = getattr(usage, "prompt_cache_hit_tokens", 0)
+    try:
+        return max(0, int(n or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _response_call_cost(model_id, resp) -> float | None:
     """Per-call $ derived from THIS response's own token usage, or ``None`` when
     the response carries no usage to price from.
@@ -488,6 +547,7 @@ def _response_call_cost(model_id, resp) -> float | None:
         return None
     from .budget import (
         _CACHE_READ_MULT,
+        CACHE_READ_MULT_OPENAI,
         _cache_write_mult_from_ttl,
         _lookup_price,
     )
@@ -504,17 +564,29 @@ def _response_call_cost(model_id, resp) -> float | None:
         return 0
 
     # Anthropic uses input/output_tokens; OpenAI-compat uses prompt/completion.
-    # ``input_tokens`` is non-cached input only; cache tokens are billed apart.
+    # Anthropic's ``input_tokens`` already EXCLUDES cache reads (they ride on the
+    # LLMResponse as cache_read_tokens). OpenAI-family ``prompt_tokens`` FOLDS the
+    # cached tokens IN and the provider doesn't surface them on the response, so
+    # without splitting them out here a cache hit is priced at the full input rate
+    # -- overstating OpenAI spend (~2x on the input side) in provider-health and
+    # the budget_dollars metric. Mirror the provider's billing split.
     in_tok = _u("input_tokens", "prompt_tokens")
     out_tok = _u("output_tokens", "completion_tokens")
     cache_read = int(getattr(resp, "cache_read_tokens", 0) or 0)
     cache_write = int(getattr(resp, "cache_creation_tokens", 0) or 0)
     if not (in_tok or out_tok or cache_read or cache_write):
         return None
+    # OpenAI/DeepSeek cached-prompt split (only when the response didn't already
+    # surface cache_read, i.e. the OpenAI-family path; in_tok is cache-inclusive).
+    openai_cached = 0
+    if not cache_read:
+        openai_cached = min(_openai_cached_tokens(usage), in_tok)
+        in_tok -= openai_cached
     in_rate, out_rate = _lookup_price(model_id)
     write_mult = _cache_write_mult_from_ttl(None)
     cost = (in_tok / 1_000_000) * in_rate
-    cost += (cache_read / 1_000_000) * in_rate * _CACHE_READ_MULT
+    cost += (cache_read / 1_000_000) * in_rate * _CACHE_READ_MULT          # Anthropic 0.1x
+    cost += (openai_cached / 1_000_000) * in_rate * CACHE_READ_MULT_OPENAI  # OpenAI-family 0.5x
     cost += (cache_write / 1_000_000) * in_rate * write_mult
     cost += (out_tok / 1_000_000) * out_rate
     return cost
@@ -554,7 +626,9 @@ class LLM:
         import threading as _threading
         self._clients_lock = _threading.Lock()
 
-    def _provider_client_config(self, provider: str) -> tuple[str | None, str | None]:
+    def _provider_client_config(
+        self, provider: str
+    ) -> tuple[str | None, str | None, dict | None]:
         key = _provider_api_key(provider, self._anthropic_api_key)
         # [providers.<name>] base_url: the CLI preflight already
         # accepts this config key as "a configured provider"; plumb it
@@ -563,18 +637,28 @@ class LLM:
         # config dialed the client's env-var/localhost default and
         # died with "Couldn't reach the LLM provider".
         base_url = None
+        default_headers = None
         try:
             from .config import get_provider_config
-            bu = (get_provider_config(provider) or {}).get("base_url")
+            pcfg = get_provider_config(provider) or {}
+            bu = pcfg.get("base_url")
             if isinstance(bu, str) and bu.strip():
                 base_url = bu.strip()
+            # Data-residency / ZDR: operator-set extra request headers a
+            # compliance gateway enforces. Accept only a str->str dict.
+            dh = pcfg.get("default_headers")
+            if isinstance(dh, dict):
+                clean = {str(k): str(v) for k, v in dh.items() if isinstance(k, str)}
+                if clean:
+                    default_headers = clean
         except Exception:  # pragma: no cover -- config read fails soft
             base_url = None
-        return key, base_url
+            default_headers = None
+        return key, base_url, default_headers
 
     def _get_client(self, provider: str):
         from .paths import current_tenant_id
-        key, base_url = self._provider_client_config(provider)
+        key, base_url, default_headers = self._provider_client_config(provider)
         cache_key = (provider, current_tenant_id(), key, base_url)
         # Fast-path: read without lock (dict reads are atomic in CPython).
         if cache_key in self._client_cache:
@@ -590,7 +674,8 @@ class LLM:
                 )
                 if use_api_provider or key:
                     client = get_provider_client(
-                        provider, api_key=key, base_url=base_url
+                        provider, api_key=key, base_url=base_url,
+                        default_headers=default_headers,
                     )
                 else:
                     if is_session_provider(provider):
@@ -604,7 +689,8 @@ class LLM:
                         )
                     else:
                         client = get_provider_client(
-                            provider, api_key=key, base_url=base_url
+                            provider, api_key=key, base_url=base_url,
+                            default_headers=default_headers,
                         )
                 self._client_cache[cache_key] = client
                 self._clients[provider] = client
@@ -629,7 +715,7 @@ class LLM:
         if not _no_failover:
             from .failover_policy import order_chain, policy_should_retry
             from .provider_failover import failover, fallback_models
-            _chain = fallback_models(model or self.model)
+            _chain = _allowlist_filter_fallbacks(fallback_models(model or self.model))
             if _chain:
                 # The policy engine narrows WHICH errors fail over and skips
                 # cooling-down models; with no [provider_failover.policy] both
@@ -647,7 +733,14 @@ class LLM:
         # EgressBlocked before any prompt is dispatched.
         from .enterprise import assert_provider_allowed
         assert_provider_allowed(provider)
+        # Outbound data-minimization (opt-in, default off): strip detectable
+        # PII/secrets from the prompt before it leaves the box to a cloud
+        # provider. No-op unless [privacy] redact_egress is on; skipped for
+        # local providers. Rewrites the outbound copy only.
+        from .privacy_egress import maybe_redact_egress
+        system, messages = maybe_redact_egress(provider, system, messages)
         _record_provider_call(provider)
+        _enforce_provider_cap(provider)  # deployment-wide $ ceiling (opt-in)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         kwargs: dict[str, Any] = dict(
@@ -687,7 +780,7 @@ class LLM:
                 return f"{op} {model}"
             def _gen_ai_attributes(*a, **kw):  # type: ignore
                 return {}
-        _t0 = _time.time()
+        _t0 = _time.monotonic()
         _d0 = budget.dollars if budget else 0.0
         _err = False
         _resp = None
@@ -714,10 +807,11 @@ class LLM:
         finally:
             if _held:
                 budget.release(_held)
-            _dt_ms = (_time.time() - _t0) * 1000.0
+            _dt_ms = (_time.monotonic() - _t0) * 1000.0
             # Price THIS call's own usage rather than diffing the shared
             # budget.dollars counter, which races concurrent sub-agents.
             _spent = _call_spend(model_id, _resp, budget, _d0)
+            _record_provider_spend(provider, _spent)  # feed the $ ceiling ledger
             try:
                 from .provider_health import get as _h
                 _h().record(provider, model_id,
@@ -755,7 +849,7 @@ class LLM:
         if not _no_failover:
             from .failover_policy import order_chain, policy_should_retry
             from .provider_failover import afailover, fallback_models
-            _chain = fallback_models(model or self.model)
+            _chain = _allowlist_filter_fallbacks(fallback_models(model or self.model))
             if _chain:
                 return await afailover([
                     (m, (lambda m=m: self.complete_async(
@@ -768,7 +862,14 @@ class LLM:
         # Egress lock (no-op unless enterprise mode is on): see complete().
         from .enterprise import assert_provider_allowed
         assert_provider_allowed(provider)
+        # Outbound data-minimization (opt-in, default off): strip detectable
+        # PII/secrets from the prompt before it leaves the box to a cloud
+        # provider. No-op unless [privacy] redact_egress is on; skipped for
+        # local providers. Rewrites the outbound copy only.
+        from .privacy_egress import maybe_redact_egress
+        system, messages = maybe_redact_egress(provider, system, messages)
         _record_provider_call(provider)
+        _enforce_provider_cap(provider)  # deployment-wide $ ceiling (opt-in)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         import time as _time
@@ -798,7 +899,7 @@ class LLM:
                 return f"{op} {model}"
             def _gen_ai_attributes(*a, **kw):  # type: ignore
                 return {}
-        _t0 = _time.time()
+        _t0 = _time.monotonic()
         _d0 = budget.dollars if budget else 0.0
         _err = False
         _resp = None
@@ -880,10 +981,11 @@ class LLM:
         finally:
             if _held:
                 budget.release(_held)
-            _dt_ms = (_time.time() - _t0) * 1000.0
+            _dt_ms = (_time.monotonic() - _t0) * 1000.0
             # Price THIS call's own usage rather than diffing the shared
             # budget.dollars counter, which races concurrent sub-agents.
             _spent = _call_spend(model_id, _resp, budget, _d0)
+            _record_provider_spend(provider, _spent)  # feed the $ ceiling ledger
             try:
                 from .provider_health import get as _h
                 _h().record(provider, model_id,

@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from typing import Any
+
+from .config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -32,11 +33,9 @@ _STOP = {
 
 
 def enabled() -> bool:
-    env = os.environ.get("MAVERICK_EXPERIENCE_GUIDANCE", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_EXPERIENCE_GUIDANCE")
+    if _v is not None:
+        return _v
     try:
         from .config import get_experience
         return bool(get_experience()["enable"])

@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gtm"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "new-rep onboarding certification packet"
+consumers = ["sales_manager", "enablement_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Load checklist"
+instruction = "Pull the onboarding checklist, ramp plan, and certification criteria for the new rep's role and segment."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify sources"
+instruction = "Confirm every product, pricing, and process fact in the curriculum traces to an approved company document and cite it."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Track progress"
+instruction = "Record each completed module and certification milestone against the checklist in the tracking spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Surface incomplete modules, failed knowledge checks, or unresolved access blockers before declaring readiness."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Submit for sign-off"
+instruction = "Route the completed certification packet to the sales manager for final ramp sign-off."
+gate = "review"

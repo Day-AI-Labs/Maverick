@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "engagement staffing proposal"
+consumers = ["engagement_partner", "resource_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Read demand"
+instruction = "Pull open roles, required skills, start dates, and budgeted hours for the engagements needing staffing."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Profile bench"
+instruction = "Query consultant skills, current allocations, and availability windows to find candidates who fit each role."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Match candidates"
+instruction = "Rank candidates per role on skill fit, availability, and stated development goals, citing the source records used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag conflicts"
+instruction = "Surface over-allocation, skill gaps, and confidentiality conflicts where a candidate already serves a competing client."
+tools = ["sql_query"]
+[[workflow]]
+name = "Partner review"
+instruction = "Route the ranked staffing proposal with assumptions and unknowns to the engagement partner for sign-off."
+gate = "review"

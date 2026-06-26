@@ -11,3 +11,26 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "competitor price tracker"
+consumers = ["pricing_manager", "category_manager"]
+cadence = "weekly"
+
+[[workflow]]
+name = "Define basket"
+instruction = "Pull the list of key value items and named competitors to monitor for this cycle."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Capture prices"
+instruction = "Capture current competitor prices and promotions for each item with the observation date."
+tools = ["web_search"]
+[[workflow]]
+name = "Compare gaps"
+instruction = "Join captured competitor prices to our own prices and compute the gap and index per item."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag outliers"
+instruction = "Flag items where we are materially over or under competitors and note suspect or stale captures for re-check."
+tools = ["spreadsheet"]

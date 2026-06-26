@@ -1,6 +1,6 @@
 # Reference architectures
 
-Self-hostable deployment blueprints for the governed Maverick runtime. Every
+Self-hostable deployment blueprints for the governed Lightwork runtime. Every
 one runs the dashboard + control plane from the published container image and
 keeps state on a persistent volume; secrets come from the platform's secret
 store, never the image. Pick the one that matches where you already run things.

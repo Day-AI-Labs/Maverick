@@ -1,12 +1,12 @@
 # Multi-tenancy
 
-Maverick can isolate many tenants (organizations / workspaces / end-users) on
+Lightwork can isolate many tenants (organizations / workspaces / end-users) on
 shared infrastructure, or run one instance per tenant. This page is the map of
 what is isolated, how to provision, and where the boundaries are.
 
 ## Turning it on
 
-Tenancy is **opt-in and fail-open**: with nothing configured, Maverick is a
+Tenancy is **opt-in and fail-open**: with nothing configured, Lightwork is a
 single-tenant install and behaves exactly as before.
 
 - `MAVERICK_TENANT_BY_USER=1` (or `[tenancy] by_user = true`) — each channel
@@ -25,13 +25,13 @@ single-tenant install and behaves exactly as before.
 | Cross-session memory | per-tenant dir | `tenants/<id>/memory/` |
 | Audit log | per-tenant, signed/hash-chained | `tenants/<id>/audit/` |
 | Knowledge store | per-tenant via Workspace | `tenants/<id>/knowledge.db` |
-| Encryption-at-rest key | distinct DEK per tenant (AEAD-bound) | `tenant_kms` |
+| Encryption-at-rest key | distinct DEK per tenant (AEAD-bound); per-tenant BYOK + fleet KEK rotation | `tenant/kms.py`, `tenant/kms_fleet.py`, `maverick tenant kms-rotate` |
 | **Config & credentials** | per-tenant overlay | `tenants/<id>/config.toml` |
 | **Calibration / learning-freeze** | per-tenant | `tenants/<id>/calibration*` |
 | **Concurrency ceiling** | per-tenant, from plan | `billing.entitlements` |
 | **RBAC role** | per-tenant membership overrides global | `dashboard-tenant-roles.json` |
-| Spend cap | per-tenant `max_daily_dollars` | tenant registry |
-| Postgres rows | optional row-level security | `MAVERICK_PG_RLS=1` |
+| Spend cap | per-tenant `max_daily_dollars` (clamps the per-run budget) | tenant registry |
+| Postgres rows | row-level security; auto-on under enterprise, else opt-in | `MAVERICK_PG_RLS` / `MAVERICK_PROFILE=enterprise` |
 
 ## Per-tenant credentials
 
@@ -49,10 +49,34 @@ orchestrator = "anthropic:claude-opus-4-8"
 
 [budget]
 max_dollars = 50
+
+# Per-tenant identity provider: in the one-instance-per-tenant model each
+# tenant authenticates against its own IdP. Resolved from this overlay while
+# the tenant is active, exactly like provider keys.
+[auth.oidc]
+issuer = "https://acme.example.com"
+audience = "maverick-acme"
 ```
 
 `maverick tenant create <id>` prints this path; the provisioning API returns it
-as `config_path`.
+as `config_path`. The same overlay drives a tenant's `[channels.*]` bot
+identities and `[auth.oidc]` provider — so credentials, models, budget, channel
+bots and IdP are all per-tenant in the one-instance-per-tenant model.
+
+## Plan tiers are enforced
+
+A tenant's plan (`free` / `pro` / `enterprise`, or operator-defined under
+`[billing.plans]`) gates real behaviour, not just labels:
+
+- **concurrency** — `max_concurrent_goals` caps a tenant's in-flight goals;
+- **channels** — a plan without the `channels` feature is refused at the
+  channel door;
+- **audit_export** — `maverick audit export --tenant <id>` requires the
+  `audit_export` feature.
+
+Enforcement is fail-open at the edges: single-tenant and unprovisioned per-user
+tenants are never gated — only a tenant an operator explicitly put on a limited
+plan is denied.
 
 ## Provisioning
 
@@ -82,7 +106,7 @@ back to the originating channel — there is **no cross-tenant reply leak** — 
 all tenants behind one process share that one bot identity and its allow-lists.
 
 When tenants need **distinct bot identities** (their own Slack workspace bot,
-their own inbound email address/webhook), run **one Maverick instance per
+their own inbound email address/webhook), run **one Lightwork instance per
 tenant**. The Helm chart (`deploy/helm`) plus the per-tenant config overlay make
 this cheap: one release per tenant, each with its own `[channels.*]` and
 credentials. `maverick serve` logs an advisory when it detects a multi-tenant
@@ -97,3 +121,35 @@ SQLite is single-writer (one replica per state volume). To run multiple
 replicas, move the world model to Postgres — see
 [`deploy/postgres/README.md`](../deploy/postgres/README.md). Row-level security
 (`MAVERICK_PG_RLS=1`) enforces the tenant boundary in the database itself.
+
+### Enabling RLS safely (auto-on under enterprise; guided opt-in otherwise)
+
+RLS auto-enables under enterprise mode (`MAVERICK_PROFILE=enterprise`) along with
+strict per-tenant reads (`MAVERICK_STRICT_TENANT_ISOLATION`); an explicit
+`MAVERICK_PG_RLS=0/1` always wins over the enterprise default. Because its policy
+is strict, fail-closed equality (a row is visible/writable only when its
+`tenant_id` equals the active tenant), the **enterprise auto-on path runs a boot
+preflight that refuses to start** if legacy `tenant_id IS NULL` rows are present
+(rather than silently freezing them) — so the sharp edges below must be cleared
+first. An operator who sets `MAVERICK_PG_RLS=1` explicitly keeps the fail-closed
+install path with no boot refusal (a knowing opt-in). The two sharp edges:
+
+- **Pre-tenancy rows have `tenant_id IS NULL`** and would become invisible *and*
+  frozen the moment RLS is forced (`NULL = <tenant>` is never true).
+- **Only the table owner** may install the policy; a non-owner app role fails at
+  startup instead.
+
+So enabling RLS is a sequenced migration, not a config flip:
+
+```
+maverick tenant rls-preflight              # per-table: does this role own it?
+                                           # how many legacy NULL-tenant rows?
+maverick tenant backfill --tenant <id>     # assign those NULL rows to a tenant
+maverick tenant backfill --tenant <id> --dry-run   # preview first
+```
+
+Once `rls-preflight` reports **READY** (every table owned by the app role, no
+NULL-tenant rows left), set `[world_model] rls = true` (or `MAVERICK_PG_RLS=1`).
+The installer's advanced step writes this with the same reminder. RLS is
+defense-in-depth: the app-layer `_tenant_scope` predicate already isolates
+tenants NULL-tolerantly, so single-tenant and SQLite installs need none of this.

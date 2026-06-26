@@ -1,14 +1,14 @@
 # Design Spec: Durable & Resumable Execution
 
-**Status:** Draft / proposal · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (A1) ([#396](https://github.com/Day-AI-Labs/Maverick/issues/396)) · **Date:** May 2026
+**Status:** Draft / proposal · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (A1) ([#396](https://github.com/Day-AI-Labs/Lightwork/issues/396)) · **Date:** May 2026
 
 > This is a proposal for discussion, not an accepted design. It deliberately
 > stops at the interface + phasing; implementation waits on sign-off.
 
 ## 1. Problem
 
-Maverick's headline promise is *"runs for hours, pause overnight, resume."* The
-**world model** (`world_model.py`, SQLite/Postgres schema v16) durably persists goals,
+Lightwork's headline promise is *"runs for hours, pause overnight, resume."* The
+**world model** (`world_model.py`, SQLite/Postgres schema v23) durably persists goals,
 episodes, facts, questions, messages, and `goal_events`. But the **in-memory
 agent-loop state is never serialized**:
 

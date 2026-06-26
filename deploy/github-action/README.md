@@ -1,6 +1,6 @@
-# Maverick GitHub Action
+# Lightwork GitHub Action
 
-Run a Maverick agent swarm inside a GitHub workflow — on a PR, on a
+Run a Lightwork agent swarm inside a GitHub workflow — on a PR, on a
 schedule, or on demand — under a **hard spend cap**. It installs
 `maverick-agent` from PyPI and runs `maverick start` with the inputs you
 give it, then writes the final answer to the job summary and exposes it as
@@ -47,7 +47,7 @@ a step output.
 ### Review every pull request
 
 ```yaml
-name: Maverick review
+name: Lightwork review
 on: pull_request
 permissions:
   contents: read

@@ -13,8 +13,35 @@ advice; keep the matter confidential and privileged."""
 
 allow_tools = ["read_file", "knowledge_search", "clio_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "web_search"]
 
 mcp_servers = ["CourtListener"]
 knowledge_sources = ["legal", "legal_matter"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "case docketing & deadline calendar"
+consumers = ["litigation_counsel", "paralegal"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull matter record"
+instruction = "Read the case file and Clio matter record to gather the docket, filings, and current procedural posture."
+tools = ["read_file", "clio_read"]
+[[workflow]]
+name = "Verify the rules"
+instruction = "Confirm the governing FRCP, FRAP, local rules, and limitations periods against authority and verify every citation."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compute deadlines"
+instruction = "Apply Rule 6 day-counting and Rule 12/26(f)/56 and FRAP 4 timing to compute every clock and surface each one."
+[[workflow]]
+name = "Flag at-risk dates"
+instruction = "Highlight imminent or conflicting deadlines so no clock is missed, since a missed deadline is malpractice."
+[[workflow]]
+name = "Route to attorney"
+instruction = "Route the deadline calendar and strategy notes to the supervising attorney for review before any filing decision."
+gate = "review"

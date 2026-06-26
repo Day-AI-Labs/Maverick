@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "delay notice draft"
+consumers = ["project_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read notice clause"
+instruction = "Read the contract's delay and notice provisions to capture the required content, recipient, and deadline."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Establish facts"
+instruction = "Pull daily logs, schedules, and correspondence to establish the delay event, cause, and date of impact."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Quantify impact"
+instruction = "Trace the delay through the schedule to support the asserted time impact and any reserved cost rights."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Draft notice"
+instruction = "Draft the contract-compliant delay notice with cited supporting documentation and reservation of rights."
+tools = ["read_file"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the delay notice draft to the project manager for signature, as notices are never sent by the agent."
+gate = "review"

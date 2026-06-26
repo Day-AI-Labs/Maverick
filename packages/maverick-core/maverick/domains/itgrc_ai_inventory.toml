@@ -21,3 +21,24 @@ deliverable = "AI system risk-tier register"
 consumers = ["risk_officer", "ciso", "compliance_officer"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Enumerate systems"
+instruction = "Collect every AI system, model, and agent in scope from intake forms, architecture docs, and the current registry."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Capture metadata"
+instruction = "Record owner, business purpose, data categories, and deployment context for each entry, flagging missing fields rather than guessing."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Assign risk tier"
+instruction = "Map each system to its EU AI Act risk tier using the Act's prohibited and high-risk criteria."
+tools = ["web_search"]
+[[workflow]]
+name = "Reconcile drift"
+instruction = "Compare the refreshed register against the prior version to surface new, retired, or re-tiered systems."
+tools = ["read_file"]
+[[workflow]]
+name = "Owner review"
+instruction = "Submit the updated risk-tier register to the risk officer and CISO for review before publication."
+gate = "review"

@@ -22,8 +22,9 @@ from __future__ import annotations
 
 import os
 
+from ._envparse import coerce_bool, env_bool
+
 _LEVELS = ("low", "medium", "high", "xhigh", "max")
-_TRUE = {"1", "true", "yes", "on"}
 
 # Built-in cost-optimized profile, activated by ``[effort] enabled = true``.
 # Intelligence-sensitive roles stay high; bulk/throwaway roles drop down.
@@ -74,11 +75,13 @@ def _config_effort() -> dict:
         return {}
 
 
-def _configured_level(role: str) -> str | None:
+def _configured_level(role: str, pack_default: str | None = None) -> str | None:
     """The effort level chosen for ``role``, or ``None`` if the feature is off.
 
     Precedence: per-role env > global env > per-role config > config default >
-    the built-in profile (only when ``[effort] enabled``)."""
+    the built-in role profile, then a pack-authored ``effort`` (both only when
+    ``[effort] enabled`` -- so a pack's tier never turns the feature on, it only
+    right-sizes it once an operator has)."""
     role_l = (role or "").strip().lower()
     env_role = os.environ.get(f"MAVERICK_EFFORT_{role_l.upper()}")
     if env_role:
@@ -98,11 +101,15 @@ def _configured_level(role: str) -> str | None:
     cfg = _config_effort()
     if role_l in cfg and isinstance(cfg[role_l], str):
         return cfg[role_l]
+    on = coerce_bool(cfg.get("enabled")) or env_bool("MAVERICK_EFFORT_ENABLED")
+    # A pack's authored tier is more specific than the global default, so it is
+    # consulted first -- but only once effort is active, so a pack never turns
+    # the feature on, it only right-sizes a deployment that already enabled it.
+    if on and pack_default:
+        return pack_default
     if isinstance(cfg.get("default"), str):
         return cfg["default"]
-    enabled = cfg.get("enabled")
-    on = enabled in _TRUE if isinstance(enabled, str) else bool(enabled)
-    if on or os.environ.get("MAVERICK_EFFORT_ENABLED", "").strip().lower() in _TRUE:
+    if on:
         return _ROLE_DEFAULTS.get(role_l)
     return None
 
@@ -122,13 +129,19 @@ def effort_for_model(level: str | None, model_id: str) -> str | None:
     return _clamp(level, model_id)
 
 
-def effort_for_role(role: str, model_id: str) -> str | None:
+def effort_for_role(role: str, model_id: str,
+                    pack_default: str | None = None) -> str | None:
     """The effort level to send for ``(role, model)``, or ``None`` to omit it.
+
+    ``pack_default`` is a domain pack's authored effort tier; it applies only at
+    the lowest precedence and only when the effort feature is enabled (see
+    :func:`_configured_level`), so it right-sizes an opted-in deployment without
+    ever turning effort on.
 
     Returns ``None`` (omit ``output_config.effort``, API default applies) when the
     feature is off, the model doesn't support effort, or the configured value is
     invalid — so this can never break a request."""
-    return effort_for_model(_configured_level(role), model_id)
+    return effort_for_model(_configured_level(role, pack_default), model_id)
 
 
 __all__ = ["effort_for_model", "effort_for_role", "effort_supported"]

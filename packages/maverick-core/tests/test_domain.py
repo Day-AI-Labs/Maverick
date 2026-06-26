@@ -100,6 +100,19 @@ class TestBuiltinPacks:
             assert prof.knowledge_sources, f"{name} should bind a knowledge collection"
             assert prof.capability(f"agent:{name}-0").permits("knowledge_search") is True
 
+    def test_healthcare_packs_deny_web_search(self):
+        domains = available_domains()
+        healthcare = {
+            name: prof for name, prof in domains.items()
+            if name.startswith("hc_")
+        }
+        assert healthcare
+        for name, prof in healthcare.items():
+            assert "web_search" not in prof.allow_tools, name
+            assert "web_search" in prof.deny_tools, name
+            for step in prof.workflow:
+                assert "web_search" not in step.tools, f"{name}: {step.name}"
+
 
 class TestDomainCapability:
     def test_mints_envelope_without_parent(self):
@@ -234,6 +247,28 @@ class TestAvailableDomainsOverlay:
         assert "brand_new" in available_domains()
 
 
+class TestLintEffort:
+    def _pack(self, effort):
+        return DomainProfile(
+            name="x", persona="x" * 250, allow_tools=["read_file"],
+            deny_tools=["shell", "write_file"], max_risk="low",
+            knowledge_sources=["x"], description="d", effort=effort,
+        )
+
+    def test_unset_effort_is_clean(self):
+        errors, _ = lint_profile(self._pack(None))
+        assert not any("effort" in e for e in errors)
+
+    def test_valid_effort_tier_is_clean(self):
+        for tier in ("low", "medium", "high", "xhigh", "max"):
+            errors, _ = lint_profile(self._pack(tier))
+            assert not any("effort" in e for e in errors), tier
+
+    def test_unknown_effort_tier_is_error(self):
+        errors, _ = lint_profile(self._pack("turbo"))
+        assert any("effort" in e and "turbo" in e for e in errors)
+
+
 class TestLintWorkflow:
     def _ok_base(self, **kw):
         return DomainProfile(
@@ -261,3 +296,35 @@ class TestLintWorkflow:
         p = self._ok_base(workflow=[WorkflowStep("a", tools=["shell"])])
         _, warnings = lint_profile(p)
         assert any("not in allow_tools" in w for w in warnings)
+
+
+class TestLintReadOnlyDenyFloor:
+    """A read-only pack must explicitly deny the state mutators its allowlist
+    already excludes, so a later allowlist change can't silently grant them."""
+
+    def _pack(self, allow, deny):
+        return DomainProfile(
+            name="x", persona="x" * 250, allow_tools=allow, deny_tools=deny,
+            max_risk="low", knowledge_sources=["x"], description="d",
+        )
+
+    def test_readonly_missing_write_file_deny_warns(self):
+        p = self._pack(["read_file"], ["shell"])
+        _, warnings = lint_profile(p)
+        assert any("write_file" in w and "defense-in-depth" in w for w in warnings)
+
+    def test_readonly_missing_shell_deny_warns(self):
+        p = self._pack(["read_file"], ["write_file"])
+        _, warnings = lint_profile(p)
+        assert any("shell" in w and "defense-in-depth" in w for w in warnings)
+
+    def test_readonly_denying_floor_has_no_floor_warning(self):
+        p = self._pack(["read_file"], ["shell", "write_file"])
+        _, warnings = lint_profile(p)
+        assert not any("defense-in-depth" in w for w in warnings)
+
+    def test_builder_pack_is_exempt_from_floor(self):
+        # A coding agent legitimately allows shell; the floor rule must not fire.
+        p = self._pack(["read_file", "shell"], ["self_edit"])
+        _, warnings = lint_profile(p)
+        assert not any("defense-in-depth" in w for w in warnings)

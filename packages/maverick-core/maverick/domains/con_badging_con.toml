@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "site access badging roster"
+consumers = ["site_superintendent", "safety_manager"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Pull badge requests"
+instruction = "Read incoming worker badge requests with names, trades, and employer for the site."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify training"
+instruction = "Confirm each requested worker has the required safety orientation and training prerequisites on file before access is granted."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Build roster"
+instruction = "Compile the access roster mapping each cleared worker to their badge status and credential expiry dates."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag deficiencies"
+instruction = "Identify requests with missing, expired, or unverifiable training that must be held until prerequisites are met."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Superintendent approval"
+instruction = "Route the roster of cleared and held workers to the site superintendent for badge issuance approval."
+gate = "approval"

@@ -24,6 +24,18 @@ MODES = ("budget", "timeout", "network", "auth", "shield", "sandbox",
          "cancelled", "error")
 
 
+def _scrub_detail(detail: object) -> str:
+    """Redact secrets from a failure detail before it is persisted. The detail
+    is often a raw provider exception string (API key / Bearer header in the
+    message); scrub it. Fail-safe: telemetry must never break a run."""
+    text = str(detail)
+    try:
+        from .secrets import scrub
+        return scrub(text)
+    except Exception:  # pragma: no cover -- scrubbing never breaks telemetry
+        return text
+
+
 def enabled() -> bool:
     if os.environ.get("MAVERICK_FAILURE_TELEMETRY", "").strip().lower() in {
             "1", "true", "yes", "on"}:
@@ -74,7 +86,11 @@ def record(mode: str, *, goal_id=None, detail: str = "",
             "ts": now if now is not None else time.time(),
             "mode": mode if mode in MODES else "error",
             "goal_id": goal_id,
-            "detail": str(detail)[:200],
+            # Scrub before truncating: record_failure feeds the raw exception
+            # string here, and provider auth/HTTP errors routinely embed the API
+            # key / Bearer header. Truncation is not redaction. scrub first so a
+            # secret can't survive by being split across the 200-char cut.
+            "detail": _scrub_detail(detail)[:200],
         }
         with open(p, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")

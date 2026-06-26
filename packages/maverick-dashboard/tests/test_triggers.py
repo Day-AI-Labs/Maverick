@@ -223,3 +223,25 @@ def test_store_slugifies_and_round_trips(monkeypatch, tmp_path):
     assert got is not None and got["params"] == {"topic": "rivals"}
     with pytest.raises(ValueError):
         ts.set_trigger("!!!", "weekly-report", {})          # un-sluggable name
+
+
+def test_concurrent_set_trigger_does_not_lose_triggers(monkeypatch, tmp_path):
+    """set_trigger does a load-modify-save; without the lock concurrent creates
+    clobber each other. All N distinct triggers must survive."""
+    import threading
+
+    from maverick_dashboard import triggers_store
+    n = 16
+
+    def add(i: int):
+        triggers_store.set_trigger(f"trig-{i:03d}", "some-template")
+
+    threads = [threading.Thread(target=add, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(triggers_store.list_triggers()) == n
+    store_dir = triggers_store._path().parent
+    assert list(store_dir.glob("*.tmp")) == []

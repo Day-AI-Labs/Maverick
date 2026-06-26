@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "patient communication draft package"
+consumers = ["patient_communications_manager", "compliance_officer"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Clarify request"
+instruction = "Identify the communication type, recipient context, and required facts for the appointment, billing, or care message."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Pull templates"
+instruction = "Retrieve the approved template, required disclosures, and HIPAA communication rules from knowledge."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft message"
+instruction = "Write the patient communication using only minimum-necessary information and the approved language."
+[[workflow]]
+name = "Compliance check"
+instruction = "Verify the draft excludes prohibited PHI and clinical judgments and includes all required disclosures."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Submit the draft to the communications manager for approval before any send."
+gate = "approval"

@@ -39,7 +39,13 @@ import hmac
 import logging
 import os
 
-from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
+from .base import (
+    Channel,
+    IncomingMessage,
+    add_webhook_body_limit,
+    is_allowed,
+    normalize_allowlist,
+)
 
 log = logging.getLogger(__name__)
 
@@ -114,6 +120,7 @@ class VoiceChannel(Channel):
         )
 
         self._app = FastAPI()
+        add_webhook_body_limit(self._app)
         self._app.post("/webhook/voice")(self._handle_webhook)
         self._uvicorn_server = None
 
@@ -180,9 +187,11 @@ class VoiceChannel(Channel):
             )
             try:
                 reply = await self.dispatch_text(msg)
-            except Exception as e:  # pragma: no cover
+            except Exception:  # pragma: no cover
+                # Spoken back to the caller -- never voice the raw exception
+                # (possible secret/internal path); detail is logged above.
                 log.exception("voice handler error")
-                reply = f"Sorry, I ran into an error: {e}"
+                reply = "Sorry, I ran into an internal error."
             return {"response": reply}
 
         # Other events (end-of-call, status updates) are informational.
@@ -191,6 +200,13 @@ class VoiceChannel(Channel):
 
     async def start(self) -> None:
         import uvicorn
+        if not self.webhook_token:
+            # Inbound webhook auth rejects every request without a token, so the
+            # listener would accept nothing. Fail loudly rather than run inert.
+            raise ValueError(
+                "voice channel: webhook token not set "
+                "(pass webhook_token or set VAPI_WEBHOOK_TOKEN) to receive calls"
+            )
         log.info("Voice channel listening on :%d (provider=%s)",
                  self.port, self.provider)
         config = uvicorn.Config(

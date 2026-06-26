@@ -19,7 +19,7 @@ device's backend (injected in tests). Registry + ledger live in
 from __future__ import annotations
 
 import json
-import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,6 +59,20 @@ class PushRegistry:
             ledger_path = data_dir("push_deliveries.json")
         self._path = Path(path)
         self._ledger_path = Path(ledger_path)
+        # Serializes a read-modify-write of either file in-process; the
+        # cross_process_lock in _locked() extends it across processes (the
+        # dashboard registers devices while a run's push() fan-out appends to the
+        # delivery ledger -- separate processes).
+        self._lock = threading.Lock()
+
+    def _locked(self, path: Path):
+        from contextlib import ExitStack
+
+        from .file_lock import cross_process_lock
+        stack = ExitStack()
+        stack.enter_context(self._lock)
+        stack.enter_context(cross_process_lock(path))
+        return stack
 
     # -- registry -------------------------------------------------------------
 
@@ -73,30 +87,31 @@ class PushRegistry:
 
     @staticmethod
     def _write(path: Path, data) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data), encoding="utf-8")
-        os.replace(tmp, path)
-        try:
-            os.chmod(path, 0o600)
-        except OSError:  # pragma: no cover
-            pass
+        # Unique temp + os.replace (0600): a fixed ".tmp" collides between two
+        # concurrent writers to the same file (one os.replace moves it out from
+        # under the other, dropping a write).
+        from .file_lock import atomic_write_text
+        atomic_write_text(path, json.dumps(data))
 
     def register(self, device: Device) -> None:
-        data = self._load()
-        data[device.name] = {
-            "backend": device.backend,
-            "min_priority": device.min_priority,
-            "quiet_hours": list(device.quiet_hours) if device.quiet_hours else None,
-        }
-        self._save(data)
+        # Whole load-modify-save under the lock so two concurrent registers
+        # can't both load the same registry and have the second drop the first.
+        with self._locked(self._path):
+            data = self._load()
+            data[device.name] = {
+                "backend": device.backend,
+                "min_priority": device.min_priority,
+                "quiet_hours": list(device.quiet_hours) if device.quiet_hours else None,
+            }
+            self._save(data)
 
     def unregister(self, name: str) -> bool:
-        data = self._load()
-        if name not in data:
-            return False
-        del data[name]
-        self._save(data)
+        with self._locked(self._path):
+            data = self._load()
+            if name not in data:
+                return False
+            del data[name]
+            self._save(data)
         return True
 
     def devices(self) -> list[Device]:
@@ -147,9 +162,12 @@ class PushRegistry:
     # -- delivery ledger -----------------------------------------------------------
 
     def _append_ledger(self, rows: list[dict]) -> None:
-        ledger = self.deliveries()
-        ledger.extend(rows)
-        self._write(self._ledger_path, ledger[-_LEDGER_CAP:])
+        # Whole read-append-write under the lock so two concurrent push()
+        # fan-outs don't both load the ledger and lose one's delivery rows.
+        with self._locked(self._ledger_path):
+            ledger = self.deliveries()
+            ledger.extend(rows)
+            self._write(self._ledger_path, ledger[-_LEDGER_CAP:])
 
     def deliveries(self, *, device: str | None = None) -> list[dict]:
         try:

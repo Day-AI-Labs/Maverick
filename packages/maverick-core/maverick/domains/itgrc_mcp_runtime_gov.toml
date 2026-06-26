@@ -18,3 +18,23 @@ deliverable = "MCP ecosystem drift findings"
 consumers = ["security_analyst", "ciso"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Load baseline"
+instruction = "Read the approved MCP server and tool manifest baseline for the connected ecosystem."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Capture current"
+instruction = "Read the current live MCP and tool manifests, versions, and granted scopes."
+tools = ["read_file"]
+[[workflow]]
+name = "Diff and classify"
+instruction = "Correlate current manifests against baseline to flag tool-poisoning, rug-pull, version-drift, and scope creep."
+[[workflow]]
+name = "Corroborate threats"
+instruction = "Check external advisories and changelogs for the drifted servers to confirm malicious or risky changes."
+tools = ["web_search"]
+[[workflow]]
+name = "Route findings"
+instruction = "Deliver the drift findings with recommended pin or quarantine actions to the security analyst for the human gate."
+gate = "review"

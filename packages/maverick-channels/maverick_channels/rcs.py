@@ -51,6 +51,7 @@ Requires::
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hmac
 import json
@@ -58,7 +59,13 @@ import logging
 import os
 import uuid
 
-from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
+from .base import (
+    Channel,
+    IncomingMessage,
+    add_webhook_body_limit,
+    is_allowed,
+    normalize_allowlist,
+)
 
 log = logging.getLogger(__name__)
 
@@ -114,6 +121,7 @@ class RcsChannel(Channel):
         self.bind_host = bind_host or os.environ.get("RCS_BIND_HOST", "127.0.0.1")
         self._credentials = None  # cached google-auth credentials (lazy)
         self._app = FastAPI()
+        add_webhook_body_limit(self._app)
         self._app.get("/webhook/rcs")(self._handle_verify)
         self._app.post("/webhook/rcs")(self._handle_webhook)
         self._uvicorn_server = None
@@ -251,14 +259,16 @@ class RcsChannel(Channel):
         )
         try:
             reply = await self.dispatch_text(incoming)
-        except Exception as e:
+        except Exception:
             log.exception("handler error")
             if wm is not None and msg_id:
                 try:
                     wm.release_processed_message("rcs", msg_id)
                 except Exception:  # pragma: no cover
                     log.warning("rcs dedup release failed")
-            reply = f"⚠ error: {e}"
+            # Generic user-facing text; raw exception detail (which can embed a
+            # secret) stays in the log only.
+            reply = "⚠ An internal error occurred."
         if reply:
             await self.send(sender, reply)
         return {"status": "ok"}
@@ -289,7 +299,10 @@ class RcsChannel(Channel):
 
     async def send(self, user_id: str, text: str) -> None:
         import httpx
-        token = self._bearer_token()
+        # _bearer_token() may do a blocking OAuth2 credentials.refresh() (a
+        # network round-trip) when the token has expired (~hourly). Run it off
+        # the event loop so a refresh doesn't stall every other channel/handler.
+        token = await asyncio.to_thread(self._bearer_token)
         url = f"{RBM_BASE}/v1/phones/{user_id}/agentMessages"
         for chunk in [text[i:i + TEXT_LIMIT] for i in range(0, max(len(text), 1), TEXT_LIMIT)]:
             async with httpx.AsyncClient(timeout=30) as client:

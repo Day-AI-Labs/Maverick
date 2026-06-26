@@ -102,3 +102,22 @@ def test_store_created_without_readable_temp_window(tmp_path, monkeypatch):
     assert oct((tmp_path / "private").stat().st_mode)[-3:] == "700"
     assert oct((tmp_path / "private" / "profiles.json").stat().st_mode)[-3:] == "600"
     assert not list((tmp_path / "private").glob("*.tmp"))
+
+
+def test_concurrent_enroll_does_not_lose_profiles(gate):
+    """enroll does a load-modify-save; without the lock two concurrent enrolls
+    of different speakers clobber each other. All N must survive."""
+    import threading
+
+    n = 16
+
+    def do(i: int):
+        gate.enroll(f"spk{i:03d}", [b"a1", b"a2", b"a3"])
+
+    threads = [threading.Thread(target=do, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(gate.profiles()) == n

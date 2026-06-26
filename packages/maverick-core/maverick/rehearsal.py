@@ -30,10 +30,11 @@ from __future__ import annotations
 
 import logging
 import math
-import os
 import random
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
+
+from .config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -78,11 +79,9 @@ def _settings() -> dict:
 
 def enabled() -> bool:
     """Whether rehearsal may gate actions. OFF by default, fail-open."""
-    env = os.environ.get("MAVERICK_REHEARSAL", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_REHEARSAL")
+    if _v is not None:
+        return _v
     return bool(_settings().get("enable", False))
 
 

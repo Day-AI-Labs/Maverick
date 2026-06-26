@@ -59,7 +59,7 @@ def test_erase_clears_llm_cache(tmp_path, monkeypatch):
 
     # Point the LLM cache at a temp db and seed it with a prompt+answer.
     cache_db = tmp_path / "llm_cache.db"
-    import maverick.llm_cache as llm_cache_mod
+    import maverick.cache.llm as llm_cache_mod
     monkeypatch.setattr(llm_cache_mod, "DEFAULT_DB", cache_db)
     cache = llm_cache_mod.LLMCache(db_path=cache_db)
     key = llm_cache_mod.cache_key(

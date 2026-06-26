@@ -1,17 +1,20 @@
 # Security hardening (operator guide)
 
-Maverick ships **defense in depth**, but almost every *enterprise/security*
-control is **opt-in and off by default** so a personal install behaves exactly
-as before. That makes the controls easy to miss: turning them on currently
-means knowing the config key. This guide is the single place that lists every
-one — what it does, the exact `~/.maverick/config.toml` block, the
+Lightwork ships **defense in depth**. The protective controls that don't break
+the happy path are now **on by default** ([Secure by default](#secure-by-default)
+— at-rest encryption, audit signing, fail-closed consent for high/critical
+actions, a sane tool-risk ceiling); the rest (OIDC, egress lock, Postgres RLS,
+...) stay **opt-in** so a personal install isn't forced into operational burden.
+Either way the controls are easy to miss, so this guide is the single place that
+lists every one — what it does, the exact `~/.maverick/config.toml` block, the
 environment-variable equivalent, the installer-wizard toggle (if any), gotchas,
 and how to confirm it's actually on.
 
-> **Precedence.** For every toggle below, an explicitly-set environment
-> variable wins over `~/.maverick/config.toml`. A few controls
-> (capabilities, encryption-at-rest) are additionally **implied by enterprise
-> mode** — see [Enterprise mode](#enterprise-mode-the-umbrella-switch).
+> **Precedence.** For every toggle below: a mandatory compliance floor wins over
+> an explicit code arg, which wins over an environment variable, which wins over
+> `~/.maverick/config.toml`, which wins over the secure-by-default posture. A few
+> controls (capabilities, encryption-at-rest) are additionally **implied by
+> enterprise mode** — see [Enterprise mode](#enterprise-mode-the-umbrella-switch).
 
 > **Verify what's on.** `maverick soc2` prints a JSON posture snapshot of the
 > main toggles (capabilities, tenant isolation, quotas, OIDC, encryption-at-rest,
@@ -21,6 +24,7 @@ and how to confirm it's actually on.
 ## Contents
 
 - [Always-on safety (not opt-in)](#always-on-safety-not-opt-in)
+- [Secure by default](#secure-by-default)
 - [Enterprise mode (the umbrella switch)](#enterprise-mode-the-umbrella-switch)
 - [Capability enforcement](#capability-enforcement)
 - [Role-based access control (RBAC)](#role-based-access-control-rbac)
@@ -29,9 +33,12 @@ and how to confirm it's actually on.
 - [OIDC SSO authentication](#oidc-sso-authentication)
 - [OIDC browser login (built-in)](#oidc-browser-login-built-in)
 - [Reverse-proxy SSO](#reverse-proxy-sso)
+- [SAML SSO](#saml-sso)
 - [Encryption at rest](#encryption-at-rest)
 - [Risk-proportional verification](#risk-proportional-verification)
 - [Audit-log signing (tamper-evidence)](#audit-log-signing-tamper-evidence)
+- [WORM audit export (immutable retention)](#worm-audit-export-immutable-retention)
+- [Two-person approval (N-of-M dual control)](#two-person-approval-n-of-m-dual-control)
 - [Compliance commands](#compliance-commands)
 - [Verifying your posture](#verifying-your-posture)
 - [Recommended enterprise baseline](#recommended-enterprise-baseline)
@@ -45,7 +52,13 @@ opt-in controls build on:
 
 - **Agent Shield** — the safety detection layer (`packages/maverick-shield/`).
   Fail-open with a warning if not installed; it's a chokepoint, not a hard
-  dependency.
+  dependency. All three scan surfaces — **input, tool-call arguments, and tool
+  output** — run through a **decode/defang pre-pass** (`deobfuscate.py`):
+  base64/hex/percent-encoded and Unicode-homoglyph payloads are decoded and the
+  detectors re-run over each variant, so an encoded `rm -rf /` is caught even
+  though the literal surface form hid it. The pre-pass is monotonic (it can only
+  turn an allowed scan into a block, never the reverse) and bounded against
+  decode bombs; escape hatch `MAVERICK_SHIELD_NO_DECODE=1`.
 - **Sandbox-mediated shell** — all tool shell execution goes through
   `sandbox.exec()` (local/Firecracker backends), never raw `subprocess`.
 - **Hard `Budget` caps** — every long-running path respects a per-run budget
@@ -58,9 +71,87 @@ opt-in controls build on:
 - **Consent / HITL** — human-in-the-loop confirmation gates for sensitive or
   destructive actions.
 
-The sections below are the controls you must **explicitly turn on**.
+Most of the sections below are now **on by default** (next section); the rest you
+**explicitly turn on**.
 
 ---
+
+## Secure by default
+
+The protective controls that don't break the happy path ship **on by default**.
+No configuration is needed for a hardened baseline; you opt *out* if you want the
+old behaviour. On by default:
+
+| Control | Default-on behaviour | Opt out |
+|---|---|---|
+| [Encryption at rest](#encryption-at-rest) | seals sensitive stores; key auto-generates | `[encryption] at_rest = false` |
+| [Audit-log signing](#audit-log-signing-tamper-evidence) | Ed25519 tamper-evidence; key auto-generates | `[audit] sign = false` |
+| Fail-closed consent | high/critical-risk actions require confirmation (not auto-approved) | per-action consent config |
+| Tool-risk ceiling | caps at `high` (CRITICAL tools need an explicit raise) | set `[security] max_risk` |
+
+Still **opt-in** (operational burden / can break a working deployment): OIDC,
+the egress lock (enterprise mode), and [Postgres RLS](multi-tenancy.md#enabling-rls-safely-guided-opt-in).
+The Shield stays **fail-open** (the kernel runs without it).
+
+**Master switch.** Turn the whole posture off with:
+
+```toml
+[security]
+secure_defaults = false
+```
+
+- env: `MAVERICK_SECURE_DEFAULT=0`
+- **Precedence** (per control): a mandatory compliance floor > explicit code arg >
+  env var > config > `secure_defaults`. So an explicit `[encryption] at_rest = true`
+  always wins, and HIPAA-mode at-rest can't be turned off by `secure_defaults = false`.
+
+**Existing installs are safe.** Sealed reads are plaintext-tolerant, so data
+written before the flip is returned unchanged until rewritten; run
+`maverick encryption migrate` to seal it eagerly (and **back up the auto-generated
+key** — `maverick encryption backup-key --to <dir>` — losing it loses the data).
+
+---
+
+## Deployment profile (one named switch)
+
+If you only remember one knob, remember this one. `profile` picks the whole
+security posture by name:
+
+- `standard` (default) — the personal / dev posture. The always-on hardened
+  controls (audit signing, at-rest encryption, fail-closed consent, tool-risk
+  ceiling — see [Secure by default](#secure-by-default)) stay on, but the
+  egress lock and the rest of enterprise mode stay off. Right for a single user
+  running against a cloud LLM on their own machine.
+- `enterprise` — the regulated posture. Turns [enterprise mode](#enterprise-mode-the-umbrella-switch)
+  on by default (egress lock, consent fail-closed, capabilities enforced) on top
+  of the always-on controls. It also flips three deployment-specific secure
+  defaults (each still overridable by its own explicit knob):
+  - **Sandbox = container.** A `local`/unset sandbox backend is upgraded to an
+    available container backend (docker → podman) instead of running
+    `shell=True` on the host; if no container runtime is installed it fails
+    closed rather than running unsandboxed (`[sandbox] backend` / `require_container`).
+  - **Plugin isolation = subprocess.** Third-party plugins run out-of-process by
+    default instead of in-process (`[plugins] isolation`).
+  - **Plugin lock = enforce.** The version/content lockfile is enforced (a no-op
+    until you run `maverick plugin lock`, then drifted/unpinned plugins are
+    refused) (`[plugins] lock_policy`).
+
+  This is what the Helm chart and the reference server deployments set.
+
+```toml
+[profile]
+name = "enterprise"     # or "standard"
+```
+
+```bash
+export MAVERICK_PROFILE=enterprise    # env wins over config
+```
+
+Precedence is preserved: this only sets the *default* an unset control falls
+back to. Any explicit knob (e.g. `[enterprise] mode = false`) and any compliance
+floor still win over the profile. Because `enterprise` engages the egress lock,
+make sure a local/self-hosted (or allow-listed) provider is configured, or runs
+fail closed by design.
 
 ## Enterprise mode (the umbrella switch)
 
@@ -213,7 +304,7 @@ audit log for `capability_denied` to see a role's restrictions bite.
 
 ## Multi-tenancy (per-user isolation)
 
-**What it does.** Namespaces Maverick's on-disk state per *tenant* so one
+**What it does.** Namespaces Lightwork's on-disk state per *tenant* so one
 tenant's data cannot leak to another. When enabled, each channel user is
 isolated into their own tenant. Tenant `t`'s data lives under
 `~/.maverick/tenants/<t>/...` instead of the legacy `~/.maverick/...` root.
@@ -358,7 +449,7 @@ so OIDC does not 401 inbound webhooks.
 
 - **Needs the optional extra.** OIDC verification requires PyJWT:
   `pip install 'maverick-agent[oidc]'` (equivalently `pip install
-  'pyjwt[crypto]>=2.8'`). The kernel imports fine without it; you'll only hit
+  'pyjwt[crypto]>=2.13.0'`). The kernel imports fine without it; you'll only hit
   the error when a token is actually verified.
 - **Asymmetric-only by design.** `algorithms` is filtered to asymmetric
   algorithms (`RS*`/`ES*`/`PS*`/`EdDSA`); `none` and every HMAC alg
@@ -372,6 +463,22 @@ so OIDC does not 401 inbound webhooks.
 
 **Verify it's on:** `maverick soc2` → `controls.oidc_auth.status == "enabled"`
 (reports `absent` if the optional module/extra isn't installed).
+
+**Session/token revocation + SCIM deprovisioning.** A leaked session cookie or a
+still-valid bearer is force-invalidated by a per-principal **revocation epoch**
+(`session-revocations.json`): "log out everywhere" and SCIM deprovision
+(`active=false` / DELETE) bump it, and any credential whose `iat` predates it is
+rejected — across processes. The revocation check fails **closed**: a damaged
+revocation store is treated as "revoked", never silently un-revoked.
+
+Some IdPs (notably Entra/Azure AD) issue a **pairwise/per-app** OIDC `sub` that
+appears in no SCIM attribute. To still end such a user's live session on
+deprovision, a **subject directory** (`oidc-subjects.json`, 0600) records, at
+each login, the `sub` against the user's stable IdP identifiers (`email` /
+`preferred_username` / `oid` / `upn`). SCIM deprovision looks the `sub` up by the
+record's identifiers and revokes it. Privacy: the lookup keys are
+`sha256(identifier)` (raw emails never hit disk); the stored value is the opaque
+`sub`. The store is bounded (LRU) and purged on a hard SCIM delete.
 
 ---
 
@@ -390,7 +497,7 @@ that, the browser is authenticated by the cookie — no bearer header needed.
 
 > **Prefer the proxy.** The [reverse-proxy SSO](#reverse-proxy-sso) path below is
 > the simpler, lower-surface option: it keeps the OAuth client secret and the
-> login flow out of Maverick entirely. Reach for this built-in flow only when
+> login flow out of Lightwork entirely. Reach for this built-in flow only when
 > running a proxy isn't practical.
 
 **Off by default, fail-closed.** The `/auth/login`, `/auth/callback`, and
@@ -486,9 +593,9 @@ bearer. Invalid/absent → falls through to the bearer path unchanged.
 **What it does.** Lets a standard auth proxy in front of the dashboard
 (oauth2-proxy, your IdP's proxy, an ALB OAuth listener, ...) own the browser
 login, then forward the authenticated user's identity in a request header.
-Maverick maps that header to a `user:<id>` principal that flows into the
+Lightwork maps that header to a `user:<id>` principal that flows into the
 [capability](#capability-enforcement) and tenant model — browser SSO without
-Maverick hand-rolling an OAuth flow. The [OIDC](#oidc-sso-authentication) bearer
+Lightwork hand-rolling an OAuth flow. The [OIDC](#oidc-sso-authentication) bearer
 gate still serves API clients; this adds the browser path.
 
 **config.toml**
@@ -508,7 +615,7 @@ export MAVERICK_PROXY_AUTH_HEADER="X-Forwarded-User"
 ```
 
 **Security — read this.** A forwarded header is trivially spoofable by a direct
-client, so Maverick honors it **only when the request's network peer is a
+client, so Lightwork honors it **only when the request's network peer is a
 trusted upstream** (`trusted_proxies`; default loopback, since the proxy usually
 runs on the same host). For this to be safe you **must**:
 
@@ -536,25 +643,78 @@ see a role biting). Direct (non-proxy) requests must not carry a honored header.
 
 ---
 
-## Encryption at rest
+## SAML SSO
 
-**What it does.** AES-256-GCM authenticated encryption for Maverick's sensitive
-local stores. By default the kernel keeps state in plaintext on disk; this seals
-it so anyone who can read `~/.maverick` can't read its contents. This increment
-wires it into the **cross-session memory** store (the most leak-sensitive
-per-tenant store).
+**What it does.** A SAML 2.0 SP browser-login front-end alongside
+[OIDC](#oidc-browser-login-built-in), for enterprises whose IdP (Okta,
+Entra/Azure AD, OneLogin, ADFS) mandates SAML. The IdP POSTs a **signed
+assertion** to the ACS; **pysaml2** verifies the XML signature (never hand-rolled
+XML-dsig), and the same hardened `mvk_session` cookie the OIDC login issues is
+minted — so a SAML user flows through [RBAC](#role-based-access-control-rbac) and
+every `require_principal` gate exactly like an OIDC user (principal
+`user:<NameID>`). Opt-in; off by default (the `/saml/*` routes 404 until configured).
 
 **config.toml**
 
 ```toml
+[auth.saml]
+sp_entity_id = "https://YOUR-HOST/saml/metadata"
+acs_url = "https://YOUR-HOST/saml/acs"
+idp_metadata_url = "https://IDP/app/metadata"   # or idp_metadata_file = "/path/idp.xml"
+want_assertions_signed = true
+# sp_cert_file / sp_key_file  — to sign AuthnRequests / decrypt assertions
+
+[auth.oidc]
+session_secret = "<32+ random bytes>"   # SAML reuses the browser-login session secret
+```
+
+**Needs the extra:** `pip install 'maverick-agent[saml]'` (pysaml2). The routes
+503 with a hint if it's absent.
+
+**Wizard toggle:** yes — "Enable SAML 2.0 SSO?" (writes the `[auth.saml]` template).
+
+**Endpoints** (mounted on the dashboard app, exempt from the dashboard-token gate
+because the IdP POST carries no bearer):
+
+- `GET /saml/metadata` — SP metadata XML; register this with the IdP.
+- `GET /saml/login` — start SSO (redirects to the IdP). `?return_to=/path` sets a
+  same-site post-login redirect (open redirects are rejected).
+- `POST /saml/acs` — Assertion Consumer Service: verifies + sets the session.
+
+**Gotchas**
+
+- **Shares the session secret.** SAML mints the *same* `mvk_session` cookie as
+  OIDC, so `[auth.oidc] session_secret` must be set or the ACS can't issue a session.
+- **Not yet certified against a live IdP in-tree** — the pysaml2 calls are
+  isolated and unit-tested with the library mocked; do an Okta/Entra round-trip in
+  staging before production. Single-logout (SLO) is not implemented yet (local
+  session clear only).
+- Failures are opaque (`401 SAML assertion did not verify`) and never log the
+  assertion — like the OIDC callback.
+
+**Verify it's on:** `GET /saml/metadata` returns SP XML (not 404); a full IdP
+login lands you authenticated with `user:<NameID>` as the principal.
+
+---
+
+## Encryption at rest
+
+**What it does.** AES-256-GCM authenticated encryption for Lightwork's sensitive
+local stores, so anyone who can read `~/.maverick` can't read its contents.
+**On by default** ([Secure by default](#secure-by-default)); the key
+auto-generates on first use.
+
+**config.toml** (to **disable** on a personal box)
+
+```toml
 [encryption]
-at_rest = true
+at_rest = false
 ```
 
 **Environment variable**
 
 ```bash
-export MAVERICK_ENCRYPT_AT_REST=1     # a falsey value force-disables
+export MAVERICK_ENCRYPT_AT_REST=0     # 1 to force-enable; 0 to force-disable
 ```
 
 **Wizard toggle:** yes — "Encrypt sensitive local stores at rest?"
@@ -571,10 +731,17 @@ export MAVERICK_ENCRYPT_AT_REST=1     # a falsey value force-disables
 
 **Gotchas**
 
-- **Scope today.** This increment covers the **memory store**. The world DB and
-  the audit log are a **documented future increment** — do not assume they are
-  encrypted yet. (Confirm in your version before relying on it for those
-  stores.)
+- **Scope.** Sealed: the **memory store**, the sensitive **world-DB content
+  columns** (goal title/description/result, facts, turns/messages, questions,
+  goal events, episode summaries/outcomes, parked approvals), and the
+  **semantic-recall documents** on the chroma/pgvector backends. Run
+  `maverick encryption migrate` to seal rows written before it was on. Not sealed:
+  the live audit day-file (seal closed ones with `maverick audit seal`) and the
+  qdrant/weaviate vector backends — see [encryption.md](encryption.md) for the
+  full map.
+- **Back up the key.** The auto-generated `~/.maverick/keys/at_rest.key` is the
+  only way to read sealed data — escrow it with `maverick encryption backup-key
+  --to <dir>`; if it's lost, the data is unrecoverable.
 - **Requires `cryptography`.** With at-rest enabled but the package missing,
   `seal()` **fails closed** (raises `EncryptionUnavailable`) rather than writing
   plaintext: `pip install 'maverick-agent[audit-signing]'`.
@@ -629,27 +796,28 @@ regardless of cost.
 Merkle-chained, tamper-evident** log: each row is hash-chained and signed, and a
 cross-file tip-ledger (`anchors.ndjson`) catches deletion/truncation of a whole
 day-file. This is what makes [`maverick audit verify`](#compliance-commands)
-and the `soc2` audit-chain probe meaningful — without signing, the log is
-append-only NDJSON but not cryptographically tamper-evident (the probe reports
-`unsigned`).
+and the `soc2` audit-chain probe meaningful. **On by default**
+([Secure by default](#secure-by-default)); the signing key auto-generates. With
+it off the log is append-only NDJSON but not cryptographically tamper-evident
+(the probe reports `unsigned`).
 
-**config.toml**
+**config.toml** (to **disable**)
 
 ```toml
 [audit]
-sign = true
+sign = false
 ```
 
 **Environment variable**
 
 ```bash
-export MAVERICK_AUDIT_SIGN=1
+export MAVERICK_AUDIT_SIGN=0     # 1 to force-enable; 0 to force-disable
 ```
 
 **Gotchas**
 
 - Precedence: explicit code arg > `MAVERICK_AUDIT_SIGN` env > `[audit] sign` in
-  config.
+  config > the secure-by-default posture (on).
 - Requires `cryptography` (`pip install 'maverick-agent[audit-signing]'`).
 - The signing key lives under `~/.maverick/keys/`; `maverick soc2`'s
   `audit_signing_key` probe reports whether a key is present.
@@ -659,14 +827,117 @@ export MAVERICK_AUDIT_SIGN=1
 
 ---
 
+## WORM audit export (immutable retention)
+
+**What it does.** Signing makes the log tamper-**evident** (you can *prove* an
+alteration). WORM makes the historical records **un-alterable**: each closed
+day-file is shipped to a write-once target with a retention lock, so neither a
+privileged insider nor an attacker with filesystem/root access can rewrite or
+delete the trail — the "immutable audit" a regulator (SEC 17a-4, HIPAA, SOX)
+actually means. Opt-in (default off).
+
+**config.toml**
+
+```toml
+[audit.worm]
+provider = "s3"            # s3 (Object-Lock) | local (read-only mirror)
+retention_days = 2555      # lock duration (~7y)
+bucket = "my-audit-worm"   # s3: bucket with Object-Lock + versioning enabled
+prefix = "maverick/audit/"
+mode = "COMPLIANCE"        # COMPLIANCE (even root can't delete) | GOVERNANCE
+region = "us-east-1"
+# local provider: dir = "/mnt/worm/audit"
+```
+
+- env: `MAVERICK_AUDIT_WORM=1` (uses the `[audit.worm]` block).
+- **Wizard toggle:** yes — "Export closed audit day-files to a write-once store?"
+
+**Run it** (idempotent; cron it, e.g. nightly):
+
+```
+maverick audit worm push              # ship closed day-files to the WORM target
+maverick audit worm push --dry-run    # show what would ship
+maverick audit worm verify            # closed files all durably shipped? (non-zero if not)
+```
+
+**Gotchas**
+
+- Only **closed** day-files (date < today) ship — today's file is still being
+  appended. A file changed afterwards by `audit seal` / GDPR erase is re-shipped
+  as a new locked version on the next push (push *after* sealing so the locked
+  copy is the sealed one).
+- **S3 setup is one-time, operator-side:** the bucket must be created with
+  Object-Lock enabled (implies versioning); `boto3` is required (`pip install boto3`).
+- **`local` is best-effort** (mode `0444`; an owner can chmod it back) — it gives
+  on-box tamper-*evidence* via the manifest hash, not true WORM. Use `s3` +
+  `COMPLIANCE` for regulator-grade immutability.
+- GDPR erasure vs. WORM is a genuine tension: under COMPLIANCE lock a record
+  can't be deleted before expiry. Crypto-shred (revoke the at-rest key) rather
+  than expecting to rewrite a locked object.
+
+**Verify it's on:** `maverick audit worm verify` (exits non-zero if any closed
+day-file isn't in the WORM store).
+
+---
+
+## Two-person approval (N-of-M dual control)
+
+**What it does.** Requires **N distinct approvers** to release a parked
+high-/critical-risk action, and (by default) **bars the requester from approving
+their own request** — the segregation-of-duties / "two-person rule" auditors test
+under SOX, SOC 2 CC, and HIPAA. The [consent](#always-on-safety-not-opt-in) gate
+already parks risky actions in the dashboard approvals queue; this sets how many
+sign-offs that queue needs before the action proceeds. Opt-in (default
+`approvals_required = 1` → the legacy single approver).
+
+**config.toml**
+
+```toml
+[security]
+approvals_required = 2          # 2 distinct approvers for every parked action
+allow_self_approval = false     # default: the requester can't approve their own
+
+# ...or vary N by risk band instead of a flat number:
+[security.approvals_required]
+high = 2
+critical = 3
+default = 1
+```
+
+- env: `MAVERICK_APPROVALS_REQUIRED=2` (global), `MAVERICK_ALLOW_SELF_APPROVAL=1`.
+- **Wizard toggle:** yes — "Require two-person approval for risky actions?"
+
+**How it works.** Each dashboard approve is a **vote** by the approver's verified
+principal (`POST /api/v1/approvals/{id}/approve`); the action flips to `approved`
+only once N *distinct* principals approve. A single `deny` rejects immediately. A
+repeat vote from the same approver counts once (enforced by the
+`approval_signoffs` primary key). `GET /api/v1/approvals/{id}/state` shows quorum
+progress (`approved_count` vs `approvals_required`). A barred self-approval
+returns **403** (vs **404** for an unknown approval).
+
+**Gotchas**
+
+- **Needs attributed approvers.** Distinctness requires each approver to have an
+  identity, so run the dashboard with [OIDC](#oidc-sso-authentication) /
+  [SAML](#oidc-browser-login-built-in) / reverse-proxy SSO; an unauthenticated
+  (single-user) dashboard can't supply two distinct principals.
+- The self-approval bar only bites when the approval records a `requested_by`
+  principal; the quorum (N distinct approvers) is enforced regardless.
+
+**Verify it's on:** park a high-risk action, then confirm one approval leaves it
+`pending` and a second *distinct* approver flips it to `approved` (watch
+`/approvals/{id}/state`).
+
+---
+
 ## Compliance commands
 
 | Command | Purpose |
 | --- | --- |
 | `maverick soc2` | Print a SOC 2 technical-posture snapshot as JSON (which controls are ON + whether the audit log verifies). Add `--json` for compact single-line output. Fail-soft: always emits JSON, exits 0. |
 | `maverick audit verify` | Verify the Ed25519 hash-chain (+ cross-file tip-ledger) of a signed audit log. Exits non-zero if the chain is not intact, so it can gate CI/cron. |
-| `maverick dsar export --user <id>` | GDPR Art. 15/20 (access / portability): export everything Maverick holds for a subject as a JSON bundle. |
-| `maverick erase --channel <c> --user <id>` | GDPR Art. 17 (right to erasure): erase everything Maverick knows about a `(channel, user_id)` pair. |
+| `maverick dsar export --user <id>` | GDPR Art. 15/20 (access / portability): export everything Lightwork holds for a subject as a JSON bundle. |
+| `maverick erase --channel <c> --user <id>` | GDPR Art. 17 (right to erasure): erase everything Lightwork knows about a `(channel, user_id)` pair. |
 
 **`maverick audit verify` flags:**
 

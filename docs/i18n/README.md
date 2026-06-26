@@ -1,6 +1,6 @@
 # Translated documentation
 
-Community-maintained translations of the Maverick user docs. The English files under [`docs/`](../) are always authoritative; translations may lag behind them.
+Community-maintained translations of the Lightwork user docs. The English files under [`docs/`](../) are always authoritative; translations may lag behind them.
 
 ## Languages
 

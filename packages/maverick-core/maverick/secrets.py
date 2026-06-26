@@ -48,6 +48,16 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b")),
     # AWS access key id
     ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    # AWS SECRET access key. The env_secret pattern below only matches an
+    # UPPERCASE key name, but the canonical ~/.aws/credentials file (and boto /
+    # aws-cli output) uses the lowercase `aws_secret_access_key`, so the actual
+    # 40-char secret -- the sensitive half -- leaked verbatim while only the
+    # harmless AKIA id above got redacted. Match the lowercase key explicitly;
+    # the value is exactly 40 base64 chars. Group 1 (key + separator + optional
+    # quote) is preserved.
+    ("aws_secret_key", re.compile(
+        r"(?i)(aws_secret_access_key\s*[:=]\s*['\"]?)([A-Za-z0-9/+]{40})",
+    )),
     # GitHub PAT (ghp_/gho_/ghu_/ghr_/ghs_ prefix)
     ("github_token", re.compile(r"\bgh[ps]_[A-Za-z0-9_]{30,}\b|\bghu_[A-Za-z0-9_]{30,}\b|\bgho_[A-Za-z0-9_]{30,}\b|\bghr_[A-Za-z0-9_]{30,}\b")),
     # Slack tokens (xoxb-, xoxp-, xapp-)
@@ -63,7 +73,11 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         # at every line start, so on a long run of newlines `\s*` backtracks
         # O(N^2) -- a ReDoS, since scrub() runs on attacker-influenced output.
         # The newline itself is already handled by the `(?:^|\n)` anchor.
-        r"((?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*)"
+        # Separator is `[:=]`, not just `=`: YAML / k8s manifests / many log
+        # formats use `KEY: value`, and those colon-delimited secrets slipped
+        # through unredacted. The key class stays UPPERCASE so ordinary lowercase
+        # prose isn't over-redacted.
+        r"((?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*[:=]\s*)"
         # Value: a single- or double-quoted string (which may contain
         # spaces) OR a bare run of non-space chars. Without the quoted
         # alternatives a value like FOO_SECRET="a b c" matched only "a,
@@ -95,7 +109,7 @@ def scrub(text: str) -> str:
         return text
     out = text
     for kind, pat in _PATTERNS:
-        if kind in ("bearer", "env_secret", "url_secret"):
+        if kind in ("bearer", "env_secret", "url_secret", "aws_secret_key"):
             # Keep the prefix (header name / KEY= / ?param=), redact the value.
             out = pat.sub(lambda m, k=kind: m.group(1) + f"[REDACTED:{k}]", out)
         elif kind == "url_credentials":

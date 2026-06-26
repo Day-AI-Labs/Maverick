@@ -1,14 +1,14 @@
 # SOC 2 Controls Mapping
 
 This document maps the SOC 2 **Trust Services Criteria (TSC)** to the concrete
-Maverick controls that satisfy each. It is the foundation of the SOC 2
+Lightwork controls that satisfy each. It is the foundation of the SOC 2
 workstream: a controls inventory an auditor can read alongside the
 machine-readable evidence collector in
 [`packages/maverick-core/maverick/soc2.py`](../../packages/maverick-core/maverick/soc2.py)
 (`collect_soc2_evidence()`).
 
 > **Honesty note.** SOC 2 is an *organizational* attestation, not a code audit.
-> Maverick's engineering controls cover a large share of the **Security (Common
+> Lightwork's engineering controls cover a large share of the **Security (Common
 > Criteria)** plus the **Confidentiality / Availability / Processing Integrity /
 > Privacy** categories — but a real SOC 2 Type II report also requires
 > *process* controls (change management, vendor management, background checks,
@@ -36,14 +36,14 @@ The CC series is mandatory for every SOC 2 report.
 
 ### CC1 — Control Environment (governance, ethics, org structure)
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | CC1.1 Integrity & ethical values | Anti-test-cheating verifier; test-driven `verify_final` keeps agents honest | Partial | `maverick/verifier.py`; `maverick/agent.py` (verify gate) |
 | CC1.2–CC1.5 Board oversight, org structure, accountability | Company governance, org chart, role definitions | Process-only | Not code — company policy |
 
 ### CC2 — Communication & Information
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | CC2.1 Quality information for internal control | Append-only Ed25519 Merkle-chained audit log; OpenTelemetry traces/metrics | Implemented | `maverick/audit/`; `audit_log`, `audit_signing_key`; `maverick/observability.py` |
 | CC2.2 Internal communication of responsibilities | EU AI Act Art. 50 user disclosure; user-facing docs | Partial | `maverick/compliance.py`; `docs/` |
@@ -51,7 +51,7 @@ The CC series is mandatory for every SOC 2 report.
 
 ### CC3 — Risk Assessment
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | CC3.1 Specifies objectives | Tool risk model + risk ceilings; capability `max_risk` | Implemented | `maverick/safety/tool_risk.py`; `maverick/capability.py` |
 | CC3.2 Identifies & analyzes risk | Agent Shield (prompt-injection / exfil detection); preflight checks | Implemented | `maverick/safety/` (jailbreak/remote_scan); `maverick/preflight.py` |
@@ -60,14 +60,14 @@ The CC series is mandatory for every SOC 2 report.
 
 ### CC4 — Monitoring Activities
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | CC4.1 Ongoing/separate evaluations | OpenTelemetry; health checks; circuit breakers; eval-gated CI | Implemented | `maverick/observability.py`, `health.py`, `circuit_breaker.py` |
 | CC4.2 Evaluates & communicates deficiencies | Audit-chain and anchor-ledger verification (`verify_chain`, `verify_anchors`) surfaces tamper/breaks; issue reporting | Partial | `maverick/audit/signing.py`; `audit_log` evidence key; `maverick/issue_report.py` |
 
 ### CC5 — Control Activities
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | CC5.1 Selects control activities | Tool ACLs + risk ceilings; capability grants | Implemented | `maverick/safety/tool_acl.py`; `maverick/capability.py` |
 | CC5.2 Technology general controls | Sandbox-mediated shell; capability chokepoint at the tool boundary | Implemented | `maverick/safety/`; sandbox `exec()` mediation (CLAUDE.md rule 4) |
@@ -75,9 +75,9 @@ The CC series is mandatory for every SOC 2 report.
 
 ### CC6 — Logical & Physical Access Controls
 
-This is Maverick's strongest area.
+This is Lightwork's strongest area.
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | CC6.1 Logical access security (identity, least privilege) | Per-agent **capabilities**: signed, attenuating; tool + path + host scopes; enforced at the tool chokepoint. Least-privilege-on-spawn by construction. | Implemented (opt-in) | `maverick/capability.py`; `controls.capability_enforcement` |
 | CC6.1 Authentication | **OIDC** ID-token verifier (asymmetric-only algs; alg-confusion-hardened; verified `exp`/`iat`/`aud`/`iss`/`sub`); a verified subject maps to the `user:{sub}` principal the capability/tenant model already uses | Implemented (opt-in) | `maverick/oidc.py`; `controls.oidc_auth` |
@@ -85,12 +85,12 @@ This is Maverick's strongest area.
 | CC6.3 Role-based access / modification | Capability attenuation (child ≤ parent); risk ceilings | Implemented (opt-in) | `maverick/capability.py` (`attenuate`); `controls.capability_enforcement` |
 | CC6.6 Boundary protection (external threats) | Agent Shield (prompt-injection/exfil); host-scope capability; network host allow-globs | Implemented | `maverick/safety/` (shield); `maverick/capability.py` (`allow_hosts`) |
 | CC6.7 Restricts data transmission/movement | Secret/PII redaction; exfil detection; capability path scopes | Implemented | `maverick/safety/secret_detector.py`; `maverick/capability.py` (`allow_paths`) |
-| CC6.7 Encryption at rest | AES-256-GCM authenticated encryption for sensitive local stores; opt-in, implied by enterprise mode | Implemented (opt-in) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
+| CC6.7 Encryption at rest | AES-256-GCM authenticated encryption for sensitive local stores; **on by default** (secure-by-default), forced by compliance floors | Implemented (on by default) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
 | CC6.8 Prevents/detects unauthorized software | Sandbox isolation backends; tool ACLs; plugin manifest | Partial | sandbox `exec()`; `maverick/plugin_manifest.py` |
 
 ### CC7 — System Operations
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | CC7.1 Detects config changes/vulnerabilities | Preflight checks; eval-gated CI; dependency markers | Partial | `maverick/preflight.py`; `.github/workflows/ci.yml` |
 | CC7.2 Monitors anomalies | OpenTelemetry metrics; circuit breakers; `capability_denied` audit event | Implemented | `maverick/observability.py`; `maverick/audit/events.py` (`CAPABILITY_DENIED`) |
@@ -101,21 +101,21 @@ This is Maverick's strongest area.
 
 ### CC8 — Change Management
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | CC8.1 Authorizes/designs/tests/approves changes | Eval-gated CI; PR review; semantic-PR-title + lint gates; test-driven verifier | Partial | `.github/workflows/` (ci, lint-pr-title); test matrix (CLAUDE.md) |
 | CC8.1 Change-management *policy* (approvals, segregation of duties) | Documented change-control policy, reviewer requirements, prod-deploy approvals | Process-only | Not code — company policy |
 
 ### CC9 — Risk Mitigation
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | CC9.1 Mitigates business-disruption risk | Hard **Budget** caps; usage **quotas** + enforcement; killswitch | Implemented | `maverick/budget.py`; `maverick/quotas.py` (`controls.usage_quotas`); `maverick/killswitch.py` |
 | CC9.2 Vendor & business-partner risk management | Sub-processor inventory, vendor security reviews, DPAs | Process-only / Gap | Not code — company policy (LLM providers, infra vendors) |
 
 ## A — Availability
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | A1.1 Capacity management | Budget caps; per-principal usage quotas; net concurrency limits | Implemented | `maverick/budget.py`, `quotas.py`, `net_concurrency.py` |
 | A1.2 Backup / recovery / resilience | Durable checkpoint/resume; job queue; circuit breakers | Implemented | `maverick/checkpoint.py`, `job_queue.py`, `circuit_breaker.py` |
@@ -124,7 +124,7 @@ This is Maverick's strongest area.
 
 ## PI — Processing Integrity
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | PI1.1 Processing definitions / quality | Eval-gated CI; test-driven verifier + anti-test-cheating | Implemented | `maverick/verifier.py`; `.github/workflows/` |
 | PI1.2 Inputs are complete & accurate | Shield input scanning; preflight; consent gates | Implemented | `maverick/safety/`; `maverick/preflight.py` |
@@ -134,11 +134,11 @@ This is Maverick's strongest area.
 
 ## C — Confidentiality
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | C1.1 Identifies & protects confidential information | Multi-tenant isolation (per-tenant memory/audit/world.db); secret/PII redaction | Implemented (opt-in) | `maverick/paths.py` (`controls.tenant_isolation`); `maverick/safety/secret_detector.py` |
 | C1.1 Access boundaries for confidential data | Capability path/host scopes; tool ACLs | Implemented (opt-in) | `maverick/capability.py` (`allow_paths`/`allow_hosts`) |
-| C1.1 Encryption at rest | AES-256-GCM authenticated encryption of sensitive local stores (also CC6.7); opt-in, implied by enterprise mode | Implemented (opt-in) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
+| C1.1 Encryption at rest | AES-256-GCM authenticated encryption of sensitive local stores (also CC6.7); **on by default** (secure-by-default), forced by compliance floors | Implemented (on by default) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
 | C1.2 Disposes of confidential information | **GDPR erase** (scrub/delete user + re-sign chain); audit retention | Implemented | `maverick/audit/erase.py`, `retention.py` |
 
 ## P — Privacy
@@ -146,7 +146,7 @@ This is Maverick's strongest area.
 The Privacy category mirrors the AICPA Privacy Management Framework; most of it
 is policy + notice, with a few technical anchors.
 
-| TSC | Maverick control | Status | Evidence |
+| TSC | Lightwork control | Status | Evidence |
 | --- | --- | --- | --- |
 | P1 Notice | EU AI Act Art. 50 first-turn AI disclosure | Partial | `maverick/compliance.py` (`first_turn_disclosure`) |
 | P2 Choice & consent | Consent/HITL gating for destructive actions | Implemented | `maverick/safety/consent.py` |
@@ -226,13 +226,24 @@ print(json.dumps(collect_soc2_evidence(), indent=2))"
 ```
 
 A SOC 2-ready deployment should show `capability_enforcement`,
-`tenant_isolation`, and `usage_quotas` as `enabled`, and `audit_log` as `ok`
-with `audit_signing_key` present. Note that `audit_log` is only `ok` when audit
-signing is turned on (`[audit] sign = true` / `MAVERICK_AUDIT_SIGN=1`) and the
-per-day chains plus cross-file anchor ledger verify cleanly; with
-signing off the log exists but is reported `unsigned` — append-only, but not
-cryptographically tamper-evident. So OIDC and audit signing both default off and
-must be enabled (alongside capabilities/tenancy/quotas) for a SOC 2 posture.
+`tenant_isolation`, `usage_quotas`, and `oidc_auth` as `enabled`,
+`encryption_at_rest` as `enabled`, and `audit_log` as `ok` with
+`audit_signing_key` present.
+
+At-rest encryption and audit signing **default ON** (secure-by-default —
+`maverick.security_defaults.secure_by_default`), unless explicitly disabled
+(`MAVERICK_SECURE_DEFAULT=0`, or the per-control knobs `[encryption] at_rest` /
+`[audit] sign`). So on a fresh install `encryption_at_rest` reports `enabled`, and
+once the audit log has rows they are signed and the per-day chains plus cross-file
+anchor ledger verify `ok` (the log reads `empty` only until the first write, and
+`audit_signing_key` becomes present once the first signed row is written). With
+signing explicitly off the log is reported `unsigned` — append-only, but not
+cryptographically tamper-evident.
+
+The deployment-specific controls that would break the zero-config happy path stay
+opt-in and must be turned on for a full SOC 2 posture: `capability_enforcement`,
+`tenant_isolation`, `usage_quotas`, and `oidc_auth` (OIDC would otherwise lock out
+the local single-user dashboard).
 
 > **Follow-on (not in this change):** a `maverick soc2` CLI command that prints
 > this snapshot (and exits non-zero if required controls are not `enabled`) is a

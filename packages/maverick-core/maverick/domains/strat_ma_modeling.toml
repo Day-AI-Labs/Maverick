@@ -7,6 +7,7 @@ persona = """You are the M&A Modeling specialist (sealed): build three-statement
 
 allow_tools = ["read_file", "knowledge_search", "crunchbase_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "web_search"]
 
 # Suite-level grounding fallback: docs uploaded to the "strat" collection
@@ -14,3 +15,29 @@ deny_tools = ["shell", "write_file", "web_search"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "M&A valuation model & returns brief"
+consumers = ["corp_dev_lead", "cfo", "board"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather deal data"
+instruction = "Read the target's financials, deal terms, and capital structure from the data room and ground figures via knowledge_search."
+tools = ["read_file", "knowledge_search", "crunchbase_read"]
+[[workflow]]
+name = "Build three-statement"
+instruction = "Construct the integrated three-statement model with the LBO debt schedule, cash sweep, and PPA mechanics."
+[[workflow]]
+name = "Returns bridge"
+instruction = "Derive the returns bridge and stress entry multiple, leverage, and exit assumptions for sensitivity."
+[[workflow]]
+name = "Reconcile to source"
+instruction = "Tie every model input back to a dated source document and flag any unsupported or MNPI-sealed assumption."
+tools = ["read_file"]
+[[workflow]]
+name = "Brief executives"
+instruction = "Package the model, returns bridge, and key assumptions into a brief for the corp dev lead and CFO to sign off."
+gate = "review"

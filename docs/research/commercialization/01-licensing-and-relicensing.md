@@ -1,4 +1,4 @@
-# Licensing & Relicensing Strategy for the Maverick Commercial Pivot
+# Licensing & Relicensing Strategy for the Lightwork Commercial Pivot
 
 > Adversarial teardown #01 (commercialization track). Date: 2026-06-06.
 > Scope: what "killing OSS" can and cannot buy us, the real license menu for a
@@ -29,7 +29,7 @@
    as the moat"). Going dark would destroy the differentiator you're pivoting *toward*.
 
 3. **The enforceable moat is the trademark, not the license.** The code is forkable;
-   the name "Maverick," the marks, and the right to say "the official build" are not.
+   the name "Lightwork," the marks, and the right to say "the official build" are not.
    That is the lever — and today there is **no trademark notice anywhere in the repo**
    (grep for `trademark|™|®` across `*.md`/`*.toml` is negative).
 
@@ -44,7 +44,7 @@ add anti-SaaS-reseller terms going forward.
 prevent third parties from continuing to distribute the old versions; "make the
 code private" — it is mirrored, on PyPI, and likely already cloned. The only
 defenses against a fork are *velocity* (out-run it), *trademark* (it can't be
-called Maverick), and *the commercial layer never being open in the first place*.
+called Lightwork), and *the commercial layer never being open in the first place*.
 
 ## The real options (hard comparison for a compliance/security product)
 
@@ -120,11 +120,11 @@ permissive commit. It has happened every time a notable project did this:
 
 ## Trademark as the real enforcement lever
 
-The license governs copying; the **trademark** governs *calling it Maverick*. This
+The license governs copying; the **trademark** governs *calling it Lightwork*. This
 is the durable moat and it is currently unguarded:
 - **No `™`/`®`/trademark notice or policy exists in the repo.** Add a `TRADEMARK.md`
-  and notices; **file a USPTO application** for "Maverick" (and the logo) in the
-  relevant IT/SaaS classes (likely Class 9 + 42) **[verify availability — "Maverick"
+  and notices; **file a USPTO application** for "Lightwork" (and the logo) in the
+  relevant IT/SaaS classes (likely Class 9 + 42) **[verify availability — "Lightwork"
   is a common word; the mark may need to be the full product/wordmark or a stylized
   form, and clearance search is essential]**.
 - Publish a trademark-use policy: forks may use the code (per license) but **may not
@@ -194,7 +194,7 @@ and trademark-protected.
    restriction, best developer goodwill, strong fork resistance). Fall back to **BSL
    1.1** if you need an explicit "no competing managed service" grant with a longer
    change window. **Reject SSPL and fully-proprietary.**
-2. **Make trademark the enforcement lever now.** Clearance-search and file "Maverick"
+2. **Make trademark the enforcement lever now.** Clearance-search and file "Lightwork"
    (wordmark + logo) with the USPTO **[verify mark availability]**; add `TRADEMARK.md`
    + notices + a use policy ("fork the code, not the name"). This is the real moat.
 3. **Never publish the commercial layer under MIT.** Open-core's safety is that the
@@ -207,7 +207,7 @@ and trademark-protected.
    (b) Re-license-forward only the *new* commercial modules (FSL/BSL); leave the kernel MIT.
    (c) File the trademark + publish the policy *before* announcing, so forks can't grab the name.
    (d) Replace CONTRIBUTING terms with a CLA; add CLA-bot gate.
-   (e) Announce as "new commercial governance tier," **not** "Maverick is no longer open" —
+   (e) Announce as "new commercial governance tier," **not** "Lightwork is no longer open" —
        the framing decides whether you get OpenTofu'd.
    (f) Keep kernel velocity high so any snapshot fork falls behind on its own.
 

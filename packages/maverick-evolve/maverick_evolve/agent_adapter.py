@@ -27,6 +27,7 @@ import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+from .adopt import _toml_value as _toml_scalar
 from .eval_harness import EvalCase
 from .loop import evolve_continuous
 
@@ -67,14 +68,6 @@ def overlay_for(config: dict) -> dict:
             "disagreement_high": float(config["autonomy.disagreement_high"]),
         }
     return overlay
-
-
-def _toml_scalar(v) -> str:
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, (int, float)):
-        return str(v)
-    return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def render_overlay_toml(config: dict) -> str:

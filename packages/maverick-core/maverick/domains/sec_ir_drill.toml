@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "IR tabletop drill scorecard"
+consumers = ["security_lead", "incident_commander"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Scope scenario"
+instruction = "Pull the incident-response plan and prior drill records to select an injection scenario and the roles being tested."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build inject timeline"
+instruction = "Draft the timed inject sequence and the expected escalation, containment, and communication actions each role should take."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Score responses"
+instruction = "Compare observed participant actions against the playbook and SLA timers from the response log to score each phase."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Document gaps"
+instruction = "Write up missed steps, ownership confusion, and tooling gaps with severity and a recommended owner for each."
+[[workflow]]
+name = "Hand to lead"
+instruction = "Route the drill scorecard and gap list to the security lead for sign-off and remediation assignment."
+gate = "review"

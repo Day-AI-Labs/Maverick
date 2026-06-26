@@ -34,6 +34,7 @@ import os
 from .base import (
     Channel,
     IncomingMessage,
+    add_webhook_body_limit,
     is_allowed,
     normalize_allowlist,
     public_url_for,
@@ -107,6 +108,7 @@ class WhatsAppChannel(Channel):
         self._twilio = TwilioClient(self.account_sid, self.auth_token)
         self._validator = RequestValidator(self.auth_token)
         self._app = FastAPI()
+        add_webhook_body_limit(self._app)
         self._app.post("/webhook/whatsapp")(self._handle_webhook)
         self._uvicorn_server = None
 
@@ -157,7 +159,7 @@ class WhatsAppChannel(Channel):
         msg = IncomingMessage(user_id=From, text=Body, channel="whatsapp")
         try:
             reply = await self.dispatch_text(msg)
-        except Exception as e:  # pragma: no cover
+        except Exception:  # pragma: no cover
             log.exception("handler error")
             # The goal didn't complete -- release the claim so Twilio's retry
             # re-processes instead of being deduped against a failed run.
@@ -167,7 +169,9 @@ class WhatsAppChannel(Channel):
                 except Exception:  # pragma: no cover
                     log.warning("WhatsApp dedup release failed")
             try:
-                await self.send(From, f"⚠ error: {e}")
+                # Generic text only; the raw exception (possible secret) is
+                # logged above, never sent back to the user.
+                await self.send(From, "⚠ An internal error occurred.")
             except Exception:  # pragma: no cover
                 log.exception("WhatsApp error-reply send failed")
             return Response(content="", media_type="text/xml")

@@ -217,7 +217,7 @@ production LLMOps, and the trade/ESG regulatory wave.
 | `ops_supply_resilience_reshoring` | Resilience strategy — dual/multi-sourcing design, supplier financial-health screen, tariff/reshoring scenarios, concentration risk. | `ops_procurement` · low | Never disqualifies a supplier or changes sourcing; sanctions/forced-labor hits to a human. The supplier-risk pack scores a given supplier; this is forward strategy. |
 | `ops_carbon_dpp_compliance` | Product-level carbon + EU passports — CBAM embedded-emissions, CSRD/ESRS product data, EU Digital Product Passport (ESPR). | `ops_ehs` · low | Published/filed figures go through finance ESG + a human files. The sustainability pack is site-level Scope 1/2/3; product-level regulatory dossiers are unowned. |
 
-### Platform / meta — operating Maverick's own machinery (7) · new `plat_` family
+### Platform / meta — operating Lightwork's own machinery (7) · new `plat_` family
 
 Seats that operate the platform's **own** skills / evolve / knowledge / fleet
 machinery — described in `self-extending-agent-factory.md` but with no pack. The
@@ -301,7 +301,7 @@ here:**
    rule applies. This is the #1 dedup risk and it is structural.
 2. **The AI/ML governance cluster.** model-card, bias-eval, ai-inventory,
    prompt-red-team, eval-harness, MLOps **all ship** (verified on disk). The only
-   net-new meta-seats operate Maverick's *own* evolve/skills/fleet machinery
+   net-new meta-seats operate Lightwork's *own* evolve/skills/fleet machinery
    (Part 2 `plat_*`), not customer ML governance.
 3. **Per-statute / per-jurisdiction clone packs.** 17 HR employment packs, ~15
    legal privacy-law packs, country-VAT/GST packs already exist. These are
@@ -348,7 +348,7 @@ Synthesizing the council's own priority calls:
    transposition deadline mid-2026), `finance_going_concern`, `gtm_trust_center`
    and `gtm_consent_ledger_ops` (the cardinal outbound control made operational).
 4. **The dogfood + reliability seats.** `pe_llmops_observability` and
-   `pe_sre_incident_commander` (Maverick is itself an AI product running a fleet),
+   `pe_sre_incident_commander` (Lightwork is itself an AI product running a fleet),
    then `ops_control_tower`.
 5. **New verticals — start with `cap_` (capital markets/asset-management)**, the
    biggest honest functional gap, riding the proven MNPI information-barrier seals.

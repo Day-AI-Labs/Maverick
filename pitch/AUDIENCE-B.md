@@ -1,8 +1,8 @@
-# Maverick — Strategic Overview (Audience B)
+# Lightwork — Strategic Overview (Audience B)
 
 > **Audience:** strategic acquirer / corporate development / strategic partner
 > (an incumbent enterprise platform, GRC/ITSM vendor, or systems integrator).
-> **Goal:** frame Maverick as the governance + provable-learning layer the
+> **Goal:** frame Lightwork as the governance + provable-learning layer the
 > incumbent is missing, and make the build-vs-buy / acquire-now case.
 > **Format:** 12 slides. On-slide copy (terse) + visual direction.
 > **Honesty rule:** every number here is real and verifiable from this repo, or
@@ -13,7 +13,7 @@
 
 ## Slide 1 — Title
 **On slide:**
-- **Maverick** — *by Daybreak Labs*
+- **Lightwork** — *by Daybreak Labs*
 - *The governance & provable-learning layer for the enterprise AI workforce.*
 - Tag (top-right): **Strategic overview · Confidential**
 - `[FILL: contact]`
@@ -42,7 +42,7 @@
 
 ---
 
-## Slide 4 — What Maverick is
+## Slide 4 — What Lightwork is
 **On slide:**
 - **A governed agent runtime — not a chatbot, not a framework.**
 - Every action passes **one chokepoint**: capability → governance policy (allow / deny / require-human) → safety shield → hard budget → tamper-evident audit.
@@ -75,7 +75,7 @@
 
 ## Slide 7 — Strategic fit
 **On slide:**
-- **Overlay wedge:** "bring your existing agents — Agentforce / Copilot / LangChain — **under Maverick governance**." **Fleet memory already governs external agents.**
+- **Overlay wedge:** "bring your existing agents — Agentforce / Copilot / LangChain — **under Lightwork governance**." **Fleet memory already governs external agents.**
 - Instant **enterprise-trust + compliance** story; cross-sell into **regulated verticals** (BFSI first); differentiation vs your competitors.
 - `[FILL: the specific fit with <acquirer> — product, channel, or vertical synergy]`
 
@@ -98,7 +98,7 @@
 - Low-friction to fold into your stack: **8 PyPI packages · Docker / K8s / VPS · MCP server** (drives from Claude Code / Cursor / any MCP client) **· GitHub Action · plugin SDK**.
 - Deliverables route into **Salesforce / ServiceNow** (signed, audited).
 
-**Visual:** Integration surface — your stack ← Maverick (MCP / SDK / packages).
+**Visual:** Integration surface — your stack ← Lightwork (MCP / SDK / packages).
 
 ---
 

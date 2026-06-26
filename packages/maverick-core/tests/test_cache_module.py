@@ -7,7 +7,7 @@ from pathlib import Path
 def test_cache_stats_shape(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("HOME", str(tmp_path))
     from maverick import cache
-    from maverick.file_cache import clear_read_cache, read_file_cached
+    from maverick.cache.file import clear_read_cache, read_file_cached
     clear_read_cache()
     f = tmp_path / "x.txt"
     f.write_text("hello")
@@ -22,7 +22,7 @@ def test_cache_stats_shape(monkeypatch, tmp_path: Path):
 
 def test_cache_purge_files(tmp_path: Path):
     from maverick import cache
-    from maverick.file_cache import clear_read_cache, read_cache_stats, read_file_cached
+    from maverick.cache.file import clear_read_cache, read_cache_stats, read_file_cached
     clear_read_cache()
     f = tmp_path / "x.txt"
     f.write_text("hello world")
@@ -37,7 +37,7 @@ def test_cache_purge_files(tmp_path: Path):
 
 def test_cache_purge_repo_map(tmp_path: Path):
     from maverick import cache
-    from maverick.file_cache import clear_repo_cache, repo_map_cached
+    from maverick.cache.file import clear_repo_cache, repo_map_cached
     clear_repo_cache()
     (tmp_path / "f.py").write_text("x")
     repo_map_cached(tmp_path, lambda: "MAP")
@@ -62,7 +62,7 @@ def test_cache_purge_skill_embeddings(monkeypatch, tmp_path: Path):
 def test_cache_purge_all(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("HOME", str(tmp_path))
     from maverick import cache
-    from maverick.file_cache import clear_read_cache, read_cache_stats, read_file_cached
+    from maverick.cache.file import clear_read_cache, read_cache_stats, read_file_cached
     clear_read_cache()
     f = tmp_path / "y.txt"
     f.write_text("data")

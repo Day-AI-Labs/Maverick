@@ -21,3 +21,24 @@ deliverable = "Access recertification register"
 consumers = ["control_owner", "risk_officer"]
 cadence = "quarterly"
 gate = "approval"
+
+[[workflow]]
+name = "Pull entitlements"
+instruction = "Read current human and agent entitlements, roles, and group memberships from the identity systems in scope."
+tools = ["okta_read", "sailpoint_read", "read_file"]
+[[workflow]]
+name = "Map to owners"
+instruction = "Map each entitlement to its accountable owner and the access policy or role definition it claims to satisfy."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Test least-privilege & SoD"
+instruction = "Compare granted access against need-to-know and segregation-of-duties rules and flag excess, dormant, or toxic-combination grants."
+tools = ["sailpoint_read", "okta_read"]
+[[workflow]]
+name = "Draft register"
+instruction = "Draft the recertification register listing each grant with a keep, revoke, or investigate recommendation and supporting evidence."
+tools = ["read_file"]
+[[workflow]]
+name = "Owner recertifies"
+instruction = "Route the register to the control owner to certify retentions and authorize revocations, which only the human executes."
+gate = "approval"

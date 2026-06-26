@@ -109,8 +109,9 @@ def adopt_best(
     """Write the adopted pack into ``out_dir`` (default: alongside the pack).
 
     Returns the written path, or ``None`` when the best config changes
-    nothing. An existing pack at the destination is backed up to ``.bak``
-    first, so adoption is reversible with a rename.
+    nothing. The destination's PRISTINE pack is preserved to ``.bak`` -- written
+    ONCE and never clobbered -- so adoption is always reversible to the original
+    with a rename, even after adopting repeatedly into the same destination.
     """
     pack_path = Path(pack_path)
     dest_dir = Path(out_dir) if out_dir is not None else pack_path.parent
@@ -123,9 +124,24 @@ def adopt_best(
     if not changes:
         return None
     dest_dir.mkdir(parents=True, exist_ok=True)
-    if dest.exists():
-        shutil.copy2(dest, dest.with_suffix(dest.suffix + ".bak"))
-    dest.write_text(render_pack(adopted), encoding="utf-8")
+    body = render_pack(adopted)
+    # Serialize the whole back-up + write across processes: the .bak guard
+    # (dest.exists() and not bak.exists()) is a TOCTOU, and the write used a
+    # fixed ".tmp" -- two concurrent adoptions of the same dest would race both.
+    from maverick.file_lock import atomic_write_text, cross_process_lock
+    with cross_process_lock(dest):
+        # Back up the PRISTINE pack once and never clobber it. With the default
+        # out_dir (dest == pack_path), a second adoption used to copy the
+        # already-adopted V1 over the .bak, destroying the original pack -- so the
+        # docstring's "reversible with a rename" silently held for only one
+        # adoption. Writing .bak once keeps the shipped pack recoverable forever.
+        bak = dest.with_suffix(dest.suffix + ".bak")
+        if dest.exists() and not bak.exists():
+            shutil.copy2(dest, bak)
+        # Atomic write: a crash or short write mid-replace must not leave a
+        # department's live pack half-written/corrupt -- the dest is always
+        # either the old pack (recoverable from .bak) or the complete new one.
+        atomic_write_text(dest, body)
     return dest
 
 

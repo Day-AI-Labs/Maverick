@@ -18,3 +18,24 @@ deliverable = "Underwriting file"
 consumers = ["underwriter"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Intake submission"
+instruction = "Read the broker submission, applications, and supplemental questionnaires for the risk being quoted."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull loss runs"
+instruction = "Retrieve currently-valued loss runs and prior-term claims history and confirm they cover the required experience period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Build exposure base"
+instruction = "Compile exposure data such as payroll, sales, property values, or schedules and reconcile totals against the application."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Identify missing documents, stale valuations, or unexplained loss spikes the underwriter will need before deciding."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Deliver to underwriter"
+instruction = "Route the decision-ready underwriting file to the underwriter for review."
+gate = "review"

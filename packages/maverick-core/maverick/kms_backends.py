@@ -1,8 +1,8 @@
 """Cloud KMS backends (BYOK) — the KEK lives in the customer's HSM/KMS.
 
-The default :class:`maverick.tenant_kms.LocalKMS` derives the KEK in-process. A
+The default :class:`maverick.tenant.kms.LocalKMS` derives the KEK in-process. A
 regulated client that mandates **customer-managed keys** wants the KEK to never
-leave their KMS/HSM; these backends implement the :class:`~maverick.tenant_kms.KMS`
+leave their KMS/HSM; these backends implement the :class:`~maverick.tenant.kms.KMS`
 ``wrap``/``unwrap`` Protocol by delegating to the cloud KMS Encrypt/Decrypt API,
 binding the tenant ``context`` as the KMS encryption context / AAD so a wrapped
 DEK can't be unwrapped under the wrong tenant/purpose.
@@ -66,8 +66,8 @@ class AwsKmsKEK:
     EncryptionContext; ``unwrap`` = ``kms:Decrypt``."""
 
     def __init__(self, *, key_id: str | None = None, region: str | None = None,
-                 client: Any | None = None):
-        cfg = _kms_cfg()
+                 client: Any | None = None, cfg: dict | None = None):
+        cfg = cfg if cfg is not None else _kms_cfg()
         self.key_id = _require(key_id or os.environ.get("MAVERICK_KMS_KEY_ID")
                                or cfg.get("key_id"), "key_id")
         self.region = region or cfg.get("region") or os.environ.get("AWS_REGION")
@@ -101,8 +101,9 @@ class GcpKmsKEK:
     """KEK in Google Cloud KMS. ``wrap``/``unwrap`` use Encrypt/Decrypt with the
     tenant context as ``additional_authenticated_data``."""
 
-    def __init__(self, *, key_id: str | None = None, client: Any | None = None):
-        cfg = _kms_cfg()
+    def __init__(self, *, key_id: str | None = None, client: Any | None = None,
+                 cfg: dict | None = None):
+        cfg = cfg if cfg is not None else _kms_cfg()
         # GCP uses the full crypto-key resource name as the id.
         self.key_id = _require(key_id or os.environ.get("MAVERICK_KMS_KEY_ID")
                                or cfg.get("key_id"), "key_id")
@@ -140,8 +141,8 @@ class VaultTransitKMS:
 
     def __init__(self, *, key_id: str | None = None, address: str | None = None,
                  token: str | None = None, mount: str | None = None,
-                 client: Any | None = None):
-        cfg = _kms_cfg()
+                 client: Any | None = None, cfg: dict | None = None):
+        cfg = cfg if cfg is not None else _kms_cfg()
         self.key_id = _require(key_id or os.environ.get("MAVERICK_KMS_KEY_ID")
                                or cfg.get("key_id"), "key_id")
         self.address = address or cfg.get("address") or os.environ.get("VAULT_ADDR")
@@ -178,19 +179,22 @@ class VaultTransitKMS:
 _PROVIDERS = {"aws": AwsKmsKEK, "gcp": GcpKmsKEK, "vault": VaultTransitKMS}
 
 
-def build_cloud_kms(provider: str):
+def build_cloud_kms(provider: str, cfg: dict | None = None):
     """Construct the cloud KMS backend for ``provider`` (aws/gcp/vault).
 
-    Raises :class:`EncryptionUnavailable` for an unknown provider (fail-closed —
-    never silently fall back to in-process keys). Construction is cheap; the SDK
-    client is built lazily on first wrap/unwrap.
+    ``cfg`` is an explicit ``[kms]`` section (key_id/region/address/mount). Pass
+    a tenant's resolved config for deterministic per-tenant BYOK — without it the
+    backend reads the ambient ``load_config()`` (which depends on the active
+    tenant context). Raises :class:`EncryptionUnavailable` for an unknown
+    provider (fail-closed — never silently fall back to in-process keys).
+    Construction is cheap; the SDK client is built lazily on first wrap/unwrap.
     """
     cls = _PROVIDERS.get((provider or "").strip().lower())
     if cls is None:
         raise EncryptionUnavailable(
             f"[kms] provider={provider!r} is not a known backend "
             f"(expected one of: local, {', '.join(sorted(_PROVIDERS))})")
-    return cls()
+    return cls(cfg=cfg)
 
 
 __all__ = ["AwsKmsKEK", "GcpKmsKEK", "VaultTransitKMS", "build_cloud_kms"]

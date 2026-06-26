@@ -28,11 +28,10 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
+from ._envparse import env_bool
 from .paths import data_dir
 
 log = logging.getLogger(__name__)
-
-_TRUE = {"1", "true", "yes", "on"}
 
 # Serializes the ledger read-modify-write across threads in this process; the
 # flock below extends that across processes (dashboard + serve sharing a tenant
@@ -245,7 +244,7 @@ def _quota_config() -> dict:
         cfg = {}
 
     enforce = bool(cfg.get("enforce", False))
-    if os.environ.get("MAVERICK_QUOTA_ENFORCE", "").strip().lower() in _TRUE:
+    if env_bool("MAVERICK_QUOTA_ENFORCE"):
         enforce = True
 
     def _cap(env_name: str, cfg_key: str) -> float:

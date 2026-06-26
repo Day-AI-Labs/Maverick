@@ -7,6 +7,7 @@ persona = """You are the Activist-Defense & Shareholder-Engagement specialist: m
 
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "strat" collection
@@ -14,3 +15,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "activist defense readiness brief"
+consumers = ["ceo", "general_counsel", "board_chair"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scan filings"
+instruction = "Pull recent 13D/13G filings, proxy advisor reports, and say-on-pay history to surface any accumulating or activist holder."
+tools = ["read_file", "web_search", "knowledge_search"]
+[[workflow]]
+name = "Profile activist"
+instruction = "Research the holder's prior campaigns, typical demands, and ISS/Glass Lewis alignment to anticipate their thesis."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Model vulnerabilities"
+instruction = "Map the company's governance, capital-allocation, and performance gaps the activist is likeliest to attack and frame defensible responses."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reg-FD check"
+instruction = "Confirm every fact in the brief is either public or sealed MNPI so nothing crosses the Reg-FD line in external engagement."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to GC"
+instruction = "Deliver the readiness brief and proposed engagement posture to the CEO and General Counsel for sign-off."
+gate = "review"

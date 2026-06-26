@@ -17,10 +17,17 @@ another.
 from __future__ import annotations
 
 import json
+import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# Concurrent runs of the same fleet append to one ``<name>.runs.json`` index.
+# Serialize the read-modify-write so simultaneous dispatches don't clobber each
+# other's entries (in-process; the dashboard runs goals as background threads).
+_runs_lock = threading.Lock()
 
 # Fleet + agent names become file + principal components, so constrain them to a
 # safe, predictable charset (blocks path traversal and audit-id ambiguity).
@@ -38,9 +45,14 @@ class FleetAgent:
     name: str
     role: str
     description: str = ""
+    domain: str = ""   # optional specialist pack; binds the agent to that
+    #                    pack's capability envelope at run time (department deploys)
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "role": self.role, "description": self.description}
+        d = {"name": self.name, "role": self.role, "description": self.description}
+        if self.domain:
+            d["domain"] = self.domain
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> FleetAgent:
@@ -50,6 +62,7 @@ class FleetAgent:
             name=str(d.get("name", "")),
             role=str(d.get("role", "")),
             description=str(d.get("description", "") or ""),
+            domain=str(d.get("domain", "") or ""),
         )
 
 
@@ -173,19 +186,31 @@ def load_runs(name: str, *, tenant: str | None = "__active__") -> list[dict]:
 def record_run(
     name: str, agent: str, goal_id: int, *, tenant: str | None = "__active__"
 ) -> None:
-    """Append a ``{agent, goal_id, ts}`` entry to the fleet's run index (0600)."""
+    """Append a ``{agent, goal_id, ts}`` entry to the fleet's run index (0600).
+
+    Atomic under ``_runs_lock`` + a temp-file rename, so concurrent runs of the
+    same fleet never lose each other's entries to a read-modify-write race."""
     if not valid_name(name):
         raise ValueError(f"invalid fleet name: {name!r}")
-    runs = load_runs(name, tenant=tenant)
-    runs.append({"agent": agent, "goal_id": goal_id, "ts": time.time()})
-    d = fleets_dir(tenant=tenant)
-    d.mkdir(parents=True, exist_ok=True)
-    import os as _os
-    path = runs_path(name, tenant=tenant)
-    # 0600 from creation: the index names principals + their work.
-    fd = _os.open(path, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
-    with _os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(runs, f, indent=2)
+    with _runs_lock:
+        runs = load_runs(name, tenant=tenant)
+        runs.append({"agent": agent, "goal_id": goal_id, "ts": time.time()})
+        d = fleets_dir(tenant=tenant)
+        d.mkdir(parents=True, exist_ok=True)
+        path = runs_path(name, tenant=tenant)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        # 0600 from creation: the index names principals + their work. Write to a
+        # temp file then atomically replace, so a reader never sees a torn write.
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(runs, f, indent=2)
+            os.replace(tmp, path)
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 __all__ = [

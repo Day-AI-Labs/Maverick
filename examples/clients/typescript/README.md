@@ -1,7 +1,7 @@
 # TypeScript MCP client example
 
 The runnable version of [`docs/clients/typescript-quickstart.md`](../../../docs/clients/typescript-quickstart.md),
-and the CI smoke test for Maverick's cross-language MCP surface.
+and the CI smoke test for Lightwork's cross-language MCP surface.
 
 `client.ts` spawns `maverick mcp` (stdio JSON-RPC) and runs the documented
 client flow — `initialize` → `tools/list` → a no-LLM `tools/call`
@@ -19,9 +19,9 @@ npm run check
 Expected output ends with:
 
 ```
-Maverick exposes 8 tools: maverick_answer, maverick_fact_set, ...
+Lightwork exposes 8 tools: maverick_answer, maverick_fact_set, ...
 maverick_facts_get round-trip OK
-OK: TypeScript client drove Maverick over MCP end-to-end
+OK: TypeScript client drove Lightwork over MCP end-to-end
 ```
 
 CI runs exactly this on every change to the MCP server or the clients (see

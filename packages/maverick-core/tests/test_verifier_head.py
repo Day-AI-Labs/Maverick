@@ -43,6 +43,41 @@ def test_predict_and_save_load_roundtrip(tmp_path):
     assert abs(reloaded.promise(x) - head.promise(x)) < 1e-9
 
 
+def test_save_is_atomic_no_torn_read(tmp_path):
+    """A serving process re-loading the head while a training run writes it must
+    never see a half-written file. With the atomic temp+replace save, a reader
+    concurrent with repeated saves always loads a valid head."""
+    import threading
+
+    from maverick.verifier_head import train
+
+    p = tmp_path / "head.json"
+    train(_linear_examples(20), seed=3).save(p)  # seed a valid file
+    errors: list[Exception] = []
+    stop = threading.Event()
+
+    def writer():
+        for s in range(150):
+            train(_linear_examples(20), seed=s).save(p)
+
+    def reader():
+        while not stop.is_set():
+            try:
+                LinearHead.load(p)  # must never see a torn file
+            except (ValueError, OSError) as e:
+                errors.append(e)
+
+    rt = threading.Thread(target=reader)
+    wt = threading.Thread(target=writer)
+    rt.start()
+    wt.start()
+    wt.join()
+    stop.set()
+    rt.join()
+    assert not errors, errors[:3]
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
 def test_empty_examples_is_safe():
     from maverick.verifier_head import discrimination, train
     head = train([])

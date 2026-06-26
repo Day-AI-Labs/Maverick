@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Agent Trust · Lightwork{% endblock %}
+{% block content %}
+  <h1 class="page-title">Agent trust</h1>
+  <p class="page-subtitle">Every external agent allowed to interact with this deployment — the tools and risk it may reach, its budget ceiling, and its lifecycle status. The cross-agent permission graph.</p>
+
+  <div class="panel">
+    <p>
+      Enforcement:
+      {% if enforced %}<span class="badge active">enforced</span>{% else %}<span class="badge">advisory (registry only)</span>{% endif %}
+      {% if not available %}<span class="badge danger">registry unavailable</span>{% endif %}
+    </p>
+  </div>
+
+  {% if graph and graph.nodes %}
+  <div class="panel">
+    <svg viewBox="0 0 {{ graph.width }} {{ graph.height }}" width="100%"
+         style="max-width:{{ graph.width }}px" role="img"
+         aria-label="Agent trust permission graph">
+      <defs>
+        <marker id="tg-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"></path>
+        </marker>
+      </defs>
+      {% for n in graph.nodes %}
+      <line x1="{{ graph.cx }}" y1="{{ graph.cy }}" x2="{{ n.x }}" y2="{{ n.y }}"
+            stroke="#94a3b8" stroke-width="1.5"
+            {% if n.outbound %}marker-end="url(#tg-arrow)"{% endif %}
+            {% if n.inbound %}marker-start="url(#tg-arrow)"{% endif %}></line>
+      {% endfor %}
+      {% for n in graph.nodes %}
+      <circle cx="{{ n.x }}" cy="{{ n.y }}" r="9" fill="{{ n.color }}"></circle>
+      <text x="{{ n.x }}" y="{{ n.y - 14 }}" text-anchor="middle" font-size="12"
+            fill="currentColor">{{ n.id }}</text>
+      {% endfor %}
+      <circle cx="{{ graph.cx }}" cy="{{ graph.cy }}" r="13" fill="#0f172a"
+              stroke="#475569" stroke-width="1.5"></circle>
+      <text x="{{ graph.cx }}" y="{{ graph.cy + 31 }}" text-anchor="middle"
+            font-size="12" fill="currentColor">Maverick</text>
+    </svg>
+    <p class="muted" style="margin-top:.5rem">
+      Arrow into Maverick = the agent may initiate inbound; arrow out = Maverick may dial it.
+      <span style="color:#2563eb">&#9679;</span> bounded ·
+      <span style="color:#d97706">&#9679;</span> high-risk ceiling ·
+      <span style="color:#dc2626">&#9679;</span> revoked/expired
+    </p>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    {% if agents %}
+    <table>
+      <thead>
+        <tr><th>Agent</th><th>Direction</th><th>Allowed tools</th><th>Denied</th><th>Max risk</th><th>Budget</th><th>Data scopes</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for a in agents %}
+        <tr>
+          <td><strong>{{ a.id }}</strong></td>
+          <td><span class="badge">{{ a.direction }}</span></td>
+          <td>{{ a.allow_tools | join(', ') }}</td>
+          <td>{{ a.deny_tools | join(', ') or '—' }}</td>
+          <td><span class="badge {{ 'danger' if a.max_risk == 'high' else '' }}">{{ a.max_risk }}</span></td>
+          <td>
+            {% if a.max_dollars is not none %}${{ '%.2f' | format(a.max_dollars) }}{% else %}—{% endif %}
+            {% if a.max_wall_seconds is not none %} · {{ a.max_wall_seconds | int }}s{% endif %}
+          </td>
+          <td>{{ a.data_scopes | join(', ') or '—' }}</td>
+          <td>
+            {% if a.revoked %}<span class="badge danger">revoked</span>
+            {% elif a.active %}<span class="badge active">{{ a.status }}</span>
+            {% else %}<span class="badge danger">{{ a.status }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No external agents are registered. Add them under <code>[agent_trust]</code> in <code>~/.maverick/config.toml</code> to govern federation / A2A / MCP peers with pinned keys, tool/risk ceilings, and per-run budgets.</p>
+    {% endif %}
+  </div>
+{% endblock %}

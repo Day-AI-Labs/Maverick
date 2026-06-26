@@ -199,3 +199,17 @@ def test_registered():
 
     names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
     assert "lsp_bridge" in names
+
+
+def test_close_reaps_child_and_closes_pipes(tmp_path):
+    # close() must reap the killed child (no zombie) and close the PIPE fds.
+    # A fresh server is spawned per query, so a leak here accumulates under fanout.
+    from pathlib import Path
+
+    session = lsp_bridge_module._LspSession(_fake_argv(), Path(tmp_path))
+    proc = session._proc
+    assert proc.poll() is None  # running before close
+    session.close()
+    assert proc.poll() is not None  # reaped (waited), not left a zombie
+    assert proc.stdin is None or proc.stdin.closed
+    assert proc.stdout is None or proc.stdout.closed

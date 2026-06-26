@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "account whitespace & expansion play"
+consumers = ["customer_success_manager", "account_executive"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull account health"
+instruction = "Read the account's usage, adoption, and health data from the CS platform."
+tools = ["read_file", "gainsight_read"]
+[[workflow]]
+name = "Map whitespace"
+instruction = "Identify unpenetrated products, seats, and modules against current entitlement to map whitespace."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Validate readiness"
+instruction = "Confirm adoption and renewal signals support expansion rather than churn risk before drafting a play."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Design expansion play"
+instruction = "Draft the prioritized expansion play with the value rationale, leaving pricing for the human gate."
+[[workflow]]
+name = "Route to CSM"
+instruction = "Hand the expansion play to the customer success manager for sign-off before any outreach."
+gate = "review"

@@ -93,6 +93,44 @@ def test_run_queued_goal_restores_explicit_capability(monkeypatch):
     )
 
 
+def test_run_queued_goal_attenuates_capability_by_worker_policy(monkeypatch):
+    """A queued grant is re-intersected with the worker's local policy when
+    enforcement is on — the queue boundary is not trusted to be least-privilege.
+    Here the worker's [security] denies ``shell`` and caps risk at ``low``, so a
+    broadened queued grant is narrowed down, never honoured as-is."""
+    seen = {}
+
+    def fake_run(*, goal_id, **kw):
+        seen.update(kw)
+        return "done"
+
+    monkeypatch.setattr(runner, "run_goal_in_thread", fake_run)
+    monkeypatch.setenv("MAVERICK_ENFORCE_CAPABILITIES", "1")
+    # Worker-local policy: deny shell, ceiling at low risk.
+    monkeypatch.setattr(
+        "maverick.safety.tool_acl.resolve_lists",
+        lambda **_kw: (set(), {"shell"}))
+    monkeypatch.setattr(
+        "maverick.safety.tool_acl.resolve_max_risk", lambda **_kw: "low")
+
+    out = qd.run_queued_goal({
+        "goal_id": 9,
+        "user_id": "alice",
+        "capability": {
+            "principal": "user:alice",
+            "allow_tools": ["shell", "safe_tool"],  # asks for shell
+            "deny_tools": [],
+            "max_risk": "high",                      # asks for high risk
+        },
+    })
+    assert out == "done"
+    cap = seen["capability"]
+    # The worker's deny + risk ceiling win: shell is not permitted, risk <= low.
+    assert cap.permits("shell") is False
+    assert "shell" in cap.deny_tools
+    assert cap.max_risk == "low"
+
+
 def test_run_queued_goal_executes_locally(monkeypatch):
     seen = {}
 

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "kit completeness & shortage report"
+consumers = ["production_supervisor", "materials_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Get work order"
+instruction = "Read the work order and its released BOM revision for the kit to be checked via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull picks"
+instruction = "Query the picked or staged quantities for each BOM line in the kit."
+tools = ["sql_query"]
+[[workflow]]
+name = "Match to BOM"
+instruction = "Compare staged quantities to BOM required quantities line by line and compute shortages."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag shortages"
+instruction = "Flag any short, missing, or wrong-revision component that would block release to the floor."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Release decision"
+instruction = "Route the completeness report to the production supervisor to confirm release or hold the kit."
+gate = "review"

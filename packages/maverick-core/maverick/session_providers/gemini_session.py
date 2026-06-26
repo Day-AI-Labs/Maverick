@@ -18,8 +18,8 @@ import hashlib
 import json
 import logging
 import re
+import secrets
 import time
-import uuid
 
 from ..budget import Budget
 from ..llm import LLMResponse
@@ -248,7 +248,12 @@ class GeminiSessionClient:
             at_token = self._ensure_at_token(client)
             params = {
                 "bl": "boq_assistant-bard-web-server_20260101.00_p0",
-                "_reqid": str(uuid.uuid4().int)[:7],
+                # Uniform 7-digit id. `str(uuid4().int)[:7]` took the LEADING
+                # digits of a 39-digit decimal, which are heavily biased (top
+                # digit almost always 1-3) -> far less than 7 digits of entropy
+                # and realistic in-session collisions that Gemini's batchexecute
+                # can reject (parser then returns "").
+                "_reqid": f"{secrets.randbelow(10_000_000):07d}",
                 "rt": "c",
             }
             resp = client.post(
@@ -318,7 +323,12 @@ class GeminiSessionClient:
 
             params = {
                 "bl": "boq_assistant-bard-web-server_20260101.00_p0",
-                "_reqid": str(uuid.uuid4().int)[:7],
+                # Uniform 7-digit id. `str(uuid4().int)[:7]` took the LEADING
+                # digits of a 39-digit decimal, which are heavily biased (top
+                # digit almost always 1-3) -> far less than 7 digits of entropy
+                # and realistic in-session collisions that Gemini's batchexecute
+                # can reject (parser then returns "").
+                "_reqid": f"{secrets.randbelow(10_000_000):07d}",
                 "rt": "c",
             }
             resp = await client.post(

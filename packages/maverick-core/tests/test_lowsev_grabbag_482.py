@@ -10,9 +10,9 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
-from maverick import file_cache
+from maverick.cache import file as file_cache
 from maverick.provider_health import ProviderStat
-from maverick.retry_classifier import ErrorClass, classify
+from maverick.retry.classifier import ErrorClass, classify
 from maverick.scheduler import CronError, next_run
 
 # ---------- cron Feb-29 across the skipped century ----------

@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "after-hours permit & variance tracker"
+consumers = ["project_manager", "field_superintendent"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Gather permits"
+instruction = "Read active noise variances and after-hours work permits to catalog each permit's scope, hours, and conditions."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map schedule"
+instruction = "Match planned after-hours and high-noise activities against the permits that authorize them."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Check conditions"
+instruction = "Verify each permit's conditions and expiration against the governing ordinance, looking up the rule when conditions are unclear."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Flag exposure"
+instruction = "Flag any planned work that falls outside permitted hours or whose permit is expiring before the activity completes."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "PM review"
+instruction = "Route the permit tracker and exposure list to the project manager before after-hours work is scheduled."
+gate = "review"

@@ -107,6 +107,10 @@ def config_path() -> Path:
 # inbound A2A delegate triggers ~6-10 full parses); this removes the redundant
 # I/O + tokenize while preserving exact semantics.
 _toml_cache: dict[str, tuple[int, int, dict]] = {}
+# Bound the cache so a deployment with many per-tenant config paths
+# (~/.maverick/tenants/<t>/config.toml) can't grow it without limit. Entries
+# are cheap to rebuild (a stat + parse), so a simple oldest-first cap is enough.
+_TOML_CACHE_MAX = 512
 
 
 def reset_config_cache() -> None:
@@ -138,6 +142,10 @@ def _read_toml_raw(path: Path) -> dict:
             path, type(e).__name__, e,
         )
         raw = {}
+    # Evict oldest entries first when over the cap (dicts preserve insertion
+    # order). Re-fetching ``key`` below keeps the just-read path resident.
+    while len(_toml_cache) >= _TOML_CACHE_MAX:
+        _toml_cache.pop(next(iter(_toml_cache)), None)
     _toml_cache[key] = (st.st_mtime_ns, st.st_size, raw)
     return raw
 
@@ -182,6 +190,26 @@ def tenant_config_path() -> Path | None:
         return maverick_home() / "tenants" / _tenant_segment(tid) / "config.toml"
     except Exception:  # pragma: no cover -- config resolution never blocks a run
         return None
+
+
+_TRUTHY = {"1", "true", "yes", "on"}
+_FALSY = {"0", "false", "no", "off"}
+
+
+def env_flag(name: str) -> bool | None:
+    """Parse an env var as a tri-state boolean: ``True``/``False`` for a
+    recognized truthy/falsy value, ``None`` when unset or unrecognized. Lets the
+    module ``enabled()`` gates share one parser instead of re-spelling the
+    ``{"1","true","yes","on"}`` literal set (and its inverse) each time.
+
+    Positive-only callers use ``if env_flag(name): ...``; tri-state callers use
+    ``v = env_flag(name); if v is not None: return v``."""
+    raw = os.environ.get(name, "").strip().lower()
+    if raw in _TRUTHY:
+        return True
+    if raw in _FALSY:
+        return False
+    return None
 
 
 def load_config(path: Path | None = None) -> dict:
@@ -230,10 +258,21 @@ def get_provider_config(provider: str) -> dict:
 
 
 # Well-known credential env vars, one per hosted provider.
-PROVIDER_KEY_ENV_VARS = (
-    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
-    "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "DEEPSEEK_API_KEY",
-    "XAI_API_KEY",
+# Canonical provider -> credential env var(s) map. Single source of truth for
+# both "which env var holds a provider's key" (llm._provider_api_key) and the
+# flat "is any provider configured?" check below. Aliases (GROK/GOOGLE) included.
+PROVIDER_KEY_ENV_MAP: dict[str, tuple[str, ...]] = {
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "moonshot": ("MOONSHOT_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
+    "xai": ("XAI_API_KEY", "GROK_API_KEY"),
+}
+
+PROVIDER_KEY_ENV_VARS = tuple(
+    dict.fromkeys(v for vs in PROVIDER_KEY_ENV_MAP.values() for v in vs)
 )
 
 # Self-hosted endpoints configured by env var (the mechanism each provider's
@@ -427,6 +466,54 @@ def get_knowledge() -> dict:
         "base_url": cfg.get("base_url", "https://api.voyageai.com/v1"),
         "dim": int(cfg.get("dim", 1024)),
         "path": cfg.get("path", ""),
+        # DSN for the pgvector scale backend (falls back to env in build_store).
+        "dsn": cfg.get("dsn", ""),
+    }
+
+
+def get_automation_import() -> dict:
+    """Return the ``[automation_import]`` section with defaults filled in.
+
+    Importing clients' existing automations (n8n/Make/Workato/Power Automate/
+    UiPath definitions, plus connect-and-trigger for Zapier/Notion) is OFF by
+    default: it reaches out to third-party platforms and writes user templates,
+    so the operator opts in. ``create_schedules`` lets a recovered cron trigger
+    auto-create a Lightwork schedule; off by default so an import never starts
+    spending on a recurring run without an explicit second step.
+    Env override: ``MAVERICK_AUTOMATION_IMPORT``.
+    """
+    cfg = load_config().get("automation_import", {})
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "create_schedules": bool(cfg.get("create_schedules", False)),
+    }
+
+
+def get_governed_connectors() -> dict:
+    """Return the ``[governed_connectors]`` section with defaults filled in.
+
+    Routing a live system-of-record write through a governed Action
+    (simulate -> approve -> commit -> lineage) instead of a bare confirm-gated
+    tool call is OFF by default: it changes how enterprise writes are authorized
+    (they hit the approval floor) and records a tamper-evident lineage link, so
+    the operator opts in. ``connectors`` selects which reference REST connectors
+    to register (see :data:`maverick.governed_rest.GOVERNED_REST_FACTORIES`).
+    Env override: ``MAVERICK_GOVERNED_CONNECTORS``.
+    """
+    cfg = load_config().get("governed_connectors", {}) or {}
+    raw = cfg.get("connectors", [])
+    if isinstance(raw, str):
+        names = [s.strip() for s in raw.split(",") if s.strip()]
+    elif isinstance(raw, (list, tuple)):
+        names = [str(s).strip() for s in raw if str(s).strip()]
+    else:
+        names = []
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "connectors": names,
+        # Standing approver of record for governed connector writes in the live
+        # tool path (the agent can't self-approve). Env: MAVERICK_GOVERNED_APPROVER.
+        "approver": str(cfg.get("approver", "")).strip(),
     }
 
 
@@ -453,6 +540,11 @@ def get_self_learning() -> dict:
         "enable": bool(cfg.get("enable", False)),
         "preflight": bool(cfg.get("preflight", True)),
         "create_tools": bool(cfg.get("create_tools", True)),
+        # The agent factory equips a freshly approved pack with the catalog
+        # skills + synthesized tools its workflow needs (maverick.provision).
+        # On by default once self-learning is accepted; still bounded by
+        # ``max_acquisitions`` and the per-tool consent gate.
+        "provision_packs": bool(cfg.get("provision_packs", True)),
         # Agent-proposed MCP-server acquisition is the highest-trust knob:
         # even gated behind catalog-pinning + operator consent it can start
         # a third-party subprocess, so it ships OFF independently of the
@@ -495,6 +587,48 @@ def get_autonomy() -> dict:
         # (headless / batch / benchmark runs). Default off.
         "headless_assume": bool(cfg.get("headless_assume", False)),
     }
+
+
+def get_workforce() -> dict:
+    """Return the ``[workforce]`` section: per-agent autonomy levels.
+
+    This is the client's control over how much rope each hired agent gets (see
+    :mod:`maverick.agent_autonomy`). OFF by default (kernel rule 1): when
+    ``levels`` is not enabled, every agent resolves to ``suggest`` (draft, a
+    human commits) -- the platform's historical behavior.
+
+    ``[workforce]
+       levels = true
+       [[workforce.agents]]
+       name = "fin_ap_clerk"
+       default = "auto"          # this hire acts autonomously by default
+       high = "human"            # ...but high-risk actions stay human-in-loop
+       onboarding = false        # graduated past the supervised phase``
+
+    Returns ``{"levels": bool, "agents": {name: {default, low, medium, high,
+    onboarding}}}`` with only the keys an operator set (the resolver layers them
+    over each pack's declared ``[autonomy]`` default). Never raises.
+    """
+    cfg = load_config().get("workforce", {})
+    if not isinstance(cfg, dict):
+        return {"levels": False, "agents": {}}
+    agents: dict[str, dict] = {}
+    raw = cfg.get("agents")
+    if isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            if not name:
+                continue
+            agents[name] = {
+                k: entry[k] for k in ("default", "low", "medium", "high", "onboarding")
+                if k in entry
+            }
+    out = {"levels": bool(cfg.get("levels", False)), "agents": agents}
+    if "data_grounding" in cfg:
+        out["data_grounding"] = bool(cfg.get("data_grounding"))
+    return out
 
 
 def get_calibration() -> dict:
@@ -618,6 +752,28 @@ def get_memory_guard() -> dict:
     return {
         "enable": bool(cfg.get("enable", False)),
         "min_recall_trust": int(cfg.get("min_recall_trust", 1)),
+    }
+
+
+def get_fairness_monitor() -> dict:
+    """Return the ``[fairness_monitor]`` section (continuous group-fairness
+    monitoring, ISO/IEC 42001 A.6.2.6). OFF by default: a deployment opts in by
+    feeding decision outcomes to :class:`maverick.fairness_monitor.FairnessMonitor`.
+    ``threshold`` is the four-fifths cutoff, ``window`` the rolling number of
+    outcomes retained, ``min_samples`` the noise floor before evaluating, and
+    ``drift_tolerance`` how far the minimum impact ratio may fall below baseline
+    before a drift alert. Also honored via ``MAVERICK_FAIRNESS_MONITOR=1``."""
+    cfg = load_config().get("fairness_monitor", {})
+    enabled = bool(cfg.get("enable", False))
+    flag = env_flag("MAVERICK_FAIRNESS_MONITOR")
+    if flag is not None:
+        enabled = flag
+    return {
+        "enable": enabled,
+        "threshold": float(cfg.get("threshold", 0.8)),
+        "window": int(cfg.get("window", 1000)),
+        "min_samples": int(cfg.get("min_samples", 30)),
+        "drift_tolerance": float(cfg.get("drift_tolerance", 0.1)),
     }
 
 
@@ -771,6 +927,11 @@ def get_self_improvement() -> dict:
         # baseline/candidate diff. Off by default; the controller only consults a
         # causal effect when this is set.
         "causal_promotion": bool(cfg.get("causal_promotion", False)),
+        # Self-improving agent factory (maverick.factory_learning): mine recurring
+        # pack-generation gaps into proposer corrections and promote them through
+        # this same gate. Sub-toggle of the master switch -- on once
+        # self-improvement is accepted; set false to keep the generator static.
+        "factory_learning": bool(cfg.get("factory_learning", True)),
     }
 
 

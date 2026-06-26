@@ -19,11 +19,14 @@ under ``data_dir``; oldest entries drop when full, counted) flushed through an
 **injected transport**: any ``send(envelope) -> None`` callable. Inbound: any
 iterable of envelopes fed to :func:`apply_inbound` / :func:`apply_many`, which
 verify the signature FAIL-CLOSED against the pinned key for the origin
-(``[federation] channel_peers``), check the envelope is addressed to us,
-rate-limit per peer (token bucket, injected clock), and hand a
-:class:`FedMessage` with ``channel="fed:<origin>"`` to the normal channel
-handler (e.g. ``Server._handle_message``) — so federated traffic flows through
-the same shield scans, tenancy, and budget caps as any other channel.
+(``[federation] channel_peers``), check the envelope is addressed to us, reject
+a stale/future-dated or replayed envelope (signed ``created_at`` freshness
+window + per-signature replay-nonce cache, so a captured envelope can't be
+re-injected at this same peer), rate-limit per peer (token bucket, injected
+clock), and hand a :class:`FedMessage` with ``channel="fed:<origin>"`` to the
+normal channel handler (e.g. ``Server._handle_message``) — so federated traffic
+flows through the same shield scans, tenancy, and budget caps as any other
+channel.
 
 **The HTTP binding is the operator's.** This module deliberately ships no
 listener and opens no sockets; wire the transport however your deployment
@@ -44,7 +47,9 @@ import hmac
 import json
 import logging
 import os
+import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,6 +71,12 @@ MAX_USER_ID_CHARS = 64
 DEFAULT_QUEUE_MAX = 256
 DEFAULT_RATE_PER_MIN = 30.0
 _MAX_BATCH = 1000
+# Inbound freshness window: reject an envelope whose signed ``created_at`` is
+# more than this far from now (stale or future-dated). Bounds how long a
+# captured envelope stays replayable; generous by default so an at-least-once
+# redelivery after a transient outage isn't dropped. Override via
+# ``[federation] channel_max_age_seconds`` / MAVERICK_FEDERATION_CHANNEL_MAX_AGE.
+DEFAULT_MAX_AGE_S = 3600.0
 
 
 def pseudonymize(user_id: str, secret: str) -> str:
@@ -125,6 +136,19 @@ class OutboundQueue:
             path = data_dir() / "channel_federation_outbox.json"
         self.path = Path(path)
         self.max_len = max(1, int(max_len))
+        # Serializes a load-modify-save of the outbox in-process; the
+        # cross_process_lock in _locked() extends it across processes (the
+        # dashboard appends while serve flushes -- separate processes).
+        self._rmw_lock = threading.Lock()
+
+    def _locked(self):
+        from contextlib import ExitStack
+
+        from .file_lock import cross_process_lock
+        stack = ExitStack()
+        stack.enter_context(self._rmw_lock)
+        stack.enter_context(cross_process_lock(self.path))
+        return stack
 
     def _load(self) -> dict:
         try:
@@ -137,22 +161,24 @@ class OutboundQueue:
         return data
 
     def _save(self, data: dict) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, self.path)
-        try:
-            os.chmod(self.path, 0o600)
-        except OSError:  # pragma: no cover
-            pass
+        # Unique temp + os.replace (0600): a fixed ".tmp" collides between a
+        # concurrent append and flush (one os.replace moves it out from under
+        # the other, dropping a write).
+        from .file_lock import atomic_write_text
+        atomic_write_text(self.path, json.dumps(data, ensure_ascii=False))
 
     def append(self, envelope: dict) -> None:
-        data = self._load()
-        data["items"].append(envelope)
-        while len(data["items"]) > self.max_len:
-            data["items"].pop(0)
-            data["dropped"] = int(data.get("dropped", 0)) + 1
-        self._save(data)
+        # Whole load-modify-save under the lock: an append racing a flush would
+        # otherwise both load the same items, and the later save clobbers the
+        # other -- losing an enqueued envelope or resurrecting an already-sent
+        # one (a re-send that breaks at-least-once dedup).
+        with self._locked():
+            data = self._load()
+            data["items"].append(envelope)
+            while len(data["items"]) > self.max_len:
+                data["items"].pop(0)
+                data["dropped"] = int(data.get("dropped", 0)) + 1
+            self._save(data)
 
     def __len__(self) -> int:
         return len(self._load()["items"])
@@ -195,19 +221,23 @@ def flush(queue: OutboundQueue, send: Callable[[dict], None]) -> int:
     failure stops the flush and keeps the remainder (including the failed one)
     queued for retry.
     """
-    data = queue._load()
-    items = data["items"]
-    sent = 0
-    while items:
-        try:
-            send(items[0])
-        except Exception as e:
-            log.warning("channel federation: send failed after %d envelope(s): %s",
-                        sent, e)
-            break
-        items.pop(0)
-        sent += 1
-    queue._save(data)
+    # Hold the queue lock across the whole drain so a concurrent append can't
+    # clobber the post-flush state (resurrecting a just-sent envelope) -- the
+    # load, the send loop, and the save are one atomic read-modify-save.
+    with queue._locked():
+        data = queue._load()
+        items = data["items"]
+        sent = 0
+        while items:
+            try:
+                send(items[0])
+            except Exception as e:
+                log.warning("channel federation: send failed after %d envelope(s): %s",
+                            sent, e)
+                break
+            items.pop(0)
+            sent += 1
+        queue._save(data)
     return sent
 
 
@@ -250,6 +280,42 @@ def default_limiter(clock: Callable[[], float] = time.monotonic) -> TokenBucket:
     return TokenBucket(rate_per_min=rate, clock=clock)
 
 
+def _default_max_age() -> float:
+    """Inbound freshness window from env / ``[federation] channel_max_age_seconds``."""
+    raw = os.environ.get("MAVERICK_FEDERATION_CHANNEL_MAX_AGE")
+    if raw is None or str(raw).strip() == "":
+        try:
+            from .config import load_config
+            val = ((load_config() or {}).get("federation") or {}).get(
+                "channel_max_age_seconds")
+            raw = None if val is None else str(val)
+        except Exception:  # pragma: no cover - config never blocks the default
+            raw = None
+    if raw is None or str(raw).strip() == "":
+        return DEFAULT_MAX_AGE_S
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return DEFAULT_MAX_AGE_S
+
+
+def _parse_iso_epoch(value: object) -> float | None:
+    """Parse an ISO-8601 ``created_at`` to epoch seconds; None if unparseable.
+
+    A naive timestamp is treated as UTC (``make_envelope`` always emits a
+    tz-aware UTC string, so this only matters for a malformed peer)."""
+    if not isinstance(value, str) or not value:
+        return None
+    from datetime import datetime, timezone
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
 @dataclass
 class FedMessage:
     """The message handed to the normal channel handler.
@@ -280,11 +346,43 @@ class InboundApplier:
         limiter: TokenBucket | None = None,
         local: str | None = None,
         clock: Callable[[], float] = time.monotonic,
+        max_age_seconds: float | None = None,
+        wall_clock: Callable[[], float] = time.time,
     ):
         self.handler = handler
         self._peers = peers
         self.limiter = limiter or default_limiter(clock)
         self.local = local or local_origin()
+        self.max_age = (_default_max_age() if max_age_seconds is None
+                        else max(1.0, float(max_age_seconds)))
+        # Wall clock (not the limiter's monotonic clock) for the created_at
+        # freshness comparison; injectable for tests.
+        self._wall = wall_clock
+        # Replay-nonce cache: a verified envelope's signature is a unique nonce
+        # (created_at is inside the signed body). Age-pruned within the freshness
+        # window and lock-guarded so a threaded inbound binding stays correct.
+        self._seen_sigs: OrderedDict[str, float] = OrderedDict()
+        self._seen_lock = threading.Lock()
+
+    def _replay_seen(self, sig: str, now: float) -> bool:
+        """Check-and-remember a verified signature; True if already seen.
+
+        Prunes by AGE: an entry older than the freshness window can never be
+        replayed (its envelope would fail the freshness check), so evicting it is
+        safe and the live set is bounded by legitimate in-window peer volume."""
+        if not sig:
+            return False
+        cutoff = now - self.max_age
+        with self._seen_lock:
+            while self._seen_sigs:
+                _oldest, ts = next(iter(self._seen_sigs.items()))
+                if ts >= cutoff:
+                    break
+                self._seen_sigs.popitem(last=False)
+            if sig in self._seen_sigs:
+                return True
+            self._seen_sigs[sig] = now
+            return False
 
     @property
     def peers(self) -> dict[str, dict]:
@@ -296,7 +394,9 @@ class InboundApplier:
         if not ok:
             log.warning("channel federation: rejected inbound envelope: %s", reason)
             return {"applied": False, "reason": reason, "result": None}
-        assert isinstance(envelope, dict)
+        if not isinstance(envelope, dict):  # defensive: honor the never-raises
+            return {"applied": False, "reason": "envelope is not an object",
+                    "result": None}
         origin = envelope["origin"]
         if envelope.get("to") != self.local:
             return {"applied": False,
@@ -318,9 +418,25 @@ class InboundApplier:
         if not all(isinstance(v, str) and v for v in (channel, user_id, text)):
             return {"applied": False, "reason": "missing channel/user_id/text",
                     "result": None}
+        # Freshness: created_at is inside the signed body, so it can't be altered
+        # without breaking the signature. Reject a stale/future-dated envelope to
+        # bound how long a captured one stays replayable.
+        created = _parse_iso_epoch(envelope.get("created_at"))
+        now = self._wall()
+        if created is None or abs(now - created) > self.max_age:
+            return {"applied": False,
+                    "reason": "envelope is stale or future-dated", "result": None}
         if not self.limiter.allow(origin):
             return {"applied": False, "reason": f"rate limited (peer {origin})",
                     "result": None}
+        # Replay: reject a second sighting of this signature within the window.
+        # The `to` check only stops cross-peer replay; this stops a captured
+        # envelope being replayed at this same peer (and dedups at-least-once
+        # redeliveries — effectively-once). Checked AFTER the rate limiter and
+        # recorded only here, so a rate-limited (dropped) message isn't recorded
+        # and its legitimate retry still gets through once the bucket refills.
+        if self._replay_seen(str(envelope.get("sig") or ""), now):
+            return {"applied": False, "reason": "replayed envelope", "result": None}
         msg = FedMessage(
             channel=f"fed:{origin}",
             user_id=str(user_id)[:MAX_USER_ID_CHARS],

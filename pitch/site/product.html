@@ -3,20 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How Maverick works — governed AI agents, every action audited</title>
-<meta name="description" content="How Maverick works: every agent action clears one gate — capability, policy, shield, budget, audit — before it runs, and lands in a signed, hash-chained Operating Record you can verify offline. Self-hosted or air-gapped. By Daybreak Labs.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<title>How Lightwork works: governed AI agents, every action audited</title>
+<meta name="description" content="How Lightwork works: every agent action clears one gate (capability, policy, shield, budget, audit) before it runs, and lands in a signed, hash-chained Operating Record you can verify offline. Self-hosted or air-gapped. By Daybreak Labs.">
 <link rel="stylesheet" href="styles.css">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="512x512" href="favicon-512.png">
 <link rel="apple-touch-icon" href="favicon-180.png">
 <meta property="og:type" content="website">
-<meta property="og:title" content="How Maverick works — governed AI agents, every action audited">
-<meta property="og:description" content="How Maverick works: every agent action clears one gate — capability, policy, shield, budget, audit — before it runs, and lands in a signed, hash-chained Operating Record you can verify offline. Self-hosted or air-gapped. By Daybreak Labs.">
+<meta property="og:title" content="How Lightwork works: governed AI agents, every action audited">
+<meta property="og:description" content="How Lightwork works: every agent action clears one gate (capability, policy, shield, budget, audit) before it runs, and lands in a signed, hash-chained Operating Record you can verify offline. Self-hosted or air-gapped. By Daybreak Labs.">
 <meta property="og:image" content="https://daybreakailabs.com/og.png">
 <meta property="og:url" content="https://daybreakailabs.com/product">
 <meta name="twitter:card" content="summary_large_image">
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "28d5584c57bd4c699bbc499ed4c37359"}'></script><!-- pragma: allowlist secret -->
 </head>
 <body>
 
@@ -24,15 +23,15 @@
   <div class="wrap">
     <a class="brand" href="index.html">
       <span class="brand-mark"><img src="daybreak-mark-dark.png" alt="Daybreak Labs" width="40" height="30"></span>
-      <span class="brand-word">Maverick <span class="by">by Daybreak Labs</span></span>
+      <span class="brand-word">Lightwork <span class="by">by Daybreak Labs</span></span>
     </a>
     <nav class="nav-links">
-      <a href="product.html">How it works</a>
+      <a href="index.html#products">Products</a>
       <a href="security.html">Security</a>
       <a href="company.html">Company</a>
     </nav>
     <div class="nav-cta">
-      <a class="btn btn-primary" href="mailto:info@daybreakailabs.com?subject=Request%20a%20Maverick%20demo">Book a demo</a>
+      <a class="btn btn-primary" href="mailto:info@daybreakailabs.com?subject=Request%20a%20Lightwork%20demo">Book a demo</a>
     </div>
   </div>
 </header>
@@ -43,9 +42,9 @@
     <div class="hero-text">
       <span class="eyebrow">How it works</span>
       <h1 style="margin-top:22px">Every action clears one gate before it runs.</h1>
-      <p class="lede">Capability, policy, shield, budget, audit — in that order — on every tool call, every payment, every write, before it happens.</p>
+      <p class="lede">Capability, policy, shield, budget, audit, in that order, on every tool call, every payment, every write, before it happens.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="mailto:info@daybreakailabs.com?subject=Request%20a%20Maverick%20demo">Book a demo</a>
+        <a class="btn btn-primary" href="mailto:info@daybreakailabs.com?subject=Request%20a%20Lightwork%20demo">Book a demo</a>
         <a class="btn btn-ghost" href="security.html">Security</a>
       </div>
       <div class="hero-marks">
@@ -62,7 +61,7 @@
           <div class="row"><span>0xA2 &middot; deny $60k wire</span><span class="ok">&#10003; signed</span></div>
           <div class="row"><span>0xA3 &middot; require-human $6k</span><span class="ok">&#10003; signed</span></div>
           <div class="row"><span>0xA4 &middot; cap runaway loop</span><span class="ok">&#10003; signed</span></div>
-          <div class="row"><span class="c">&mdash; alter 0xA2 after the fact &mdash;</span><span class="deny">&#10007; CAUGHT</span></div>
+          <div class="row"><span class="c">(alter 0xA2 after the fact)</span><span class="deny">&#10007; CAUGHT</span></div>
         </div>
       </div>
       <div class="art-cap">A tamper-evident record you can verify offline.</div>
@@ -75,16 +74,16 @@
   <div class="wrap">
     <div class="sec-head">
       <span class="eyebrow">The gate</span>
-      <h2>Capability, policy, shield, budget, audit — in that order.</h2>
+      <h2>Capability, policy, shield, budget, audit, in that order.</h2>
     </div>
     <div class="gate">
       <div class="stage"><div class="n">01</div><div class="t">Capability</div><div class="d">Attenuate-only tokens. An agent can narrow its rights, never widen them.</div></div>
-      <div class="stage"><div class="n">02</div><div class="t">Policy</div><div class="d">Allow, deny, or require a human — bound to every action.</div></div>
+      <div class="stage"><div class="n">02</div><div class="t">Policy</div><div class="d">Allow, deny, or require a human, bound to every action.</div></div>
       <div class="stage"><div class="n">03</div><div class="t">Shield</div><div class="d">Scans for the dangerous action and the prompt injection.</div></div>
       <div class="stage"><div class="n">04</div><div class="t">Budget</div><div class="d">Hard caps on tokens, dollars, wall-clock, and tools.</div></div>
       <div class="stage"><div class="n">05</div><div class="t">Audit</div><div class="d">A signed, hash-chained entry you can verify offline.</div></div>
     </div>
-    <p class="muted" style="margin-top:26px;font-size:16.5px">Every action passes through this gate before it runs. An agent cannot do anything Maverick didn't watch and record.</p>
+    <p class="muted" style="margin-top:26px;font-size:16.5px">Every action passes through this gate before it runs. An agent cannot do anything Lightwork didn't watch and record.</p>
   </div>
 </section>
 
@@ -100,7 +99,7 @@
     <div class="cols cols-3">
       <div class="card">
         <div class="idx">kernel</div>
-        <h3>maverick-core</h3>
+        <h3>lightwork-core</h3>
         <p>The runtime that runs and governs the work. It holds without the shield, never requires it.</p>
       </div>
       <div class="card">
@@ -111,7 +110,7 @@
       <div class="card">
         <div class="idx">channels</div>
         <h3>Work in, work out</h3>
-        <p>How work comes in and goes out — the governed surface between agents and your systems.</p>
+        <p>How work comes in and goes out: the governed surface between agents and your systems.</p>
       </div>
       <div class="card">
         <div class="idx">dashboard</div>
@@ -121,12 +120,12 @@
       <div class="card">
         <div class="idx">mcp</div>
         <h3>Drive it from your editor</h3>
-        <p>An MCP server. Run Maverick from Claude Code, Cursor, or any MCP client.</p>
+        <p>An MCP server. Run Lightwork from Claude Code, Cursor, or any MCP client.</p>
       </div>
       <div class="card">
         <div class="idx">evolve</div>
         <h3>The learning lifecycle</h3>
-        <p>The closed, audited loop that lets the workforce improve — and prove it.</p>
+        <p>The closed, audited loop that lets the workforce improve, and prove it.</p>
       </div>
       <div class="card">
         <div class="idx">knowledge</div>
@@ -148,12 +147,12 @@
       <div class="card">
         <div class="idx">01</div>
         <h3>Capability tokens</h3>
-        <p>Attenuate-only. An agent narrows its rights to the task in front of it — and can never widen them.</p>
+        <p>Attenuate-only. An agent narrows its rights to the task in front of it, and can never widen them.</p>
       </div>
       <div class="card">
         <div class="idx">02</div>
         <h3>Policy engine</h3>
-        <p>Allow, deny, or require a human — bound to every action, not bolted on after the fact.</p>
+        <p>Allow, deny, or require a human, bound to every action, not bolted on after the fact.</p>
       </div>
       <div class="card">
         <div class="idx">03</div>
@@ -170,7 +169,7 @@
     <div class="sec-head">
       <span class="eyebrow">The Operating Record</span>
       <h2>Every action, signed and hash-chained.</h2>
-      <p>Tamper-evident and verifiable offline. Each entry signs the one before it — alter a row and the chain breaks.</p>
+      <p>Tamper-evident and verifiable offline. Each entry signs the one before it. Alter a row and the chain breaks.</p>
     </div>
     <div class="cols cols-2">
       <div class="term">
@@ -180,11 +179,11 @@
           <div class="row"><span>0xA2 &middot; deny $60k wire</span><span class="ok">&#10003; signed</span></div>
           <div class="row"><span>0xA3 &middot; require-human $6k</span><span class="ok">&#10003; signed</span></div>
           <div class="row"><span>0xA4 &middot; cap runaway loop</span><span class="ok">&#10003; signed</span></div>
-          <div class="row"><span class="c">&mdash; alter 0xA2 after the fact &mdash;</span><span class="deny">&#10007; CAUGHT</span></div>
+          <div class="row"><span class="c">(alter 0xA2 after the fact)</span><span class="deny">&#10007; CAUGHT</span></div>
         </div>
       </div>
       <div class="term">
-        <div class="bar"><span class="chip">maverick audit --verify</span><span style="font-size:12px;color:var(--on-navy-muted)">no network required</span></div>
+        <div class="bar"><span class="chip">lightwork audit --verify</span><span style="font-size:12px;color:var(--on-navy-muted)">no network required</span></div>
         <div class="body">
           <div class="c"># offline verification of the chain</div>
           <div class="row"><span>read 0xA2 &rarr; 0xA4</span><span class="ok">&#10003; signatures valid</span></div>
@@ -216,7 +215,7 @@
     <div class="sec-head">
       <span class="eyebrow">Provable learning</span>
       <h2>A workforce that proves it improved.</h2>
-      <p>A closed, audited loop: offline consolidation (&ldquo;dreaming&rdquo;), hindsight, and proof, with per-department memory feeding a causal flywheel. Every causal claim survives a placebo test before it changes behavior, and every change is reversible — snapshot and rollback.</p>
+      <p>A closed, audited loop: offline consolidation (&ldquo;dreaming&rdquo;), hindsight, and proof, with per-department memory feeding a causal flywheel. Every causal claim survives a placebo test before it changes behavior, and every change is reversible: snapshot and rollback.</p>
     </div>
   </div>
 </section>
@@ -229,7 +228,7 @@
       <h2>1,118 specialists, already built.</h2>
     </div>
     <div class="stats">
-      <div class="s"><div class="big">1,118</div><div class="lbl">governed packs &middot; 0 lint errors</div></div>
+      <div class="s"><div class="big">1,118</div><div class="lbl">governed packs</div></div>
       <div class="s"><div class="big">26</div><div class="lbl">regulated suites</div></div>
       <div class="s"><div class="big">~29</div><div class="lbl">governed deliverables in the finance suite alone, across 11 roles</div></div>
     </div>
@@ -247,7 +246,7 @@
     </div>
     <div class="cols cols-2">
       <div class="term">
-        <div class="bar"><span class="chip">maverick golden-path</span><span style="font-size:12px;color:var(--on-navy-muted)">every row tamper-evident</span></div>
+        <div class="bar"><span class="chip">lightwork golden-path</span><span style="font-size:12px;color:var(--on-navy-muted)">every row tamper-evident</span></div>
         <div class="body">
           <div class="row"><span>boot finance specialist</span><span class="seal">SEALED</span></div>
           <div class="row"><span>$60,000 wire</span><span class="deny">DENY</span></div>
@@ -257,9 +256,9 @@
         </div>
       </div>
       <div class="term">
-        <div class="bar"><span class="chip">maverick proof-pack</span><span style="font-size:12px;color:var(--mint)">&#9679; Ed25519 signed</span></div>
+        <div class="bar"><span class="chip">lightwork proof-pack</span><span style="font-size:12px;color:var(--mint)">&#9679; Ed25519 signed</span></div>
         <div class="body">
-          <div class="c"># PROOF.md &mdash; verifiable offline</div>
+          <div class="c"># PROOF.md &middot; verifiable offline</div>
           <div class="row"><span>governance</span><span class="ok">&#10003; PASS</span></div>
           <div class="row"><span>reliability</span><span class="ok">&#10003; CERT</span></div>
           <div class="row"><span>performance</span><span class="ok">&#10003; SLA</span></div>
@@ -276,7 +275,7 @@
     <div class="sec-head">
       <span class="eyebrow">Deliverables</span>
       <h2>Work lands where a human signs off.</h2>
-      <p>A goal's result renders as a typed deliverable, routes to a per-role inbox, and waits for a human to certify it — then routes into Salesforce or ServiceNow, signed and audited.</p>
+      <p>A goal's result renders as a typed deliverable, routes to a per-role inbox, and waits for a human to certify it, then routes into Salesforce or ServiceNow, signed and audited.</p>
     </div>
   </div>
 </section>
@@ -299,7 +298,7 @@
     <h2 style="margin-top:14px">See it on your own workflow.</h2>
     <p class="lede">We're working with a small number of design partners in regulated industries. If that's you, let's scope one workflow.</p>
     <div class="hero-cta">
-      <a class="btn btn-primary" href="mailto:info@daybreakailabs.com?subject=Request%20a%20Maverick%20demo">Book a demo</a>
+      <a class="btn btn-primary" href="mailto:info@daybreakailabs.com?subject=Request%20a%20Lightwork%20demo">Book a demo</a>
     </div>
   </div>
 </section>
@@ -309,15 +308,16 @@
   <div class="wrap">
     <div class="top">
       <div>
-        <div class="footer-brand"><span class="brand-mark"><img src="daybreak-mark-dark.png" alt="Daybreak Labs" width="40" height="30"></span><span>Maverick</span></div>
+        <div class="footer-brand"><span class="brand-mark"><img src="daybreak-mark-dark.png" alt="Daybreak Labs" width="40" height="30"></span><span>Lightwork</span></div>
         <p class="blurb">The governed AI agent workforce for regulated enterprises. A product of Daybreak Labs.</p>
       </div>
       <div>
-        <h4>Product</h4>
+        <h4>Products</h4>
         <ul>
-          <li><a href="product.html">How it works</a></li>
-          <li><a href="security.html">Security</a></li>
-          <li><a href="mailto:info@daybreakailabs.com?subject=Request%20a%20Maverick%20demo">Book a demo</a></li>
+          <li><a href="product.html">Lightwork Platform</a></li>
+          <li><a href="second-shift.html">Second Shift</a></li>
+          <li><a href="fleet-governance.html">Fleet Governance</a></li>
+          <li><a href="daybreak-forge.html">Daybreak Forge</a></li>
         </ul>
       </div>
       <div>
@@ -325,7 +325,7 @@
         <ul>
           <li><a href="company.html">About</a></li>
           <li><a href="company.html#contact">Contact</a></li>
-          <li><a href="mailto:info@daybreakailabs.com?subject=Maverick%20access">Request access</a></li>
+          <li><a href="mailto:info@daybreakailabs.com?subject=Lightwork%20access">Request access</a></li>
         </ul>
       </div>
       <div>
@@ -337,11 +337,12 @@
       </div>
     </div>
     <div class="legal">
-      <span>&copy; 2026 Daybreak Labs. Maverick is a product of Daybreak Labs.</span>
-      <span>Private alpha &middot; built for regulated enterprises</span>
+      <span>&copy; 2026 Daybreak Labs. Lightwork is a product of Daybreak Labs.</span>
+      <span><a href="privacy.html">Privacy &amp; cookies</a> &middot; Private alpha</span>
     </div>
   </div>
 </footer>
 
+<script src="app.js"></script>
 </body>
 </html>

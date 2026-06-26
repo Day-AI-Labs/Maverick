@@ -23,9 +23,9 @@ def _isolate(monkeypatch, tmp_path):
 
 def _seed_tenant_with_runs_and_spend():
     """Provision 'acme' with two goals (one done, one active) + $1.25 today."""
-    from maverick import tenant_registry as tr
     from maverick.paths import data_dir
     from maverick.quotas import UsageLedger
+    from maverick.tenant import registry as tr
     from maverick.workspace import Workspace
     from maverick.world_model import WorldModel
     tr.create_tenant("acme", plan="enterprise", display_name="Acme Inc",
@@ -47,7 +47,7 @@ def test_overview_page_empty_state(monkeypatch, tmp_path):
 
 def test_overview_page_rollup(monkeypatch, tmp_path):
     _seed_tenant_with_runs_and_spend()
-    from maverick import tenant_registry as tr
+    from maverick.tenant import registry as tr
     tr.create_tenant("beta")
     tr.suspend_tenant("beta")
     text = _client().get("/tenants/overview").text

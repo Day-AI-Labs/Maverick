@@ -1,12 +1,12 @@
-# Maverick from C# / .NET
+# Lightwork from C# / .NET
 
-Drive a locally running Maverick swarm from a .NET app over the
+Drive a locally running Lightwork swarm from a .NET app over the
 [Model Context Protocol](https://modelcontextprotocol.io/). Same
 contract every IDE-side MCP client uses — you talk to `maverick mcp`
 over stdio JSON-RPC.
 
 This is the official cross-language surface. We don't ship a separate
-`Maverick.Core` NuGet package; we ship one Python kernel and you talk to
+`Lightwork.Core` NuGet package; we ship one Python kernel and you talk to
 it from any language an MCP SDK exists in.
 
 ## Prereqs
@@ -37,7 +37,7 @@ var transport = new StdioClientTransport(new()
 await using var client = await McpClient.CreateAsync(transport);
 
 var tools = await client.ListToolsAsync();
-Console.WriteLine($"Maverick exposes {tools.Count} tools");
+Console.WriteLine($"Lightwork exposes {tools.Count} tools");
 
 // Start a goal. maverick_start runs the swarm and returns the final
 // answer (it's long-running — give it a real budget/timeout).
@@ -60,7 +60,7 @@ You should see the tool list (10 tools), then the swarm's final answer.
 ## What works
 
 The MCP server exposes a small, stable control surface — **8
-`maverick_*` tools**, not the ~70 in-kernel tools. You drive the swarm;
+`maverick_*` tools**, not the 100+ in-kernel tools. You drive the swarm;
 the kernel runs the tools internally.
 
 - `maverick_start` `{title, description?, max_dollars?, max_wall_seconds?, max_depth?}`
@@ -75,7 +75,7 @@ the kernel runs the tools internally.
 - `maverick_fleet_recall` `{agent_id, vendor, query}` — governed, audited
   memory read for an external fleet agent.
 
-The ~70 in-kernel tools (web search, repo map, editor, Slack, S3, …)
+The 100+ in-kernel tools (web search, repo map, editor, Slack, S3, …)
 are **not** individually exposed over MCP — the swarm decides which to
 use while running a goal.
 
@@ -92,16 +92,16 @@ use while running a goal.
 
 - **Multi-agent orchestration stays in Python.** Don't try to
   reimplement the orchestrator-proposer-verifier topology in C#;
-  spawn goals and let Maverick run the swarm. The .NET process is the
+  spawn goals and let Lightwork run the swarm. The .NET process is the
   *client*, not a worker.
 - **Sandbox / kernel features are Python-side.** Backends
   (firecracker, k8s, devcontainer) live in `maverick-core` and are
   not part of the wire protocol.
 - **The MCP server is for cross-language clients, not for tunneling
-  Maverick over the public internet.** Pair with your own auth +
+  Lightwork over the public internet.** Pair with your own auth +
   TLS layer if you go remote (see `packages/maverick-mcp/http_transport.py`).
 
-## Why no `Maverick.Core` NuGet package?
+## Why no `Lightwork.Core` NuGet package?
 
 See [docs/ROADMAP.md → "Language Bindings — Council Decision"](../ROADMAP.md).
 Short version: thin API clients port well; opinionated frameworks

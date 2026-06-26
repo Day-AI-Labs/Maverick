@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Continuous-compliance scoring report"
+consumers = ["compliance_officer", "risk_officer"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory controls"
+instruction = "Read the control framework and identify which controls can be continuously tested versus manually attested."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map control tests"
+instruction = "Draft control-to-test mappings linking each control to an automated evidence collector signal."
+tools = ["logicgate_read", "vanta_read"]
+[[workflow]]
+name = "Pull live signals"
+instruction = "Collect current automated test results and compute pass/fail scoring across the control set."
+tools = ["vanta_read", "logicgate_read"]
+[[workflow]]
+name = "Flag drift"
+instruction = "Identify controls that newly failed, lack coverage, or produce false positives in the collectors."
+[[workflow]]
+name = "Owner review"
+instruction = "Route the continuous-compliance scoring report to the compliance owner for sign-off."
+gate = "review"

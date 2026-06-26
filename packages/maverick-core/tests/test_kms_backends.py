@@ -12,8 +12,9 @@ import pytest
 pytest.importorskip("cryptography")
 from cryptography.exceptions import InvalidTag  # noqa: E402
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: E402
-from maverick import kms_backends, tenant_kms  # noqa: E402
+from maverick import kms_backends  # noqa: E402
 from maverick.crypto_at_rest import EncryptionUnavailable  # noqa: E402
+from maverick.tenant import kms as tenant_kms  # noqa: E402
 
 _FIXED_KEK = b"\x11" * 32
 

@@ -1,8 +1,8 @@
 """Marketplace stats aggregation over the ratings ledger."""
 from __future__ import annotations
 
-from maverick.marketplace_ratings import RatingsLedger
-from maverick.marketplace_stats import summarize
+from maverick.marketplace.ratings import RatingsLedger
+from maverick.marketplace.stats import summarize
 
 
 def _ledger(tmp_path, ratings):
@@ -59,3 +59,25 @@ def test_summarize_ignores_malformed(tmp_path):
     (tmp_path / "r.json").write_text(json.dumps(raw))
     s = summarize(led)
     assert s["total"] == 1  # only the valid 4-star counted
+
+
+def test_rate_is_concurrency_safe(tmp_path):
+    """Separate ledgers at one path (≈ separate processes) rating different
+    names must not clobber each other's entry."""
+    import threading
+
+    p = tmp_path / "ratings.json"
+    n = 24
+
+    def worker(i: int):
+        RatingsLedger(p).rate("skills", f"pack{i:03d}", (i % 5) + 1)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    all_skills = RatingsLedger(p).all_ratings("skills")
+    assert len(all_skills) == n
+    assert list(tmp_path.glob("*.tmp")) == []

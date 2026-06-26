@@ -13,7 +13,7 @@
 
 ## Purpose
 
-The Safety Steering Group (SSG) is the body that owns Maverick's safety
+The Safety Steering Group (SSG) is the body that owns Lightwork's safety
 posture across releases: it decides what capabilities ship, under what
 guardrails, and what gets declined — and it is the named escalation point
 when a safety question can't be resolved inside a normal PR review. It exists
@@ -53,7 +53,7 @@ group, with a written record — not implicitly, one merge at a time.
 
 - **Routine code review** — owned by maintainers. The SSG is the escalation
   target, not a second reviewer on every PR.
-- **Operator configuration choices** — Maverick is operator-controlled by
+- **Operator configuration choices** — Lightwork is operator-controlled by
   design; the SSG sets *defaults* and *what ships*, not what a given operator
   does in their own deployment.
 - **Company HR/legal/process governance** — those belong to company
@@ -99,6 +99,7 @@ from nothing:
 - **Shield** — `packages/maverick-shield/`, ensemble framework + explainable
   reason codes (`docs/safety.md`).
 - **Kill switch / revocation** — `maverick/killswitch.py`,
+- **Roster-wide governance invariant tests** — a six-invariant test suite verified across all 2,020 packs and fault-injected at 1,000,000 iterations: (1) tool-reachability (no drafting/non-builder agent can reach a state-mutating tool); (2) autonomy dial (an onboarding agent is never autonomous; a high-risk action is never autonomous even when graduated); (3) capability attenuation (a spawned child can never exceed its parent grant); (4) compartment isolation (a quarantine seal never bleeds across compartments/suites); (5) hard refusals (the universal refusal floor is unstrippable); (6) budget caps (no cap is ever silently exceeded). Plus hostile-argument fuzzing of all connectors and tools, each test with a non-vacuous fault-injection control.
   `maverick/revocation.py`, `maverick/review_checkpoint.py`.
 - **Audit + evidence** — append-only Ed25519 Merkle-chained audit log
   (`maverick/audit/`), `maverick/soc2.py` evidence collector,

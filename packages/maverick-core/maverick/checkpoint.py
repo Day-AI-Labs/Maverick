@@ -21,10 +21,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass
 from typing import Any
+
+from .config import env_flag
 
 log = logging.getLogger(__name__)
 
@@ -58,11 +59,9 @@ def enabled() -> bool:
     Mirrors the ``self_learning.enabled()`` opt-in pattern: env first, then
     ``[durable] enabled`` config, then False. Config never blocks a run.
     """
-    env = os.environ.get("MAVERICK_DURABLE", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
+    _v = env_flag("MAVERICK_DURABLE")
+    if _v is not None:
+        return _v
     try:
         from .config import get_durable
         return bool(get_durable()["enabled"])

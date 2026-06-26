@@ -15,7 +15,7 @@ shipped features. If a number here disagrees with `FEATURES.md`,
 
 ## Boilerplate v2 (verified against FEATURES.md)
 
-Maverick is a proprietary, commercially licensed agent runtime for
+Lightwork is a proprietary, commercially licensed agent runtime for
 enterprises and regulated teams that need AI agents they can govern, audit,
 and run entirely in their own environment. Hand it a goal and its
 orchestrator decomposes the work and spawns specialist sub-agents —
@@ -29,19 +29,19 @@ built-in tools, 17 wired messaging/voice/wearable channels, and 9
 selectable sandbox backends, runs as a multi-tenant platform (tenant
 isolation, per-tenant encryption keys and egress policy, metering and
 quotas), and can be driven from other languages over MCP and gRPC.
-Maverick is developed by Day AI Labs.
+Lightwork is developed by Day AI Labs.
 
 ### 50-word version
 
-Maverick is a proprietary, self-hosted AI agent runtime for enterprises. A
+Lightwork is a proprietary, self-hosted AI agent runtime for enterprises. A
 recursive orchestrator spawns specialist sub-agents that work in parallel
 under hard budget caps, behind a safety shield, with a signed audit log
-and a multi-tenant control plane. 100+ tools, 17 channels, 9 sandbox
+and a multi-tenant control plane. 286 tool modules, 17 channels, 9 sandbox
 backends, 12 LLM providers.
 
 ### 25-word version
 
-Unchanged from v1 (still accurate): Maverick is a proprietary, self-hosted
+Unchanged from v1 (still accurate): Lightwork is a proprietary, self-hosted
 multi-agent runtime for enterprises: a recursive swarm under hard budget
 caps, a safety shield, and a signed, append-only audit log.
 

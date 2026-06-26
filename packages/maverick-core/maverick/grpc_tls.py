@@ -30,9 +30,28 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from ._envparse import coerce_bool, env_bool
+
 log = logging.getLogger(__name__)
 
-_TRUE = {"1", "true", "yes", "on"}
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "[::1]", ""}
+
+
+def _host_of(address: str) -> str:
+    """Extract the host from a gRPC ``host:port`` bind address (IPv6-aware)."""
+    a = str(address).strip()
+    if a.startswith("["):  # [::1]:50051
+        return a[1:].split("]", 1)[0]
+    return a.rsplit(":", 1)[0] if ":" in a else a
+
+
+def _is_loopback_address(address: str) -> bool:
+    return _host_of(address).strip().lower() in _LOOPBACK_HOSTS
+
+
+def _insecure_grpc_allowed() -> bool:
+    """Explicit opt-out for plaintext on a non-loopback address (trusted net)."""
+    return env_bool("MAVERICK_ALLOW_INSECURE_GRPC")
 
 
 def _section(name: str) -> dict:
@@ -59,7 +78,7 @@ class TlsConfigError(RuntimeError):
 def tls_enabled(section: str, cfg: dict | None = None) -> bool:
     """Has the operator turned TLS on for this surface (``[<section>] tls``)?"""
     c = cfg if cfg is not None else _section(section)
-    return str(c.get("tls") or "").strip().lower() in _TRUE
+    return coerce_bool(c.get("tls"))
 
 
 def tls_required(section: str, cfg: dict | None = None) -> bool:
@@ -71,7 +90,7 @@ def tls_required(section: str, cfg: dict | None = None) -> bool:
     closed rather than falling back to an insecure port/channel.
     """
     c = cfg if cfg is not None else _section(section)
-    if str(c.get("tls_required") or "").strip().lower() in _TRUE:
+    if coerce_bool(c.get("tls_required")):
         return True
     try:
         from .client import client_binding_enforced
@@ -142,6 +161,17 @@ def bind_port(server: Any, address: str, section: str) -> bool:
         server.add_secure_port(address, creds)
         log.info("%s gRPC bound with TLS on %s", section, address)
         return True
+    # Fail-closed on a non-loopback plaintext bind: shipping a public gRPC port
+    # in cleartext leaks goal content + bearer tokens. A loopback bind (behind a
+    # local TLS-terminating proxy) is fine; an explicit MAVERICK_ALLOW_INSECURE_GRPC=1
+    # accepts plaintext on a trusted private network.
+    if not _is_loopback_address(address) and not _insecure_grpc_allowed():
+        raise TlsConfigError(
+            f"[{section}] refusing a plaintext bind on non-loopback address "
+            f"{address!r}: set [{section}] tls = true (with tls_cert/tls_key, and "
+            f"tls_client_ca for mTLS), or set MAVERICK_ALLOW_INSECURE_GRPC=1 to "
+            f"accept plaintext on a trusted private network."
+        )
     server.add_insecure_port(address)
     log.warning("%s gRPC bound WITHOUT TLS on %s (plaintext) — set [%s] tls = "
                 "true for production", section, address, section)

@@ -308,3 +308,37 @@ def test_local_provider_warm_is_honestly_ignored(tmp_path, monkeypatch):
     assert calls == ["echo 1", "echo 2"]  # one-shot boot per exec, no reuse
     assert fc._warm_id is None
     fc.close()                            # no-op without a warm VM
+
+
+def test_acquire_does_not_hold_lock_across_digest(tmp_path, docker_ok, monkeypatch):
+    # The image-digest subprocess (up to 10s) must run OUTSIDE the pool lock, or
+    # one acquire() stalls every other acquire()/park()/len() behind it.
+    import threading
+
+    p = pool.SandboxPool(clock=lambda: 0.0)
+    sb = _backend(tmp_path, timeout=60.0)
+    p.park(sb)  # an entry exists, so acquire proceeds into the digest
+
+    in_digest = threading.Event()
+    release = threading.Event()
+
+    def slow_digest(engine, image):
+        in_digest.set()
+        release.wait(timeout=5)
+        return f"id-{image}"
+
+    monkeypatch.setattr(pool, "_image_digest", slow_digest)
+
+    t = threading.Thread(
+        target=lambda: p.acquire("docker", sb.image,
+                                 workdir=tmp_path / "run2", timeout=90.0))
+    t.start()
+    assert in_digest.wait(timeout=2)  # acquire reached the (blocked) digest
+
+    # While acquire is stuck in the digest, another pool op must NOT block.
+    other_done = threading.Event()
+    threading.Thread(target=lambda: (len(p), other_done.set())).start()
+    assert other_done.wait(timeout=2), "pool lock held across the digest subprocess"
+
+    release.set()
+    t.join(timeout=5)

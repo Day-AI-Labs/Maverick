@@ -14,7 +14,6 @@ the dashboard/CLI call it on view, nothing runs per-turn.
 from __future__ import annotations
 
 import json
-import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -114,16 +113,16 @@ def evaluate(world, *, path: Path | None = None,
             continue
     if fresh:
         ts = float(now if now is not None else time.time())
-        for ach in fresh:
-            earned[ach.key] = ts
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(earned, sort_keys=True), encoding="utf-8")
-        os.replace(tmp, p)
-        try:
-            os.chmod(p, 0o600)
-        except OSError:  # pragma: no cover
-            pass
+        # Reload the earned set under a cross-process lock before applying this
+        # run's unlocks: two concurrent evaluate()s would otherwise both load
+        # the old set and the second save would drop the first's unlocks.
+        # Re-stamping a key another process already unlocked is idempotent.
+        from .file_lock import atomic_write_text, cross_process_lock
+        with cross_process_lock(p):
+            earned = unlocked(p)
+            for ach in fresh:
+                earned[ach.key] = ts
+            atomic_write_text(p, json.dumps(earned, sort_keys=True))
     return fresh
 
 

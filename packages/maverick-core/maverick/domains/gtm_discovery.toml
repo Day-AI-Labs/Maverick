@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "discovery & qualification brief"
+consumers = ["account_executive", "sales_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather context"
+instruction = "Read account notes, prior emails, and CRM history to assemble the deal background."
+tools = ["read_file"]
+[[workflow]]
+name = "Research account"
+instruction = "Research the prospect's industry, initiatives, and likely pain points to ground the discovery plan."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Mine calls"
+instruction = "Review recorded discovery calls to extract stated pain, metrics, and economic-buyer signals."
+tools = ["gong_read"]
+[[workflow]]
+name = "Score MEDDIC"
+instruction = "Map findings to MEDDIC and flag the weakest qualification gaps to probe next."
+[[workflow]]
+name = "Draft solution map"
+instruction = "Draft the qualification brief and solution map and route it to the AE for review."
+gate = "review"

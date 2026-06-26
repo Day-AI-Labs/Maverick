@@ -18,3 +18,24 @@ deliverable = "DOI bulletin & reg-change log"
 consumers = ["compliance_officer", "risk_officer"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Gather bulletins"
+instruction = "Collect new DOI bulletins and regulatory changes by state for the review window from the knowledge base."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Verify currency"
+instruction = "Confirm each item's effective date and supersession status against the source bulletin and cite it."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Assess impact"
+instruction = "Map each change to affected lines, states, and internal procedures and draft a concrete action item."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build log"
+instruction = "Assemble the DOI bulletin and reg-change log with state, effective date, and owner per action item."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Compliance review"
+instruction = "Route the log to the compliance officer and risk officer for sign-off on action items."
+gate = "review"

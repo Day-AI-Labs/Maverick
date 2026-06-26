@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from maverick import tenant_registry as tr
+from maverick.tenant import registry as tr
 
 
 @pytest.fixture(autouse=True)
@@ -102,3 +102,69 @@ def test_registry_round_trips_on_disk():
     ids = [t.id for t in tr.list_tenants()]
     assert ids == ["acme", "beta"]
     assert tr.get_tenant("acme").plan == "pro"
+
+
+# ---- atomic persistence + concurrency-safe roster edits ----
+
+def test_save_is_atomic_0600_no_temp(tmp_path):
+    import stat
+    tr.create_tenant("acme")
+    path = tmp_path / "tenant_registry.json"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    # A valid, fully-written JSON roster -- never a truncated file.
+    import json
+    assert "acme" in {t["id"] for t in json.loads(path.read_text())["tenants"]}
+    # No stray temp droppings from the atomic write.
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_concurrent_creates_do_not_lose_tenants():
+    """Each create_tenant does a load-modify-save; without the lock two
+    concurrent creates both load the same roster and the second save clobbers
+    the first's tenant. All N distinct tenants must survive."""
+    import threading
+
+    n = 24
+    errors: list[Exception] = []
+
+    def make(i: int):
+        try:
+            tr.create_tenant(f"t{i:03d}")
+        except (ValueError, OSError) as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=make, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, errors[:3]
+    assert len(tr.list_tenants()) == n
+
+
+def test_concurrent_suspend_and_quota_both_apply():
+    """A suspend racing a set_quota must not lose either change (last-writer
+    clobber). After both, the tenant is suspended AND carries the new quota."""
+    import threading
+
+    tr.create_tenant("acme")
+    barrier = threading.Barrier(2)
+
+    def suspend():
+        barrier.wait()
+        tr.suspend_tenant("acme")
+
+    def quota():
+        barrier.wait()
+        tr.set_quota("acme", 99.0)
+
+    ts = [threading.Thread(target=suspend), threading.Thread(target=quota)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+
+    rec = tr.get_tenant("acme")
+    assert rec.status == tr.SUSPENDED
+    assert rec.max_daily_dollars == 99.0

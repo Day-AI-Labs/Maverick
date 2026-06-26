@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "works council obligation tracker"
+consumers = ["hr_director", "local_counsel"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Map entities"
+instruction = "Read the EU entity list and identify which works councils and co-determination bodies apply to each."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Identify triggers"
+instruction = "Determine which planned actions trigger information or consultation obligations per jurisdiction, citing the source documents."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Build tracker"
+instruction = "Build the obligation tracker mapping each trigger to deadlines, required notices, and consultation status per entity."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag missed or upcoming deadlines and state jurisdiction-specific assumptions and unknowns plainly."
+[[workflow]]
+name = "Counsel review"
+instruction = "Route jurisdiction-specific positions to the HR director and local counsel for review before any council engagement."
+gate = "review"

@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["ops"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "service-parts stocking plan"
+consumers = ["inventory_planner", "service_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull install base"
+instruction = "Query the install-base population, field-failure history, and current service-part on-hand and on-order positions."
+tools = ["sql_query"]
+[[workflow]]
+name = "Verify failure rates"
+instruction = "Confirm failure rates, lead times, and criticality classifications against company service and engineering records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Model demand"
+instruction = "Project service-part demand from install base and failure rates and compute target stocking levels and reorder points by location."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag risk parts"
+instruction = "Flag critical parts at stockout risk and slow-movers carrying excess obsolescence exposure."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Route the stocking plan with stated assumptions to the inventory planner for review."
+gate = "review"

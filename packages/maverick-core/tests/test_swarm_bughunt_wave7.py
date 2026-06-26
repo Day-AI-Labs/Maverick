@@ -25,7 +25,7 @@ class TestArxivOldStyleId:
 
 class TestCostRouterReconciled:
     def test_deepseek_and_moonshot_match_model_prices(self):
-        from maverick.cost_router import _PRICING
+        from maverick.cost.router import _PRICING
         from maverick.llm import MODEL_PRICES
         rates = {mid: (cin, cout) for _p, mid, _t, cin, cout in _PRICING}
         for mid in ("deepseek-chat", "moonshot-v1-128k"):

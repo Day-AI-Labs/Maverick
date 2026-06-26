@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "data room index & Q&A log"
+consumers = ["general_counsel", "deal_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Inventory documents"
+instruction = "Compile the inventory of deal documents to be hosted and map each to its data room folder."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build index"
+instruction = "Construct the data room index with consistent numbering and confirm every listed document is present."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Verify permissions"
+instruction = "Cross-check each folder's access list against the approved party roster and flag any over-broad grant."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Log Q&A"
+instruction = "Record each buyer-side question, its routed owner, and the cleared response in the Q&A log."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Counsel sign-off"
+instruction = "Route the index, permission set, and Q&A log to deal counsel for approval before access is opened or changed."
+gate = "approval"

@@ -196,6 +196,21 @@ class _LspSession:
             self._proc.kill()
         except Exception:
             pass
+        # kill() only sends the signal; without wait() the child stays a zombie
+        # until CPython incidentally reaps it, and the PIPE fds leak until then.
+        # A fresh server is spawned per query (esp. the timeout/hung-server path
+        # this module exists for), so without this they accumulate. reap + close
+        # the pipes, matching every sibling subprocess host (mcp_client, etc.).
+        try:
+            self._proc.wait(timeout=5)
+        except Exception:
+            pass
+        for stream in (self._proc.stdin, self._proc.stdout):
+            try:
+                if stream is not None:
+                    stream.close()
+            except Exception:
+                pass
 
 
 def _server_for(language: str) -> list[str] | str:

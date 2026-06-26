@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "gift batch & acknowledgment log"
+consumers = ["advancement_director", "finance_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull gifts"
+instruction = "Read the day's incoming gift records, pledges, and payment detail from the gift queue."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Verify coding"
+instruction = "Confirm each gift's fund, designation, and tax-deductible amount against gift-entry policy in the knowledge base."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Reconcile batch"
+instruction = "Total the batch and reconcile gift counts and amounts to the deposit before posting."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft acknowledgments"
+instruction = "Draft donor-correct acknowledgment letters with accurate amounts, designations, and required IRS substantiation language."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Route the reconciled batch and acknowledgment drafts to the advancement director for review and signature."
+gate = "review"

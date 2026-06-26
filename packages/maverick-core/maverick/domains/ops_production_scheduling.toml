@@ -16,3 +16,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_production"]
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "finite production schedule"
+consumers = ["production_supervisor", "plant_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull demand"
+instruction = "Read the firm order book, work orders, and routings for the planning horizon."
+tools = ["read_file"]
+[[workflow]]
+name = "Check capacity"
+instruction = "Compare required hours against line and labor capacity and identify bottleneck work centers."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Sequence runs"
+instruction = "Build a finite schedule that sequences and balances lines while honoring changeover and material constraints."
+[[workflow]]
+name = "Safety check"
+instruction = "Verify no sequence forces unsafe staffing or overtime that violates worker-safety limits before throughput gains."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Hand to supervisor"
+instruction = "Present the draft schedule to the production supervisor to release the orders to the floor."
+gate = "review"

@@ -1,10 +1,10 @@
 # Regulated deployment
 
-**Run Maverick on private / sensitive data without it leaving your boundary.**
+**Run Lightwork on private / sensitive data without it leaving your boundary.**
 
 The kernel ships fail-open and cloud-capable — right for a personal agent, wrong the
 moment it touches PHI, PII, financial, or otherwise regulated data. This page is the
-single reference for standing Maverick up in a *regulated* posture: one profile, the
+single reference for standing Lightwork up in a *regulated* posture: one profile, the
 guarantees it gives you, and one command to **prove** they hold.
 
 ## The guarantee
@@ -18,12 +18,16 @@ With the profile below, every load-bearing control is fail-closed at once:
 | **Tamper-evident audit** | Every event is Ed25519 hash-chained, so a forged or deleted log line is detectable. | EU AI Act Art. 12 |
 | **Human oversight** | Destructive-action consent defaults to `ask` — and therefore *deny* in non-interactive contexts — instead of auto-approve. | EU AI Act Art. 14 |
 | **Storage limitation** | Retention windows expire audit, episode, and event data on a schedule. | GDPR Art. 5(1)(e) |
+| **Isolated execution** | Agent-generated shell runs in a container (docker → podman), never `shell=True` on the host; if no container runtime exists it fails closed. Plugin tool calls can be isolation-proxied and plugin distributions can be content-hash-checked after a lockfile is generated, but plugin import/discovery code still runs in-process; install only trusted plugins. | EU AI Act Art. 15 (robustness / cybersecurity) |
 
 ## The profile
 
 Put this in `~/.maverick/config.toml`. Enterprise mode alone gives you the egress lock,
-fail-closed consent, capability enforcement, **and** at-rest encryption; signing,
-retention, and anonymization are the extra knobs.
+fail-closed consent, capability enforcement, at-rest encryption, **and** the
+deployment-specific secure defaults (container-default sandbox, plugin tool-call isolation +
+hash-lock checks); signing, retention, and anonymization are the extra knobs. Setting
+`[profile] name = "enterprise"` (or `MAVERICK_PROFILE=enterprise`) selects enterprise
+mode plus those defaults in a single knob.
 
 ```toml
 [enterprise]
@@ -117,7 +121,7 @@ maverick ai-act    # EU AI Act risk classification (self-assessment)
 `maverick dpia` pre-fills the processing description (consistent with the ROPA) and a
 **risk register** of the agent-on-personal-data risks — data egress to an LLM,
 unsupervised automated action, audit tampering, indefinite retention — each mapped to the
-Maverick control that mitigates it and flagged `OPEN` if that control is currently off.
+Lightwork control that mitigates it and flagged `OPEN` if that control is currently off.
 Necessity/proportionality and residual-risk sign-off are left to the controller.
 
 `maverick ai-act` reports the live Art. 50 transparency posture and hands you a checklist

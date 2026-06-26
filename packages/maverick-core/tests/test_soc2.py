@@ -470,3 +470,42 @@ def test_audit_chain_ok_after_a_signed_write():
     # A signed write implies the trust-anchor key was created.
     assert ev["audit_signing_key"]["status"] == soc2.STATUS_ENABLED
     assert ev["audit_signing_key"]["present"] is True
+
+
+def test_signing_key_offhost_injected_marker_counts_as_present(monkeypatch):
+    """Off-host (KMS) key custody leaves a ``.injected`` marker + ``.pub`` and NO
+    local ``.key``. The probe must still report the anchor present — else the most
+    secure (enterprise-required) custody fails the SOC 2 gate."""
+    monkeypatch.delenv("MAVERICK_AUDIT_SIGNING_KEY", raising=False)
+    monkeypatch.delenv("MAVERICK_AUDIT_SIGNING_KEY_WRAPPED", raising=False)
+    from maverick.audit import signing
+
+    key_dir = signing._key_dir()
+    key_dir.mkdir(parents=True, exist_ok=True)
+    (key_dir / "abc123.injected").write_text("")
+    (key_dir / "abc123.pub").write_bytes(b"\x00" * 32)
+
+    sk = soc2.collect_soc2_evidence()["audit_signing_key"]
+    assert sk["status"] == soc2.STATUS_ENABLED
+    assert sk["present"] is True
+    assert sk["offhost_key"] is True
+    assert sk["key_count"] == 0  # no local private .key on disk
+
+
+def test_signing_key_offhost_env_counts_as_present(monkeypatch):
+    """A KMS-sourced signing key injected via env counts as present even before a
+    key file or marker exists on disk."""
+    monkeypatch.setenv("MAVERICK_AUDIT_SIGNING_KEY", "00" * 32)
+    sk = soc2.collect_soc2_evidence()["audit_signing_key"]
+    assert sk["status"] == soc2.STATUS_ENABLED
+    assert sk["offhost_key"] is True
+
+
+def test_signing_key_absent_when_no_anchor_anywhere(monkeypatch):
+    """No local key, no marker, no env -> genuinely absent."""
+    monkeypatch.delenv("MAVERICK_AUDIT_SIGNING_KEY", raising=False)
+    monkeypatch.delenv("MAVERICK_AUDIT_SIGNING_KEY_WRAPPED", raising=False)
+    sk = soc2.collect_soc2_evidence()["audit_signing_key"]
+    assert sk["status"] == soc2.STATUS_ABSENT
+    assert sk["present"] is False
+    assert sk["offhost_key"] is False

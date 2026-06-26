@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "vendor security assessment"
+consumers = ["security_lead", "procurement_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Load baseline"
+instruction = "Retrieve our control baseline and the vendor's completed questionnaire and supporting evidence."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Map to controls"
+instruction = "Map each questionnaire response and evidence artifact to the corresponding control in our baseline."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify evidence"
+instruction = "Check that claimed certifications and attestations are current and supported by attached evidence rather than assertions alone."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Score gaps"
+instruction = "Rate each control as met, partial, or gap and flag responses that conflict with the supplied evidence."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route assessment"
+instruction = "Deliver the gap-scored assessment to the security lead for sign-off before it informs the procurement decision."
+gate = "review"

@@ -6,7 +6,7 @@ import asyncio
 import maverick.server as server_mod
 from maverick.paths import data_dir
 from maverick.quotas import UsageLedger
-from maverick.tenant_registry import (
+from maverick.tenant.registry import (
     create_tenant,
     set_quota,
     suspend_tenant,

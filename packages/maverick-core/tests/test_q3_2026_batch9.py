@@ -482,7 +482,7 @@ def test_shopify_refund_dry_run(monkeypatch):
 # ---------- LLM cache ----------
 
 def test_llm_cache_key_stable():
-    from maverick.llm_cache import cache_key
+    from maverick.cache.llm import cache_key
     a = cache_key(provider="anthropic", model="m", system="s",
                   messages=[{"role": "user", "content": "hi"}],
                   tools=[], max_tokens=100)
@@ -497,7 +497,7 @@ def test_llm_cache_key_stable():
 
 
 def test_llm_cache_lookup_miss_then_hit(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db")
     key = "abc"
     assert cache.lookup(key) is None
@@ -514,7 +514,7 @@ def test_llm_cache_lookup_miss_then_hit(tmp_path):
 
 
 def test_llm_cache_ttl_expires(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db", ttl_seconds=1)
     cache.store("k", provider="p", model="m", text="x")
     assert cache.lookup("k") is not None
@@ -524,7 +524,7 @@ def test_llm_cache_ttl_expires(tmp_path):
 
 
 def test_llm_cache_stats(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db")
     cache.store("a", provider="p", model="m", text="1")
     cache.store("b", provider="p", model="m", text="2")
@@ -535,7 +535,7 @@ def test_llm_cache_stats(tmp_path):
 
 
 def test_llm_cache_purge_expired(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db", ttl_seconds=10)
     cache.store("k", provider="p", model="m", text="x")
     # Force expiration window.
@@ -545,7 +545,7 @@ def test_llm_cache_purge_expired(tmp_path):
 
 
 def test_llm_cache_clear(tmp_path):
-    from maverick.llm_cache import LLMCache
+    from maverick.cache.llm import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db")
     cache.store("a", provider="p", model="m", text="x")
     cache.clear()
@@ -553,7 +553,7 @@ def test_llm_cache_clear(tmp_path):
 
 
 def test_llm_cache_enabled_via_env(monkeypatch):
-    from maverick import llm_cache
+    from maverick.cache import llm as llm_cache
     monkeypatch.setenv("MAVERICK_LLM_CACHE", "1")
     assert llm_cache.enabled() is True
     monkeypatch.setenv("MAVERICK_LLM_CACHE", "0")

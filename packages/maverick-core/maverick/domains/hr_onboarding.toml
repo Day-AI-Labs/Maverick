@@ -14,3 +14,27 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "new-hire onboarding plan"
+consumers = ["hiring_manager", "it_admin", "hr_business_partner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Confirm new hire"
+instruction = "Read the new-hire record to confirm start date, role, manager, and location from HRIS."
+tools = ["read_file", "bamboohr_read", "rippling_read"]
+[[workflow]]
+name = "Build plan"
+instruction = "Assemble the onboarding plan and required new-hire paperwork from company onboarding policy and templates."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Stage provisioning"
+instruction = "Draft the IT provisioning trigger listing accounts, equipment, and access for IT to perform."
+tools = ["rippling_read"]
+[[workflow]]
+name = "Manager review"
+instruction = "Route the onboarding plan and paperwork to the hiring manager for review before day one."
+gate = "review"

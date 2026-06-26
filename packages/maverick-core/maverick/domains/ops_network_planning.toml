@@ -16,3 +16,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_planning"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "network footprint options brief"
+consumers = ["supply_chain_director", "cfo"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Gather baseline"
+instruction = "Pull current network nodes, lane volumes, capacity, and cost-to-serve from planning and finance sources."
+tools = ["read_file", "flexport_read", "knowledge_search"]
+[[workflow]]
+name = "Model options"
+instruction = "Build candidate footprint and sourcing scenarios with capacity, cost, and lead-time parameters for each."
+tools = ["read_file"]
+[[workflow]]
+name = "Quantify cost-to-serve"
+instruction = "Compute cost-to-serve and service impact per option and run sensitivities on demand and cost drivers."
+[[workflow]]
+name = "Assess resilience risk"
+instruction = "Score each option for concentration and resilience risk and flag single-source or single-region exposure."
+tools = ["web_search"]
+[[workflow]]
+name = "Route to leadership"
+instruction = "Compile the ranked options with assumptions and sensitivities for leadership to decide the footprint and capital."
+gate = "review"

@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gtm"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "territory model for approval"
+consumers = ["sales_ops_manager", "sales_leadership"]
+cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Gather TAM data"
+instruction = "Pull addressable-market, account, and existing-coverage data needed to model territories for the segment."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify inputs"
+instruction = "Cross-check account counts and market sizing against approved source documents and flag any assumptions."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Build model"
+instruction = "Construct balanced territory carve-ups in the spreadsheet weighing potential, headcount, and equity of opportunity."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Stress-test balance"
+instruction = "Check for overloaded or underweight territories and account overlaps before presenting the model."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Submit for approval"
+instruction = "Route the territory model to sales leadership for approval before any coverage changes take effect."
+gate = "approval"

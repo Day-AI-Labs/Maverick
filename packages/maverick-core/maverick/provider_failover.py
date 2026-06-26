@@ -63,6 +63,19 @@ def should_retry_llm_error(exc: Exception) -> bool:
     return not non_retryable or not isinstance(exc, tuple(non_retryable))
 
 
+def _cooldown_ledger():
+    """The process cooldown ledger, or None if unavailable. Feeding it here is
+    what makes ``order_chain``'s cooldown skip actually fire: without recording
+    failures/successes on the live path, ``in_cooldown`` is always False and the
+    configured ``cooldown_s``/``cooldown_after`` policy is a dead no-op. The
+    ledger itself is a no-op when ``cooldown_s`` is unset (window_s <= 0)."""
+    try:
+        from .failover_policy import shared_ledger
+        return shared_ledger()
+    except Exception:  # pragma: no cover -- never block a call on the ledger
+        return None
+
+
 def failover(attempts, *, should_retry=None):
     """Call each ``(label, thunk)`` in order; return the first success.
 
@@ -72,14 +85,22 @@ def failover(attempts, *, should_retry=None):
     attempts = list(attempts)
     if not attempts:
         raise ValueError("failover: no attempts")
+    ledger = _cooldown_ledger()
     last: Exception | None = None
     for label, thunk in attempts:
         try:
-            return thunk()
+            result = thunk()
+            if ledger is not None:
+                ledger.record_success(label)
+            return result
         except Exception as e:  # noqa: BLE001 -- failover boundary
             last = e
             if should_retry is not None and not should_retry(e):
+                # Control-signal (budget/egress/...), not a provider failure --
+                # re-raise without cooling a model that didn't actually fail.
                 raise
+            if ledger is not None:
+                ledger.record_failure(label)
             log.warning("provider failover: %s failed (%s); trying next",
                         label, type(e).__name__)
     assert last is not None
@@ -91,14 +112,20 @@ async def afailover(attempts, *, should_retry=None):
     attempts = list(attempts)
     if not attempts:
         raise ValueError("failover: no attempts")
+    ledger = _cooldown_ledger()
     last: Exception | None = None
     for label, thunk in attempts:
         try:
-            return await thunk()
+            result = await thunk()
+            if ledger is not None:
+                ledger.record_success(label)
+            return result
         except Exception as e:  # noqa: BLE001 -- failover boundary
             last = e
             if should_retry is not None and not should_retry(e):
                 raise
+            if ledger is not None:
+                ledger.record_failure(label)
             log.warning("provider failover: %s failed (%s); trying next",
                         label, type(e).__name__)
     assert last is not None

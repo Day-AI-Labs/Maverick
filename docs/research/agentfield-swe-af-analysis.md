@@ -1,12 +1,12 @@
-# AgentField / SWE-AF vs. Maverick — Competitive Analysis
+# AgentField / SWE-AF vs. Lightwork — Competitive Analysis
 
 > Deep-research report. Date: 2026-06-03.
 > Scope: [agentfield.ai](https://agentfield.ai/) + [docs/learn](https://agentfield.ai/docs/learn),
 > [github.com/Agent-Field/agentfield](https://github.com/Agent-Field/agentfield),
 > [github.com/Agent-Field/SWE-AF](https://github.com/Agent-Field/SWE-AF), benchmarked against
-> Maverick's actual codebase (`packages/maverick-core`, `packages/maverick-shield`).
+> Lightwork's actual codebase (`packages/maverick-core`, `packages/maverick-shield`).
 > Method: 5 parallel web-research angles + 1 codebase ground-truth pass, with adversarial
-> verification of load-bearing claims. Findings re-verified against Maverick source before
+> verification of load-bearing claims. Findings re-verified against Lightwork source before
 > publishing (an earlier draft mis-stated two items — see "Corrections" at the end).
 
 ## Bottom line
@@ -17,13 +17,13 @@
    identity + a signed audit trail** (a W3C DID per agent — "Kubernetes for agents").
    **SWE-AF** ("Autonomous Fleet") is a *reference application* on top of it — an autonomous
    coding system. Neither is a model, and **"SWE-AF" is not a SWE-bench-style benchmark.**
-2. **On the axes that matter for a safe consumer agent, Maverick is ahead or on par** — hard
+2. **On the axes that matter for a safe consumer agent, Lightwork is ahead or on par** — hard
    budget caps, content/injection safety, sandbox diversity, anti-test-cheating, and
-   cheap-model routing are all present in Maverick and largely *absent* in SWE-AF/AgentField.
+   cheap-model routing are all present in Lightwork and largely *absent* in SWE-AF/AgentField.
 3. **The genuinely transferable ideas are few and specific** (see "Worth adopting"). The
    single highest-leverage move is **model choice + a real benchmark number**, not more
    orchestration. The strongest external evidence is *skeptical* of multi-agent
-   role-simulation for coding — which is an argument for Maverick's shared-context design,
+   role-simulation for coding — which is an argument for Lightwork's shared-context design,
    not SWE-AF's 22-agent pipeline.
 
 ---
@@ -80,22 +80,22 @@ M2.5). Do not trust this as a quality claim:
 
 ---
 
-## Head-to-head: where Maverick stands (verified against source)
+## Head-to-head: where Lightwork stands (verified against source)
 
-| Capability | Maverick (file evidence) | SWE-AF / AgentField | Verdict |
+| Capability | Lightwork (file evidence) | SWE-AF / AgentField | Verdict |
 |---|---|---|---|
-| **Hard $/token/wall-clock budget caps** | `Budget.check()` enforced atomically; synthesis reserve; per-provider cache pricing (`budget.py:124,286`) | Cost only *tracked*, never capped; caps are iteration/time counters | ✅ **Maverick ahead** |
-| **Content / injection safety** | Shield scans input/tool-call/output, secret redaction, fail-open (`maverick_shield/guard.py`, `agent.py:500-571`) | None; `permission_mode` defaults to `""`; governance ≠ content safety | ✅ **Maverick ahead** |
-| **Anti-test-cheating** | `defensive_validate()` hard-blocks edits to `tests/`/`test_*.py`/`conftest.py`/FAIL_TO_PASS paths + lockfiles, plus gold-patch overlap detector (`coding_mode.py:775`, wired `agent.py:1076`) | Prompt-rule only ("don't skip/xfail") | ✅ **Maverick ahead** |
-| **Sandbox isolation** | 7 backends (Local/Docker/Podman/Devcontainer/K8s/Firecracker/SSH) (`sandbox/__init__.py`) | Only Codex's inherited bubblewrap; other runtimes none | ✅ **Maverick ahead** |
+| **Hard $/token/wall-clock budget caps** | `Budget.check()` enforced atomically; synthesis reserve; per-provider cache pricing (`budget.py:124,286`) | Cost only *tracked*, never capped; caps are iteration/time counters | ✅ **Lightwork ahead** |
+| **Content / injection safety** | Shield scans input/tool-call/output, secret redaction, fail-open (`maverick_shield/guard.py`, `agent.py:500-571`) | None; `permission_mode` defaults to `""`; governance ≠ content safety | ✅ **Lightwork ahead** |
+| **Anti-test-cheating** | `defensive_validate()` hard-blocks edits to `tests/`/`test_*.py`/`conftest.py`/FAIL_TO_PASS paths + lockfiles, plus gold-patch overlap detector (`coding_mode.py:775`, wired `agent.py:1076`) | Prompt-rule only ("don't skip/xfail") | ✅ **Lightwork ahead** |
+| **Sandbox isolation** | 7 backends (Local/Docker/Podman/Devcontainer/K8s/Firecracker/SSH) (`sandbox/__init__.py`) | Only Codex's inherited bubblewrap; other runtimes none | ✅ **Lightwork ahead** |
 | **Cheap-model routing** | `MODEL_PRICES` registers DeepSeek/Kimi/Gemini-Flash/Qwen; `cost_router` tiers + per-role assignment (`llm.py`, `cost_router.py`) | Per-role cascade (`runtime default < models.default < models.<role>`) | ✅ **On par / slight edge** |
 | **Per-role model selection** | `model_for_role()` 6-level resolution (`llm.py:157`) | Role→model map | 🟰 **On par** |
 | **Git worktrees** | Yes — for *safe patch application* (`agent.py:330-375`) | Yes — for *parallel isolation* | 🟰 **Different purpose** |
-| **Real SWE-bench harness** | Yes, with **test-driven** ground-truth grading (`benchmarks/swe_bench.py`, `agent.py:1165-1283`) | None — only the toy rubric | ✅ **Maverick ahead** |
-| **Risk-proportional verification** | Uniform verifier depth (no skip for trivial) | `needs_deeper_qa` routes 2-call vs 4-call path per issue | ❌ **Maverick lacking** |
-| **Live-CI terminal gate** | LLM-panel verifier off-benchmark; no real-PR/CI poll | Opens real PR, polls GitHub Actions to conclusion | ❌ **Maverick lacking** |
-| **Act on swarm disagreement** | Entropy *measured* and posted; acting on it is a coded TODO (`spawn.py` "deferred follow-up") | Typed advisor/replanner act on failure | ⚠️ **Maverick partial** |
-| **Honest debt in user-facing output** | Low confidence/critique carried in `AgentResult`, not surfaced in `final` text | `accept_with_debt` → debt notes in PR body | ⚠️ **Maverick partial** |
+| **Real SWE-bench harness** | Yes, with **test-driven** ground-truth grading (`benchmarks/swe_bench.py`, `agent.py:1165-1283`) | None — only the toy rubric | ✅ **Lightwork ahead** |
+| **Risk-proportional verification** | Uniform verifier depth (no skip for trivial) | `needs_deeper_qa` routes 2-call vs 4-call path per issue | ❌ **Lightwork lacking** |
+| **Live-CI terminal gate** | LLM-panel verifier off-benchmark; no real-PR/CI poll | Opens real PR, polls GitHub Actions to conclusion | ❌ **Lightwork lacking** |
+| **Act on swarm disagreement** | Entropy *measured* and posted; acting on it is a coded TODO (`spawn.py` "deferred follow-up") | Typed advisor/replanner act on failure | ⚠️ **Lightwork partial** |
+| **Honest debt in user-facing output** | Low confidence/critique carried in `AgentResult`, not surfaced in `final` text | `accept_with_debt` → debt notes in PR body | ⚠️ **Lightwork partial** |
 | **Full-build checkpoint/resume** | Depth-0 only (`checkpoint.py`) | `.artifacts/{plan,execution,verification}` + `resume_build` | ⚠️ **SWE-AF edge** |
 | **Cryptographic audit trail** | Heavy instrumentation; no signed chain | DID + verifiable credentials per call | ⚠️ **AgentField edge (enterprise-only)** |
 
@@ -109,7 +109,7 @@ After verifying against source, the anti-cheat and cheap-routing recs from the f
 **Highest value (consumer-facing honesty + reliability):**
 
 1. **Surface "couldn't fully verify / known limitations" in the user-facing answer.** Today,
-   when the verifier rejects after the one allowed revision, Maverick accepts the second attempt
+   when the verifier rejects after the one allowed revision, Lightwork accepts the second attempt
    *regardless* (`agent.py:1323-1334`, `1349-1362`) and the low confidence/critique live only in
    `AgentResult`, not in the answer the user reads. Borrow SWE-AF's `accept_with_debt` idea:
    attach an honest caveat when confidence is low. (Caveat: in coding mode `final` is a patch —
@@ -137,7 +137,7 @@ After verifying against source, the anti-cheat and cheap-routing recs from the f
 **Conditional / strategic:**
 
 7. **Parallel-coding worktrees + semantic merge** — *only* for truly independent subtasks.
-   Maverick currently serializes coder children via a workdir lock, sidestepping merges. The
+   Lightwork currently serializes coder children via a workdir lock, sidestepping merges. The
    evidence (below) says parallel code editing is where multi-agent most often fails; adopt
    narrowly, gated by dependency analysis.
 8. **Signed audit trail** (AgentField's DID idea) — skip for consumers; revisit only for a
@@ -147,7 +147,7 @@ After verifying against source, the anti-cheat and cheap-routing recs from the f
 
 ## The strategic caveat (most important finding)
 
-Maverick is positioned as a **recursive multi-agent swarm**. The strongest external evidence is
+Lightwork is positioned as a **recursive multi-agent swarm**. The strongest external evidence is
 *skeptical of multi-agent role-simulation for coding specifically*:
 
 - **Cognition / Devin — "Don't Build Multi-Agents":** parallel sub-agents editing code fail from
@@ -163,7 +163,7 @@ Maverick is positioned as a **recursive multi-agent swarm**. The strongest exter
 - **Routing economics are real and literature-backed** (RouteLLM: route ~85% of queries to
   cheap models, keep ~95% of frontier quality). <https://arxiv.org/pdf/2410.10347>
 
-**Implication — good news for Maverick's design.** Maverick is a *single recursive agent with
+**Implication — good news for Lightwork's design.** Lightwork is a *single recursive agent with
 shared context* (one `SwarmContext`, one blackboard, one budget across the tree; `swarm.py:54`),
 not a fixed 22-agent assembly line passing serialized state like SWE-AF. That is much closer to
 the "shared context, not shared state" pattern the failure literature endorses. So:
@@ -178,7 +178,7 @@ the "shared context, not shared state" pattern the failure literature endorses. 
 
 ## Confidence & caveats
 
-- **High confidence** (code-level or multi-source): Maverick's architecture and the
+- **High confidence** (code-level or multi-source): Lightwork's architecture and the
   `defensive_validate` / budget / shield / routing facts (read from source); SWE-AF's loop/config
   (`schemas.py`); AgentField = control plane with DID/audit (GitHub + SiliconANGLE); the
   multi-agent-for-coding skepticism (4 independent sources); RouteLLM economics.
@@ -190,10 +190,10 @@ the "shared context, not shared state" pattern the failure literature endorses. 
 ## Corrections to the first draft
 
 The initial synthesis (based on an architecture-only codebase scan) wrongly listed two items as
-Maverick gaps. Re-reading source corrected them:
+Lightwork gaps. Re-reading source corrected them:
 
 - **Anti-test-cheating is NOT missing.** `defensive_validate()` (`coding_mode.py:775`) already
-  hard-blocks test/lockfile edits and runs a gold-patch overlap cheating detector. Maverick is
+  hard-blocks test/lockfile edits and runs a gold-patch overlap cheating detector. Lightwork is
   *ahead* of SWE-AF here.
 - **Cheap-model routing is NOT missing.** `MODEL_PRICES` + `cost_router` already cover
   DeepSeek/Kimi/Gemini-Flash/Qwen with per-role tiers. Only MiniMax M2.5 specifically is

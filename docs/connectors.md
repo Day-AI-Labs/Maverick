@@ -1,6 +1,6 @@
 # Connectors
 
-Maverick ships connectors to the systems enterprises actually run on. Every
+Lightwork ships connectors to the systems enterprises actually run on. Every
 connector follows the same house rules:
 
 - **Explicit-env auth.** Each connector reads its credentials from named
@@ -11,11 +11,20 @@ connector follows the same house rules:
 - **Fail closed, fail loud.** Missing config or an API error returns an
   `ERROR:`-prefixed message; it never silently half-succeeds.
 
-There are **217 enterprise connectors** below, part of **311+ total
-tools** in the kernel. They span ITSM/ESM, CRM & sales, ERP & finance, HCM &
+There are **214 write-capable long-tail enterprise connectors** in the catalog
+below, plus dedicated-module connectors (Salesforce, HubSpot, Stripe,
+ServiceNow, Snowflake, ...), part of **286 built-in tool modules** in the
+kernel. They span ITSM/ESM, CRM & sales, ERP & finance, HCM &
 payroll, observability & APM, security/IAM/GRC, cloud & infra, DevOps/CI/CD,
 data/BI/ETL, collaboration & content, marketing/commerce/CX, contact center,
 and more.
+
+Alongside these write-capable systems, the kernel ships **37 read-only
+primary-source / public-data connectors** (SEC EDGAR, FRED, Treasury, World
+Bank, FDIC, Census, BLS, EIA, openFDA, NPPES, ClinicalTrials, USAspending,
+SAM.gov, CourtListener, Federal Register, GLEIF, OpenCorporates, NWS/NOAA
+weather, EPA, Climatiq, ...) — GET-only, low-risk, and auto-granted to analyst
+packs by suite (see **Primary-source data grounding** below).
 
 ## Enabling a connector
 
@@ -28,6 +37,23 @@ maverick init        # advanced flow → "Connect any enterprise systems now?"
 
 Pick the systems by name and the wizard prompts for each one's URL and token.
 You can also add or edit them in `~/.maverick/.env` at any time.
+
+## Primary-source data grounding
+
+Separately from the write-capable catalog above, the kernel ships **37
+read-only primary-source / public-data connectors** (SEC EDGAR, FRED,
+Treasury, World Bank, FDIC, Census, BLS, EIA, openFDA, NPPES, ClinicalTrials,
+USAspending, SAM.gov, CourtListener, Federal Register, GLEIF, OpenCorporates,
+NWS/NOAA weather, EPA, Climatiq, ...). These are **GET-only, low-risk, and
+deferred** (no per-turn context cost).
+
+Each analyst pack is **auto-granted its suite's primary-source connectors**
+(`SUITE_DATA_CONNECTORS`, layered in `domain_capability`) so specialists ground
+answers in authoritative public data instead of guessing. This is **ON by
+default**. Kill-switch: set `[workforce] data_grounding = false` in
+`config.toml`, or the env var `MAVERICK_WORKFORCE_DATA_GROUNDING=off`. The
+installer wizard (`maverick init`) also has a step for it.
+
 
 ## Catalog
 

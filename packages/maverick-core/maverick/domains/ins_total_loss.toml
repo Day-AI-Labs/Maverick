@@ -18,3 +18,24 @@ deliverable = "Total-loss file"
 consumers = ["claims_adjuster", "claims_manager"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Open loss file"
+instruction = "Read the claim file, police or loss report, and confirm the vehicle or property is being declared a total loss."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Assemble valuation"
+instruction = "Compile the comparable-market valuation, condition data, and applicable taxes and fees into the actual cash value worksheet."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Verify lien and title"
+instruction = "Confirm lienholder balances, title status, and any owner-retained-salvage election against the documents and cite each source."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Reconcile payoff"
+instruction = "Net the valuation against lien payoff, deductible, and salvage to derive the owner's settlement figure and flag any shortfall."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand to adjuster"
+instruction = "Route the assembled total-loss file to the claims adjuster for review before any settlement offer is communicated."
+gate = "review"

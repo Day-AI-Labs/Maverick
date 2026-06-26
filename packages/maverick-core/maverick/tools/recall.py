@@ -101,7 +101,7 @@ def _rank_with_embeddings(
 ) -> list[tuple[float, Any]] | None:
     """Use fastembed if available. Returns None if model can't load."""
     try:
-        from ..skill_embeddings import _have_fastembed, embed
+        from ..skill.embeddings import _have_fastembed, embed
         if not _have_fastembed():
             return None
         texts = [_goal_text(g) for g in goals]

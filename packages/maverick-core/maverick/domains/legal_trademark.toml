@@ -15,3 +15,31 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "trademark clearance & filing-prep package"
+consumers = ["trademark_counsel", "brand_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope mark"
+instruction = "Read the brief to confirm the proposed mark, goods/services, and the international classes to be cleared."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Knockout search"
+instruction = "Run clearance and knockout searches against USPTO Trademark Search and TSDR sources for confusingly similar marks."
+tools = ["web_search"]
+[[workflow]]
+name = "Assess confusion"
+instruction = "Assess likelihood of confusion under Lanham Act §2(d), citing the class and basis for each cited reference."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Prep filing"
+instruction = "Draft the TEAS filing bases and watch/opposition notes, flagging any blocking prior registration that defeats registrability."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route to counsel"
+instruction = "Hand the clearance package and filing prep to trademark counsel, who files."
+gate = "review"

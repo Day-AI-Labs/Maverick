@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "assortment add/drop recommendation"
+consumers = ["category_manager", "merchandising_director"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull productivity"
+instruction = "Query sales, margin, and inventory turns by SKU and category for the review period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Rank performers"
+instruction = "Rank SKUs by productivity and isolate underperformers and overlapping duplicates for drop candidates."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Source adds"
+instruction = "Identify assortment gaps and candidate adds using internal plans and market trends."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Evidence check"
+instruction = "Verify each add and drop against company merchandising guidelines and cite the supporting documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Merchant review"
+instruction = "Hand the add/drop recommendation with evidence to the category manager for sign-off before any listing change."
+gate = "review"

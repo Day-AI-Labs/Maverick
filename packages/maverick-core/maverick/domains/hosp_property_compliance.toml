@@ -9,3 +9,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["hosp"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "property compliance findings report"
+consumers = ["compliance_owner", "property_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull checklists"
+instruction = "Read the applicable health, safety, and ADA checklists and the property standards they reference."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather evidence"
+instruction = "Collect inspection records and incident data for the property under review from the company's own documents."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Assess against standards"
+instruction = "Compare observed conditions to each standard and draft findings citing the source for every gap."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Surface gaps"
+instruction = "Plainly flag missing evidence and assumptions so no finding is closed on an unverified basis."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the prepared findings to a qualified compliance owner to review and sign off."
+gate = "approval"

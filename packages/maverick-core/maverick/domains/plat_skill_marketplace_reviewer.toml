@@ -10,3 +10,32 @@ max_risk = "medium"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["platform"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "skill submission review verdict"
+consumers = ["supply_chain_operator", "platform_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Load submission"
+instruction = "Pull the submitted SKILL.md, its signature, sha256, and declared permission manifest from the submission artifacts."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify integrity"
+instruction = "Verify the signature and recompute the sha256 against the body, rejecting any mismatch."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Audit manifest"
+instruction = "Compare the declared permission manifest against what the skill body actually does and flag every over-reach."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Weigh publisher trust"
+instruction = "Check the publisher's trust record and history, citing each signal that raises or lowers confidence."
+tools = ["knowledge_search", "sql_query", "web_search"]
+[[workflow]]
+name = "Issue verdict"
+instruction = "Write the pass-or-fail verdict with each check's result and route promotion to the human gate, refusing anything unverified."
+tools = ["spreadsheet"]
+gate = "approval"

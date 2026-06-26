@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "channel-to-revenue attribution reconciliation"
+consumers = ["demand_gen_lead", "marketing_ops", "finance_partner"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "State model"
+instruction = "Document the active attribution model, its windows, and the rules each channel is scored under."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pull claims"
+instruction = "Collect each channel's credited pipeline and revenue figures for the period."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Reconcile"
+instruction = "Reconcile summed channel credit to actual booked revenue and surface any gap or double-count."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Explain variance"
+instruction = "Trace each discrepancy to its model rule or data source and state assumptions plainly."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route review"
+instruction = "Send the reconciled view to marketing ops and finance for sign-off."
+gate = "review"
