@@ -140,6 +140,66 @@ class TestBuildStore:
         assert "WHERE namespace = %s AND collection = %s" in delete_sql
         assert delete_params[0] == insert_params[0][0]
 
+    def test_pgvector_migrates_legacy_table_to_namespace(self, monkeypatch):
+        """A pre-namespacing table (no namespace column) is migrated in place:
+        column added, existing rows backfilled to 'default', PK moved to include
+        namespace -- so a shared-DSN upgrade doesn't break every scoped query."""
+        calls = []
+
+        class _Cursor:
+            _last = ""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return None
+
+            def execute(self, sql, params=None):
+                calls.append((sql, params))
+                self._last = sql
+                return self
+
+            def fetchone(self):
+                # Simulate a legacy table: the namespace column does not exist.
+                if "information_schema.columns" in self._last:
+                    return None
+                return (0,)
+
+        class _Conn:
+            def execute(self, sql, params=None):
+                calls.append((sql, params))
+
+            def cursor(self):
+                return _Cursor()
+
+            def close(self):
+                pass
+
+        monkeypatch.setitem(
+            sys.modules, "psycopg",
+            types.SimpleNamespace(connect=lambda *a, **k: _Conn()),
+        )
+
+        from maverick_knowledge.store import PgVectorStore
+        PgVectorStore("postgresql://shared", dim=2, table="knowledge_chunks")
+
+        sqls = [sql for sql, _ in calls]
+        assert any("ADD COLUMN namespace TEXT" in s for s in sqls)
+        assert any(
+            s.startswith("UPDATE knowledge_chunks SET namespace = 'default'")
+            for s in sqls
+        )
+        assert any("ALTER COLUMN namespace SET NOT NULL" in s for s in sqls)
+        assert any(
+            "DROP CONSTRAINT IF EXISTS knowledge_chunks_pkey" in s for s in sqls
+        )
+        assert any(
+            "ADD CONSTRAINT knowledge_chunks_pkey "
+            "PRIMARY KEY (namespace, collection, id)" in s
+            for s in sqls
+        )
+
 
 class TestPgVectorLive:
     """Round-trip against a live pgvector Postgres. Skipped unless a DSN is set

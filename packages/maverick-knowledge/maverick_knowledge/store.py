@@ -205,6 +205,37 @@ class PgVectorStore:
             f"embedding vector({self._dim}), meta JSONB, "
             "PRIMARY KEY (namespace, collection, id))"
         )
+        # Migrate a pre-namespacing table in place. Older installs created
+        # {table} with PRIMARY KEY (collection, id) and no namespace column, so a
+        # shared-DSN upgrade would fail every namespace-scoped query (and the
+        # CREATE TABLE IF NOT EXISTS above is a no-op on the existing table). Add
+        # the column, assign existing rows to the 'default' workspace, and move
+        # the primary key to include namespace so the same id can live in
+        # multiple workspaces and ON CONFLICT (namespace, collection, id) upserts
+        # resolve. Guarded on the column's absence so it runs once, not per init.
+        with self._db.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = %s AND column_name = 'namespace'",
+                (self._table,),
+            )
+            has_namespace = cur.fetchone() is not None
+        if not has_namespace:
+            self._db.execute(f"ALTER TABLE {self._table} ADD COLUMN namespace TEXT")
+            self._db.execute(
+                f"UPDATE {self._table} SET namespace = 'default' "
+                "WHERE namespace IS NULL"
+            )
+            self._db.execute(
+                f"ALTER TABLE {self._table} ALTER COLUMN namespace SET NOT NULL"
+            )
+            self._db.execute(
+                f"ALTER TABLE {self._table} DROP CONSTRAINT IF EXISTS {self._table}_pkey"
+            )
+            self._db.execute(
+                f"ALTER TABLE {self._table} ADD CONSTRAINT {self._table}_pkey "
+                "PRIMARY KEY (namespace, collection, id)"
+            )
         # Cosine IVFFlat index -- approximate but the point of the scale backend.
         self._db.execute(
             f"CREATE INDEX IF NOT EXISTS {self._table}_embedding_idx "
