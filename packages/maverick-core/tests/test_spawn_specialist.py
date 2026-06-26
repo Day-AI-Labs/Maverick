@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from maverick.blackboard import Blackboard
 from maverick.budget import Budget
-from maverick.domain import enabled_domains, suite_for
+from maverick.domain import builtin_dir, enabled_domains, load_domains, suite_for
 from maverick.quarantine import QuarantineRegistry
 from maverick.tools.spawn import list_specialists_tool, spawn_specialist_tool
 
@@ -120,8 +120,14 @@ async def test_spawn_specialist_withholds_already_sealed_domain_without_running(
         )
         return child
 
+    # Containment is COMPARTMENT-scoped: a specialist registers under its pack's
+    # compartment (profile.compartment), which may differ from the domain name
+    # (e.g. domain 'aero_airworthiness' -> compartment 'aero_mro'). Seal the
+    # sector the child actually lands in -- the same key the automatic escalation
+    # path (maybe_seal_domain) uses -- not the bare domain name.
+    compartment = load_domains(builtin_dir())[dom].compartment
     quarantine = QuarantineRegistry()
-    quarantine.seal_domain(dom, "prior compromise")
+    quarantine.seal_domain(compartment, "prior compromise")
     parent = _fake_parent(depth=0)
     parent.ctx.quarantine = quarantine
 

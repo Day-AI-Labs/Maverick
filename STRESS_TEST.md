@@ -18,6 +18,13 @@ The dispatch substrate, budget accounting, authorization boundary, shared state
 store, and dashboard all held under loads well past their defaults. The only
 real defect surfaced was an environment-interaction bug in the git sandbox.
 
+> **Follow-up (round 2).** Fixing Finding 2's stale risk assertion unmasked a
+> **taxpayer-data confidentiality regression** (Finding 4) that the first failed
+> assertion had been hiding — 12 client-data tax packs had been granted web
+> egress, an exfiltration path. Round 2 resolves Findings 2, 3 and 4: the tax
+> risk envelope, the compartment-scoped containment test, and the egress
+> restructure. See the Round-2 section below.
+
 ---
 
 ## Finding 1 — `scrub_env()` corrupts git's env-config injection (FIXED)
@@ -65,9 +72,9 @@ still pass.
 
 ---
 
-## Finding 2 — `test_tax_prep::test_roster_present_and_sealed` is stale (NOT fixed — owner call)
+## Finding 2 — `test_tax_prep::test_roster_present_and_sealed` is stale (FIXED in round 2)
 
-**Severity:** low · **Type:** test drift
+**Severity:** low · **Type:** test drift · **Status:** resolved — see Round-2 section
 
 The test asserts every `tax_*` pack has `max_risk == "low"`. Yesterday's commit
 `1b7b0a7` ("feat: deepen banking, real-estate, tax… (68 packs)") promoted **10
@@ -82,9 +89,9 @@ Left for the owner because it's a product/governance decision, not a defect.
 
 ---
 
-## Finding 3 — `test_spawn_specialist…sealed_domain` exposes a containment-semantics gap (NOT fixed — owner call)
+## Finding 3 — `test_spawn_specialist…sealed_domain` exposes a containment-semantics gap (FIXED in round 2)
 
-**Severity:** low-to-medium · **Type:** test drift + governance question
+**Severity:** low-to-medium · **Type:** test drift + governance question · **Status:** resolved — seal by compartment (Round-2 section)
 
 The test seals a **domain** (`quarantine.seal_domain(dom, "prior compromise")`,
 `dom = sorted(enabled_domains())[0]` = `aero_airworthiness`) and asserts the
@@ -106,6 +113,60 @@ name still be allowed to run? If yes, the test is simply stale and should seal b
 compartment. If no, this is a containment hole and `seal_domain` (or the spawn
 guard) should also seal by domain identity. Flagged rather than silently
 "fixed" because it changes governance semantics.
+
+---
+
+## Finding 4 — taxpayer-data confidentiality regression: client packs with web egress (FIXED)
+
+**Severity:** high · **Type:** data-confinement / exfiltration surface · **Status:** fixed in round-2 PR
+
+**How it surfaced.** pytest stops at the first failed assertion, so Finding 2's
+risk-tier failure was masking a second, more serious break in the *same* test.
+Once the risk assertion was fixed, the egress assertion failed.
+
+**The invariant.** The tax suite was designed so taxpayer data can never leave:
+a tax pack is **either** a client-data pack (reads the client `tax` corpus, no
+web egress) **or** a web-research pack (the `tax_law` firm library, no client
+corpus). Originally exactly one pack — `tax_law_watch` — had web access, and it
+holds no client data.
+
+**The regression.** Yesterday's "68 packs" commit added **12 tax packs that hold
+the client `tax` corpus AND `web_search`** (`tax_audit_defense`,
+`tax_international`, `tax_transfer_pricing_tax`, `tax_provision_prep`,
+`tax_sales_use`, `tax_state_apportionment`, `tax_research_tax`, …). A pack that
+can both read client taxpayer documents and call `web_search` is a structural
+exfiltration path — a prompt-injected agent can encode client data into search
+queries and it leaves the trust boundary.
+
+**Fix (restructure, per owner decision).** Reading the personas, all 12 are
+genuinely *client-grounded* ("ground every conclusion in the company's own
+documents"); the only true no-client web-research pack is `tax_law_watch`. So
+web egress was removed from all 12 (their live-authority lookups route through
+the no-client `tax_law_watch` surface), their `web_search` workflow hints
+retargeted to the in-boundary `knowledge_search`, and the denial made explicit
+in `deny_tools`. The roster test is now **corpus-driven** — it enforces "client
+`tax` corpus ⟹ no web egress" and "`tax_law` corpus ⟹ no client data, no
+read_file" structurally, so a *future* pack that grants both fails the test, not
+just the ones we happened to name.
+
+Verified: 0 client-data tax packs permit web egress; `tax_law_watch` remains the
+sole web-enabled pack (no client corpus). 64 tax tests + 475 domain/quarantine/
+egress tests pass.
+
+*(Open option for the owner: if any advisory function genuinely needs live web
+authority lookups of its own, the heavier path is a dedicated per-domain
+research companion with no client corpus — offered but not built, to avoid
+speculative surface.)*
+
+---
+
+## Round-2 resolutions (Findings 2, 3, 4)
+
+| Finding | Decision | Change |
+|---------|----------|--------|
+| 2 — tax risk envelope | accept per-pack tiering | assert `max_risk in {low, medium}` (still forbids high/critical) |
+| 3 — sealed-domain test | stale test, not a hole | seal by **compartment** (the real containment unit); no behavior change |
+| 4 — tax web egress | restructure | strip web from 12 client packs; corpus-driven invariant |
 
 ---
 

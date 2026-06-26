@@ -587,21 +587,33 @@ class TestTaxSuitePacks:
                  if k.startswith("tax_")}
         assert len(packs) >= 19, f"expected >=19 tax packs, found {len(packs)}"
         for name, p in packs.items():
-            assert p.max_risk == "low", f"{name}: risk={p.max_risk!r}"
+            # Tax work is advisory: a pack may be low- or medium-risk (medium for
+            # the higher-liability advisory areas -- audit defense, transfer
+            # pricing, international, sales/use, state apportionment, etc.) but
+            # never high/critical. The real safety guarantee is the read-only,
+            # no-shell/write/egress envelope asserted below; the tier is capped
+            # at medium so a pack can't silently escalate past advisory.
+            assert p.max_risk in {"low", "medium"}, f"{name}: risk={p.max_risk!r}"
             assert len(p.persona.strip()) >= 200, f"{name}: thin persona"
             assert p.compartment.startswith("tax_"), name
             cap = p.capability(f"agent:{name}")
             assert "shell" in p.deny_tools and "write_file" in p.deny_tools
             for dangerous in ("shell", "write_file", "code_exec"):
                 assert cap.permits(dangerous) is False, f"{name}: {dangerous}"
-            if name == "tax_law_watch":   # inverse seal, asserted below
+            # Confidentiality invariant, enforced by CORPUS (not by pack name so a
+            # new pack can't slip past): a tax pack is EITHER a client-data pack
+            # -- reads the client `tax` corpus, no web egress, so taxpayer data
+            # can never leave -- OR a web-research pack on the `tax_law` firm
+            # library with no client corpus and no read_file. The two must never
+            # co-locate: client data + web egress is an exfiltration path.
+            if p.knowledge_sources == ["tax_law"]:   # web-research class
+                assert cap.permits("web_search") is True, name
                 assert cap.permits("read_file") is False, name
-                continue
-            assert cap.permits("read_file") is True, name
-            # Client-data packs: taxpayer data never leaves -- no web egress.
-            assert p.knowledge_sources == ["tax"], name
-            for egress in ("web_search", "browser"):
-                assert cap.permits(egress) is False, f"{name}: {egress}"
+            else:                                     # client-data class
+                assert p.knowledge_sources == ["tax"], name
+                assert cap.permits("read_file") is True, name
+                for egress in ("web_search", "browser"):
+                    assert cap.permits(egress) is False, f"{name}: {egress}"
 
     def test_law_watch_has_the_inverse_seal(self):
         # The one pack with web access is the one pack with NO client data:
