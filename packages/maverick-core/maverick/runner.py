@@ -105,6 +105,7 @@ def run_goal_in_thread(
     channel: str | None = None,
     user_id: str | None = None,
     capability: Any | None = None,
+    concurrency_principal: str | None = None,
 ) -> str | None:
     """Synchronously run a goal under the global concurrency semaphore.
 
@@ -126,14 +127,18 @@ def run_goal_in_thread(
     handles the concurrency), and always closes the WorldModel so the
     per-goal connection + WAL handle don't leak for the process lifetime.
     """
-    # Per-user lane first: bounds one principal's own fan-out without ever
-    # blocking on another principal's runs.
-    principal_sem = _principal_semaphore(user_id)
+    # Per-user lane first: bounds one caller's own fan-out without ever
+    # blocking on another caller's runs.  Some execution identities (for
+    # example fleet agent audit principals) are derived from user-controlled
+    # objects, so callers may pass a separate stable authenticated principal
+    # for scheduling while preserving ``user_id`` for audit/governance.
+    lane_principal = concurrency_principal if concurrency_principal is not None else user_id
+    principal_sem = _principal_semaphore(lane_principal)
     if not principal_sem.acquire(timeout=_ACQUIRE_TIMEOUT):
         log.error(
             "run_goal_in_thread: per-user concurrency cap (%d) reached within "
             "%.0fs (goal_id=%s, principal=%s); refusing run",
-            MAX_CONCURRENT_GOALS_PER_PRINCIPAL, _ACQUIRE_TIMEOUT, goal_id, user_id,
+            MAX_CONCURRENT_GOALS_PER_PRINCIPAL, _ACQUIRE_TIMEOUT, goal_id, lane_principal,
         )
         return None
     # Global ceiling next: only a host-wide saturation makes anyone wait here.
@@ -240,6 +245,7 @@ class Dispatcher(Protocol):
         channel: str | None = None,
         user_id: str | None = None,
         capability: Any | None = None,
+        concurrency_principal: str | None = None,
     ) -> str | None: ...
 
 
@@ -258,11 +264,13 @@ class LocalThreadDispatcher:
         channel: str | None = None,
         user_id: str | None = None,
         capability: Any | None = None,
+        concurrency_principal: str | None = None,
     ) -> str | None:
         return run_goal_in_thread(
             goal_id=goal_id, max_dollars=max_dollars,
             max_wall_seconds=max_wall_seconds, max_depth=max_depth,
             channel=channel, user_id=user_id, capability=capability,
+            concurrency_principal=concurrency_principal,
         )
 
 
@@ -291,6 +299,7 @@ def run_goal_in_background(
     channel: str | None = None,
     user_id: str | None = None,
     capability: Any | None = None,
+    concurrency_principal: str | None = None,
 ) -> str | None:
     """Dispatch a goal through the active :class:`Dispatcher`. Defaults to
     in-process thread execution; ``set_dispatcher`` swaps in a task queue
@@ -300,4 +309,5 @@ def run_goal_in_background(
         goal_id, max_dollars=max_dollars,
         max_wall_seconds=max_wall_seconds, max_depth=max_depth,
         channel=channel, user_id=user_id, capability=capability,
+        concurrency_principal=concurrency_principal,
     )

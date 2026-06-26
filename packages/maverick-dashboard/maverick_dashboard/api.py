@@ -2543,9 +2543,14 @@ async def run_fleet_agent(
     w = _world()
     goal_id = w.create_goal(prompt[:200], prompt, owner=fleet.owner)
     record_run(fleet_name, agent.name, goal_id)
+    # Schedule against the authenticated caller (or the shared anonymous lane
+    # when auth is off), not the fleet-agent audit principal.  Agent names are
+    # user-created, so using them as scheduler principals lets one caller mint
+    # many lanes and bypass MAVERICK_MAX_CONCURRENT_GOALS_PER_PRINCIPAL.
     bg.add_task(
         run_goal_in_thread, goal_id, max_dollars,
         channel="fleet", user_id=agent_principal, capability=cap,
+        concurrency_principal=principal,
     )
     return {"goal_id": goal_id, "principal": agent_principal, "role": agent.role}
 
