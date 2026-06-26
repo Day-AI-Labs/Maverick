@@ -107,6 +107,17 @@ def _shared_halt_backend() -> bool:
     except Exception:
         return False
 
+
+def _require_halt_permission(request: Request) -> None:
+    """Gate dashboard halt toggles at the correct blast radius.
+
+    In local/SQLite mode the halt is process-local and remains an operator action.
+    In shared Postgres mode the halt row is fleet-wide and untenanted, so toggling
+    it is a global control-plane action reserved for dashboard admins.
+    """
+    require_permission(request, "admin" if _shared_halt_backend() else "operate")
+
+
 _PERF_SLA_CACHE_TTL_SECONDS = 60.0
 _PERF_SLA_LOCK = asyncio.Lock()
 _PERF_SLA_CACHE: tuple[float, list[dict], str | None] | None = None
@@ -1242,7 +1253,7 @@ async def halt_set(request: Request, payload: HaltIn) -> None:
     Honoured by every agent at the next tool-call boundary. Use the
     DELETE endpoint or ``rm ~/.maverick/HALT`` to clear.
     """
-    require_permission(request, "operate")
+    _require_halt_permission(request)
     from maverick.killswitch import _halt_file_path
     reason = payload.reason or "manual via dashboard"
     p = _halt_file_path()
@@ -1268,7 +1279,7 @@ async def halt_set(request: Request, payload: HaltIn) -> None:
 @router.delete("/halt", status_code=204)
 async def halt_clear(request: Request) -> None:
     """Clear the killswitch (delete ~/.maverick/HALT)."""
-    require_permission(request, "operate")
+    _require_halt_permission(request)
     from maverick.killswitch import _halt_file_path, clear
     p = _halt_file_path()
     if p.exists():
