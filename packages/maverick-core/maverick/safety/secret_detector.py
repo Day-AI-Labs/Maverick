@@ -114,7 +114,11 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
         # -- a ReDoS, since this scans attacker-influenced tool output. The
         # newline is already consumed by the `(?:^|\n)` anchor.
         r"(?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*"
-        r"(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*"
+        # Separator `[:=]`, not just `=`: YAML / k8s manifests / many log lines
+        # use `KEY: value`. Mirrors maverick.secrets.env_secret so the two
+        # redactors actually agree (they were advertised as mirrors but this one
+        # silently missed every colon-delimited secret).
+        r"(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*[:=]\s*"
         # Value: a quoted string (single OR double) captured WHOLE, else an
         # unquoted run up to whitespace. The prior `[^\s\n]+` stopped at the
         # first space, so `API_TOKEN="my secret value"` redacted only `"my` and

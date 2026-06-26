@@ -44,6 +44,35 @@ def test_redact_prompt_handles_str_and_block_content():
     assert "555-123-4567" not in messages[1]["content"][0]["text"]
 
 
+def test_redact_prompt_covers_tool_result_and_tool_use_channels():
+    # Regression: the highest-volume egress channel is tool output. tool_result
+    # carries its payload in `content` (str OR nested block list) and tool_use in
+    # `input` -- neither is a `text` field, so the old redactor skipped them and
+    # cat .env / db-query PII reached the provider verbatim.
+    from maverick.privacy_egress import redact_prompt
+    _, messages = redact_prompt(
+        "s",
+        [
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "a",
+                 "content": "customer ssn 123-45-6789 email bob@corp.com"},
+                {"type": "tool_result", "tool_use_id": "b",
+                 "content": [{"type": "text", "text": "card 4111 1111 1111 1111"}]},
+            ]},
+            {"role": "assistant", "content": [
+                {"type": "tool_use", "id": "c", "name": "lookup",
+                 "input": {"q": "ssn 123-45-6789", "nested": {"email": "eve@corp.com"}}},
+            ]},
+        ],
+    )
+    tr0 = messages[0]["content"][0]["content"]
+    assert "123-45-6789" not in tr0 and "bob@corp.com" not in tr0
+    assert "4111 1111 1111 1111" not in messages[0]["content"][1]["content"][0]["text"]
+    tu_in = messages[1]["content"][0]["input"]
+    assert "123-45-6789" not in tu_in["q"]
+    assert "eve@corp.com" not in tu_in["nested"]["email"]
+
+
 def test_redact_prompt_does_not_mutate_caller_messages():
     from maverick.privacy_egress import redact_prompt
     original = [{"role": "user", "content": "ssn 123-45-6789"}]

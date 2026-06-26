@@ -55,12 +55,26 @@ def _redact_text(text: str) -> str:
     return redact_proven(text).redacted
 
 
+def _redact_json(value: Any) -> Any:
+    """Redact the string leaves of a JSON-ish structure (tool_use ``input`` args)."""
+    if isinstance(value, str):
+        return _redact_text(value)
+    if isinstance(value, dict):
+        return {k: _redact_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_json(v) for v in value]
+    return value
+
+
 def _redact_content(content: Any) -> Any:
     """Redact a message ``content`` (a str, or a list of content blocks).
 
-    Returns a NEW value; the caller's stored messages are never mutated. Only
-    string and block ``text`` fields are touched -- tool-call/image/other blocks
-    pass through structurally unchanged (with their text, if any, redacted)."""
+    Returns a NEW value; the caller's stored messages are never mutated. Covers
+    every channel a secret/PII can ride out on: a block's ``text``; a
+    ``tool_result`` block's ``content`` (a str or a nested block list -- the
+    high-volume tool-output channel, which carries cat/printenv/db-query output);
+    and a ``tool_use`` block's ``input`` args (a dict). Image/other blocks pass
+    through structurally unchanged."""
     if isinstance(content, str):
         return _redact_text(content)
     if isinstance(content, list):
@@ -70,6 +84,13 @@ def _redact_content(content: Any) -> Any:
                 nb = dict(block)
                 if isinstance(nb.get("text"), str):
                     nb["text"] = _redact_text(nb["text"])
+                # tool_result payload rides in `content`, NOT `text`; recurse so
+                # tool output (the highest-volume channel) is redacted too.
+                if isinstance(nb.get("content"), (str, list)):
+                    nb["content"] = _redact_content(nb["content"])
+                # tool_use call args live in `input` (a dict of JSON values).
+                if isinstance(nb.get("input"), (dict, list)):
+                    nb["input"] = _redact_json(nb["input"])
                 out.append(nb)
             else:
                 out.append(block)

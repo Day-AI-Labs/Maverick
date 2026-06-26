@@ -22,7 +22,19 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # block -- runs first so its base64 body isn't partially matched by the
     # key/jwt patterns below.
     ("private_key", re.compile(
-        r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----",
+        r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"
+        r"(?:"
+        # Preferred: the whole block when an END marker is present. Bounded
+        # body ({0,8192}, > RSA-4096) so many BEGIN markers with no END can't
+        # scan to EOF per marker (ReDoS guard); a real key's END is in-window.
+        r".{0,8192}?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"
+        r"|"
+        # Fallback: a BEGIN header + base64 body but NO END marker (a key
+        # truncated by a buffer/summary boundary). Without this the pattern
+        # required END and leaked the truncated key body to logs / support
+        # bundles. Mirrors safety.secret_detector.private_key_pem.
+        r"[A-Za-z0-9+/=\s]{0,8192}"
+        r")",
         re.DOTALL,
     )),
     # Credentials embedded in a URL / connection string
