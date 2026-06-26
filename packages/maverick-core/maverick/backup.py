@@ -169,6 +169,30 @@ def read_manifest(tarball: str | Path) -> dict:
         raise BackupError(f"unreadable backup {tarball!r}: {e}") from e
 
 
+def _manifest_files(manifest: dict) -> dict[str, str]:
+    """Return a validated manifest file map.
+
+    The manifest is the restore contract: every regular payload file must be
+    listed exactly once and must match its recorded SHA-256.  Keep validation
+    here so both malformed and tampered archives fail before any live data is
+    overwritten.
+    """
+    files = manifest.get("files")
+    if not isinstance(files, dict) or not files:
+        raise BackupError("backup manifest has no file hashes")
+    out: dict[str, str] = {}
+    for name, digest in files.items():
+        if not isinstance(name, str) or not isinstance(digest, str):
+            raise BackupError("backup manifest contains invalid file hash entries")
+        norm = os.path.normpath(name)
+        if norm in ("", ".") or norm.startswith(".." + os.sep) or os.path.isabs(norm):
+            raise BackupError(f"unsafe path in backup manifest: {name!r}")
+        if norm != name or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+            raise BackupError(f"invalid backup manifest hash for {name!r}")
+        out[name] = digest
+    return out
+
+
 def restore_backup(tarball: str | Path, *, force: bool = False) -> Path:
     """Restore a backup into this client's data root. Returns the root.
 
@@ -178,6 +202,7 @@ def restore_backup(tarball: str | Path, *, force: bool = False) -> Path:
     path-traversal safe.
     """
     manifest = read_manifest(tarball)
+    expected_files = _manifest_files(manifest)
     backup_cid = manifest.get("client_id")
     live_cid = _client_id()
     if not force and backup_cid != live_cid:
@@ -193,6 +218,7 @@ def restore_backup(tarball: str | Path, *, force: bool = False) -> Path:
         # Validate member names BEFORE extracting (Python <3.12 extractall has
         # no traversal guard): a normalised name must stay within data/.
         safe = []
+        payload_names: set[str] = set()
         for m in tar.getmembers():
             if not m.isfile() or m.issym() or m.islnk():
                 continue
@@ -202,11 +228,33 @@ def restore_backup(tarball: str | Path, *, force: bool = False) -> Path:
             norm = os.path.normpath(m.name)
             if not norm.startswith("data" + os.sep):
                 raise BackupError(f"unsafe path in backup: {m.name!r}")
+            rel = norm.removeprefix("data" + os.sep)
+            if rel in payload_names:
+                raise BackupError(f"duplicate payload file in backup: {rel!r}")
+            payload_names.add(rel)
             safe.append(m)
+        expected_names = set(expected_files)
+        if payload_names != expected_names:
+            missing = sorted(expected_names - payload_names)
+            extra = sorted(payload_names - expected_names)
+            detail = []
+            if missing:
+                detail.append(f"missing={missing!r}")
+            if extra:
+                detail.append(f"extra={extra!r}")
+            raise BackupError("backup payload does not match manifest: " + ", ".join(detail))
         tar.extractall(td, members=safe)
         staged = Path(td) / "data"
         if not staged.exists():
             raise BackupError("backup contains no data/ payload")
+        actual_files = {
+            str(src.relative_to(staged)): _sha256(src)
+            for src in sorted(staged.rglob("*")) if src.is_file()
+        }
+        mismatched = [name for name, digest in expected_files.items()
+                      if actual_files.get(name) != digest]
+        if mismatched:
+            raise BackupError(f"backup payload hash mismatch: {mismatched!r}")
         for src in sorted(staged.rglob("*")):
             if not src.is_file():
                 continue

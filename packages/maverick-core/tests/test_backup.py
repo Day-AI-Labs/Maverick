@@ -3,6 +3,7 @@ the client data root, round-trip restore, the cross-client fail-closed guard,
 and path-traversal-safe extraction."""
 from __future__ import annotations
 
+import json
 import sqlite3
 import tarfile
 
@@ -79,13 +80,55 @@ def test_restore_rejects_path_traversal(tmp_path):
     payload = tmp_path / "payload"
     payload.mkdir()
     (payload / "x").write_text("data")
-    import json
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(json.dumps({"schema": 1, "client_id": "acme", "files": {}}))
+    manifest.write_text(json.dumps({"schema": 1, "client_id": "acme", "files": {"x": "0" * 64}}))
     with tarfile.open(bad, "w:gz") as tar:
         tar.add(manifest, arcname="manifest.json")
         tar.add(payload / "x", arcname="data/../../escape")
     with pytest.raises(backup.BackupError):
+        backup.restore_backup(bad)
+
+
+def test_restore_rejects_tampered_payload(tmp_path):
+    from maverick.paths import data_dir
+
+    root = data_dir()
+    _seed(root)
+    original = backup.create_backup()
+    bad = tmp_path / "tampered.tgz"
+    tampered = tmp_path / "agent_trust.json"
+    tampered.write_text('[{"id":"attacker","role":"trusted"}]')
+
+    with tarfile.open(original, "r:gz") as src, tarfile.open(bad, "w:gz") as dst:
+        for member in src.getmembers():
+            if member.name == "data/agent_trust.json":
+                dst.add(tampered, arcname=member.name)
+                continue
+            extracted = src.extractfile(member) if member.isfile() else None
+            dst.addfile(member, extracted)
+
+    (root / "agent_trust.json").write_text('[{"id":"live"}]')
+    with pytest.raises(backup.BackupError, match="hash mismatch"):
+        backup.restore_backup(bad)
+    assert (root / "agent_trust.json").read_text() == '[{"id":"live"}]'
+
+
+def test_restore_rejects_extra_payload_file(tmp_path):
+    from maverick.paths import data_dir
+
+    _seed(data_dir())
+    original = backup.create_backup()
+    bad = tmp_path / "extra.tgz"
+    extra = tmp_path / "extra.txt"
+    extra.write_text("surprise")
+
+    with tarfile.open(original, "r:gz") as src, tarfile.open(bad, "w:gz") as dst:
+        for member in src.getmembers():
+            extracted = src.extractfile(member) if member.isfile() else None
+            dst.addfile(member, extracted)
+        dst.add(extra, arcname="data/extra.txt")
+
+    with pytest.raises(backup.BackupError, match="does not match manifest"):
         backup.restore_backup(bad)
 
 
