@@ -1829,9 +1829,20 @@ async def import_run_endpoint(request: Request, payload: ImportRunIn) -> ImportR
     from maverick.config import get_features
     triggers_on = get_features().get("triggers", True)
     from maverick_dashboard import triggers_store
+    owner = caller_principal(request) or ""
+    user_id = execution_user_id_from_request(request)
+    channel = "api" if user_id else None
+
     results: list[dict] = []
     for a in automations:
-        res = materialize(a, save=not payload.dry_run, queue=queue)
+        res = materialize(
+            a,
+            save=not payload.dry_run,
+            queue=queue,
+            owner=owner,
+            channel=channel,
+            user_id=user_id,
+        )
         webhook_trigger = None
         # Wire the inbound webhook trigger when asked and the automation is
         # webhook-triggered (the one step the CLI can't do: triggers_store is
