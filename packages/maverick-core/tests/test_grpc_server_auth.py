@@ -155,16 +155,21 @@ def test_read_and_control_rpcs_enforce_trust_plane(monkeypatch, method_name):
     svc = _Service()
     servicer = grpc_server._servicer(svc, _Pb2, _Pb2Grpc, bearer_token="secret")
     request = SimpleNamespace(goal_id=2, since_id=0, max_seconds=1.0)
-    context = _Context((("authorization", "Bearer agent-secret"),))
+    # A shared-operator-bearer caller passes authentication; with the trust plane
+    # engaged the read/control RPC must still go through the gate, which
+    # default-denies the "grpc" surface when it isn't registered (an outbound
+    # per-caller token would instead fail authentication outright -- see
+    # agent_for_token -- so the shared bearer is what actually reaches the gate).
+    context = _Context((("authorization", "Bearer secret"),))
     call = getattr(servicer, method_name)
 
-    with pytest.raises(PermissionError, match="not permitted inbound"):
+    with pytest.raises(PermissionError, match="not in the trust registry"):
         result = call(request, context)
         if method_name == "StreamEpisode":
             list(result)
 
     assert context.aborted[0] == _Codes.PERMISSION_DENIED
-    assert "not permitted inbound" in context.aborted[1]
+    assert "not in the trust registry" in context.aborted[1]
     assert svc.calls == []
 
 def test_run_goal_intersects_rpc_capability_with_local_policy(monkeypatch):

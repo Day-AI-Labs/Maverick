@@ -628,52 +628,64 @@ class LLM:
     def __init__(self, model: str = DEFAULT_MODEL, api_key: str | None = None):
         self.model = model
         self._anthropic_api_key = api_key  # legacy back-compat
+        # Compatibility/debug view: latest client created for each provider.
         self._clients: dict[str, Any] = {}
+        # Actual cache key includes tenant and resolved endpoint credentials so
+        # a long-lived server LLM never reuses one tenant's client for another.
+        self._client_cache: dict[tuple[str, str | None, str | None, str | None], Any] = {}
         # Wave 12 (council F12a): lock the provider cache so two
         # concurrent calls don't double-init httpx connection pools.
         import threading as _threading
         self._clients_lock = _threading.Lock()
 
+    def _provider_client_config(
+        self, provider: str
+    ) -> tuple[str | None, str | None, dict | None]:
+        key = _provider_api_key(provider, self._anthropic_api_key)
+        # [providers.<name>] base_url: the CLI preflight already
+        # accepts this config key as "a configured provider"; plumb it
+        # into the client too. It used to be read by the preflight and
+        # then dropped, so a self-hosted setup configured only via
+        # config dialed the client's env-var/localhost default and
+        # died with "Couldn't reach the LLM provider".
+        base_url = None
+        default_headers = None
+        try:
+            from .config import get_provider_config
+            pcfg = get_provider_config(provider) or {}
+            bu = pcfg.get("base_url")
+            if isinstance(bu, str) and bu.strip():
+                base_url = bu.strip()
+            # Data-residency / ZDR: operator-set extra request headers a
+            # compliance gateway enforces. Accept only a str->str dict.
+            dh = pcfg.get("default_headers")
+            if isinstance(dh, dict):
+                clean = {str(k): str(v) for k, v in dh.items() if isinstance(k, str)}
+                if clean:
+                    default_headers = clean
+        except Exception:  # pragma: no cover -- config read fails soft
+            base_url = None
+            default_headers = None
+        return key, base_url, default_headers
+
     def _get_client(self, provider: str):
+        from .paths import current_tenant_id
+        key, base_url, default_headers = self._provider_client_config(provider)
+        cache_key = (provider, current_tenant_id(), key, base_url)
         # Fast-path: read without lock (dict reads are atomic in CPython).
-        if provider in self._clients:
-            return self._clients[provider]
+        if cache_key in self._client_cache:
+            return self._client_cache[cache_key]
         with self._clients_lock:
             # Re-check under the lock in case another thread populated it.
-            if provider not in self._clients:
+            if cache_key not in self._client_cache:
                 from .providers import KNOWN_PROVIDERS, get_provider_client
                 from .session_providers import is_session_provider
-                key = _provider_api_key(provider, self._anthropic_api_key)
-                # [providers.<name>] base_url: the CLI preflight already
-                # accepts this config key as "a configured provider"; plumb it
-                # into the client too. It used to be read by the preflight and
-                # then dropped, so a self-hosted setup configured only via
-                # config dialed the client's env-var/localhost default and
-                # died with "Couldn't reach the LLM provider".
-                base_url = None
-                default_headers = None
-                try:
-                    from .config import get_provider_config
-                    pcfg = get_provider_config(provider) or {}
-                    bu = pcfg.get("base_url")
-                    if isinstance(bu, str) and bu.strip():
-                        base_url = bu.strip()
-                    # Data-residency / ZDR: operator-set extra request headers a
-                    # compliance gateway enforces. Accept only a str->str dict.
-                    dh = pcfg.get("default_headers")
-                    if isinstance(dh, dict):
-                        clean = {str(k): str(v) for k, v in dh.items()
-                                 if isinstance(k, str)}
-                        if clean:
-                            default_headers = clean
-                except Exception:  # pragma: no cover -- config read fails soft
-                    base_url = None
                 use_api_provider = (
                     provider in KNOWN_PROVIDERS
                     and (not is_session_provider(provider) or key)
                 )
                 if use_api_provider or key:
-                    self._clients[provider] = get_provider_client(
+                    client = get_provider_client(
                         provider, api_key=key, base_url=base_url,
                         default_headers=default_headers,
                     )
@@ -684,15 +696,17 @@ class LLM:
                         # coder, researcher) work transparently. The
                         # wrapper is a no-op when tools=None.
                         from .session_providers import get_session_client
-                        self._clients[provider] = get_session_client(
+                        client = get_session_client(
                             provider, simulate_tools=True,
                         )
                     else:
-                        self._clients[provider] = get_provider_client(
+                        client = get_provider_client(
                             provider, api_key=key, base_url=base_url,
                             default_headers=default_headers,
                         )
-            return self._clients[provider]
+                self._client_cache[cache_key] = client
+                self._clients[provider] = client
+            return self._client_cache[cache_key]
 
     def complete(
         self,

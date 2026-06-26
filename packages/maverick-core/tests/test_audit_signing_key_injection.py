@@ -95,6 +95,12 @@ def test_injected_key_precedence_over_on_disk(monkeypatch):
     # ...then an injected key is provided: it must win.
     key_hex, _ = _fresh_key_hex()
     monkeypatch.setenv(signing._SIGNING_KEY_ENV, key_hex)
+    # The injected key is read-and-consumed once per process; the on-disk read
+    # above already populated the cache with "no env key". Reset it so this call
+    # models the realistic case (env injected, process restarted, env re-read).
+    monkeypatch.setattr(
+        signing, "_INJECTED_KEYPAIR_CACHE", signing._INJECTED_KEYPAIR_UNREAD
+    )
     _, _, active_id = signing._load_or_create_keypair()
     assert active_id != disk_id
     assert (signing._key_dir() / f"{active_id}.injected").exists()
