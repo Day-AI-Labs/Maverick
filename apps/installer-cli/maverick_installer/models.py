@@ -122,61 +122,6 @@ PROVIDERS: dict[str, dict] = {
             {"id": "openai-compatible", "notes": "Set base_url to your endpoint; model id is whatever it serves."},
         ],
     },
-    "chatgpt-session": {
-        "status": "ready",
-        "label": "ChatGPT browser session (use your Plus subscription, no API key)",
-        "env": None,
-        "session": True,
-        "tool_support": False,
-        "models": [
-            {"id": "gpt-4o",      "notes": "Free for Plus subscribers. Best for summarizer/writer/analyst."},
-            {"id": "gpt-4o-mini", "notes": "Free tier model. Use for cheap roles."},
-        ],
-    },
-    "claude-session": {
-        "status": "ready",
-        "label": "Claude.ai browser session (use your Pro subscription, no API key)",
-        "env": None,
-        "session": True,
-        "tool_support": False,
-        "models": [
-            {"id": "claude-sonnet-4-6", "notes": "Pro default. Best for summarizer/writer/analyst."},
-            {"id": "claude-haiku-4-5",  "notes": "Faster, lower quota cost."},
-        ],
-    },
-    "kimi-session": {
-        "status": "ready",
-        "label": "Kimi browser session (use your kimi.com subscription)",
-        "env": None,
-        "session": True,
-        "tool_support": False,
-        "models": [
-            {"id": "kimi-k2",   "notes": "Latest Kimi. Strong agentic / code."},
-            {"id": "kimi-k1.5", "notes": "Cheaper, lighter quota cost."},
-        ],
-    },
-    "grok-session": {
-        "status": "ready",
-        "label": "Grok via x.com browser session (requires X Premium)",
-        "env": None,
-        "session": True,
-        "tool_support": False,
-        "models": [
-            {"id": "grok-4-latest", "notes": "Flagship. Reasoning + tools."},
-            {"id": "grok-4-mini",   "notes": "Cheaper sibling."},
-        ],
-    },
-    "gemini-session": {
-        "status": "ready",
-        "label": "Gemini browser session (gemini.google.com Advanced)",
-        "env": None,
-        "session": True,
-        "tool_support": False,
-        "models": [
-            {"id": "gemini-3.5-pro",   "notes": "Long context, smart."},
-            {"id": "gemini-3.5-flash", "notes": "Fast and cheap."},
-        ],
-    },
 }
 
 

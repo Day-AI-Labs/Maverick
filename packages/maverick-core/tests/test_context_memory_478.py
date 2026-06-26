@@ -1,13 +1,11 @@
 """Regression tests for issue #478 — context/memory correctness.
 
-Covers four independent fixes:
+Covers three independent fixes:
   1. compaction embedding ranking must not drop head turns when the
      embedder yields fewer vectors than there are head messages;
   2. ``_fit_recent_to_budget`` must stop (not append blank turns) once
      the token budget is exhausted;
-  3. session-provider SSE parsing must join multi-line ``data:`` fields
-     into a single event payload;
-  4. reflexion ``recall`` must prefer fresher lessons and de-duplicate
+  3. reflexion ``recall`` must prefer fresher lessons and de-duplicate
      near-identical ones in the top-k.
 """
 from __future__ import annotations
@@ -19,7 +17,6 @@ import types
 
 from maverick import context_compactor as cc
 from maverick import reflexion
-from maverick.session_providers.base import iter_sse_data_payloads
 
 # --- Task 1: embedding ranking keeps head turns on vector shortfall ------
 
@@ -94,51 +91,7 @@ def test_fit_recent_to_budget_no_blank_partial_when_exhausted():
     assert cc._message_text(fitted[0]) == messages[-1]["content"]
 
 
-# --- Task 3: multi-line data: SSE events parse as one payload ------------
-
-def test_sse_joins_multiline_data_field():
-    # A spec-compliant event whose JSON is pretty-printed across lines.
-    stream = (
-        "event: message\n"
-        "data: {\n"
-        'data:   "completion": "hi"\n'
-        "data: }\n"
-        "\n"
-        "data: [DONE]\n"
-        "\n"
-    )
-    payloads = list(iter_sse_data_payloads(stream))
-    assert payloads[0] == '{\n  "completion": "hi"\n}'
-    assert payloads[1] == "[DONE]"
-
-
-def test_sse_claude_parser_handles_multiline_event():
-    from maverick.session_providers.claude_session import _parse_sse_response
-
-    stream = (
-        "data: {\n"
-        'data:   "completion": "Hello,"\n'
-        "data: }\n"
-        "\n"
-        'data: {"completion": " world"}\n'
-        "\n"
-        "data: [DONE]\n"
-        "\n"
-    )
-    assert _parse_sse_response(stream) == "Hello, world"
-
-
-def test_sse_single_line_events_still_work():
-    stream = (
-        'data: {"a": 1}\n'
-        "\n"
-        'data: {"b": 2}\n'
-        "\n"
-    )
-    assert list(iter_sse_data_payloads(stream)) == ['{"a": 1}', '{"b": 2}']
-
-
-# --- Task 4: reflexion recall prefers recent + dedups --------------------
+# --- Task 3: reflexion recall prefers recent + dedups --------------------
 
 def test_recall_prefers_recent_on_equal_similarity(tmp_path):
     path = tmp_path / "reflexions.ndjson"

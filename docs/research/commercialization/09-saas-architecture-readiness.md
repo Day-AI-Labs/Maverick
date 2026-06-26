@@ -105,8 +105,8 @@ The brain survives; the spine, skin, and locks do not.
   module's own docstring concedes "the world model and audit log are migrated in
   follow-on increments" (`paths.py:18-21`). **Those increments are the product.**
 - **Secrets at rest in plaintext** — provider API keys live in `~/.maverick/.env`
-  protected only by chmod 600 (`session_providers/cookie_store.py:8`,
-  `health.py:81,99`), interpolated into config via `${VAR}`
+  protected only by chmod 600 (`health.py:81,99`), interpolated into config
+  via `${VAR}`
   (`config.py:61-67`). `secrets.py` is a log *scrubber*, not a vault — there is
   **no envelope encryption, no per-tenant DEK, no KMS**. In a hosted model one
   process holds every tenant's keys in its environment.
@@ -201,7 +201,7 @@ that would lose the deal:
    full unauthenticated control-plane access (cancel goals, arm killswitch,
    disable safety tools, read all spend).
 4. **Plaintext secrets, single process.** Every tenant's provider keys in one
-   process env / one chmod-600 `.env` (`cookie_store.py:8`). One RCE or one
+   process env / one chmod-600 `.env`. One RCE or one
    verbose log (pre-scrub) and it's a multi-tenant key compromise.
 5. **No isolation between tenant executions.** Threads in one process sharing GIL,
    FS, env, and one `world.db` (`runner.py:32-136`). No resource fairness, no

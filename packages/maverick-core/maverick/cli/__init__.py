@@ -369,7 +369,7 @@ def _install_config_from_file(src: str) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     # Tighten ~/.maverick to 0700: a bare `init` can create it before any
     # world-DB command does, and the config we're about to drop may carry inline
-    # provider api_keys. Matches world_model / cookie_store.
+    # provider api_keys. Matches world_model.
     try:
         os.chmod(dst.parent, 0o700)
     except OSError:
@@ -4415,124 +4415,6 @@ def monitor(ctx, goal_id, interval) -> None:
         goal_id=goal_id,
         interval_seconds=interval,
     ))
-
-
-@main.group()
-def session() -> None:
-    """Manage browser-session credentials for consumer-chat providers."""
-
-
-@session.command("list")
-def session_list() -> None:
-    """List providers with a stored session."""
-    from ..session_providers import cookie_store
-    names = cookie_store.list_sessions()
-    if not names:
-        click.echo("No sessions stored.")
-        return
-    for name in names:
-        click.echo(name)
-
-
-_SESSION_IMPORT_PROFILES: dict[str, dict] = {
-    "chatgpt": {
-        "canon": "chatgpt-session",
-        "cookie_key": "__Secure-next-auth.session-token",
-        "hint_url": "chatgpt.com",
-    },
-    "claude": {
-        "canon": "claude-session",
-        "cookie_key": "sessionKey",
-        "hint_url": "claude.ai",
-    },
-    "kimi": {
-        "canon": "kimi-session",
-        "cookie_key": "access_token",
-        "hint_url": "kimi.com",
-    },
-    "grok": {
-        # Grok needs auth_token + ct0; the CLI prompts for ct0 as a 2nd input.
-        "canon": "grok-session",
-        "cookie_key": "auth_token",
-        "extra_cookie_key": "ct0",
-        "hint_url": "x.com",
-    },
-    "gemini": {
-        "canon": "gemini-session",
-        "cookie_key": "__Secure-1PSID",
-        "hint_url": "gemini.google.com",
-    },
-}
-# Aliases for the canonical names.
-for _alias, _canon in [
-    ("chatgpt-session", "chatgpt"),
-    ("claude-session", "claude"),
-    ("kimi-session", "kimi"),
-    ("grok-session", "grok"),
-    ("gemini-session", "gemini"),
-]:
-    _SESSION_IMPORT_PROFILES[_alias] = _SESSION_IMPORT_PROFILES[_canon]
-
-
-@session.command("import")
-@click.argument(
-    "provider",
-    type=click.Choice(sorted(_SESSION_IMPORT_PROFILES.keys())),
-)
-@click.option(
-    "--token", default=None,
-    help="Paste the session cookie value here, or omit to be prompted.",
-)
-def session_import(provider: str, token: str | None) -> None:
-    """Import a session cookie captured from your browser.
-
-    Step 1: Sign in at the provider in your normal browser.
-    Step 2: Open DevTools -> Application -> Cookies.
-    Step 3: Copy the session cookie value and paste it here.
-    """
-    from ..session_providers import cookie_store
-    profile = _SESSION_IMPORT_PROFILES[provider]
-    canon, cookie_key, hint_url = profile["canon"], profile["cookie_key"], profile["hint_url"]
-    extra_key = profile.get("extra_cookie_key")
-    if token is None:
-        click.echo(
-            f"Find your session cookie at {hint_url} -> DevTools (F12) -> "
-            f"Application -> Cookies -> {cookie_key}"
-        )
-        token = click.prompt("Paste session token", hide_input=True)
-    if not token or not token.strip():
-        click.echo("No token entered; aborting.", err=True)
-        sys.exit(2)
-    cookies = {cookie_key: token.strip()}
-    if extra_key:
-        click.echo(f"Also need the {extra_key} cookie (from the same site).")
-        extra_val = click.prompt(f"Paste {extra_key}", hide_input=True)
-        if not extra_val or not extra_val.strip():
-            click.echo(f"No {extra_key} entered; aborting.", err=True)
-            sys.exit(2)
-        cookies[extra_key] = extra_val.strip()
-    blob = {"cookies": cookies}
-    path = cookie_store.save_session(canon, blob)
-    click.echo(f"Saved session to {path} (chmod 600)")
-
-
-@session.command("clear")
-@click.argument("provider")
-def session_clear(provider: str) -> None:
-    """Delete a stored session."""
-    from ..session_providers import cookie_store
-    # `session import chatgpt` stores under the canonical name
-    # ('chatgpt-session'), so accept the same short alias here -- otherwise
-    # `session clear chatgpt` reports "no session" right after a successful
-    # import. Unknown names pass through unchanged (the store is generic).
-    profile = _SESSION_IMPORT_PROFILES.get(provider)
-    name = profile["canon"] if profile else provider
-    removed = cookie_store.clear_session(name)
-    if removed:
-        click.echo(f"Cleared session for {name}")
-    else:
-        click.echo(f"No session stored for {name}", err=True)
-        sys.exit(1)
 
 
 def _conversation_user_matches(conv_user_id: str, requested: str, channel: str) -> bool:

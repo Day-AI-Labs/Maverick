@@ -82,18 +82,16 @@ def test_openai_compatible_declares_base_url_env():
 def test_wizard_catalog_matches_kernel_registry():
     """The wizard offerings must be dispatchable by the kernel.
 
-    Every provider the wizard shows must be reachable via either the
-    BYOK registry (maverick.providers.KNOWN_PROVIDERS) or the browser-
-    session registry (maverick.session_providers.KNOWN_SESSION_PROVIDERS).
-    If they drift, a user picks a provider in the wizard but the kernel
-    refuses to instantiate it -- the worst possible UX bug.
+    Every provider the wizard shows must be reachable via the BYOK registry
+    (maverick.providers.KNOWN_PROVIDERS). If they drift, a user picks a
+    provider in the wizard but the kernel refuses to instantiate it -- the
+    worst possible UX bug.
     """
     try:
         from maverick.providers import KNOWN_PROVIDERS
-        from maverick.session_providers import KNOWN_SESSION_PROVIDERS
     except ImportError:
         pytest.skip("maverick-core not installed in this environment")
-    dispatchable = set(KNOWN_PROVIDERS) | set(KNOWN_SESSION_PROVIDERS)
+    dispatchable = set(KNOWN_PROVIDERS)
     wizard_only = set(models.PROVIDERS) - dispatchable
     assert not wizard_only, (
         f"wizard offers providers the kernel can't dispatch: {wizard_only}"
@@ -111,8 +109,6 @@ def test_wizard_model_ids_have_pricing():
       - ollama / openrouter / tgi / openai_compatible: local or
         aggregated or self-hosted catalogs (dynamic, zero per-token
         cost known to the kernel).
-      - session providers: user pays a flat subscription, no per-token
-        billing meaningful at this layer.
     """
     try:
         from maverick.llm import MODEL_PRICES
@@ -122,27 +118,9 @@ def test_wizard_model_ids_have_pricing():
     for prov_id, info in models.PROVIDERS.items():
         if prov_id in ("ollama", "openrouter", "tgi", "openai_compatible"):
             continue
-        if info.get("session"):
-            continue
         for m in info["models"]:
             if m["id"] not in MODEL_PRICES:
                 unpriced.append(f"{prov_id}:{m['id']}")
     assert not unpriced, (
         f"wizard offers models not priced in llm.MODEL_PRICES: {unpriced}"
     )
-
-
-def test_session_providers_marked_correctly():
-    """Session providers must declare session=True and tool_support=False.
-
-    The kernel relies on these flags (or their absence) to refuse
-    routing tool-using roles to session-only providers.
-    """
-    for prov_id, info in models.PROVIDERS.items():
-        if info.get("session"):
-            assert info.get("env") is None, (
-                f"{prov_id}: session providers don't use an env var key"
-            )
-            assert info.get("tool_support") is False, (
-                f"{prov_id}: session providers don't support tool-use"
-            )

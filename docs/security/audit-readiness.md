@@ -130,7 +130,7 @@ The redactors and detection rules run on attacker-influenced text, so every
 regex over untrusted input must be sub-quadratic. To re-run the dynamic sweep
 that found the fixed `url_credentials` and `env_secret` holes: collect every
 compiled `re.Pattern` from `maverick.safety`, `maverick_shield`,
-`maverick.tools`, and `maverick.session_providers`, then time `pattern.search`
+and `maverick.tools`, then time `pattern.search`
 on long single-character runs (`"a"`, `"A"`, `"\n"`, `"\t"`, `" "`, …) at N
 and 2N — a time ratio near 4× on doubling signals O(N²). `scrub()` /
 `redact()` should stay linear (~130 ms on a 500 KB run). See

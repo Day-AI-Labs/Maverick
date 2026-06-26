@@ -86,7 +86,6 @@ def test_run_prints_step_indicators(monkeypatch):
     # Avoid touching disk / network past the prompt loop.
     monkeypatch.setattr(wizard, "_save_partial", lambda state: None)
     monkeypatch.setattr(wizard, "collect_api_keys", lambda providers, envs: {})
-    monkeypatch.setattr(wizard, "collect_browser_sessions", lambda providers: {})
     # Decline the final "write config and finish?" so we stop cleanly
     # right after the prompt loop, before write_config / smoke_test.
     monkeypatch.setattr(wizard, "_q_confirm", lambda *a, **kw: False)
