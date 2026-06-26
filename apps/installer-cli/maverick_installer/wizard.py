@@ -1243,6 +1243,14 @@ def pick_advanced() -> dict[str, Any]:
             "on the next similar goal.",
             default=False,
         ),
+        "self_harness": _q_confirm(
+            "Self-harness? Learn a MODEL-SPECIFIC operating-guidance addendum from "
+            "recurring failures -- mined, validated on held-out cases, and gated "
+            "through the same promotion ladder as every other learned change -- "
+            "then recalled into that model's system prompt. Inspect or roll it "
+            "back any time with `maverick harness`. OFF by default.",
+            default=False,
+        ),
         "fleet_memory": _q_confirm(
             "Fleet memory? Let EXTERNAL agents (Agentforce, Copilot, custom) "
             "deposit experience into and recall from Maverick's governed "
@@ -3032,6 +3040,10 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
     if advanced.get("reflexion"):
         lines.append("")
         lines.append("[reflexion]")
+        lines.append("enable = true")
+    if advanced.get("self_harness"):
+        lines.append("")
+        lines.append("[self_harness]")
         lines.append("enable = true")
     if advanced.get("fleet_memory"):
         lines.append("")
