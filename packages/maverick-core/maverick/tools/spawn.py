@@ -187,14 +187,19 @@ async def _run_child_and_report(parent, child) -> str:
     except BaseException:
         parent.ctx.release_spawns(1)
         raise
+    # Containment Rung 1: a sealed child's final is attacker-influenced, so it
+    # must never surface -- not even inside a SUBAGENT_STOP hook payload (hook
+    # consumers log/route it). Compute the withhold notice BEFORE emitting and
+    # hand the hook the notice instead of the raw final when the child is sealed.
+    notice = _sealed_notice(parent.ctx, child)
     from ..hooks import HookEvent
     from ..hooks import emit as _emit_hook
     await _emit_hook(
         HookEvent.SUBAGENT_STOP,
         goal_id=parent.ctx.goal_id, agent_role=child.role,
-        extra={"name": child.name, "final": result.final or ""},
+        extra={"name": child.name,
+               "final": notice if notice is not None else (result.final or "")},
     )
-    notice = _sealed_notice(parent.ctx, child)
     if notice is not None:
         return notice
     if result.final:

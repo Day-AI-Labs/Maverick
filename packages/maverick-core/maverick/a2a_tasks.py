@@ -591,7 +591,16 @@ class TaskEngine:
         except Exception as e:
             log.exception("a2a task %s failed", task.id)
             task.set_state("failed")
-            task.add_artifact(f"task failed: {e}", "error")
+            # Scrub the exception before it enters the artifact: it is returned
+            # to the caller AND pushed to the notification webhook, and an
+            # exception message can carry a secret/PII (a DB DSN, a token in a
+            # URL, a row value). Fail safe to the type name if scrub is missing.
+            try:
+                from .secrets import scrub
+                detail = scrub(f"{type(e).__name__}: {e}")
+            except Exception:  # pragma: no cover -- never let reporting raise
+                detail = type(e).__name__
+            task.add_artifact(f"task failed: {detail}", "error")
             return
         finally:
             _caller_agent.reset(cv)
