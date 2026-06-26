@@ -953,6 +953,11 @@ def pick_self_learning() -> dict[str, Any]:
         "  Pre-acquire likely skills before each run (one extra LLM call)?",
         default=True,
     )
+    provision_packs = _q_confirm(
+        "  Equip newly onboarded packs: install the catalog skills and "
+        "synthesize the tools a pack's workflow needs, at approval time?",
+        default=True,
+    )
     console.print(
         "[dim]  MCP acquisition: the agent may PROPOSE adding a curated, "
         "hash-pinned catalog MCP server (never a free-text command). Each one "
@@ -971,6 +976,7 @@ def pick_self_learning() -> dict[str, Any]:
         "enable": True,
         "preflight": preflight,
         "create_tools": create_tools,
+        "provision_packs": provision_packs,
         "allow_mcp_acquisition": allow_mcp,
         "distill_local": distill_local,
         "max_acquisitions": 5,
