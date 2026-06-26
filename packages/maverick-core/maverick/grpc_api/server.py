@@ -97,7 +97,8 @@ def _abort(context, code, details: str):
 
 
 def _require_authorized(context, bearer_token: str) -> None:
-    _authorize_caller(context, bearer_token)
+    agent = _authorize_caller(context, bearer_token)
+    _trust_capability(context, agent)
 
 
 def _authorize_caller(context, bearer_token: str):
@@ -125,8 +126,8 @@ def _authorize_caller(context, bearer_token: str):
 
 
 def _trust_capability(context, agent):
-    """Agent Trust Plane gate for a goal-CREATING RPC. Returns the capability
-    ceiling to intersect into the run (``None`` when disengaged). Aborts
+    """Agent Trust Plane gate for an inbound gRPC RPC. Returns the capability
+    ceiling to intersect into goal execution (``None`` when disengaged). Aborts
     PERMISSION_DENIED when the caller isn't a permitted inbound agent.
 
     A per-caller token gates on that agent's entry; a shared-operator-bearer
