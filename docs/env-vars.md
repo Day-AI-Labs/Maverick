@@ -261,7 +261,6 @@ Config equivalents live under `[effort]` (`enabled`, `default`, `<role>`) and
 | `MAVERICK_BOT_LINEAR_ID` | unset | Linear user id identifying "the bot" for issue webhooks. |
 | `MAVERICK_BOT_JIRA_ACCOUNT_ID` | unset | Jira accountId (or bot email) identifying "the bot" for issue webhooks. |
 | `MAVERICK_NTFY_TOPIC` | config `[notifications]` | ntfy topic for push notifications. |
-| `MAVERICK_ENABLE_SESSION_PROVIDERS` | config `[session_providers] enabled` (off) | Opt in to session providers. |
 
 ## Connectors
 

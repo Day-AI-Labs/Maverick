@@ -678,32 +678,11 @@ class LLM:
         with self._clients_lock:
             # Re-check under the lock in case another thread populated it.
             if cache_key not in self._client_cache:
-                from .providers import KNOWN_PROVIDERS, get_provider_client
-                from .session_providers import is_session_provider
-                use_api_provider = (
-                    provider in KNOWN_PROVIDERS
-                    and (not is_session_provider(provider) or key)
+                from .providers import get_provider_client
+                client = get_provider_client(
+                    provider, api_key=key, base_url=base_url,
+                    default_headers=default_headers,
                 )
-                if use_api_provider or key:
-                    client = get_provider_client(
-                        provider, api_key=key, base_url=base_url,
-                        default_headers=default_headers,
-                    )
-                else:
-                    if is_session_provider(provider):
-                        # Session providers get auto-wrapped in the tool
-                        # simulator so tool-using roles (orchestrator,
-                        # coder, researcher) work transparently. The
-                        # wrapper is a no-op when tools=None.
-                        from .session_providers import get_session_client
-                        client = get_session_client(
-                            provider, simulate_tools=True,
-                        )
-                    else:
-                        client = get_provider_client(
-                            provider, api_key=key, base_url=base_url,
-                            default_headers=default_headers,
-                        )
                 self._client_cache[cache_key] = client
                 self._clients[provider] = client
             return self._client_cache[cache_key]

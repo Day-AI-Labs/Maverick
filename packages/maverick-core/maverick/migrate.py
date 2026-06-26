@@ -57,7 +57,7 @@ KNOWN_SECTIONS = frozenset({
     "provider_failover", "providers", "queue", "quotas", "reflexion",
     "retention", "role_assignments", "roles", "routing", "safety",
     "sandbox", "screening", "search", "security", "self_learning",
-    "session_providers", "sharing", "shield", "skill_synthesis", "skills",
+    "sharing", "shield", "skill_synthesis", "skills",
     "system", "telemetry", "template_registries", "tenancy", "thinking",
     "tools", "tui", "verification", "voice", "webhooks", "workforce",
     "workspace", "world_model",

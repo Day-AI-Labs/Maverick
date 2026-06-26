@@ -121,10 +121,8 @@ def test_error_helpers_dont_crash(capsys):
     wizard.show_bad_key_error("ANTHROPIC_API_KEY", "API rejected the key")
     wizard.show_network_error("Anthropic", "ConnectError")
     wizard.show_install_failure(RuntimeError("disk full"))
-    wizard.show_browser_capture_timeout("Claude")
     # Smoke: they all rendered. (Panel chrome shortens lines; just verify
     # each panel's distinctive phrase appears somewhere in the output.)
     out = capsys.readouterr().out
     assert "Anthropic" in out
     assert "Setup hit a problem" in out
-    assert "Sign-in to Claude" in out
