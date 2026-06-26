@@ -31,10 +31,13 @@ fail-closed (`maverick/enterprise.py`):
   available container runtime (docker → podman) instead of running `shell=True` on
   the host; if no container runtime is installed it fails closed rather than
   running agent-generated commands unsandboxed (`sandbox/__init__.py`).
-- **Plugin supply-chain containment.** Third-party plugins run **out-of-process**
-  (subprocess isolation) and are checked against a **content-hash lockfile** —
-  a drifted or unpinned plugin is refused (`plugin_isolation.py`,
-  `plugin_lock.py`).
+- **Plugin supply-chain checks.** Plugin tool calls can be proxied through the
+  configured isolation backend, and plugin distributions can be checked against
+  a **content-hash lockfile** when lock enforcement is enabled. Plugin discovery,
+  imports, tool factories, channel plugins, skill plugins, and persona plugins
+  still run in the Maverick process; install only trusted plugins, and generate a
+  lockfile before relying on drift enforcement (`plugins.py`,
+  `plugin_isolation.py`, `plugin_lock.py`).
 
 **Prove it, don't trust the flag.** `maverick enterprise verify`
 (`deployment.py`) *actively exercises* the load-bearing guarantees — it confirms
@@ -68,8 +71,10 @@ the host — so a pass means the boundary holds, not merely that a config flag r
 - **Data subject rights.** DSAR export (`dsar.py`) and data-retention enforcement
   (`audit/retention.py`, GDPR Art. 5(1)(e) storage limitation).
 - **Supply chain.** A CycloneDX SBOM is produced in CI; dependencies are scanned
-  (`pip-audit`). Third-party plugins are isolation- and lockfile-gated under the
-  enterprise profile (see the data-boundary guarantees above).
+  (`pip-audit`). Plugin tool calls can be isolation-proxied and plugin distributions can be
+  lockfile-checked under the enterprise profile, but plugin import/discovery code
+  still runs in-process; treat plugins as trusted code (see the data-boundary
+  guarantees above).
 
 ## Compliance posture
 
