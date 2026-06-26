@@ -881,31 +881,16 @@ async def extension_cors(request: Request, call_next):
 
 @app.middleware("http")
 async def tenant_pinning(request: Request, call_next):
-    """Pin the active tenant from the authenticated principal for the request.
+    """Reset any per-request tenant pin established by authentication.
 
-    Council #6: the world model's tenant scoping (the app-layer ``_tenant_scope``
-    predicate AND the Postgres RLS ``maverick.tenant`` GUC) only engages when a
-    tenant is pinned, but no dashboard request ever pinned one -- isolation rested
-    on each call site remembering to, with no central enforcement. This pins the
-    tenant from the verified principal for the request's duration (ContextVar,
-    reset on exit so it never leaks across requests/tasks).
-
-    No-op unless per-user tenancy is enabled (``[tenancy] by_user`` /
-    ``MAVERICK_TENANT_BY_USER``) -- the single-tenant default is unchanged -- and
-    only when a principal resolves (an authenticated request). Fail-open: a
-    resolution error never blocks the request."""
-    token = None
-    try:
-        from maverick.paths import set_tenant, tenant_by_user_enabled
-        if tenant_by_user_enabled():
-            principal = caller_principal(request)
-            if principal:
-                token = set_tenant(f"api:{principal}")
-    except Exception:  # pragma: no cover -- pinning never blocks a request
-        token = None
+    The actual pin is set inside ``require_principal`` after FastAPI has resolved
+    the verified caller but before route handlers run. This outer middleware owns
+    cleanup so the ContextVar token never leaks across requests/tasks.
+    """
     try:
         return await call_next(request)
     finally:
+        token = getattr(request.state, "tenant_pin_token", None)
         if token is not None:
             try:
                 from maverick.paths import reset_tenant

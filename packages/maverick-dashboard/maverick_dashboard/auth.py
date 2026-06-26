@@ -149,6 +149,29 @@ def caller_principal(request: Request) -> str | None:
     return name or None
 
 
+def _pin_tenant_from_principal(request: Request, principal: VerifiedPrincipal) -> None:
+    """Pin per-user tenant state once the verified principal is known.
+
+    HTTP middleware runs before FastAPI dependencies populate
+    ``request.state.principal``, so tenant pinning must happen here, in the
+    authentication dependency, immediately after a principal is established and
+    before route handlers choose tenant-scoped world state. The reset token is
+    stored on request state for the outer middleware to clean up after the
+    response. Pinning is best-effort and never blocks authentication.
+    """
+    try:
+        from maverick.paths import set_tenant, tenant_by_user_enabled
+
+        if not tenant_by_user_enabled():
+            return
+        name = str(getattr(principal, "principal", "") or "").strip()
+        if not name or getattr(request.state, "tenant_pin_token", None) is not None:
+            return
+        request.state.tenant_pin_token = set_tenant(f"api:{name}")
+    except Exception:  # pragma: no cover -- tenant pinning must fail open
+        return
+
+
 def is_dashboard_admin(principal: str) -> bool:
     """True iff ``principal`` is listed as a dashboard admin.
 
@@ -338,6 +361,7 @@ def require_principal(
     pp = _proxy_principal(request)
     if pp is not None:
         request.state.principal = pp
+        _pin_tenant_from_principal(request, pp)
         return pp
 
     if not oidc_enabled():
@@ -348,6 +372,7 @@ def require_principal(
     sp = _session_principal(request)
     if sp is not None:
         request.state.principal = sp
+        _pin_tenant_from_principal(request, sp)
         return sp
 
     if request.url.path in _OIDC_EXEMPT_PATHS or request.url.path == "/static/daybreak-logo.jpg":
@@ -403,6 +428,7 @@ def require_principal(
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
     request.state.principal = principal
+    _pin_tenant_from_principal(request, principal)
     return principal
 
 
