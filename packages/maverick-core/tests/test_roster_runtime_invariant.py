@@ -94,3 +94,46 @@ def test_grounding_off_withholds_the_grant(monkeypatch):
         assert not cap.permits(extra[0]), f"{name}: {extra[0]} leaked with grounding off"
         return
     pytest.skip("no pack with a data grant beyond its own allowlist")
+
+
+# Mutators that are NOT builder-defining: injecting one keeps the pack a
+# non-builder, so the "no drafting agent reaches a mutator" check still applies
+# to it (injecting shell/code_exec would instead reclassify it as a builder and
+# legitimately exempt it -- which would NOT prove the detector fires).
+_NONBUILDER_MUTATORS = tuple(t for t in _DANGEROUS if t not in ("shell", "code_exec"))
+
+
+def test_invariant_detector_catches_an_injected_mutator(monkeypatch):
+    """Fault injection: prove the runtime guard is NOT vacuous.
+
+    If a regression added a state-mutating tool to a drafting pack's allowlist,
+    the same reachability scan that ``test_no_drafting_agent_reaches_a_mutator_*``
+    runs must flag it. Under autonomy-levels-on the risk ceiling is lifted to
+    ``high``, so the allowlist is the load-bearing boundary -- exactly where such
+    a regression would land. We corrupt a copy of a real pack (never mutating the
+    shared roster) and assert the corrupt pack reaches the injected mutator while
+    the clean pack does not.
+    """
+    import dataclasses
+
+    monkeypatch.setenv("MAVERICK_WORKFORCE_LEVELS", "true")
+    for name in _NAMES:
+        p = _DOMAINS[name]
+        if _is_builder(p):
+            continue
+        deny, allow = set(p.deny_tools), set(p.allow_tools)
+        inj = next((t for t in _NONBUILDER_MUTATORS
+                    if t not in deny and t not in allow), None)
+        if inj is None:
+            continue  # this pack denies every non-builder mutator -- doubly safe
+        corrupt = dataclasses.replace(p, allow_tools=[*p.allow_tools, inj])
+        assert not _is_builder(corrupt), "injection must not reclassify as builder"
+        corrupt_cap = domain_capability(corrupt, None, f"agent:{name}-1")
+        clean_cap = domain_capability(p, None, f"agent:{name}-1")
+        assert corrupt_cap.permits(inj), (
+            f"detector blind: injected {inj!r} into {name} is not reachable -- "
+            "the roster invariant would fail to catch this regression")
+        assert not clean_cap.permits(inj), (
+            f"control failed: clean {name} already reaches {inj!r}")
+        return
+    pytest.skip("no injectable non-builder pack found")
