@@ -38,6 +38,10 @@ log = logging.getLogger(__name__)
 _KINDS = ("action", "narration", "observation")
 _MAX_STEP_CHARS = 400
 _MAX_WORKFLOW_STEPS = 8
+# A real job uses a handful of tools; cap the derived envelope so a pathological
+# demonstration (thousands of distinct tool hints) can't synthesize a pack with
+# an unbounded allow_tools list. validate_profile clamps by RISK, not by COUNT.
+_MAX_OBSERVED_TOOLS = 16
 # Plain-text line prefixes a capture front-end can emit, mapped to step kinds.
 # ``ACTION[tool]: ...`` carries an optional capability hint in the brackets.
 _PREFIX_KIND = {
@@ -57,6 +61,17 @@ def _redact(text: str) -> str:
         return str(text or "")
 
 
+def _clean(text: str) -> str:
+    """Redact secrets, collapse whitespace to single-line, and length-cap.
+
+    A raw (programmatically built) DemoStep can carry a multi-line credential
+    paste; the parser only ever yields single lines, so normalize both paths to
+    the same shape -- redacted, one line, bounded -- before anything is persisted
+    or sent to a provider."""
+    cleaned = " ".join(_redact(text or "").split())
+    return cleaned[:_MAX_STEP_CHARS]
+
+
 @dataclass
 class DemoStep:
     """One observed beat of a demonstration."""
@@ -70,9 +85,9 @@ class DemoStep:
         kind = self.kind if self.kind in _KINDS else "observation"
         return DemoStep(
             kind=kind,
-            summary=_redact(self.summary).strip()[:_MAX_STEP_CHARS],
+            summary=_clean(self.summary),
             tool=(self.tool or "").strip(),
-            target=_redact(self.target).strip()[:_MAX_STEP_CHARS],
+            target=_clean(self.target),
         )
 
 
@@ -93,6 +108,8 @@ class Demonstration:
         for s in self.steps:
             if s.tool and s.tool not in seen:
                 seen.append(s.tool)
+                if len(seen) >= _MAX_OBSERVED_TOOLS:
+                    break
         return seen
 
     def narration(self) -> str:
@@ -145,8 +162,11 @@ def parse_demonstration(text: str) -> list[DemoStep]:
                         target=str(d.get("target") or ""),
                     ).normalized())
                     continue
-            except (json.JSONDecodeError, ValueError):
-                pass  # fall through to text parsing
+            except (json.JSONDecodeError, ValueError, RecursionError):
+                # RecursionError: a deeply-nested JSON object exceeds the parser's
+                # recursion limit -- treat it as not-our-JSON and fall through to
+                # text parsing rather than letting it crash a capture ingest.
+                pass
         m = _ACTION_RE.match(line)
         if m:
             kind = _PREFIX_KIND.get(m.group("prefix"), None)
@@ -296,6 +316,18 @@ def induce_profile(demo: Demonstration, *, llm=None, model: str | None = None, b
     """
     from .intake import generate_profile
 
+    # Defensive normalization at the chokepoint. Only ``parse_demonstration``
+    # normalizes; a Demonstration built programmatically (a capture front-end,
+    # a test, a future API) may carry RAW DemoSteps whose summaries/targets --
+    # and whose title -- still hold pasted secrets. Re-normalize every step and
+    # redact the title here so no downstream path (the deterministic proposer's
+    # workflow instructions, the LLM transcript, the provenance note) can leak a
+    # secret into the persisted pack. Idempotent on already-normalized steps.
+    demo = Demonstration(
+        title=_redact(demo.title).strip()[:_MAX_STEP_CHARS],
+        steps=[s.normalized() for s in demo.steps],
+        source=demo.source, industry=demo.industry,
+    )
     spec = _demo_to_spec(demo)
     propose = (
         build_demo_proposer(demo, llm, model=model, budget=budget)

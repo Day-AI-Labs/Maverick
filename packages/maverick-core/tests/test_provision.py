@@ -79,6 +79,17 @@ def test_tool_gaps_only_when_known_tools_given(monkeypatch):
     assert needs == {"frobnicate_widgets": "generate_tool"}
 
 
+def test_tool_gaps_dedupe_duplicate_allow_tools(monkeypatch):
+    # A duplicated allow_tools entry must produce ONE gap, not N -- otherwise
+    # apply_plan would redundantly synthesize the same tool repeatedly.
+    monkeypatch.setattr(provision, "_installed_skill_names", lambda: set())
+    monkeypatch.setattr("maverick.self_learning.search_capabilities", lambda *a, **k: [])
+    monkeypatch.setattr(provision, "_generated_tool_names", lambda: set())
+    prof = _profile(allow_tools=["frob", "frob", "frob", "read_file"])
+    plan = provision.analyze_profile(prof, known_tools={"read_file"})
+    assert [g.need for g in plan.tool_gaps] == ["frob"]
+
+
 def test_missing_tool_resolved_by_strong_catalog_skill(monkeypatch):
     def fake_search(need, *, kinds=(), max_n=5, indexes=None):
         return [Candidate(kind="skill", name="send-sms", summary="Twilio SMS",
@@ -180,6 +191,21 @@ def test_apply_generate_tool_needs_llm(monkeypatch):
     res = provision.apply_plan(plan, approved=True, llm=None)
     assert res.generated == []
     assert any("no LLM" in s for s in res.skipped)
+
+
+def test_apply_zero_budget_acquires_nothing(monkeypatch):
+    monkeypatch.setattr("maverick.self_learning.enabled", lambda: True)
+    monkeypatch.setattr("maverick.self_learning.settings",
+                        lambda: {"max_acquisitions": 5, "create_tools": True})
+    monkeypatch.setattr("maverick.self_learning.acquire_skill",
+                        lambda name, need="": "body")
+    plan = provision.ProvisioningPlan("p", [
+        provision.CapabilityGap(kind="skill", need="a", resolution="acquire_skill",
+                                candidate="one"),
+    ])
+    # cap==0 must mean none -- not floored to one.
+    res = provision.apply_plan(plan, approved=True, max_acquisitions=0)
+    assert res.acquired == []
 
 
 def test_apply_respects_acquisition_budget(monkeypatch):

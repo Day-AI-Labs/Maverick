@@ -149,3 +149,29 @@ def test_induce_llm_failure_falls_back_safely():
 def test_demo_step_redacts_secrets():
     s = DemoStep("action", "export AWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE12345").normalized()
     assert "AKIAIOSFODNN7EXAMPLE12345" not in s.summary
+
+
+def test_induce_redacts_secret_in_raw_demostep():
+    # A Demonstration built programmatically carries RAW DemoSteps (only
+    # parse_demonstration normalizes). induce_profile must redact every field
+    # that reaches the persisted pack -- summary, target, narration, AND title
+    # (which becomes the name + provenance note) -- not just the ones the
+    # deterministic proposer happens to touch. Use a detector-recognized token.
+    secret = "ghp_" + "A" * 36
+    raw = Demonstration(title=f"deploy with {secret}", steps=[
+        DemoStep("action", f"run {secret}", tool="read_file", target=f"repo {secret}"),
+        DemoStep("narration", f"the pat is {secret}"),
+    ])
+    p = demo.induce_profile(raw, llm=None)
+    blob = " ".join([p.name, p.description, *[w.name + " " + w.instruction for w in p.workflow]])
+    assert secret not in blob
+
+
+def test_induce_caps_allow_tools_from_pathological_demo():
+    # Thousands of distinct tool hints must not synthesize an unbounded envelope
+    # (validate_profile clamps by risk, not by count).
+    d = Demonstration(title="firehose", steps=[
+        DemoStep("action", f"step {i}", tool=f"tool_{i}") for i in range(5000)
+    ])
+    p = demo.induce_profile(d, llm=None)
+    assert len(p.allow_tools) <= demo._MAX_OBSERVED_TOOLS
