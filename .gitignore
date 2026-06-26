@@ -99,3 +99,6 @@ benchmarks/security/results.jsonl
 # generated gRPC stubs (compiled on demand from maverick.proto by the [grpc] extra)
 packages/maverick-core/maverick/grpc_api/*_pb2.py
 packages/maverick-core/maverick/grpc_api/*_pb2_grpc.py
+
+# repo-root scratch dir for ad-hoc stress/repro scripts (never committed)
+/scratchpad/

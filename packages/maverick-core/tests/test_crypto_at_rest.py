@@ -558,7 +558,10 @@ def test_keygen_logs_backup_warning(monkeypatch, caplog):
 def test_backup_key_material_copies_primary_and_keyring(monkeypatch, tmp_path):
     monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
     car._load_or_create_key()              # create the primary key
-    car.rotate_at_rest_key()               # create a keyring key too
+    keyring_key = car._keyring_dir() / "rotation.key"
+    keyring_key.parent.mkdir(parents=True)
+    keyring_key.write_text((b"r" * 32).hex(), encoding="utf-8")
+    keyring_key.chmod(0o600)
     dest = tmp_path / "escrow"
     written = car.backup_key_material(dest)
     names = sorted(p.name for p in written)
@@ -568,6 +571,49 @@ def test_backup_key_material_copies_primary_and_keyring(monkeypatch, tmp_path):
     assert all(_stat.S_IMODE(p.stat().st_mode) == 0o600 for p in written)
     # The escrowed primary key matches the live one (usable for recovery).
     assert (dest / "at_rest.key").read_text() == car._KEY_PATH.read_text()
+
+
+def test_backup_key_material_refuses_existing_destination_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    car._load_or_create_key()
+    dest = tmp_path / "escrow"
+    dest.mkdir()
+    existing = dest / "at_rest.key"
+    existing.write_text("attacker controlled", encoding="utf-8")
+
+    with pytest.raises(car.EncryptionUnavailable, match="cannot copy key"):
+        car.backup_key_material(dest)
+
+    assert existing.read_text(encoding="utf-8") == "attacker controlled"
+
+
+def test_backup_key_material_refuses_destination_symlink(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    car._load_or_create_key()
+    dest = tmp_path / "escrow"
+    dest.mkdir()
+    leaked = tmp_path / "leaked.key"
+    leaked.write_text("attacker controlled", encoding="utf-8")
+    (dest / "at_rest.key").symlink_to(leaked)
+
+    with pytest.raises(car.EncryptionUnavailable, match="cannot copy key"):
+        car.backup_key_material(dest)
+
+    assert leaked.read_text(encoding="utf-8") == "attacker controlled"
+
+
+def test_backup_key_material_refuses_directory_symlink(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    car._load_or_create_key()
+    real_dest = tmp_path / "real-escrow"
+    real_dest.mkdir()
+    dest = tmp_path / "escrow-link"
+    dest.symlink_to(real_dest, target_is_directory=True)
+
+    with pytest.raises(car.EncryptionUnavailable, match="cannot prepare key backup dir"):
+        car.backup_key_material(dest)
+
+    assert not (real_dest / "at_rest.key").exists()
 
 
 def test_backup_key_material_errors_when_no_key(monkeypatch, tmp_path):

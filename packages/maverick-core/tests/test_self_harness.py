@@ -179,7 +179,7 @@ def test_cli_requires_enable(monkeypatch):
     from maverick.cli import main
     monkeypatch.delenv("MAVERICK_SELF_HARNESS", raising=False)
     monkeypatch.setattr("maverick.config.load_config", dict)
-    res = CliRunner().invoke(main, ["self-harness", "--model", "m"])
+    res = CliRunner().invoke(main, ["self-harness", "preview", "--model", "m"])
     assert res.exit_code != 0 and "self-harness is off" in res.output
 
 
@@ -193,7 +193,7 @@ def test_cli_reports_mined_weaknesses(monkeypatch, tmp_path):
                  "export ledger nightly run"):
         reflexion.record(goal, "timeout", "timed out", "r", model_id="m", path=p)
     monkeypatch.setattr(reflexion, "default_path", lambda: p)
-    res = CliRunner().invoke(main, ["self-harness", "--model", "m", "--min-support", "3"])
+    res = CliRunner().invoke(main, ["self-harness", "preview", "--model", "m", "--min-support", "3"])
     assert res.exit_code == 0
     assert "Weaknesses for 'm'" in res.output and "would add:" in res.output
 

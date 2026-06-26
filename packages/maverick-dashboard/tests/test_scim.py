@@ -235,3 +235,32 @@ class TestLifecycle:
         assert client.get(f"/scim/v2/Users/{uid}", headers=_auth()).status_code == 404
         from maverick.tenant import registry
         assert registry.get_tenant(uid) is None
+
+    def test_patch_tenant_suspend_failure_does_not_commit_scim_inactive(self, client, monkeypatch):
+        uid = _make_user(client).json()["id"]
+        from maverick.tenant import registry
+
+        def fail_suspend(_uid):
+            raise RuntimeError("simulated suspend failure")
+
+        monkeypatch.setattr(registry, "suspend_tenant", fail_suspend)
+        r = client.patch(f"/scim/v2/Users/{uid}", headers=_auth(), json={
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            "Operations": [{"op": "replace", "path": "active", "value": False}],
+        })
+        assert r.status_code == 500
+        assert client.get(f"/scim/v2/Users/{uid}", headers=_auth()).json()["active"] is True
+        assert registry.get_tenant(uid).active is True
+
+    def test_delete_tenant_failure_keeps_scim_user_for_retry(self, client, monkeypatch):
+        uid = _make_user(client).json()["id"]
+        from maverick.tenant import registry
+
+        def fail_delete(_uid):
+            raise RuntimeError("simulated delete failure")
+
+        monkeypatch.setattr(registry, "delete_tenant", fail_delete)
+        r = client.delete(f"/scim/v2/Users/{uid}", headers=_auth())
+        assert r.status_code == 500
+        assert client.get(f"/scim/v2/Users/{uid}", headers=_auth()).status_code == 200
+        assert registry.get_tenant(uid) is not None

@@ -12,9 +12,12 @@ name: Compliance Posture
 # (CI cannot reach prod). It proves that the documented compliant config + the
 # evidence collector still produce a green posture, so a code/config change can't
 # silently break a customer's ability to pass the gate. (It would have caught the
-# off-host-key false-negative fixed alongside it.) To gate an actual deployment,
-# run docs/compliance/deployment/verify-posture.sh on the deployment host (or
-# point this same job at a self-hosted runner in the prod environment).
+# off-host-key false-negative fixed alongside it.) Because this workflow runs on
+# pull_request and executes code from the checked-out tree, it must stay on
+# GitHub-hosted runners and must never be retargeted to production or other
+# privileged self-hosted runners. To gate an actual deployment, run
+# docs/compliance/deployment/verify-posture.sh on the deployment host from a
+# trusted, protected ref outside this pull_request-triggered workflow.
 #
 # The audit signing key here is an EPHEMERAL throwaway generated in-job, standing
 # in for the KMS/secrets-manager key a real deployment injects via
@@ -53,8 +56,13 @@ on:
       - "docs/compliance/deployment/compliant-config.toml"
       - ".github/workflows/compliance-posture.yml"
 
+permissions:
+  contents: read
+
 jobs:
   posture:
+    # Keep this PR-triggered regression gate on GitHub-hosted runners only; do
+    # not retarget it to production or privileged self-hosted runners.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

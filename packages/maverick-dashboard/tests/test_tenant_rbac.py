@@ -6,6 +6,8 @@ out of a tenant). No active tenant / no membership => unchanged global behaviour
 """
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 
@@ -98,10 +100,10 @@ def test_named_tenant_role_does_not_apply_under_per_user_pin():
         reset_tenant(tok)
 
 
-def test_tenant_role_mutation_rejected_under_per_user_tenancy(monkeypatch):
+def test_tenant_role_assignment_rejected_under_per_user_tenancy(monkeypatch):
     from fastapi import HTTPException
     from maverick_dashboard.api import (
-        _reject_tenant_roles_under_per_user_tenancy as guard,
+        _reject_tenant_role_assignment_under_per_user_tenancy as guard,
     )
 
     # Named-tenant deployment (default): per-tenant roles apply -> no rejection.
@@ -114,3 +116,29 @@ def test_tenant_role_mutation_rejected_under_per_user_tenancy(monkeypatch):
         guard()
     assert ei.value.status_code == 409
     assert "per-user tenancy" in ei.value.detail
+
+
+def test_remove_active_per_user_tenant_role_allowed_under_per_user_tenancy(
+    monkeypatch,
+):
+    from maverick.paths import reset_tenant, set_tenant
+    from maverick_dashboard import api, auth, rbac
+
+    monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")
+    monkeypatch.setattr(api, "require_permission", lambda request, permission: None)
+    monkeypatch.setattr(api, "_get_tenant_or_404", lambda tenant_id: object())
+
+    rbac.set_role("user:alice", "viewer")
+    rbac.set_tenant_role("api:user:alice", "user:alice", "admin")
+
+    tok = set_tenant("api:user:alice")
+    try:
+        assert auth.role_for_principal("user:alice") == "admin"
+        response = asyncio.run(
+            api.remove_tenant_role(object(), "api:user:alice", "user:alice")
+        )
+        assert response.status_code == 204
+        assert rbac.get_tenant_role("api:user:alice", "user:alice") is None
+        assert auth.role_for_principal("user:alice") == "viewer"
+    finally:
+        reset_tenant(tok)

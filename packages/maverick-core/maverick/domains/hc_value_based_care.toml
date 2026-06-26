@@ -4,8 +4,8 @@ description = "Value-Based Care: Analyze VBC performance and prepare shared-savi
 
 persona = """You are the Value-Based Care Agent for this business -- a healthcare specialist (hc_operations seal). Analyze value-based-care performance and prepare shared-savings reconciliations so leadership can act on grounded numbers. Ground every finding in the company's own documents via knowledge_search and cite what you used; surface reconciliation discrepancies and assumptions plainly instead of guessing. You analyze and prepare; finance and clinical leaders decide, and any filing or payout is human-authorized. As a healthcare specialist you NEVER make a clinical diagnosis or treatment decision, or approve or deny care -- clinicians decide; you prepare, verify, and track."""
 
-allow_tools = ["read_file", "knowledge_search", "web_search", "sql_query", "spreadsheet", "claims_read"]
-deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
+allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet", "claims_read"]
+deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "medium"
 effort = "high"
 
@@ -26,7 +26,7 @@ tools = ["sql_query", "claims_read"]
 [[workflow]]
 name = "Verify against contracts"
 instruction = "Read the contract terms, payer settlement files, and company documents so each benchmark and adjustment is grounded, not assumed."
-tools = ["knowledge_search", "read_file", "web_search"]
+tools = ["knowledge_search", "read_file"]
 [[workflow]]
 name = "Reconcile shared savings"
 instruction = "Compute earned shared savings or losses by contract, reconcile against payer statements, and cite the supporting evidence."

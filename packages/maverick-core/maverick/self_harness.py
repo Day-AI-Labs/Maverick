@@ -118,6 +118,67 @@ def recall_addendum(model_id: str | None, path: Path | None = None) -> str:
     return load_addenda(path).get(str(model_id), "")
 
 
+def _bullets(block: str) -> list[str]:
+    return [ln[2:].strip() for ln in (block or "").splitlines()
+            if ln.startswith("- ")]
+
+
+def list_learned(path: Path | None = None) -> dict[str, list[str]]:
+    """The learned guidance lines per model, for operator inspection.
+
+    Returns ``{model_id: [line, ...]}`` parsed from the stored addenda -- the
+    same lines :func:`recall_addendum` injects, minus the framing header. Note
+    this reads the STORE regardless of :func:`enabled`; the recall path is what
+    gates on the toggle, so an operator can still inspect/roll back what was
+    learned while the feature is paused."""
+    out: dict[str, list[str]] = {}
+    for model_id, block in load_addenda(path).items():
+        lines = _bullets(block)
+        if lines:
+            out[model_id] = lines
+    return out
+
+
+def forget_addendum(model_id: str, *, line: str | None = None,
+                    path: Path | None = None) -> bool:
+    """Operator rollback: remove a model's learned addendum, or a single line.
+
+    The user-facing undo handle for self-harness learning. The removal is
+    serialized + atomic like every other store write, and is itself audited so
+    the rollback leaves a trail. Returns ``True`` if something was removed,
+    ``False`` if there was nothing matching to remove."""
+    p = path if path is not None else _store_path()
+    from .file_lock import cross_process_lock
+    removed = False
+    with _lock, cross_process_lock(p):
+        before = load_addenda(p)
+        if model_id not in before:
+            return False
+        after = dict(before)
+        if line is None:
+            del after[model_id]
+            removed = True
+        else:
+            existing = _bullets(before[model_id])
+            kept = [ln for ln in existing if ln != line]
+            removed = len(kept) != len(existing)
+            if not removed:
+                return False
+            if kept:
+                header = "Operating guidance learned for this model:"
+                after[model_id] = header + "\n" + "\n".join(f"- {ln}" for ln in kept)
+            else:
+                del after[model_id]
+        _write_addenda(after, p)
+    try:
+        from .audit import EventKind, record
+        record(EventKind.LEARNING_UPDATE, agent="self_harness", model_id=model_id,
+               rung="prompt", line=line or "*", phase="forget")
+    except Exception:  # pragma: no cover -- audit best-effort
+        pass
+    return removed
+
+
 # ---- MINE -----------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -569,6 +630,7 @@ def _gate_and_apply(proposal: HarnessProposal, vr: ValidationResult, *,
 
 __all__ = [
     "enabled", "recall_addendum", "load_addenda",
+    "list_learned", "forget_addendum",
     "FailureSignature", "mine_failures",
     "HarnessProposal", "ProposeFn", "propose_addendum",
     "ValidationResult", "ScoreFn", "validate_proposal",

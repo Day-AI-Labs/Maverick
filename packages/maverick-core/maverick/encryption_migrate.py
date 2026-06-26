@@ -7,11 +7,11 @@ store is encrypted, not just new data. It is **idempotent** — already-sealed
 values are skipped — so it is safe to re-run.
 
 The reseal happens **in place** and shreds the pre-encryption plaintext residue
-(``secure_delete`` + VACUUM), so a crash or key problem mid-migration would be
-unrecoverable. To make it safe, a transactionally-consistent **plaintext backup**
-of the DB is taken first (:func:`backup_world_db`) unless explicitly disabled.
+(``secure_delete`` + VACUUM). Operators who need a rollback copy may explicitly
+opt in to a transactionally-consistent **plaintext backup** of the DB
+(:func:`backup_world_db`).
 
-Exposed as ``maverick encryption migrate [--dry-run] [--no-backup]``.
+Exposed as ``maverick encryption migrate [--dry-run] [--backup]``.
 """
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ def backup_world_db(db_path: Path) -> Path:
 
 
 def migrate_world_db(
-    db_path: Path, *, dry_run: bool = False, backup: bool = True
+    db_path: Path, *, dry_run: bool = False, backup: bool = False
 ) -> dict[str, int]:
     """Seal any remaining plaintext in the world DB's sensitive columns.
 
@@ -94,10 +94,11 @@ def migrate_world_db(
     :class:`EncryptionUnavailable` otherwise, or if the crypto backend / key is
     missing -- this never writes plaintext.
 
-    Unless ``backup`` is False (or ``dry_run`` is set), a plaintext snapshot of
-    the DB is written via :func:`backup_world_db` before any row is resealed, so
-    the in-place migration is recoverable. The backup is skipped when there is no
-    plaintext to seal, so idempotent re-runs don't litter identical copies.
+    By default no plaintext backup is written. If ``backup`` is True (and
+    ``dry_run`` is not set), a plaintext snapshot of the DB is written via
+    :func:`backup_world_db` before any row is resealed, so the in-place migration
+    is recoverable. The backup is skipped when there is no plaintext to seal, so
+    idempotent re-runs don't litter identical copies.
     """
     if not at_rest_enabled():
         raise EncryptionUnavailable(
@@ -134,7 +135,7 @@ def migrate_world_db(
         if dry_run or not work:
             log.info("encryption migrate (dry_run=%s): %s", dry_run, report)
             return report
-        # Phase 2 -- back up the pre-migration plaintext, then reseal in place.
+        # Phase 2 -- optionally back up the plaintext, then reseal in place.
         if backup:
             path = backup_world_db(db_path)
             log.info("encryption migrate: backed up world DB to %s before reseal", path)

@@ -40,6 +40,13 @@ Lightwork is proprietary, commercially licensed software (see
   caps) across all 2,020 packs, fault-injected at 1,000,000 iterations,
   plus hostile-argument fuzzing of every connector and tool.
   Email, Matrix, WhatsApp, SMS, iMessage — one config, all channels.
+- **Build an agent from a demonstration**: watch a person do their job,
+  then synthesize the agent that does it — `maverick learn-demo <file>`
+  ingests an observed transcript, induces a profile through the same
+  intake clamp + review gate, and provisions the skills/tools it needs.
+  The factory also improves itself: `maverick factory-learn` mines
+  provisioning/approval gaps back into future pack generation
+  (off by default, never widens an envelope).
 
 ## Quick start
 

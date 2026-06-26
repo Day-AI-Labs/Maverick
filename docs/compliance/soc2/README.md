@@ -85,9 +85,12 @@ GitHub Actions workflow runs the gate automatically: it applies
 (`workflow_dispatch`), and on any change to the controls/config that affect
 posture — a **regression gate** so a code change can't silently break the
 ability to pass (it would have caught the off-host-key false-negative). It also
-uploads each run's `soc2-evidence.json` as an artifact. To gate a *live*
-deployment, run [`verify-posture.sh`](../deployment/verify-posture.sh) on the
-deployment host (or point the same workflow at a self-hosted runner there).
+uploads each run's `soc2-evidence.json` as an artifact. This workflow is
+`pull_request`-triggered and executes code from the checked-out tree, so keep it
+on GitHub-hosted runners only; do **not** retarget it to a production or other
+privileged self-hosted runner. To gate a *live* deployment, run
+[`verify-posture.sh`](../deployment/verify-posture.sh) on the deployment host
+from a trusted, protected ref or another trusted deployment automation path.
 
 ## 5. Process controls to operate (NOT code)
 

@@ -34,7 +34,7 @@ rely on are in place and verifiable now.
 | **AI/agent safety** | Prompt-injection / unsafe actions? | [shield-benchmark.md](../security/shield-benchmark.md) (layered detection + a decode/defang pre-pass that defeats base64/hex/homoglyph obfuscation on input, tool-call, and output surfaces + confirm-gated writes + container-isolated shell + budget caps) | `python benchmarks/security/detector_score.py`; latency/ReDoS CI gate |
 | **Roster governance invariants** | Do the safety rails hold across *every* agent? | Roster-wide governance invariant test suite — six invariants verified across all 2,020 specialist packs (tool-reachability, autonomy dial, capability attenuation, compartment isolation, hard refusals, budget caps), fault-injected at 1,000,000 iterations with a non-vacuity control per test, plus hostile-argument fuzzing of all connectors/tools | governance invariant suite in CI (each invariant has a fault-injection control proving it is non-vacuous) |
 | **Vulnerability mgmt** | Deps, SAST, secrets? | [audit-readiness.md §Static-analysis gates](../security/audit-readiness.md#4-reproducible-verification-harness) | `pip-audit`; `bandit`; detect-secrets baseline; all blocking in CI |
-| **Supply chain** | SBOM, provenance, third-party code? | SBOM produced in CI (CycloneDX); third-party **plugin isolation** (out-of-process under enterprise) + **content-hash lockfile** (drifted/unpinned plugins refused) | CI `audit` job artifact; `[plugins] isolation` / `lock_policy` |
+| **Supply chain** | SBOM, provenance, third-party code? | SBOM produced in CI (CycloneDX); plugin tool-call isolation under enterprise + **content-hash lockfile** checks (drift refused after a lockfile exists; plugin import/discovery still runs in-process) | CI `audit` job artifact; `[plugins] isolation` / `lock_policy` |
 | **SOC 2 readiness** | Control coverage + gaps? | [soc2-controls.md](../compliance/soc2-controls.md) (CC1–CC9, A/PI/C/P mapping + honest gap list) | `python -c "from maverick.soc2 import collect_soc2_evidence as c; print(c())"` |
 | **Deployment / topology** | How does it run in our env? | [security-overview.md §Reference architecture](security-overview.md#reference-architecture-self-host--air-gap) (laptop / VPC / k8s / air-gap) | `maverick enterprise verify` on the target host |
 | **Regulatory mapping** | GDPR / EU AI Act / DSAR? | [regulated-deployment.md](../regulated-deployment.md); `ai_act.py`; DSAR via `dsar.py` | `maverick compliance --strict` |
@@ -47,7 +47,7 @@ rely on are in place and verifiable now.
 capability scoping, encryption at rest, OIDC SSO, per-tenant isolation,
 hash-chained signed audit, SBOM + dependency/secret/SAST CI gates, the shield's
 layered detection + obfuscation-decoding pre-pass + action-layer containment,
-container-default sandbox and third-party-plugin isolation + hash-lock under the
+container-default sandbox and plugin tool-call isolation + hash-lock checks under the
 enterprise profile, and the SOC 2 evidence collector. The whole regulated posture
 is selectable with one knob (`MAVERICK_PROFILE=enterprise`), each control still
 individually overridable.
