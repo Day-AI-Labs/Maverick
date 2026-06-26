@@ -85,6 +85,46 @@ maverick resume
 
 Goals survive restarts. You can shut your laptop and come back tomorrow.
 
+## Building your own specialist from a watched task
+
+You don't have to describe a job in words — you can show it. Capture an ordered
+record of someone doing the work (the actions they took and any narration of why)
+as JSONL or simple prefixed text, then hand the file to Lightwork:
+
+```
+ACTION[gmail]: send the morning digest -> ops@acme.com
+NOTE: only the top 5 stories, with one-line summaries
+SEE: digest looks right, ops confirmed receipt
+```
+
+```bash
+maverick learn-demo demo.txt
+```
+
+This parses the demonstration, induces a draft specialist, shows you the derived
+workflow, and waits for your approval before saving. Secrets are redacted at the
+door, and the draft inherits the same capability clamp and persona scan a
+described pack gets — nothing activates without your yes. Useful flags:
+
+```bash
+maverick learn-demo demo.txt --name "Morning Digest" --no-llm --yes
+```
+
+`--no-llm` mirrors the observed steps deterministically (tools = what the person
+used); drop it to let the model propose from the transcript.
+
+The same agent-factory flow runs when you build a pack conversationally:
+
+```bash
+maverick onboard
+```
+
+On approval, `onboard` now provisions the pack — it installs the catalog skills
+its workflow needs and synthesizes any declared tools that aren't built in, so a
+freshly approved specialist is equipped to do its job from the first run. (This
+step honors the `[self_learning]` / `provision_packs` config and never widens the
+pack's clamped envelope.)
+
 ## Changing models or providers
 
 Re-run the wizard any time:

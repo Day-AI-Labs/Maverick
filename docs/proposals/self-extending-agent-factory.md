@@ -2,8 +2,10 @@
 
 > **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,118 lint-clean agents across 26 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
 
+> **Status: Implemented** — the self-extending factory has shipped to main: capability provisioning at pack-birth (`maverick/provision.py`), programming by demonstration (`maverick/demonstration.py`), and the self-improving factory loop (`maverick/factory_learning.py`); CLI `maverick learn-demo` / `maverick factory-learn`.
 
-**Status:** design / roadmap — a load-bearing differentiator. Companion to the eight
+
+**Status:** implemented (see the banner above) — was design / roadmap; a load-bearing differentiator. Companion to the eight
 agent suites ([`agent-suites-overview.md`](agent-suites-overview.md)) and the
 [agent-to-agent protocol](agent-to-agent-protocol.md). Builds on
 [`../enterprise/architecture.md`](../enterprise/architecture.md).
