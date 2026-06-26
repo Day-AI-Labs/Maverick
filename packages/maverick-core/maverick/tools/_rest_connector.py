@@ -87,12 +87,15 @@ def _rest_validate(
     norm,
 ) -> tuple[str, str] | str:
     """Validate op/path/confirm. Returns ``(op, path)`` or an ``ERROR/DRY RUN`` string."""
-    op = (args.get("op") or ("get" if read_only else "")).strip().lower()
+    # Coerce to str first: a malformed non-string op/path (e.g. the model emits
+    # an int or a list) must yield an ``ERROR:`` string, never raise into the
+    # agent loop -- ``(123).strip()`` would AttributeError otherwise.
+    op = str(args.get("op") or ("get" if read_only else "")).strip().lower()
     if read_only and op != "get":
         return f"ERROR: {name} is read-only -- only GET is permitted from this seat."
     if op not in ("get", "post", "put", "patch", "delete"):
         return f"ERROR: op must be get/post/put/patch/delete (got {op!r})"
-    path = (args.get("path") or "").strip()
+    path = str(args.get("path") or "").strip()
     if not path:
         return "ERROR: path is required"
     if read_only and not read_path_allowed(path):
@@ -431,7 +434,8 @@ def make_graphql_tool(
         return _env_config(name, base_url_env, token_env)
 
     def _run(args: dict[str, Any]) -> str:
-        q = (args.get("query") or "").strip()
+        # Coerce to str: a non-string query must ERROR, not raise (see _rest_validate).
+        q = str(args.get("query") or "").strip()
         if not q:
             return "ERROR: query is required"
         try:
