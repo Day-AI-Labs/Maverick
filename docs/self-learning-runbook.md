@@ -46,13 +46,22 @@ On a GPU pod (RunPod / Lambda / Vast / any GPU VM):
 2. Paste one line:
 
 ```bash
+# cheap proof run (default base model, full-param, any GPU):
 curl -fsSL https://raw.githubusercontent.com/Day-AI-Labs/Lightwork/main/scripts/train_runpod.sh -o train.sh \
-  && BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct bash train.sh
+  && bash train.sh
+
+# …or graduate to the strongest ownable model on one 80GB GPU (QLoRA):
+BASE_MODEL=Qwen/Qwen3-Coder-30B-A3B LORA=1 BITS=4 bash train.sh
 ```
 
-It installs (`maverick-agent[training]` → torch + transformers), generates any
-missing inputs, trains the L2 PRM (CPU), runs real DPO (GPU,
-`--require-real-text`), and prints where the outputs are.
+It installs (`maverick-agent[training]` → torch + transformers + peft +
+bitsandbytes), generates any missing inputs, trains the L2 PRM (CPU), runs real
+DPO (GPU, `--require-real-text`; `LORA=1 BITS=4` uses 4-bit QLoRA so 7B–30B fit
+one GPU), and prints where the outputs are.
+
+> **Right-size to your data.** Start with the default tiny model to prove the
+> loop cheaply; only graduate to 8B–30B once you have real trajectory volume —
+> DPO on a few pairs barely moves a big model and overfits.
 
 3. **Copy the outputs off the pod before stopping it** (pods are ephemeral):
    `maverick-train-out/prm_linear.json` and `maverick-train-out/proposer_dpo/`

@@ -368,6 +368,67 @@ def _confidence(row: dict) -> float:
     return max(0.0, min(1.0, c))
 
 
+def resolve_pair_text(
+    pair: dict, key: str, *, rows_by_id: dict[str, dict] | None = None,
+    text_sidecar: dict[str, str] | None = None, require_real_text: bool = False,
+    allow_structural_fallback: bool = True,
+) -> str:
+    """The text for one side of a pair: cached ``{key}_text`` > real text via
+    ``row_text`` > structural stand-in (only when allowed). Raises if real text
+    is required but absent. Shared by the full-param and LoRA training paths."""
+    cached = pair.get(f"{key}_text")
+    if cached:
+        return cached
+    rid = pair.get(f"{key}_id")
+    real = row_text((rows_by_id or {}).get(rid, {}) or {}, text_sidecar)
+    if real:
+        return real
+    if require_real_text or not allow_structural_fallback:
+        raise ValueError(
+            f"no real proposer text for {key} attempt {rid!r}; supply a "
+            "--text-sidecar (or unset --require-real-text to train on the "
+            "structural stand-in)."
+        )
+    global _warned_structural
+    if not _warned_structural:
+        log.warning(
+            "RLAIF: training on the STRUCTURAL STAND-IN text (no real proposer "
+            "text supplied); pass --text-sidecar for real DPO."
+        )
+        _warned_structural = True
+    if rows_by_id is None:
+        raise ValueError("rows_by_id required to recover text")
+    return trajectory_to_text(rows_by_id[rid])
+
+
+def pairs_to_dpo_rows(
+    pairs: list[dict], *, rows_by_id: dict[str, dict] | None = None,
+    text_sidecar: dict[str, str] | None = None, require_real_text: bool = False,
+    allow_structural_fallback: bool = True,
+) -> list[dict]:
+    """Resolve each pair to ``{"chosen", "rejected", "weight"}`` text rows for a
+    DPO loop. Pure + testable (no torch). With ``require_real_text`` a pair
+    lacking real text for either side is skipped rather than raising."""
+    rows: list[dict] = []
+    for p in pairs:
+        try:
+            chosen = resolve_pair_text(
+                p, "chosen", rows_by_id=rows_by_id, text_sidecar=text_sidecar,
+                require_real_text=require_real_text,
+                allow_structural_fallback=allow_structural_fallback)
+            rejected = resolve_pair_text(
+                p, "rejected", rows_by_id=rows_by_id, text_sidecar=text_sidecar,
+                require_real_text=require_real_text,
+                allow_structural_fallback=allow_structural_fallback)
+        except ValueError:
+            if require_real_text:
+                continue
+            raise
+        rows.append({"chosen": chosen, "rejected": rejected,
+                     "weight": float(p.get("weight", 1.0))})
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # DPO training loop (heavy deps lazily imported; GPU + real model required).
 # ---------------------------------------------------------------------------
@@ -385,8 +446,20 @@ def train(
     beta: float = 0.1,
     epochs: int = 1,
     lr: float = 5e-7,
+    lora: bool = False,
+    bits: int = 0,
+    lora_r: int = 16,
+    lora_alpha: int = 32,
+    lora_dropout: float = 0.05,
 ) -> int:
     """Run a minimal, textbook DPO loop over the preference pairs.
+
+    Two backends, same DPO math: full-parameter (default; both policy and a
+    frozen reference held in memory -- only feasible for small base models), or
+    -- when ``lora`` or ``bits`` is set -- a QLoRA path (4-/8-bit base + LoRA
+    adapters, reference recovered by DISABLING the adapter so only ONE model is
+    held) that fits 7B-30B on a single GPU. The QLoRA path needs the optional
+    ``peft``/``bitsandbytes``/``accelerate`` deps (the [training] extra).
 
     REQUIRES a GPU and a real causal-LM ``base_model`` (HF id or path).
     This function is NOT covered by the unit tests — only the missing-dep
@@ -416,6 +489,14 @@ def train(
     Returns:
         0 on success, 1 if the heavy deps are missing.
     """
+    if lora or bits:
+        return _train_dpo_lora(
+            pairs, base_model, out_dir, rows_by_id=rows_by_id,
+            text_sidecar=text_sidecar, require_real_text=require_real_text,
+            allow_structural_fallback=allow_structural_fallback,
+            beta=beta, epochs=epochs, lr=lr, bits=(bits or 4),
+            lora_r=lora_r, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+        )
     try:
         import torch
         import torch.nn.functional as F
@@ -458,28 +539,10 @@ def train(
         return token_logp.sum()
 
     def text_for(pair: dict, key: str) -> str:
-        cached = pair.get(f"{key}_text")
-        if cached:
-            return cached
-        rid = pair.get(f"{key}_id")
-        real = row_text((rows_by_id or {}).get(rid, {}) or {}, text_sidecar)
-        if real:
-            return real
-        if require_real_text or not allow_structural_fallback:
-            raise ValueError(
-                f"no real proposer text for {key} attempt {rid!r}; supply a "
-                "--text-sidecar (or unset --require-real-text to train on the "
-                "structural stand-in)."
-            )
-        global _warned_structural
-        if not _warned_structural:
-            log.warning(
-                "RLAIF: training on the STRUCTURAL STAND-IN text (no real "
-                "proposer text supplied); pass --text-sidecar for real DPO."
-            )
-            _warned_structural = True
-        assert rows_by_id is not None, "rows_by_id required to recover text"
-        return trajectory_to_text(rows_by_id[rid])
+        return resolve_pair_text(
+            pair, key, rows_by_id=rows_by_id, text_sidecar=text_sidecar,
+            require_real_text=require_real_text,
+            allow_structural_fallback=allow_structural_fallback)
 
     policy.train()
     for epoch in range(epochs):
@@ -507,6 +570,116 @@ def train(
     policy.save_pretrained(out_dir)
     tokenizer.save_pretrained(out_dir)
     print(f"saved DPO-tuned proposer -> {out_dir}", file=sys.stderr)
+    return 0
+
+
+def _train_dpo_lora(
+    pairs: list[dict], base_model: str, out_dir: str | Path, *,
+    rows_by_id=None, text_sidecar=None, require_real_text=False,
+    allow_structural_fallback=True, beta=0.1, epochs=1, lr=1e-4, bits=4,
+    lora_r=16, lora_alpha=32, lora_dropout=0.05,
+) -> int:
+    """QLoRA DPO: a 4-/8-bit base + LoRA adapters, with the reference logp
+    recovered by DISABLING the adapter -- so only ONE model is resident, which
+    is what lets 7B-30B fit a single GPU. Same DPO objective as ``train``.
+
+    Operator-side and GPU-only: NOT exercised by the test suite (the pure data
+    mapping ``pairs_to_dpo_rows`` and the missing-dep path are). Saves a small
+    LoRA ADAPTER to ``out_dir`` (merge with the base at serving time, or load
+    base+adapter). Needs the [training] extra (peft / bitsandbytes / accelerate).
+    """
+    try:
+        import torch
+        import torch.nn.functional as F
+        from peft import (
+            LoraConfig,
+            get_peft_model,
+            prepare_model_for_kbit_training,
+        )
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            BitsAndBytesConfig,
+        )
+    except ImportError:
+        print(
+            "QLoRA DPO needs torch + transformers + peft + bitsandbytes "
+            "(+ a GPU). Install them with:\n"
+            "    pip install 'maverick-agent[training]'",
+            file=sys.stderr,
+        )
+        return 1
+
+    rows = pairs_to_dpo_rows(
+        pairs, rows_by_id=rows_by_id, text_sidecar=text_sidecar,
+        require_real_text=require_real_text,
+        allow_structural_fallback=allow_structural_fallback)
+    if not rows:
+        print("no preference pairs to train on; nothing to do.", file=sys.stderr)
+        return 0
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not torch.cuda.is_available():
+        print("WARNING: no CUDA -- QLoRA on CPU is impractically slow.",
+              file=sys.stderr)
+
+    compute_dtype = torch.bfloat16
+    if bits == 4:
+        quant = BitsAndBytesConfig(
+            load_in_4bit=True, bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=compute_dtype)
+    elif bits == 8:
+        quant = BitsAndBytesConfig(load_in_8bit=True)
+    else:
+        quant = None
+
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(
+        base_model, quantization_config=quant, device_map="auto",
+        torch_dtype=compute_dtype)
+    if quant is not None:
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=True)
+    model = get_peft_model(model, LoraConfig(
+        r=lora_r, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+        bias="none", task_type="CAUSAL_LM", target_modules="all-linear"))
+    model.print_trainable_parameters()
+    opt = torch.optim.AdamW(
+        (p for p in model.parameters() if p.requires_grad), lr=lr)
+
+    def seq_logp(text: str):
+        ids = tokenizer(text, return_tensors="pt").input_ids.to(model.device)
+        logits = model(ids).logits[:, :-1, :]
+        targets = ids[:, 1:]
+        logp = F.log_softmax(logits, dim=-1)
+        return logp.gather(-1, targets.unsqueeze(-1)).squeeze(-1).sum()
+
+    model.train()
+    for epoch in range(epochs):
+        total = 0.0
+        for row in rows:
+            pi_c = seq_logp(row["chosen"])
+            pi_r = seq_logp(row["rejected"])
+            # Reference = the SAME base with LoRA disabled (no second model).
+            with torch.no_grad(), model.disable_adapter():
+                ref_c = seq_logp(row["chosen"])
+                ref_r = seq_logp(row["rejected"])
+            logits = beta * ((pi_c - ref_c) - (pi_r - ref_r))
+            loss = -F.logsigmoid(logits) * float(row.get("weight", 1.0))
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            total += loss.item()
+        print(f"epoch {epoch + 1}/{epochs}: mean DPO loss {total / len(rows):.4f}",
+              file=sys.stderr)
+
+    model.save_pretrained(out_dir)        # LoRA adapter
+    tokenizer.save_pretrained(out_dir)
+    print(f"saved DPO LoRA adapter -> {out_dir} (load base + adapter, or merge)",
+          file=sys.stderr)
     return 0
 
 
@@ -560,6 +733,17 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--text-field", default="text",
                     help="Row key holding inline raw text, if embedded "
                          "(default 'text').")
+    ap.add_argument("--lora", action="store_true",
+                    help="Use the QLoRA path (4-bit base + LoRA adapters, ref "
+                         "via adapter-disable) so 7B-30B fit one GPU. Required "
+                         "for any base model bigger than ~3B.")
+    ap.add_argument("--bits", type=int, default=0, choices=[0, 4, 8],
+                    help="Quantize the base to 4/8-bit (implies --lora; 0=off, "
+                         "full-param). 4 is the QLoRA default.")
+    ap.add_argument("--lora-r", type=int, default=16, help="LoRA rank.")
+    ap.add_argument("--lora-alpha", type=int, default=32, help="LoRA alpha.")
+    ap.add_argument("--lora-dropout", type=float, default=0.05,
+                    help="LoRA dropout.")
     return ap
 
 
@@ -626,6 +810,11 @@ def main(argv: list[str] | None = None) -> int:
         beta=args.beta,
         epochs=args.epochs,
         lr=args.lr,
+        lora=args.lora,
+        bits=args.bits,
+        lora_r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
     )
 
 

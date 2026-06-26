@@ -10,7 +10,9 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Day-AI-Labs/Lightwork/main/scripts/train_runpod.sh -o train.sh
 #   # upload your two inputs to the pod first (see below), then:
-#   BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct bash train.sh
+#   bash train.sh                      # cheap 0.5B proof run (default)
+#   # …or graduate to the strongest ownable model on one 80GB GPU:
+#   BASE_MODEL=Qwen/Qwen3-Coder-30B-A3B LORA=1 BITS=4 bash train.sh
 #
 # Inputs: the script GENERATES both from your maverick data if they're absent,
 # so you bring EITHER the two JSONL files OR your ~/.maverick (outbox + world DB):
@@ -23,9 +25,10 @@
 #
 # Config (all env vars, with defaults):
 #   BASE_MODEL      HF id / local path of the proposer to fine-tune
-#                   (default Qwen/Qwen2.5-1.5B-Instruct -- small so the naive
-#                   full-param DPO loop fits a 24GB card; bigger models need a
-#                   bigger GPU, the reference train() does not use LoRA/4-bit).
+#                   (default Qwen/Qwen2.5-0.5B-Instruct -- tiny + ungated, for a
+#                   cheap first PROOF run on any GPU. For a real ownable model
+#                   set LORA=1 BITS=4 and a bigger BASE_MODEL, e.g.
+#                   Qwen/Qwen3-8B (24GB) or Qwen/Qwen3-Coder-30B-A3B (80GB)).
 #   TRAJECTORIES    default ./trajectories.jsonl
 #   PROPOSER_TEXTS  default ./proposer_texts.jsonl
 #   OUT_DIR         default ./maverick-train-out
@@ -36,6 +39,9 @@
 #   SKIP_DPO        0 | 1 to run only the CPU PRM step
 #   DRY_RUN         0 | 1 to print the commands without executing
 #   BETA EPOCHS LR MIN_MARGIN MAX_PAIRS   DPO hyperparameters (passed through)
+#   LORA=1 BITS=4    QLoRA (4-bit base + LoRA) -- REQUIRED for base models >~3B.
+#                    Graduate run, strongest ownable model on one 80GB GPU:
+#                      BASE_MODEL=Qwen/Qwen3-Coder-30B-A3B LORA=1 BITS=4 bash train.sh
 #
 # Outputs (PUSH THESE OFF THE POD before you stop it -- pods are ephemeral):
 #   $OUT_DIR/prm_linear.json     the learned step PRM (set MAVERICK_PRM=linear)
@@ -43,10 +49,11 @@
 set -euo pipefail
 
 case "${1:-}" in -h|--help)
-  sed -n '2,56p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  awk 'NR>1 && /^#/ {sub(/^# ?/,""); print; next} NR>1 && !/^#/ {exit}' "$0"
+  exit 0 ;;
 esac
 
-BASE_MODEL="${BASE_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}"
+BASE_MODEL="${BASE_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}"
 TRAJECTORIES="${TRAJECTORIES:-./trajectories.jsonl}"
 PROPOSER_TEXTS="${PROPOSER_TEXTS:-./proposer_texts.jsonl}"
 OUTBOX="${OUTBOX:-$HOME/.maverick/outbox}"
@@ -55,8 +62,12 @@ SCORES="${SCORES:-./scores.json}"
 INSTALL="${INSTALL:-1}"
 SKIP_DPO="${SKIP_DPO:-0}"
 DRY_RUN="${DRY_RUN:-0}"
-BETA="${BETA:-0.1}"; EPOCHS="${EPOCHS:-1}"; LR="${LR:-5e-7}"
+BETA="${BETA:-0.1}"; EPOCHS="${EPOCHS:-1}"
 MIN_MARGIN="${MIN_MARGIN:-0.5}"; MAX_PAIRS="${MAX_PAIRS:-32}"
+LORA="${LORA:-0}"; BITS="${BITS:-0}"
+LORA_R="${LORA_R:-16}"; LORA_ALPHA="${LORA_ALPHA:-32}"; LORA_DROPOUT="${LORA_DROPOUT:-0.05}"
+# QLoRA needs a much higher LR than full-param DPO; default per path.
+if [ "$LORA" = "1" ] || [ "$BITS" != "0" ]; then LR="${LR:-1e-4}"; else LR="${LR:-5e-7}"; fi
 
 say() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 run() { printf '+ %s\n' "$*"; [ "$DRY_RUN" = "1" ] || eval "$*"; }
@@ -113,13 +124,18 @@ else
   if [ "$DRY_RUN" != "1" ] && [ ! -f "$PROPOSER_TEXTS" ]; then
     die "PROPOSER_TEXTS not found: $PROPOSER_TEXTS (real DPO needs it; set SKIP_DPO=1 to run only the PRM step)."
   fi
+  LORA_ARGS=""
+  if [ "$LORA" = "1" ] || [ "$BITS" != "0" ]; then
+    LORA_ARGS="--lora --bits $BITS --lora-r $LORA_R --lora-alpha $LORA_ALPHA --lora-dropout $LORA_DROPOUT"
+    printf 'QLoRA: 4/8-bit base + LoRA adapters (fits big models on one GPU)\n'
+  fi
   say "3b/4 Real DPO fine-tune of the proposer (L3, GPU)"
   run "python -m maverick.training.rlaif \
     --data '$TRAJECTORIES' \
     --text-sidecar '$PROPOSER_TEXTS' --require-real-text \
     --base-model '$BASE_MODEL' --out '$OUT_DIR/proposer_dpo' \
     --beta $BETA --epochs $EPOCHS --lr $LR \
-    --min-margin $MIN_MARGIN --max-pairs $MAX_PAIRS"
+    --min-margin $MIN_MARGIN --max-pairs $MAX_PAIRS $LORA_ARGS"
 fi
 
 say "4/4 Prove the lift (optional)"
