@@ -62,6 +62,10 @@ _LEGACY_KEY_DIR = data_dir("audit", "keys")
 KEY_DIR = _LEGACY_KEY_DIR
 
 
+class OffHostSigningRequiredError(RuntimeError):
+    """Raised when audit signing must use off-host key material."""
+
+
 def _key_dir() -> Path:
     """The active audit signing-key directory.
 
@@ -438,7 +442,7 @@ def _load_or_create_keypair() -> tuple[bytes, bytes, str]:
         return priv, pub, key_id
 
     if require_offhost_signing():
-        raise RuntimeError(
+        raise OffHostSigningRequiredError(
             "off-host audit signing is required (enterprise mode / [audit] "
             "require_offhost_key) but no off-host key is configured. Set "
             f"{_SIGNING_KEY_ENV} (a KMS/secrets-manager-sourced Ed25519 key) or "

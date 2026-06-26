@@ -317,6 +317,10 @@ class AuditLog:
                 self._signing_enabled = False
                 return None
             except Exception as e:  # pragma: no cover - defensive
+                from .signing import OffHostSigningRequiredError
+
+                if isinstance(e, OffHostSigningRequiredError):
+                    raise
                 log.warning("audit: signer init failed (%s); writing unsigned", e)
                 self._signing_enabled = False
                 return None
