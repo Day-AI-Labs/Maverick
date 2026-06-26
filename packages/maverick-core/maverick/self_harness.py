@@ -396,8 +396,23 @@ def _compose_addendum(model_id: str, existing: str, line: str) -> str:
         lines.remove(line)
     lines.append(line)
     lines = lines[-_MAX_LINES_PER_MODEL:]
-    block = header + "\n" + "\n".join(f"- {ln}" for ln in lines)
-    return block[:_MAX_ADDENDUM_CHARS]
+
+    # Enforce the char budget by dropping WHOLE OLDEST bullets, not by slicing
+    # the rendered block. A trailing ``block[:_MAX_ADDENDUM_CHARS]`` cut the
+    # NEWEST bullets off the end (inverting the newest-wins cap) and could sever
+    # a bullet mid-line -- corrupting the last stored line so a later re-promote
+    # of it no longer dedups. Lines are <=280 chars, so ~6 max-length lines
+    # already overflow 1500: this is reachable, not theoretical. Drop from the
+    # front (oldest) until it fits; keep at least the single newest line.
+    # (Found by the stateful sequence battery.)
+    def _render(ls: list[str]) -> str:
+        return header + "\n" + "\n".join(f"- {x}" for x in ls) if ls else header
+
+    while len(lines) > 1 and len(_render(lines)) > _MAX_ADDENDUM_CHARS:
+        lines.pop(0)
+    # Last-resort guard for a single pathological line wider than the buffer
+    # (can't happen under the 280-char propose cap, but stays defensive).
+    return _render(lines)[:_MAX_ADDENDUM_CHARS]
 
 
 def _rollback_handle(path: Path | None = None) -> Callable[[], None]:
