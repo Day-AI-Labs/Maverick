@@ -176,6 +176,66 @@ class TestUiPath:
             uipath.translate([1, 2, 3])  # type: ignore[arg-type]
 
 
+class TestAutomationImportSecretRedaction:
+    @pytest.mark.parametrize("source,raw,secret", [
+        (
+            "make",
+            {"name": "secret make", "flow": [
+                {"id": 1, "module": "gateway:CustomWebHook", "mapper": {}},
+                {"id": 2, "module": "http:ActionSendData", "mapper": {
+                    "url": "https://api.example.invalid/data?api_key=MAKE_API_KEY_DO_NOT_LEAK_12345",
+                    "headers": {"Authorization": "Bearer MAKE_BEARER_DO_NOT_LEAK_12345"},
+                }},
+            ]},
+            "MAKE_BEARER_DO_NOT_LEAK_12345",
+        ),
+        (
+            "power_automate",
+            {"definition": {"triggers": {"manual": {"type": "Request"}}, "actions": {
+                "Call_API": {"type": "OpenApiConnection", "runAfter": {}, "inputs": {
+                    "host": {"connectionName": "shared_http", "operationId": "Invoke"},
+                    "parameters": {"Authorization": "Bearer POWER_BEARER_DO_NOT_LEAK_12345"},
+                }},
+            }}},
+            "POWER_BEARER_DO_NOT_LEAK_12345",
+        ),
+        (
+            "workato",
+            {"id": 1, "name": "secret recipe", "code": json.dumps({
+                "provider": "webhook", "name": "new_event", "block": [
+                    {"provider": "http", "name": "post", "input": {
+                        "api_key": "WORKATO_TOKEN_DO_NOT_LEAK_12345",
+                    }},
+                ],
+            })},
+            "WORKATO_TOKEN_DO_NOT_LEAK_12345",
+        ),
+        (
+            "uipath",
+            {"Name": "SecretBot", "ProcessKey": "SecretBot", "Arguments": {
+                "password": "UIPATH_PASSWORD_DO_NOT_LEAK_12345",
+            }},
+            "UIPATH_PASSWORD_DO_NOT_LEAK_12345",
+        ),
+    ])
+    def test_render_redacts_secret_shaped_imported_params(self, source, raw, secret):
+        automation = ai.get_importer(source).translate(raw)
+        _title, body = automation.render()
+        assert secret not in body
+        assert "[REDACTED:" in body
+
+    def test_render_keeps_benign_params_readable(self):
+        step = ir.ImportedStep(
+            name="Post message",
+            app="slack",
+            operation="post_message",
+            params={"channel": "#sales", "text": "hello"},
+        )
+        rendered = step.render(1)
+        assert "#sales" in rendered
+        assert "hello" in rendered
+
+
 class TestRegistry:
     def test_all_definition_importers_registered(self):
         for s in ("make", "power_automate", "uipath", "workato"):

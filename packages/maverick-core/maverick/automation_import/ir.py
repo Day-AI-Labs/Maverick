@@ -27,6 +27,52 @@ TRIGGER_EVENT = "event"          # a polled/streamed app event (new row, new ema
 TRIGGER_MANUAL = "manual"        # run-on-demand
 TRIGGER_KINDS = frozenset({TRIGGER_WEBHOOK, TRIGGER_SCHEDULE, TRIGGER_EVENT, TRIGGER_MANUAL})
 
+_SENSITIVE_PARAM_KEY_RE = re.compile(
+    r"(?i)(?:authorization|api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|"
+    r"client[_-]?secret|password|passwd|pass|credential|signature|sig)"
+)
+
+
+def _redact_param_value(value: Any, *, sensitive_key: bool = False) -> Any:
+    """Return a prompt-safe copy of imported connector params.
+
+    Imported automation definitions often contain static connector inputs. Keep
+    benign operational context readable, but never render obvious credential
+    fields or secret-shaped substrings into the goal/template body.
+    """
+    if sensitive_key:
+        if isinstance(value, dict):
+            return {str(k): _redact_param_value(v, sensitive_key=True) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_redact_param_value(v, sensitive_key=True) for v in value]
+        if isinstance(value, tuple):
+            return tuple(_redact_param_value(v, sensitive_key=True) for v in value)
+        if value is None or isinstance(value, bool | int | float):
+            return value
+        return "[REDACTED:automation_import_secret]"
+
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            redacted[key_text] = _redact_param_value(
+                item, sensitive_key=bool(_SENSITIVE_PARAM_KEY_RE.search(key_text))
+            )
+        return redacted
+    if isinstance(value, list):
+        return [_redact_param_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_param_value(item) for item in value)
+    if isinstance(value, str):
+        from ..secrets import scrub
+
+        return scrub(value)
+    return value
+
+
+def _redact_params_for_prompt(params: dict[str, Any]) -> dict[str, Any]:
+    return _redact_param_value(params)
+
 
 def slugify(text: str) -> str:
     """Lowercase ``[a-z0-9-]`` slug (the charset templates/triggers accept)."""
@@ -61,7 +107,7 @@ class ImportedStep:
             # Keep inputs compact: cap BOTH the key count and the rendered length
             # so a single large value (an HTTP body, a big Set value) can't bloat
             # the brief -- it's read by the model on every run.
-            shown = {k: v for k, v in list(self.params.items())[:12]}
+            shown = _redact_params_for_prompt({k: v for k, v in list(self.params.items())[:12]})
             rendered = repr(shown)
             if len(rendered) > 500:
                 rendered = rendered[:500] + " …(truncated)"
