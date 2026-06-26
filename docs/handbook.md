@@ -263,6 +263,17 @@ Defense in depth, each layer independent:
    periodic human heartbeat (`[safety] review_checkpoint`).
 6. **Audit** — everything recorded, signed, verifiable after the fact.
 
+These are not just claimed; they are *tested at roster scale*. A governance
+invariant test suite verifies six invariants across all 2,020 packs — (1)
+tool-reachability (no drafting/non-builder agent can reach a state-mutating
+tool), (2) the autonomy dial (an onboarding agent, or any high-risk action, is
+never autonomous), (3) capability attenuation (a spawned child can never exceed
+its parent grant), (4) compartment isolation (a quarantine seal never bleeds
+across compartments/suites), (5) hard refusals (the universal refusal floor is
+unstrippable), and (6) budget caps (no cap is ever silently exceeded) — each
+fault-injected at 1,000,000 iterations with a non-vacuity control, alongside
+hostile-argument fuzzing of every connector and tool.
+
 Posture checks make claims testable: `maverick airgap check` fails if the
 config has any outbound path (remote provider, non-deny-all egress,
 networked sandbox); `maverick confidential-compute` detects SEV-SNP/TDX;
@@ -292,6 +303,16 @@ screened by the same shield/budget/sandbox machinery:
   for any language. Single Python tools need only the `@tool` decorator
   (`tools/decorator.py`).
 - **Channels** — 17 wired adapters (`packages/maverick-channels/`):
+- **Connectors & primary-source grounding** — 214 write-capable enterprise
+  REST/GraphQL connectors plus 37 read-only primary-source / public-data
+  connectors (SEC EDGAR, FRED, Treasury, World Bank, FDIC, Census, BLS, EIA,
+  openFDA, NPPES, ClinicalTrials, USAspending, SAM.gov, CourtListener, Federal
+  Register, GLEIF, OpenCorporates, NWS/NOAA, EPA, ...), plus dedicated-module
+  connectors (Salesforce, HubSpot, Stripe, ServiceNow, Snowflake, ...). The 37
+  public-data connectors are auto-granted per analyst suite for primary-source
+  grounding (GET-only, low-risk, deferred); on by default, kill-switch
+  `[workforce] data_grounding = false` (or `MAVERICK_WORKFORCE_DATA_GROUNDING=off`),
+  with an installer wizard step.
   Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon,
   Voice, WhatsApp (Twilio + Cloud API), SMS, iMessage, IRC, Threads, RCS,
   and a glasses/wearable bridge. New ones subclass `Channel` in `base.py`

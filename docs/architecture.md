@@ -26,8 +26,8 @@ the next section for scope.
 | OS primitive | Agent analog | Lightwork today (file) |
 |---|---|---|
 | Kernel / scheduler | dispatch and schedule agents | recursive swarm with shared context, per-call fan-out cap (`MAVERICK_MAX_SWARM_FANOUT`, default 8) and a total-spawn cap (`MAVERICK_MAX_TOTAL_SPAWNS`, default 64), parallel tool execution, plus a cron-style scheduler over a durable job queue (`swarm.py`, `tools/spawn.py`, `scheduler.py`, `job_queue.py`, `worker.py`) |
-| Processes / isolation | agents + execution sandboxing | 7 sandbox backends behind one `build_sandbox()` factory and a uniform `.exec()` interface — local subprocess, Docker, Podman, devcontainer, Kubernetes, Firecracker, SSH (`sandbox/`) |
-| Syscalls / drivers | tools, providers, channels | 286 built-in tool modules (`tools/`) — incl. 200+ token-authed REST/GraphQL connectors and 37 read-only primary-source data connectors — 12 LLM providers routable per role (`providers/`, `llm.py`), and MCP client over stdio **and** Streamable HTTP (`mcp_client.py`) |
+| Processes / isolation | agents + execution sandboxing | 9 sandbox backends behind one `build_sandbox()` factory and a uniform `.exec()` interface — local subprocess, Docker, gVisor, Podman, devcontainer, Kubernetes, Firecracker, SSH, and Modal cloud (`sandbox/`) |
+| Syscalls / drivers | tools, providers, channels | 286 built-in tool modules (`tools/`) — incl. 214 write-capable token-authed REST/GraphQL connectors and 37 read-only primary-source data connectors — 12 LLM providers routable per role (`providers/`, `llm.py`), and MCP client over stdio **and** Streamable HTTP (`mcp_client.py`) |
 | IPC | inter-agent communication | append-only blackboard, parent↔child spawn handoffs, and a peer message bus — **in-process today** (`blackboard.py`, `tools/spawn.py`, `agent_bus.py`) |
 | Memory management | context = RAM, long-term = disk | turn-list compaction (drop/summarize, opt-in digest RAG), a model-curated cross-session memory directory, and per-goal KV memory (`compaction.py`, `tools/memory.py`, `tools/kv_memory.py`) |
 | Permissions / capabilities | per-agent access control | tool allow/deny ACLs, per-identity risk ceilings, destructive-action consent gating, plus Ed25519-signable **attenuating** capabilities that can only narrow as they propagate to children (`safety/tool_acl.py`, `safety/tool_risk.py`, `safety/consent.py`, `capability.py`) |
@@ -89,7 +89,7 @@ any pack's envelope.
 
 **Strong.** The primitives a canonical academic agent kernel leaves unowned are
 exactly where Lightwork is built out: a hard per-run budget the loop refuses to
-exceed (`budget.py`), seven real execution sandboxes (`sandbox/`), tamper-evident
+exceed (`budget.py`), nine real execution sandboxes (`sandbox/`), tamper-evident
 signed audit (`audit/signing.py`), and least-privilege attenuating capabilities
 (`capability.py`). Tenancy is namespaced on disk by a context-scoped `tenant_id`
 (`paths.py`), and content safety runs at three chokepoints via the shield (see

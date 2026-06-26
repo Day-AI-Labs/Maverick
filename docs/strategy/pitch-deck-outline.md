@@ -43,6 +43,7 @@ traffic · GRC tools govern *company* controls, not runtime behavior. Maverick s
 them, in-boundary. (Detail: [`competitive-landscape.md`](./competitive-landscape.md).)
 
 **7 · It's already real (proof)**
+Add to the proof logo-grid / appendix A2: **roster-wide governance invariants** (six invariants — tool-reachability, autonomy dial, capability attenuation, compartment isolation, hard refusals, budget caps — verified across all 2,020 packs, fault-injected at 1,000,000 iterations with non-vacuity controls + hostile-argument fuzzing of every connector/tool) and **primary-source data grounding** (37 read-only public-data connectors auto-granted per analyst pack, ON by default with a kill-switch + wizard step). Both are shipped and tested, and both strengthen 'can they build it?' and the governance moat.
 Most startups here have a demo; we have a **governed runtime + cryptographic flight
 recorder**, ~9,300 tests, a **standalone external verifier**. Logo-grid of the
 shipped primitives: signed audit · capabilities · approval gate · replay/evidence ·

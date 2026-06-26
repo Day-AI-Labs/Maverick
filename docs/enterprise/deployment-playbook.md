@@ -85,6 +85,7 @@ deployments need none of these.)
 - ◇ Vector store for RAG (`MAVERICK_QDRANT_URL`+key, Weaviate, pgvector via the Postgres DSN).
 - ◇ KMS for wrapping per-tenant keys; SIEM endpoint for audit export; Sentry/OTLP for telemetry.
 - ◇ Enterprise connectors (ServiceNow/Salesforce/Snowflake/…): their instance URLs + service-account creds.
+- ◇ **Primary-source data grounding** (read-only public-data connectors — SEC EDGAR, FRED, Treasury, World Bank, FDIC, Census, BLS, EIA, openFDA, NPPES, ClinicalTrials, USAspending, SAM.gov, CourtListener, Federal Register, GLEIF, OpenCorporates, NWS/NOAA, EPA, Climatiq, …): GET-only, low-risk, **auto-granted per analyst pack by suite and ON by default**. No credentials required. To disable for an air-gapped/no-egress deployment, set `[workforce] data_grounding = false` or `MAVERICK_WORKFORCE_DATA_GROUNDING=off` (also surfaced as an installer wizard step).
 
 ---
 

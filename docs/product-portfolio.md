@@ -68,6 +68,7 @@ environments*.
 | Hard budget caps | Set a dollar / time / token ceiling per run; the system stops itself before it overspends. | ✓ | ✓ | ✓ |
 | Sandboxed execution (local + Docker) | Agents run code in an isolated container instead of on your machine, so nothing escapes. | ✓ | ✓ | ✓ |
 | Skills + Knowledge (RAG) | Agents reuse learned "recipes" and answer grounded in *your* documents, with citations. | ✓ | ✓ | ✓ |
+| Primary-source data grounding | Analyst packs are auto-granted 37 read-only public-data connectors (SEC EDGAR, FRED, Treasury, Census, BLS, openFDA, CourtListener, ...) so answers cite authoritative primary sources, not just model recall. On by default; kill-switch + wizard step. | ✓ | ✓ | ✓ |
 | 17 channels + Dashboard + CLI + MCP | Reach it from Slack/Teams/email/etc., a web dashboard, the terminal, or inside Cursor/Claude Code. | ✓ | ✓ | ✓ |
 | Agent Shield | Screens every input, tool call, and output for prompt-injection, jailbreaks, and data theft. | Built-in rules | Full | Full |
 | SSO/OIDC + RBAC + capability tokens | Log in with corporate identity; every agent gets least-privilege permissions it physically cannot exceed. | — | ✓ | ✓ |
@@ -310,6 +311,6 @@ placeholders.)
 - **Don't meter the audit log or charge per-agent** — it punishes the exact behavior
   a recursive swarm exists to produce. Agent count is a soft tier *band*, never a
   multiplier (see the commercialization doc, "What would kill us").
-- The 32 packs all pass the quality gate (`maverick domains-lint`): every agent has a
+- The 53 suites all pass the quality gate (`maverick domains-lint`): every agent has a
   bounded persona, a least-privilege allow-list, an explicit deny-list, and a risk
   ceiling — 0 errors, 0 warnings across all 2,020.
