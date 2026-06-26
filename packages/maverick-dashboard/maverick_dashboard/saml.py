@@ -214,7 +214,8 @@ def mint_session_cookie(name_id: str, *, secret: str | None = None) -> str:
         raise SamlUnavailable(
             "SAML needs the browser-login session secret ([auth.oidc] "
             "session_secret) to issue a session")
-    return sign_session({"sub": name_id, "exp": int(time.time()) + _SESSION_TTL},
+    now = int(time.time())
+    return sign_session({"sub": name_id, "iat": now, "exp": now + _SESSION_TTL},
                         secret)
 
 

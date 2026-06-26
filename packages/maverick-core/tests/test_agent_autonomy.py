@@ -156,6 +156,8 @@ def test_suite_default_tiers():
 
     assert default_profile_for("fin_ap_clerk").default is AutonomyLevel.SUGGEST  # finance
     assert default_profile_for("legal_contract").default is AutonomyLevel.SUGGEST  # legal
+    assert default_profile_for("clean_grid_ops").default is AutonomyLevel.SUGGEST
+    assert default_profile_for("semi_fab_ops").default is AutonomyLevel.SUGGEST
     ops = default_profile_for("cx_ticket_triage")  # customer_experience -> STANDARD
     assert ops.default is AutonomyLevel.REQUEST
     assert ops.low is AutonomyLevel.AUTO
@@ -270,6 +272,20 @@ def test_action_grant_when_levels_on(monkeypatch, tmp_path):
     assert cap.permits("calendar")
     assert cap.max_risk == "high"            # ceiling lifted; the dial now governs
     assert cap.permits("read_file")          # reads still fine
+
+
+def test_action_grant_does_not_lift_existing_high_risk_tools(monkeypatch, tmp_path):
+    from maverick.domain import domain_capability
+
+    monkeypatch.setenv("MAVERICK_WORKFORCE_LEVELS", "1")
+    monkeypatch.setattr("maverick.config.get_workforce", lambda: {"levels": True, "agents": {}})
+    cap = domain_capability(_pack(tmp_path), None, "agent:fin_clerk")
+    assert cap.permits("email")
+    assert cap.permits("notify")
+    assert cap.permits("calendar")
+    assert cap.max_risk == "high"
+    assert cap.permits("read_file")
+    assert not cap.permits("sql_query")
 
 
 # -- graduation (onboarding -> trusted) ------------------------------------

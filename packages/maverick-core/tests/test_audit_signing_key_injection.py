@@ -8,6 +8,8 @@ persisted, so local ``verify_chain`` still trusts the chain.
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 from maverick.audit import signing
 
@@ -16,6 +18,9 @@ from maverick.audit import signing
 def _temp_keys(tmp_path, monkeypatch):
     pytest.importorskip("cryptography")
     monkeypatch.setattr(signing, "KEY_DIR", tmp_path / "keys")
+    monkeypatch.setattr(
+        signing, "_INJECTED_KEYPAIR_CACHE", signing._INJECTED_KEYPAIR_UNREAD
+    )
     monkeypatch.delenv(signing._SIGNING_KEY_ENV, raising=False)
     yield
 
@@ -48,6 +53,17 @@ def test_injected_key_signs_without_writing_private_to_disk(monkeypatch):
     # key_id is the deterministic fingerprint of the public key.
     import hashlib
     assert key_id == hashlib.sha256(pub).hexdigest()[:16]
+
+
+def test_injected_key_is_removed_from_process_environment(monkeypatch):
+    key_hex, _ = _fresh_key_hex()
+    monkeypatch.setenv(signing._SIGNING_KEY_ENV, key_hex)
+
+    first = signing._load_or_create_keypair()
+    second = signing._load_or_create_keypair()
+
+    assert signing._SIGNING_KEY_ENV not in os.environ
+    assert second == first
 
 
 def test_injected_key_chain_verifies_via_marker(tmp_path, monkeypatch):

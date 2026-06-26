@@ -149,3 +149,53 @@ def test_induce_llm_failure_falls_back_safely():
 def test_demo_step_redacts_secrets():
     s = DemoStep("action", "export AWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE12345").normalized()
     assert "AKIAIOSFODNN7EXAMPLE12345" not in s.summary
+
+
+def test_induce_redacts_secret_in_raw_demostep():
+    # A Demonstration built programmatically carries RAW DemoSteps (only
+    # parse_demonstration normalizes). induce_profile must redact every field
+    # that reaches the persisted pack -- summary, target, narration, AND title
+    # (which becomes the name + provenance note) -- not just the ones the
+    # deterministic proposer happens to touch. Use a detector-recognized token.
+    secret = "ghp_" + "A" * 36
+    raw = Demonstration(title=f"deploy with {secret}", steps=[
+        DemoStep("action", f"run {secret}", tool="read_file", target=f"repo {secret}"),
+        DemoStep("narration", f"the pat is {secret}"),
+    ])
+    p = demo.induce_profile(raw, llm=None)
+    blob = " ".join([p.name, p.description, *[w.name + " " + w.instruction for w in p.workflow]])
+    assert secret not in blob
+
+
+def test_parse_bounds_steps_and_redact_window():
+    # An attacker-supplied capture log must not drive unbounded work: the step
+    # count is capped, and redaction runs over a bounded window (so a multi-MB
+    # paste is cheap) -- while a secret inside the kept region is still redacted.
+    many = "\n".join(f"ACTION: step {i}" for i in range(50_000))
+    steps = demo.parse_demonstration(many)
+    assert len(steps) <= demo._MAX_DEMO_STEPS
+
+    secret = "ghp_" + "Z" * 36
+    huge = "b" * 5000 + " " + secret          # secret beyond the kept window
+    cleaned = demo._clean(huge)
+    assert len(cleaned) <= demo._MAX_STEP_CHARS and secret not in cleaned
+    near = "a" * 380 + " " + secret + " tail"  # secret inside the window
+    assert secret not in demo._clean(near)
+
+
+def test_load_demonstration_bounds_file_read(tmp_path):
+    f = tmp_path / "big.txt"
+    f.write_text("ACTION: ok\nACTION: " + "y" * (demo._MAX_DEMO_BYTES + 1000) + "\n")
+    d = demo.load_demonstration(f)
+    # The oversized second line is truncated by the byte cap, not loaded whole.
+    assert all(len(s.summary) <= demo._MAX_STEP_CHARS for s in d.steps)
+
+
+def test_induce_caps_allow_tools_from_pathological_demo():
+    # Thousands of distinct tool hints must not synthesize an unbounded envelope
+    # (validate_profile clamps by risk, not by count).
+    d = Demonstration(title="firehose", steps=[
+        DemoStep("action", f"step {i}", tool=f"tool_{i}") for i in range(5000)
+    ])
+    p = demo.induce_profile(d, llm=None)
+    assert len(p.allow_tools) <= demo._MAX_OBSERVED_TOOLS

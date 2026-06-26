@@ -137,7 +137,7 @@ def _all_db_bytes(db):
 
 
 @requires_crypto
-def test_migrate_writes_backup_before_resealing(monkeypatch, tmp_path):
+def test_migrate_backup_true_writes_backup_before_resealing(monkeypatch, tmp_path):
     import stat as _stat
 
     from maverick.encryption_migrate import migrate_world_db
@@ -149,7 +149,7 @@ def test_migrate_writes_backup_before_resealing(monkeypatch, tmp_path):
     wm.conn.close()
 
     monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
-    migrate_world_db(db)  # backup=True by default
+    migrate_world_db(db, backup=True)
 
     backups = list(tmp_path.glob("world.db.pre-encrypt-*.bak"))
     assert len(backups) == 1
@@ -167,7 +167,7 @@ def test_migrate_writes_backup_before_resealing(monkeypatch, tmp_path):
 
 
 @requires_crypto
-def test_migrate_no_backup_when_nothing_to_seal(monkeypatch, tmp_path):
+def test_migrate_default_writes_no_backup(monkeypatch, tmp_path):
     from maverick.encryption_migrate import migrate_world_db
     from maverick.world_model import WorldModel
 
@@ -177,16 +177,14 @@ def test_migrate_no_backup_when_nothing_to_seal(monkeypatch, tmp_path):
     wm.conn.close()
 
     monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
-    migrate_world_db(db)                       # first run seals + backs up
-    for b in tmp_path.glob("world.db.pre-encrypt-*.bak"):
-        b.unlink()
-    # Idempotent re-run: nothing to seal -> no backup litter.
     migrate_world_db(db)
     assert list(tmp_path.glob("world.db.pre-encrypt-*.bak")) == []
+    live = sqlite3.connect(str(db)).execute("SELECT title FROM goals").fetchone()[0]
+    assert car.is_sealed_str(live)
 
 
 @requires_crypto
-def test_migrate_backup_false_skips_backup(monkeypatch, tmp_path):
+def test_migrate_backup_true_when_nothing_to_seal_skips_backup(monkeypatch, tmp_path):
     from maverick.encryption_migrate import migrate_world_db
     from maverick.world_model import WorldModel
 
@@ -196,10 +194,9 @@ def test_migrate_backup_false_skips_backup(monkeypatch, tmp_path):
     wm.conn.close()
 
     monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
-    migrate_world_db(db, backup=False)
+    migrate_world_db(db)
+    migrate_world_db(db, backup=True)
     assert list(tmp_path.glob("world.db.pre-encrypt-*.bak")) == []
-    live = sqlite3.connect(str(db)).execute("SELECT title FROM goals").fetchone()[0]
-    assert car.is_sealed_str(live)            # still sealed, just unbacked
 
 
 @requires_crypto

@@ -5,6 +5,7 @@ not in the lightweight local subset).
 """
 from __future__ import annotations
 
+from maverick.agent_autonomy import AutonomyLevel, AutonomyProfile
 from maverick.capability import Capability
 from maverick.domain import DomainProfile, agent_from_profile
 
@@ -67,6 +68,30 @@ def test_agent_from_profile_uses_active_handoff_grant_for_parent(tmp_path):
     assert child.capability is not None
     assert child.capability.permits("spawn_specialist") is True
     assert child.capability.permits("shell") is False
+
+
+def test_agent_from_profile_no_autonomy_block_uses_own_suite_default(tmp_path):
+    ctx = _ctx(tmp_path)
+    parent = agent_from_profile(
+        DomainProfile(
+            name="parent",
+            allow_tools=["read_file"],
+            autonomy=AutonomyProfile(default=AutonomyLevel.AUTO, onboarding=False),
+        ),
+        ctx,
+        "parent task",
+    )
+    profile = DomainProfile(
+        name="bank_wire_review",
+        allow_tools=["read_file"],
+        autonomy=None,
+    )
+
+    child = agent_from_profile(profile, ctx, "Review transfer", parent=parent, depth=1)
+
+    assert child._autonomy is not parent._autonomy
+    assert child._autonomy.default is AutonomyLevel.SUGGEST
+    assert child._autonomy.onboarding is True
 
 
 def test_children_inherit_parent_domain(tmp_path):

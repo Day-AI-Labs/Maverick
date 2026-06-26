@@ -10,9 +10,9 @@ Three destination schemes, parsed from a single URI so one ``--to`` flag /
 
   - ``tcp://host:port`` -- newline-framed syslog/TCP (Splunk, rsyslog, Vector).
   - ``udp://host:port`` -- one datagram per event (classic syslog/UDP).
-  - ``http://...`` / ``https://...`` -- a single POST whose body is the
-    newline-delimited batch (Splunk HEC ``/raw``, Sumo, an HTTP collector). A
-    bearer from ``MAVERICK_SIEM_TOKEN`` (via the secret provider) is sent as
+  - ``http://...`` / ``https://...`` -- bounded POST batches whose bodies are
+    newline-delimited (Splunk HEC ``/raw``, Sumo, an HTTP collector). A bearer
+    from ``MAVERICK_SIEM_TOKEN`` (via the secret provider) is sent as
     ``Authorization`` when set.
 
 Read-only with respect to the audit log: it only consumes already-rendered
@@ -30,9 +30,10 @@ from urllib.parse import urlparse
 log = logging.getLogger(__name__)
 
 _SUPPORTED = ("tcp", "udp", "http", "https")
-# A datagram cap so one oversized event can't exceed a typical MTU-safe syslog
-# payload; TCP/HTTP are stream/length-framed and not subject to it.
+# Maximum UDP payload size for IPv4. Oversized events must fail loudly instead
+# of being truncated and counted as successfully forwarded.
 _UDP_MAX = 65507
+_HTTP_BATCH_MAX = 1024 * 1024
 
 
 def parse_dest(dest: str) -> tuple[str, str, int, str]:
@@ -85,19 +86,20 @@ def _send_udp(host: str, port: int, lines: Iterable[str], timeout: float) -> int
     with socket.socket(family, socket.SOCK_DGRAM) as sock:
         sock.settimeout(timeout)
         for line in lines:
-            payload = (line + "\n").encode("utf-8")[:_UDP_MAX]
+            payload = (line + "\n").encode("utf-8")
+            if len(payload) > _UDP_MAX:
+                raise ValueError(
+                    "rendered audit event exceeds UDP payload limit "
+                    f"({_UDP_MAX} bytes); use tcp:// or http(s)://"
+                )
             sock.sendto(payload, sockaddr)
             n += 1
     return n
 
 
-def _send_http(url: str, lines: Iterable[str], timeout: float) -> int:
+def _post_http_batch(url: str, body: bytes, timeout: float) -> None:
     import urllib.request
 
-    batch = list(lines)
-    if not batch:
-        return 0
-    body = ("\n".join(batch) + "\n").encode("utf-8")
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Content-Type", "application/json")
     token = _siem_token()
@@ -107,7 +109,24 @@ def _send_http(url: str, lines: Iterable[str], timeout: float) -> int:
         code = getattr(resp, "status", None) or resp.getcode()
     if not (200 <= int(code) < 300):
         raise RuntimeError(f"SIEM HTTP collector returned {code}")
-    return len(batch)
+
+
+def _send_http(url: str, lines: Iterable[str], timeout: float) -> int:
+    n = 0
+    batch = bytearray()
+    for line in lines:
+        payload = (line + "\n").encode("utf-8")
+        if batch and len(batch) + len(payload) > _HTTP_BATCH_MAX:
+            _post_http_batch(url, bytes(batch), timeout)
+            batch.clear()
+        batch.extend(payload)
+        n += 1
+        if len(batch) >= _HTTP_BATCH_MAX:
+            _post_http_batch(url, bytes(batch), timeout)
+            batch.clear()
+    if batch:
+        _post_http_batch(url, bytes(batch), timeout)
+    return n
 
 
 def forward(lines: Iterable[str], dest: str, *, timeout: float = 10.0) -> int:

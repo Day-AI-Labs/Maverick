@@ -53,10 +53,12 @@ def _authority(profiles) -> dict:
     }
 
 
-def _delivery(world, member_set: set[str], *, limit: int) -> dict:
+def _delivery(
+    world, member_set: set[str], *, limit: int, owner: str | None = None,
+) -> dict:
     """Department-level delivery rollup over its workers' outcomes."""
     cards = [
-        c for c in outcomes.by_worker(assemble(world, limit=limit)).values()
+        c for c in outcomes.by_worker(assemble(world, limit=limit, owner=owner)).values()
         if c.worker in member_set
     ]
     goals_total = sum(c.goals_total for c in cards)
@@ -81,7 +83,9 @@ def _delivery(world, member_set: set[str], *, limit: int) -> dict:
 _LEARNING_SAMPLE = 50
 
 
-def _learning(world, member_set: set[str], *, limit: int) -> dict:
+def _learning(
+    world, member_set: set[str], *, limit: int, owner: str | None = None,
+) -> dict:
     """How much of the department's recent work the live learned state covers.
 
     Uses :func:`maverick.hindsight.coverage_under` (reflexions + insights +
@@ -90,7 +94,7 @@ def _learning(world, member_set: set[str], *, limit: int) -> dict:
     evaluate yet."""
     from . import hindsight
 
-    goals = [r for r in assemble(world, limit=limit)
+    goals = [r for r in assemble(world, limit=limit, owner=owner)
              if r.kind == "goal" and r.department in member_set and r.subject]
     goals = goals[:_LEARNING_SAMPLE]
     if not goals:
@@ -110,7 +114,7 @@ def _learning(world, member_set: set[str], *, limit: int) -> dict:
 
 
 def review(world, department_key: str, *, cfg: dict | None = None,
-           limit: int = 500) -> dict | None:
+           limit: int = 500, owner: str | None = None) -> dict | None:
     """A governed performance review for one department.
 
     Returns ``None`` if the department has no enabled packs. Composes identity,
@@ -123,9 +127,9 @@ def review(world, department_key: str, *, cfg: dict | None = None,
     profiles = departments.roster(department_key, cfg)
     return {
         "department": dept.to_dict(),
-        "delivery": _delivery(world, member_set, limit=limit),
+        "delivery": _delivery(world, member_set, limit=limit, owner=owner),
         "authority": _authority(profiles),
-        "learning": _learning(world, member_set, limit=limit),
+        "learning": _learning(world, member_set, limit=limit, owner=owner),
         "governance_note": (
             "Every action counted here passed the shield's input/tool/output "
             "checks and is recorded in the signed, tamper-evident audit log."

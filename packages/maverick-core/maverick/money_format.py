@@ -61,7 +61,11 @@ def format_money(amount: float, *, currency: str = "USD", locale: str = "en-US",
     ``rate`` converts from the base amount (e.g. USD→EUR); omit it to format the
     amount as-is. Unknown locale/currency degrade to sensible generic formats.
     """
-    symbol, decimals = _CURRENCIES.get(currency.upper(), (currency.upper() + " ", 2))
+    # Coerce defensively: an unknown/None currency degrades to a generic format
+    # (matching the locale path's ``.get(..., default)``), never crashes on
+    # ``None.upper()``.
+    cur = str(currency or "USD").upper()
+    symbol, decimals = _CURRENCIES.get(cur, (cur + " ", 2))
     loc = _LOCALES.get(locale, _DEFAULT_LOCALE)
     value = float(amount) * (float(rate) if rate is not None else 1.0)
     s = f"{abs(value):.{decimals}f}"

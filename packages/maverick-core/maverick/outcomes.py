@@ -119,12 +119,13 @@ def firm_totals(records: list[DecisionRecord]) -> FirmTotals:
 
 def worker_cards(
     world, *, limit: int = 500, top: int | None = None,
+    owner: str | None = None,
 ) -> list[Outcome]:
     """Outcome cards for every worker with recorded work, best delivery first.
 
     ``top`` keeps only the N highest-delivering workers (for a dashboard
     leaderboard); ``None`` returns all."""
-    records = assemble(world, limit=limit)
+    records = assemble(world, limit=limit, owner=owner)
     cards = list(by_worker(records).values())
     cards.sort(key=lambda o: (o.goals_completed, o.goals_total), reverse=True)
     return cards[:top] if top else cards

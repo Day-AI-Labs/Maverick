@@ -26,6 +26,8 @@ the deepest agent framework available.
 |---|---|---|---|---|
 | Primary form | Self-hosted platform + CLI | Hosted product | Coding agents | IDE / CLI coding agents |
 | Prebuilt business specialists | **2,020 across 53 suites** (lint-audited envelopes) | No | No | No |
+| Primary-source data grounding | **Yes** — 37 read-only public-data connectors (SEC EDGAR, FRED, Treasury, Census, BLS, openFDA, CourtListener, ...) auto-granted per suite, on by default | No | No | No |
+| Roster-wide governance invariants | **Yes** — 6 invariants (tool-reachability, autonomy dial, capability attenuation, compartment isolation, hard refusals, budget caps) verified across all 2,020 packs, fault-injected at 1M iterations | No | No | No |
 | Learns from use (governed) | **Yes** — consolidation, regression detection, rollback, signed learning audit | No | No | No |
 | Runs in your environment | **Yes** (9 sandbox backends) | Hosted | Varies | Yes (local) |
 | Multi-agent swarm | **Yes** (orchestrator + specialists) | Yes | Single-agent focus | Single-agent |
@@ -47,9 +49,16 @@ deliberately coarse to avoid asserting details that may be stale.
 - **Self-host first.** Every capability that would otherwise need a hosted
   service ships with a self-hostable path (see the
   [reference architectures](./reference-architectures.md)).
-- **Breadth on a governed core.** 100+ tools, 17 channels, 9 sandbox backends,
+- **Breadth on a governed core.** 286 tool modules, 17 channels, 9 sandbox backends,
   12 LLM providers — all behind config knobs and the shield.
 - **Long-horizon multi-agent work.** Planning topologies (tree-of-thought,
+- **Provable governance at roster scale.** A governance invariant test suite
+  verifies six invariants across all 2,020 packs — no drafting agent can reach
+  a state-mutating tool, no onboarding/high-risk action is autonomous, a child
+  capability can never exceed its parent, quarantine seals never bleed across
+  compartments, the refusal floor is unstrippable, and no budget cap is
+  silently exceeded — each fault-injected at 1,000,000 iterations with a
+  non-vacuity control, plus hostile-argument fuzzing of every connector and tool.
   debate, speculative, latency-aware best-of-N), durable resume, reflexion.
 
 ## Where another tool may fit better

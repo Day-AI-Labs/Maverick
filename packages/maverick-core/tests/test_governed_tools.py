@@ -33,6 +33,29 @@ def _fake_tool(calls):
     return Tool(name="acme", description="Acme connector", input_schema=_SCHEMA, fn=_fn)
 
 
+def _salesforce_tool(calls):
+    schema = {
+        "type": "object",
+        "properties": {
+            "op": {
+                "type": "string",
+                "enum": ["soql", "record_create", "record_update", "record_delete"],
+            },
+            "sobject": {"type": "string"},
+            "id": {"type": "string"},
+            "fields": {"type": "object"},
+            "confirm": {"type": "boolean"},
+        },
+        "required": ["op"],
+    }
+
+    def _fn(args):
+        calls.append(dict(args))
+        return f"SF {args.get('op')} {args.get('sobject')} confirm={args.get('confirm')}"
+
+    return Tool(name="salesforce", description="Salesforce", input_schema=schema, fn=_fn)
+
+
 class TestWrap:
     def test_read_passes_through(self):
         calls = []
@@ -87,6 +110,25 @@ class TestApply:
         reg.register(_fake_tool([]))
         assert apply_governed_connectors(reg) == ["acme"]
         assert "governed" in reg.get("acme").description
+
+    def test_enabled_wraps_bespoke_salesforce_schema(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_GOVERNED_CONNECTORS", "1")
+        import maverick.config as cfg
+        monkeypatch.setattr(cfg, "get_governed_connectors",
+                            lambda: {"enable": True, "connectors": ["salesforce"], "approver": ""})
+        calls = []
+        reg = ToolRegistry()
+        reg.register(_salesforce_tool(calls))
+        assert apply_governed_connectors(reg) == ["salesforce"]
+        assert "governed" in reg.get("salesforce").description
+        out = reg.get("salesforce").fn({
+            "op": "record_create",
+            "sobject": "Account",
+            "fields": {"Name": "poc"},
+            "confirm": True,
+        })
+        assert "REFUSED (governed)" in out
+        assert calls == []
 
     def test_skips_non_op_tool(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_GOVERNED_CONNECTORS", "1")

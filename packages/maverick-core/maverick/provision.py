@@ -220,9 +220,11 @@ def analyze_profile(
 
     if known_tools is not None:
         known = set(known_tools) | _generated_tool_names()
+        seen_tools: set[str] = set()
         for tool in getattr(profile, "allow_tools", []) or []:
-            if tool in known:
+            if tool in known or tool in seen_tools:
                 continue
+            seen_tools.add(tool)  # a duplicated allow_tools entry is one gap, not N
             gaps.append(_classify_missing_tool(tool))
 
     return ProvisioningPlan(profile_name=getattr(profile, "name", "") or "", gaps=gaps)
@@ -331,7 +333,9 @@ def apply_plan(
     count = 0
 
     for g in plan.gaps:
-        if count >= max(1, cap):
+        # Honor cap==0 as "acquire nothing" (don't floor it to 1). Config clamps
+        # max_acquisitions to >=1, but a direct caller may pass 0 to mean none.
+        if count >= cap:
             res.skipped.append(f"{g.need} (acquisition budget reached)")
             continue
         if g.resolution == "acquire_skill" and g.candidate:

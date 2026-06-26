@@ -106,13 +106,11 @@ _NONBUILDER_MUTATORS = tuple(t for t in _DANGEROUS if t not in ("shell", "code_e
 def test_invariant_detector_catches_an_injected_mutator(monkeypatch):
     """Fault injection: prove the runtime guard is NOT vacuous.
 
-    If a regression added a state-mutating tool to a drafting pack's allowlist,
-    the same reachability scan that ``test_no_drafting_agent_reaches_a_mutator_*``
-    runs must flag it. Under autonomy-levels-on the risk ceiling is lifted to
-    ``high``, so the allowlist is the load-bearing boundary -- exactly where such
-    a regression would land. We corrupt a copy of a real pack (never mutating the
-    shared roster) and assert the corrupt pack reaches the injected mutator while
-    the clean pack does not.
+    If a regression added a state-mutating tool to a high-ceiling drafting
+    pack's allowlist, the same reachability scan that
+    ``test_no_drafting_agent_reaches_a_mutator_*`` runs must flag it. We corrupt
+    a copy of a real pack (never mutating the shared roster) and assert the
+    corrupt pack reaches the injected mutator while the clean pack does not.
     """
     import dataclasses
 
@@ -126,7 +124,7 @@ def test_invariant_detector_catches_an_injected_mutator(monkeypatch):
                     if t not in deny and t not in allow), None)
         if inj is None:
             continue  # this pack denies every non-builder mutator -- doubly safe
-        corrupt = dataclasses.replace(p, allow_tools=[*p.allow_tools, inj])
+        corrupt = dataclasses.replace(p, allow_tools=[*p.allow_tools, inj], max_risk="high")
         assert not _is_builder(corrupt), "injection must not reclassify as builder"
         corrupt_cap = domain_capability(corrupt, None, f"agent:{name}-1")
         clean_cap = domain_capability(p, None, f"agent:{name}-1")

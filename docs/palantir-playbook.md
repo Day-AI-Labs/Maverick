@@ -19,6 +19,7 @@ actions, lineage, simulate-before-commit), **not** the data-OS scope.
 | **Simulate / branch** before commit | `simulate()` previews an effect with no side effects; commit gated on risk/approval | `governed_actions.py` (`Preview`) |
 | **Lineage** ("trace this number to source") | Tamper-evident, hash-chained lineage of every committed action → inputs, sources, skills | `governed_actions.py` (`verify_lineage`, `trace`) |
 | **Act on systems of record** (CRM/ticketing/ERP) | A `Connector` surface exposing `<sys>.read` (low risk) / `<sys>.write` (high risk → approval) as governed Actions | `maverick/governed_connectors.py` |
+| **Source-of-truth grounding** (cite to the primary source) | 37 read-only primary-source / public-data connectors (SEC EDGAR, FRED, Treasury, World Bank, FDIC, Census, BLS, EIA, openFDA, NPPES, ClinicalTrials, USAspending, SAM.gov, CourtListener, Federal Register, GLEIF, OpenCorporates, NWS/NOAA, EPA, Climatiq, …) auto-granted per suite as GET-only, low-risk, deferred Actions | `maverick/enterprise_connectors.py`, `SUITE_DATA_CONNECTORS` in `domain_capability` |
 | **Forward-Deployed Engineer** GTM | Land on one painful workflow with a tailored pack + measured ROI, then expand | this doc (below) |
 
 All of it is **opt-in and additive**: the kernel does not route through these by
@@ -42,7 +43,7 @@ is the leverage Palantir solves with a services army.
 
 1. **Pick one painful, measurable workflow** (e.g. tier-1 ticket triage, claims
    intake, vendor onboarding). Not "AI for the enterprise" — *this* workflow.
-2. **Ship a tailored pack** from the 26-suite library, plus 1–2 governed
+2. **Ship a tailored pack** from the 53-suite library, plus 1–2 governed
    Connectors to the systems that workflow touches (read first, write behind the
    approval gate).
 3. **Run it governed from day one**: simulate-before-commit on every write, lineage

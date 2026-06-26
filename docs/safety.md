@@ -102,7 +102,7 @@ posture is on:
 | **Consent** | `auto-approve` | `ask` (and therefore *deny* in non-interactive contexts) |
 | **Capabilities** | opt-in | enforced (least privilege; sub-agents can only narrow their grant) |
 | **Sandbox** | `local` host shell (warned) | **container-default** — a `local`/unset backend is upgraded to an available container runtime (docker → podman); if none is installed it fails closed rather than running `shell=True` on the host (`[sandbox] backend` / `require_container`) |
-| **Plugins** | in-process, lockfile off | **subprocess isolation** (third-party plugins run out-of-process) + **lock-enforce** (version/content drift refused once a lockfile exists) (`[plugins] isolation` / `lock_policy`) |
+| **Plugins** | in-process, lockfile off | plugin **tool calls** are proxied through the configured isolation backend, and lock enforcement refuses version/content drift once a lockfile exists; plugin import/discovery, factories, channel plugins, skill plugins, and persona plugins still run in-process, so install only trusted plugins (`[plugins] isolation` / `lock_policy`) |
 
 The egress lock is enforced at the single LLM dispatch chokepoint (`maverick.llm.LLM.complete`),
 so it covers every agent, role, and tool-driven model call. An explicit env/config setting

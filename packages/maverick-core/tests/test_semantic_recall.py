@@ -225,11 +225,14 @@ class TestTenantCollectionIsolation:
         monkeypatch.setattr(paths, "current_tenant", lambda: "acme-1")
 
         sr.build_store("chroma")
-        assert captured["collection"] == "t_acme_1__goals"
+        assert captured["collection"].startswith("t_acme_1_")
+        assert captured["collection"].endswith("__goals")
         sr.build_store("qdrant")
-        assert captured["collection"] == "t_acme_1__goals"
+        assert captured["collection"].startswith("t_acme_1_")
+        assert captured["collection"].endswith("__goals")
         sr.build_store("weaviate")  # class names must start uppercase
-        assert captured["collection"] == "T_acme_1__Goals"
+        assert captured["collection"].startswith("T_acme_1_")
+        assert captured["collection"].endswith("__Goals")
 
     def test_single_tenant_collection_unchanged(self, monkeypatch):
         captured = self._capture(monkeypatch)
@@ -251,7 +254,32 @@ class TestTenantCollectionIsolation:
         monkeypatch.setattr(paths, "current_tenant", lambda: "tenant_b")
         sr.build_store("qdrant")
         b = captured["collection"]
-        assert a != b and a == "t_tenant_a__goals" and b == "t_tenant_b__goals"
+        assert a != b
+        assert a.startswith("t_tenant_a_") and a.endswith("__goals")
+        assert b.startswith("t_tenant_b_") and b.endswith("__goals")
+
+    @pytest.mark.parametrize(("tenant_a", "tenant_b"), [
+        ("acme-1", "acme_1"),
+        ("acme_1", "acme.1"),
+        ("A" * 60 + "1", "A" * 60 + "2"),
+    ])
+    def test_collision_prone_tenants_get_distinct_collections(
+        self, monkeypatch, tenant_a, tenant_b
+    ):
+        captured = self._capture(monkeypatch)
+        from maverick import paths
+
+        monkeypatch.setattr(paths, "current_tenant", lambda: tenant_a)
+        sr.build_store("chroma")
+        a = captured["collection"]
+        monkeypatch.setattr(paths, "current_tenant", lambda: tenant_b)
+        sr.build_store("chroma")
+        b = captured["collection"]
+        assert a != b
+        assert a.startswith("t_") and a.endswith("__goals")
+        assert b.startswith("t_") and b.endswith("__goals")
+        assert len(a) <= 63
+        assert len(b) <= 63
 
 
 import importlib.util  # noqa: E402

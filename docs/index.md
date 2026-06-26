@@ -3,7 +3,7 @@
 > Enterprise recursive multi-agent swarm. One kernel, every model.
 
 Lightwork is an **agentic enterprise platform**: a governed AI workforce of
-1,118 prebuilt specialists across 26 business suites that provably improves
+2,020 prebuilt specialists across 53 business suites that provably improves
 with use — deployed in your own environment. It drives any
 LLM (Claude, GPT, Kimi, Grok, Gemini, DeepSeek, Ollama, OpenRouter), and
 ships a governed, auditable safety surface built for regulated teams.
@@ -25,7 +25,28 @@ Lightwork is proprietary, commercially licensed software (see
   Playwright-driven browser tool, with kill switches and an audit
   trail for every action.
 - **Multi-channel deployment**: Telegram, Discord, Slack, Signal,
+- **Primary-source data grounding**: analyst packs are auto-granted 37
+  read-only public-data connectors (SEC EDGAR, FRED, Treasury, World Bank,
+  FDIC, Census, BLS, EIA, openFDA, NPPES, ClinicalTrials, USAspending,
+  SAM.gov, CourtListener, Federal Register, GLEIF, OpenCorporates,
+  NWS/NOAA, EPA, Climatiq, …) so they cite authoritative sources instead of
+  model recall. On by default; kill-switch via `[workforce] data_grounding
+  = false`. Alongside 214 write-capable enterprise REST/GraphQL connectors
+  and dedicated modules (Salesforce, HubSpot, Stripe, ServiceNow,
+  Snowflake, …).
+- **Proven governance**: a roster-wide invariant test suite checks six
+  governance invariants (tool-reachability, autonomy dial, capability
+  attenuation, compartment isolation, unstrippable hard refusals, budget
+  caps) across all 2,020 packs, fault-injected at 1,000,000 iterations,
+  plus hostile-argument fuzzing of every connector and tool.
   Email, Matrix, WhatsApp, SMS, iMessage — one config, all channels.
+- **Build an agent from a demonstration**: watch a person do their job,
+  then synthesize the agent that does it — `maverick learn-demo <file>`
+  ingests an observed transcript, induces a profile through the same
+  intake clamp + review gate, and provisions the skills/tools it needs.
+  The factory also improves itself: `maverick factory-learn` mines
+  provisioning/approval gaps back into future pack generation
+  (off by default, never widens an envelope).
 
 ## Quick start
 
