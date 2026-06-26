@@ -190,15 +190,9 @@ def rank_specialists(query: str, k: int = 10,
                      *, alpha: float = _ALPHA) -> list[tuple[str, float]]:
     """Rank the roster for ``query``, hybrid (semantic + lexical) when an
     embedding model is installed, pure lexical otherwise. Cached per roster."""
-    if domains is not None:
-        lex, emb = DomainRouter(domains), None
-        try:
-            emb = EmbeddingRouter(domains)
-        except Exception:
-            emb = None
-    else:
+    if domains is None:
         domains = available_domains()
-        lex, emb = _indexes(domains)
+    lex, emb = _indexes(domains)
     lexical = lex.score_all(query)
     semantic = emb.score_all(query) if (emb and emb.available) else {}
     blended = _blend(lexical, semantic, alpha)
