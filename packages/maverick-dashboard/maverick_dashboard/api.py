@@ -3379,6 +3379,39 @@ async def resume_goal(goal_id: int, request: Request, bg: BackgroundTasks) -> No
 # — the buyer-facing surfaces, not new platform. No mutation, so no extra
 # permission gate beyond the dashboard's read access (cf. /overview).
 # ---------------------------------------------------------------------------
+def _department_request_tenant() -> str | None:
+    """Tenant id for department entitlement checks in dashboard requests."""
+    try:
+        from maverick.paths import current_tenant_id
+        return current_tenant_id()
+    except Exception:  # pragma: no cover - tenant lookup must not break self-host
+        return None
+
+
+def _has_managed_tenant_roster() -> bool:
+    """Whether this install has provisioned tenants but no request tenant."""
+    try:
+        from maverick.tenant import registry as tenant_registry
+        return bool(tenant_registry.list_tenants())
+    except Exception:  # pragma: no cover - registry lookup must not break self-host
+        return False
+
+
+def _department_entitled_for_request(key: str) -> bool:
+    """Department entitlement for this dashboard request.
+
+    No active tenant remains fail-open for legacy self-host installs. Once a
+    tenant roster exists, however, a dashboard request with no pinned tenant is
+    an ambiguous managed request; report the paid add-on as unavailable rather
+    than letting the core billing gate treat it as self-hosted.
+    """
+    from maverick.departments import department_entitled
+    tenant = _department_request_tenant()
+    if tenant is None and _has_managed_tenant_roster():
+        return False
+    return department_entitled(key, tenant=tenant)
+
+
 @router.get("/departments")
 async def list_departments_api(request: Request) -> list[dict]:
     """Departments (suites) as deployable teams: title, charter, headcount.
@@ -3386,11 +3419,11 @@ async def list_departments_api(request: Request) -> list[dict]:
     Each entry carries ``entitled`` — whether the active tenant's plan includes
     the paid ``departments`` add-on, so the UI shows Deploy vs. Add-on-required.
     """
-    from maverick.departments import department_entitled, list_departments
+    from maverick.departments import list_departments
     out = []
     for d in list_departments():
         row = d.to_dict()
-        row["entitled"] = department_entitled(d.key)
+        row["entitled"] = _department_entitled_for_request(d.key)
         out.append(row)
     return out
 
@@ -3398,12 +3431,12 @@ async def list_departments_api(request: Request) -> list[dict]:
 @router.get("/departments/{key}")
 async def get_department_api(request: Request, key: str) -> dict:
     """One department with its specialist roster (name + description + risk)."""
-    from maverick.departments import department_entitled, get_department, roster
+    from maverick.departments import get_department, roster
     dept = get_department(key)
     if dept is None:
         raise HTTPException(status_code=404, detail="no such department")
     out = dept.to_dict()
-    out["entitled"] = department_entitled(key)
+    out["entitled"] = _department_entitled_for_request(key)
     out["roster"] = [
         {"name": p.name, "description": p.description or "",
          "max_risk": p.max_risk or "low"}
@@ -3443,8 +3476,15 @@ async def deploy_department_api(request: Request, key: str) -> dict:
     ):
         raise HTTPException(status_code=404, detail="no such fleet")
 
+    tenant = _department_request_tenant()
+    if tenant is None and _has_managed_tenant_roster():
+        raise HTTPException(
+            status_code=402,
+            detail="departments add-on requires an active tenant",
+        )
+
     try:
-        fleet = deploy_department(key, owner)
+        fleet = deploy_department(key, owner, tenant=tenant)
     except EntitlementError as e:
         raise HTTPException(status_code=402, detail=str(e)) from e
     if fleet is None:  # suite disabled between the check and the deploy

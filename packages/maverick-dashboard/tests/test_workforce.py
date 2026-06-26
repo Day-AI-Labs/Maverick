@@ -118,3 +118,41 @@ def test_deploy_unknown_department_404(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     r = client.post("/api/v1/departments/not_a_dept/deploy")
     assert r.status_code == 404
+
+
+def test_deploy_managed_roster_without_active_tenant_fails_closed(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.paths import reset_tenant, set_tenant
+    from maverick.tenant import registry as tenant_registry
+
+    token = set_tenant(None)
+    try:
+        tenant_registry.create_tenant("acme", plan="free")
+        rows = client.get("/api/v1/departments").json()
+        assert any(r["key"] == "finance" and r["entitled"] is False for r in rows)
+        r = client.post("/api/v1/departments/finance/deploy")
+    finally:
+        reset_tenant(token)
+
+    assert r.status_code == 402
+    assert "active tenant" in r.json()["detail"]
+
+
+def test_deploy_passes_active_tenant_to_entitlement(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.paths import reset_tenant, set_tenant
+    from maverick.tenant import registry as tenant_registry
+
+    tenant_registry.create_tenant("acme", plan="free")
+    token = set_tenant("acme")
+    try:
+        r = client.post("/api/v1/departments/finance/deploy")
+    finally:
+        reset_tenant(token)
+
+    assert r.status_code == 402
+    assert "add-on" in r.json()["detail"]
