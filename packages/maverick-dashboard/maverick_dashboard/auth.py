@@ -67,6 +67,18 @@ def _bearer_token(request: Request) -> str:
     return ""
 
 
+def _dashboard_require_auth_enabled() -> bool:
+    """Whether the dashboard's fail-closed require-auth guard is enabled."""
+    env = os.environ.get("MAVERICK_DASHBOARD_REQUIRE_AUTH", "").strip().lower()
+    if env:
+        return env in {"1", "true", "yes", "on"}
+    try:
+        from maverick.config import load_config
+        return bool(((load_config() or {}).get("dashboard") or {}).get("require_auth"))
+    except Exception:  # pragma: no cover -- config never blocks auth decisions
+        return False
+
+
 def _proxy_principal(request: Request) -> VerifiedPrincipal | None:
     """Reverse-proxy SSO: a principal from a forwarded identity header.
 
@@ -396,6 +408,8 @@ def require_principal(
         return pp
 
     if not oidc_enabled():
+        if _dashboard_require_auth_enabled() and proxy_auth_enabled():
+            raise HTTPException(status_code=401, detail="proxy identity header required")
         return None
 
     # Session-cookie identity (browser login). Only active when login is
