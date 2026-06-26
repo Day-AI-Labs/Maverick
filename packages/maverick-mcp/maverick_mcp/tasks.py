@@ -346,19 +346,26 @@ class TaskStore:
 
     def _reject_if_owner_over_quota_locked(self, owner: str | None) -> None:
         # owner=None is stdio/single-client mode: the global cap governs, no
-        # per-owner quota. In HTTP mode, count this owner's NON-terminal tasks
-        # (the ones occupying worker/queue slots) and reject before one session
-        # can monopolize the shared global cap. Terminal records don't count --
-        # they're purged by _make_room and don't block other clients.
+        # per-owner quota. In HTTP mode, count this owner's records that still
+        # occupy the shared worker/queue capacity. That includes non-terminal
+        # tasks and cancelled terminal tasks whose Future has not drained yet;
+        # otherwise one session can repeatedly create+cancel tasks to bypass
+        # the owner cap while filling the global cap with non-evictable records.
         if owner is None:
             return
         active = sum(
             1 for t in self._tasks.values()
-            if t.owner == owner and t.status not in TASK_TERMINAL
+            if t.owner == owner and self._task_occupies_capacity(t)
         )
         if active >= self._max_tasks_per_owner:
             raise TaskError(
                 _INVALID_PARAMS, "too many active tasks for this session")
+
+    @staticmethod
+    def _task_occupies_capacity(task: McpTask) -> bool:
+        if task.status not in TASK_TERMINAL:
+            return True
+        return task.future is not None and not task.future.done()
 
     def _make_room_for_task_locked(self) -> None:
         # Completed/failed/cancelled records are retained only for polling; drop
@@ -369,8 +376,7 @@ class TaskStore:
         # running executions unmanageable and defeat the configured task cap.
         while len(self._tasks) >= self._max_tasks:
             for tid, task in self._tasks.items():
-                future_done = task.future is None or task.future.done()
-                if task.status in TASK_TERMINAL and future_done:
+                if not self._task_occupies_capacity(task):
                     self._tasks.pop(tid, None)
                     break
             else:
@@ -397,8 +403,7 @@ class TaskStore:
                 if task.status not in TASK_TERMINAL:
                     self._cancel_task_locked(task, "The task expired.")
                     continue
-                future_done = task.future is None or task.future.done()
-                if future_done:
+                if not self._task_occupies_capacity(task):
                     self._tasks.pop(tid, None)
 
     def _notify(self, task: McpTask) -> None:
