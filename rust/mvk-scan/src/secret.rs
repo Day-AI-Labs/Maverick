@@ -94,7 +94,7 @@ static DEFS: &[(&str, &str, bool)] = &[
     // MULTILINE via (?m); only the `val` group is redacted.
     (
         "env_secret",
-        r#"(?m)(?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*(?P<val>"[^"\n]*"|'[^'\n]*'|[^\s\n]+)"#,
+        r#"(?m)(?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*[:=]\s*(?P<val>"[^"\n]*"|'[^'\n]*'|[^\s\n]+)"#,
         true,
     ),
 ];
