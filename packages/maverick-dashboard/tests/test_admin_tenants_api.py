@@ -18,6 +18,16 @@ client = TestClient(app, headers={"Origin": "http://testserver"})
 def _isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    # rbac's role stores live under Path.home()/.maverick (global control-plane
+    # files), which ignore MAVERICK_HOME -- so without redirecting them, a test
+    # that sets a global/tenant role (e.g. user:alice -> viewer) would leak into
+    # the shared session home and make later suites see that principal demoted.
+    import maverick_dashboard.rbac as rbac
+    roles_dir = tmp_path / "home" / ".maverick"
+    monkeypatch.setattr(rbac, "store_path", lambda: roles_dir / "dashboard-users.json")
+    monkeypatch.setattr(
+        rbac, "tenant_store_path", lambda: roles_dir / "dashboard-tenant-roles.json"
+    )
     yield
 
 
