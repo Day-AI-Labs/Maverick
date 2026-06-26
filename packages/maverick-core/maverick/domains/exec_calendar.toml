@@ -11,3 +11,27 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "weekly schedule with conflict resolutions"
+consumers = ["executive", "chief_of_staff"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Load schedule"
+instruction = "Read the current calendar, pending invites, and the executive's stated priority and importance rules."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Detect conflicts"
+instruction = "Identify overlapping commitments, over-booked windows, and meetings that crowd out protected priority time."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Propose resolution"
+instruction = "Resolve each conflict by the stated importance rules and propose specific reschedules or declines with rationale."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Confirm changes"
+instruction = "Route the proposed schedule changes to the executive for sign-off before any commitment is altered."
+gate = "review"

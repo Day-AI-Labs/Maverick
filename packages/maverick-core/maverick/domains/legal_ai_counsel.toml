@@ -17,3 +17,30 @@ deny_tools = ["shell", "write_file"]
 mcp_servers = ["CourtListener"]
 knowledge_sources = ["legal", "ai_governance"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "AI-law advisory memo"
+consumers = ["general_counsel", "privacy_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame question"
+instruction = "Read the product or feature facts to identify the AI-law question and the jurisdictions in scope."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull statutes"
+instruction = "Research the EU AI Act, Colorado AI Act, state-privacy, and AI/IP provisions that govern the facts and cite article, statute, and jurisdiction."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Analyze exposure"
+instruction = "Apply the cited law to the facts and flag the fast-moving areas where the law is unsettled."
+tools = ["read_file"]
+[[workflow]]
+name = "Draft memo"
+instruction = "Draft the advisory memo with citations and explicit assumptions for human counsel to review."
+[[workflow]]
+name = "Route to counsel"
+instruction = "Route the memo to human counsel for sign-off since it gives no binding advice and approves nothing."
+gate = "review"

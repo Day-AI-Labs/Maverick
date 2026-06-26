@@ -221,9 +221,17 @@ class SandboxPool:
             self._prune_locked()
             if not any(e.key.startswith(engine + "|") for e in self._entries):
                 return None  # cheap out before any digest subprocess
-            key = _key(engine, image, allow_network=allow_network,
-                       allow_root=allow_root, pids_limit=pids_limit,
-                       memory=memory, cpus=cpus, runtime=runtime)
+        # Compute the digest key OUTSIDE the lock: _key -> _image_digest runs a
+        # `docker/podman image inspect` (up to 10s) and must not stall every
+        # other acquire()/park()/len() behind the global pool lock. park() is
+        # symmetric -- it computes _key_of before locking. A second thread that
+        # mutates _entries in this window is fine: the authoritative scan below
+        # re-takes the lock.
+        key = _key(engine, image, allow_network=allow_network,
+                   allow_root=allow_root, pids_limit=pids_limit,
+                   memory=memory, cpus=cpus, runtime=runtime)
+        with self._lock:
+            self._prune_locked()
             for i, entry in enumerate(self._entries):
                 if entry.key == key:
                     self._entries.pop(i)

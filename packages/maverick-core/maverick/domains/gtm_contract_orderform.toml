@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "order form & redline package"
+consumers = ["account_executive", "deal_desk", "legal_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull deal terms"
+instruction = "Read the approved quote, pricing, and negotiated terms for the deal being papered."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Assemble order form"
+instruction = "Assemble the order form from the standard template populated with the verified deal terms."
+tools = ["read_file"]
+[[workflow]]
+name = "Redline vs standard"
+instruction = "Compare the order form against standard terms and mark every deviation as a redline."
+[[workflow]]
+name = "Flag legal items"
+instruction = "Route non-standard or non-fallback terms to legal and leave them open in the package."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Send the order form and redline package to deal desk and legal for review before signature."
+gate = "review"

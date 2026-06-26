@@ -79,7 +79,7 @@ def test_cache_purge_endpoint_default_all(monkeypatch, tmp_path):
 def test_cache_purge_targeted_scope(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
-    from maverick.file_cache import read_cache_stats, read_file_cached
+    from maverick.cache.file import read_cache_stats, read_file_cached
     f = tmp_path / "x.txt"
     f.write_text("data")
     read_file_cached(f)

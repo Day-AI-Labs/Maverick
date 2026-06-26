@@ -150,3 +150,99 @@ def test_runs_compare_missing_goal_has_no_id_oracle(monkeypatch):
     # "exists-but-forbidden", which assert_goal_access deliberately hides).
     assert r.json()["detail"] == "no such goal"
     assert "4242" not in r.json()["detail"]
+
+# --- workforce operating metrics must be owner-scoped ------------------------
+
+class _Goal:
+    def __init__(self, gid, owner, domain, status="done"):
+        self.id = gid
+        self.owner = owner
+        self.domain = domain
+        self.status = status
+        self.title = f"{owner} {domain}"
+        self.updated_at = float(gid)
+
+
+class _Spend:
+    def __init__(self, goal_id, cost):
+        self.goal_id = goal_id
+        self.cost_dollars = cost
+
+
+class _Approval:
+    def __init__(self, requested_by, decided_by=None):
+        self.requested_by = requested_by
+        self.decided_by = decided_by
+        self.claimed_by = None
+        self.requested_at = 10.0
+        self.decided_at = 11.0 if decided_by else None
+        self.action = "approve secret spend"
+        self.status = "approved" if decided_by else "pending"
+        self.provenance = None
+
+
+class _WorkforceWorld:
+    goals = [
+        _Goal(1, "user:alice", "finance_ar"),
+        _Goal(2, "user:bob", "finance_ap"),
+    ]
+    episodes = [
+        ("user:alice", _Spend(1, 12.34)),
+        ("user:bob", _Spend(2, 99.99)),
+    ]
+    approvals = [
+        _Approval("user:alice", "user:alice"),
+        _Approval("user:bob", "user:bob"),
+    ]
+
+    def list_goals(self, limit=500, order="desc", owner=None):
+        rows = [g for g in self.goals if owner is None or g.owner == owner]
+        return rows[:limit]
+
+    def list_episodes(self, limit=500, goal_id=None, owner=None):
+        rows = [e for e_owner, e in self.episodes if owner is None or e_owner == owner]
+        if goal_id is not None:
+            rows = [e for e in rows if e.goal_id == goal_id]
+        return rows[:limit]
+
+    def list_approvals(self, limit=500):
+        return self.approvals[:limit]
+
+
+def test_workforce_outcomes_api_scoped_to_owner(monkeypatch):
+    monkeypatch.setattr(api_mod, "_world", lambda: _WorkforceWorld())
+    monkeypatch.setattr(api_mod, "goal_owner_filter", lambda request: "user:alice")
+
+    data = client.get("/api/v1/outcomes").json()
+
+    assert data["firm"] == {
+        "goals_total": 1,
+        "goals_completed": 1,
+        "approvals": 1,
+        "human_decisions": 1,
+        "spend_dollars": 12.34,
+    }
+    assert {w["worker"] for w in data["workers"]} == {"finance_ar"}
+
+
+def test_department_review_api_scoped_to_owner(monkeypatch):
+    monkeypatch.setattr(api_mod, "_world", lambda: _WorkforceWorld())
+    monkeypatch.setattr(api_mod, "goal_owner_filter", lambda request: "user:alice")
+
+    data = client.get("/api/v1/departments/finance/review").json()
+
+    assert data["delivery"]["goals_total"] == 1
+    assert data["delivery"]["spend_dollars"] == 12.34
+    assert {w["worker"] for w in data["delivery"]["workers"]} == {"finance_ar"}
+
+
+def test_workforce_page_rollup_scoped_to_owner(monkeypatch):
+    monkeypatch.setattr(app_mod, "_world", lambda: _WorkforceWorld())
+    monkeypatch.setattr(app_mod, "goal_owner_filter", lambda request: "user:alice")
+
+    body = client.get("/workforce").text
+
+    assert "$12.34" in body
+    assert "$112.33" not in body
+    assert "finance_ar" in body
+    assert "finance_ap" not in body

@@ -7,7 +7,36 @@ persona = """You are the Coding QA Assistant for this business -- a healthcare s
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "high"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "coding QA discrepancy report"
+consumers = ["medical_coder", "coding_supervisor"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull encounters"
+instruction = "Query the batch of coded encounters queued for pre-submission QA review."
+tools = ["sql_query"]
+[[workflow]]
+name = "Read documentation"
+instruction = "Read each encounter's clinical note and the codes assigned to it."
+tools = ["read_file"]
+[[workflow]]
+name = "Check coding rules"
+instruction = "Validate assigned codes against the company's coding and documentation guidelines for support and specificity."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag mismatches"
+instruction = "List each code unsupported by documentation or missing modifiers with the specific gap and citation."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Coder review"
+instruction = "Route the flagged discrepancies to the assigned coder for correction before submission."
+gate = "review"

@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "screening status & renewal tracker"
+consumers = ["volunteer_coordinator", "hr_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull roster"
+instruction = "Read the current staff and volunteer roster and their roles to determine which screenings each person requires."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Check requirements"
+instruction = "Search policy to confirm which screening types and renewal intervals apply to each role."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Reconcile records"
+instruction = "Match completed screenings to each person and flag missing checks and upcoming or lapsed renewals."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag exposures"
+instruction = "Identify anyone serving in a role without a current required screening so they can be paused from contact."
+[[workflow]]
+name = "Coordinator review"
+instruction = "Route the screening status and renewal tracker to the volunteer coordinator for action and sign-off."
+gate = "review"

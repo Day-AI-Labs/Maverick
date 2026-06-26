@@ -18,3 +18,23 @@ deliverable = "Non-human identity inventory"
 consumers = ["ciso", "control_owner"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Inventory identities"
+instruction = "Pull the population of service accounts, API keys, OAuth grants, and agent capabilities from IdP and PAM exports."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Assess posture"
+instruction = "Evaluate each identity for orphaned ownership, staleness, and over-privilege against least-privilege baselines."
+tools = ["read_file"]
+[[workflow]]
+name = "Benchmark scopes"
+instruction = "Reference external least-privilege guidance to confirm which granted scopes are excessive."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft remediation"
+instruction = "Compile the inventory with least-privilege recommendations for each flagged identity."
+[[workflow]]
+name = "Route inventory"
+instruction = "Hand the non-human identity inventory and recommendations to the control owner for sign-off."
+gate = "review"

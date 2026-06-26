@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "M&A target pipeline screen"
+consumers = ["corp_dev_lead", "ceo"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Restate thesis"
+instruction = "Read the acquisition thesis and screening criteria from internal strategy docs to anchor the search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Source candidates"
+instruction = "Search market and company databases to assemble a longlist of candidate targets fitting the thesis."
+tools = ["web_search", "crunchbase_read"]
+[[workflow]]
+name = "Score fit"
+instruction = "Score each candidate against thesis criteria for strategic fit, size, and ownership status, flagging weak matches."
+[[workflow]]
+name = "Check MNPI seal"
+instruction = "Verify no material non-public information leaks into the longlist and that nothing crosses the Reg-FD line."
+[[workflow]]
+name = "Brief corp dev"
+instruction = "Hand the ranked target screen to corp dev and the CEO for go/no-go on outreach."
+gate = "review"

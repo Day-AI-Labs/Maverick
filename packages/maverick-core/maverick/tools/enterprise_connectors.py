@@ -964,6 +964,347 @@ _SUITE_READ_SPECS = _read_specs_for(_SUITE_READ_VENDORS)
 _READ_SPECS += _SUITE_READ_SPECS
 _READ_CONNECTOR_RISKS.update({s["name"]: "high" for s in _SUITE_READ_SPECS})
 
+# --- Primary-source / public-reference data connectors ----------------------
+# Authoritative GOVERNMENT and public data APIs that ground the analyst-style
+# packs (finance, banking, insurance, legal, GRC, gov-contracting, healthcare,
+# utilities, ESG, strategy) in primary sources instead of model memory. All are
+# GET-only and LOW risk: they read public reference data, mutate nothing, and
+# carry no customer/tenant secrets. Most are keyless (a fixed public host, no
+# credential); some take a free API key delivered either as a header or a query
+# param (never from the prompt -- it comes from the connector's env var).
+#
+# ``_pub`` fills the standard env names so a spec is one line. A keyless spec
+# ships a ``default_base_url`` so it works with zero config; a keyed spec needs
+# only its ``*_API_KEY`` env var (the base URL still defaults).
+def _pub(name: str, default_base_url: str, description: str, **kw) -> dict:
+    return dict(
+        name=name,
+        base_url_env=f"{name.upper()}_BASE_URL",
+        token_env=f"{name.upper()}_API_KEY",
+        default_base_url=default_base_url,
+        description=description,
+        **kw,
+    )
+
+
+_PUBLIC_DATA_SPECS: list[dict] = [
+    # --- Financial markets & macroeconomic data ---
+    _pub("fred", "https://api.stlouisfed.org", query_auth="api_key",
+         description="FRED (St. Louis Fed) economic data, READ-ONLY. e.g. "
+         "/fred/series/observations?series_id=GDP&file_type=json. Key as query "
+         "param. Auth: FRED_API_KEY (free)."),
+    _pub("sec_edgar", "https://data.sec.gov", keyless=True,
+         description="SEC EDGAR company filings & XBRL facts, READ-ONLY, keyless. "
+         "e.g. /submissions/CIK0000320193.json, "
+         "/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json. "
+         "Send a descriptive User-Agent via SEC_EDGAR_* if required."),
+    _pub("treasury_fiscaldata", "https://api.fiscaldata.treasury.gov", keyless=True,
+         description="U.S. Treasury Fiscal Data, READ-ONLY, keyless. e.g. "
+         "/services/api/fiscal_service/v2/accounting/od/avg_interest_rates."),
+    _pub("world_bank", "https://api.worldbank.org", keyless=True,
+         description="World Bank Open Data, READ-ONLY, keyless. e.g. "
+         "/v2/country/US/indicator/NY.GDP.MKTP.CD?format=json."),
+    _pub("imf", "https://www.imf.org/external/datamapper/api", keyless=True,
+         description="IMF DataMapper, READ-ONLY, keyless. e.g. /v1/NGDP_RPCH/USA."),
+    _pub("fdic", "https://banks.data.fdic.gov", keyless=True,
+         description="FDIC BankFind (institutions & financials), READ-ONLY, keyless. "
+         "e.g. /api/financials?filters=STNAME:Texas&fields=REPDTE,ASSET."),
+    _pub("bea", "https://apps.bea.gov", query_auth="UserID",
+         description="Bureau of Economic Analysis, READ-ONLY. e.g. "
+         "/api/data?method=GetData&datasetname=NIPA&... UserID as query param. "
+         "Auth: BEA_API_KEY (free)."),
+    _pub("census", "https://api.census.gov", query_auth="key",
+         description="U.S. Census Bureau data, READ-ONLY. e.g. "
+         "/data/2022/acs/acs5?get=NAME,B01001_001E&for=state:*. Key as query "
+         "param. Auth: CENSUS_API_KEY (free)."),
+    _pub("bls", "https://api.bls.gov", keyless=True,
+         description="Bureau of Labor Statistics v1, READ-ONLY, keyless. e.g. "
+         "/publicAPI/v1/timeseries/data/CUUR0000SA0 (CPI series)."),
+    _pub("eia", "https://api.eia.gov", query_auth="api_key",
+         description="EIA energy data, READ-ONLY. e.g. "
+         "/v2/electricity/rto/region-data/data?... Key as query param. "
+         "Auth: EIA_API_KEY (free)."),
+    _pub("alphavantage", "https://www.alphavantage.co", query_auth="apikey",
+         description="Alpha Vantage market data, READ-ONLY. e.g. "
+         "/query?function=TIME_SERIES_DAILY&symbol=IBM. Key as query param. "
+         "Auth: ALPHAVANTAGE_API_KEY (free)."),
+    _pub("finnhub", "https://finnhub.io", token_header="X-Finnhub-Token", scheme="",
+         description="Finnhub market data, READ-ONLY. e.g. /api/v1/quote?symbol=AAPL, "
+         "/api/v1/stock/profile2?symbol=AAPL. Auth: FINNHUB_API_KEY (X-Finnhub-Token)."),
+    _pub("polygon", "https://api.polygon.io",
+         description="Polygon.io market data, READ-ONLY (Bearer). e.g. "
+         "/v3/reference/tickers, /v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-02-01. "
+         "Auth: POLYGON_API_KEY (Bearer)."),
+    _pub("openfigi", "https://api.openfigi.com", token_header="X-OPENFIGI-APIKEY", scheme="",
+         description="OpenFIGI security-identifier mapping, READ-ONLY. POST-style "
+         "mapping is read-shaped; e.g. GET /v3/search. Auth: OPENFIGI_API_KEY."),
+    # --- Regulatory / legal / government ---
+    _pub("federal_register", "https://www.federalregister.gov", keyless=True,
+         description="U.S. Federal Register, READ-ONLY, keyless. e.g. "
+         "/api/v1/documents.json?conditions[term]=privacy&per_page=20."),
+    _pub("ecfr", "https://www.ecfr.gov", keyless=True,
+         description="Electronic Code of Federal Regulations, READ-ONLY, keyless. "
+         "e.g. /api/versioner/v1/titles.json, /api/search/v1/results?query=."),
+    _pub("regulations_gov", "https://api.regulations.gov",
+         token_header="X-Api-Key", scheme="",
+         description="Regulations.gov dockets & comments, READ-ONLY. e.g. "
+         "/v4/documents?filter[searchTerm]=. Auth: REGULATIONS_GOV_API_KEY "
+         "(X-Api-Key; free via api.data.gov)."),
+    _pub("courtlistener", "https://www.courtlistener.com", scheme="Token",
+         description="CourtListener case law & dockets, READ-ONLY. e.g. "
+         "/api/rest/v4/search/?q=, /api/rest/v4/opinions/. Auth: "
+         "COURTLISTENER_API_KEY (Authorization: Token <key>)."),
+    _pub("govinfo", "https://api.govinfo.gov", query_auth="api_key",
+         description="GovInfo (bills, CFR, public laws), READ-ONLY. e.g. "
+         "/collections, /packages/{id}/summary. Key as query param. "
+         "Auth: GOVINFO_API_KEY (free via api.data.gov)."),
+    _pub("usaspending", "https://api.usaspending.gov", keyless=True,
+         description="USAspending federal awards/spending, READ-ONLY, keyless. e.g. "
+         "/api/v2/search/spending_by_award/ (POST search is read-shaped)."),
+    _pub("sam_gov", "https://api.sam.gov", query_auth="api_key",
+         description="SAM.gov entity registration & exclusions, READ-ONLY. e.g. "
+         "/entity-information/v3/entities?ueiSAM=. Key as query param. "
+         "Auth: SAM_GOV_API_KEY (free via api.data.gov)."),
+    _pub("openstates", "https://v3.openstates.org", token_header="X-API-KEY", scheme="",
+         description="Open States (state legislatures), READ-ONLY. e.g. /bills?jurisdiction=, "
+         "/people. Auth: OPENSTATES_API_KEY (X-API-KEY)."),
+    _pub("patentsview", "https://search.patentsview.org", keyless=True,
+         description="PatentsView (USPTO patent data), READ-ONLY, keyless. e.g. "
+         "/api/v1/patent/?q={...}&f={...}."),
+    # --- Company / legal-entity registries ---
+    _pub("gleif", "https://api.gleif.org", keyless=True,
+         description="GLEIF Legal Entity Identifier (LEI) registry, READ-ONLY, keyless. "
+         "e.g. /api/v1/lei-records?filter[entity.legalName]=Apple."),
+    _pub("opencorporates", "https://api.opencorporates.com", query_auth="api_token",
+         description="OpenCorporates company registry, READ-ONLY. e.g. "
+         "/v0.4/companies/search?q=. Token as query param. Auth: OPENCORPORATES_API_KEY."),
+    _pub("companies_house", "https://api.company-information.service.gov.uk", basic=True,
+         description="UK Companies House, READ-ONLY (basic: API key as username). e.g. "
+         "/search/companies?q=, /company/{number}. Auth: COMPANIES_HOUSE_API_KEY."),
+    # --- Health / life sciences ---
+    _pub("openfda", "https://api.fda.gov", keyless=True,
+         description="openFDA (drug/device/food adverse events, recalls, labels), "
+         "READ-ONLY, keyless. e.g. /drug/event.json?search=&limit=5, "
+         "/device/recall.json?search=."),
+    _pub("nppes", "https://npiregistry.cms.hhs.gov", keyless=True,
+         description="NPPES NPI Registry (US healthcare providers), READ-ONLY, keyless. "
+         "e.g. /api/?version=2.1&number=&first_name=&state=."),
+    _pub("clinicaltrials", "https://clinicaltrials.gov", keyless=True,
+         description="ClinicalTrials.gov v2, READ-ONLY, keyless. e.g. "
+         "/api/v2/studies?query.term=diabetes&pageSize=10."),
+    _pub("rxnorm", "https://rxnav.nlm.nih.gov", keyless=True,
+         description="RxNorm/RxNav drug normalization, READ-ONLY, keyless. e.g. "
+         "/REST/rxcui.json?name=ibuprofen, /REST/interaction/interaction.json?rxcui=."),
+    _pub("pubmed", "https://eutils.ncbi.nlm.nih.gov", keyless=True,
+         description="PubMed/NCBI E-utilities, READ-ONLY, keyless. e.g. "
+         "/entrez/eutils/esearch.fcgi?db=pubmed&term=&retmode=json."),
+    # --- Geo / weather / energy / environment (ESG) ---
+    _pub("nws_weather", "https://api.weather.gov", keyless=True,
+         description="US National Weather Service, READ-ONLY, keyless. e.g. "
+         "/points/{lat},{lon}, /gridpoints/{office}/{x},{y}/forecast, /alerts/active."),
+    _pub("noaa_climate", "https://www.ncdc.noaa.gov", token_header="token", scheme="",
+         description="NOAA Climate Data Online, READ-ONLY. e.g. "
+         "/cdo-web/api/v2/data?datasetid=GHCND&... Auth: NOAA_CLIMATE_API_KEY (token header)."),
+    _pub("openweather", "https://api.openweathermap.org", query_auth="appid",
+         description="OpenWeather, READ-ONLY. e.g. /data/2.5/weather?q=London. "
+         "Key as query param (appid). Auth: OPENWEATHER_API_KEY."),
+    _pub("epa_envirofacts", "https://data.epa.gov", keyless=True,
+         description="EPA Envirofacts environmental data, READ-ONLY, keyless. e.g. "
+         "/efservice/{table}/{column}/{value}/JSON."),
+    _pub("climatiq", "https://api.climatiq.io",
+         description="Climatiq carbon-emission factors/estimates, READ-ONLY (Bearer). "
+         "e.g. /data/v1/search?query=electricity. Auth: CLIMATIQ_API_KEY (Bearer)."),
+    _pub("carbon_interface", "https://www.carboninterface.com",
+         description="Carbon Interface emission estimates, READ-ONLY (Bearer). e.g. "
+         "GET /api/v1/estimates/{id}. Auth: CARBON_INTERFACE_API_KEY (Bearer)."),
+]
+_READ_SPECS += _PUBLIC_DATA_SPECS
+_READ_CONNECTOR_RISKS.update({s["name"]: "low" for s in _PUBLIC_DATA_SPECS})
+# Names of just the primary-source data connectors, for docs/tests.
+PUBLIC_DATA_CONNECTOR_NAMES: list[str] = [s["name"] for s in _PUBLIC_DATA_SPECS]
+
+# The public host each data connector reaches (from its default base URL). Used
+# when an operator wants to widen a host-restricted pack's egress to admit a
+# granted data connector -- the grant itself (see domain.py) never loosens a
+# pack's allow_hosts automatically.
+from urllib.parse import urlsplit as _urlsplit  # noqa: E402
+
+PUBLIC_DATA_CONNECTOR_HOSTS: dict[str, str] = {
+    s["name"]: _urlsplit(s["default_base_url"]).netloc for s in _PUBLIC_DATA_SPECS
+}
+
+
+# --- Suite -> primary-source data connectors --------------------------------
+# Which public-data connectors each business suite's packs get in their
+# capability envelope, so an analyst pack reaches for FRED/SEC EDGAR/openFDA/etc.
+# by default instead of guessing. All are GET-only and LOW risk, so they sit
+# under a read-only pack's ceiling. Layered centrally in domain.domain_capability
+# (additive to allow_tools; deferred, so no context cost until find_tools).
+#
+# Reusable bundles, composed per suite below. Keep a suite's set curated -- the
+# few sources its work actually grounds in, not the whole catalogue.
+_MARKETS_CORE = frozenset({
+    "fred", "sec_edgar", "treasury_fiscaldata", "world_bank", "bls",
+    "alphavantage", "finnhub", "polygon", "openfigi",
+})
+_ENTITY = frozenset({"gleif", "opencorporates", "companies_house"})
+_REG_FED = frozenset({"federal_register", "ecfr", "regulations_gov", "govinfo"})
+_GOV_SPEND = frozenset({"usaspending", "sam_gov"})
+_HEALTH = frozenset({"openfda", "nppes", "clinicaltrials", "rxnorm", "pubmed"})
+_CLIMATE = frozenset({
+    "nws_weather", "noaa_climate", "openweather", "epa_envirofacts",
+    "climatiq", "carbon_interface",
+})
+_STATS = frozenset({"census", "bls", "fred", "world_bank"})
+
+SUITE_DATA_CONNECTORS: dict[str, frozenset[str]] = {
+    # --- Finance / capital / deals / banking / insurance / tax ---
+    "finance": _MARKETS_CORE | _ENTITY | frozenset({"bea"}),
+    "capital_markets": _MARKETS_CORE | frozenset({"imf", "bea", "gleif", "openfigi"}),
+    "private_equity_vc": _MARKETS_CORE | _ENTITY | frozenset({"sam_gov", "usaspending"}),
+    "banking": frozenset({
+        "fdic", "fred", "treasury_fiscaldata", "sec_edgar", "bls", "census",
+    }) | _ENTITY,
+    "insurance": frozenset({
+        "nws_weather", "noaa_climate", "fred", "treasury_fiscaldata", "sec_edgar",
+        "bls", "census", "fdic", "epa_envirofacts",
+    }),
+    "tax": _REG_FED | frozenset({"courtlistener", "sec_edgar", "bls", "census", "fred"}),
+    # --- Legal / GRC / risk / trust&safety / IP ---
+    "legal": frozenset({"courtlistener", "patentsview"}) | _REG_FED | _ENTITY
+             | frozenset({"sec_edgar", "sam_gov"}),
+    "it_grc": _REG_FED | frozenset({"sec_edgar"}),
+    "security_ops": frozenset({"federal_register", "regulations_gov"}),
+    "enterprise_risk": frozenset({
+        "fred", "world_bank", "imf", "sec_edgar", "nws_weather", "noaa_climate",
+    }) | _REG_FED | _ENTITY,
+    "trust_safety": frozenset({"federal_register", "regulations_gov", "courtlistener"}),
+    # --- Government / public sector / aero-defense / education ---
+    "government_contracting": _GOV_SPEND | _REG_FED | frozenset({"sec_edgar"}),
+    "public_sector": _GOV_SPEND | _REG_FED
+                     | frozenset({"openstates", "census", "bls"}),
+    "aerospace_defense": _GOV_SPEND | frozenset({
+        "sec_edgar", "federal_register", "patentsview", "world_bank", "bls",
+    }),
+    "education_nonprofit": frozenset({
+        "census", "bls", "fred", "federal_register", "world_bank",
+    }) | _GOV_SPEND,
+    # --- Health / life sciences / devices ---
+    "healthcare": _HEALTH | frozenset({"federal_register", "regulations_gov"}),
+    "medical_devices": frozenset({
+        "openfda", "clinicaltrials", "pubmed", "patentsview",
+        "federal_register", "regulations_gov",
+    }),
+    "pharma_lifesciences": frozenset({
+        "openfda", "clinicaltrials", "pubmed", "rxnorm", "patentsview",
+        "federal_register", "regulations_gov", "sec_edgar",
+    }),
+    # --- Energy / utilities / environment / ESG / ag ---
+    "utilities": frozenset({
+        "eia", "nws_weather", "noaa_climate", "epa_envirofacts",
+        "federal_register", "fred",
+    }),
+    "water_utilities": frozenset({
+        "epa_envirofacts", "nws_weather", "noaa_climate", "eia", "federal_register",
+    }),
+    "oil_gas": frozenset({
+        "eia", "epa_envirofacts", "nws_weather", "noaa_climate",
+        "federal_register", "sec_edgar", "world_bank",
+    }),
+    "renewables_cleantech": frozenset({
+        "eia", "climatiq", "carbon_interface", "epa_envirofacts",
+        "nws_weather", "noaa_climate", "fred",
+    }),
+    "esg_sustainability": _CLIMATE | frozenset({
+        "eia", "sec_edgar", "federal_register", "world_bank",
+    }),
+    "agriculture": frozenset({
+        "nws_weather", "noaa_climate", "epa_envirofacts", "eia",
+        "world_bank", "census", "fred", "climatiq",
+    }),
+    "facilities_ehs": frozenset({
+        "epa_envirofacts", "nws_weather", "noaa_climate", "eia",
+        "federal_register", "regulations_gov",
+    }),
+    # --- Industrials / materials / mobility ---
+    "manufacturing_vertical": frozenset({
+        "bls", "fred", "census", "eia", "epa_envirofacts", "world_bank", "patentsview",
+    }),
+    "chemicals": frozenset({
+        "epa_envirofacts", "federal_register", "regulations_gov", "eia",
+        "patentsview", "nws_weather",
+    }),
+    "mining_metals": frozenset({
+        "world_bank", "fred", "eia", "epa_envirofacts", "nws_weather", "sec_edgar",
+    }),
+    "automotive": frozenset({
+        "bls", "fred", "census", "epa_envirofacts", "patentsview", "world_bank",
+    }),
+    "semiconductors": frozenset({
+        "sec_edgar", "world_bank", "census", "bls", "patentsview", "fred", "finnhub",
+    }),
+    "construction": frozenset({
+        "bls", "fred", "census", "nws_weather", "epa_envirofacts", "eia", "world_bank",
+    }),
+    # --- Logistics / maritime / travel ---
+    "logistics": frozenset({
+        "nws_weather", "noaa_climate", "eia", "census", "world_bank",
+        "federal_register", "usaspending",
+    }),
+    "maritime": frozenset({
+        "nws_weather", "noaa_climate", "world_bank", "eia", "federal_register",
+    }),
+    "travel_aviation": frozenset({
+        "nws_weather", "noaa_climate", "bls", "fred", "world_bank",
+        "eia", "federal_register",
+    }),
+    # --- Consumer / retail / media ---
+    "retail": frozenset({
+        "census", "bls", "fred", "world_bank", "openfda", "epa_envirofacts",
+    }),
+    "food_beverage_cpg": frozenset({
+        "openfda", "epa_envirofacts", "census", "bls", "fred",
+        "nws_weather", "federal_register", "regulations_gov",
+    }),
+    "hospitality": frozenset({"bls", "fred", "census", "nws_weather", "world_bank"}),
+    "telecom_media": frozenset({
+        "federal_register", "regulations_gov", "sec_edgar",
+        "census", "bls", "fred", "patentsview",
+    }),
+    "crypto_digital_assets": frozenset({
+        "sec_edgar", "federal_register", "regulations_gov", "courtlistener",
+        "fred", "finnhub", "world_bank",
+    }),
+    "real_estate": frozenset({
+        "fred", "census", "fdic", "treasury_fiscaldata", "nws_weather",
+        "epa_envirofacts", "world_bank", "bls",
+    }),
+    # --- Cross-functional horizontals ---
+    "strategy": _MARKETS_CORE | _ENTITY | frozenset({
+        "imf", "census", "patentsview", "federal_register",
+    }),
+    "operations": frozenset({"bls", "fred", "census", "eia", "nws_weather", "world_bank"}),
+    "procurement": _GOV_SPEND | _ENTITY | frozenset({"sec_edgar", "fred", "bls"}),
+    "professional_services": frozenset({
+        "sec_edgar", "courtlistener", "federal_register", "fred", "bls",
+    }) | _ENTITY,
+    "hr": frozenset({"bls", "census", "fred", "federal_register", "regulations_gov"}),
+    "sales_gtm": frozenset({"sec_edgar", "fred", "bls"}) | _ENTITY,
+    "marketing": frozenset({"census", "bls", "fred", "world_bank"}),
+    "data_analytics": frozenset({"census", "bls", "fred", "world_bank", "eia", "sec_edgar"}),
+    "executive_office": frozenset({"sec_edgar", "fred", "world_bank", "bls", "federal_register"}),
+    "knowledge_management": frozenset({"pubmed", "patentsview", "federal_register", "sec_edgar"}),
+    "product_engineering": frozenset({"patentsview", "federal_register", "sec_edgar"}),
+}
+
+
+def data_connectors_for_suite(suite: str | None) -> frozenset[str]:
+    """The primary-source data connectors a suite's packs are granted (read-only,
+    low-risk). Empty for an unmapped/None suite."""
+    if not suite:
+        return frozenset()
+    return SUITE_DATA_CONNECTORS.get(suite, frozenset())
+
 READ_CONNECTOR_NAMES: list[str] = [s["name"] for s in _READ_SPECS]
 READ_CONNECTOR_RISKS: dict[str, str] = {
     name: _READ_CONNECTOR_RISKS.get(name, "high") for name in READ_CONNECTOR_NAMES

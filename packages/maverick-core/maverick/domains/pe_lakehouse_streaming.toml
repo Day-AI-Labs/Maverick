@@ -14,3 +14,27 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "lakehouse/streaming pipeline pull request"
+consumers = ["data_platform_lead", "sre_oncall"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Read topology"
+instruction = "Map the existing Iceberg/Delta tables, topics, and pipeline code plus the standards for partitioning and schema."
+tools = ["read_file", "repo_map", "knowledge_search"]
+[[workflow]]
+name = "Design pipeline"
+instruction = "Author the table or CDC/streaming change in the sandbox preserving exactly-once delivery and backward-compatible schema evolution."
+tools = ["apply_patch", "ast_edit", "str_replace_editor"]
+[[workflow]]
+name = "Test correctness"
+instruction = "Run the pipeline against sandbox data and verify no duplicates, no data loss, and a safe backfill or compaction path."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Open PR"
+instruction = "Open the pull request describing the topology impact so a human gates any production repoint or rebalance."
+gate = "approval"

@@ -109,10 +109,19 @@ def promote_skill_live(candidate: str, constraints, *,
     to a no-op, never a half-applied promotion."""
     from . import dreaming
 
+    # The snapshot is what makes the promotion reversible. If it RAISES (disk
+    # full, permission), there is no reliable rollback -- so ABORT rather than
+    # proceed into a promotion we can't cleanly undo (the docstring's "never a
+    # half-applied promotion"). A None return is the legitimate empty-state case
+    # (nothing yet to snapshot); rollback's remove-post-snapshot path still
+    # reverts anything this rollout adds, so that case proceeds.
     try:
         dreaming.snapshot_learning_state()
     except Exception as e:
-        log.warning("rollout: pre-promotion snapshot failed (%s); proceeding cautiously", e)
+        log.warning("rollout: pre-promotion snapshot failed (%s); aborting -- "
+                    "a promotion without a snapshot can't be rolled back", e)
+        return RolloutResult(candidate=candidate, completed=False,
+                             reason=f"aborted: pre-promotion snapshot failed ({e})")
 
     def deploy(cand: str, fraction: float) -> None:
         try:

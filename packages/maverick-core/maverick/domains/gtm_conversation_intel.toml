@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "call coaching scorecard"
+consumers = ["sales_rep", "sales_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Confirm consent"
+instruction = "Verify all-party recording consent is on file for each call before any analysis and drop any call lacking it."
+tools = ["gong_read"]
+[[workflow]]
+name = "Pull transcripts"
+instruction = "Retrieve the rep's recorded calls and transcripts for the review window."
+tools = ["gong_read"]
+[[workflow]]
+name = "Score talk patterns"
+instruction = "Analyze talk-to-listen ratio, discovery questions, and next-step commitments against the coaching rubric."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft coaching"
+instruction = "Draft specific, timestamped coaching notes and a prioritized improvement list for the rep."
+[[workflow]]
+name = "Manager review"
+instruction = "Route the coaching scorecard to the sales manager to review and deliver in the 1:1."
+gate = "review"

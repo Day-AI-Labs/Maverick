@@ -17,3 +17,24 @@ deliverable = "Variance (flux) analysis"
 consumers = ["controller", "fpa_analyst"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull periods"
+instruction = "Query actuals for the current and prior period from the system of record with currency and period labeled."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute variances"
+instruction = "Compute the period-over-period variance per account and rank the largest movers by magnitude."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Drill evidence"
+instruction = "Drill into each material variance and tie the change to transaction-level evidence and the company's own documents."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Explain drivers"
+instruction = "Write the variance explanation grounded in cited evidence and flag any movement you cannot substantiate."
+tools = ["read_file"]
+[[workflow]]
+name = "Route review"
+instruction = "Hand the variance analysis to the controller for review."
+gate = "review"

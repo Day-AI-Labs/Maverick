@@ -30,7 +30,7 @@ from .paths import data_dir
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = data_dir("world.db")
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 23
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -217,10 +217,23 @@ CREATE TABLE IF NOT EXISTS approvals (
     decided_at REAL,
     claimed_by TEXT,
     claimed_at REAL,
-    decided_by TEXT
+    decided_by TEXT,
+    approvals_required INTEGER NOT NULL DEFAULT 1,
+    requested_by TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, id);
+
+-- v21 N-of-M dual control: one row per (approval, approver), so the PK enforces
+-- a given approver counting once toward the quorum (segregation of duties).
+CREATE TABLE IF NOT EXISTS approval_signoffs (
+    approval_id INTEGER NOT NULL,
+    approver    TEXT NOT NULL,
+    decision    TEXT NOT NULL,
+    decided_at  REAL NOT NULL,
+    note        TEXT,
+    PRIMARY KEY (approval_id, approver)
+);
 
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -293,6 +306,31 @@ CREATE TABLE IF NOT EXISTS processed_messages (
     goal_id INTEGER REFERENCES goals(id),
     seen_at REAL NOT NULL,
     UNIQUE(channel, external_id)
+);
+
+-- v22 cluster-wide killswitch: a shared halt the dashboard arms and every
+-- replica's killswitch.check() consults, so an emergency stop propagates across
+-- the fleet (the in-process flag + local HALT file only stop the replica that
+-- served the request). Untenanted on purpose -- a global emergency stop is not
+-- per-tenant; ``scope=''`` is the global row.
+CREATE TABLE IF NOT EXISTS halt (
+    scope    TEXT PRIMARY KEY,
+    reason   TEXT,
+    source   TEXT,
+    armed_by TEXT,
+    armed_at REAL NOT NULL
+);
+
+-- v23 cluster-wide provider spend ledger: a shared per-(period, provider) total
+-- so the provider_cost_cap ceiling is enforced across the fleet, not per-host.
+-- The host-local JSON ledger (provider_spend.json) is per-host and lets N
+-- replicas each spend up to the cap; on a shared backend this row is the single
+-- authoritative total.
+CREATE TABLE IF NOT EXISTS provider_spend (
+    period_key TEXT NOT NULL,
+    provider   TEXT NOT NULL,
+    dollars    REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (period_key, provider)
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -435,6 +473,22 @@ MIGRATIONS: dict[int, list[str]] = {
     # v20 share links: the share_links table is in SCHEMA (idempotent CREATE);
     # listed here so existing DBs bump the version on next open.
     20: [],
+    # v21 N-of-M dual control: quorum + requester columns on approvals, and the
+    # per-(approval, approver) signoff table (also in SCHEMA for fresh DBs).
+    21: [
+        "ALTER TABLE approvals ADD COLUMN approvals_required INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE approvals ADD COLUMN requested_by TEXT",
+        "CREATE TABLE IF NOT EXISTS approval_signoffs ("
+        " approval_id INTEGER NOT NULL, approver TEXT NOT NULL,"
+        " decision TEXT NOT NULL, decided_at REAL NOT NULL, note TEXT,"
+        " PRIMARY KEY (approval_id, approver))",
+    ],
+    # v22 cluster-wide killswitch: the halt table is in SCHEMA (idempotent
+    # CREATE); listed here so existing DBs bump the version on next open.
+    22: [],
+    # v23 cluster-wide provider spend ledger: the provider_spend table is in
+    # SCHEMA (idempotent CREATE); listed here so existing DBs bump the version.
+    23: [],
 }
 
 
@@ -478,6 +532,8 @@ class Approval:
     claimed_by: str | None = None
     claimed_at: float | None = None
     decided_by: str | None = None
+    approvals_required: int = 1
+    requested_by: str | None = None
 
 
 @dataclass
@@ -1214,16 +1270,20 @@ class WorldModel:
         it); ``content`` is encrypted at rest like other agent output."""
         now = time.time()
         with self._writing() as conn:
-            cur = conn.execute(
-                "SELECT COALESCE(MAX(version), 0) FROM artifacts WHERE goal_id = ? AND title = ?",
-                (int(goal_id), title or ""),
-            )
-            version = int(cur.fetchone()[0]) + 1
+            # Compute the next version in the SAME statement as the INSERT so the
+            # whole read-modify-write is atomic under SQLite's per-statement write
+            # lock. A separate SELECT MAX(version)+1 then INSERT races ACROSS
+            # PROCESSES (the dashboard + worker each hold their own _writing lock,
+            # and a deferred txn takes no write lock until the INSERT) -> two
+            # processes assign the SAME version. The scalar subquery closes that
+            # gap; mirrors the per-key serialization done in the Postgres backend.
             cur = conn.execute(
                 "INSERT INTO artifacts(goal_id, kind, title, content, version, created_at) "
-                "VALUES(?, ?, ?, ?, ?, ?)",
-                (int(goal_id), str(kind or "text"), title or "",
-                 _enc_field(content), version, now),
+                "VALUES(?, ?, ?, ?, "
+                "(SELECT COALESCE(MAX(version), 0) + 1 FROM artifacts "
+                " WHERE goal_id = ? AND title = ?), ?)",
+                (int(goal_id), str(kind or "text"), title or "", _enc_field(content),
+                 int(goal_id), title or "", now),
             )
             return int(cur.lastrowid)
 
@@ -2029,19 +2089,28 @@ class WorldModel:
         scope: str | None = None,
         detail: str | None = None,
         provenance: str | None = None,
+        approvals_required: int = 1,
+        requested_by: str | None = None,
     ) -> int:
         """Park a high-risk action for out-of-band (dashboard) approval.
 
         ``provenance`` is trusted caller-supplied metadata used by operator UIs;
         it must not be inferred from ``detail``, which may contain untrusted
         model, user, or remote-server text.
+
+        ``approvals_required`` is the quorum (N) of DISTINCT approvers needed
+        before the action is granted (segregation of duties; 1 = legacy single
+        approver). ``requested_by`` is the requesting principal, so a multi-party
+        approval can bar the requester from approving their own request.
         """
         with self._writing() as conn:
             cur = conn.execute(
-                "INSERT INTO approvals(action, risk, scope, detail, provenance, status, requested_at) "
-                "VALUES(?, ?, ?, ?, ?, 'pending', ?)",
+                "INSERT INTO approvals(action, risk, scope, detail, provenance, "
+                "status, requested_at, approvals_required, requested_by) "
+                "VALUES(?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
                 (_enc_field(action), risk, _enc_field(scope), _enc_field(detail),
-                 provenance, time.time()),
+                 provenance, time.time(), max(1, int(approvals_required)),
+                 (requested_by or None)),
             )
             return cur.lastrowid
 
@@ -2068,22 +2137,95 @@ class WorldModel:
 
     def decide_approval(self, approval_id: int, status: str,
                         decided_by: str | None = None) -> bool:
-        """Flip a pending approval to 'approved' or 'denied'.
+        """Record one approver's decision on a pending approval.
 
-        Returns True if a pending row was transitioned, False otherwise
-        (unknown id, or already decided — so a double-click is a no-op).
-        ``decided_by`` records WHICH supervisor decided (collaborative
-        supervision attribution); None keeps the legacy unattributed form.
+        Single-approver (``approvals_required <= 1``, the default): flips the row
+        to 'approved'/'denied' atomically, exactly as before.
+
+        N-of-M (``approvals_required > 1``): records this approver's sign-off and
+        applies **segregation of duties** — a ``denied`` vote rejects immediately;
+        an ``approved`` vote counts toward the quorum and the row flips to
+        'approved' only once N **distinct** approvers have approved. The requester
+        cannot approve their own request unless ``allow_self_approval`` is set.
+
+        Returns True when the vote was accepted (recorded and/or final), False on
+        an unknown/already-decided id, a self-approval that is barred, or a
+        multi-party vote with no ``decided_by`` (an approver identity is required
+        to enforce distinctness).
         """
         if status not in ("approved", "denied"):
             raise ValueError("status must be 'approved' or 'denied'")
+        appr = self.get_approval(approval_id)
+        if appr is None or appr.status != "pending":
+            return False
+        required = max(1, int(getattr(appr, "approvals_required", 1) or 1))
+        if required <= 1:
+            with self._writing() as conn:
+                cur = conn.execute(
+                    "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ? "
+                    "WHERE id = ? AND status = 'pending'",
+                    (status, time.time(), decided_by, approval_id),
+                )
+                return cur.rowcount > 0
+
+        approver = (decided_by or "").strip()
+        if not approver:
+            return False   # distinctness needs an attributed approver
+        if (status == "approved" and appr.requested_by
+                and approver == appr.requested_by):
+            from .safety.dual_control import allow_self_approval
+            if not allow_self_approval():
+                return False   # segregation of duties: no self-approval
+        now = time.time()
         with self._writing() as conn:
-            cur = conn.execute(
-                "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ? "
-                "WHERE id = ? AND status = 'pending'",
-                (status, time.time(), decided_by, approval_id),
+            # PK (approval_id, approver) makes a given approver count once; a
+            # repeat vote from the same approver updates their recorded decision.
+            conn.execute(
+                "INSERT INTO approval_signoffs(approval_id, approver, decision, "
+                "decided_at) VALUES(?, ?, ?, ?) "
+                "ON CONFLICT(approval_id, approver) DO UPDATE SET "
+                "decision = excluded.decision, decided_at = excluded.decided_at",
+                (approval_id, approver, status, now),
             )
-            return cur.rowcount > 0
+            if status == "denied":
+                conn.execute(
+                    "UPDATE approvals SET status = 'denied', decided_at = ?, "
+                    "decided_by = ? WHERE id = ? AND status = 'pending'",
+                    (now, approver, approval_id),
+                )
+                return True
+            approved = conn.execute(
+                "SELECT COUNT(*) FROM approval_signoffs "
+                "WHERE approval_id = ? AND decision = 'approved'",
+                (approval_id,),
+            ).fetchone()[0]
+            if approved >= required:
+                conn.execute(
+                    "UPDATE approvals SET status = 'approved', decided_at = ?, "
+                    "decided_by = ? WHERE id = ? AND status = 'pending'",
+                    (now, approver, approval_id),
+                )
+            return True
+
+    def approval_state(self, approval_id: int) -> dict | None:
+        """Quorum progress for an approval, or None if unknown. Shape:
+        ``{status, approvals_required, approved_count, approvers, requested_by}``
+        -- the operator/UI view of an in-flight N-of-M decision."""
+        appr = self.get_approval(approval_id)
+        if appr is None:
+            return None
+        rows = self._read_all(
+            "SELECT approver, decision FROM approval_signoffs "
+            "WHERE approval_id = ? ORDER BY decided_at", (approval_id,),
+        )
+        approvers = [r["approver"] for r in rows if r["decision"] == "approved"]
+        return {
+            "status": appr.status,
+            "approvals_required": max(1, int(appr.approvals_required or 1)),
+            "approved_count": len(approvers),
+            "approvers": approvers,
+            "requested_by": appr.requested_by,
+        }
 
     def claim_approval(self, approval_id: int, principal: str) -> bool:
         """Atomically claim a pending approval for one supervisor.
@@ -2303,6 +2445,68 @@ class WorldModel:
             (channel, external_id),
         )
         return row is not None
+
+    # ----- cluster-wide killswitch (v22) -----
+    # Untenanted, single-row global emergency stop. On a shared backend
+    # (Postgres) every replica's killswitch.check() consults this, so a halt
+    # armed via the dashboard stops the whole fleet rather than just the replica
+    # that served the request.
+    def arm_halt(self, reason: str = "", source: str = "manual",
+                 armed_by: str = "") -> None:
+        with self._writing() as conn:
+            conn.execute(
+                "INSERT INTO halt(scope, reason, source, armed_by, armed_at) "
+                "VALUES('', ?, ?, ?, ?) "
+                "ON CONFLICT(scope) DO UPDATE SET reason=excluded.reason, "
+                "source=excluded.source, armed_by=excluded.armed_by, "
+                "armed_at=excluded.armed_at",
+                (reason or "", source or "manual", armed_by or "", time.time()),
+            )
+
+    def disarm_halt(self) -> None:
+        with self._writing() as conn:
+            conn.execute("DELETE FROM halt WHERE scope = ''")
+
+    def active_halt(self) -> dict | None:
+        """The shared global halt state, or ``None`` when not armed."""
+        row = self._read_one(
+            "SELECT reason, source, armed_by, armed_at FROM halt WHERE scope = ''",
+            (),
+        )
+        if row is None:
+            return None
+        return {"reason": row[0] or "", "source": row[1] or "",
+                "armed_by": row[2] or "", "armed_at": row[3]}
+
+    # ----- cluster-wide provider spend ledger (v23) -----
+    def add_provider_spend(self, period_key: str, provider: str,
+                           amount: float) -> float:
+        """Atomically add ``amount`` to ``(period_key, provider)``; return the new
+        running total. The single authoritative spend total when this world is the
+        shared (Postgres) backend, so N replicas can't each spend up to the cap."""
+        amt = max(0.0, float(amount or 0.0))
+        with self._writing() as conn:
+            conn.execute(
+                "INSERT INTO provider_spend(period_key, provider, dollars) "
+                "VALUES(?, ?, ?) ON CONFLICT(period_key, provider) "
+                "DO UPDATE SET dollars = dollars + ?",
+                (period_key, provider, amt, amt),
+            )
+            row = conn.execute(
+                "SELECT dollars FROM provider_spend "
+                "WHERE period_key = ? AND provider = ?",
+                (period_key, provider),
+            ).fetchone()
+        return float(row[0]) if row else amt
+
+    def get_provider_spend(self, period_key: str, provider: str) -> float:
+        """The running spend total for ``(period_key, provider)`` (0.0 if none)."""
+        row = self._read_one(
+            "SELECT dollars FROM provider_spend "
+            "WHERE period_key = ? AND provider = ?",
+            (period_key, provider),
+        )
+        return float(row[0]) if row else 0.0
 
     # ----- attachments -----
     def add_attachment(

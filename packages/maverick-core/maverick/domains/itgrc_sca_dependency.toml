@@ -21,3 +21,24 @@ deliverable = "Dependency-CVE & SBOM findings"
 consumers = ["security_analyst", "compliance_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Inventory dependencies"
+instruction = "Read the manifest, lockfiles, and existing SBOM to enumerate every direct and transitive component in scope."
+tools = ["read_file"]
+[[workflow]]
+name = "Pull CVEs"
+instruction = "Query Snyk and advisory sources for known vulnerabilities and license data across the resolved dependency set."
+tools = ["snyk_read", "web_search"]
+[[workflow]]
+name = "Prioritize risk"
+instruction = "Score each finding by CVSS, EPSS, and VEX exploitability and classify license obligations against company policy."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Validate SBOM"
+instruction = "Check the CycloneDX or SPDX SBOM for completeness and SLSA provenance and flag components missing from it."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to owner"
+instruction = "Draft the prioritized CVE, license, and SBOM findings package for the security analyst to review and remediate."
+gate = "review"

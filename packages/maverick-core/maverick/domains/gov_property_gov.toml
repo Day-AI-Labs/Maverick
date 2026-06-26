@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "government-furnished property accountability register"
+consumers = ["property_administrator", "contracts_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull GFP list"
+instruction = "Read the government-furnished property records and the contract's property clauses from company records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify records"
+instruction = "Confirm each item's required FAR 52.245-1 record fields against the cited clause rather than memory."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Reconcile inventory"
+instruction = "Match the property register against physical-inventory and receipt data and flag missing, lost, or untagged items."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "List incomplete records, overdue physical inventories, and disposition actions needing resolution."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route register"
+instruction = "Hand the property accountability register to the property administrator for sign-off."
+gate = "review"

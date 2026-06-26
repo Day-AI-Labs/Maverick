@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "earnings release package"
+consumers = ["cfo", "investor_relations", "disclosure_committee"]
+cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Pull the filing"
+instruction = "Read the draft filing and prior-period materials to anchor the quarter's reporting baseline."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build reconciliations"
+instruction = "Draft the non-GAAP reconciliations and confirm each adjustment is Reg G compliant."
+tools = ["read_file"]
+[[workflow]]
+name = "Check consistency"
+instruction = "Verify the press release, script, and reconciliations agree with the filing line by line."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Scan for surprises"
+instruction = "Compare the narrative to consensus and prior guidance so nothing reads as an unintended material disclosure."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Route for release"
+instruction = "Hand the package to IR and the disclosure committee for approval since release is human under Reg FD."
+gate = "approval"

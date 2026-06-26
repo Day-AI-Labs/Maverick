@@ -220,14 +220,17 @@ class WhatsAppCloudChannel(Channel):
             )
             try:
                 reply = await self.dispatch_text(incoming)
-            except Exception as e:  # pragma: no cover
+            except Exception:  # pragma: no cover
                 log.exception("handler error")
                 if wm is not None and msg_id:
                     try:
                         wm.release_processed_message("whatsapp_cloud", msg_id)
                     except Exception:  # pragma: no cover
                         log.warning("whatsapp-cloud dedup release failed")
-                reply = f"⚠ error: {e}"
+                # Don't echo the raw exception to the external sender (it can
+                # carry internal paths/detail); the full error is logged above.
+                # Matches the generic reply sms.py / rcs.py already use.
+                reply = "⚠ An internal error occurred."
             if reply:
                 await self.send(sender, reply)
 

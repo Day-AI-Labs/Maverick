@@ -92,6 +92,38 @@ def test_create_owned_by_caller(monkeypatch, tmp_path):
     assert load_fleet("dteam").owner == "user:dana"
 
 
+def test_fleet_run_schedules_against_caller_not_agent(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _as(monkeypatch, "user:alice")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+
+    import maverick.runner as runner_mod
+    from maverick.fleet import Fleet, FleetAgent, save_fleet
+
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(runner_mod, "run_goal_in_thread", fake_run)
+    save_fleet(Fleet(
+        name="acme",
+        owner="user:alice",
+        agents=(FleetAgent(name="coder", role="engineer"),),
+    ))
+
+    r = _client().post(
+        "/api/v1/fleets/acme/run",
+        json={"agent": "coder", "prompt": "ship it"},
+    )
+
+    assert r.status_code == 201, r.text
+    assert r.json()["principal"] == "agent:acme.coder"
+    assert len(calls) == 1
+    assert calls[0][1]["user_id"] == "agent:acme.coder"
+    assert calls[0][1]["concurrency_principal"] == "user:alice"
+
+
 def test_create_clobber_other_owner_404(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     from maverick.fleet import Fleet, load_fleet, save_fleet

@@ -26,6 +26,7 @@ from typing import Any
 from ..budget import Budget, BudgetExceeded
 from ..llm import LLMResponse, ToolCall
 from ..retry import async_retry, sync_retry
+from ..secrets import scrub
 
 log = logging.getLogger(__name__)
 
@@ -359,8 +360,8 @@ class OpenAIClient:
                     log.warning(
                         "tool call %r had unparseable arguments; running with {} "
                         "(raw=%.200r)",
-                        getattr(tc.function, "name", "?"),
-                        getattr(tc.function, "arguments", None),
+                        scrub(str(getattr(tc.function, "name", "?") or "?")),
+                        scrub(str(getattr(tc.function, "arguments", None) or "")),
                     )
                 tool_calls.append(ToolCall(
                     id=tc.id, name=tc.function.name, input=args,

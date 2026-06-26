@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "temporary utilities tracking log"
+consumers = ["project_manager", "superintendent"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Gather phase plan"
+instruction = "Read the project schedule and site logistics plan to identify which temporary power, water, and protection are required in each phase."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Inventory installs"
+instruction = "List current temporary utility installations on site and map each to the phase it serves and its required removal date."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Verify against contract"
+instruction = "Confirm each temporary utility against contract responsibility and any utility-company or code requirements before reporting status."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Flag phase gaps"
+instruction = "Flag any phase transition where temporary power, water, or protection will be missing, conflicting, or left in place past its need."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to PM"
+instruction = "Hand the temporary utilities log to the project manager for review and action on flagged gaps."
+gate = "review"

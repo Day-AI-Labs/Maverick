@@ -141,6 +141,31 @@ jobs:
         # reviewed for online/offline (hot-deploy) safety. Pure offline
         # SQL-shape check, no DB. See maverick/schema_migrations.py.
         run: python -m maverick.schema_migrations --ci
+      - name: Migration governance gate (released migrations are immutable)
+        # Fingerprints both backend ladders (SQLite + Postgres) and diffs them
+        # against the committed migrations.lock.json: editing/removing a
+        # released migration fails (it would diverge already-migrated DBs), a
+        # new destructive (DROP/RENAME) migration fails, and the two backends
+        # must stay at the same declared head. Add a migration -> regenerate the
+        # lock (`python -m maverick.migration_governance --regen`) so the change
+        # is reviewed. Pure offline check, no DB. See migration_governance.py.
+        run: python -m maverick.migration_governance --ci
+      - name: Control/data-plane e2e (goals provably run out-of-process)
+        # Drives the real QueueDispatcher -> SQLite JobQueue -> Worker ->
+        # shared WorldModel path end-to-end (no Redis/gRPC) and fails if the
+        # split doesn't hold: the control plane must only enqueue (goal stays
+        # pending), a separate worker must claim+execute, and the terminal
+        # status must flow back through the shared store. Agent execution is
+        # stubbed at the LLM boundary. See control_data_plane_e2e.py.
+        run: python -m maverick.control_data_plane_e2e --ci
+      - name: Control/data-plane soak (concurrent dispatch holds: zero-loss, exactly-once)
+        # Drives many goals through the real QueueDispatcher -> SQLite JobQueue
+        # -> a pool of concurrent Workers and fails if the substrate doesn't
+        # hold under contention: every goal must reach 'done' exactly once (a
+        # duplicate means JobQueue.claim's pending->running guard is broken =
+        # double work/spend), nothing lost, queue drained clean. No Redis/gRPC;
+        # execution stubbed at the LLM boundary. See control_data_plane_soak.py.
+        run: python -m maverick.control_data_plane_soak --ci
 
   audit:
     runs-on: ubuntu-latest
@@ -331,7 +356,9 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        # pgvector image = postgres:16 + the `vector` extension, so the same
+        # service also exercises the pgvector knowledge store (round-trip below).
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: maverick
           POSTGRES_PASSWORD: maverick
@@ -352,12 +379,17 @@ jobs:
         run: |
           set -x
           pip install -e ./packages/maverick-core
+          pip install -e ./packages/maverick-knowledge
           pip install 'psycopg[binary]>=3.1'
           pip install pytest pytest-asyncio
       - name: Test PostgresWorldModel
         env:
           MAVERICK_PG_DSN: postgres://maverick:maverick@localhost:5432/maverick_test
         run: pytest -vvs packages/maverick-core/tests/test_postgres_world.py
+      - name: Test pgvector knowledge store
+        env:
+          MAVERICK_PG_DSN: postgres://maverick:maverick@localhost:5432/maverick_test
+        run: pytest -vvs packages/maverick-knowledge/tests/test_knowledge.py -k PgVectorLive
 
   docker:
     runs-on: ubuntu-latest

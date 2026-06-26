@@ -394,6 +394,14 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Min reward gap for a preference pair (default 0.5).")
     ap.add_argument("--max-pairs", type=int, default=32,
                     help="Max pairs per task_family (default 32).")
+    ap.add_argument("--reward-model", default=None,
+                    help="Optional learned reward-model JSON (from "
+                         "`maverick reward-model train`). When set, preference "
+                         "pairs the model disagrees with are downweighted "
+                         "(label-noise mitigation).")
+    ap.add_argument("--disagree-penalty", type=float, default=0.5,
+                    help="Weight multiplier for pairs the reward model "
+                         "disagrees with (default 0.5).")
     return ap
 
 
@@ -410,6 +418,24 @@ def main(argv: list[str] | None = None) -> int:
         file=sys.stderr,
     )
     rows_by_id = {r.get("id"): r for r in rows}
+    # Optional: cross-check the verifier's labels with a learned reward model and
+    # downweight pairs the two signals don't corroborate. Off unless --reward-model.
+    if args.reward_model:
+        from .reward_model import PreferenceRewardModel, reweight_pairs_with_model
+        try:
+            rm_model = PreferenceRewardModel.load(args.reward_model)
+        except (OSError, ValueError) as e:
+            print(f"reward model load failed ({e}); proceeding unweighted",
+                  file=sys.stderr)
+        else:
+            rep = reweight_pairs_with_model(
+                pairs, rows_by_id, rm_model, disagree_penalty=args.disagree_penalty)
+            print(
+                f"reward-model cross-check: {rep['agreement_rate']:.0%} agreement "
+                f"with the verifier ({rep['agree']}/{rep['pairs']} pairs); "
+                "disagreements downweighted",
+                file=sys.stderr,
+            )
     return train(
         pairs,
         base_model=args.base_model,

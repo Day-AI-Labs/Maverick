@@ -9,3 +9,31 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["tmt"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "billing adjustment draft"
+consumers = ["billing_owner", "accounts_receivable"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull account"
+instruction = "Read the subscriber account and disputed charges and pull the applicable rate plan terms."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Query usage"
+instruction = "Query the usage and billing records for the period under review."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile charges"
+instruction = "Reconcile metered usage against the rate plan to confirm the correct charge and the variance."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft adjustment"
+instruction = "Draft the proposed billing adjustment with each figure cited and assumptions flagged."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Owner approval"
+instruction = "Route the adjustment draft to the billing owner to approve and post."
+gate = "approval"

@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "works-council & notice compliance memo"
+consumers = ["hr_business_partner", "employment_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame the action"
+instruction = "Determine the workforce measure at issue and whether it triggers a works council co-determination right."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull consultation basis"
+instruction = "Retrieve the company's works-agreement and prior consultation records and cite the relevant provisions."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Map obligations"
+instruction = "Lay out the required consultation steps, statutory notice periods, and documentation for the measure."
+tools = ["spreadsheet", "web_search"]
+[[workflow]]
+name = "Flag consultation risk"
+instruction = "Highlight where skipping or shortening works council consultation would void the measure and state assumptions plainly."
+[[workflow]]
+name = "Counsel review"
+instruction = "Route the German consultation and notice memo to employment counsel for sign-off."
+gate = "review"

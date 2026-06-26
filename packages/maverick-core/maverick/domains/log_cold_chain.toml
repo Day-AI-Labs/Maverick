@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "cold chain excursion case file"
+consumers = ["quality_manager", "logistics_coordinator"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull telemetry"
+instruction = "Read temperature telemetry for the shipment and the product's required storage range and stability specs."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Map excursions"
+instruction = "Plot the telemetry against spec limits and flag every interval that breached temperature thresholds with duration."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Assess impact"
+instruction = "Evaluate each excursion against product stability data to determine whether the load remains within acceptable limits."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build case"
+instruction = "Compile the excursion case file with timestamps, severity, and a hold-or-release recommendation citing sources."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Route disposition"
+instruction = "Present the excursion case file to the quality manager for the final disposition decision."
+gate = "review"

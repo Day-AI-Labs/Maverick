@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "matter budget-vs-actual report"
+consumers = ["billing_partner", "client_relationship_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Load budget"
+instruction = "Read the approved matter budget, phase-task codes, and any agreed fee caps for the matter."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull actuals"
+instruction = "Query recorded time, disbursements, and billed amounts to date for the matter."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute variance"
+instruction = "Compare actuals to budget by phase and project burn to compute remaining headroom and overrun risk."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag overruns"
+instruction = "Surface phases over budget and matters trending toward the fee cap, distinguishing scope creep from rate drift."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Partner review"
+instruction = "Route the budget-vs-actual report to the billing partner before any client-facing variance commentary is sent."
+gate = "review"

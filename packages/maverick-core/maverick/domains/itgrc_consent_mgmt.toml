@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Consent & cookie compliance review"
+consumers = ["privacy_officer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull consent records"
+instruction = "Read consent records by purpose and category, withdrawal logs, and cookie banner configuration."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check requirements"
+instruction = "Verify consent capture, granularity, and opt-out flows against GDPR, ePrivacy, and CCPA requirements."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag missing purposes, untracked withdrawals, non-essential cookies set before consent, and stale records."
+tools = ["read_file"]
+[[workflow]]
+name = "Draft review"
+instruction = "Draft the consent and cookie compliance review with remediation recommendations per gap."
+[[workflow]]
+name = "Route to privacy"
+instruction = "Send the compliance review to the privacy officer and DPO for human sign-off."
+gate = "review"

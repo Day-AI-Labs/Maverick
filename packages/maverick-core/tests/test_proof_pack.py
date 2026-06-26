@@ -145,3 +145,46 @@ def test_ci_gate_fails_on_hard_failure(monkeypatch, tmp_path):
                                      "hard": True, "data": {}}}
     monkeypatch.setattr(proof_pack, "build", lambda **kw: dict(ok))
     assert proof_pack.main(["--ci", "-o", str(tmp_path)]) == 0
+
+
+class TestVerify:
+    """Council H6: the proof manifest must have a shipped, fail-closed verifier."""
+
+    def _signed(self):
+        m = {"kind": "maverick-proof-pack", "version": 1, "issued_at": 1.0,
+             "sections": {}, "hard_sections": [], "passed": True}
+        return proof_pack.sign(m)
+
+    def test_roundtrip_verifies_with_trusted_anchor(self):
+        m = self._signed()
+        if not m.get("signature"):
+            pytest.skip("cryptography/audit key unavailable")
+        anchor = m["signature"]["pubkey"]
+        ok, reason = proof_pack.verify(m, trusted_pubkey_hex=anchor)
+        assert ok, reason
+
+    def test_embedded_key_without_anchor_fails_closed(self):
+        m = self._signed()
+        if not m.get("signature"):
+            pytest.skip("cryptography/audit key unavailable")
+        ok, reason = proof_pack.verify(m)
+        assert not ok and "trusted pubkey" in reason
+
+    def test_tamper_fails(self):
+        m = self._signed()
+        if not m.get("signature"):
+            pytest.skip("cryptography/audit key unavailable")
+        m["passed"] = False  # flip a field after signing
+        ok, reason = proof_pack.verify(m, trusted_pubkey_hex=m["signature"]["pubkey"])
+        assert not ok and "does not verify" in reason
+
+    def test_wrong_anchor_fails(self):
+        m = self._signed()
+        if not m.get("signature"):
+            pytest.skip("cryptography/audit key unavailable")
+        ok, reason = proof_pack.verify(m, trusted_pubkey_hex="ab" * 32)
+        assert not ok and "anchor" in reason
+
+    def test_unsigned_fails_closed(self):
+        ok, reason = proof_pack.verify({"kind": "x", "signature": None})
+        assert not ok and "unsigned" in reason

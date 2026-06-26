@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "terms comparison memo"
+consumers = ["contract_manager", "procurement_lead", "legal_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Load proposal"
+instruction = "Read the proposed supplier terms and identify the clauses that carry commercial or legal risk."
+tools = ["read_file"]
+[[workflow]]
+name = "Pull standards"
+instruction = "Retrieve the company standard terms and the prior agreement with this supplier for comparison."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Diff clauses"
+instruction = "Compare each proposed clause against the standard and prior baseline and flag every regression or deviation."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Rate severity"
+instruction = "Score each flagged deviation by risk and note the fallback position the company normally holds."
+[[workflow]]
+name = "Route memo"
+instruction = "Draft the terms comparison memo with citations and hand it to the contract manager for review."
+gate = "review"

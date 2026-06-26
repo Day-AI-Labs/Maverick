@@ -90,8 +90,8 @@ Treat the OS analogy rigorously (per AIOS, COLM 2025 — the only project with a
 | OS primitive | Agent analog | Lightwork today (file) | AIOS (canonical kernel) |
 |---|---|---|---|
 | Kernel / scheduler | dispatch & schedule agents | recursive swarm, spawn caps (64), parallel tool exec, cron (`swarm.py`,`scheduler.py`) | FIFO/RR only |
-| Processes / isolation | agents + sandboxing | **7 sandbox backends** (`sandbox/`) | ❌ no tool sandbox |
-| Syscalls / drivers | tools, providers, channels | 80+ tools, 10+ providers, MCP (stdio+**HTTP**), 10 channels | LLM syscall + adapters |
+| Processes / isolation | agents + sandboxing | **9 sandbox backends** (`sandbox/`) | ❌ no tool sandbox |
+| Syscalls / drivers | tools, providers, channels | 286 tool modules + 214 write-capable enterprise connectors + 37 read-only primary-source connectors, 10+ providers, MCP (stdio+**HTTP**), 10 channels | LLM syscall + adapters |
 | IPC | inter-agent comms | blackboard + spawn handoffs (in-proc) | ❌ none |
 | Memory mgmt | context=RAM, long-term=disk | compaction + world model + **cross-session memory** (`tools/memory.py`) | K-LRU evict |
 | Permissions / capabilities | per-agent access | tool ACLs + risk ceilings + consent (`safety/`) | coarse hashmap |

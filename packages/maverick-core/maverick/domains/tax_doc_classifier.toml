@@ -7,6 +7,34 @@ persona = """You are the Document Classification Agent for this business -- a ta
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "document classification log"
+consumers = ["tax_preparer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read uploads"
+instruction = "Open each uploaded client document without renaming or discarding the original."
+tools = ["read_file"]
+[[workflow]]
+name = "Classify type"
+instruction = "Identify each document as W-2, a 1099 variant, K-1, 1098, or prior-year return."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Match checklist"
+instruction = "Map each classified document to its line on the intake checklist and mark items still missing."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag unreadable"
+instruction = "Flag any unreadable or unidentifiable document for the preparer rather than guessing its type."
+[[workflow]]
+name = "Hand to preparer"
+instruction = "Route the classification log to the credentialed preparer for review."
+gate = "review"

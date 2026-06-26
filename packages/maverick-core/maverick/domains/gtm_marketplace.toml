@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "marketplace listing & alliance brief"
+consumers = ["partner_manager", "product_marketing"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull listing"
+instruction = "Read the current cloud-marketplace listing copy, pricing terms, and co-sell alliance agreements on file."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Scan policy"
+instruction = "Research the target marketplace's current listing, fee, and co-sell program requirements to confirm what the change must satisfy."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft changes"
+instruction = "Draft the proposed listing edits and alliance positioning grounded in the listing of record and program rules."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check terms"
+instruction = "Verify no draft language commits a price, discount, or co-sell obligation beyond what is already approved on file."
+[[workflow]]
+name = "Route to partner"
+instruction = "Hand the drafted listing change and alliance brief to the partner manager for approval before any publish."
+gate = "approval"

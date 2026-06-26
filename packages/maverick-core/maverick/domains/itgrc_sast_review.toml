@@ -21,3 +21,24 @@ deliverable = "SAST findings"
 consumers = ["security_analyst", "compliance_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Scope the diff"
+instruction = "Read the pull request or release diff and identify the changed files and components in scope for review."
+tools = ["read_file"]
+[[workflow]]
+name = "Run static analysis"
+instruction = "Run Semgrep, CodeQL, and Snyk scans across the changed code to surface candidate vulnerabilities."
+tools = ["snyk_read"]
+[[workflow]]
+name = "Classify findings"
+instruction = "Map each result to its OWASP and CWE class and confirm exploitability to eliminate false positives."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Triage severity"
+instruction = "Rank confirmed findings by severity and reachability and draft remediation guidance for each."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to engineer"
+instruction = "Hand the triaged findings to the engineer and security analyst for review and remediation."
+gate = "review"

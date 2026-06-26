@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "supplier risk watchlist & alert brief"
+consumers = ["procurement_manager", "risk_officer"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "List suppliers"
+instruction = "Pull the active supplier master with spend exposure and criticality tiers to define the monitoring scope."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Scan signals"
+instruction = "Search external sources for financial distress, sanctions, litigation, and disruption signals tied to each in-scope supplier."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Corroborate findings"
+instruction = "Cross-check each signal against the supplier's own contracts and records to confirm relevance and avoid false positives."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Score & rank"
+instruction = "Rate each supplier's risk severity and likelihood and rank the watchlist by exposure-weighted risk."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Escalate alerts"
+instruction = "Route the watchlist and cited alert brief to the risk officer for mitigation decisions."
+gate = "review"

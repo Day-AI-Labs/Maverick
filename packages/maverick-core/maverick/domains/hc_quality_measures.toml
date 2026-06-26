@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "quality measure gap report"
+consumers = ["clinician", "quality_director"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Read measure specs"
+instruction = "Read the active quality-measure specifications including numerator, denominator, and exclusion definitions."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Query population"
+instruction = "Query the population that meets each measure denominator for the reporting period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute performance"
+instruction = "Calculate numerator compliance and the open care gap for each measure into a tracking sheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "List open gaps"
+instruction = "Document the patients with open gaps and the specific action needed without making clinical decisions."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to clinicians"
+instruction = "Hand the gap report to the care team for clinical follow-up sign-off."
+gate = "review"

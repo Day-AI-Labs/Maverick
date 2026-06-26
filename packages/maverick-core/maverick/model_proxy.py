@@ -230,13 +230,18 @@ def handle(config: ProxyConfig, method: str, path: str,
         return 401, {"Content-Type": "text/plain"}, b"proxy authentication required"
     if not route_allowed(config, method, path):
         return 403, {"Content-Type": "text/plain"}, b"model proxy route not allowed"
+    from .secrets import scrub
     try:
         return forward(config, method, path, headers, body, client=client)
     except ValueError as e:  # blocked host / bad request
-        return 403, {"Content-Type": "text/plain"}, str(e).encode("utf-8")
+        return 403, {"Content-Type": "text/plain"}, scrub(str(e)).encode("utf-8")
     except Exception as e:  # pragma: no cover -- upstream/network error
-        log.warning("model proxy forward failed: %s", e)
-        return 502, {"Content-Type": "text/plain"}, f"proxy error: {e}".encode()
+        # The upstream exception (httpx URL/error detail) is returned to the
+        # proxy client and logged; scrub it so a credential-shaped string in a
+        # URL/error can't leak into either sink.
+        safe = scrub(str(e))
+        log.warning("model proxy forward failed: %s", safe)
+        return 502, {"Content-Type": "text/plain"}, f"proxy error: {safe}".encode()
 
 
 def serve(config: ProxyConfig) -> None:  # pragma: no cover -- socket server

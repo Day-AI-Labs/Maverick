@@ -12,7 +12,7 @@ import os
 import stat
 
 import pytest
-from maverick import skill_stats
+from maverick.skill import stats as skill_stats
 
 
 @pytest.fixture
@@ -142,3 +142,28 @@ def test_saved_file_is_chmod_600(stats_path):
     skill_stats.record_use(["a"], path=stats_path)
     mode = stat.S_IMODE(stats_path.stat().st_mode)
     assert mode == 0o600
+
+
+def test_record_is_concurrency_safe(stats_path):
+    """record_use/record_outcome do a load-modify-save hit per run from separate
+    processes; without serialization concurrent writers lose use/win counts."""
+    import threading
+
+    n, per = 16, 30
+
+    def worker():
+        for _ in range(per):
+            skill_stats.record_use(["alpha"], path=stats_path)
+            skill_stats.record_outcome(["alpha"], success=True, path=stats_path)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    st = skill_stats.get("alpha", path=stats_path)
+    assert st.uses == n * per
+    assert st.wins == n * per
+    # Atomic writes leave no temp droppings.
+    assert list(stats_path.parent.glob("*.tmp")) == []

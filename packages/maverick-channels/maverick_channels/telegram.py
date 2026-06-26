@@ -87,22 +87,39 @@ class TelegramChannel(Channel):
                         getattr(update.effective_user, "id", None),
                         getattr(update.effective_chat, "id", None))
             return
+        # Per the IncomingMessage contract, user_id is the REPLY/SEND TARGET and
+        # sender_id is the human identity. For a room-based adapter that means
+        # the CHAT id is the target (so a proactive channel.send(msg.user_id, ...)
+        # reaches the group, not the sender's private chat -- which the bot often
+        # can't even open), and the user id is the sender. Matches the Slack
+        # adapter. In a 1:1 chat the two ids coincide, so phone-companion mode is
+        # unchanged, and principal_id (sender_id or user_id) stays the human in
+        # both cases -- so auth/history/tenant keying is identical to before.
         # effective_user is None for channel posts / anonymous admins;
-        # _is_authorized denies those (they can't be attributed to an
-        # allowlisted sender), but guard here too rather than AttributeError.
+        # _is_authorized denies those, but guard here too rather than
+        # AttributeError.
         msg = IncomingMessage(
-            user_id=str(update.effective_user.id) if update.effective_user else "",
+            user_id=str(update.effective_chat.id) if update.effective_chat else "",
             text=update.message.text,
             channel="telegram",
             raw=update,
+            sender_id=str(update.effective_user.id) if update.effective_user else None,
             message_id=str(update.message.message_id),
         )
         try:
             reply = await self.dispatch_text(msg)
-        except Exception as e:  # pragma: no cover
+        except Exception:  # pragma: no cover
+            # Don't reflect the raw exception text to the remote user -- it can
+            # carry a credential/internal path. The detail is logged above;
+            # the user gets a generic message (matches slack/signal).
             log.exception("handler error")
-            reply = f"⚠ error: {e}"
-        await update.message.reply_text(reply)
+            reply = "⚠ An internal error occurred."
+        # An empty reply (action-only goal, or a Reply whose text dispatch
+        # dropped) must not be sent: Telegram rejects reply_text("") with a 400
+        # "message text is empty", which raises out of the handler. Guard with
+        # `if reply:`, matching bluesky/whatsapp/mastodon and the other channels.
+        if reply:
+            await update.message.reply_text(reply)
 
     async def start(self) -> None:
         self._app = Application.builder().token(self.token).build()

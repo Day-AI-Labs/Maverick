@@ -19,10 +19,13 @@ Hand Lightwork a goal. Its orchestrator decomposes it, spawns specialist sub-age
 - 🔒 **Self-host & air-gap.** Runs entirely in your environment — laptop, VPC, Kubernetes, or a disconnected network with no required data egress. No hyperscaler dependency, no telemetry.
 - 📈 **A workforce that provably improves.** Closed-loop learning — offline experience consolidation ("dreaming"), per-department memory, skill distillation with safe forgetting — every learned artifact audited, snapshotted, and rollback-able. `maverick hindsight` detects if learning ever regressed; `maverick proof` reports deliverables, cost avoided, ROI, and the improvement curve.
 - 🔬 **Causal learning, not vibes (opt-in).** A **Cognitive Data Engine** (`maverick flywheel`) triages production failures by their *causal* impact on real outcomes — stratified ATE with confidence intervals, placebo refutation, and a trustworthiness gate — then mines self-retiring **guardrails**, consolidates **habits**, and lets an **Operations Scientist** prove a better process in a world-model before spending a real experiment. The **Consequence Engine** (`maverick record-outcome`) grounds all of it in what *actually* happened — an invoice paid, a ticket reopened — so the workforce learns from reality, not a model grading its own work. All OFF by default.
-- 🏢 **1,118 prebuilt specialists across 26 business suites.** Customer support, finance, legal, HR, ops, GTM, marketing, procurement, data, security ops, tax preparation for CPA firms, and 10 industry verticals (healthcare, insurance, banking, gov contracting, …) — every pack a real agent with a least-privilege tool envelope and risk ceiling. Run `maverick domains-lint` and check for yourself: 0 errors, 0 warnings.
+- 🏢 **2,020 prebuilt specialists across 53 business suites.** Customer support, finance, legal, HR, ops, GTM, marketing, procurement, data, security ops, tax preparation for CPA firms, and 30+ industry verticals (healthcare, insurance, banking, gov contracting, maritime, mining, semiconductors, chemicals, water, renewables, …) — every pack a real agent with a least-privilege tool envelope and risk ceiling, an editable workflow playbook, a declared deliverable, a right-sized reasoning tier, and hard prohibited-use refusals (EU AI Act Art-5 for HR, safety-critical for the physical suites). Prove it: `maverick domains-lint` (0 errors, 0 warnings), `domains-audit` (0 drafting agents can reach a state-mutator), `domains-eval` (behavioral golden cases). The orchestrator finds the right one via query-based routing. Backed by a library of **514 reusable, validator-compliant skills** (`SKILL.md`) that any pack can activate by trigger, and an **agent factory** that equips every freshly-approved pack with the skills and tools its workflow needs *at birth* — never widening the pack's already-clamped envelope.
+- 🏭 **An agent factory that builds agents — and itself.** Describe a job, or just *demonstrate* it: `maverick learn-demo` watches a person do their work (observed actions + narration, secret-redacted at the door) and synthesizes the agent that does it through the same intake pipeline — identical envelope clamp and persona shield-scan, with a human review gate always appended. `maverick factory-learn` closes the loop onto generation quality, mining provisioning/approval gaps into proposer guidance that improves future pack generation. OFF by default; never widens any pack's envelope.
+- 📚 **Primary-source data grounding.** Every analyst pack is auto-granted (by suite) a set of 37 read-only, GET-only public-data connectors — SEC EDGAR, FRED, Treasury, World Bank, FDIC, Census, BLS, EIA, openFDA, NPPES, ClinicalTrials, USAspending, SAM.gov, CourtListener, Federal Register, GLEIF, OpenCorporates, NWS/NOAA weather, EPA, Climatiq, and more — so the workforce grounds its work in authoritative primary sources, not model recall. On by default (low-risk, deferred), with a kill switch (`[workforce] data_grounding = false` / `MAVERICK_WORKFORCE_DATA_GROUNDING=off`) and an installer wizard step. These sit alongside 214 write-capable long-tail enterprise REST/GraphQL connectors and dedicated modules (Salesforce, HubSpot, Stripe, ServiceNow, Snowflake, …).
+- 🧪 **Governance proven across the whole roster.** A roster-wide invariant test suite verifies six governance invariants across all 2,020 packs — tool-reachability (no drafting agent can reach a state-mutating tool), the autonomy dial (onboarding and high-risk actions are never autonomous), capability attenuation (a spawned child can never exceed its parent grant), compartment isolation (a quarantine seal never bleeds across suites), unstrippable hard refusals, and never-silently-exceeded budget caps — each fault-injected at 1,000,000 iterations with a non-vacuous control, plus hostile-argument fuzzing of every connector and tool.
 - 🧠 **Long-horizon multi-agent depth.** A recursive orchestrator spawns specialist sub-agents that work for hours under hard dollar / wall-clock / tool-call caps — frontier-agent depth, on the models *you* choose, with the governance and learning layers no coding-agent runtime ships.
 
-> **Proprietary software — not open source.** Lightwork is enterprise software; use, redistribution, and derivative works require a license. [Contact us](https://github.com/Day-AI-Labs/Lightwork) for evaluation or commercial access. See [`LICENSE`](./LICENSE) and [`TRADEMARK.md`](./TRADEMARK.md).
+> **Proprietary software — not open source.** Lightwork is enterprise software; use, redistribution, and derivative works require a license. [Contact us](https://github.com/Day-AI-Labs/Maverick) for evaluation or commercial access. See [`LICENSE`](./LICENSE) and [`TRADEMARK.md`](./TRADEMARK.md).
 
 ```bash
 pipx install 'maverick-agent[installer]'
@@ -42,9 +45,9 @@ Alpha, but **installable today**: all eight packages are on [PyPI](https://pypi.
 |---|---|---|
 | Install | **Native installer (`.exe` / `.dmg` / `.AppImage`)**, one-line bootstrap (`install.ps1` / `install.sh`), pipx, or from source | Code-signed bundles + auto-update |
 | GUI | Native installer app + local web dashboard (`maverick dashboard`) + chat at `/chat` | Native Tauri shell for the agent itself + iOS/Android |
-| Sandbox | Local subprocess, Docker, SSH, Podman, devcontainer, Firecracker, Kubernetes | Modal, Daytona |
+| Sandbox | Local subprocess, Docker, gVisor, Podman, devcontainer, Firecracker, Kubernetes, SSH, Modal | Daytona |
 | AI providers | Anthropic (full), OpenAI, OpenRouter, Ollama, Gemini, DeepSeek, Bedrock, Azure, xAI, Moonshot, TGI, vLLM (per-role routable) | Cohere |
-| Channels | All 12 wired — Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon, Voice; WhatsApp/SMS (need Twilio), iMessage (macOS-only) | Push notifications |
+| Channels | All 17 wired — Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon, Voice, IRC, Threads, RCS, Glasses; WhatsApp (Cloud API + Twilio)/SMS (need Twilio), iMessage (macOS-only) | Push notifications |
 | Safety | Shield wired at 3 chokepoints; agent-shield SDK if installed, else a built-in rule set | Agent-shield full ~115 patterns |
 | Distribution | PyPI (8 packages), GHCR image, PyInstaller binaries, **native installers on Releases** | Code signing; Homebrew tap |
 | Tests | 2000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
@@ -55,7 +58,7 @@ Alpha, but **installable today**: all eight packages are on [PyPI](https://pypi.
 
 ### Download the app — no terminal needed (easiest)
 
-Grab the installer for your OS from the **[latest release ›](https://github.com/Day-AI-Labs/Lightwork/releases/latest)**, double-click it, then press **Install Lightwork**:
+Grab the installer for your OS from the **[latest release ›](https://github.com/Day-AI-Labs/Maverick/releases/latest)**, double-click it, then press **Install Lightwork**:
 
 | OS | File on the release |
 |---|---|
@@ -127,6 +130,8 @@ maverick version                         # installed package versions
 | `maverick skills` | List installed + distilled skills |
 | `maverick skill install / remove / info` | Manage the skill marketplace |
 | `maverick template list / show` | Goal templates with `{{ var }}` substitution |
+| `maverick learn-demo FILE [--name --no-llm --source --industry --yes]` | Build an agent from a recorded demonstration (parse → induce → approve → save → provision) |
+| `maverick factory-learn [--min-support N] [--dry-run]` | Self-improving factory: mine provisioning/approval gaps into proposer guidance (opt-in `[self_improvement]`) |
 | `maverick budget` | Total + per-run cost history |
 | `maverick flywheel` | Cognitive Data Engine: causal failure triage → guardrails → habits (opt-in `[data_engine]`) |
 | `maverick record-outcome GOAL EP VALUE` | Feed a real downstream outcome to a past episode (Consequence Engine) |
@@ -138,13 +143,14 @@ maverick version                         # installed package versions
 ```
 packages/
   maverick-core/       Python agent kernel: recursive swarm, persistent world
-                       model (SQLite + FTS5, or Postgres; schema v20), 12 LLM providers, 7
+                       model (SQLite + FTS5, or Postgres; schema v23), 12 LLM providers, 9
                        sandboxes, MCP client, skills, templates, persona,
                        background runner, budget tracking
   maverick-shield/     Agent Shield integration + built-in fallback rule set
-  maverick-channels/   12 channel adapters: Telegram, Discord, Slack, Signal,
-                       Email, Matrix, Bluesky, Mastodon, Voice, WhatsApp, SMS,
-                       iMessage (WhatsApp/SMS need Twilio; iMessage is macOS-only)
+  maverick-channels/   17 channel adapters: Telegram, Discord, Slack, Signal,
+                       Email, Matrix, Bluesky, Mastodon, Voice, WhatsApp, WhatsApp
+                       Cloud, SMS, iMessage, IRC, Threads, RCS, Glasses
+                       (WhatsApp/SMS need Twilio; iMessage is macOS-only)
   maverick-dashboard/  Local FastAPI web UI + REST API at /api/v1 + OpenAPI
                        docs at /docs. Live progress streaming via short-poll.
   maverick-mcp/        MCP server (stdio JSON-RPC) -- exposes Lightwork to Claude
@@ -208,7 +214,7 @@ See [docs/github-action.md](./docs/github-action.md).
 | **Wedge** | Long-horizon depth + true multi-agent coordination |
 | **Safety** | First-class. Every input, tool call, and output passes through Agent Shield. |
 | **Control** | You pick the models. Per-role. Multi-provider. |
-| **Deploy** | Desktop / Docker / VPS / Phone (12 channels) |
+| **Deploy** | Desktop / Docker / VPS / Phone (17 channels) |
 | **Privacy** | All detection runs locally. Your data never leaves your machine unless you choose a cloud LLM. |
 
 ## License

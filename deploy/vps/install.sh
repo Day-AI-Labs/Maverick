@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Maverick VPS bootstrap script.
 #
-# Usage:
+# Usage (defaults to the latest published release for a reproducible install):
 #   curl -sSL https://raw.githubusercontent.com/Day-AI-Labs/Maverick/main/deploy/vps/install.sh | sudo bash
 #
-# Or pin to a specific tag:
+# Or pin to a specific tag / full commit SHA:
 #   curl -sSL ...install.sh | sudo MAVERICK_VERSION=v0.1.0 bash
 #
 # What it does:
@@ -17,7 +17,18 @@
 
 set -euo pipefail
 
-MAVERICK_VERSION="${MAVERICK_VERSION:-main}"
+# Default to the latest *published release* for a reproducible, reviewed install
+# rather than the mutable `main` branch (supply-chain hardening). An explicit
+# MAVERICK_VERSION (tag or full SHA) always wins; if no release can be resolved
+# (offline, or none published yet) we fall back to `main` with a loud warning.
+resolve_default_version() {
+  local tag
+  tag="$(curl -fsSL https://api.github.com/repos/Day-AI-Labs/Maverick/releases/latest 2>/dev/null \
+         | grep -m1 '"tag_name"' \
+         | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)"
+  if [[ -n "${tag}" ]]; then printf '%s' "${tag}"; else printf 'main'; fi
+}
+MAVERICK_VERSION="${MAVERICK_VERSION:-$(resolve_default_version)}"
 
 # Everything user-facing (the pipx venv, the wizard, the systemd service)
 # runs as one non-root account with one consistent HOME, so the `maverick`

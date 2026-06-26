@@ -47,19 +47,20 @@ KNOWN_SECTIONS = frozenset({
     "emergent_codec", "emergent_protocol",
     "email", "embedded", "encryption", "energy", "enterprise", "erp",
     "experience", "features", "federation", "finance", "github",
-    "governance", "grpc", "grpc_dispatch", "intake", "kms", "knowledge",
+    "governance", "governed_connectors", "grpc", "grpc_dispatch", "intake",
+    "kms", "knowledge",
     "langchain", "latency", "limits", "local_first", "local_runtime",
     "logging", "lsp", "mcp_registries", "mcp_servers", "memory",
-    "model_proxy", "models", "notifications", "observability", "obsidian",
-    "operations_scientist",
+    "model_proxy", "models", "notifications", "oauth", "observability",
+    "obsidian", "operations_scientist",
     "perf", "persona", "planning", "plugins", "privacy",
     "provider_failover", "providers", "queue", "quotas", "reflexion",
     "retention", "role_assignments", "roles", "routing", "safety",
     "sandbox", "screening", "search", "security", "self_learning",
     "session_providers", "sharing", "shield", "skill_synthesis", "skills",
     "system", "telemetry", "template_registries", "tenancy", "thinking",
-    "tools", "tui", "verification", "voice", "webhooks", "workspace",
-    "world_model",
+    "tools", "tui", "verification", "voice", "webhooks", "workforce",
+    "workspace", "world_model",
 })
 
 
@@ -127,7 +128,7 @@ REWRITES: list[tuple[str, str]] = []
 
 def _apply_rewrites(cfg: dict) -> list[Finding]:
     findings = []
-    for old, new in REWRITES:  # pragma: no cover -- table is empty today
+    for old, new in REWRITES:
         old_parts, new_parts = old.split("."), new.split(".")
         node = cfg
         for p in old_parts[:-1]:

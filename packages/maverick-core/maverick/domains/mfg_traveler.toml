@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "traveler completeness & exception memo"
+consumers = ["production_planner", "quality_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull work order"
+instruction = "Query the work order's routing steps, current operation, and required traveler fields."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load routing spec"
+instruction = "Retrieve the controlled routing and traveler template for this part to confirm required steps and signoffs."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Verify completeness"
+instruction = "Check each completed routing step for required entries, operator signoffs, and inspection stamps against the routing spec."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag missing steps"
+instruction = "Flag skipped operations, missing signoffs, or quality holds so no step advances without its interlock cleared."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route to planner"
+instruction = "Summarize traveler exceptions and route the work order to the production planner for disposition."
+gate = "review"

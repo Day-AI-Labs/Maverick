@@ -235,3 +235,10 @@ def test_content_hash_covers_metadata_native_and_unrecorded_files(tmp_path, monk
 
     (pkg / "generated.py").write_text("def factory(): return 'owned'\n", encoding="utf-8")
     assert pl._dist_content_hash("acme-plugin") != original
+
+
+def test_write_lock_leaves_no_temp_residue(tmp_path):
+    lock = tmp_path / "plugins.lock.json"
+    pl.write_lock(lock)
+    assert lock.exists()
+    assert list(tmp_path.glob("*.tmp")) == []  # unique temp + replace, no leftover

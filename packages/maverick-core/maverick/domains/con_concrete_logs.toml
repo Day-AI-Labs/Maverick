@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "concrete pour and break log"
+consumers = ["project_manager", "quality_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture pour"
+instruction = "Read pour tickets and field notes to record date, location, mix design, and quantity for each placement."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Log cylinders"
+instruction = "Record the cylinders cast for each pour with their set IDs tied to the pour location."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Enter breaks"
+instruction = "Enter lab break results at each test age and tie them back to the originating pour and cylinder set."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Flag low breaks"
+instruction = "Compare break strengths against the specified design strength and flag any pour failing or trending below acceptance."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "QC review"
+instruction = "Route flagged low or missing breaks to the quality manager for disposition before reporting acceptance."
+gate = "review"

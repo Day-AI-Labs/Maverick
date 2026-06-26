@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "review response drafts"
+consumers = ["brand_manager", "cx_lead"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Gather reviews"
+instruction = "Pull the queue of unanswered product reviews with rating, product, and verbatim text."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load brand voice"
+instruction = "Retrieve the brand tone guide and approved response templates from company documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Verify claims"
+instruction = "Confirm any product facts referenced in the review against the catalog before responding."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Draft responses"
+instruction = "Write a brand-appropriate reply per review, never disclosing customer data or making unapproved offers."
+[[workflow]]
+name = "Route for review"
+instruction = "Send the drafted responses to the brand manager to sign off before publishing."
+gate = "review"

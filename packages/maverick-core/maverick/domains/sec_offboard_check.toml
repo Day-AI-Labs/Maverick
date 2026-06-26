@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "offboarding access residue report"
+consumers = ["security_lead", "it_admin", "hr_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Get leaver list"
+instruction = "Pull recently departed users and their termination dates from HR records and the offboarding SLA from policy."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Enumerate access"
+instruction = "Query each system, directory, and SaaS app for any accounts, tokens, or group memberships still tied to each leaver."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Flag residue"
+instruction = "Mark every access that survived past the SLA window and note shared-credential or service-account exposure that simple deprovisioning misses."
+[[workflow]]
+name = "Document evidence"
+instruction = "Record the source system and timestamp proving each residual access for the audit trail."
+tools = ["read_file"]
+[[workflow]]
+name = "Escalate residue"
+instruction = "Route the residue report to the security lead so the on-call human executes the outstanding revocations."
+gate = "review"

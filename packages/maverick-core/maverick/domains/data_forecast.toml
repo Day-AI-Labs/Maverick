@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "demand & revenue forecast"
+consumers = ["finance_planner", "operations_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull actuals"
+instruction = "Query historical demand and revenue actuals and read the prior forecast for the same horizon."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Score prior"
+instruction = "Compute error against the last forecast such as MAPE and bias to learn what to correct."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build forecast"
+instruction = "Generate the new forecast with a stated method and prediction intervals, labeling every series with its definition and freshness."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Reconcile drivers"
+instruction = "Cross-check the projection against known drivers and documented assumptions and flag any unexplained swing."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Planning review"
+instruction = "Hand the forecast with methods, intervals, and error history to the finance planner for sign-off."
+gate = "review"

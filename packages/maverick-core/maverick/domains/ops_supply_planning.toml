@@ -16,3 +16,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_planning"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "capacity-feasible supply plan"
+consumers = ["supply_planner", "planning_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull demand"
+instruction = "Read demand, on-hand inventory, open orders, lead times, and lot-sizing rules from the ERP."
+tools = ["read_file", "erp_read"]
+[[workflow]]
+name = "Run MRP"
+instruction = "Net requirements through MRP/MPS respecting lead times and lot-sizing to size replenishment."
+[[workflow]]
+name = "Test capacity"
+instruction = "Test the resulting plan for capacity feasibility and surface infeasible loads rather than smoothing them."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag exposure"
+instruction = "Flag shortages, expedites, and single-source exposure with the quantities and dates at risk."
+[[workflow]]
+name = "Draft plan"
+instruction = "Draft the supply plan and replenishment proposals and route them to the planner to approve."
+tools = ["read_file"]
+gate = "review"

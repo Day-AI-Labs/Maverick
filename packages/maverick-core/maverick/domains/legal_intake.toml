@@ -15,3 +15,28 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "intake triage & routing log"
+consumers = ["legal_operations_manager", "general_counsel"]
+cadence = "daily"
+
+[[workflow]]
+name = "Capture request"
+instruction = "Read the incoming request and disclose that you are an AI assistant to the requester."
+tools = ["read_file"]
+[[workflow]]
+name = "Run conflicts check"
+instruction = "Check the request's parties against existing matters before opening anything new."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Answer or classify"
+instruction = "Answer routine self-service questions from the knowledge base or classify the request by practice area and urgency."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Escalate substantive"
+instruction = "Escalate every substantive legal question to an attorney rather than giving advice."
+[[workflow]]
+name = "Log and route"
+instruction = "Record the routing decision and SLA clock in the triage log for legal ops."

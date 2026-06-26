@@ -175,3 +175,27 @@ def test_fleets_page_has_run_form(monkeypatch, tmp_path):
     text = _client().get("/fleets").text
     assert 'class="fleet-run-form"' in text
     assert "/api/v1/fleets/" in text  # the dispatch target
+
+
+def test_deployed_department_agent_runs_under_domain_capability(monkeypatch, tmp_path):
+    """A department-deployed agent carries its specialist pack and runs under that
+    pack's capability envelope (least privilege per domain), not just its role."""
+    _isolate(monkeypatch, tmp_path)
+    calls = _stub_runner(monkeypatch)
+    c = _client()
+
+    # Self-host fail-open entitlement: deploy the Sales & GTM department.
+    r = c.post("/api/v1/departments/sales_gtm/deploy")
+    assert r.status_code == 201, r.text
+    fleet = r.json()["fleet"]
+    agent = next(a for a in fleet["agents"] if a["name"] == "gtm_demand_gen")
+    assert agent["domain"] == "gtm_demand_gen"  # bound to its pack
+
+    rr = c.post("/api/v1/fleets/dept-sales_gtm/run",
+                json={"agent": "gtm_demand_gen", "prompt": "plan a campaign"})
+    assert rr.status_code == 201, rr.text
+
+    # The dispatched capability enforces the pack's hard denials (shell/write).
+    cap = calls[-1]["kwargs"]["capability"]
+    assert "shell" in cap.deny_tools
+    assert "write_file" in cap.deny_tools

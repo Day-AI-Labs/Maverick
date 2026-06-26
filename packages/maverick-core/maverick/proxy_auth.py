@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import os
 
+from ._envparse import coerce_bool, is_truthy
+
 _DEFAULT_HEADER = "X-Forwarded-User"
 # The proxy normally shares the host, so loopback is the safe default peer.
 _LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
-_TRUE = {"1", "true", "yes", "on"}
 
 
 def _section() -> dict:
@@ -36,11 +37,8 @@ def proxy_auth_enabled() -> bool:
     """Opt-in, off by default: ``MAVERICK_PROXY_AUTH`` or ``[auth.proxy] enabled``."""
     env = os.environ.get("MAVERICK_PROXY_AUTH", "").strip().lower()
     if env:
-        return env in _TRUE
-    val = _section().get("enabled")
-    if isinstance(val, str):
-        return val.strip().lower() in _TRUE
-    return bool(val)
+        return is_truthy(env)
+    return coerce_bool(_section().get("enabled"))
 
 
 def proxy_header_name() -> str:
@@ -52,19 +50,45 @@ def proxy_header_name() -> str:
     return name or _DEFAULT_HEADER
 
 
+def _trust_loopback_fallback() -> bool:
+    """Whether to trust loopback peers when ``trusted_proxies`` is unset.
+
+    The same-host proxy is the documented default, so loopback stays trusted in
+    the standard single-host deployment. But trusting loopback by IP alone can't
+    tell the real proxy from ANY other co-located loopback process -- a sidecar,
+    another container in the pod's network namespace, or an SSRF pivot to
+    127.0.0.1 -- each of which could then spoof ``X-Forwarded-User: admin``.
+    So enterprise mode requires an explicit ``trusted_proxies`` pin and does NOT
+    fall back to loopback; operators can also force the fallback off with
+    ``[auth.proxy] trust_loopback = false``.
+    """
+    val = _section().get("trust_loopback")
+    if val is not None:
+        return coerce_bool(val)
+    try:
+        from .enterprise import enterprise_enabled
+        if enterprise_enabled():
+            return False
+    except Exception:  # pragma: no cover -- never weaken posture on a lookup error
+        pass
+    return True
+
+
 def proxy_trusts(client_host: str | None) -> bool:
     """True iff a request from ``client_host`` may carry the identity header.
 
-    Defaults to loopback only. Add remote proxy peer IPs via
-    ``[auth.proxy] trusted_proxies = ["10.0.0.5", ...]``. An empty/unknown peer
-    is never trusted (fail-closed): an unverifiable source can't assert identity.
+    A configured ``[auth.proxy] trusted_proxies = ["10.0.0.5", ...]`` is the
+    secure form (the exact proxy peer is pinned). With no pin, loopback is
+    trusted only when the loopback fallback is allowed (see
+    :func:`_trust_loopback_fallback` -- on by default, OFF under enterprise mode
+    or ``trust_loopback = false``). An empty/unknown peer is never trusted.
     """
     if not client_host:
         return False
     trusted = _section().get("trusted_proxies")
     if isinstance(trusted, (list, tuple)) and trusted:
         return client_host in {str(t).strip() for t in trusted}
-    return client_host in _LOOPBACK
+    return _trust_loopback_fallback() and client_host in _LOOPBACK
 
 
 def principal_from_proxy(value: str):

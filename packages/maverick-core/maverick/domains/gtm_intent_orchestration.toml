@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "prioritized account wave & play plan"
+consumers = ["sdr_manager", "field_marketing"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Gather signals"
+instruction = "Read first-party engagement signals and pull third-party intent feeds to assemble the candidate account set."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Check provenance"
+instruction = "Verify lead-source provenance and lawful basis for each account and drop any intent data lacking a lawful basis."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Fuse and rank"
+instruction = "Fuse intent and first-party signals into a single score and rank accounts into prioritized waves."
+[[workflow]]
+name = "Recommend plays"
+instruction = "Match each wave to a recommended play, screening out opted-out and suppressed accounts before inclusion."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Gate wave launch"
+instruction = "Submit the wave and play plan for the SDR manager to approve before any outreach is pushed live."
+gate = "approval"

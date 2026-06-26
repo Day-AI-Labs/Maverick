@@ -12,7 +12,36 @@ tolerance. Research and analysis, not legal advice."""
 
 allow_tools = ["read_file", "web_search", "knowledge_search", "ironclad_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal", "legal_playbook"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "negotiation support package"
+consumers = ["legal_counsel", "contracts_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read redline"
+instruction = "Pull the current contract draft and counterparty redlines from the CLM system."
+tools = ["ironclad_read", "read_file"]
+[[workflow]]
+name = "Map history"
+instruction = "Reconstruct the negotiation history and the open positions on each contested term."
+tools = ["ironclad_read"]
+[[workflow]]
+name = "Analyze counterparty"
+instruction = "Analyze the counterparty's positions and identify where terms exceed the company's risk tolerance."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Propose fallbacks"
+instruction = "Draft fallback positions citing the playbook tier for each proposed term."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Attorney sign-off"
+instruction = "Route the fallback recommendations and risk flags to the attorney who negotiates and decides."
+gate = "review"

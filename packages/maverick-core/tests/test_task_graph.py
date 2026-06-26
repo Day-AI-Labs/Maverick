@@ -112,3 +112,114 @@ def test_tool_critical_op(tmp_path, monkeypatch):
     t.fn({"op": "add", "task": "b", "deps": ["a"]})
     out = t.fn({"op": "critical"})
     assert "critical path" in out and "a -> b" in out
+
+
+# ---- concurrency: atomic save + lock-guarded load-modify-save ----
+
+def test_save_is_atomic_under_concurrent_reads(tmp_path):
+    """A bare write_text truncates in place, so a reader mid-write sees a
+    half-written file and json.load raises -> the whole DAG is lost. With the
+    atomic temp+replace, a concurrent reader only ever sees a whole file."""
+    import threading
+
+    path = tmp_path / "graph.json"
+    g = _g()
+    g.save(path)  # seed a valid file
+    errors: list[Exception] = []
+    stop = threading.Event()
+
+    def writer():
+        for i in range(200):
+            gg = TaskGraph()
+            for j in range(i + 1):
+                gg.add_task(f"t{j}", "x" * 50)
+            gg.save(path)
+
+    def reader():
+        while not stop.is_set():
+            try:
+                TaskGraph.load(path)  # must never see a torn file
+            except (ValueError, OSError) as e:  # json torn read / mid-replace
+                errors.append(e)
+
+    rt = threading.Thread(target=reader)
+    rt.start()
+    wt = threading.Thread(target=writer)
+    wt.start()
+    wt.join()
+    stop.set()
+    rt.join()
+    assert not errors, f"torn read(s): {errors[:3]}"
+
+
+def test_tool_add_is_concurrency_safe(tmp_path, monkeypatch):
+    """Concurrent add ops do a load-modify-save; without the cross-process lock
+    the second save clobbers the first's task -> tasks silently vanish. Each of
+    N writers adds a distinct task id; all N must survive."""
+    import threading
+
+    import maverick.task_graph as tg
+    monkeypatch.setattr(tg, "_STORE", tmp_path)
+    t = tg.task_graph()
+
+    n = 40
+
+    def add(i: int):
+        t.fn({"op": "add", "task": f"task{i:03d}", "title": "t"})
+
+    threads = [threading.Thread(target=add, args=(i,)) for i in range(n)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+
+    g = TaskGraph.load(tmp_path / "default.json")
+    assert len(g.tasks) == n, f"lost updates: only {len(g.tasks)} of {n} survived"
+
+
+# ---- DoS: deep chains must not blow the Python stack ----
+
+def test_deep_chain_does_not_recurse_or_crash():
+    """has_cycle/topo_order use an explicit stack, not recursion. A linear
+    chain far deeper than sys.getrecursionlimit() (an agent can build it via
+    repeated `add` ops on the persisted, tool-callable graph) must not raise
+    RecursionError."""
+    g = TaskGraph()
+    n = 2500  # comfortably past the default recursion limit (~1000)
+    for i in range(n):
+        g.add_task(f"t{i}", deps=[f"t{i + 1}"] if i + 1 < n else [])
+    assert g.has_cycle() is False
+    order = g.topo_order()
+    assert len(order) == n
+    # A deep cycle is still detected (no false negative from the rewrite).
+    g.add_task(f"t{n - 1}", deps=["t0"])
+    assert g.has_cycle() is True
+
+
+def test_node_count_is_capped():
+    """The persisted, agent-built graph is bounded so it can't grow without
+    limit (O(V^2) topo_order + on-disk bloat)."""
+    import maverick.task_graph as tg
+    g = TaskGraph()
+    for i in range(tg._MAX_TASKS):
+        g.add_task(f"t{i}")
+    assert len(g.tasks) == tg._MAX_TASKS
+    with pytest.raises(ValueError, match="full"):
+        g.add_task("one-too-many")
+    # Updating an EXISTING task at the cap still works (not a new node).
+    g.add_task("t0", title="updated")
+    assert g.tasks["t0"]["title"] == "updated"
+
+
+def test_tool_op_survives_a_deep_chain(tmp_path, monkeypatch):
+    """The `order` op over a deep persisted graph returns a result instead of
+    crashing the tool call with an uncaught RecursionError."""
+    import maverick.task_graph as tg
+    monkeypatch.setattr(tg, "_STORE", tmp_path)
+    t = tg.task_graph()
+    n = 1500  # past the recursion limit
+    for i in range(n):
+        t.fn({"op": "add", "task": f"t{i}",
+              "deps": [f"t{i + 1}"] if i + 1 < n else []})
+    out = t.fn({"op": "order"})
+    assert "t0" in out and "ERROR" not in out

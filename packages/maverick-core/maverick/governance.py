@@ -217,10 +217,25 @@ class Policy:
 
 
 def _threshold_for(table: dict[str, float], action: str) -> float | None:
-    """The amount threshold for ``action`` (exact key, else the ``"*"`` default)."""
-    if action in table:
-        return table[action]
-    return table.get("*")
+    """The amount threshold for ``action``: the STRICTER (lower) of its exact
+    entry and the ``"*"`` catch-all.
+
+    The gate is ``amount > threshold``, so a LOWER threshold is stricter (more
+    amounts gated). A ``"*"`` entry is therefore a floor: a per-action key can
+    only TIGHTEN it, never loosen it. Without this, an org-wide
+    ``require_human_above = {"*": 5000}`` (or a ``deny_above`` ceiling) was
+    silently defeated for any action that carried its own higher threshold --
+    e.g. ``{"*": 5000, "wire_transfer": 50000}`` let a $20k wire auto-approve.
+    This also makes the composed/union case correct: ``union_policies`` keeps
+    both keys, and the floor is applied here at evaluation time (strictest-wins,
+    matching the documented "lowest threshold wins" contract)."""
+    exact = table.get(action)
+    star = table.get("*")
+    if exact is None:
+        return star
+    if star is None:
+        return exact
+    return min(exact, star)
 
 
 def _money(amount: float | None, currency: str) -> str:

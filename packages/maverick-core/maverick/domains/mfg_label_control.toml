@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "label & packaging conformance check"
+consumers = ["quality_manager", "shipping_supervisor"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Get item spec"
+instruction = "Read the item, destination, and customer packaging spec with required label and packaging revisions via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull label rev"
+instruction = "Query the label and packaging revisions assigned to this item and lot."
+tools = ["sql_query"]
+[[workflow]]
+name = "Verify match"
+instruction = "Compare the assigned label and packaging revisions against item and destination requirements field by field."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag mismatches"
+instruction = "Flag any wrong-revision, missing, or destination-incorrect label or packaging element before release."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Quality review"
+instruction = "Route the conformance check to the quality manager for sign-off before labels are printed or applied."
+gate = "review"

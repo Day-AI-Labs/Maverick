@@ -18,3 +18,30 @@ deny_tools = ["shell", "write_file", "home_assistant", "computer"]
 
 knowledge_sources = ["ops_safety", "security_runbooks"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "OT segmentation & hardening findings"
+consumers = ["ot_engineer", "ciso"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope assets"
+instruction = "Read historian and SCADA/DCS inventory and configuration with least privilege to scope the assessment."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map Purdue zones"
+instruction = "Map assets to Purdue levels and document IT-OT segmentation and conduit boundaries."
+tools = ["read_file"]
+[[workflow]]
+name = "Assess against standards"
+instruction = "Evaluate configuration and telemetry against IEC 62443 and NIST 800-82 to identify exposures."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Guard safety functions"
+instruction = "Confirm no recommendation writes to, reconfigures, or disables a safety instrumented function."
+[[workflow]]
+name = "Route to OT engineers"
+instruction = "Hand the prioritized segmentation and hardening findings to human OT engineers for action."
+gate = "review"

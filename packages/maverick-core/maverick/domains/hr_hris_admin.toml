@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "HRIS configuration change package"
+consumers = ["hris_analyst", "hr_systems_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather requirement"
+instruction = "Read the change request and confirm the target system, business process, and security scope affected."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Inspect config"
+instruction = "Read current Workday or SuccessFactors configuration and tenant data to baseline the existing state."
+tools = ["bamboohr_read", "rippling_read"]
+[[workflow]]
+name = "Design change"
+instruction = "Draft the business-process, security, or business-rule change against vendor best practices and note rollback steps."
+tools = ["web_search"]
+[[workflow]]
+name = "Assess blast radius"
+instruction = "Identify downstream integrations, EIB loads, and role-based permissions the change could break."
+[[workflow]]
+name = "Hand to admin"
+instruction = "Route the documented configuration package to a human systems admin to apply in the tenant."
+gate = "review"

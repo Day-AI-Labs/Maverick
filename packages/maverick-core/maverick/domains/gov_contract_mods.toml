@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "modification, option & funding action log"
+consumers = ["contracts_manager", "program_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull mods & options"
+instruction = "Read every modification, option period, and funding document on each awarded contract and capture its effect on scope, period, and ceiling."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile funding"
+instruction = "Reconcile cumulative obligated and funded amounts against the contract value and incremental funding limits."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Track option windows"
+instruction = "Track each option exercise and notice-of-intent deadline and the funding action it depends on."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Flag exposures"
+instruction = "Flag any funding shortfall, expiring option, or unfunded mod that risks a work stoppage or limitation-of-funds breach."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to CM"
+instruction = "Hand the modification and funding action log to the contracts manager for review."
+gate = "review"

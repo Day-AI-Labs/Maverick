@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "DLP policy & coverage assessment"
+consumers = ["security_analyst", "ciso"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory channels"
+instruction = "Read existing DLP policy, channel coverage, and data-classification scheme across email, endpoint, cloud, and SaaS."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map sensitive data"
+instruction = "Identify the sensitive data types and exfiltration paths each channel must protect against and where coverage gaps exist."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Benchmark controls"
+instruction = "Check current Purview/Forcepoint/Netskope rule patterns against vendor guidance and CASB/SSE best practice."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Draft policy & gaps"
+instruction = "Draft tightened DLP rules and an insider-risk gap list, flagging false-positive-prone patterns that would block legitimate work."
+[[workflow]]
+name = "Route to owner"
+instruction = "Route the assessment and recommended rule changes to the security owner for review since the agent never enables or disables a control."
+gate = "review"

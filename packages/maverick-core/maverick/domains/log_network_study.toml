@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "lane consolidation opportunity study"
+consumers = ["network_strategy_lead", "logistics_director"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull lane data"
+instruction = "Query shipment volumes, costs, and frequencies by origin-destination lane for the study period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Profile lanes"
+instruction = "Rank lanes by spend and volume and compute cost per unit and per mile in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Validate context"
+instruction = "Cross-check lane patterns against network design notes and service requirements via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Model consolidation"
+instruction = "Identify candidate lanes to consolidate or reroute and estimate the savings and service impact."
+[[workflow]]
+name = "Route study"
+instruction = "Send the lane consolidation opportunity study to the network strategy lead for review."
+gate = "review"

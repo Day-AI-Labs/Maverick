@@ -243,7 +243,7 @@ def _rank_embed(need: str, entries: list, max_n: int) -> list[Candidate] | None:
     empty if nothing clears ``_EMBED_MIN_SCORE``).
     """
     try:
-        from .skill_embeddings import _cosine, _have_fastembed, embed
+        from .skill.embeddings import _cosine, _have_fastembed, embed
 
         if not _have_fastembed() or not entries:
             return None
@@ -370,9 +370,15 @@ def add_mcp_server(
     body = ("" if existing.endswith("\n") or not existing else "\n") + \
         "\n" + "\n".join(block) + "\n"
 
+    # Atomic write (temp + os.replace), NOT an append to the live config: a
+    # crash / power-loss / ENOSPC mid-write used to leave a truncated TOML block
+    # at EOF, making the WHOLE config unparseable -- the next load_config() would
+    # raise and the deployment would fail to start. We already hold the full
+    # file in `existing`; render the new content in memory and swap it in atomically.
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(body)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(existing + body, encoding="utf-8")
+    os.replace(tmp, path)
     record(need or name, "mcp", name, source=command)
     return spec
 

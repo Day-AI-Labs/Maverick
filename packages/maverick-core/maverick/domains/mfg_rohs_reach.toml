@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "BOM substance compliance status matrix"
+consumers = ["compliance_manager", "product_engineer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull BOM"
+instruction = "Read the active BOM and its revision and list every part requiring a RoHS/REACH declaration."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Find declarations"
+instruction = "Retrieve each part's supplier compliance declaration and SVHC data from the company knowledge base."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Map substances"
+instruction = "Match each declaration to its part and substance thresholds and tabulate compliant, exempt, and non-compliant status."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag parts with missing, expired, or above-threshold declarations against the current BOM revision."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Submit matrix"
+instruction = "Hand the compliance status matrix with flagged gaps to the compliance manager for sign-off."
+gate = "review"

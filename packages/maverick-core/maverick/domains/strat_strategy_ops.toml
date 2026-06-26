@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "OKR and KPI cascade review"
+consumers = ["executive_team", "strategy_lead"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull strategy"
+instruction = "Read the approved strategy and current OKRs to confirm the objectives the cascade must operationalize."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pull KPI actuals"
+instruction = "Pull current strategic KPI actuals and OKR progress from the BI dashboards."
+tools = ["tableau_read", "looker_read"]
+[[workflow]]
+name = "Cascade and score"
+instruction = "Map objectives to measurable key results down the org and score progress against targets."
+[[workflow]]
+name = "Flag misalignment"
+instruction = "Flag KPIs that drift from strategic intent or double-count, separating real progress from vanity metrics."
+[[workflow]]
+name = "Brief leadership"
+instruction = "Route the OKR and KPI cascade review to executives and the strategy lead for sign-off."
+gate = "review"

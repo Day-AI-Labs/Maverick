@@ -212,6 +212,50 @@ def test_decide_approval_rejects_bad_status(world):
         world.decide_approval(aid, "maybe")
 
 
+def test_child_writes_are_tenant_scoped(world):
+    """Child rows (episodes/events/turns/messages/questions/attachments) carry no
+    tenant_id; they inherit tenancy through their goal/conversation FK and reads
+    enforce it via a JOIN. The WRITES must too: a tenant must not inject a child
+    row onto another tenant's goal/conversation by id. Regression for the
+    unscoped PG child-write methods."""
+    from maverick.paths import reset_tenant, set_tenant
+
+    tok = set_tenant("acme")
+    try:
+        gid = world.create_goal("acme-goal")
+        conv = world.get_or_create_conversation("sms", "acme-user")
+        eid = world.start_episode(gid)  # happy path within the tenant works
+        assert isinstance(eid, int)
+    finally:
+        reset_tenant(tok)
+
+    tok = set_tenant("globex")
+    try:
+        # id-returning child writes against acme's ids are rejected.
+        for call in (
+            lambda: world.start_episode(gid),
+            lambda: world.append_event(gid, "orch", "note", "x"),
+            lambda: world.ask("q?", goal_id=gid),
+            lambda: world.add_attachment(gid, "f.txt", "text/plain", 1, "ab", "/tmp/f"),
+            lambda: world.append_turn(conv.id, "user", "x"),
+        ):
+            with pytest.raises(ValueError):
+                call()
+        # void writes silently no-op (don't raise, don't land).
+        world.append_message(gid, "user", "sneaky")
+        world.end_episode(eid, "done", "success")  # acme's episode; globex can't end it
+    finally:
+        reset_tenant(tok)
+
+    tok = set_tenant("acme")
+    try:
+        eps = world.list_episodes(goal_id=gid)
+        assert len(eps) == 1                 # no globex episode landed
+        assert eps[0].ended_at is None       # globex's end_episode was a no-op
+    finally:
+        reset_tenant(tok)
+
+
 def test_decide_approval_is_tenant_scoped(world):
     """A tenant must not decide another tenant's parked high-risk action.
 
@@ -410,6 +454,40 @@ def test_erase_conversations_deletes_pg_rows(world):
     assert world.get_goal(parent) is None
     assert world.get_goal(child) is None
     assert world.is_processed_message("gdpr-pg", "external-1") is False
+
+
+def test_erase_conversations_fact_scrub_is_tenant_scoped(world):
+    """The GDPR erase scrubs the subject's ``user:<channel>:<user>:`` facts by key
+    prefix. Facts are UNIQUE per (tenant, key), so the scrub must be tenant-scoped:
+    erasing acme's "alice on sms" must NOT delete globex's identically-keyed fact.
+    Regression for the cross-tenant over-deletion in erase_conversations (the same
+    class delete_facts_matching guards, in a sibling path that missed it)."""
+    from maverick.paths import reset_tenant, set_tenant
+
+    key = "user:sms:alice:preference"
+    # globex holds the same-key fact for ITS own alice.
+    tok = set_tenant("globex")
+    try:
+        world.upsert_fact(key, "globex-alice-pref")
+    finally:
+        reset_tenant(tok)
+
+    # acme erases its alice's conversation (subject = sms/alice), scrubbing its fact.
+    tok = set_tenant("acme")
+    try:
+        conv = world.get_or_create_conversation("sms", "alice")
+        world.upsert_fact(key, "acme-alice-pref")
+        world.erase_conversations([conv.id])
+        assert world.get_fact(key) is None
+    finally:
+        reset_tenant(tok)
+
+    # globex's identically-keyed fact is untouched.
+    tok = set_tenant("globex")
+    try:
+        assert world.get_fact(key) == "globex-alice-pref"
+    finally:
+        reset_tenant(tok)
 
 
 # ----- connection pooling (opt-in) -----
@@ -717,3 +795,266 @@ def test_rate_events_window_count(world):
     assert world.count_rate_events(key, now + 5) == 0
     # An unrelated key sees none of them.
     assert world.count_rate_events("rl-other", now - 60) == 0
+
+
+def test_concurrent_migrate_does_not_race(world):
+    # Advisory lock (audit follow-up): many replicas migrating the same DB at
+    # once must not error -- Postgres CREATE/ALTER ... IF NOT EXISTS DDL is not
+    # concurrency-safe without serialization. Each thread opens its own backend
+    # (its own connection) and runs migration on construction.
+    import threading
+
+    from maverick.world_model_backends.postgres import (
+        _PG_SCHEMA_VERSION,
+        PostgresWorldModel,
+    )
+
+    errs: list[str] = []
+
+    def go():
+        try:
+            w = PostgresWorldModel(dsn=_DSN)
+            w.close()
+        except Exception as e:  # noqa: BLE001
+            errs.append(repr(e))
+
+    threads = [threading.Thread(target=go) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errs == [], f"concurrent migration raced: {errs}"
+    assert world.schema_version == _PG_SCHEMA_VERSION
+
+
+# ---------- audit round 6: Postgres backend at-rest / tenant parity ----------
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("cryptography") is None,
+    reason="cryptography extra not installed (at-rest sealing needs AES-256-GCM)",
+)
+def test_reclaim_orphan_goals_preserves_sealed_result(world, monkeypatch, tmp_path):
+    """Under at-rest encryption, reclaim must append the marker THROUGH the seal
+    layer. The old bulk `result = COALESCE(result,'') || ' [marker]'` SQL
+    concatenated plaintext onto ciphertext, corrupting the sealed result so it
+    no longer decrypts -- the deliverable was permanently lost on crash
+    recovery. (Mirrors the SQLite backend's at-rest branch.)"""
+    from maverick import crypto_at_rest as car
+
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "at_rest.key")
+    assert car.at_rest_enabled() is True
+
+    gid = world.create_goal("orphan-enc")
+    world.set_goal_status(gid, "active", result="SEALED-RESULT-keepme")
+
+    n = world.reclaim_orphan_goals(max_age_seconds=0)
+    assert n >= 1
+
+    g = world.get_goal(gid)
+    assert g.status == "blocked"
+    # The original result is still readable (decryptable) and the marker is on it.
+    assert "SEALED-RESULT-keepme" in g.result
+    assert "[process restarted mid-run]" in g.result
+
+
+def test_delete_facts_matching_is_tenant_scoped(world):
+    """A GDPR erase for a subject in one tenant must not delete another tenant's
+    fact that happens to share the same key. The DELETE keyed only on `key` (no
+    tenant predicate) over-deleted across tenants; the read side was already
+    scoped, so the write side has to match."""
+    from maverick.paths import reset_tenant, set_tenant
+
+    key = "user:telegram:alice:preference"
+    tok = set_tenant("acme")
+    try:
+        world.upsert_fact(key, "acme-alice-value")
+    finally:
+        reset_tenant(tok)
+    tok = set_tenant("globex")
+    try:
+        world.upsert_fact(key, "globex-alice-value")
+    finally:
+        reset_tenant(tok)
+
+    # acme erases its alice: only acme's row goes.
+    tok = set_tenant("acme")
+    try:
+        removed = world.delete_facts_matching("telegram:alice")
+        assert key in removed
+        assert world.get_fact(key) is None
+    finally:
+        reset_tenant(tok)
+    # globex's identically-keyed fact is untouched.
+    tok = set_tenant("globex")
+    try:
+        assert world.get_fact(key) == "globex-alice-value"
+    finally:
+        reset_tenant(tok)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("cryptography") is None,
+    reason="cryptography extra not installed (at-rest sealing needs AES-256-GCM)",
+)
+def test_search_facts_matches_value_under_encryption(world, monkeypatch, tmp_path):
+    """With encryption on, `value` is ciphertext, so a SQL LIKE over it can never
+    match the plaintext query. search_facts must scan by key prefix then decrypt
+    + substring-match in Python, and return PLAINTEXT (not ciphertext)."""
+    from maverick import crypto_at_rest as car
+
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "at_rest.key")
+    assert car.at_rest_enabled() is True
+
+    world.upsert_fact("srch:color", "the user prefers MAGENTA")
+    hits = world.search_facts("srch:", "magenta")
+    assert ("srch:color", "the user prefers MAGENTA") in hits
+
+
+def test_concurrent_add_artifact_no_duplicate_versions(world):
+    # Per-key advisory lock: N threads appending the same (goal, title) must get
+    # N distinct, gapless versions -- not duplicates from a MAX(version)+1 race.
+    import threading
+
+    from maverick.world_model_backends.postgres import PostgresWorldModel
+
+    gid = world.create_goal("artifact-race")
+    n = 12
+    barrier = threading.Barrier(n)
+    errs: list[str] = []
+
+    def go():
+        try:
+            w = PostgresWorldModel(dsn=_DSN)
+            barrier.wait()  # maximize overlap on the read-modify-write
+            w.add_artifact(gid, "text", "report", "body")
+            w.close()
+        except Exception as e:  # noqa: BLE001
+            errs.append(repr(e))
+
+    threads = [threading.Thread(target=go) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errs == [], errs
+    versions = sorted(a["version"] for a in world.artifacts_for_goal(gid)
+                      if a["title"] == "report")
+    assert versions == list(range(1, n + 1)), versions  # distinct + gapless
+
+
+def test_concurrent_upsert_fact_single_open_window(world, monkeypatch):
+    # Per-key advisory lock: concurrent temporal upserts of one key must leave
+    # exactly ONE open history window (valid_to IS NULL), not several.
+    import threading
+
+    from maverick import world_model as wm
+    from maverick.world_model_backends.postgres import PostgresWorldModel
+
+    monkeypatch.setattr(wm, "_temporal_memory_enabled", lambda: True)
+
+    key = f"k-{id(object())}"
+    n = 12
+    barrier = threading.Barrier(n)
+    errs: list[str] = []
+
+    def go(i):
+        try:
+            w = PostgresWorldModel(dsn=_DSN)
+            barrier.wait()
+            w.upsert_fact(key, f"v{i}", trust_tier=(i % 5) + 1)
+            w.close()
+        except Exception as e:  # noqa: BLE001
+            errs.append(repr(e))
+
+    threads = [threading.Thread(target=go, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errs == [], errs
+    with world._tx() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM fact_history WHERE key = %s AND valid_to IS NULL",
+            (key,),
+        )
+        open_windows = cur.fetchone()[0]
+    assert open_windows == 1, f"expected exactly one open window, got {open_windows}"
+
+
+def test_answer_cannot_cross_tenant(world, monkeypatch):
+    # A tenant must not answer (overwrite) another tenant's question by id.
+    # RLS defaults off, so app-level _tenant_scope is the only guard.
+    from maverick.world_model_backends import postgres as pg
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "tA")
+    gid_a = world.create_goal("a-goal")
+    qid_a = world.ask("secret question?", gid_a)
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "tB")
+    assert world.answer(qid_a, "tB was here") is False  # no row under tB's scope
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "tA")
+    qa = [q for q in world.all_questions(gid_a) if q.id == qid_a]
+    assert qa and qa[0].answer is None  # still unanswered; not overwritten
+
+
+def test_recent_event_contents_is_tenant_scoped(world, monkeypatch):
+    from maverick.world_model_backends import postgres as pg
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "evA")
+    ga = world.create_goal("evt-a")
+    world.append_event(ga, "agent", "note", "TENANT_A_ONLY_SECRET")
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "evB")
+    gb = world.create_goal("evt-b")
+    world.append_event(gb, "agent", "note", "tenant_b_event")
+    contents = world.recent_event_contents(limit=1000)
+    assert "TENANT_A_ONLY_SECRET" not in contents  # no cross-tenant read
+    assert "tenant_b_event" in contents
+
+
+def test_erase_conversations_cannot_cross_tenant(world, monkeypatch):
+    from maverick.world_model_backends import postgres as pg
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "erA")
+    conv_a = world.get_or_create_conversation("chan", "userA").id
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "erB")
+    goals, paths, turns = world.erase_conversations([conv_a])
+    assert goals == set() and paths == [] and turns == 0  # nothing erased
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "erA")
+    assert any(c.id == conv_a for c in world.list_conversations())  # survived
+
+
+def test_fk_readers_are_tenant_scoped(world, monkeypatch):
+    # Defense-in-depth: artifact/share-link/signoff/origin readers must not
+    # return another tenant's rows even if handed a foreign goal_id directly.
+    from maverick.world_model_backends import postgres as pg
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "fkA")
+    ga = world.create_goal("a")
+    world.add_artifact(ga, "text", "rep", "secretA")
+    world.create_share_link(ga, created_by="a")
+    world.record_signoff(ga, "approved", decided_by="a")
+    world.record_goal_origin(ga, "schedule", "shared-ref")
+
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "fkB")
+    # Tenant B hands tenant A's goal id to each reader -> empty.
+    assert world.artifacts_for_goal(ga) == []
+    assert world.share_links_for_goal(ga) == []
+    assert world.signoffs_for_goals([ga]) == {}
+    # origin_status_counts for the colliding ref must not see A's goals.
+    assert world.origin_status_counts("schedule", "shared-ref") == {}
+
+    # Tenant A still sees its own.
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "fkA")
+    assert len(world.artifacts_for_goal(ga)) == 1
+    assert len(world.share_links_for_goal(ga)) == 1
+    assert world.signoffs_for_goals([ga]) == {ga: "approved"}
+    assert world.origin_status_counts("schedule", "shared-ref")  # non-empty

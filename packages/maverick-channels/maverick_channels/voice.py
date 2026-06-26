@@ -187,9 +187,11 @@ class VoiceChannel(Channel):
             )
             try:
                 reply = await self.dispatch_text(msg)
-            except Exception as e:  # pragma: no cover
+            except Exception:  # pragma: no cover
+                # Spoken back to the caller -- never voice the raw exception
+                # (possible secret/internal path); detail is logged above.
                 log.exception("voice handler error")
-                reply = f"Sorry, I ran into an error: {e}"
+                reply = "Sorry, I ran into an internal error."
             return {"response": reply}
 
         # Other events (end-of-call, status updates) are informational.

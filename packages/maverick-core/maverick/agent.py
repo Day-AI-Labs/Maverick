@@ -337,6 +337,81 @@ def _last_assistant_text(messages: list[dict]) -> str:
     return ""
 
 
+def _assemble_assistant_content(resp: Any, final_dropped_tools: bool) -> list[dict]:
+    """Rebuild the assistant message content blocks from an LLM response,
+    preserving Anthropic's exact thinking-block order/signatures (interleaved
+    blocks must be echoed back unmodified). Extracted verbatim from
+    _run_inner; see the inline council-fix notes for the ordering rules."""
+    assistant_content: list[dict] = []
+    ordered_blocks = getattr(resp, "content_blocks", None)
+    if final_dropped_tools:
+        # May 28 fix #2: the model emitted a FINAL: marker AND
+        # tool_use in the same turn; we discard the tool attempt and
+        # treat FINAL as the answer. Do NOT replay the model's blocks
+        # here. Dropping the interleaved tool_use would merge
+        # previously-separated thinking blocks into one consecutive
+        # run, and on a revision pass (verifier/patch reject ->
+        # continue) the re-sent turn 400s:
+        #   messages.N.content.M: `thinking`/`redacted_thinking`
+        #   blocks in the latest assistant message cannot be modified.
+        # The tool_use can't stay either (orphan with no
+        # tool_result). Omitting thinking from a turn is explicitly
+        # allowed (the API auto-filters prior-turn thinking), so emit
+        # a clean text-only turn. resp.text is non-empty here (guarded
+        # by `resp.text and resp.tool_calls` above).
+        assistant_content.append({"type": "text", "text": resp.text})
+    elif ordered_blocks:
+        # May 28 fix: replay the model's blocks in their ORIGINAL
+        # order, COMPLETE and UNMODIFIED. Anthropic rejects a
+        # rearranged thinking-block sequence on the next request —
+        # the bucket-by-type rebuild in the else branch reordered
+        # interleaved Opus 4.7 turns (thinking between tool_use) and
+        # triggered "thinking blocks in the latest assistant message
+        # cannot be modified". (The only tool_use-dropping case,
+        # FINAL, is handled above — here every block is kept so the
+        # tool_use blocks always have matching tool_results below.)
+        for blk in ordered_blocks:
+            assistant_content.append(dict(blk))
+    else:
+        # May 26 council fix: emit ONE thinking block per original
+        # block, preserving each block's exact signature. Concatenating
+        # text but keeping only the first signature corrupted multi-
+        # block interleaved thinking on Opus 4.7 — the signature is
+        # derived from the EXACT text of its block. Falls back to
+        # the legacy single-block path when thinking_blocks is empty
+        # but resp.thinking is set (older mocks / non-Anthropic).
+        thinking_blocks = getattr(resp, "thinking_blocks", None) or []
+        if thinking_blocks:
+            # May 26 council fix (API audit #2): include the block
+            # EVEN IF the text is empty as long as a signature is
+            # present. Anthropic still requires the signature-bearing
+            # block to be echoed back to maintain continuity. The old
+            # `if resp.thinking:` check at the elif below would drop
+            # empty-text-signature pairs entirely.
+            for tb_text, tb_sig in thinking_blocks:
+                if not tb_text and not tb_sig:
+                    continue
+                block_dict: dict = {"type": "thinking", "thinking": tb_text}
+                if tb_sig:
+                    block_dict["signature"] = tb_sig
+                assistant_content.append(block_dict)
+        elif resp.thinking or getattr(resp, "thinking_signature", None):
+            sig = getattr(resp, "thinking_signature", None)
+            thinking_block: dict = {
+                "type": "thinking", "thinking": resp.thinking or "",
+            }
+            if sig:
+                thinking_block["signature"] = sig
+            assistant_content.append(thinking_block)
+        if resp.text:
+            assistant_content.append({"type": "text", "text": resp.text})
+        for tc in resp.tool_calls:
+            assistant_content.append(
+                {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input}
+            )
+    return assistant_content
+
+
 @dataclass
 class AgentResult:
     final: str | None = None
@@ -460,6 +535,8 @@ class Agent:
         domain: str | None = None,
         persona: str | None = None,
         knowledge_sources: list[str] | None = None,
+        domain_effort: str | None = None,
+        autonomy=None,
     ):
         self.ctx = ctx
         self.role = role
@@ -487,6 +564,20 @@ class Agent:
         # parent's domain so a Rung-2 sector seal catches the whole sub-tree.
         # None == unsectored (the orchestrator and ad-hoc agents).
         self.domain = domain if domain is not None else getattr(parent, "domain", None)
+        # Per-agent autonomy profile (the agent-as-employee authority dial,
+        # maverick.agent_autonomy). The factory's spawn-from-profile sets it from
+        # the pack's [autonomy] block; a child inherits its parent's so a sub-tree
+        # shares the hire's authority. None == the default SUGGEST profile.
+        self._autonomy = autonomy if autonomy is not None else getattr(parent, "_autonomy", None)
+        # Workforce overrides are tied to the profile's original hire, not to an
+        # ad-hoc child role. Otherwise a model-selected spawn_subagent role could
+        # layer a more permissive [workforce.agents.<role>] override over an
+        # inherited low-authority profile. Explicit profile spawns establish a new
+        # override anchor; inherited profiles keep their parent's anchor.
+        self._autonomy_name = (
+            role if autonomy is not None
+            else getattr(parent, "_autonomy_name", role)
+        )
         # Optional domain-pack persona, appended to the system prompt below.
         self._domain_persona = persona
         # Domain knowledge collections this agent may query (the DomainProfile's
@@ -512,14 +603,20 @@ class Agent:
         self.max_steps = env_int("MAVERICK_MAX_STEPS", max_steps)
         self.name = f"{role}-{depth}-{uuid.uuid4().hex[:6]}"
 
+        # Resolve the model BEFORE building the system prompt: the self-harness
+        # addendum layer (_with_harness_addendum) recalls guidance keyed on
+        # self.model, so self.model must exist when _build_system runs.
+        # Otherwise recall_addendum(self.model) raises AttributeError, the
+        # addendum's except swallows it, and the learned guidance is silently
+        # dropped from every prompt -- the feature becomes a no-op.
+        self.model = model_override or model_for_role(role)
         self.tools = self._build_tools()
         self.system = self._build_system()
-        self.model = model_override or model_for_role(role)
         # Per-role reasoning effort (opt-in; None unless configured). Resolved
         # once against this agent's role + model so the cost/latency lever rides
         # every LLM call this agent makes. Model-gated -> never 400s.
         from .effort import effort_for_role
-        self.effort = effort_for_role(role, self.model)
+        self.effort = effort_for_role(role, self.model, pack_default=domain_effort)
         # Tracks whether we've already given one LLM-verifier-driven
         # revision pass for this agent run. Separate from
         # `_already_verified` so revised FINALs can be re-verified once
@@ -773,7 +870,7 @@ class Agent:
                     # orchestrator can attribute this run's outcome to them
                     # at finalize. Fully fail-safe: stats are an optimization.
                     try:
-                        from . import skill_stats
+                        from .skill import stats as skill_stats
                         names = [s.name for s in skills]
                         skill_stats.record_use(names)
                         self.ctx.skills_used.update(names)
@@ -797,6 +894,23 @@ class Agent:
             except Exception:  # pragma: no cover -- never block a run
                 pass
 
+        base = self._with_harness_addendum(base)
+        return base
+
+    def _with_harness_addendum(self, base: str) -> str:
+        """Append the self-harness addendum: model-specific operating guidance
+        the loop learned from THIS model's past failures, recalled like
+        skills/insights (never a kernel-template mutation). Keyed on the agent's
+        resolved model so a worker's lesson never bleeds into the orchestrator's.
+        Empty (no change) unless [self_harness] is enabled and an addendum
+        exists. Fully fail-safe."""
+        try:
+            from .self_harness import recall_addendum
+            addendum = recall_addendum(self.model)
+            if addendum:
+                return base + "\n\n" + addendum
+        except Exception:  # pragma: no cover -- never block a run
+            pass
         return base
 
     def _thinking_budget(self) -> int | None:
@@ -1237,6 +1351,18 @@ class Agent:
             "The tool was not executed."
         )
 
+    @staticmethod
+    def _with_capability_host_scope(name: str, args: dict, cap) -> dict:
+        """Attach active host scope for tools that enforce it internally."""
+        if cap is None or not cap.allow_hosts or not isinstance(args, dict):
+            return args
+        scoped = dict(args)
+        if name == "browser":
+            scoped["_capability_allow_hosts"] = tuple(cap.allow_hosts)
+        else:
+            scoped.setdefault("_capability_allow_hosts", tuple(cap.allow_hosts))
+        return scoped
+
     def _autonomy_denial(self, name: str, cap) -> str | None:
         # Autonomy servo (Loop 2): tighten the leash with live trust. When the
         # run's trust is low -- a high-disagreement swarm fan-out or a low
@@ -1321,6 +1447,39 @@ class Agent:
                     _GovDecision.DENY,
                     "governance evaluation error (failed closed)", "error",
                 )
+        # Per-agent autonomy level (the agent-as-employee authority dial):
+        # compose strictest-wins with the org governance verdict. Only
+        # consequential (non-low-risk) tools are gated -- reading/searching is
+        # always allowed regardless of the hire's rung. Independent of whether an
+        # [governance] policy is set; no-op unless [workforce] levels is enabled.
+        # Fail-open: a bug here must never wedge a tool.
+        try:
+            from . import agent_autonomy as _aa
+            from .governance import Decision as _GD
+            from .governance import Verdict as _GV
+            from .safety.tool_risk import risk_rank as _rr
+            from .safety.tool_risk import tool_risk as _tr
+            _risk = _tr(name)
+            # Disabled => the gate is a strict no-op (kernel rule 1: byte-for-byte
+            # historical behaviour). Low-risk tools (reads/searches) and the
+            # coordination control-plane (spawn/bus/delegate -- how the workforce
+            # communicates) are never gated by the dial.
+            if (_aa.levels_enabled() and _rr(_risk) > 0
+                    and name not in _aa.COORDINATION_TOOLS):
+                _al = _aa.decide(getattr(self, "_autonomy_name", self.role),
+                                 getattr(self, "_autonomy", None),
+                                 action=name, risk=_risk)
+                _amap = {"allow": _GD.ALLOW, "require_human": _GD.REQUIRE_HUMAN,
+                         "deny": _GD.DENY}
+                _adec = _amap.get(_al.decision, _GD.REQUIRE_HUMAN)
+                if _adec is not _GD.ALLOW:
+                    _rank = {_GD.ALLOW: 0, _GD.REQUIRE_HUMAN: 1, _GD.DENY: 2}
+                    if _gov is None or _rank[_adec] > _rank[_gov.decision]:
+                        _gov = _GV(_adec, f"autonomy level: {_al.reason}",
+                                   f"autonomy:{_al.level.value}")
+        except Exception:  # pragma: no cover -- autonomy gate must never break the loop
+            log.warning("autonomy: level evaluation failed for %r; skipping", name,
+                        exc_info=True)
         if _gov is None or _gov.decision is _GovDecision.ALLOW:
             return None
         from .audit import EventKind, record
@@ -1355,8 +1514,12 @@ class Agent:
                 allow_auto_approve=False,
                 # When the operator opts into per-action oversight, a prior
                 # persistent ledger grant must NOT silently satisfy the
-                # Art-14 gate -- demand a fresh human decision each time.
-                consult_ledger=not _gov_policy.require_fresh_human_approval,
+                # Art-14 gate -- demand a fresh human decision each time. The
+                # autonomy dial can drive REQUIRE_HUMAN with no [governance]
+                # policy set (_gov_policy None), so guard the attribute read.
+                consult_ledger=not (
+                    _gov_policy.require_fresh_human_approval if _gov_policy else False
+                ),
             )
             granted = bool(decision.granted)
         except Exception:  # pragma: no cover -- consent unavailable -> fail closed
@@ -1474,9 +1637,7 @@ class Agent:
         # tool so it can gate the final/current page host before returning
         # content or continuing a restricted session. This must happen before
         # the host-scope check so the (possibly rewritten) args carry forward.
-        if cap is not None and name == "browser" and cap.allow_hosts and isinstance(args, dict):
-            args = dict(args)
-            args["_capability_allow_hosts"] = tuple(cap.allow_hosts)
+        args = self._with_capability_host_scope(name, args, cap)
         if (d := self._capability_host_denial(name, args, cap)) is not None:
             return d
 
@@ -2153,73 +2314,7 @@ class Agent:
                     resp.tool_calls = []
                     final_dropped_tools = True
 
-            assistant_content: list[dict] = []
-            ordered_blocks = getattr(resp, "content_blocks", None)
-            if final_dropped_tools:
-                # May 28 fix #2: the model emitted a FINAL: marker AND
-                # tool_use in the same turn; we discard the tool attempt and
-                # treat FINAL as the answer. Do NOT replay the model's blocks
-                # here. Dropping the interleaved tool_use would merge
-                # previously-separated thinking blocks into one consecutive
-                # run, and on a revision pass (verifier/patch reject ->
-                # continue) the re-sent turn 400s:
-                #   messages.N.content.M: `thinking`/`redacted_thinking`
-                #   blocks in the latest assistant message cannot be modified.
-                # The tool_use can't stay either (orphan with no
-                # tool_result). Omitting thinking from a turn is explicitly
-                # allowed (the API auto-filters prior-turn thinking), so emit
-                # a clean text-only turn. resp.text is non-empty here (guarded
-                # by `resp.text and resp.tool_calls` above).
-                assistant_content.append({"type": "text", "text": resp.text})
-            elif ordered_blocks:
-                # May 28 fix: replay the model's blocks in their ORIGINAL
-                # order, COMPLETE and UNMODIFIED. Anthropic rejects a
-                # rearranged thinking-block sequence on the next request —
-                # the bucket-by-type rebuild in the else branch reordered
-                # interleaved Opus 4.7 turns (thinking between tool_use) and
-                # triggered "thinking blocks in the latest assistant message
-                # cannot be modified". (The only tool_use-dropping case,
-                # FINAL, is handled above — here every block is kept so the
-                # tool_use blocks always have matching tool_results below.)
-                for blk in ordered_blocks:
-                    assistant_content.append(dict(blk))
-            else:
-                # May 26 council fix: emit ONE thinking block per original
-                # block, preserving each block's exact signature. Concatenating
-                # text but keeping only the first signature corrupted multi-
-                # block interleaved thinking on Opus 4.7 — the signature is
-                # derived from the EXACT text of its block. Falls back to
-                # the legacy single-block path when thinking_blocks is empty
-                # but resp.thinking is set (older mocks / non-Anthropic).
-                thinking_blocks = getattr(resp, "thinking_blocks", None) or []
-                if thinking_blocks:
-                    # May 26 council fix (API audit #2): include the block
-                    # EVEN IF the text is empty as long as a signature is
-                    # present. Anthropic still requires the signature-bearing
-                    # block to be echoed back to maintain continuity. The old
-                    # `if resp.thinking:` check at the elif below would drop
-                    # empty-text-signature pairs entirely.
-                    for tb_text, tb_sig in thinking_blocks:
-                        if not tb_text and not tb_sig:
-                            continue
-                        block_dict: dict = {"type": "thinking", "thinking": tb_text}
-                        if tb_sig:
-                            block_dict["signature"] = tb_sig
-                        assistant_content.append(block_dict)
-                elif resp.thinking or getattr(resp, "thinking_signature", None):
-                    sig = getattr(resp, "thinking_signature", None)
-                    thinking_block: dict = {
-                        "type": "thinking", "thinking": resp.thinking or "",
-                    }
-                    if sig:
-                        thinking_block["signature"] = sig
-                    assistant_content.append(thinking_block)
-                if resp.text:
-                    assistant_content.append({"type": "text", "text": resp.text})
-                for tc in resp.tool_calls:
-                    assistant_content.append(
-                        {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input}
-                    )
+            assistant_content = _assemble_assistant_content(resp, final_dropped_tools)
             messages.append({"role": "assistant", "content": assistant_content})
 
             if resp.text:

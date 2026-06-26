@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "OKR status scorecard"
+consumers = ["executive", "chief_of_staff", "leadership_team"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Load OKRs"
+instruction = "Read the current objectives, key results, owners, and targets from the OKR source of record."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Collect updates"
+instruction = "Pull owner-submitted progress notes and metrics for each key result for the reporting period."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Score status"
+instruction = "Compute each key result's status against target using only owner-confirmed numbers, never optimistic inference."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag at-risk"
+instruction = "Mark key results that are off-track or unconfirmed and note the owner accountable for each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Executive review"
+instruction = "Route the OKR scorecard to the executive for review before it goes to the leadership team."
+gate = "review"

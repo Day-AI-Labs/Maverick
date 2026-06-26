@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "strategic account plan"
+consumers = ["account_executive", "sales_manager"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Scope account"
+instruction = "Read the existing CRM notes and prior plan to set the target account, territory, and planning objectives."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Firmographic research"
+instruction = "Enrich the account with firmographics, org structure, and recent triggers from external sources."
+tools = ["zoominfo_read", "clearbit_read", "web_search"]
+[[workflow]]
+name = "Map stakeholders"
+instruction = "Build the stakeholder map of buyers, influencers, and blockers, marking any opted-out or suppressed contacts as do-not-touch."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft account plan"
+instruction = "Draft the account plan with whitespace, entry points, and a contact strategy, citing every claim to its source."
+[[workflow]]
+name = "AE review"
+instruction = "Route the drafted account plan to the account executive for sign-off before it drives any outreach."
+gate = "review"

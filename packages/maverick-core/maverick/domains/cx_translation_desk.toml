@@ -11,3 +11,29 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "translated case reply"
+consumers = ["customer", "support_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read original case"
+instruction = "Read the non-English case and identify the language, intent, and any account-specific details."
+tools = ["read_file"]
+[[workflow]]
+name = "Translate inbound"
+instruction = "Produce a faithful English translation of the customer's message, noting nuance or ambiguity for the handler."
+[[workflow]]
+name = "Ground the answer"
+instruction = "Pull the policy-accurate resolution from the knowledge base and cite the article supporting the reply."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Draft localized reply"
+instruction = "Write the response back in the customer's language with culturally appropriate tone and no unauthorized policy promises."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Send the translated reply to the support lead for review before it is sent to the customer."
+gate = "review"

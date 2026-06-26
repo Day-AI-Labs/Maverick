@@ -14,3 +14,32 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "automated suite PR & flakiness report"
+consumers = ["engineering_manager", "qa_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Audit suite"
+instruction = "Map the existing automated suite and its run history to find gaps and the flakiest tests."
+tools = ["repo_map", "read_file", "knowledge_search"]
+[[workflow]]
+name = "Reproduce flakes"
+instruction = "Re-run suspect tests to reproduce intermittent failures and isolate timing, ordering, or environment causes."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Stabilize and extend"
+instruction = "Fix flaky tests and add missing automation across the unit-to-E2E pyramid in the sandbox."
+tools = ["apply_patch", "ast_edit", "str_replace_editor"]
+[[workflow]]
+name = "Verify green"
+instruction = "Run the updated suite repeatedly to confirm it is stable and the fixes hold."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Open PR"
+instruction = "Open the suite PR with the flakiness report for a human to review and merge."
+tools = ["apply_patch"]
+gate = "review"

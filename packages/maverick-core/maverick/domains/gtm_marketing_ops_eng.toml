@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "martech instrumentation spec"
+consumers = ["marketing_ops_lead", "analytics_engineer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather requirements"
+instruction = "Read the tracking, scoring, and lifecycle requirements plus current MAP, GA4, and tagging configuration."
+tools = ["read_file", "marketo_read", "segment_read"]
+[[workflow]]
+name = "Verify consent mode"
+instruction = "Confirm Consent Mode v2 and CAPI/server-side tagging respect the consent and suppression floor for every event."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Design instrumentation"
+instruction = "Draft the lead-scoring, lifecycle, and server-side tagging/attribution plumbing spec mapping events to destinations."
+[[workflow]]
+name = "Validate data flow"
+instruction = "Trace sample events end to end to catch dropped, duplicated, or mis-attributed signals before handoff."
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the instrumentation spec to the marketing ops lead for review before any production change is deployed."
+gate = "review"

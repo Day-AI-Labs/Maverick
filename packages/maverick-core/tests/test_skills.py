@@ -179,7 +179,7 @@ class TestRelevantSkills:
         # These exercise the LEXICAL scorer specifically, so force it -- the
         # result must not depend on whether fastembed happens to be installed
         # (the embedding path has its own cosine gate).
-        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed", lambda: False)
+        monkeypatch.setattr("maverick.skill.embeddings._have_fastembed", lambda: False)
 
     def _make_skill(self, name: str, triggers: list[str]) -> Skill:
         return Skill(
@@ -223,7 +223,7 @@ class TestRelevantSkills:
 class TestPurposeScopedRecall:
     @pytest.fixture(autouse=True)
     def _force_lexical(self, monkeypatch):
-        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed", lambda: False)
+        monkeypatch.setattr("maverick.skill.embeddings._have_fastembed", lambda: False)
 
     def _skill(self, purposes=()):
         return Skill(name="s", triggers=["reconcile the general ledger"],

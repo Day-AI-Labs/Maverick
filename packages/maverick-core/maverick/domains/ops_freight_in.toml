@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ops"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "inbound freight schedule"
+consumers = ["receiving_lead", "supply_planner"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull inbound POs"
+instruction = "Read open inbound purchase orders and shipments with their need dates from the company's records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Assess capacity"
+instruction = "Query receiving dock and labor capacity by day to find available windows."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Sequence arrivals"
+instruction = "Sequence inbound arrivals to receiving capacity and need dates, keeping traceability identifiers with each load."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag conflicts"
+instruction = "Identify capacity overflows or at-risk need dates and state the assumptions behind each call."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route schedule"
+instruction = "Route the proposed inbound freight schedule to the receiving lead for review."
+gate = "review"

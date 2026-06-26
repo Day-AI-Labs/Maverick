@@ -13,3 +13,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["ops"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "supply-chain exception & risk early-warning brief"
+consumers = ["supply_chain_director", "logistics_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull network state"
+instruction = "Read current shipment, inventory, and supplier status across tiers and query the ops data for open orders and ETAs."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Sense disruptions"
+instruction = "Scan internal records and external signals for multi-tier disruptions, delays, and capacity constraints affecting in-transit flows."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Score exceptions"
+instruction = "Rank exceptions by ETA slip and risk severity in a worksheet and tie each to the orders and customers it impacts."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Run what-if"
+instruction = "Model reroute, expedite, and substitution scenarios with cost and ETA tradeoffs without executing any physical action."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Escalate brief"
+instruction = "Route the prioritized exception and risk early-warning brief with recommended actions to the supply-chain director for sign-off."
+gate = "review"

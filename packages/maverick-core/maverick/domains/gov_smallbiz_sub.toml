@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "subcontracting plan goal report (ISR/SSR)"
+consumers = ["small_business_liaison_officer", "contracts_manager"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull plan goals"
+instruction = "Retrieve the contract's small-business subcontracting plan and its committed category goals from company records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Gather actuals"
+instruction = "Collect actual subcontracting dollars awarded by socioeconomic category for the reporting period."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Compute attainment"
+instruction = "Calculate attainment against each plan goal in a worksheet and compute variances by category."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag shortfalls"
+instruction = "Identify categories falling short of plan commitments and note required explanations for the report narrative."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for submission"
+instruction = "Hand the completed ISR/SSR-style report with cited figures to the authorized human for review and submission."
+gate = "review"

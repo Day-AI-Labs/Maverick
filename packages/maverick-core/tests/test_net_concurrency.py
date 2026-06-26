@@ -27,6 +27,23 @@ def _reset_semaphores():
     nc._reset_for_tests()
 
 
+def test_get_semaphore_picks_up_cap_change():
+    """MAVERICK_NET_HOST_CONCURRENCY is a live tunable: a changed cap must
+    rebuild the per-host semaphore rather than keep the first one seen for the
+    loop's lifetime."""
+    async def go():
+        nc._reset_for_tests()
+        s4 = nc._get_semaphore("http:example.com", 4)
+        assert s4._mvk_cap == 4
+        # Same cap -> same cached object.
+        assert nc._get_semaphore("http:example.com", 4) is s4
+        # Changed cap -> a fresh semaphore carrying the new limit.
+        s8 = nc._get_semaphore("http:example.com", 8)
+        assert s8 is not s4 and s8._mvk_cap == 8
+
+    asyncio.run(go())
+
+
 @pytest.fixture
 def ctx(tmp_path: Path, fake_llm):
     world = WorldModel(tmp_path / "world.db")
@@ -162,16 +179,26 @@ def test_concurrent_loops_do_not_collide():
 
     nc._reset_for_tests()
     errors: list[BaseException] = []
-    sems: list[int] = []
+    # Hold the semaphore OBJECTS, not their id()s: a finished loop's semaphore is
+    # GC'd, and CPython readily re-allocates the next loop's semaphore at the same
+    # address, so comparing id()s of non-co-existing objects flakes between 1 and
+    # 2. Keeping a reference to each loop's semaphore keeps both alive until the
+    # assertion, so their identities can't alias.
+    sems: list = []
     barrier = threading.Barrier(2)
 
     async def _use() -> None:
         barrier.wait()  # maximise interleaving of the two loops' registry access
+        loop_sem = None
         for _ in range(50):
             ctx = nc.limit("http_fetch", {"url": "https://example.com/x"})
             async with ctx:  # awaiting binds the semaphore to THIS loop
                 await asyncio.sleep(0)
-            sems.append(id(ctx))
+            # limit() returns the cached per-loop semaphore; it must be stable
+            # across calls within a single loop.
+            assert loop_sem is None or ctx is loop_sem, "semaphore not stable in loop"
+            loop_sem = ctx
+        sems.append(loop_sem)
 
     def _runner() -> None:
         try:
@@ -186,6 +213,8 @@ def test_concurrent_loops_do_not_collide():
         t.join()
 
     assert not errors, f"cross-loop semaphore error: {errors!r}"
-    # Each loop kept ONE stable semaphore for the host (not torn down by the
-    # other loop): exactly two distinct semaphore objects across the two loops.
-    assert len(set(sems)) == 2
+    # Each loop kept its OWN stable semaphore for the host (not shared with, or
+    # torn down by, the other loop): two distinct live objects across two loops.
+    assert len(sems) == 2
+    assert sems[0] is not sems[1]
+    assert len({id(s) for s in sems}) == 2

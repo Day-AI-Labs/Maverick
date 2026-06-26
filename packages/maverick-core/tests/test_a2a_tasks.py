@@ -329,3 +329,40 @@ def test_http_stream_emits_sse(monkeypatch):
     assert "status-update" in body
     assert "artifact-update" in body
     assert "ran:go" in body
+
+
+def test_a2a_rejects_cross_origin_browser_request(monkeypatch):
+    """/a2a/v1 must reject a browser cross-origin POST (DNS-rebinding defense),
+    the same gate /mcp has. This is the ONLY browser defense when the bearer is
+    waived via MAVERICK_A2A_ALLOW_UNAUTHENTICATED."""
+    pytest.importorskip("fastapi")
+    import maverick.a2a as a2a
+    import maverick.a2a_tasks as a2at
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(a2at, "_default_runner", lambda text, **k: f"ran:{text}")
+    monkeypatch.setenv("MAVERICK_A2A_ENABLED", "1")
+    monkeypatch.setenv("MAVERICK_A2A_ALLOW_UNAUTHENTICATED", "1")  # bearer waived
+    monkeypatch.delenv("MAVERICK_A2A_ALLOWED_ORIGINS", raising=False)
+    monkeypatch.delenv("MAVERICK_MCP_ALLOWED_ORIGINS", raising=False)
+
+    app = FastAPI()
+    a2a.mount(app)
+    client = TestClient(app)
+    rpc = {"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": _msg("hi")}
+
+    # A malicious page's Origin -> blocked even though auth is waived.
+    r = client.post("/a2a/v1", headers={"Origin": "https://evil.example"}, json=rpc)
+    assert r.status_code == 403
+    assert "cross-origin" in r.json()["error"]["message"]
+
+    # A loopback Origin (a local browser client) is allowed.
+    assert client.post("/a2a/v1", headers={"Origin": "http://127.0.0.1:8771"},
+                       json=rpc).status_code == 200
+    # No Origin (native client / curl / server-to-server) is allowed.
+    assert client.post("/a2a/v1", json=rpc).status_code == 200
+    # An explicit allow-list entry is honored.
+    monkeypatch.setenv("MAVERICK_A2A_ALLOWED_ORIGINS", "https://trusted.example")
+    assert client.post("/a2a/v1", headers={"Origin": "https://trusted.example"},
+                       json=rpc).status_code == 200

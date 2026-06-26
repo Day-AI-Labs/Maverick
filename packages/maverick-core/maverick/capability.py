@@ -22,7 +22,21 @@ import time
 from dataclasses import dataclass
 from fnmatch import fnmatch
 
-from .safety.tool_risk import risk_rank, tool_risk
+from .safety.tool_risk import RISK_LEVELS, risk_rank, tool_risk
+
+# The coordination control-plane: the tools that let a specialist participate in
+# the workforce -- discover peers, spawn specialists, fan out a swarm, and
+# message/delegate across the agent bus. These are how "individual agents
+# communicate to complete things", so a capability PERMITS them by default even
+# when a narrow allowlist or a low risk-ceiling would otherwise block them
+# (several are classified high-risk because they fan out budget). An operator can
+# still revoke coordination for a specific principal by listing a tool in
+# ``deny_tools`` -- deny always wins. The fan-out stays bounded by max_depth, the
+# budget, and each spawned child's own (attenuated) envelope.
+COORDINATION_TOOLS: frozenset[str] = frozenset({
+    "spawn_specialist", "spawn_swarm", "spawn_subagent", "list_specialists",
+    "send_to_agent", "recv_from_agent", "delegate_to_agent", "ask_user",
+})
 
 
 @dataclass(frozen=True)
@@ -49,6 +63,16 @@ class Capability:
     allow_hosts: frozenset[str] = frozenset()
     ancestors: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        # Fail closed at the trust boundary: an unknown max_risk string -- e.g.
+        # an operator who writes "none"/"readonly" in a role/domain TOML
+        # intending the *tightest* ceiling -- must not silently rank as "medium"
+        # (risk_rank's default for unknown levels) and thereby PERMIT medium-risk
+        # tools (the default class for any unclassified/MCP-adjacent tool).
+        # Coerce any unrecognized ceiling to the most restrictive level.
+        if self.max_risk is not None and self.max_risk not in RISK_LEVELS:
+            object.__setattr__(self, "max_risk", RISK_LEVELS[0])
+
     def revocation_principals(self) -> tuple[str, ...]:
         """Principals whose revocation invalidates this grant.
 
@@ -69,6 +93,11 @@ class Capability:
             return False
         if tool_name in self.deny_tools:
             return False
+        # Coordination floor: the workforce control-plane is permitted unless the
+        # operator explicitly denied it above -- a narrow allowlist or a low risk
+        # ceiling must not isolate an agent from spawning/messaging its peers.
+        if tool_name in COORDINATION_TOOLS:
+            return True
         if self.allow_tools == frozenset({_DENY_ALL}):
             return False
         if self.allow_tools and tool_name not in self.allow_tools:
@@ -345,7 +374,14 @@ def capability_from_config(
         allowed, denied = resolve_lists(channel=channel, user_id=user_id)
         max_risk = resolve_max_risk(channel=channel, user_id=user_id)
     except Exception:
-        allowed, denied, max_risk = set(), set(), None
+        # Fail CLOSED, not open. An EMPTY allow_tools means "all tools", so the
+        # old fallback (set(), set(), None) was an all-permissive root grant on a
+        # resolver error -- the inverse of tool_acl's _FAIL_CLOSED posture.
+        # _DENY_ALL makes permits() refuse every tool; "low" is the tightest
+        # risk ceiling. Dead-defensive today (resolve_lists/resolve_max_risk
+        # swallow their own config errors and already return fail-closed), but a
+        # latent trap for any future refactor that lets those resolvers raise.
+        allowed, denied, max_risk = {_DENY_ALL}, set(), "low"
     base = Capability(
         principal=principal,
         allow_tools=frozenset(allowed),

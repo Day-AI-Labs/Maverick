@@ -27,6 +27,20 @@ except ImportError:
     discord = None  # type: ignore
 
 
+def _no_mentions():
+    """``AllowedMentions`` that suppress every ping (``@everyone``/``@here``,
+    role, and user mentions) so the agent's reply text cannot be coerced into
+    mass-notifying a guild.
+
+    discord.py's default parses ALL mentions in the message content, so a reply
+    that contains ``@everyone`` (trivially induced -- the inbound text is fed to
+    the agent, and a prompt-injecting message can make it echo one) would ping
+    the whole server under the bot's permissions. Pinning this on every send
+    closes that amplification. Returns ``None`` when discord.py is absent (the
+    real client never runs then; the agent path stays unit-testable)."""
+    return discord.AllowedMentions.none() if _HAVE_DISCORD else None
+
+
 async def _handle_discord_message(message, *, bot_user, allowed_user_ids, dispatch_text):
     """Gate, dispatch, and reply to one inbound Discord message.
 
@@ -57,9 +71,16 @@ async def _handle_discord_message(message, *, bot_user, allowed_user_ids, dispat
         # Don't leak internals (exception text / class names) to the chat.
         log.exception("discord handler error")
         reply = "⚠ error handling your message"
+    # An empty reply (action-only goal, or a Reply whose text dispatch dropped)
+    # must not be sent: split_for_discord("") returns [""], and channel.send("")
+    # is rejected by Discord with a 400 "Cannot send an empty message", which
+    # propagates out of on_message as an unhandled task error. Guard with
+    # `if reply:` like the other channels.
+    if not reply:
+        return
     from .formatting import split_for_discord
     for chunk in split_for_discord(reply):
-        await message.channel.send(chunk)
+        await message.channel.send(chunk, allowed_mentions=_no_mentions())
 
 
 class DiscordChannel(Channel):
@@ -84,9 +105,12 @@ class DiscordChannel(Channel):
 
         intents = discord.Intents.default()
         intents.message_content = True
+        # Belt-and-suspenders: a client-wide default so ANY send (the two here
+        # and any future/library-internal one) can never ping @everyone/roles.
         self._client = _MaverickDiscordClient(
             dispatch_text=self.dispatch_text,
             allowed_user_ids=self.allowed_user_ids, intents=intents,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
     async def start(self) -> None:
@@ -101,7 +125,7 @@ class DiscordChannel(Channel):
             return
         from .formatting import split_for_discord
         for chunk in split_for_discord(text):
-            await channel.send(chunk)
+            await channel.send(chunk, allowed_mentions=_no_mentions())
 
     async def stop(self) -> None:
         await self._client.close()

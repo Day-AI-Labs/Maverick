@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Privileged access governance assessment"
+consumers = ["control_owner", "ciso"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Scope accounts"
+instruction = "Pull the privileged account, role, and vault inventory from CyberArk and ground it against the company's PAM policy."
+tools = ["cyberark_read", "knowledge_search"]
+[[workflow]]
+name = "Check JIT controls"
+instruction = "Review just-in-time elevation, session recording, and secret rotation settings for each privileged role against the approved standard."
+tools = ["cyberark_read", "read_file"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag standing access, stale credentials, missing rotation, and unmonitored sessions as findings without altering any control."
+tools = ["read_file"]
+[[workflow]]
+name = "Benchmark practice"
+instruction = "Compare gaps to vendor and NIST PAM guidance to size remediation effort and priority."
+tools = ["web_search"]
+[[workflow]]
+name = "Route to owner"
+instruction = "Hand the assessment and prioritized recommendations to the control owner to approve and remediate."
+gate = "review"

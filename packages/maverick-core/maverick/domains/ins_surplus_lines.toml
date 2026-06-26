@@ -17,3 +17,24 @@ deliverable = "Surplus-lines tax & filing"
 consumers = ["compliance_officer", "controller"]
 cadence = "monthly"
 gate = "approval"
+
+[[workflow]]
+name = "Gather placements"
+instruction = "Pull the period's surplus-lines placements, policy declarations, and premium amounts by state from the system of record."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Confirm diligent search"
+instruction = "Locate and cite the diligent-search affidavit or declination documentation proving the risk could not be placed in the admitted market."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute taxes"
+instruction = "Apply each state's surplus-lines tax and stamping-fee rates to allocated premium and reconcile totals against booked amounts."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Check filing deadlines"
+instruction = "Flag any state filing whose statutory due date is approaching or missed and note the controlling jurisdiction for split-state risks."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for filing"
+instruction = "Hand the reconciled tax and filing package to the compliance officer to approve before remittance and submission."
+gate = "approval"

@@ -17,3 +17,24 @@ deliverable = "HMDA LAR submission"
 consumers = ["compliance_officer", "internal_auditor"]
 cadence = "quarterly"
 gate = "approval"
+
+[[workflow]]
+name = "Pull originations"
+instruction = "Query covered loan applications and originations for the reporting period that fall under HMDA scope."
+tools = ["sql_query"]
+[[workflow]]
+name = "Collect fields"
+instruction = "Read loan files to gather the required HMDA data fields including applicant, property, action-taken, and pricing data."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Validate edits"
+instruction = "Run syntactical, validity, and quality edit checks against the filing instructions to catch missing or inconsistent fields before submission."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Resolve flags"
+instruction = "Trace each failed edit back to the source loan file and correct or document the discrepancy."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Route LAR"
+instruction = "Hand the validated LAR to the compliance officer to approve the official submission."
+gate = "approval"

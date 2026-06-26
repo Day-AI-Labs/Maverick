@@ -17,3 +17,23 @@ deliverable = "License reconciliation matrix"
 consumers = ["control_owner", "compliance_officer"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Pull entitlements"
+instruction = "Retrieve purchased license entitlements and contract terms from the company's procurement and asset records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Count deployments"
+instruction = "Query the asset/inventory data for actual installed and consumed seats per product edition."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile usage"
+instruction = "Match deployments against entitlements per product and compute over- and under-deployment positions."
+[[workflow]]
+name = "Size true-up"
+instruction = "Quantify true-up exposure using current list and contracted pricing and cite the metric rules applied."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Route reconciliation"
+instruction = "Hand the reconciliation matrix and exposure estimate to the control owner for sign-off."
+gate = "review"

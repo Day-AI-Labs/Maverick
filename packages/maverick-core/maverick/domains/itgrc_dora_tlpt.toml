@@ -18,3 +18,23 @@ deliverable = "DORA TLPT scope & ICT register"
 consumers = ["ciso", "risk_officer"]
 cadence = "annual"
 gate = "approval"
+
+[[workflow]]
+name = "Scope critical functions"
+instruction = "Read the critical-or-important functions inventory and prior TLPT scope to set this cycle's test boundary."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build ICT register"
+instruction = "Compile the ICT third-party register and identify concentration-risk among providers supporting in-scope functions."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Align to TIBER-EU"
+instruction = "Verify the proposed scope, threat intelligence, and red-team phases against DORA RTS and the TIBER-EU framework."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft scope package"
+instruction = "Draft the test scope specification and evidence package, flagging any production system the test must not touch unauthorized."
+[[workflow]]
+name = "Route authorization"
+instruction = "Route the scope and authorization request to the CISO since the agent never authorizes or launches a live test."
+gate = "approval"

@@ -14,3 +14,32 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "data pipeline PR with dbt models & run logs"
+consumers = ["analytics_engineer", "data_platform_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope sources"
+instruction = "Read the source schemas, target models, and existing DAGs to scope the requested transformation."
+tools = ["read_file", "repo_map", "knowledge_search"]
+[[workflow]]
+name = "Build models"
+instruction = "Write the ETL/ELT transformations and dbt/Airflow models in the sandbox following existing conventions."
+tools = ["apply_patch", "ast_edit", "str_replace_editor"]
+[[workflow]]
+name = "Run & validate"
+instruction = "Execute the pipeline on sample data and verify row counts, schema, and freshness against the source."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Check idempotency"
+instruction = "Re-run the pipeline to confirm it is idempotent and does not duplicate or drop rows on backfill."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Open PR"
+instruction = "Open a PR with the models and run logs for human review before any merge or deploy."
+tools = ["apply_patch"]
+gate = "review"

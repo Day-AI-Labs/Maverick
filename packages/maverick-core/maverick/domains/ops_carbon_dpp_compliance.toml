@@ -13,3 +13,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["ops"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "product carbon & EU passport data package"
+consumers = ["esg_controller", "sustainability_lead"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Scope products"
+instruction = "Identify the products and disclosures in scope for CBAM, CSRD/ESRS, and the EU Digital Product Passport this cycle."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Assemble data"
+instruction = "Pull product-level embedded-emissions and material data from company sources and the operational tables."
+tools = ["sql_query", "read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile figures"
+instruction = "Reconcile assembled figures across CBAM, ESRS, and passport requirements and resolve discrepancies between sources."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Document assumptions"
+instruction = "State methodology, assumptions, and unknowns plainly and cite the company documents used for each figure."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Route to ESG"
+instruction = "Hand the reconciled data package to finance ESG review so a human can file or publish the figures."
+gate = "review"

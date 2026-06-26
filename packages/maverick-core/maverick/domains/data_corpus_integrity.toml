@@ -8,3 +8,31 @@ max_risk = "medium"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "corpus integrity findings report"
+consumers = ["knowledge_curator", "security_officer"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Scope corpus"
+instruction = "Identify which RAG and training collections to audit and pull their recent additions and mutations."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Scan for poisoning"
+instruction = "Inspect documents for injected instructions, suspicious payloads, and content that contradicts trusted sources."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check anomalies"
+instruction = "Look for embedding-space outliers and unauthorized changes that signal tampering versus legitimate updates."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Label findings"
+instruction = "Compile each suspected document with its evidence and a confidence label, never deleting or quarantining it yourself."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Curator review"
+instruction = "Route the findings report to a human curator to decide on quarantine or removal."
+gate = "review"

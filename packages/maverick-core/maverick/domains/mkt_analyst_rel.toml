@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "analyst briefing & submission package"
+consumers = ["analyst_relations_lead", "product_marketing_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Confirm request"
+instruction = "Identify the analyst firm, the evaluation or inquiry at hand, and its submission deadline."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pull evidence"
+instruction = "Gather approved positioning, proof points, and prior briefings relevant to the analyst's criteria."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft response"
+instruction = "Draft the briefing narrative or evaluation answers grounded only in approved, cited claims."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify claims"
+instruction = "Check that every statement traces to an approved source and meets brand guidelines."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route approval"
+instruction = "Submit the package to the AR lead for sign-off before it reaches the analyst."
+gate = "approval"

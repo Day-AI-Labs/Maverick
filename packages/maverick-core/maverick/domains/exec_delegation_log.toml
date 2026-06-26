@@ -11,3 +11,27 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "delegation tracker with slippage flags"
+consumers = ["executive", "chief_of_staff"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Capture delegations"
+instruction = "Read recent decisions and notes to record what was delegated, to whom, and the agreed deadline."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Update statuses"
+instruction = "Refresh each open item's status from the latest updates in the company's documents."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Flag slippage"
+instruction = "Compare deadlines to today and flag items at risk or overdue with how many days they have slipped."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Surface to executive"
+instruction = "Route the slippage flags to the executive for sign-off on follow-up before escalation."
+gate = "review"

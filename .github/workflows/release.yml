@@ -185,6 +185,7 @@ jobs:
     permissions:
       contents: write   # create the GitHub Release
       actions: write    # dispatch desktop.yml to build + attach installers
+      id-token: write   # keyless cosign signing (Sigstore OIDC, no stored keys)
     steps:
       - uses: actions/checkout@v7
         with:
@@ -213,12 +214,34 @@ jobs:
           cyclonedx-py environment \
             -o "dist/maverick-sbom-${{ needs.validate-release-tag.outputs.tag }}.cdx.json" \
             || echo "SBOM generation failed (non-fatal); release continues"
+      - name: Install cosign
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
+      - name: Sign release artifacts (keyless, Sigstore)
+        # Keyless signing: cosign mints a short-lived cert bound to THIS
+        # workflow's OIDC identity and logs the signature to the public Rekor
+        # transparency log -- no long-lived private key to store or leak. For
+        # each binary + the SBOM we emit a detached `.sig` (signature) and
+        # `.pem` (signing certificate); users verify with
+        # `cosign verify-blob` (see deploy/verify-release.sh).
+        env:
+          COSIGN_YES: "true"
+        run: |
+          shopt -s nullglob
+          for f in dist/maverick-* dist/maverick-sbom-*.cdx.json; do
+            case "$f" in *.sig|*.pem) continue;; esac
+            echo "signing $f"
+            cosign sign-blob --yes \
+              --output-signature "$f.sig" \
+              --output-certificate "$f.pem" \
+              "$f"
+          done
       - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           # The validation job resolves manual dispatches and tag pushes
           # to the same v* tag that every build job checked out.
           tag_name: ${{ needs.validate-release-tag.outputs.tag }}
-          # Binaries + the per-release CycloneDX SBOM.
+          # Binaries + the per-release CycloneDX SBOM + their Sigstore
+          # signatures (.sig) and signing certificates (.pem).
           files: |
             dist/maverick-*
             dist/maverick-sbom-*.cdx.json

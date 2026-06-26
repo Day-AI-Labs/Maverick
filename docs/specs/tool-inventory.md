@@ -2,7 +2,7 @@
 
 **Purpose.** Decision-support for the *breadth-vs-depth* question raised in
 [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (thesis: "the
-highest-value additions are not more breadth"). This audit buckets the **103** tools in
+highest-value additions are not more breadth"). This audit buckets the **286** tool modules in
 `packages/maverick-core/maverick/tools/` by **what they cost to maintain** and
 **how much capability/risk they carry**, so the team can decide what stays in the
 core and what should move to the community **plugin** tier.
@@ -48,6 +48,23 @@ Each connector independently tracks a third-party API (auth, schema, rate limits
 breaking changes) and ships a credential path — i.e. each is recurring maintenance
 **and** attack surface, with little differentiation (these are table-stakes that
 every agent offers).
+
+## Primary-source / public-data connectors (read-only)
+
+Separate from the bucket-7 SaaS connector tail, the platform ships **37 read-only
+primary-source / public-data connectors** (SEC EDGAR, FRED, Treasury, World Bank,
+FDIC, Census, BLS, EIA, openFDA, NPPES, ClinicalTrials, USAspending, SAM.gov,
+CourtListener, Federal Register, GLEIF, OpenCorporates, NWS/NOAA weather, EPA,
+Climatiq, ...). These are **GET-only, low-risk, deferred** and are auto-granted
+to each analyst pack by suite (`SUITE_DATA_CONNECTORS`, layered in
+`domain_capability`) for **primary-source data grounding** — ON by default, with
+kill-switch `[workforce] data_grounding = false` (env
+`MAVERICK_WORKFORCE_DATA_GROUNDING=off`) and an installer wizard step. Because
+they are read-only and keyless/public, they belong in the **Low** risk tier
+below and do not carry the credential/attack-surface cost of bucket 7.
+
+Robustness note: connectors now return an ERROR string (rather than raising) on
+a non-string op/path/query, hardened by the governance stress sweep.
 
 ## Risk tiers (capability, not maintenance)
 

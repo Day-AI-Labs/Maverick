@@ -10,3 +10,28 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "fabrication & delivery status log"
+consumers = ["project_manager", "superintendent"]
+cadence = "weekly"
+
+[[workflow]]
+name = "Pull erection sequence"
+instruction = "Read the erection sequence and the steel piece list defining required-on-site order and dates."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Update fab status"
+instruction = "Record current fabrication, shipping, and delivery status for each piece mark or sequence from the fabricator's reports."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Align to sequence"
+instruction = "Map delivery dates against the erection sequence and flag pieces arriving out of order or late."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Surface gaps"
+instruction = "Call out any sequence whose missing or delayed steel will stall erection and note the at-risk crane days."
+[[workflow]]
+name = "Report to PM"
+instruction = "Hand the fabrication and delivery status log to the project manager and superintendent."

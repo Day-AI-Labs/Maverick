@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "contract key-terms register"
+consumers = ["contract_manager", "procurement_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Find new contracts"
+instruction = "Identify newly received or amended supplier contracts not yet reflected in the register."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Extract terms"
+instruction = "Pull the key terms from each contract including parties, term dates, renewal, pricing, and termination clauses."
+tools = ["read_file"]
+[[workflow]]
+name = "Reconcile register"
+instruction = "Compare extracted terms against the existing register and flag missing, conflicting, or expiring entries."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Draft entries"
+instruction = "Prepare the corrected register rows with a citation to the source clause for each field."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route register"
+instruction = "Hand the updated key-terms register to the contract manager to confirm before it is filed."
+gate = "review"

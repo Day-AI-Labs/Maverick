@@ -93,7 +93,7 @@ Relancez l'assistant à tout moment :
 maverick init
 ```
 
-Ou modifiez directement `~/.maverick/config.toml`. La section `[models]` associe chaque rôle d'agent à une chaîne `provider:model-id`. Consultez [`configuration.md`](./configuration.md) pour le schéma.
+Ou modifiez directement `~/.maverick/config.toml`. La section `[models]` associe chaque rôle d'agent à une chaîne `provider:model-id`. Consultez [`configuration.md`](../../configuration.md) pour le schéma.
 
 ## Où sont stockées les données
 

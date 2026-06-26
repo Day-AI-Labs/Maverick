@@ -31,6 +31,29 @@ def test_store_roundtrip_and_validation(monkeypatch, tmp_path):
         rbac.set_role("", "viewer")
 
 
+def test_concurrent_set_role_does_not_lose_assignments(monkeypatch, tmp_path):
+    """set_role does a load-modify-save; without the lock two concurrent role
+    assignments both load the same roster and the second drops the first -- a
+    lost role grant/revoke on a security store. All N must survive."""
+    import threading
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from maverick_dashboard import rbac
+    n = 24
+
+    def assign(i: int):
+        rbac.set_role(f"user:u{i:03d}", "viewer")
+
+    threads = [threading.Thread(target=assign, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(rbac.list_users()) == n
+    assert list((tmp_path / ".maverick").glob("*.tmp")) == []
+
+
 def test_permissions_map():
     from maverick_dashboard import rbac
     assert "admin" in rbac.permissions_for("admin")
@@ -111,6 +134,23 @@ def test_viewer_cannot_run_goals_via_compose_or_resume(monkeypatch, tmp_path):
     assert c.post("/api/v1/goals/1/resume").status_code == 403
 
 
+def test_viewer_cannot_run_create_or_delete_fleets(monkeypatch, tmp_path):
+    # The fleet routes (run/create/delete) dispatch governed goals and mutate
+    # fleet config -- "operate" actions. They are owner-scoped, but owner-scoping
+    # is not authz: a viewer could self-own a created fleet and then run it. A
+    # read-only viewer must be 403'd before any provider-key / owner check, just
+    # like compose/resume. Regression for the missing require_permission gate.
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import rbac
+    rbac.set_role("user:vf", "viewer")
+    _as(monkeypatch, "user:vf")
+    assert c.post("/api/v1/fleets/myfleet/run",
+                  json={"agent": "a", "prompt": "spend money"}).status_code == 403
+    assert c.post("/api/v1/fleets",
+                  json={"name": "myfleet", "agents": []}).status_code == 403
+    assert c.delete("/api/v1/fleets/myfleet").status_code == 403
+
+
 def test_operator_can_operate_but_not_admin(monkeypatch, tmp_path):
     monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "")
     c = _client(monkeypatch, tmp_path)
@@ -182,3 +222,98 @@ def test_auditor_reads_audit_but_nothing_operational(monkeypatch, tmp_path):
     assert c.post("/chat/send", data={"title": "hi"}).status_code == 403
     assert c.post("/api/v1/goals/compose",
                   json={"title": "spend money"}).status_code == 403
+
+
+def test_viewer_cannot_mutate_owned_goal(monkeypatch, tmp_path):
+    # answer/retitle/reparent are "operate" actions. A viewer who OWNS a goal
+    # (so the access check passes) must still be 403'd by the role gate -- owner
+    # access is not authz. Regression for the missing require_permission gate.
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import rbac
+    rbac.set_role("user:vm", "viewer")
+    from maverick.world_model import WorldModel
+    gid = WorldModel(tmp_path / "world.db").create_goal("owned", owner="user:vm")
+    _as(monkeypatch, "user:vm")
+    assert c.post(f"/api/v1/goals/{gid}/answer",
+                  json={"question_id": 1, "answer": "x"}).status_code == 403
+    assert c.post(f"/api/v1/goals/{gid}/retitle",
+                  json={"title": "new"}).status_code == 403
+    assert c.post(f"/api/v1/goals/{gid}/reparent",
+                  json={"parent_id": None}).status_code == 403
+
+
+def test_redact_preview_requires_operate(monkeypatch, tmp_path):
+    # /redact/preview ran the detector pipeline on caller text unauthenticated;
+    # it now requires "operate" (a viewer is 403'd).
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import rbac
+    rbac.set_role("user:vp", "viewer")
+    _as(monkeypatch, "user:vp")
+    assert c.post("/api/v1/redact/preview", json={"text": "hi"}).status_code == 403
+
+
+def test_validate_agent_override_requires_pack_admin(monkeypatch, tmp_path):
+    # /agents/{name}/validate (pack-edit lint) was unauthenticated; it now uses
+    # the same pack-admin gate as save/delete override.
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import api
+    monkeypatch.setattr(api, "caller_principal", lambda request: "user:alice")
+    monkeypatch.setattr(api, "is_dashboard_admin", lambda principal: False)
+    assert c.post("/api/v1/agents/orchestrator/validate", json={}).status_code == 403
+
+
+def test_shared_halt_requires_admin(monkeypatch, tmp_path):
+    # The shared Postgres halt is a global, untenanted fleet control. A tenant
+    # operator may operate local goals, but must not arm the cluster-wide halt.
+    monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "")
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import api, rbac
+
+    monkeypatch.setenv("MAVERICK_HALT_FILE", str(tmp_path / "HALT"))
+    monkeypatch.setattr(api, "_shared_halt_backend", lambda: True)
+    rbac.set_role("user:op-halt", "operator")
+    _as(monkeypatch, "user:op-halt")
+
+    r = c.post("/api/v1/halt", json={"reason": "tenant halt"})
+    assert r.status_code == 403
+    assert not (tmp_path / "HALT").exists()
+
+    r = c.delete("/api/v1/halt")
+    assert r.status_code == 403
+
+
+def test_shared_halt_allows_admin(monkeypatch, tmp_path):
+    # Dashboard admins retain the ability to toggle the global shared halt.
+    monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "user:root")
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import api
+
+    class FakeWorld:
+        def __init__(self):
+            self.armed = False
+
+        def arm_halt(self, reason="", source="manual", armed_by=""):
+            self.armed = True
+            self.reason = reason
+            self.source = source
+            self.armed_by = armed_by
+
+        def disarm_halt(self):
+            self.armed = False
+
+    fake_world = FakeWorld()
+    monkeypatch.setenv("MAVERICK_HALT_FILE", str(tmp_path / "HALT"))
+    monkeypatch.setattr(api, "_shared_halt_backend", lambda: True)
+    monkeypatch.setattr(api, "_world", lambda: fake_world)
+    _as(monkeypatch, "user:root")
+
+    r = c.post("/api/v1/halt", json={"reason": "admin halt"})
+    assert r.status_code == 204
+    assert fake_world.armed is True
+    assert fake_world.reason == "admin halt"
+    assert (tmp_path / "HALT").exists()
+
+    r = c.delete("/api/v1/halt")
+    assert r.status_code == 204
+    assert fake_world.armed is False
+    assert not (tmp_path / "HALT").exists()

@@ -14,8 +14,11 @@ Heavy deps deferred to import time; the optional install is
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import logging
 import os
+import re
+from collections import deque
 
 from .base import (
     Channel,
@@ -29,8 +32,45 @@ from .base import (
 log = logging.getLogger(__name__)
 
 
+def _now_iso_z() -> str:
+    """Current UTC time as an AT-Protocol timestamp (``...Z``). Uses a
+    timezone-aware now() -- datetime.utcnow() is deprecated in 3.12+."""
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
 _API_BASE = "https://bsky.social/xrpc"
 _POLL_INTERVAL_SEC = 30.0
+# Bound on the recently-seen notification-uri dedup set (FIFO eviction). The
+# poll window is the 50 newest notifications, so this is generous headroom.
+_MAX_SEEN_URIS = 1000
+
+_FRAC_RE = re.compile(r"\.(\d+)")
+
+
+def _parse_indexed_at(ts: str) -> _dt.datetime | None:
+    """Parse an AT-proto ``indexedAt`` into an aware UTC datetime.
+
+    Tolerant of the varying fractional precision AT-proto emits (``...:00Z``,
+    ``...:00.123Z``, ``...:00.123456789Z``) and of the trailing ``Z`` that
+    ``datetime.fromisoformat`` rejects before Python 3.11. Returns None if the
+    value is empty/unparseable so the caller can fall back to a string compare.
+
+    Why: the startup floor is seeded with 6-digit microseconds, but a raw
+    string ``<=`` compares ``"…:00Z"`` as GREATER than ``"…:00.000000Z"``
+    (``'Z'`` > ``'.'``), so a boundary-second notification with no/short
+    fractional part slips past the "don't backfill history" floor.
+    """
+    s = (ts or "").strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    # Clamp fractional seconds to microseconds; fromisoformat rejects >6 digits.
+    s = _FRAC_RE.sub(lambda m: "." + m.group(1)[:6].ljust(6, "0"), s, count=1)
+    try:
+        return _dt.datetime.fromisoformat(s)
+    except ValueError:
+        return None
 
 
 class BlueskyChannel(Channel):
@@ -65,7 +105,15 @@ class BlueskyChannel(Channel):
             )
         self.poll_interval = poll_interval
         self._session: dict = {}
+        # ``_last_seen_indexed_at`` is a FLOOR seeded to startup time so a cold
+        # start doesn't backfill history. Dedup is by notification ``uri`` (a
+        # bounded recently-seen set), NOT a strict high-water-mark on the floor:
+        # AT-proto indexedAt is not monotonic (clock skew / late server
+        # indexing), so advancing a watermark to the newest timestamp silently
+        # dropped a genuinely-new notification indexed a moment earlier.
         self._last_seen_indexed_at: str | None = None
+        self._seen_uris: set[str] = set()
+        self._seen_order: deque[str] = deque()
         self._running = False
         self._stop_event = asyncio.Event()
 
@@ -110,18 +158,38 @@ class BlueskyChannel(Channel):
                 return []
             resp.raise_for_status()
             notifs = (resp.json() or {}).get("notifications") or []
-        # Filter: only new mentions / replies / DMs.
+        # Filter: only new mentions / replies. Floor on the startup cursor (no
+        # history backfill), then dedup by uri -- so a notification indexed just
+        # before the newest one (out-of-order/late indexing) is still delivered,
+        # not dropped by a strict timestamp watermark.
         new: list[dict] = []
         for n in notifs:
             reason = n.get("reason")
             if reason not in ("mention", "reply"):
                 continue
             ts = n.get("indexedAt", "")
-            if self._last_seen_indexed_at and ts <= self._last_seen_indexed_at:
-                continue
+            floor = self._last_seen_indexed_at
+            if floor and ts:
+                ts_dt = _parse_indexed_at(ts)
+                floor_dt = _parse_indexed_at(floor)
+                if ts_dt is not None and floor_dt is not None:
+                    if ts_dt <= floor_dt:
+                        continue  # at/before startup -> pre-history, skip
+                elif ts <= floor:
+                    continue  # unparseable: conservative lexicographic fallback
+            uri = n.get("uri") or ""
+            if uri and uri in self._seen_uris:
+                continue  # already delivered this exact notification
             new.append(n)
-        if new:
-            self._last_seen_indexed_at = max(n.get("indexedAt", "") for n in new)
+        for n in new:
+            uri = n.get("uri") or ""
+            if uri:
+                self._seen_uris.add(uri)
+                self._seen_order.append(uri)
+        # Bound the dedup set (FIFO); the polling window is the last ~50, so a
+        # few hundred entries is ample headroom against re-delivery.
+        while len(self._seen_order) > _MAX_SEEN_URIS:
+            self._seen_uris.discard(self._seen_order.popleft())
         return new
 
     async def _dispatch(self, notif: dict) -> None:
@@ -166,7 +234,7 @@ class BlueskyChannel(Channel):
             "record": {
                 "$type": "app.bsky.feed.post",
                 "text": text[:300],  # 300-char limit
-                "createdAt": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                "createdAt": _now_iso_z(),
                 "reply": {
                     "root": reply_root,
                     "parent": {
@@ -193,11 +261,7 @@ class BlueskyChannel(Channel):
         # start (or any restart) re-runs the agent swarm on the last 50
         # mentions in history — duplicate replies + real LLM spend.
         if self._last_seen_indexed_at is None:
-            import datetime as _dt
-            self._last_seen_indexed_at = (
-                _dt.datetime.now(_dt.timezone.utc)
-                .strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-            )
+            self._last_seen_indexed_at = _now_iso_z()
         log.info("Bluesky channel started (handle=%s)", self.handle)
         errors = 0
         try:
@@ -237,7 +301,7 @@ class BlueskyChannel(Channel):
             "record": {
                 "$type": "app.bsky.feed.post",
                 "text": f"@{user_id}: {text[:280]}",
-                "createdAt": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                "createdAt": _now_iso_z(),
             },
         }
         async with httpx.AsyncClient(timeout=30.0) as client:

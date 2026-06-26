@@ -120,8 +120,10 @@ def _resolve_signing(explicit: bool | None) -> bool:
     Compliance floors are mandatory and strictest-wins: HIPAA-mode audit logging
     requires signed/tamper-evident audit rows even if the standalone signing knob
     is absent or false. Otherwise, precedence is explicit arg >
-    MAVERICK_AUDIT_SIGN env > [audit] sign in config.toml > off. Resolved once
-    at construction so the hot record() path never re-reads config.
+    MAVERICK_AUDIT_SIGN env > [audit] sign in config.toml > secure-by-default
+    (ON unless explicitly disabled, via ``MAVERICK_SECURE_DEFAULT=0`` /
+    ``[security] secure_defaults = false``). Resolved once at construction so the
+    hot record() path never re-reads config.
     """
     try:
         from ..compliance_profiles import FLOOR_AUDIT_LOG, requires_floor
@@ -137,8 +139,14 @@ def _resolve_signing(explicit: bool | None) -> bool:
         return env_bool("MAVERICK_AUDIT_SIGN", False)
     try:
         from ..config import load_config
+        from ..security_defaults import secure_by_default
 
-        return bool(((load_config() or {}).get("audit") or {}).get("sign", False))
+        # Secure-by-default: sign + hash-chain the audit log unless explicitly
+        # disabled. An explicit [audit] sign still wins when present.
+        sign = ((load_config() or {}).get("audit") or {}).get("sign")
+        if sign is not None:
+            return bool(sign)
+        return secure_by_default()
     except Exception:
         return False
 
@@ -148,8 +156,10 @@ class AuditLog:
 
     Single writer instance per process. Thread-safe.
 
-    When signing is enabled (opt-in via ``sign=True`` /
-    ``MAVERICK_AUDIT_SIGN`` / ``[audit] sign``), each row is routed
+    When signing is enabled (**on by default** via secure-by-default; also
+    forced by ``sign=True`` / ``MAVERICK_AUDIT_SIGN`` / ``[audit] sign``, and
+    turned off by ``[audit] sign = false`` / ``MAVERICK_AUDIT_SIGN=0`` / the
+    ``secure_defaults`` master switch), each row is routed
     through :class:`maverick.audit.signing.AuditSigner`, adding an
     Ed25519 ``prev_hash``/``hash``/``sig`` chain so tampering is
     detectable by ``maverick audit verify``. For third-party
@@ -282,13 +292,35 @@ class AuditLog:
                 self._signer = AuditSigner(path)
                 self._signer_path = path
             except ImportError:
-                log.warning(
+                # A compliance floor (e.g. HIPAA) that mandates signed,
+                # tamper-evident audit rows must NOT silently degrade to plaintext
+                # -- mirror crypto_at_rest's fail-closed posture and refuse rather
+                # than let an operator believe tamper-evidence is active when it
+                # isn't. Only the no-floor (secure-by-default) path degrades, and
+                # then loudly (error, not warning).
+                try:
+                    from ..compliance_profiles import FLOOR_AUDIT_LOG, requires_floor
+                    floored = requires_floor(FLOOR_AUDIT_LOG)
+                except Exception:  # pragma: no cover - floor lookup never blocks
+                    floored = False
+                if floored:
+                    raise RuntimeError(
+                        "audit: an active compliance profile requires signed, "
+                        "tamper-evident audit logs, but the 'cryptography' extra is "
+                        "not installed -- refusing to write UNSIGNED. Run: "
+                        "pip install 'maverick-agent[audit-signing]'"
+                    ) from None
+                log.error(
                     "audit: signing enabled but 'cryptography' not installed; "
                     "writing UNSIGNED. Run: pip install 'maverick-agent[audit-signing]'"
                 )
                 self._signing_enabled = False
                 return None
             except Exception as e:  # pragma: no cover - defensive
+                from .signing import OffHostSigningRequiredError
+
+                if isinstance(e, OffHostSigningRequiredError):
+                    raise
                 log.warning("audit: signer init failed (%s); writing unsigned", e)
                 self._signing_enabled = False
                 return None

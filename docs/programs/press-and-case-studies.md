@@ -36,7 +36,7 @@ Lightwork is developed by Day AI Labs.
 Lightwork is a proprietary, self-hosted AI agent runtime for enterprises. A
 recursive orchestrator spawns specialist sub-agents that work in parallel
 under hard budget caps, behind a safety shield, with a signed audit log
-and a multi-tenant control plane. 100+ tools, 17 channels, 9 sandbox
+and a multi-tenant control plane. 286 tool modules, 17 channels, 9 sandbox
 backends, 12 LLM providers.
 
 ### 25-word version

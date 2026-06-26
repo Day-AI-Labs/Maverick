@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "platform-ready social post drafts"
+consumers = ["social_media_manager", "brand_marketing_lead"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Pull material"
+instruction = "Gather the approved campaign material, brand voice guide, and key messages from company documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Tailor posts"
+instruction = "Draft each post to the conventions, length, and tone of its target platform from the approved source."
+tools = ["read_file"]
+[[workflow]]
+name = "Check claims"
+instruction = "Verify every factual claim traces to an approved source and complies with brand and regulatory guidelines."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compile metrics"
+instruction = "Pull recent engagement data into a short report to inform timing and format choices."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand to manager"
+instruction = "Route the post drafts to the social media manager for approval before anything is published."
+gate = "approval"

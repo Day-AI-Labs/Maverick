@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_facilities"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "work-order & vendor coordination plan"
+consumers = ["facilities_manager", "maintenance_lead"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Triage work orders"
+instruction = "Review open facility work orders and rank them with life-safety systems taking priority."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check compliance"
+instruction = "Verify each work order against building-code and compliance requirements and flag any code issue."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Match vendors"
+instruction = "Identify the appropriate service vendors and scope for each prioritized work order."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft plan"
+instruction = "Draft the work-order schedule and vendor-coordination recommendations with estimated spend."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for authorization"
+instruction = "Route vendor spend and any building-system change to the facilities manager for authorization."
+gate = "approval"

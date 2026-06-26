@@ -15,3 +15,31 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "matter status & triage report"
+consumers = ["general_counsel", "legal_ops_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Read intake"
+instruction = "Pull the new matter request and supporting documents from the matter system and intake queue."
+tools = ["clio_read", "read_file"]
+[[workflow]]
+name = "Conflict check"
+instruction = "Screen for conflicts and confirm the matter does not cross an existing privilege wall before routing."
+tools = ["clio_read", "knowledge_search"]
+[[workflow]]
+name = "Triage and prioritize"
+instruction = "Classify the matter type, assign priority, and identify the responsible attorney based on intake details."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compile status"
+instruction = "Aggregate lifecycle status, deadlines, and priorities across open matters into the report."
+tools = ["clio_read"]
+[[workflow]]
+name = "Attorney sign-off"
+instruction = "Route the triage and status report to the supervising attorney for review and any substantive escalation."
+gate = "review"

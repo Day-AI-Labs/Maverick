@@ -66,7 +66,7 @@ class _ReadTool:
 
 def scenario_tool_loop() -> dict:
     """Re-call the same read tool 100x; the cache must absorb the repeats."""
-    from maverick import tool_cache
+    from maverick.cache import tool as tool_cache
 
     tool = _ReadTool()
     args = {"path": "src/big_module.py"}

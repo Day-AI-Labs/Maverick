@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "security questionnaire response package"
+consumers = ["security_team", "sales_engineering", "deal_owner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Parse questionnaire"
+instruction = "Read the inbound SIG, CAIQ, or VSA and extract each control question and its required answer format."
+tools = ["read_file"]
+[[workflow]]
+name = "Match evidence"
+instruction = "Ground each answer in the company's own controls, policies, and attestations via knowledge search and cite the source."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft answers"
+instruction = "Draft responses consistent with current attestations, never upgrading a control status or claiming a certification not held."
+[[workflow]]
+name = "Flag gaps"
+instruction = "List any unanswerable items or control gaps and assign each to a human owner for resolution."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Submit the response package to the security team for human review and signature before it is returned."
+gate = "review"

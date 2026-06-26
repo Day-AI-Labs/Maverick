@@ -21,3 +21,23 @@ deliverable = "Threat-intelligence brief"
 consumers = ["security_analyst", "ciso"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Ingest intel"
+instruction = "Pull the latest IOCs and intel feeds via STIX/TAXII and MISP and read CrowdStrike intelligence for the period."
+tools = ["crowdstrike_read", "read_file"]
+[[workflow]]
+name = "Enrich indicators"
+instruction = "Enrich and deduplicate indicators against open-source reporting and prior knowledge to drop stale or low-confidence entries."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Map TTPs"
+instruction = "Map observed activity to MITRE ATT&CK techniques and tie it to relevant threat actors."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft brief"
+instruction = "Write the threat-intelligence brief with prioritized indicators and recommended detections for the SOC."
+[[workflow]]
+name = "Route to SOC"
+instruction = "Submit the brief to the security analyst and CISO for sign-off before SOC distribution."
+gate = "review"

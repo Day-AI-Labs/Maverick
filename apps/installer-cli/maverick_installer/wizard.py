@@ -90,6 +90,9 @@ STEPS: list[tuple[str, str]] = [
     ("sandbox", "Sandbox"),
     ("capabilities", "Capabilities"),
     ("self_learning", "Self-learning"),
+    ("automation_import", "Automation import"),
+    ("oauth_vault", "OAuth token vault"),
+    ("governed_connectors", "Governed connectors"),
     ("durable", "Durable execution"),
     ("finance", "Finance suite"),
     ("advanced", "Advanced reasoning"),
@@ -131,6 +134,12 @@ def _safe_int(s: str, *, default: int) -> int:
         return int(str(s or "").strip())
     except (TypeError, ValueError):
         return default
+
+
+def _csv_list(raw: str, *, lower: bool = False) -> list[str]:
+    """Split a comma-separated prompt answer into trimmed, non-empty items."""
+    items = [x.strip() for x in str(raw or "").split(",") if x.strip()]
+    return [x.lower() for x in items] if lower else items
 
 
 def _safe_float(s: str, *, default: float) -> float:
@@ -491,7 +500,7 @@ def show_browser_capture_timeout(provider: str) -> None:
 
 def welcome() -> None:
     console.print(Panel.fit(
-        "[bold]Maverick installer[/bold]\n\n"
+        "[bold]Lightwork installer[/bold]\n\n"
         "Next you'll pick a setup mode: a quick consumer flow (a few\n"
         "questions, safe defaults) or advanced (configure every model,\n"
         "channel, safety level, and budget). Re-run any time with\n"
@@ -502,12 +511,12 @@ def welcome() -> None:
 
 def pick_deployment() -> str:
     pick = _q_select(
-        "Where will Maverick run?",
+        "Where will Lightwork run?",
         [
             "desktop  - This computer (recommended for first-time users)",
             "docker   - Local Docker container (isolated, easy to remove)",
             "vps      - Remote server you own (always-on)",
-            "phone    - Phone companion (Maverick runs on desktop/VPS; phone is a frontend)",
+            "phone    - Phone companion (Lightwork runs on desktop/VPS; phone is a frontend)",
         ],
     )
     return pick.split()[0]
@@ -702,7 +711,7 @@ def _channel_allowlist(ch_id: str, cfg: dict[str, Any]) -> None:
             "only these can drive the agent",
             default="",
         )
-        ids = [s.strip() for s in raw_ids.split(",") if s.strip()]
+        ids = _csv_list(raw_ids)
         if ids:
             cfg["allowed_user_ids"] = ids
         else:
@@ -722,7 +731,7 @@ def _channel_allowlist(ch_id: str, cfg: dict[str, Any]) -> None:
             "blank = any authenticated caller)",
             default="",
         )
-        callers = [x.strip() for x in raw.split(",") if x.strip()]
+        callers = _csv_list(raw)
         if callers:
             cfg["allowed_callers"] = callers
 
@@ -824,7 +833,7 @@ def pick_signed_skills() -> dict[str, Any]:
         "leave blank to skip.[/dim]"
     )
     raw = _q_text("  Trusted skill publisher pubkeys (comma-separated hex)", default="")
-    trusted = [k.strip() for k in raw.split(",") if k.strip()]
+    trusted = _csv_list(raw)
     require = _q_confirm(
         "  Reject unsigned skills (only install signed + trusted ones)?",
         default=False,
@@ -944,6 +953,11 @@ def pick_self_learning() -> dict[str, Any]:
         "  Pre-acquire likely skills before each run (one extra LLM call)?",
         default=True,
     )
+    provision_packs = _q_confirm(
+        "  Equip newly onboarded packs: install the catalog skills and "
+        "synthesize the tools a pack's workflow needs, at approval time?",
+        default=True,
+    )
     console.print(
         "[dim]  MCP acquisition: the agent may PROPOSE adding a curated, "
         "hash-pinned catalog MCP server (never a free-text command). Each one "
@@ -962,10 +976,92 @@ def pick_self_learning() -> dict[str, Any]:
         "enable": True,
         "preflight": preflight,
         "create_tools": create_tools,
+        "provision_packs": provision_packs,
         "allow_mcp_acquisition": allow_mcp,
         "distill_local": distill_local,
         "max_acquisitions": 5,
     }
+
+
+def pick_automation_import() -> dict[str, Any]:
+    """Opt-in to importing clients' existing automations into Lightwork.
+
+    Off by default. When on, ``maverick import`` can pull workflow definitions
+    from platforms that expose them (n8n/Make/Workato/Power Automate/UiPath) and
+    turn each into a Lightwork template, plus connect-and-trigger for Zapier/
+    Notion. It reaches out to third-party platforms and writes user templates,
+    so it ships disabled. Returns a dict written under ``[automation_import]``.
+    """
+    console.print()
+    console.print(
+        "[dim]Automation import pulls workflows your clients already built "
+        "(n8n/Make/Workato/Power Automate/UiPath) into Lightwork templates, and "
+        "lets Zapier/Notion trigger Lightwork. It calls third-party APIs and "
+        "writes templates, so it's OFF by default.[/dim]"
+    )
+    enable = _q_confirm("Enable automation import?", default=False)
+    if not enable:
+        return {"enable": False}
+    create_schedules = _q_confirm(
+        "  Auto-create Lightwork schedules for imported cron triggers? "
+        "(off = import the template, you activate the schedule yourself)",
+        default=False,
+    )
+    return {"enable": True, "create_schedules": create_schedules}
+
+
+def pick_oauth_vault() -> dict[str, Any]:
+    """Opt-in to sealing captured OAuth tokens in the per-tenant vault.
+
+    Off by default. When on, the OAuth helper seals access/refresh tokens
+    encrypted-at-rest under the tenant's DEK (one data key per tenant) instead
+    of writing them to a plaintext file. Returns a dict written under
+    ``[oauth]``.
+    """
+    console.print()
+    console.print(
+        "[dim]The OAuth token vault seals captured access/refresh tokens "
+        "encrypted-at-rest under each tenant's own key (no plaintext token "
+        "files, no cross-tenant readability). Recommended for hosted/multi-"
+        "tenant deploys. OFF by default.[/dim]"
+    )
+    return {"vault": _q_confirm("Seal OAuth tokens in the per-tenant vault?",
+                                default=False)}
+
+
+def pick_governed_connectors() -> dict[str, Any]:
+    """Opt-in to routing live system-of-record writes through governed Actions.
+
+    Off by default. When on, a selected enterprise connector (Salesforce,
+    ServiceNow) is registered as a typed governed Action: a write previews its
+    effect, hits the approval floor (``[actions] require_approval_at``), and
+    records a tamper-evident lineage link -- instead of a bare confirm-gated
+    tool call. Returns a dict written under ``[governed_connectors]``.
+    """
+    try:
+        from maverick.governed_rest import available_rest_connectors
+        choices = available_rest_connectors()
+    except Exception:  # pragma: no cover -- never block the wizard
+        choices = ["salesforce", "servicenow"]
+    console.print()
+    console.print(
+        "[dim]Governed connectors route a live system-of-record write "
+        f"({', '.join(choices)}) through simulate -> approve -> commit -> "
+        "lineage: the write hits the approval floor and is recorded in a "
+        "tamper-evident chain. OFF by default.[/dim]"
+    )
+    if not _q_confirm("Enable governed system-of-record connectors?", default=False):
+        return {"enable": False}
+    selected = [c for c in choices
+                if _q_confirm(f"  Register {c} as a governed connector?", default=False)]
+    # Standing approver of record: when these connectors are wrapped in the live
+    # tool path, a write is approval-gated against this identity (the agent can't
+    # self-approve). Blank = writes are previewed but refused until an operator
+    # commits them out of band.
+    approver = _q_text(
+        "  Approver of record for governed writes (blank = refuse agent writes "
+        "without out-of-band approval):", default="").strip()
+    return {"enable": True, "connectors": selected, "approver": approver}
 
 
 def pick_durable() -> dict[str, Any]:
@@ -1147,6 +1243,14 @@ def pick_advanced() -> dict[str, Any]:
             "on the next similar goal.",
             default=False,
         ),
+        "self_harness": _q_confirm(
+            "Self-harness? Learn a MODEL-SPECIFIC operating-guidance addendum from "
+            "recurring failures -- mined, validated on held-out cases, and gated "
+            "through the same promotion ladder as every other learned change -- "
+            "then recalled into that model's system prompt. Inspect or roll it "
+            "back any time with `maverick harness`. OFF by default.",
+            default=False,
+        ),
         "fleet_memory": _q_confirm(
             "Fleet memory? Let EXTERNAL agents (Agentforce, Copilot, custom) "
             "deposit experience into and recall from Maverick's governed "
@@ -1165,6 +1269,13 @@ def pick_advanced() -> dict[str, Any]:
             "Temporal memory? Keep a bitemporal history of every fact (validity "
             "windows) instead of overwriting -- answer 'what did we believe on "
             "date X, and why' for the Operating Record. OFF by default.",
+            default=False,
+        ),
+        "fairness_monitor": _q_confirm(
+            "Continuous fairness monitoring (ISO 42001 A.6.2.6)? Watch decision "
+            "outcomes over a rolling window and raise a signed FAIRNESS_ALERT when "
+            "the four-fifths rule is breached or fairness drifts below baseline. A "
+            "deployment opts in by feeding the monitor its outcomes. OFF by default.",
             default=False,
         ),
         "specialist_discipline": _q_confirm(
@@ -1225,6 +1336,22 @@ def pick_advanced() -> dict[str, Any]:
             "agent action (writes, shell) so a run's actions are auditable end-to-end.",
             default=False,
         ),
+        "workforce_levels": _q_confirm(
+            "Per-agent autonomy levels? Treat each agent like a hire with a level of "
+            "authority you set -- observe / suggest / request-approval / autonomous, "
+            "per action risk -- starting supervised (onboarding) and graduating on a "
+            "clean record. Off by default, every agent stages actions for human "
+            "execution. Per-agent overrides go under [workforce.agents].",
+            default=False,
+        ),
+        "workforce_data_grounding": _q_confirm(
+            "Primary-source data grounding? Give each analyst pack its suite's "
+            "public/government data connectors (SEC EDGAR, FRED, openFDA, "
+            "USAspending, weather, ...) so it grounds work in primary sources. "
+            "GET-only, low-risk, deferred (no context cost), and inert without "
+            "each source's API key. On by default; turn off to withhold them.",
+            default=True,
+        ),
         "calibration_enforce": _q_confirm(
             "Calibration interlock? Freeze self-improvement (trajectory donation) "
             "if the verifier stops telling correct answers from incorrect ones on "
@@ -1264,6 +1391,14 @@ def pick_advanced() -> dict[str, Any]:
             "with success. Each promotion records the effect, its confidence interval, and "
             "what it adjusted for. Requires self-improvement enabled.",
             default=False,
+        ),
+        "factory_learning": _q_confirm(
+            "Self-improving agent factory? Mine recurring pack-generation gaps (a tool a "
+            "draft kept omitting, a skill its workflow kept needing) into proposer "
+            "corrections and promote them through the self-improvement gate, so future "
+            "packs are drafted better. Guidance text only -- never widens an envelope. "
+            "Requires self-improvement enabled.",
+            default=True,
         ),
         "rehearsal": _q_confirm(
             "Pre-execution rehearsal? Before a risky plan runs, simulate it against the "
@@ -1383,11 +1518,38 @@ def pick_advanced() -> dict[str, Any]:
             "Off by default (single-tenant boxes don't need it).",
             default=False,
         ),
+        "pg_rls": _q_confirm(
+            "Database-enforced tenant isolation (Postgres Row-Level Security)? "
+            "Only for the shared Postgres backend with MULTIPLE tenants: the DB "
+            "itself rejects cross-tenant rows as defense-in-depth over the "
+            "app-layer scoping. REQUIRES one-time prep first — assign legacy rows "
+            "with `maverick tenant backfill --tenant <id>` and verify with "
+            "`maverick tenant rls-preflight`, or pre-tenancy rows become invisible. "
+            "Off by default; leave off for SQLite or single-tenant installs.",
+            default=False,
+        ),
         "audit_sign": _q_confirm(
             "Sign the audit log for tamper-evidence? Ed25519 hash-chains every "
             "audit row (plus a signed cross-file ledger) so `maverick audit verify` "
             "can prove the log was not altered — the basis for SOC 2 evidence. "
             "Needs the [audit-signing] extra; falls back to unsigned if absent.",
+            default=False,
+        ),
+        "audit_worm": _q_confirm(
+            "Export closed audit day-files to a write-once (WORM) store? Beyond "
+            "tamper-EVIDENCE, this makes the historical log un-alterable: each "
+            "closed day-file is shipped with a retention lock so it can't be "
+            "rewritten or deleted (S3 Object-Lock for regulator-grade WORM, or a "
+            "local read-only mirror). Run `maverick audit worm push` (e.g. nightly "
+            "cron). Defaults to a local mirror; edit [audit.worm] for S3.",
+            default=False,
+        ),
+        "saml": _q_confirm(
+            "Enable SAML 2.0 SSO (alongside or instead of OIDC)? For enterprises "
+            "whose IdP (Okta, Entra/Azure AD, ADFS) mandates SAML over OIDC. "
+            "Writes a [auth.saml] template you fill in with your SP/IdP details, "
+            "then hand /saml/metadata to the IdP. Needs the [saml] extra (pysaml2) "
+            "and the browser-login session secret. Off by default.",
             default=False,
         ),
         "security_autofix": _q_confirm(
@@ -1396,6 +1558,14 @@ def pick_advanced() -> dict[str, Any]:
             "config fixes (enable audit signing, set retention); anything "
             "behaviour-changing stays gated for a human. Off by default; every fix "
             "is audited and reversible.",
+            default=False,
+        ),
+        "dual_approval": _q_confirm(
+            "Require two-person approval for risky actions (N-of-M dual control)? "
+            "A high/critical-risk action then needs 2 DISTINCT approvers in the "
+            "dashboard queue, and the requester can't approve their own request — "
+            "the segregation-of-duties control SOX / SOC 2 / HIPAA auditors test. "
+            "Writes [security] approvals_required = 2. Off by default.",
             default=False,
         ),
         "deferred_tools": _q_confirm(
@@ -1892,7 +2062,7 @@ def pick_webhooks() -> tuple[dict[str, Any], list[str]]:
         "  Endpoint URL(s), comma-separated",
         default="",
     ).strip()
-    urls = [u.strip() for u in raw.split(",") if u.strip()]
+    urls = _csv_list(raw)
     if not urls:
         return {}, []
     cfg: dict[str, Any] = {"outbound": urls}
@@ -1975,7 +2145,7 @@ def pick_connectors() -> dict[str, str]:
         "  Which systems? (comma-separated names, e.g. servicenow, snowflake)",
         default="",
     )
-    picked = [n.strip().lower() for n in raw.split(",") if n.strip()]
+    picked = _csv_list(raw, lower=True)
     keys: dict[str, str] = {}
     for name in dict.fromkeys(picked):  # dedupe, preserve order
         entry = by_name.get(name)
@@ -2394,6 +2564,29 @@ AGENT_SUITES: list[tuple[str, str]] = [
     ("telecom_media", "Telecom / Media & Entertainment"),
     ("hospitality", "Hospitality / Travel"),
     ("capital_markets", "Capital Markets / Asset Management"),
+    # New industry suites (2026 build-out).
+    ("oil_gas", "Oil & Gas / Energy (Upstream-Downstream)"),
+    ("automotive", "Automotive (OEM / Dealership / Mobility)"),
+    ("public_sector", "Public Sector (State & Local Government Operations)"),
+    ("agriculture", "Agriculture / Agribusiness"),
+    ("aerospace_defense", "Aerospace & Defense"),
+    ("maritime", "Maritime / Shipping & Ports"),
+    ("travel_aviation", "Travel / Airlines & Aviation"),
+    ("mining_metals", "Mining & Metals"),
+    ("crypto_digital_assets", "Crypto & Digital Assets"),
+    ("chemicals", "Chemicals (Bulk / Specialty / Petrochemical)"),
+    ("food_beverage_cpg", "Food, Beverage & CPG"),
+    ("medical_devices", "Medical Devices & Diagnostics"),
+    ("private_equity_vc", "Private Equity & Venture Capital"),
+    ("water_utilities", "Water & Wastewater Utilities"),
+    ("renewables_cleantech", "Renewables & Clean Energy"),
+    ("semiconductors", "Semiconductors & Electronics"),
+    # Horizontal-function suites.
+    ("esg_sustainability", "ESG & Sustainability"),
+    ("enterprise_risk", "Enterprise Risk & Corporate Insurance"),
+    ("knowledge_management", "Knowledge Management"),
+    ("trust_safety", "Trust & Safety"),
+    ("process_automation", "Process Automation & Workflows"),
 ]
 
 
@@ -2514,6 +2707,35 @@ def _cfg_self_learning(self_learning: dict[str, Any] | None) -> list[str]:
     return lines
 
 
+def _cfg_automation_import(automation_import: dict[str, Any] | None) -> list[str]:
+    if not automation_import:
+        return []
+    # Automation import. enable gates the whole feature; create_schedules lets a
+    # recovered cron trigger auto-create a Lightwork schedule on import.
+    lines = ["", "[automation_import]"]
+    for k, v in automation_import.items():
+        _emit_kv(lines, k, v)
+    return lines
+
+
+def _cfg_oauth(oauth: dict[str, Any] | None) -> list[str]:
+    if not (oauth and oauth.get("vault")):
+        return []
+    # Seal captured OAuth tokens in the per-tenant vault (encrypted at rest).
+    return ["", "[oauth]", "vault = true"]
+
+
+def _cfg_governed_connectors(governed_connectors: dict[str, Any] | None) -> list[str]:
+    if not (governed_connectors and governed_connectors.get("enable")):
+        return []
+    # Governed system-of-record connectors. enable turns on the governed write
+    # path; connectors selects which reference REST connectors to register.
+    lines = ["", "[governed_connectors]"]
+    for k, v in governed_connectors.items():
+        _emit_kv(lines, k, v)
+    return lines
+
+
 def _cfg_durable(durable: dict[str, Any] | None) -> list[str]:
     if not (durable and durable.get("enabled")):
         return []
@@ -2627,6 +2849,16 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[actions]")
         lines.append("enable = true")
+    # data_grounding defaults ON, so emit the knob only to DISABLE it. Both keys
+    # share one [workforce] section.
+    _wf_disable_grounding = advanced.get("workforce_data_grounding") is False
+    if advanced.get("workforce_levels") or _wf_disable_grounding:
+        lines.append("")
+        lines.append("[workforce]")
+        if advanced.get("workforce_levels"):
+            lines.append("levels = true")
+        if _wf_disable_grounding:
+            lines.append("data_grounding = false")
     if advanced.get("calibration_enforce"):
         lines.append("")
         lines.append("[calibration]")
@@ -2651,13 +2883,22 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[credit]")
         lines.append("enable = true")
-    if advanced.get("causal_promotion"):
+    # The [self_improvement] block carries several sub-toggles; emit it if any
+    # diverges from its default (causal_promotion defaults off, factory_learning
+    # defaults on -- so we only write factory_learning when the user opts out).
+    declined_factory = "factory_learning" in advanced and not advanced.get("factory_learning")
+    if advanced.get("causal_promotion") or declined_factory:
         lines.append("")
         lines.append("[self_improvement]")
-        lines.append("# Promote learned changes on their confounder-adjusted causal")
-        lines.append("# effect (maverick.promotion_effect), not a correlation. Applies")
-        lines.append("# when self-improvement is enabled.")
-        lines.append("causal_promotion = true")
+        if advanced.get("causal_promotion"):
+            lines.append("# Promote learned changes on their confounder-adjusted causal")
+            lines.append("# effect (maverick.promotion_effect), not a correlation. Applies")
+            lines.append("# when self-improvement is enabled.")
+            lines.append("causal_promotion = true")
+        if declined_factory:
+            lines.append("# Keep the agent factory's generator static (do not mine")
+            lines.append("# pack-generation gaps into proposer corrections).")
+            lines.append("factory_learning = false")
     if advanced.get("rehearsal"):
         lines.append("")
         lines.append("[rehearsal]")
@@ -2761,10 +3002,34 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("at_rest = true")
         if advanced.get("encrypt_per_tenant"):
             lines.append("per_tenant = true")
+    if advanced.get("pg_rls"):
+        lines.append("")
+        lines.append("[world_model]")
+        # Database-enforced tenant isolation (Postgres backend only; ignored on
+        # SQLite). The policy is strict, fail-closed equality, so prep BEFORE the
+        # first start or pre-tenancy (NULL-tenant) rows become invisible:
+        #   maverick tenant rls-preflight         # ownership + legacy-row check
+        #   maverick tenant backfill --tenant ID  # assign pre-tenancy NULL rows
+        lines.append("# Run `maverick tenant rls-preflight` + `maverick tenant "
+                     "backfill` before first start (see docs/multi-tenancy.md).")
+        lines.append("rls = true")
     if advanced.get("audit_sign"):
         lines.append("")
         lines.append("[audit]")
         lines.append("sign = true")
+    if advanced.get("audit_worm"):
+        lines.append("")
+        # WORM export of closed audit day-files. Defaults to a local read-only
+        # mirror (best-effort, tamper-evident); switch provider to "s3" + an
+        # Object-Lock bucket for regulator-grade immutability. Ship with
+        # `maverick audit worm push` (see docs/security-hardening.md).
+        lines.append("[audit.worm]")
+        lines.append('provider = "local"   # or "s3" for S3 Object-Lock')
+        lines.append("retention_days = 2555   # lock duration (~7y)")
+        lines.append('# bucket = "my-audit-worm"   # s3: Object-Lock + versioning enabled')
+        lines.append('# prefix = "maverick/audit/"')
+        lines.append('# mode = "COMPLIANCE"        # COMPLIANCE | GOVERNANCE')
+        lines.append('# region = "us-east-1"')
     # Dashboard editing locks. Both default on, so we only emit the disables --
     # and as ONE [features] table (two tables would be a duplicate-key TOML
     # error). The kernel reads these via config.get_features.
@@ -2793,6 +3058,10 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[reflexion]")
         lines.append("enable = true")
+    if advanced.get("self_harness"):
+        lines.append("")
+        lines.append("[self_harness]")
+        lines.append("enable = true")
     if advanced.get("fleet_memory"):
         lines.append("")
         lines.append("[fleet_memory]")
@@ -2805,6 +3074,10 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[memory]")
         lines.append("temporal = true")
+    if advanced.get("fairness_monitor"):
+        lines.append("")
+        lines.append("[fairness_monitor]")
+        lines.append("enable = true")
     # Discipline defaults ON; only an explicit decline is written.
     if advanced.get("specialist_discipline") is False:
         lines.append("")
@@ -2900,6 +3173,18 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
             val = oidc.get(key)
             if val:
                 _emit_kv(lines, key, val)
+    if advanced.get("saml"):
+        lines.append("")
+        # SAML 2.0 SP browser SSO (alongside OIDC). Fill in the SP/IdP details
+        # then hand /saml/metadata to the IdP. Needs the [saml] extra (pysaml2)
+        # and the [auth.oidc] session_secret above. See docs/security-hardening.md.
+        lines.append("[auth.saml]")
+        lines.append('sp_entity_id = "https://YOUR-HOST/saml/metadata"')
+        lines.append('acs_url = "https://YOUR-HOST/saml/acs"')
+        lines.append('idp_metadata_url = "https://IDP/app/metadata"   # or idp_metadata_file')
+        lines.append("# want_assertions_signed = true")
+        lines.append('# sp_cert_file = ""   # to sign AuthnRequests / decrypt')
+        lines.append('# sp_key_file = ""')
     return lines
 
 
@@ -2947,12 +3232,20 @@ def _cfg_plugins(
     return lines
 
 
-def _cfg_security(tool_acl: dict[str, Any] | None, autofix: bool) -> list[str]:
-    if not (tool_acl or autofix):
+def _cfg_security(tool_acl: dict[str, Any] | None, autofix: bool,
+                  dual_approval: bool = False) -> list[str]:
+    if not (tool_acl or autofix or dual_approval):
         return []
     lines = ["", "[security]"]
     if autofix:
         lines.append("auto_fix = true")
+    if dual_approval:
+        # N-of-M dual control (two-person rule): high/critical-risk actions need
+        # 2 distinct approvers and the requester can't self-approve. See
+        # docs/security-hardening.md. Use a [security.approvals_required] table
+        # to vary N per risk band.
+        lines.append("approvals_required = 2")
+        lines.append("allow_self_approval = false")
     for k, v in (tool_acl or {}).items():
         if k == "channels":
             continue
@@ -3018,6 +3311,9 @@ def write_config(
     web_search_enabled: bool = False,
     skills: dict[str, Any] | None = None,
     self_learning: dict[str, Any] | None = None,
+    automation_import: dict[str, Any] | None = None,
+    oauth: dict[str, Any] | None = None,
+    governed_connectors: dict[str, Any] | None = None,
     durable: dict[str, Any] | None = None,
     finance: dict[str, Any] | None = None,
     deployment: str | None = None,
@@ -3100,6 +3396,9 @@ def write_config(
     lines += _cfg_core(budget, safety, sandbox)
     lines += _cfg_skills(skills)
     lines += _cfg_self_learning(self_learning)
+    lines += _cfg_automation_import(automation_import)
+    lines += _cfg_oauth(oauth)
+    lines += _cfg_governed_connectors(governed_connectors)
     lines += _cfg_durable(durable)
     lines += _cfg_finance(finance)
 
@@ -3128,7 +3427,8 @@ def write_config(
     lines += _cfg_registries("mcp_registries", mcp_registries)
     lines += _cfg_registries("template_registries", template_registries)
     lines += _cfg_plugins(plugins, plugin_grant, plugin_enforce, ts_plugins)
-    lines += _cfg_security(tool_acl, bool((advanced or {}).get("security_autofix")))
+    lines += _cfg_security(tool_acl, bool((advanced or {}).get("security_autofix")),
+                           dual_approval=bool((advanced or {}).get("dual_approval")))
     lines += _cfg_rate_limits(rate_limits)
     lines += _cfg_table("retention", retention)
     lines += _cfg_table("analytics", analytics)
@@ -3139,9 +3439,13 @@ def write_config(
     lines += _cfg_table("personas", personas)
     lines += _cfg_table("a2a", a2a)
 
-    # Config has no secrets today but does carry provider names and
-    # runtime settings. chmod 600 so multi-user hosts don't
-    # leak it to other accounts.
+    # SECURITY: config.toml is NOT secret-free. Unlike API keys (which live in
+    # ~/.maverick/.env and are referenced via ${VAR}), the OIDC browser-login
+    # client_secret and session_secret (HMAC session-cookie signing key) are
+    # written here as literal values. The 0600 mode below is therefore load-
+    # bearing, not just tidiness -- never relax it, and treat this file as
+    # secret-bearing in backups/log redaction. chmod 600 so multi-user hosts
+    # don't leak it to other accounts.
     config_body = "\n".join(lines) + "\n"
     _backup(CONFIG_FILE)
     fd = os.open(
@@ -3527,6 +3831,9 @@ def _regulated_deployment(advanced: dict[str, Any]) -> bool:
         advanced.get("enterprise")
         or advanced.get("encrypt_at_rest")
         or advanced.get("audit_sign")
+        or advanced.get("audit_worm")
+        or advanced.get("dual_approval")
+        or advanced.get("saml")
         or advanced.get("security_autofix")
     )
 
@@ -3587,6 +3894,21 @@ def _run_simple_picks(state: dict[str, Any], _announce) -> dict[str, Any]:
     _save_partial(state)
 
     _announce()
+    automation_import = state.get("automation_import") or pick_automation_import()
+    state["automation_import"] = automation_import
+    _save_partial(state)
+
+    _announce()
+    oauth = state.get("oauth") or pick_oauth_vault()
+    state["oauth"] = oauth
+    _save_partial(state)
+
+    _announce()
+    governed_connectors = state.get("governed_connectors") or pick_governed_connectors()
+    state["governed_connectors"] = governed_connectors
+    _save_partial(state)
+
+    _announce()
     durable = state.get("durable") or pick_durable()
     state["durable"] = durable
     _save_partial(state)
@@ -3608,6 +3930,9 @@ def _run_simple_picks(state: dict[str, Any], _announce) -> dict[str, Any]:
         "sandbox": sandbox,
         "capabilities": capabilities,
         "self_learning": self_learning,
+        "automation_import": automation_import,
+        "oauth": oauth,
+        "governed_connectors": governed_connectors,
         "durable": durable,
         "finance": finance,
         "advanced": advanced,
@@ -3795,6 +4120,9 @@ def run(fast: bool = False, resume: bool = False) -> int:
     sandbox = _simple["sandbox"]
     capabilities = _simple["capabilities"]
     self_learning = _simple["self_learning"]
+    automation_import = _simple["automation_import"]
+    oauth = _simple["oauth"]
+    governed_connectors = _simple["governed_connectors"]
     durable = _simple["durable"]
     finance = _simple["finance"]
     advanced = _simple["advanced"]
@@ -3901,6 +4229,9 @@ def run(fast: bool = False, resume: bool = False) -> int:
         web_search_enabled=web_search_enabled,
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed") or signed_skills.get("require_signed_catalog")) else None,
         self_learning=self_learning if self_learning.get("enable") else None,
+        automation_import=automation_import if automation_import.get("enable") else None,
+        oauth=oauth if oauth.get("vault") else None,
+        governed_connectors=governed_connectors if governed_connectors.get("enable") else None,
         durable=durable if durable.get("enabled") else None,
         finance=finance if finance.get("enable") else None,
         suites=suites,

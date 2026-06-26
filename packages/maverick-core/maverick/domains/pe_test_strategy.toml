@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "risk-based test plan"
+consumers = ["engineering_manager", "qa_lead", "product_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Map the change"
+instruction = "Read the feature, architecture, and requirements to understand what is changing and its dependencies."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Assess risk"
+instruction = "Rank components by likelihood and impact of failure to target test effort where it matters most."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Design coverage"
+instruction = "Define the test levels, types, and exit criteria proportional to each area's risk."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Spot gaps"
+instruction = "Cross-check the plan for uncovered high-risk paths and untestable requirements before finalizing."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Send the test plan to the engineering and QA leads for sign-off."
+gate = "review"

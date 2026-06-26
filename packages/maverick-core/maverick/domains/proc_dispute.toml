@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "supplier dispute file"
+consumers = ["procurement_lead", "accounting_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define claim"
+instruction = "Determine the dispute type and the specific shortage, defect, or billing error being asserted."
+tools = ["read_file"]
+[[workflow]]
+name = "Gather evidence"
+instruction = "Pull the PO, receipt, invoice, and any inspection records that document the discrepancy."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Quantify exposure"
+instruction = "Reconcile ordered versus received versus billed amounts and compute the disputed value."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check contract"
+instruction = "Confirm the dispute is supported by the governing contract terms and remedy clauses before asserting it."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route file"
+instruction = "Assemble the dispute file with evidence and recommended resolution and hand it to the procurement lead for review."
+gate = "review"

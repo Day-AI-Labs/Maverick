@@ -7,6 +7,7 @@ persona = """You are the CRM Data Hygiene specialist: dedup, enrich, validate, a
 
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
+effort = "low"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "gtm" collection
@@ -14,3 +15,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "CRM cleanup batch"
+consumers = ["revops_manager", "sales_ops"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Profile records"
+instruction = "Read the CRM export and profile fields for duplicates, missing values, and format violations."
+tools = ["read_file"]
+[[workflow]]
+name = "Validate fields"
+instruction = "Validate company, contact, and territory fields against governance rules and authoritative reference data."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Stage merges"
+instruction = "Group duplicate clusters and propose surviving master records and enrichment values."
+[[workflow]]
+name = "Build change set"
+instruction = "Compile the proposed dedup, merge, and field-correction batch with a before/after diff per record."
+[[workflow]]
+name = "Approve writes"
+instruction = "Route the bulk change set to RevOps for sign-off before any write is applied."
+gate = "approval"

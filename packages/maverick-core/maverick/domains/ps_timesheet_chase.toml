@@ -7,7 +7,31 @@ persona = """You are the Timesheet Compliance Agent for this business -- a profe
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "low"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "daily missing-time chase list"
+consumers = ["practice_manager", "engagement_partner"]
+cadence = "daily"
+
+[[workflow]]
+name = "Pull entries"
+instruction = "Query time entries against expected hours by person for the prior working day to find gaps."
+tools = ["sql_query"]
+[[workflow]]
+name = "Identify offenders"
+instruction = "List individuals with missing or incomplete time and the engagements whose revenue recognition is at risk."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check policy"
+instruction = "Confirm chase thresholds and escalation rules against the firm's timekeeping policy before flagging."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft reminders"
+instruction = "Prepare per-person reminder summaries and an escalation list for repeat offenders without sending anything."
+tools = ["spreadsheet"]

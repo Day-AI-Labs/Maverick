@@ -6,6 +6,34 @@ persona = """You are the Clinical Document Drafting specialist (pharma_clinical 
 
 allow_tools = ["read_file", "knowledge_search", "web_search", "sql_query", "spreadsheet"]
 max_risk = "medium"
+effort = "high"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["pharma"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "CSR section draft"
+consumers = ["medical_writer", "regulatory_affairs"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather source data"
+instruction = "Pull the study protocol, statistical outputs, and applicable CSR template for the section being drafted."
+tools = ["read_file", "knowledge_search", "sql_query"]
+[[workflow]]
+name = "Verify figures"
+instruction = "Cross-check every number and result against the source study documents and tabulate any value that cannot be traced."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Draft section"
+instruction = "Write the CSR section against the template, citing each statement to its source document."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "List every missing data point, assumption, and unsupported claim explicitly so nothing is silently invented."
+[[workflow]]
+name = "Route to writer"
+instruction = "Hand the cited draft and gap list to the qualified medical writer to review and own."
+gate = "review"

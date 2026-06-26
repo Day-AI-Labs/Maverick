@@ -15,3 +15,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_production"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "engineering-change order draft with impact analysis"
+consumers = ["manufacturing_engineer", "change_control_board"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read change request"
+instruction = "Read the originating ECO request and the current BOM and routing for the affected part."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Trace to source"
+instruction = "Confirm every proposed change traces to the source ECO and matches the controlled part and revision."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Assess impact"
+instruction = "Quantify cost, lead-time, and quality impacts of the change and check for downstream where-used effects."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft ECO"
+instruction = "Draft the BOM and routing changes as a structured ECO with rationale and impacts, without committing to the system of record."
+[[workflow]]
+name = "Route to CCB"
+instruction = "Submit the drafted ECO to engineering and the change-control board for review and approval to commit."
+gate = "review"

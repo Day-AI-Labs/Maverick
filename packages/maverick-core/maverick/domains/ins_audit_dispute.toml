@@ -17,3 +17,24 @@ deliverable = "Premium audit dispute file"
 consumers = ["premium_auditor", "controller"]
 cadence = "on-demand"
 gate = "approval"
+
+[[workflow]]
+name = "Read the audit"
+instruction = "Read the contested premium audit, the policy classifications, and the specific basis the insured disputes."
+tools = ["read_file"]
+[[workflow]]
+name = "Gather payroll"
+instruction = "Pull payroll, class-code, and exposure records that support or rebut the disputed audit figures."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Reconcile classes"
+instruction = "Reconcile reported exposures to audited classifications in the spreadsheet and isolate each line of disagreement."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Assemble file"
+instruction = "Organize the payroll evidence and reconciliation into a dispute file with each contested item cited to source."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Auditor handoff"
+instruction = "Route the assembled dispute file to the premium auditor for the disposition decision, which this role never makes."
+gate = "approval"
