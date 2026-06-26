@@ -217,3 +217,67 @@ def test_encrypted_field_opaque_across_tenants(monkeypatch):
         reset_tenant(tok)
     # The ciphertext itself never contains the plaintext.
     assert "alice@example.com" not in (blob if isinstance(blob, str) else blob.decode("latin-1"))
+
+
+def test_llm_provider_client_cache_is_tenant_aware(tmp_path, monkeypatch):
+    """A shared LLM must not reuse tenant A's provider client for tenant B."""
+    from maverick import config
+    from maverick.llm import LLM
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("MAVERICK_HOME", str(home))
+    monkeypatch.setattr(config, "config_path", lambda: home / "config.toml")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.toml").write_text("[providers.openai]\n", encoding="utf-8")
+
+    for tenant, key, base_url in (
+        ("tenant-a", "tenant-a-key", "https://tenant-a.example/v1"),  # pragma: allowlist secret
+        ("tenant-b", "tenant-b-key", "https://tenant-b.example/v1"),  # pragma: allowlist secret
+    ):
+        tenant_dir = data_dir(tenant=tenant)
+        tenant_dir.mkdir(parents=True, exist_ok=True)
+        (tenant_dir / "config.toml").write_text(
+            "[providers.openai]\n"
+            f'api_key = "{key}"\n'  # pragma: allowlist secret
+            f'base_url = "{base_url}"\n',
+            encoding="utf-8",
+        )
+
+    class FakeProviderClient:
+        def __init__(self, name, api_key=None, base_url=None):
+            self.name = name
+            self.api_key = api_key
+            self.base_url = base_url
+
+    calls = []
+
+    def fake_get_provider_client(name, api_key=None, base_url=None):
+        calls.append((name, api_key, base_url))
+        return FakeProviderClient(name, api_key=api_key, base_url=base_url)
+
+    import maverick.providers as providers_mod
+    monkeypatch.setattr(providers_mod, "get_provider_client", fake_get_provider_client)
+
+    llm = LLM(model="openai:stub")
+    tok = set_tenant("tenant-a")
+    try:
+        client_a = llm._get_client("openai")
+    finally:
+        reset_tenant(tok)
+
+    tok = set_tenant("tenant-b")
+    try:
+        client_b = llm._get_client("openai")
+    finally:
+        reset_tenant(tok)
+
+    assert client_a is not client_b
+    assert client_a.api_key == "tenant-a-key"  # pragma: allowlist secret
+    assert client_a.base_url == "https://tenant-a.example/v1"
+    assert client_b.api_key == "tenant-b-key"  # pragma: allowlist secret
+    assert client_b.base_url == "https://tenant-b.example/v1"
+    assert calls == [
+        ("openai", "tenant-a-key", "https://tenant-a.example/v1"),  # pragma: allowlist secret
+        ("openai", "tenant-b-key", "https://tenant-b.example/v1"),  # pragma: allowlist secret
+    ]
