@@ -13,6 +13,7 @@ from maverick.grpc_api.service import EventDTO, GoalStatusDTO
 class _Codes:
     UNAUTHENTICATED = "UNAUTHENTICATED"
     INVALID_ARGUMENT = "INVALID_ARGUMENT"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
 
 
 class _Pb2Grpc:
@@ -135,6 +136,36 @@ def test_authorized_calls_reach_all_rpc_methods(monkeypatch):
         "start_goal", "stream_episode", "cancel", "status",
     ]
 
+
+
+@pytest.mark.parametrize("method_name", ["StreamEpisode", "Cancel", "GetStatus"])
+def test_read_and_control_rpcs_enforce_trust_plane(monkeypatch, method_name):
+    from maverick import agent_trust
+    from maverick.agent_trust import TrustedAgent
+
+    monkeypatch.setattr(grpc_server, "_grpc_code", lambda: _Codes)
+    registry = {
+        "outbound": TrustedAgent(
+            id="outbound", grpc_token="agent-secret", direction="outbound"
+        )
+    }
+    monkeypatch.setattr(agent_trust, "load_trust_state", lambda: (True, registry))
+    monkeypatch.setattr(agent_trust, "load_registry", lambda cfg=None: registry)
+
+    svc = _Service()
+    servicer = grpc_server._servicer(svc, _Pb2, _Pb2Grpc, bearer_token="secret")
+    request = SimpleNamespace(goal_id=2, since_id=0, max_seconds=1.0)
+    context = _Context((("authorization", "Bearer agent-secret"),))
+    call = getattr(servicer, method_name)
+
+    with pytest.raises(PermissionError, match="not permitted inbound"):
+        result = call(request, context)
+        if method_name == "StreamEpisode":
+            list(result)
+
+    assert context.aborted[0] == _Codes.PERMISSION_DENIED
+    assert "not permitted inbound" in context.aborted[1]
+    assert svc.calls == []
 
 def test_run_goal_intersects_rpc_capability_with_local_policy(monkeypatch):
     monkeypatch.setattr(grpc_server, "_grpc_code", lambda: _Codes)
