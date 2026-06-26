@@ -1714,6 +1714,48 @@ async def delete_schedule(request: Request, job_id: int) -> dict:
 # it runs only an operator-registered template, never arbitrary text.
 
 _WEBHOOK_RUN_PATH = "/webhook/run"
+_IMPORT_MAX_DEFINITIONS = 25
+_IMPORT_MAX_DEFINITION_BYTES = 64_000
+_IMPORT_MAX_TOTAL_DEFINITION_BYTES = 512_000
+_IMPORT_MAX_RENDERED_BODY_CHARS = 16_000
+
+
+def _definition_size(raw: dict) -> int:
+    return len(json.dumps(raw, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def _bounded_import_definitions(raws: list[dict]) -> list[dict]:
+    if len(raws) > _IMPORT_MAX_DEFINITIONS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"too many import definitions (max {_IMPORT_MAX_DEFINITIONS})",
+        )
+    total = 0
+    for raw in raws:
+        size = _definition_size(raw)
+        if size > _IMPORT_MAX_DEFINITION_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=("import definition is too large "
+                        f"(max {_IMPORT_MAX_DEFINITION_BYTES} bytes)"),
+            )
+        total += size
+        if total > _IMPORT_MAX_TOTAL_DEFINITION_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=("import definitions are too large "
+                        f"(max {_IMPORT_MAX_TOTAL_DEFINITION_BYTES} bytes total)"),
+            )
+    return raws
+
+
+def _ensure_import_body_size(body: str) -> None:
+    if len(body) > _IMPORT_MAX_RENDERED_BODY_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=("rendered import template is too large "
+                    f"(max {_IMPORT_MAX_RENDERED_BODY_CHARS} characters)"),
+        )
 
 
 def _require_triggers() -> None:
@@ -1821,12 +1863,17 @@ async def import_run_endpoint(request: Request, payload: ImportRunIn) -> ImportR
 
     # Definitions from the request (offline/connect) or a live fetch (env creds).
     if payload.definitions is not None:
-        raws = [d for d in payload.definitions if isinstance(d, dict)]
+        raws = _bounded_import_definitions([
+            d for d in payload.definitions if isinstance(d, dict)
+        ])
     else:
         try:
-            raws = await run_in_threadpool(get_importer(payload.source).fetch)
+            fetched = await run_in_threadpool(get_importer(payload.source).fetch)
         except ImporterError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
+        raws = _bounded_import_definitions([
+            d for d in fetched if isinstance(d, dict)
+        ])
 
     automations = translate_all(payload.source, raws)
     if not automations:
@@ -1845,6 +1892,8 @@ async def import_run_endpoint(request: Request, payload: ImportRunIn) -> ImportR
     from maverick_dashboard import triggers_store
     results: list[dict] = []
     for a in automations:
+        _, body = a.render()
+        _ensure_import_body_size(body)
         res = materialize(a, save=not payload.dry_run, queue=queue)
         webhook_trigger = None
         # Wire the inbound webhook trigger when asked and the automation is
