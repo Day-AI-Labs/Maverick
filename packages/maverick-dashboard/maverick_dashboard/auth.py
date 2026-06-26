@@ -149,6 +149,29 @@ def caller_principal(request: Request) -> str | None:
     return name or None
 
 
+def _pin_tenant_from_principal(request: Request, principal: VerifiedPrincipal) -> None:
+    """Pin per-user tenant state once the verified principal is known.
+
+    HTTP middleware runs before FastAPI dependencies populate
+    ``request.state.principal``, so tenant pinning must happen here, in the
+    authentication dependency, immediately after a principal is established and
+    before route handlers choose tenant-scoped world state. The reset token is
+    stored on request state for the outer middleware to clean up after the
+    response. Pinning is best-effort and never blocks authentication.
+    """
+    try:
+        from maverick.paths import set_tenant, tenant_by_user_enabled
+
+        if not tenant_by_user_enabled():
+            return
+        name = str(getattr(principal, "principal", "") or "").strip()
+        if not name or getattr(request.state, "tenant_pin_token", None) is not None:
+            return
+        request.state.tenant_pin_token = set_tenant(f"api:{name}")
+    except Exception:  # pragma: no cover -- tenant pinning must fail open
+        return
+
+
 def is_dashboard_admin(principal: str) -> bool:
     """True iff ``principal`` is listed as a dashboard admin.
 
@@ -175,6 +198,17 @@ def is_dashboard_admin(principal: str) -> bool:
         if isinstance(raw, (list, tuple)):
             admins = {str(a).strip() for a in raw if str(a).strip()}
     return principal in admins
+
+
+def global_role_for_principal(principal: str | None) -> str | None:
+    """The principal's dashboard-wide RBAC role, ignoring tenant memberships."""
+    if principal is None:
+        return None
+    if is_dashboard_admin(principal):
+        return "admin"
+    from . import rbac
+
+    return rbac.get_stored_role(principal) or rbac.default_role()
 
 
 def role_for_principal(principal: str | None) -> str | None:
@@ -205,7 +239,7 @@ def role_for_principal(principal: str | None) -> str | None:
                 return tenant_role
     except Exception:  # pragma: no cover - tenant resolution never gates auth
         pass
-    return rbac.get_stored_role(principal) or rbac.default_role()
+    return global_role_for_principal(principal)
 
 
 def caller_role(request: Request) -> str | None:
@@ -229,6 +263,26 @@ def has_permission(request: Request, permission: str) -> bool:
 def require_permission(request: Request, permission: str) -> None:
     """Raise ``HTTPException(403)`` unless the caller's role grants ``permission``."""
     if not has_permission(request, permission):
+        raise HTTPException(status_code=403, detail="insufficient role for this action")
+
+
+def has_global_permission(request: Request, permission: str) -> bool:
+    """Whether the caller may perform a dashboard-wide control-plane action.
+
+    Tenant memberships are intentionally ignored so a tenant-local admin cannot
+    satisfy global admin gates for other tenants or dashboard settings.
+    """
+    principal = caller_principal(request)
+    if principal is None:
+        return True
+    from . import rbac
+
+    return permission in rbac.permissions_for(global_role_for_principal(principal))
+
+
+def require_global_permission(request: Request, permission: str) -> None:
+    """Raise ``HTTPException(403)`` unless the global role grants permission."""
+    if not has_global_permission(request, permission):
         raise HTTPException(status_code=403, detail="insufficient role for this action")
 
 
@@ -338,6 +392,7 @@ def require_principal(
     pp = _proxy_principal(request)
     if pp is not None:
         request.state.principal = pp
+        _pin_tenant_from_principal(request, pp)
         return pp
 
     if not oidc_enabled():
@@ -348,6 +403,7 @@ def require_principal(
     sp = _session_principal(request)
     if sp is not None:
         request.state.principal = sp
+        _pin_tenant_from_principal(request, sp)
         return sp
 
     if request.url.path in _OIDC_EXEMPT_PATHS or request.url.path == "/static/daybreak-logo.jpg":
@@ -403,6 +459,7 @@ def require_principal(
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
     request.state.principal = principal
+    _pin_tenant_from_principal(request, principal)
     return principal
 
 

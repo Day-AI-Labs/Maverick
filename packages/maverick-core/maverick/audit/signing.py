@@ -25,11 +25,14 @@ Externally-managed key (enterprise / H29): set
 base64). It then becomes the active signer and is held IN MEMORY ONLY -- the
 private key is never written to the local key dir, so the chain's trust anchor
 can be custodied in a KMS / HSM / secrets manager and injected at deploy time
-instead of generated-and-left on the host. Only the public half (plus an
-``.injected`` marker) is persisted, so local ``verify_chain`` still trusts the
-chain. An injected key takes precedence over any on-disk key; rotate it in your
-secret manager (the ``key_id`` is derived from the public key, so a new key
-chains additively exactly like ``rotate_audit_keypair``).
+instead of generated-and-left on the host. Maverick consumes and removes this
+environment entry the first time audit signing loads, then caches only decoded
+key material in memory; inherited startup environments are not an HSM/KMS
+security boundary. Only the public half (plus an ``.injected`` marker) is
+persisted, so local ``verify_chain`` still trusts the chain. An injected key
+takes precedence over any on-disk key; rotate it in your secret manager (the
+``key_id`` is derived from the public key, so a new key chains additively
+exactly like ``rotate_audit_keypair``).
 
 Optional [audit-signing] extra (cryptography>=44.0.1).
 """
@@ -60,6 +63,10 @@ log = logging.getLogger(__name__)
 # no-tenant default stays exactly ``~/.maverick/audit/keys``.
 _LEGACY_KEY_DIR = data_dir("audit", "keys")
 KEY_DIR = _LEGACY_KEY_DIR
+
+
+class OffHostSigningRequiredError(RuntimeError):
+    """Raised when audit signing must use off-host key material."""
 
 
 def _key_dir() -> Path:
@@ -113,6 +120,10 @@ def _key_paths_for_id(key_id: str) -> tuple[Path, Path] | tuple[None, None]:
 # at deploy time rather than generated-and-left on local disk. See
 # ``_injected_keypair`` and the module docstring (H29 / enterprise key custody).
 _SIGNING_KEY_ENV = "MAVERICK_AUDIT_SIGNING_KEY"
+_INJECTED_KEYPAIR_UNREAD = object()
+_INJECTED_KEYPAIR_CACHE: tuple[bytes, bytes, str] | None | object = (
+    _INJECTED_KEYPAIR_UNREAD
+)
 
 
 def _injected_marker_for_id(key_id: str) -> Path | None:
@@ -169,15 +180,25 @@ def _decode_injected_key(raw: str) -> bytes | None:
 def _injected_keypair() -> tuple[bytes, bytes, str] | None:
     """Return (priv, pub, key_id) for an env-injected signing key, or None.
 
-    Reads :data:`_SIGNING_KEY_ENV`. The private key is held in memory only; the
-    caller writes just the public key (+ an ``.injected`` marker) so verification
-    still trusts the chain without the secret ever touching local disk. A
-    malformed value logs a warning and returns None (fall back to disk keys).
+    Consumes :data:`_SIGNING_KEY_ENV` once, removes it from ``os.environ`` as
+    early as possible, and caches only decoded key material. This keeps local
+    shell tools from recovering the secret from the parent process environment
+    via same-user ``/proc`` reads; inherited startup environments are not an
+    HSM/KMS boundary. The caller writes just the public key (+ an ``.injected``
+    marker) so verification still trusts the chain without the secret ever
+    touching local disk. A malformed value logs a warning and returns None
+    (fall back to disk keys).
     """
-    raw = os.environ.get(_SIGNING_KEY_ENV)
+    global _INJECTED_KEYPAIR_CACHE
+    if _INJECTED_KEYPAIR_CACHE is not _INJECTED_KEYPAIR_UNREAD:
+        return _INJECTED_KEYPAIR_CACHE
+
+    raw = os.environ.pop(_SIGNING_KEY_ENV, None)
     if not raw:
+        _INJECTED_KEYPAIR_CACHE = None
         return None
     if not _have_crypto():
+        _INJECTED_KEYPAIR_CACHE = None
         return None
     priv_bytes = _decode_injected_key(raw)
     if priv_bytes is None:
@@ -186,6 +207,7 @@ def _injected_keypair() -> tuple[bytes, bytes, str] | None:
             "falling back to the on-disk audit signing key",
             _SIGNING_KEY_ENV,
         )
+        _INJECTED_KEYPAIR_CACHE = None
         return None
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -196,7 +218,8 @@ def _injected_keypair() -> tuple[bytes, bytes, str] | None:
         format=serialization.PublicFormat.Raw,
     )
     key_id = hashlib.sha256(pub_bytes).hexdigest()[:16]
-    return priv_bytes, pub_bytes, key_id
+    _INJECTED_KEYPAIR_CACHE = (priv_bytes, pub_bytes, key_id)
+    return _INJECTED_KEYPAIR_CACHE
 
 
 def _provision_injected_pubkey(pub: bytes, key_id: str) -> None:
@@ -438,7 +461,7 @@ def _load_or_create_keypair() -> tuple[bytes, bytes, str]:
         return priv, pub, key_id
 
     if require_offhost_signing():
-        raise RuntimeError(
+        raise OffHostSigningRequiredError(
             "off-host audit signing is required (enterprise mode / [audit] "
             "require_offhost_key) but no off-host key is configured. Set "
             f"{_SIGNING_KEY_ENV} (a KMS/secrets-manager-sourced Ed25519 key) or "

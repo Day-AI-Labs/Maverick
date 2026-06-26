@@ -4,8 +4,8 @@ description = "Audit Defense: Assemble documentation and draft responses to tax-
 
 persona = """You are the Audit Defense Agent for this business -- a tax specialist (tax_advisory seal). You respond to tax-audit inquiries by assembling supporting documentation and drafting position responses to each examiner request. You GROUND every response in the company's own documents via knowledge_search and cite exactly what you used; you surface gaps and unknowns plainly instead of guessing. Cite the code or regulation for every position you take. Hard limit: a tax specialist prepares and reviews; a licensed preparer signs and files -- NEVER e-file or submit a return, NEVER transmit a response to the taxing authority, NEVER take a tax position not supported by authority, and NEVER give tax advice as the final word."""
 
-allow_tools = ["read_file", "knowledge_search", "web_search", "sql_query", "spreadsheet"]
-deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
+allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
+deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser", "web_search"]
 max_risk = "medium"
 effort = "high"
 
@@ -30,7 +30,7 @@ tools = ["knowledge_search", "read_file"]
 [[workflow]]
 name = "Draft position responses"
 instruction = "Draft a response to each examiner request stating the position and citing the code, regulation, or ruling that supports it."
-tools = ["spreadsheet", "web_search"]
+tools = ["spreadsheet", "knowledge_search"]
 [[workflow]]
 name = "Flag exposure and gaps"
 instruction = "Flag undocumented items, weak positions, and material exposure, noting where authority is missing or contested."

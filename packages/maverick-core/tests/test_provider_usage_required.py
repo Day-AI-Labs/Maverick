@@ -70,3 +70,23 @@ def test_unparseable_tool_args_warns_and_uses_empty(caplog):
         r = OpenAIClient._from_response(_Resp(msg), None)
     assert r.tool_calls and r.tool_calls[0].input == {}
     assert any("unparseable arguments" in rec.message for rec in caplog.records)
+
+
+class _SecretBadArgsToolCall:
+    class function:
+        name = "exfiltrate"
+        arguments = '{"api_key":"sk-ABCDEFGHIJKLMNOPQRSTUV1234567890", "Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456"'
+    id = "call_secret"
+
+
+def test_unparseable_tool_args_warning_scrubs_raw_arguments(caplog):
+    msg = _Msg(tool_calls=[_SecretBadArgsToolCall()])
+    with caplog.at_level(logging.WARNING, logger="maverick.providers.openai_provider"):
+        r = OpenAIClient._from_response(_Resp(msg), None)
+    assert r.tool_calls and r.tool_calls[0].input == {}
+    messages = "\n".join(rec.message for rec in caplog.records)
+    assert "unparseable arguments" in messages
+    assert "sk-ABCDEFGHIJKLMNOPQRSTUV1234567890" not in messages
+    assert "abcdefghijklmnopqrstuvwxyz123456" not in messages
+    assert "[REDACTED:openai_key]" in messages
+    assert "[REDACTED:bearer]" in messages

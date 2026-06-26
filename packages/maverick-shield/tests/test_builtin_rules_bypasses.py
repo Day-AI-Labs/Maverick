@@ -72,15 +72,18 @@ def test_plain_attack_still_blocked():
 # --- input-length DoS bound --------------------------------------------------
 
 def test_scan_input_length_is_bounded(monkeypatch):
-    """scan() truncates oversized input before the expensive de-obfuscation, so a
-    2 MB body can't be a linear-amplification CPU DoS. Proven deterministically:
-    with a tiny cap, a marker past the cap is truncated away (not scanned) while
-    the same marker within the cap still fires."""
+    """scan() rejects oversized input before the expensive de-obfuscation, so a
+    2 MB body can't be a linear-amplification CPU DoS and can't hide a malicious
+    suffix past an unscanned prefix."""
     monkeypatch.setenv("MAVERICK_SHIELD_MAX_SCAN_CHARS", "64")
     # Marker within the first 64 chars -> still detected.
     assert _blocked(_ATTACK)
-    # Marker pushed entirely past the 64-char cap -> truncated away.
-    assert not _blocked(("a" * 200) + _ATTACK)
+    # Marker pushed entirely past the 64-char cap -> still blocked because the
+    # oversized input itself is unsafe to forward unscanned.
+    blocked, severity, matches = br.scan(("a" * 200) + _ATTACK, block_threshold="high")
+    assert blocked
+    assert severity == "critical"
+    assert matches == ["input_too_large"]
 
 
 def test_scan_default_cap_bounds_oversized_input():

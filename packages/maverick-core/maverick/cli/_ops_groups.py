@@ -91,18 +91,18 @@ def encryption_group() -> None:
 @encryption_group.command("migrate")
 @click.option("--dry-run", is_flag=True,
               help="Report what would be sealed without writing.")
-@click.option("--no-backup", is_flag=True,
-              help="Skip the pre-migration plaintext backup (NOT recommended).")
+@click.option("--backup/--no-backup", default=False,
+              help="Opt in to a pre-migration plaintext backup next to the DB.")
 @click.pass_context
-def encryption_migrate_cmd(ctx, dry_run: bool, no_backup: bool) -> None:
+def encryption_migrate_cmd(ctx, dry_run: bool, backup: bool) -> None:
     """Seal existing plaintext in the world DB (turns, facts, messages, questions).
 
     Enabling encryption only seals NEW writes; this seals data written before it
     was on. Idempotent and safe to re-run. Requires at-rest encryption enabled.
 
-    The reseal is in place, so unless --no-backup is given a timestamped plaintext
-    snapshot of the DB is written alongside it first (mode 0600); delete that
-    backup once you have verified the migration.
+    The reseal is in place. By default no plaintext backup is written; pass
+    --backup to write a timestamped plaintext snapshot alongside the DB first
+    (mode 0600), and delete that backup once you have verified the migration.
     """
     from pathlib import Path
 
@@ -110,7 +110,7 @@ def encryption_migrate_cmd(ctx, dry_run: bool, no_backup: bool) -> None:
     from ..encryption_migrate import backup_world_db, migrate_world_db
     db = Path(ctx.obj["db"])
     try:
-        if not dry_run and not no_backup and db.exists():
+        if not dry_run and backup and db.exists():
             # Only snapshot when there is plaintext left to seal, so idempotent
             # re-runs don't litter identical backups. The CLI owns the backup
             # (so it can echo the path); the real run below skips its own.

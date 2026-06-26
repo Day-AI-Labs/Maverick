@@ -55,6 +55,16 @@ _lock = threading.Lock()
 # A correction targeting the whole roster (no suite prefix) uses this scope.
 _GLOBAL_SCOPE = "*"
 _MAX_GUIDANCE_ITEMS = 8
+# Bound the outcomes ledger the way trajectory_store bounds its capture: oldest
+# rows roll off so a long-lived deployment can't grow it without limit (and the
+# whole-file re-read in mining/promotion stays cheap). The promoted ledger is
+# self-bounding (deduped on read, one entry per distinct correction).
+_MAX_OUTCOME_ROWS = 50_000
+# Rotate (read + rewrite, keeping the newest rows) once the file exceeds this many
+# bytes. Sized comfortably above the worst-case row (pack + 200-char detail + json
+# overhead ~= 320 B) * the row cap, so the expensive rewrite runs rarely and the
+# ledger settles just above the cap rather than oscillating on every append.
+_ROTATE_BYTES = _MAX_OUTCOME_ROWS * 320
 
 
 def enabled() -> bool:
@@ -123,16 +133,41 @@ def record_outcome(
     with _lock:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "a", encoding="utf-8") as f:
+            # Create with 0600 atomically (os.open honors the mode on CREATE), so
+            # the file is never briefly world/group-readable between open + chmod.
+            fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o600)
+            with open(fd, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry.to_dict()) + "\n")
-            try:
-                os.chmod(path, 0o600)
-            except OSError:
-                pass
+            _maybe_rotate(path)
             return True
         except OSError as e:
             log.warning("factory_learning: outcome write failed: %s", e)
             return False
+
+
+def _maybe_rotate(path: Path) -> None:
+    """Keep only the newest ``_MAX_OUTCOME_ROWS`` rows. Called under ``_lock``.
+
+    Triggered by the file's actual SIZE, not a process-local counter: in the CLI
+    a fresh process records only a few rows, so a counter would never trip and
+    the cap would be a no-op. A cheap ``stat`` on each append, with the expensive
+    read+rewrite only once the file is clearly oversized, bounds the ledger
+    regardless of how many short-lived processes write it.
+    """
+    try:
+        if path.stat().st_size < _ROTATE_BYTES:
+            return
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) <= _MAX_OUTCOME_ROWS:
+            return
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write("".join(lines[-_MAX_OUTCOME_ROWS:]))
+        os.replace(tmp, path)
+    except OSError:  # pragma: no cover -- rotation is best-effort
+        pass
 
 
 def load_outcomes(*, path: Path | None = None) -> list[FactoryOutcome]:
@@ -145,6 +180,8 @@ def load_outcomes(*, path: Path | None = None) -> list[FactoryOutcome]:
             for raw in f:
                 try:
                     d = json.loads(raw)
+                    if not isinstance(d, dict):  # a bare int/str/array/null line
+                        continue
                     out.append(FactoryOutcome(
                         ts=float(d.get("ts") or 0.0), pack=str(d.get("pack") or ""),
                         suite=str(d.get("suite") or ""), signal=str(d.get("signal") or ""),
@@ -170,15 +207,19 @@ def record_provisioning(profile, plan, result) -> int:
         return 0
     pack = getattr(profile, "name", "") or ""
     n = 0
-    for tool_name in getattr(result, "generated", []) or []:
-        n += bool(record_outcome(pack, SIGNAL_TOOL_MISSING, detail=tool_name))
+    # The making-time signal is "the pack DECLARED a tool that didn't exist",
+    # keyed by the declared name (``gap.need``). Record it from the plan's
+    # tool-gaps -- which captures every such tool whether or not synthesis later
+    # succeeded -- and NOT also from ``result.generated`` (the post-synthesis
+    # SANITIZED name): recording both would double-count and, worse, fragment
+    # mining across two different spellings of the same tool.
+    seen_tools: set[str] = set()
+    for gap in getattr(plan, "tool_gaps", []) or []:
+        if getattr(gap, "resolution", "") == "generate_tool" and gap.need not in seen_tools:
+            seen_tools.add(gap.need)
+            n += bool(record_outcome(pack, SIGNAL_TOOL_MISSING, detail=gap.need))
     for skill_name in getattr(result, "acquired", []) or []:
         n += bool(record_outcome(pack, SIGNAL_SKILL_GAP, detail=skill_name))
-    # A declared tool that provisioning couldn't satisfy at all is still a
-    # making-time signal even when it wasn't synthesized.
-    for gap in getattr(plan, "tool_gaps", []) or []:
-        if getattr(gap, "resolution", "") == "generate_tool":
-            n += bool(record_outcome(pack, SIGNAL_TOOL_MISSING, detail=gap.need))
     return n
 
 
@@ -271,6 +312,8 @@ def promoted_corrections(*, path: Path | None = None) -> list[ProposerCorrection
             for raw in f:
                 try:
                     d = json.loads(raw)
+                    if not isinstance(d, dict):  # a bare int/str/array/null line
+                        continue
                     c = ProposerCorrection(
                         scope=str(d.get("scope") or _GLOBAL_SCOPE),
                         signal=str(d.get("signal") or ""), detail=str(d.get("detail") or ""),
@@ -284,20 +327,24 @@ def promoted_corrections(*, path: Path | None = None) -> list[ProposerCorrection
     return list(by_key.values())
 
 
-def _persist_promoted(correction: ProposerCorrection, *, path: Path | None = None) -> None:
+def _persist_promoted(correction: ProposerCorrection, *, path: Path | None = None) -> bool:
+    """Append a promoted correction. Never raises (returns False on I/O error) so
+    an unwritable data dir can't crash the promotion pass."""
     path = path or PROMOTED_PATH
     with _lock:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "ts": time.time(), "scope": correction.scope, "signal": correction.signal,
-                "detail": correction.detail, "support": correction.support,
-                "guidance": correction.guidance,
-            }) + "\n")
         try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o600)
+            with open(fd, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "ts": time.time(), "scope": correction.scope, "signal": correction.signal,
+                    "detail": correction.detail, "support": correction.support,
+                    "guidance": correction.guidance,
+                }) + "\n")
+            return True
+        except OSError as e:
+            log.warning("factory_learning: promoted-correction write failed: %s", e)
+            return False
 
 
 def review_and_promote(
@@ -318,10 +365,14 @@ def review_and_promote(
     corrections = mine_corrections(min_support=min_support)
     if not corrections:
         return []
-    if controller is None:
-        from .self_improvement import SelfImprovementController
-        controller = SelfImprovementController()
-    from .self_improvement import Candidate
+    try:
+        from .self_improvement import Candidate
+        if controller is None:
+            from .self_improvement import SelfImprovementController
+            controller = SelfImprovementController()
+    except Exception as e:  # pragma: no cover -- can't build the gate -> fail closed
+        log.debug("factory_learning: controller unavailable: %s", e)
+        return []
 
     score = scorer or _default_scorer
     npacks = total_packs if total_packs is not None else _distinct_pack_count()
@@ -344,8 +395,7 @@ def review_and_promote(
         except Exception as e:  # pragma: no cover -- gate failure -> skip, fail closed
             log.debug("factory_learning: gate error for %s: %s", corr.key(), e)
             continue
-        if getattr(verdict, "promote", False):
-            _persist_promoted(corr, path=promoted_path)
+        if getattr(verdict, "promote", False) and _persist_promoted(corr, path=promoted_path):
             promoted.append(corr)
     return promoted
 

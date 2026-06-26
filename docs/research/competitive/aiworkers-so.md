@@ -109,9 +109,26 @@ Per the kernel rule, this is the right competitive frame: compete on
 3. **Self-host + bring-your-own-model.** Regulated buyers (finance, health,
    gov, defense) cannot send data to a Paris SaaS. We run in their VPC, on
    their model keys, across 12 providers. Workers Delos has no self-host path.
-4. **Breadth on a governed core.** 2,020 specialists vs ~50; 286 tool modules;
-   14+ channels; shield on every I/O boundary; per-principal budget caps.
+4. **Breadth on a governed core.** 2,020 specialists vs ~50; 286 tool modules +
+   214 write-capable enterprise connectors + 37 read-only primary-source
+   connectors (SEC EDGAR, FRED, Treasury, World Bank, BLS, EIA, ...); 14+
+   channels; shield on every I/O boundary; per-principal budget caps.
 5. **Multi-tenant control plane.** Tenancy, KMS, egress policy, billing — we can
+6. **Primary-source data grounding.** Every analyst pack is auto-granted 37
+   read-only primary-source / public-data connectors by suite (SEC EDGAR, FRED,
+   Treasury, World Bank, FDIC, Census, BLS, EIA, openFDA, NPPES, ClinicalTrials,
+   USAspending, SAM.gov, CourtListener, Federal Register, GLEIF, OpenCorporates,
+   NWS/NOAA weather, EPA, Climatiq, ...). GET-only, low-risk, deferred, ON by
+   default (kill-switch `[workforce] data_grounding = false` or
+   `MAVERICK_WORKFORCE_DATA_GROUNDING=off`, with an installer wizard step). A
+   hosted black-box coworker answers from training data; ours grounds claims in
+   authoritative public sources — a defensible accuracy/trust moat.
+7. **Roster-wide governance invariant test suite.** Six invariants — tool
+   reachability, autonomy dial, capability attenuation, compartment isolation,
+   hard refusals, budget caps — are verified across all 2,020 packs and
+   fault-injected at 1,000,000 iterations, each with a non-vacuity control, plus
+   hostile-argument fuzzing of every connector and tool. "Full audit log"
+   doesn't survive this kind of provable, roster-wide governance evidence.
    *be* the platform a Workers-Delos-like product is built on.
 
 ## Where they win — and what we need to close it
@@ -143,8 +160,10 @@ are **packaging and GTM**, plus two real product items and one compliance item.
 
 5. **No-code connector breadth.** Match the "3000+ tools" perception with a
    Zapier/Make/native-connector story surfaced in the UI. We have 286 tool
-   modules + `enterprise_connectors.py` + `oauth_helper.py` — but the *count and
-   discoverability* are the marketing gap. Consider a connector marketplace page.
+   modules + 214 write-capable enterprise connectors + 37 read-only
+   primary-source connectors (`enterprise_connectors.py`) + `oauth_helper.py` —
+   but the *count and discoverability* are the marketing gap. Consider a
+   connector marketplace page.
 6. **Outbound voice/phone, productized.** They lead with "workers that call your
    customers." We have voice + streaming voice as channels; package an outbound
    calling capability (with shield gating + recording/consent + audit) as a
@@ -227,10 +246,11 @@ Match their "3000+ tools" perception with named, discoverable surfaces:
 - **Pack / suite marketplace** — the 2,020 packs plus partner-built and
   **operator/intake-generated packs** (we already synthesize packs from customer
   SOPs). Browsable, deployable, with the persona layer on top.
-- **Connector marketplace** — the 286 tool modules + `enterprise_connectors.py`
-  + `oauth_helper.py`, presented as a catalog with categories and one-click
-  OAuth, so integration breadth is *countable and discoverable* rather than
-  buried in code.
+- **Connector marketplace** — the 286 tool modules + 214 write-capable
+  enterprise connectors + 37 read-only primary-source connectors
+  (`enterprise_connectors.py`) + `oauth_helper.py`, presented as a catalog with
+  categories and one-click OAuth, so integration breadth is *countable and
+  discoverable* rather than buried in code.
 
 > Caveat worth flagging to GTM: part of Workers Delos is a **human-freelancer
 > marketplace** ("our freelancers earn 23% more"). Their "AI worker" claims are

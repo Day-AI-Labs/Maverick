@@ -178,3 +178,23 @@ def test_automations_page_hides_import_when_disabled(monkeypatch):
     r = _client().get("/automations")
     assert r.status_code == 200
     assert "Import from another platform" not in r.text
+
+
+def test_run_rejects_too_many_definitions():
+    definitions = [dict(N8N_WF, id=str(i), name=f"WF {i}") for i in range(26)]
+    r = _client().post("/api/v1/import/run", json={"source": "n8n", "definitions": definitions})
+    assert r.status_code == 422
+
+
+def test_run_rejects_oversized_definition():
+    wf = dict(N8N_WF)
+    wf["nodes"] = [
+        {"name": "Hook", "type": "n8n-nodes-base.webhook", "parameters": {}},
+        {
+            "name": "Notify",
+            "type": "n8n-nodes-base.slack",
+            "parameters": {"operation": "post", "body": "x" * 65_000},
+        },
+    ]
+    r = _client().post("/api/v1/import/run", json={"source": "n8n", "definitions": [wf]})
+    assert r.status_code == 413

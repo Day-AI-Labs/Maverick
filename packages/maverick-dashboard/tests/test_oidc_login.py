@@ -377,6 +377,7 @@ class _FakeSharedWorld:
 
     def __init__(self):
         self.seen: set[tuple[str, str]] = set()
+        self.released: list[tuple[str, str]] = []
 
     def mark_message_processed(self, channel, external_id, goal_id=None):
         key = (channel, external_id)
@@ -384,6 +385,38 @@ class _FakeSharedWorld:
             return False
         self.seen.add(key)
         return True
+
+    def release_processed_message(self, channel, external_id):
+        key = (channel, external_id)
+        self.released.append(key)
+        self.seen.discard(key)
+
+
+def test_callback_releases_shared_tx_when_token_exchange_fails(
+    login_env, client, monkeypatch
+):
+    """Bogus unauthenticated callbacks must not leave durable HA replay rows."""
+    import maverick_dashboard._shared as shared
+    from maverick import world_model_backends
+
+    monkeypatch.setattr(world_model_backends, "is_postgres_configured", lambda: True)
+    fake = _FakeSharedWorld()
+    monkeypatch.setattr(shared, "_world", lambda: fake)
+    state, tx_cookie = _do_login(client)
+    tx = verify_session(tx_cookie, SESSION_SECRET)
+
+    async def _fail_exchange(*a, **k):
+        raise RuntimeError("bad code")
+
+    monkeypatch.setattr(ol, "_exchange_code_for_tokens", _fail_exchange)
+
+    resp = client.get(
+        f"/auth/callback?code=bogus&state={state}", follow_redirects=False
+    )
+    assert resp.status_code == 303
+    key = (ol._OIDC_TX_CHANNEL, tx["jti"])
+    assert key in fake.released
+    assert key not in fake.seen
 
 
 def test_consume_tx_in_process_guard_is_default(monkeypatch):

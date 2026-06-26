@@ -28,6 +28,7 @@ except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib  # type: ignore[no-redef]
 
 from .agent_autonomy import AutonomyProfile
+from .safety.tool_risk import risk_rank, tool_risk
 
 # Keys we accept from a pack's TOML. Unknown keys are ignored so a newer pack
 # can't crash an older loader.
@@ -464,15 +465,20 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
         try:
             from .agent_autonomy import levels_enabled
             if levels_enabled():
-                allow = allow | _GOVERNED_ACTION_BUNDLE
-                # The dial now governs HOW consequential actions run (staged /
-                # approved / auto per rung). So lift the static risk ceiling to
-                # 'high' -- the bundle's actions are high-risk -- and let the
-                # autonomy gate, not a blanket ceiling, hold them. Reads stay
-                # low; only the governed bundle is high. Never lowers an existing
-                # ceiling, and leaves an uncapped (None) grant untouched.
+                # The governed action bundle is high-risk, so packs with a
+                # low/medium ceiling need a high runtime ceiling for those
+                # actions to pass through to the autonomy gate. Keep that lift
+                # scoped to the new governed tools: tools that were already in
+                # the pack but above its declared ceiling were not reachable
+                # before levels were enabled and must not become reachable just
+                # because email/notify/calendar were added.
                 if max_risk in ("low", "medium"):
+                    allow = {
+                        tool for tool in allow
+                        if risk_rank(tool_risk(tool)) <= risk_rank(max_risk)
+                    }
                     max_risk = "high"
+                allow = allow | _GOVERNED_ACTION_BUNDLE
         except Exception:  # pragma: no cover -- never block capability build
             pass
         # Grant the pack's suite its primary-source data connectors (GET-only,
@@ -693,7 +699,7 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
     spawn depth, works like a professional with its department's memory.
     """
     from .agent import Agent
-    from .agent_autonomy import render_autonomy_prompt
+    from .agent_autonomy import default_profile_for, render_autonomy_prompt
     from .domain_discipline import augment_persona
     from .domain_refusals import render_refusals
     principal = principal or f"agent:{profile.name}-{depth}"
@@ -719,5 +725,5 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
         capability=cap,
         knowledge_sources=profile.knowledge_sources,
         domain_effort=profile.effort,
-        autonomy=profile.autonomy,
+        autonomy=profile.autonomy or default_profile_for(profile.name),
     )

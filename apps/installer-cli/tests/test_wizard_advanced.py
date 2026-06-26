@@ -80,6 +80,27 @@ def test_kernel_modules_read_what_the_wizard_writes(tmp_path, monkeypatch):
     assert reflexion.enabled() is True
 
 
+def test_self_harness_toggle_writes_and_reaches_the_kernel(tmp_path, monkeypatch):
+    """Rule-6: the self-harness wizard toggle writes [self_harness] and the
+    kernel module actually reads it (a capability needs a config knob AND a
+    wizard step -- this proves the step reaches the feature)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_SELF_HARNESS", raising=False)
+    monkeypatch.delenv("MAVERICK_CONFIG", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"self_harness": True})
+    assert "[self_harness]" in cfg and "enable = true" in cfg
+
+    from maverick import self_harness
+    assert self_harness.enabled() is True
+
+
+def test_self_harness_off_writes_no_section(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"self_harness": False})
+    assert "[self_harness]" not in cfg
+
+
 def test_effort_and_cache_prewarm_write_and_are_read(tmp_path, monkeypatch):
     """Rule-6: the new efficiency toggles reach the kernel that reads them."""
     monkeypatch.setenv("HOME", str(tmp_path))

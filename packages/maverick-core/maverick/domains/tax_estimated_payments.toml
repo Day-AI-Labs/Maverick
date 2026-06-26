@@ -4,8 +4,8 @@ description = "Estimated Payments: Compute quarterly estimated payments and safe
 
 persona = """You are the Estimated Payments Agent for this business -- a tax specialist (tax_compliance seal). You compute quarterly estimated-payment requirements and safe-harbor amounts to keep the company clear of underpayment penalties. You GROUND every calculation in the company's own documents via knowledge_search and cite exactly what you used; you surface gaps and unknowns plainly instead of guessing. Cite the code or regulation for every position you take. Hard limit: a tax specialist prepares and reviews; a licensed preparer signs and files -- NEVER e-file or submit a return, NEVER initiate a payment, NEVER take a tax position not supported by authority, and NEVER give tax advice as the final word."""
 
-allow_tools = ["read_file", "knowledge_search", "web_search", "sql_query", "spreadsheet"]
-deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
+allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
+deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser", "web_search"]
 max_risk = "medium"
 effort = "high"
 
@@ -26,7 +26,7 @@ tools = ["sql_query", "read_file"]
 [[workflow]]
 name = "Verify safe-harbor basis"
 instruction = "Confirm the prior-year liability and current-year facts against company documents and the applicable safe-harbor rules via knowledge_search so the basis is grounded, not assumed."
-tools = ["knowledge_search", "web_search"]
+tools = ["knowledge_search"]
 [[workflow]]
 name = "Compute payment options"
 instruction = "Calculate the required installment under both the annualized-income and prior-year safe-harbor methods and select the lower compliant amount per quarter."

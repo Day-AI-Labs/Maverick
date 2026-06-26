@@ -51,7 +51,13 @@ def backend_name() -> str | None:
 
 
 def _tenant_ns() -> str | None:
-    """Sanitized active-tenant namespace, or None for single-tenant use."""
+    """Backend-safe active-tenant namespace, or None for single-tenant use.
+
+    The namespace is intentionally collision-resistant: a readable sanitized
+    prefix is only a hint, and a SHA-256 suffix covers the raw tenant id. This
+    keeps external vector-store collection names tenant-isolated even when
+    tenant ids differ only by punctuation or after truncation.
+    """
     try:
         from .paths import current_tenant
         t = current_tenant()
@@ -59,8 +65,13 @@ def _tenant_ns() -> str | None:
         return None
     if not t:
         return None
+    import hashlib
     import re
-    return re.sub(r"[^0-9A-Za-z]", "_", str(t))[:48] or None
+
+    raw = str(t)
+    safe = re.sub(r"[^0-9A-Za-z]", "_", raw).strip("_") or "tenant"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return f"{safe[:32]}_{digest}"
 
 
 def _sealed_recall() -> bool:

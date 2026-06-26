@@ -63,6 +63,21 @@ def test_forward_udp_one_datagram_per_event():
     assert got == {b"x\n", b"y\n"}
 
 
+def test_forward_udp_rejects_oversized_event_without_truncating():
+    srv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    srv.bind(("127.0.0.1", 0))
+    srv.settimeout(0.2)
+    port = srv.getsockname()[1]
+
+    try:
+        with pytest.raises(ValueError, match="exceeds UDP payload limit"):
+            forwarder.forward(["x" * forwarder._UDP_MAX], f"udp://127.0.0.1:{port}")
+        with pytest.raises(TimeoutError):
+            srv.recvfrom(1024)
+    finally:
+        srv.close()
+
+
 def test_forward_udp_ipv6_destination():
     # IPv6 collectors must work too (regression: family was hardcoded AF_INET).
     import socket as _s
@@ -106,6 +121,34 @@ def test_forward_http_posts_batch_with_token(monkeypatch):
     assert captured["body"] == b"e1\ne2\n"
     assert captured["auth"] == "Bearer hec-token"
     assert captured["url"] == "https://siem.example/raw"
+
+
+def test_forward_http_streams_bounded_batches(monkeypatch):
+    bodies: list[bytes] = []
+    yielded = 0
+
+    class _Resp:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def _lines():
+        nonlocal yielded
+        for line in ("aa", "bb", "cc"):
+            yielded += 1
+            yield line
+
+    def _fake_urlopen(req, timeout=None):
+        bodies.append(req.data)
+        if len(bodies) == 1:
+            assert yielded < 3
+        return _Resp()
+
+    monkeypatch.setattr(forwarder, "_HTTP_BATCH_MAX", 6)
+    monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
+
+    assert forwarder.forward(_lines(), "https://siem.example/raw") == 3
+    assert bodies == [b"aa\nbb\n", b"cc\n"]
 
 
 def test_forward_http_raises_on_5xx(monkeypatch):

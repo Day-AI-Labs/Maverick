@@ -11,7 +11,7 @@ from pathlib import Path
 import click
 
 from ..world_model import open_world
-from . import _strip_terminal_control, main
+from . import _strip_terminal_control, harness, main
 
 
 @main.group("finance")
@@ -207,7 +207,7 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
                "now complete (verifier-scored).")
 
 
-@main.command("self-harness")
+@harness.command("preview")
 @click.option("--model", "model_id", default=None,
               help="Model to mine weaknesses for (default: the configured "
                    "orchestrator model).")

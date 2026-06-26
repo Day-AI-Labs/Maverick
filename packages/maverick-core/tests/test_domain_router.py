@@ -189,3 +189,29 @@ def test_rank_specialists_falls_back_to_lexical_when_no_embedder(monkeypatch):
     hybrid = [n for n, _ in rank_specialists("review an NDA", k=5, domains=_PACKS)]
     lexical = [n for n, _ in _ROUTER.rank("review an NDA", k=5)]
     assert hybrid == lexical
+
+
+def test_rank_specialists_caches_explicit_domain_embedding_index(monkeypatch):
+    # list_specialists passes an explicit enabled-domain roster; that path must
+    # reuse the module cache so repeated user queries do not re-embed every pack.
+    import maverick.domain_router as dr
+
+    calls = []
+
+    def counting_embed(texts):
+        calls.append(len(texts))
+        return [[1.0] for _ in texts]
+
+    class CountingEmbeddingRouter(dr.EmbeddingRouter):
+        def __init__(self, domains):
+            super().__init__(domains, embed_fn=counting_embed)
+
+    monkeypatch.setattr(dr, "_LEX", None)
+    monkeypatch.setattr(dr, "_EMB", None)
+    monkeypatch.setattr(dr, "_KEY", None)
+    monkeypatch.setattr(dr, "EmbeddingRouter", CountingEmbeddingRouter)
+
+    dr.rank_specialists("review an NDA", k=3, domains=_PACKS)
+    dr.rank_specialists("draft a press release", k=3, domains=_PACKS)
+
+    assert calls == [len(_PACKS), 1, 1]

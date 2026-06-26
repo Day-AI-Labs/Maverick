@@ -1,6 +1,6 @@
 # Agent skills catalog
 
-> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,118 lint-clean agents across 26 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
+> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 2,020 lint-clean agents across 53 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
 
 
 **Status:** in progress — the per-agent skill profiles for the eight agent suites
@@ -1653,7 +1653,7 @@ JD: Microcopy, content design, product voice, localization prep.
 
 #### 3.1 Implementation / Coding Agent  [UB +Build]
 JD: Feature implementation — the core write-test loop against a spec.
-- Systems: the kernel (`agent`/`coding_mode`/`edit_format`) · `tools/{apply_patch,ast_edit,code_exec,repo_map}` · the **7 sandbox backends** (+ a `network_policy` egress layer) · Git `[C]`.
+- Systems: the kernel (`agent`/`coding_mode`/`edit_format`) · `tools/{apply_patch,ast_edit,code_exec,repo_map}` · the **9 sandbox backends** (+ a `network_policy` egress layer) · Git `[C]`.
 - Technical: **multi-language coding** (Python, TypeScript/JS, Go, Java, Rust, …) · test-first development · debugging · the relevant frameworks `[S]`.
 - Domain: software design · the codebase + its standards `[K]`.
 - Lightwork: edit-in-sandbox; opens PRs; **never merges, deploys, or `self_edit`s**.

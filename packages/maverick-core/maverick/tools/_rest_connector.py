@@ -15,6 +15,7 @@ a service without hard-coding entities.
 from __future__ import annotations
 
 import base64
+import fnmatch
 import json
 import os
 from typing import Any
@@ -23,6 +24,25 @@ from urllib.parse import unquote, urlsplit
 from . import Tool, as_bool
 
 _WRITE_OPS = {"post", "put", "patch", "delete"}
+
+
+def _capability_egress_denial(url: str, args: dict[str, Any], *, name: str) -> str | None:
+    """Apply an active capability host scope to REST connector base URLs."""
+    raw_allow_hosts = args.get("_capability_allow_hosts") if isinstance(args, dict) else None
+    if not raw_allow_hosts:
+        return None
+    try:
+        host = urlsplit(url).hostname
+    except ValueError:
+        host = None
+    if not host:
+        return None
+    host_l = host.lower().rstrip(".")
+    for pat in raw_allow_hosts:
+        pat_l = str(pat).lower().rstrip(".")
+        if fnmatch.fnmatchcase(host_l, pat_l):
+            return None
+    return f"capability policy denies host {host!r} for tool {name!r}"
 
 
 def _env_config(name: str, base_url_env: str, token_env: str) -> tuple[str, str]:
@@ -134,6 +154,8 @@ def _rest_execute(
         url = f"{base}{norm(path)}"
         # Enterprise mode: a connector POSTs agent-supplied content to a
         # third-party SaaS host -- hold it to the egress boundary too.
+        if deny := _capability_egress_denial(url, args, name=name):
+            return f"ERROR: {deny}"
         from ..enterprise import enterprise_egress_denial
         deny = enterprise_egress_denial(url, tool=name)
         if deny:
