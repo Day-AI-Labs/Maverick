@@ -2547,22 +2547,34 @@ def tenant_backfill(tenant_id: str, dsn: str | None, dry_run: bool) -> None:
 
 
 @tenant.command("kms-rotate")
-@click.option("--old-kek", "old_kek", required=True,
-              help="Current KEK (hex or base64, 32 bytes) wrapping the DEKs.")
-@click.option("--new-kek", "new_kek", required=True,
-              help="New KEK (hex or base64, 32 bytes) to re-wrap under.")
+@click.option("--old-kek-file", "old_kek_file",
+              type=click.Path(exists=True, dir_okay=False, readable=True),
+              help="File containing the current KEK (hex/base64, 32 bytes).")
+@click.option("--new-kek-file", "new_kek_file",
+              type=click.Path(exists=True, dir_okay=False, readable=True),
+              help="File containing the new KEK (hex/base64, 32 bytes).")
 @click.option("--dry-run", is_flag=True,
               help="Report what each tenant would do; write nothing.")
 @click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
-def tenant_kms_rotate(old_kek: str, new_kek: str, dry_run: bool, yes: bool) -> None:
-    """Rotate every tenant's wrapped DEK from --old-kek to --new-kek (LocalKMS).
+def tenant_kms_rotate(old_kek_file: str | None, new_kek_file: str | None,
+                      dry_run: bool, yes: bool) -> None:
+    """Rotate every tenant's wrapped DEK between LocalKMS KEKs.
 
     Use when rolling the at-rest master key / MAVERICK_KMS_KEK. Re-wrap only --
     no tenant data is re-encrypted. Idempotent and resumable: a tenant already
     on the new KEK is skipped, so a re-run finishes an interrupted rotation. Set
-    the new KEK live (MAVERICK_KMS_KEK=<new>) only AFTER this reports 0 failed.
+    the new KEK live only AFTER this reports 0 failed. Supply KEKs via protected
+    files or the hidden prompts; raw KEKs are never accepted in command argv.
     """
     from ..tenant.kms_fleet import rotate_local_fleet
+
+    def _read_kek(label: str, path: str | None) -> str:
+        if path:
+            return Path(path).read_text(encoding="utf-8").strip()
+        return click.prompt(label, hide_input=True).strip()
+
+    old_kek = _read_kek("Current KEK", old_kek_file)
+    new_kek = _read_kek("New KEK", new_kek_file)
     if not dry_run and not yes:
         click.confirm("Re-wrap every tenant's DEK to the new KEK?", abort=True)
     try:
