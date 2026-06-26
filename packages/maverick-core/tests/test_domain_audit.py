@@ -60,6 +60,41 @@ def test_builder_is_flagged_as_builder_not_dangerous():
         assert "self_edit" not in a.reachable_dangerous  # the one floor never relaxes
 
 
+def test_high_risk_mutators_are_reachable_dangerous():
+    p = DomainProfile(
+        name="finance_poc_apply_patch",
+        allow_tools=["read_file", "apply_patch"],
+        max_risk="high",
+    )
+    a = audit_profile(p)
+    assert a.is_builder is False
+    assert "apply_patch" in a.reachable_dangerous
+    assert summarize([a])["drafting_agents_reaching_a_mutator"] == 1
+
+
+def test_irreversible_business_actions_are_reachable_dangerous():
+    p = DomainProfile(
+        name="finance_poc_release_payment",
+        allow_tools=["read_file", "release_payment"],
+        max_risk="high",
+    )
+    a = audit_profile(p)
+    assert a.is_builder is False
+    assert "release_payment" in a.reachable_dangerous
+    assert summarize([a])["drafting_agents_reaching_a_mutator"] == 1
+
+
+def test_shell_does_not_make_drafting_pack_a_builder():
+    p = DomainProfile(
+        name="finance_poc_shell",
+        allow_tools=["read_file", "shell"],
+        max_risk="high",
+    )
+    a = audit_profile(p)
+    assert a.is_builder is False
+    assert "shell" in a.reachable_dangerous
+    assert summarize([a])["drafting_agents_reaching_a_mutator"] == 1
+
 def test_json_export_is_well_formed():
     doc = to_json(audit_roster(_BUILTIN))
     assert set(doc) == {"summary", "packs"}
