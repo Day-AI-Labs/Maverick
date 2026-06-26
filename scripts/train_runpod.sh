@@ -12,12 +12,14 @@
 #   # upload your two inputs to the pod first (see below), then:
 #   BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct bash train.sh
 #
-# You supply TWO files (they come from real agent usage, not hardware):
-#   * TRAJECTORIES   Klear-format JSONL from maverick's ingest/donation pipeline.
-#   * PROPOSER_TEXTS {"id","text"} JSONL mapping trajectory id -> the RAW
-#                    proposer transcript (operator-held; kept out of the shared
-#                    corpus on purpose). Required for real DPO; set SKIP_DPO=1 to
-#                    run only the CPU PRM step without it.
+# Inputs: the script GENERATES both from your maverick data if they're absent,
+# so you bring EITHER the two JSONL files OR your ~/.maverick (outbox + world DB):
+#   * TRAJECTORIES   Klear JSONL; else generated via `training.ingest` from OUTBOX.
+#   * PROPOSER_TEXTS {"id","text"} raw-transcript sidecar; else generated via
+#                    `training.export_texts` from OUTBOX + the world DB. Real DPO
+#                    needs it; set SKIP_DPO=1 to run only the CPU PRM step.
+#   Either way the data comes from REAL runs: enable [telemetry]
+#   donate_trajectories = true and run goals first, or there's nothing to train on.
 #
 # Config (all env vars, with defaults):
 #   BASE_MODEL      HF id / local path of the proposer to fine-tune
@@ -27,6 +29,8 @@
 #   TRAJECTORIES    default ./trajectories.jsonl
 #   PROPOSER_TEXTS  default ./proposer_texts.jsonl
 #   OUT_DIR         default ./maverick-train-out
+#   OUTBOX          donation outbox to auto-generate inputs from
+#                   (default ~/.maverick/outbox)
 #   SCORES          default ./scores.json (prove-learning runs only if present)
 #   INSTALL         1 (pip install 'maverick-agent[training]') | 0 to skip
 #   SKIP_DPO        0 | 1 to run only the CPU PRM step
@@ -39,12 +43,13 @@
 set -euo pipefail
 
 case "${1:-}" in -h|--help)
-  sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  sed -n '2,56p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
 
 BASE_MODEL="${BASE_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}"
 TRAJECTORIES="${TRAJECTORIES:-./trajectories.jsonl}"
 PROPOSER_TEXTS="${PROPOSER_TEXTS:-./proposer_texts.jsonl}"
+OUTBOX="${OUTBOX:-$HOME/.maverick/outbox}"
 OUT_DIR="${OUT_DIR:-./maverick-train-out}"
 SCORES="${SCORES:-./scores.json}"
 INSTALL="${INSTALL:-1}"
@@ -82,9 +87,18 @@ except Exception as e:
 PY
 fi
 
-# Input validation (skipped in DRY_RUN so the script is inspectable anywhere).
+say "2b/4 Ensure training inputs (generate from your maverick data if missing)"
+if [ ! -f "$TRAJECTORIES" ]; then
+  printf 'no %s -> generating from %s\n' "$TRAJECTORIES" "$OUTBOX"
+  run "python -m maverick.training.ingest --in '$OUTBOX' --out '$TRAJECTORIES'"
+fi
+if [ "$SKIP_DPO" != "1" ] && [ ! -f "$PROPOSER_TEXTS" ]; then
+  printf 'no %s -> generating from %s (+ world DB)\n' "$PROPOSER_TEXTS" "$OUTBOX"
+  run "python -m maverick.training.export_texts --in '$OUTBOX' --out '$PROPOSER_TEXTS'"
+fi
+# Validate (real runs only; generation above may have just created them).
 if [ "$DRY_RUN" != "1" ]; then
-  [ -f "$TRAJECTORIES" ] || die "TRAJECTORIES not found: $TRAJECTORIES"
+  [ -s "$TRAJECTORIES" ] || die "no trajectories at $TRAJECTORIES and none generated from $OUTBOX. Run goals with [telemetry] donate_trajectories=true first (see docs/self-learning-runbook.md)."
 fi
 
 say "3a/4 Train the CPU step PRM (L2)"

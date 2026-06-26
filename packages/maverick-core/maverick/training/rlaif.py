@@ -132,20 +132,41 @@ def load_text_sidecar(path: str | Path) -> dict[str, str]:
     ``{"id": "<id>", "text": "<text>"}`` rows. Malformed lines are skipped.
     """
     raw = Path(path).expanduser().read_text(encoding="utf-8")
+    lines = [ln for ln in raw.splitlines() if ln.strip()]
+    # Prefer the JSONL-records form first: a SINGLE {"id","text"} line is also
+    # valid JSON-as-a-whole, so checking the object form first would misread one
+    # record as an {id: text} map. Records form = every line is an object with
+    # an "id" and a string "text".
+    recs: list[dict] = []
+    jsonl_ok = bool(lines)
+    for ln in lines:
+        try:
+            rec = json.loads(ln)
+        except json.JSONDecodeError:
+            jsonl_ok = False
+            break
+        if isinstance(rec, dict) and "id" in rec and isinstance(rec.get("text"), str):
+            recs.append(rec)
+        else:
+            jsonl_ok = False
+            break
+    if jsonl_ok and recs:
+        return {str(r["id"]): r["text"] for r in recs}
+    # Object form: the whole file is a {id: text} map.
     try:
         obj = json.loads(raw)
         if isinstance(obj, dict):
             return {str(k): str(v) for k, v in obj.items() if isinstance(v, str)}
     except json.JSONDecodeError:
         pass
+    # Lenient JSONL: skip malformed lines, keep {"id","text"} rows.
     out: dict[str, str] = {}
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
+    for ln in lines:
         try:
-            rec = json.loads(line)
+            rec = json.loads(ln)
         except json.JSONDecodeError:
+            continue
+        if not isinstance(rec, dict):
             continue
         rid, txt = rec.get("id"), rec.get("text")
         if rid is not None and isinstance(txt, str):
