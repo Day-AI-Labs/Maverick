@@ -156,3 +156,42 @@ def test_registered():
 
     names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
     assert "oauth_helper" in names
+
+
+def test_vault_enabled_requires_provider_without_plaintext_fallback(monkeypatch, tmp_path):
+    import maverick.tools.oauth_helper as mod
+
+    out_file = tmp_path / "tokens.json"
+    monkeypatch.setenv("MAVERICK_OAUTH_VAULT", "1")
+    monkeypatch.setenv("MAVERICK_OAUTH_OUT", str(out_file))
+    monkeypatch.setattr(mod, "_post_form",
+                        lambda url, data: {"access_token": "no-plain-access",
+                                           "refresh_token": "no-plain-refresh"})
+
+    out = _t().fn({"op": "refresh", "token_url": "https://x/t",
+                   "client_id": "c", "refresh_token": "r1"})
+
+    assert out.startswith("ERROR: token persistence failed:")
+    assert "provider is required" in out
+    assert not out_file.exists()
+
+
+def test_vault_failure_does_not_plaintext_fallback(monkeypatch, tmp_path):
+    import maverick.oauth_vault as vault
+    import maverick.tools.oauth_helper as mod
+
+    out_file = tmp_path / "tokens.json"
+    monkeypatch.setenv("MAVERICK_OAUTH_VAULT", "1")
+    monkeypatch.setenv("MAVERICK_OAUTH_OUT", str(out_file))
+    monkeypatch.setattr(mod, "_post_form",
+                        lambda url, data: {"access_token": "no-plain-access",
+                                           "refresh_token": "no-plain-refresh"})
+    monkeypatch.setattr(vault, "get_vault",
+                        lambda: (_ for _ in ()).throw(RuntimeError("kms unavailable")))
+
+    out = _t().fn({"op": "exchange", "token_url": "https://x/t",
+                   "client_id": "c", "code": "k", "redirect_uri": "https://r",
+                   "provider": "github"})
+
+    assert out == "ERROR: token persistence failed: kms unavailable"
+    assert not out_file.exists()
