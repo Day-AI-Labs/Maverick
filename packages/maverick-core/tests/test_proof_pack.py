@@ -155,23 +155,27 @@ class TestVerify:
              "sections": {}, "hard_sections": [], "passed": True}
         return proof_pack.sign(m)
 
-    def test_roundtrip_verifies(self):
+    def test_roundtrip_verifies_with_trusted_anchor(self):
+        m = self._signed()
+        if not m.get("signature"):
+            pytest.skip("cryptography/audit key unavailable")
+        anchor = m["signature"]["pubkey"]
+        ok, reason = proof_pack.verify(m, trusted_pubkey_hex=anchor)
+        assert ok, reason
+
+    def test_embedded_key_without_anchor_fails_closed(self):
         m = self._signed()
         if not m.get("signature"):
             pytest.skip("cryptography/audit key unavailable")
         ok, reason = proof_pack.verify(m)
-        assert ok, reason
-        # And against the correct anchor (embedded pubkey) -> provenance OK.
-        anchor = m["signature"]["pubkey"]
-        ok2, _ = proof_pack.verify(m, trusted_pubkey_hex=anchor)
-        assert ok2
+        assert not ok and "trusted pubkey" in reason
 
     def test_tamper_fails(self):
         m = self._signed()
         if not m.get("signature"):
             pytest.skip("cryptography/audit key unavailable")
         m["passed"] = False  # flip a field after signing
-        ok, reason = proof_pack.verify(m)
+        ok, reason = proof_pack.verify(m, trusted_pubkey_hex=m["signature"]["pubkey"])
         assert not ok and "does not verify" in reason
 
     def test_wrong_anchor_fails(self):
