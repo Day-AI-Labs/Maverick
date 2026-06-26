@@ -635,6 +635,21 @@ async def bearer_auth(request: Request, call_next):
         # an external recipient has no dashboard bearer, like the webhook paths.
         return await call_next(request)
     if not expected:
+        if _require_auth_enabled():
+            # A configured OIDC or reverse-proxy SSO layer must get a chance to
+            # enforce identity. Do not satisfy require_auth with the historical
+            # loopback/no-token fallback.
+            try:
+                from maverick.oidc import oidc_enabled
+                from maverick.proxy_auth import proxy_auth_enabled
+                if oidc_enabled() or proxy_auth_enabled():
+                    return await call_next(request)
+            except Exception:  # pragma: no cover - fall through to fail closed
+                pass
+            return JSONResponse(
+                {"detail": "dashboard require_auth is set but no auth mechanism accepted the request"},
+                status_code=401,
+            )
         # Client-bound / enterprise: loopback-trust (no-token) mode is DISABLED.
         # In a hosted/regulated deployment any process sharing the loopback
         # namespace (a sidecar, a co-located container, an SSRF pivot to
