@@ -179,6 +179,7 @@ def _payload(
     channel,
     user_id,
     capability: Any | None,
+    concurrency_principal: str | None = None,
 ) -> dict:
     """JSON-safe job payload, including the explicit security capability grant."""
     return {
@@ -189,6 +190,7 @@ def _payload(
         "channel": channel,
         "user_id": user_id,
         "capability": _serialize_capability(capability),
+        "concurrency_principal": concurrency_principal,
     }
 
 
@@ -208,6 +210,7 @@ class QueueDispatcher:
         channel: str | None = None,
         user_id: str | None = None,
         capability: Any | None = None,
+        concurrency_principal: str | None = None,
     ) -> str | None:
         from .runner import DEFAULT_MAX_DEPTH
 
@@ -219,6 +222,7 @@ class QueueDispatcher:
             channel=channel,
             user_id=user_id,
             capability=capability,
+            concurrency_principal=concurrency_principal,
         )
         self._enqueue(JOB_NAME, payload)
         log.info("queued goal #%s for worker execution", goal_id)
@@ -242,6 +246,7 @@ def run_queued_goal(payload: dict) -> str | None:
         max_depth=payload.get("max_depth") or DEFAULT_MAX_DEPTH,
         channel=channel,
         user_id=user_id,
+        concurrency_principal=payload.get("concurrency_principal"),
         # Re-attenuate by THIS worker's local policy before running (zero-trust
         # across the queue boundary); no-op when enforcement is off.
         capability=_worker_capability(
