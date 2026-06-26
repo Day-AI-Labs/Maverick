@@ -20,12 +20,27 @@ runs**. Turn on donation, then use Maverick normally:
 # ~/.maverick/config.toml
 [telemetry]
 donate_trajectories = true     # off by default; writes scrubbed records to ~/.maverick/outbox/
+donate_min_entropy = 0         # capture EVERY successful run, not just swarm-disagreement ones
+# donate_min_confidence = 0.75 # (default) verifier-confidence floor; lower to capture more
 ```
 
 ```bash
 maverick start "…a real goal…"     # run a bunch; high-confidence runs (verifier ≥ 0.75) get donated
+maverick start --repeat 5 "…task…" # run the SAME task 5×: its attempts become DPO preference pairs
 maverick donate status             # see what's queued in the outbox
 ```
+
+> **Why `donate_min_entropy = 0`.** The default bar only donates
+> high-disagreement *swarm* runs (entropy ≥ 0.5). A normal single-agent goal has
+> entropy 0, so with the default bar **nothing is captured** — the outbox stays
+> empty and there's nothing to train on. Set it to `0` to capture every
+> successful, high-confidence run.
+>
+> **Why `--repeat`.** DPO learns from *preference pairs* — a better attempt vs. a
+> worse attempt at the **same task** (same `task_family`, reward margin ≥ 0.5).
+> One run per task yields no pairs. `--repeat N` runs one task N times so its
+> better-vs-worse outcomes pair up. Non-clean runs are kept (not fatal) in repeat
+> mode — the worse attempt is half of a pair.
 
 The two training inputs are generated from this data (you don't hand-write them):
 
@@ -120,8 +135,14 @@ improved — a CI gate you can wire in.
 
 ## Troubleshooting
 
-- **"no transcripts" / "no trajectories"** → the outbox is empty. You haven't run
-  goals with `donate_trajectories = true` yet (step 0).
+- **"no transcripts" / "no trajectories"** → the outbox is empty. Either you
+  haven't run goals with `donate_trajectories = true` yet, or every run was a
+  single-agent goal and the default disagreement bar filtered them all out — set
+  `donate_min_entropy = 0` in `[telemetry]` to capture them (step 0).
+- **"ingested 0 trajectories from 0 donation record(s)"** → same cause: the
+  selection gate donated nothing. Set `donate_min_entropy = 0` and re-run.
+- **DPO finds no preference pairs** → you ran each task once. DPO needs repeated
+  attempts at the *same* task; use `maverick start --repeat N "…task…"`.
 - **DPO is extremely slow** → you're on a CPU pod. The PRM/proof steps are CPU,
   but L3 needs a GPU.
 - **OOM during DPO** → the reference loop is full-param (no LoRA/4-bit); use a

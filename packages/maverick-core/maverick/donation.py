@@ -124,13 +124,32 @@ def _scrub_payload(value):
     return value
 
 
+def _donation_thresholds() -> tuple[float, float]:
+    """``(min_entropy, min_confidence)`` from ``[telemetry]``.
+
+    Defaults to the "gold trajectory" bar (0.5 / 0.75). Lower
+    ``[telemetry] donate_min_entropy = 0`` to capture EVERY successful,
+    high-confidence run -- not only swarm high-disagreement ones -- so the
+    learning loop actually has data from normal single-agent use (most goals
+    never spawn a disagreeing swarm, so the default bar donates nothing from
+    typical usage). Fail-open to the defaults."""
+    try:
+        from .config import load_config
+        tel = load_config().get("telemetry", {}) or {}
+        ent = float(tel.get("donate_min_entropy", 0.5))
+        conf = float(tel.get("donate_min_confidence", 0.75))
+        return max(0.0, ent), max(0.0, min(1.0, conf))
+    except Exception:
+        return 0.5, 0.75
+
+
 def should_donate(
     outcome: str,
     verifier_confidence: float,
     disagreement_entropy: float,
     *,
-    min_entropy: float = 0.5,
-    min_confidence: float = 0.75,
+    min_entropy: float | None = None,
+    min_confidence: float | None = None,
 ) -> bool:
     """Selection: only the trajectories the model can learn from.
 
@@ -138,7 +157,18 @@ def should_donate(
     multiple branches) AND high verifier confidence on the chosen
     branch (we know the right answer was eventually reached) AND
     outcome=success (the trajectory closed cleanly).
+
+    When ``min_entropy``/``min_confidence`` are not passed, they come from
+    ``[telemetry] donate_min_entropy`` / ``donate_min_confidence`` (see
+    :func:`_donation_thresholds`) -- set ``donate_min_entropy = 0`` to donate
+    every successful high-confidence run, not just swarm-disagreement ones.
     """
+    if min_entropy is None or min_confidence is None:
+        cfg_ent, cfg_conf = _donation_thresholds()
+        if min_entropy is None:
+            min_entropy = cfg_ent
+        if min_confidence is None:
+            min_confidence = cfg_conf
     if outcome != "success":
         return False
     if verifier_confidence < min_confidence:
