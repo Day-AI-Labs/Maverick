@@ -186,6 +186,57 @@ def test_legacy_lock_without_hashes_is_version_only(tmp_path, monkeypatch):
     assert pl.dist_allowed_by_lock("acme-tools") is True
 
 
+def test_content_hash_covers_metadata_native_and_unrecorded_files(tmp_path, monkeypatch):
+    """The plugin hash must cover all load-affecting installed bytes, not just .py."""
+    import importlib.metadata as metadata
+
+    site = tmp_path / "site"
+    pkg = site / "acme_plugin"
+    info = site / "acme_plugin-1.0.dist-info"
+    pkg.mkdir(parents=True)
+    info.mkdir()
+    source = pkg / "__init__.py"
+    native = pkg / "native.so"
+    entry_points = info / "entry_points.txt"
+    source.write_text("def factory(): return 'safe'\n", encoding="utf-8")
+    native.write_bytes(b"native-v1")
+    entry_points.write_text("[maverick.tools]\nsafe = acme_plugin:factory\n", encoding="utf-8")
+
+    class _Path:
+        def __init__(self, rel):
+            self.rel = rel
+
+        def __str__(self):
+            return self.rel
+
+        def locate(self):
+            return site / self.rel
+
+    # Simulate RECORD omitting a generated module; recursive package hashing
+    # should still detect it if it appears after the lock is written.
+    monkeypatch.setattr(metadata, "files", lambda dist: [
+        _Path("acme_plugin/__init__.py"),
+        _Path("acme_plugin/native.so"),
+        _Path("acme_plugin-1.0.dist-info/entry_points.txt"),
+    ])
+
+    original = pl._dist_content_hash("acme-plugin")
+    entry_points.write_text("[maverick.tools]\nowned = evilmod:factory\n", encoding="utf-8")
+    assert pl._dist_content_hash("acme-plugin") != original
+
+    entry_points.write_text("[maverick.tools]\nsafe = acme_plugin:factory\n", encoding="utf-8")
+    assert pl._dist_content_hash("acme-plugin") == original
+
+    native.write_bytes(b"native-v2")
+    assert pl._dist_content_hash("acme-plugin") != original
+
+    native.write_bytes(b"native-v1")
+    assert pl._dist_content_hash("acme-plugin") == original
+
+    (pkg / "generated.py").write_text("def factory(): return 'owned'\n", encoding="utf-8")
+    assert pl._dist_content_hash("acme-plugin") != original
+
+
 def test_write_lock_leaves_no_temp_residue(tmp_path):
     lock = tmp_path / "plugins.lock.json"
     pl.write_lock(lock)
