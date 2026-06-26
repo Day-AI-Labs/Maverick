@@ -104,7 +104,7 @@ class ImportRunIn(BaseModel):
     inbound webhook trigger for each webhook-triggered automation.
     """
     source: str = Field(..., max_length=40)
-    definitions: list[dict] | None = None
+    definitions: list[dict] | None = Field(default=None, max_length=25)
     dry_run: bool = False
     activate_schedules: bool = False
     create_webhook_triggers: bool = False
