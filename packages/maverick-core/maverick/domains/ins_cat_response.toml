@@ -18,3 +18,24 @@ deliverable = "CAT event exposure summary"
 consumers = ["claims_manager", "risk_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Scope the event"
+instruction = "Define the CAT event footprint, affected territories, and perils from the bulletin and company guidance."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build exposure list"
+instruction = "Query in-force policies and aggregate insured values within the event footprint into an exposure list."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Route claim surge"
+instruction = "Track incoming FNOL volume and route the claim surge to adjuster teams by territory and severity."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Status reporting"
+instruction = "Compile the CAT event exposure and claim-status summary and surface any capacity or reinsurance trigger concern."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Manager review"
+instruction = "Route the exposure summary to the claims manager and risk officer for review, making no coverage decision."
+gate = "review"

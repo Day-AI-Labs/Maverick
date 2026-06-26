@@ -170,11 +170,21 @@ class StreamingCompactor:
         cursor, summary, _fingerprint = self._state_entry(conversation_id)
         return cursor, summary
 
+    def _cplock(self):
+        # Cross-process lock around the sidecar's load-modify-save. The sidecar
+        # holds every conversation's state in one dict, so without it two
+        # concurrent folds on DIFFERENT conversations both load the dict and the
+        # second save drops the other's entry. The lock wraps only the final
+        # reload-merge-save (never the LLM fold), re-reading fresh under it.
+        from ..file_lock import cross_process_lock
+        return cross_process_lock(self.path)
+
     def reset(self, conversation_id: str) -> None:
-        data = self._load()
-        if conversation_id in data:
-            del data[conversation_id]
-            self._save(data)
+        with self._cplock():
+            data = self._load()
+            if conversation_id in data:
+                del data[conversation_id]
+                self._save(data)
 
     # ---- folding ----
 
@@ -223,14 +233,17 @@ class StreamingCompactor:
         new_turns = turns[cursor:]
         if new_turns:
             summary = self._fold_once(summary, new_turns)
-        data = self._load()
-        data[conversation_id] = {
-            "cursor": len(turns),
-            "summary": summary,
-            "fingerprint": _turns_fingerprint(turns),
-            "last": self._clock(),
-        }
-        self._save(data)
+        # Reload-merge-save under the cross-process lock (the LLM fold above ran
+        # outside it) so a concurrent fold on another conversation isn't lost.
+        with self._cplock():
+            data = self._load()
+            data[conversation_id] = {
+                "cursor": len(turns),
+                "summary": summary,
+                "fingerprint": _turns_fingerprint(turns),
+                "last": self._clock(),
+            }
+            self._save(data)
         return summary
 
     def folder(self, conversation_id: str) -> Generator[str, list[dict], None]:
@@ -249,14 +262,15 @@ class StreamingCompactor:
             cursor += len(sent)
             folded_turns.extend(sent)
             summary = self._fold_once(summary, sent)
-            data = self._load()
-            data[conversation_id] = {
-                "cursor": cursor,
-                "summary": summary,
-                "fingerprint": _turns_fingerprint(folded_turns),
-                "last": self._clock(),
-            }
-            self._save(data)
+            with self._cplock():
+                data = self._load()
+                data[conversation_id] = {
+                    "cursor": cursor,
+                    "summary": summary,
+                    "fingerprint": _turns_fingerprint(folded_turns),
+                    "last": self._clock(),
+                }
+                self._save(data)
 
 
 def _default_key(messages: list[dict]) -> str:

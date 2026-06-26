@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "employment-law compliance review memo"
+consumers = ["hr_business_partner", "employment_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope question"
+instruction = "Identify which policy or practice is at issue and which federal statutes (FLSA, FMLA, ADA, Title VII, NLRA, WARN) plausibly apply."
+tools = ["read_file"]
+[[workflow]]
+name = "Pull policy text"
+instruction = "Read the company's current policy, handbook, or practice description and the relevant statutory or regulatory text."
+tools = ["read_file", "knowledge_search", "web_search"]
+[[workflow]]
+name = "Assess compliance"
+instruction = "Compare the practice against each applicable statute, flag gaps and disparate-impact risks, and exclude any protected-class data or proxy from the analysis."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft memo"
+instruction = "Write a screening memo stating findings, assumptions, and recommended remediation, labeled as attorney-owned advice not a final decision."
+[[workflow]]
+name = "Counsel sign-off"
+instruction = "Route the memo to employment counsel for legal sign-off before any consequential employment action is taken."
+gate = "review"

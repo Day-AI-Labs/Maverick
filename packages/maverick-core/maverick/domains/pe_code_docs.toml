@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "docstrings & API reference draft"
+consumers = ["engineering_lead", "tech_writer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read source"
+instruction = "Read the target modules, signatures, and existing comments to understand behavior and public surface."
+tools = ["read_file"]
+[[workflow]]
+name = "Identify gaps"
+instruction = "List undocumented functions, params, return values, and stale docs that need updating."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft docs"
+instruction = "Write docstrings, API reference, and README sections matching the house style and density."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Verify accuracy"
+instruction = "Cross-check each documented behavior against the actual source so no example or signature is wrong."
+tools = ["read_file"]
+[[workflow]]
+name = "Hand to lead"
+instruction = "Route the documentation draft to the engineering lead for review before it is published."
+gate = "review"

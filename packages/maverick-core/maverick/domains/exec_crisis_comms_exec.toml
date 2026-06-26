@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "holding statement and response brief"
+consumers = ["executive", "communications_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Establish facts"
+instruction = "Read the incident reports and confirmed facts from the company's documents, separating verified facts from unknowns."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Apply protocol"
+instruction = "Match the situation to the established crisis comms protocol to set audience, tone, and required approvals."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Scan context"
+instruction = "Check public coverage to gauge what is already known externally and avoid contradicting it."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft statement"
+instruction = "Draft a holding statement that states only confirmed facts and explicitly flags what is not yet known."
+[[workflow]]
+name = "Executive approval"
+instruction = "Route the holding statement to the executive for approval before any external release."
+gate = "approval"

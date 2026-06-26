@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "warranty call tracking log"
+consumers = ["project_manager", "warranty_coordinator"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Log incoming call"
+instruction = "Capture each post-completion warranty call with the unit, reported issue, claimant, and date received."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify coverage"
+instruction = "Check the warranty scope and expiration against the contract and closeout documents to confirm the issue is covered."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route to trade"
+instruction = "Assign each covered call to the responsible subcontractor or trade and set a target response date."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag overdue"
+instruction = "Flag any open call past its response target or any disputed coverage that needs a decision."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to PM"
+instruction = "Hand the warranty call log to the project manager for review of open and disputed items."
+gate = "review"

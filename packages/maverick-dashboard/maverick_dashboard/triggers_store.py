@@ -14,11 +14,25 @@ nested tables; ``list_triggers`` decodes them back to a dict.
 from __future__ import annotations
 
 import json
-import os
 import re
+import threading
 import time
 
 from maverick import config
+
+# Serializes the triggers load-modify-save in-process; cross_process_lock in
+# _locked() extends it across processes (multiple dashboard workers).
+_TRIGGERS_LOCK = threading.Lock()
+
+
+def _locked():
+    from contextlib import ExitStack
+
+    from maverick.file_lock import cross_process_lock
+    stack = ExitStack()
+    stack.enter_context(_TRIGGERS_LOCK)
+    stack.enter_context(cross_process_lock(_path()))
+    return stack
 
 # Trigger names are URL/TOML-safe slugs: they appear in the signed webhook body
 # and as a bare TOML table key, so keep them to [a-z0-9-].
@@ -96,17 +110,10 @@ def _dump(triggers: list[dict]) -> str:
 
 
 def _write(triggers: list[dict]) -> None:
-    p = _path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".toml.tmp")
-    fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(_dump(triggers))
-    os.replace(tmp, p)
-    try:
-        os.chmod(p, 0o600)
-    except OSError:
-        pass
+    # Unique temp + os.replace (0600): the fixed ".toml.tmp" collided between two
+    # concurrent workers. RMW serialization is in the mutators via _locked().
+    from maverick.file_lock import atomic_write_text
+    atomic_write_text(_path(), _dump(triggers))
 
 
 def set_trigger(name: str, template: str, params: dict | None = None) -> dict:
@@ -121,16 +128,18 @@ def set_trigger(name: str, template: str, params: dict | None = None) -> dict:
         "params": {str(k): str(v) for k, v in (params or {}).items()},
         "created": time.time(),
     }
-    kept = [t for t in list_triggers() if t["name"] != slug]
-    kept.append(rec)
-    _write(kept)
+    with _locked():
+        kept = [t for t in list_triggers() if t["name"] != slug]
+        kept.append(rec)
+        _write(kept)
     return rec
 
 
 def delete_trigger(name: str) -> bool:
-    triggers = list_triggers()
-    kept = [t for t in triggers if t["name"] != name]
-    if len(kept) == len(triggers):
-        return False
-    _write(kept)
+    with _locked():
+        triggers = list_triggers()
+        kept = [t for t in triggers if t["name"] != name]
+        if len(kept) == len(triggers):
+            return False
+        _write(kept)
     return True

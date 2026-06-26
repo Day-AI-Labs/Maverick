@@ -7,6 +7,7 @@ persona = """You are the Workplace Investigations specialist (sealed, confidenti
 
 allow_tools = ["read_file", "knowledge_search"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file", "web_search"]
 
 # Suite-level grounding fallback: docs uploaded to the "hr" collection
@@ -14,3 +15,29 @@ deny_tools = ["shell", "write_file", "web_search"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "investigation evidence package and draft findings"
+consumers = ["lead_investigator", "employee_relations"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read intake"
+instruction = "Read the complaint intake, allegations, and any documents already collected for the matter."
+tools = ["read_file"]
+[[workflow]]
+name = "Plan interviews"
+instruction = "Build the interview plan and witness list with neutral, allegation-specific questions for each party."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build timeline"
+instruction = "Organize evidence into a neutral chronological timeline that cites each underlying document."
+[[workflow]]
+name = "Draft findings"
+instruction = "Draft findings that state facts and corroboration without reaching a conclusion or determining credibility."
+[[workflow]]
+name = "Route to investigator"
+instruction = "Route the sealed package to the lead investigator who makes every determination."
+gate = "review"

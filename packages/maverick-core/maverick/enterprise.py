@@ -124,7 +124,9 @@ def enterprise_enabled() -> bool:
     standalone enterprise knob is absent or false. Otherwise, a recognized
     ``MAVERICK_ENTERPRISE`` env value wins over ``[enterprise] mode`` in config;
     an *unrecognized* env value is ignored (with a warning) rather than silently
-    disabling the control. Off by default.
+    disabling the control. When neither is set, the named deployment profile
+    decides (``profile = "enterprise"`` turns it on; see :mod:`maverick.profile`).
+    Off by default (the default profile is ``standard``).
     """
     try:
         from .compliance_profiles import FLOOR_EGRESS_LOCK, requires_floor
@@ -146,7 +148,16 @@ def enterprise_enabled() -> bool:
         return False
     if isinstance(val, str):
         return _truthy(val)
-    return bool(val)
+    if val is not None:
+        return bool(val)
+    # No explicit [enterprise] mode and no env override: the named deployment
+    # profile decides. profile="enterprise" turns the boundary on by default;
+    # "standard" (the default) leaves it off. Any explicit knob above still wins.
+    try:
+        from .profile import is_enterprise_profile
+        return is_enterprise_profile()
+    except Exception:
+        return False
 
 
 def _configured_openai_compatible_base_url() -> str | None:

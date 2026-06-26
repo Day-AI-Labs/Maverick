@@ -9,3 +9,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["hosp"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "banquet event order draft"
+consumers = ["sales_owner", "catering_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather event brief"
+instruction = "Read the group inquiry, room block, and catering requirements to assemble the event scope."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify against standards"
+instruction = "Check menu, space, and pricing details against the property's own sales and catering documents and cite each source."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Draft the BEO"
+instruction = "Draft the banquet event order with timeline, setup, and headcount, marking every assumption and unknown plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag commitments"
+instruction = "Flag any line that would commit a price or contract so no figure is presented as final."
+[[workflow]]
+name = "Route to sales"
+instruction = "Hand the prepared BEO draft to the sales owner to review and commit."
+gate = "review"

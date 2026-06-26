@@ -44,6 +44,7 @@ import io
 import json
 import logging
 import os
+import tempfile
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -134,14 +135,40 @@ def _yyyymmdd(epoch: float) -> str:
     return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y%m%d")
 
 
-def _unique_path(cold_dir: Path, stem: str, ext: str) -> Path:
-    """Never clobber existing cold data: dedupe a same-range rerun with -N."""
-    path = cold_dir / f"{stem}{ext}"
-    n = 2
-    while path.exists():
-        path = cold_dir / f"{stem}-{n}{ext}"
-        n += 1
-    return path
+def _publish_unique(cold_dir: Path, stem: str, ext: str, src: Path) -> Path:
+    """Atomically publish the fully-written ``src`` under a never-clobber name.
+
+    A plain ``while path.exists()`` then ``os.replace`` is a TOCTOU: two
+    processes archiving the same date-range both see the same ``-N`` free and
+    both replace onto it, so one silently clobbers the other's cold file -- and
+    the SQLite rows were already deleted on the assumption the cold file is
+    durable, so that is permanent data loss. Instead ``os.link`` ``src`` onto
+    each candidate name in turn: ``link`` is atomic and fails with
+    ``FileExistsError`` if the name is already taken, so the winner owns the
+    name and the loser just tries the next ``-N``. Because ``src`` is already
+    complete, the published file is never observed half-written or empty (unlike
+    an O_EXCL placeholder, which ``read_cold`` would pick up and fail to parse).
+    Falls back to the historical exists()+replace on a platform without
+    hard-links.
+    """
+    n = 1
+    while True:
+        path = cold_dir / (f"{stem}{ext}" if n == 1 else f"{stem}-{n}{ext}")
+        try:
+            os.link(str(src), str(path))
+            return path
+        except FileExistsError:
+            n += 1
+            continue
+        except OSError:
+            # No hard-link support (exotic FS / platform): degrade to the old
+            # best-effort scheme. Still better than nothing; the link path is
+            # the one that closes the race on POSIX.
+            while path.exists():
+                n += 1
+                path = cold_dir / f"{stem}-{n}{ext}"
+            os.replace(str(src), str(path))
+            return path
 
 
 def _write_parquet(rows: list[dict], path: Path) -> None:
@@ -176,19 +203,32 @@ def _write_cold_file(cold_dir: Path, table: str, ts_col: str, rows: list[dict]) 
     lo = _yyyymmdd(min(r[ts_col] for r in rows))
     hi = _yyyymmdd(max(r[ts_col] for r in rows))
     ext, writer = _choose_format(_cold_codec())
-    path = _unique_path(cold_dir, f"{table}-{lo}-{hi}", ext)
-    tmp = path.with_name(path.name + ".tmp")
+    cold_dir.mkdir(parents=True, exist_ok=True)
+    # Write the whole file to a UNIQUE temp first (read_cold skips ".tmp"), then
+    # atomically publish it under a never-clobber name. A fixed ".tmp" derived
+    # from the final name would also collide between two same-range archivers.
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(cold_dir), prefix=f".{table}-", suffix=ext + ".tmp")
+    os.close(fd)
+    tmp = Path(tmp_name)
     try:
         writer(rows, tmp)
-        os.replace(tmp, path)
+        try:
+            os.chmod(tmp, 0o600)  # same posture as world.db: content may be sensitive
+        except OSError:
+            pass
+        path = _publish_unique(cold_dir, f"{table}-{lo}-{hi}", ext, tmp)
     except BaseException:
         try:
             tmp.unlink()
         except OSError:
             pass
         raise
+    # On the hard-link path the published file is a second link to tmp; drop the
+    # temp name so only the final cold file remains. (On the os.replace fallback
+    # tmp was already renamed away, so this unlink is a no-op miss.)
     try:
-        os.chmod(path, 0o600)  # same posture as world.db: content may be sensitive
+        tmp.unlink()
     except OSError:
         pass
     return path

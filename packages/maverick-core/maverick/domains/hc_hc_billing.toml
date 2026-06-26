@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "patient billing explanation & plan proposal"
+consumers = ["patient_account_rep", "revenue_cycle_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull account"
+instruction = "Read the patient account and itemized statement to identify charges, payments, and outstanding balance."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Verify charges"
+instruction = "Reconcile each line against the chargemaster, EOB, and posted adjustments to spot billing errors."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Draft explanation"
+instruction = "Write a plain-language explanation of the bill and itemize any corrections needed."
+[[workflow]]
+name = "Check plan policy"
+instruction = "Confirm any payment plan terms fall within the company financial-assistance and plan policy."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Rep review"
+instruction = "Route the explanation and proposed plan to a patient account rep before it is shared with the patient."
+gate = "review"

@@ -7,7 +7,35 @@ persona = """You are the Delivery ETA Communicator for this business -- a logist
 allow_tools = ["read_file", "web_search", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit"]
 max_risk = "medium"
+effort = "low"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "delivery ETA status update"
+consumers = ["customer_service", "account_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull shipments"
+instruction = "Query in-transit shipments with their committed delivery dates and current carrier milestone data."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Verify tracking"
+instruction = "Cross-check carrier-reported status and exceptions against current public tracking and cite sources used."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Compute ETAs"
+instruction = "Recalculate revised ETAs and flag shipments now at risk of missing their committed window."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft updates"
+instruction = "Write proactive, accurate ETA update messages stating assumptions and any unconfirmed carrier data."
+[[workflow]]
+name = "Review before send"
+instruction = "Route at-risk and customer-facing updates to customer service for sign-off before they go out."
+gate = "review"

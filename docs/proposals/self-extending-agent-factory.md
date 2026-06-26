@@ -2,8 +2,10 @@
 
 > **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,118 lint-clean agents across 26 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
 
+> **Status: Implemented** — the self-extending factory has shipped to main: capability provisioning at pack-birth (`maverick/provision.py`), programming by demonstration (`maverick/demonstration.py`), and the self-improving factory loop (`maverick/factory_learning.py`); CLI `maverick learn-demo` / `maverick factory-learn`.
 
-**Status:** design / roadmap — a load-bearing differentiator. Companion to the eight
+
+**Status:** implemented (see the banner above) — was design / roadmap; a load-bearing differentiator. Companion to the eight
 agent suites ([`agent-suites-overview.md`](agent-suites-overview.md)) and the
 [agent-to-agent protocol](agent-to-agent-protocol.md). Builds on
 [`../enterprise/architecture.md`](../enterprise/architecture.md).
@@ -59,7 +61,7 @@ it's credible rather than vaporware.
 
 | Capability | Module / surface | Status | Role in the factory |
 |---|---|---|---|
-| **Generated-profile authoring** | `domain.py` — `DomainProfile(authoring="generated")`, `agent_from_profile`, `load_domains` | **Shipped** | The output format: a synthesized agent *is* a generated pack |
+| **Generated-profile authoring** | `domain.py` — `DomainProfile(authoring="generated")`, `agent_from_profile`, `load_domains`; `intake.py` parity | **Shipped** | The output format: a synthesized agent *is* a generated pack — at parity with built-ins (intake emits `[output]`/`[[workflow]]`/`effort`/`refuse`, all sanitized lint-clean) |
 | **Customer intake** | `assessment.py` (`start`→`answer`→`finalize`) | **Shipped** | Produces the customer's Operating Profile (§6) |
 | **Skill distillation** | `skills.py` — `distill(trajectory)→SKILL.md`, `validate_skill_file`, `install`, Ed25519 `sig` + `trusted_pubkeys` | **Shipped** | The skill side of synthesis: author/validate/sign new skills |
 | **Performance signal (selection)** | `skill_stats.decay_weights`, `skill_embeddings` | **Shipped** | The fitness function — what's earning its keep vs decaying |

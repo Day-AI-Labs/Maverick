@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Policy lifecycle & control-mapping package"
+consumers = ["compliance_officer", "control_owner"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory policies"
+instruction = "Read the current policy set with version, owner, and review-due dates from the company's repository."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check currency"
+instruction = "Identify policies past their review cadence, missing approvals, or with open exceptions needing renewal."
+tools = ["read_file"]
+[[workflow]]
+name = "Map to controls"
+instruction = "Map each policy to its supporting controls and flag controls with no governing policy or orphaned policies."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft updates"
+instruction = "Draft revision and attestation recommendations, citing regulatory or framework changes that drive them."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Route to owner"
+instruction = "Hand the lifecycle package and mapping to the compliance officer to review and adopt."
+gate = "review"

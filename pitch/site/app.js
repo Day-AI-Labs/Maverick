@@ -1,11 +1,24 @@
 /* Lightwork site — demo-request modal.
    Opens from every "Book a demo" / "Request access" CTA on every page.
-   Delivery: set ACCESS_KEY to a free Web3Forms key to send submissions
-   straight to info@daybreakailabs.com. Until then it falls back to a
-   pre-filled email so the form is never a dead end. */
+   Delivery: provide a free Web3Forms access key to send submissions straight to
+   info@daybreakailabs.com — set it at DEPLOY TIME without editing this file via
+   either:
+     <meta name="web3forms-access-key" content="YOUR-KEY">   (in each page head), or
+     window.LIGHTWORK_ACCESS_KEY = "YOUR-KEY";                (e.g. an uncommitted config.js)
+   With no key set, the form still posts via a pre-filled mailto, so it is never
+   a dead end. See pitch/site/README.md. */
 (function () {
   "use strict";
-  var ACCESS_KEY = ""; // <-- paste the Web3Forms access key here to enable direct-to-inbox delivery
+  // Resolve the key from deploy-time injection first, then the inline constant.
+  function resolveAccessKey() {
+    try {
+      var m = document.querySelector('meta[name="web3forms-access-key"]');
+      if (m && m.content && m.content.trim()) return m.content.trim();
+      if (window.LIGHTWORK_ACCESS_KEY) return String(window.LIGHTWORK_ACCESS_KEY).trim();
+    } catch (e) { /* non-browser / no DOM */ }
+    return ""; // optional inline fallback: paste a Web3Forms key here
+  }
+  var ACCESS_KEY = resolveAccessKey();
 
   var modal = document.createElement("div");
   modal.className = "modal";

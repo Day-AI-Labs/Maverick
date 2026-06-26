@@ -15,8 +15,8 @@ def _wm(tmp_path) -> WorldModel:
     return WorldModel(tmp_path / "world.db")
 
 
-def test_schema_is_v20(tmp_path):
-    assert _wm(tmp_path).schema_version == 20
+def test_schema_is_v23(tmp_path):
+    assert _wm(tmp_path).schema_version == 23
 
 
 def test_overwrite_when_temporal_disabled(tmp_path, monkeypatch):

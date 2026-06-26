@@ -93,7 +93,7 @@ Führen Sie den Assistenten jederzeit erneut aus:
 maverick init
 ```
 
-Oder bearbeiten Sie `~/.maverick/config.toml` direkt. Der Abschnitt `[models]` ordnet jeder Agentenrolle eine Zeichenkette der Form `provider:model-id` zu. Das Schema ist in [`configuration.md`](./configuration.md) beschrieben.
+Oder bearbeiten Sie `~/.maverick/config.toml` direkt. Der Abschnitt `[models]` ordnet jeder Agentenrolle eine Zeichenkette der Form `provider:model-id` zu. Das Schema ist in [`configuration.md`](../../configuration.md) beschrieben.
 
 ## Wo die Daten liegen
 

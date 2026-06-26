@@ -14,3 +14,33 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "executive decision memo"
+consumers = ["ceo", "board"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame decision"
+instruction = "Read the decision request and existing materials to pin down the question, constraints, and what success looks like."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather evidence"
+instruction = "Research market context and pull the relevant metrics so each option rests on verifiable data, not assertion."
+tools = ["web_search", "knowledge_search", "tableau_read", "looker_read"]
+[[workflow]]
+name = "Model options"
+instruction = "Lay out the realistic options with trade-offs, risks, and a quantified case for each."
+tools = ["tableau_read", "looker_read"]
+[[workflow]]
+name = "Draft recommendation"
+instruction = "Write the memo with a single clear recommendation, the reasoning, and the dissent or downside the executive must weigh."
+[[workflow]]
+name = "Scrub MNPI"
+instruction = "Confirm no material non-public information leaks outside its sealed compartment before circulation."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the brief to the executive sponsor for review before it reaches the decision-makers."
+gate = "review"

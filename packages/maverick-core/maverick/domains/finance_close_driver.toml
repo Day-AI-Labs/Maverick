@@ -17,3 +17,24 @@ deliverable = "Month-end close checklist"
 consumers = ["controller", "accounting_manager"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Load checklist"
+instruction = "Read the month-end close checklist and prior-period close to identify every task, owner, and due date."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check status"
+instruction = "Query the ledger and task records to determine which close items are posted, pending, or blocked."
+tools = ["sql_query"]
+[[workflow]]
+name = "Chase owners"
+instruction = "Compile the list of overdue or unsigned items with their owners and assemble a chase summary per task."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Capture sign-offs"
+instruction = "Record each owner's certification against its checklist line tied to the system of record with period labeled."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Controller review"
+instruction = "Present the completed checklist with outstanding items flagged to the controller and accounting manager for close sign-off."
+gate = "review"

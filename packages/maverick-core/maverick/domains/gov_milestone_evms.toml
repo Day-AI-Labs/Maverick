@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "EVMS variance report with narratives"
+consumers = ["program_manager", "control_account_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Collect EV data"
+instruction = "Read BCWS, BCWP, and ACWP by control account for the reporting period from the cost and schedule sources."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compute variances"
+instruction = "Calculate cost and schedule variances, CPI, SPI, and the estimate at completion for each control account."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag thresholds"
+instruction = "Identify control accounts breaching the variance reporting thresholds that require an explanation."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft narratives"
+instruction = "Draft root-cause and corrective-action narratives for each flagged variance grounded in the cited control-account data."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "CAM review"
+instruction = "Route the variance report and narratives to the control account managers for sign-off before program review."
+gate = "review"

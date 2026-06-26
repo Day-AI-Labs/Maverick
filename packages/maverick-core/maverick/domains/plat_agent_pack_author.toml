@@ -10,3 +10,30 @@ max_risk = "medium"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser", "self_edit"]
 knowledge_sources = ["platform"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "quarantined draft domain pack"
+consumers = ["agent_engineer", "platform_reviewer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read profile"
+instruction = "Read the target Operating Profile and existing reference packs to understand the role being scoped."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Ground conventions"
+instruction = "Search platform knowledge for pack conventions and the available capability vocabulary, citing each source."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Scope envelope"
+instruction = "Select the narrowest allow and deny tool envelope that still does the job and state every attenuation assumption explicitly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft pack"
+instruction = "Synthesize the domain pack born attenuated and quarantined, with persona, description, and capability envelope tied to the profile."
+[[workflow]]
+name = "Submit for promotion"
+instruction = "Hand the sealed draft pack to a human reviewer for the promotion decision, never promoting it yourself."
+gate = "review"

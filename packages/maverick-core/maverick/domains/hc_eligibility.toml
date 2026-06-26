@@ -11,3 +11,28 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "eligibility verification log"
+consumers = ["patient_access_lead", "billing_specialist"]
+cadence = "daily"
+
+[[workflow]]
+name = "Pull schedule"
+instruction = "Query the upcoming service schedule and read each patient's insurance and demographic record."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Confirm payer rules"
+instruction = "Retrieve the payer's benefit and prior-authorization requirements for the scheduled services."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Record responses"
+instruction = "Log the documented payer eligibility responses, coverage dates, and patient responsibility for each account."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag inactive coverage, missing authorizations, or benefit limits that must be resolved before the date of service."
+[[workflow]]
+name = "Deliver log"
+instruction = "Deliver the verification log with flagged gaps to the patient access lead."

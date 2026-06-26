@@ -49,6 +49,19 @@ def test_record_failure_from_exception(tmp_path, monkeypatch):
     assert rec["mode"] == "timeout" and rec["goal_id"] == 7 and "slow" in rec["detail"]
 
 
+def test_recorded_detail_is_scrubbed(tmp_path, monkeypatch):
+    # record_failure feeds the raw exception string, which for provider auth
+    # errors carries the API key. It must be scrubbed before hitting disk.
+    monkeypatch.setenv("MAVERICK_FAILURE_TELEMETRY", "1")
+    p = tmp_path / "f.jsonl"
+    ft.record_failure(
+        RuntimeError("401 from provider key=sk-ant-abcdefghij1234567890XYZ"),
+        goal_id=9, path=p)
+    detail = json.loads(p.read_text().strip())["detail"]
+    assert "sk-ant-abcdefghij" not in detail
+    assert "[REDACTED" in detail
+
+
 def test_record_failure_from_mode_string(tmp_path, monkeypatch):
     monkeypatch.setenv("MAVERICK_FAILURE_TELEMETRY", "1")
     p = tmp_path / "f.jsonl"

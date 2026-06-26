@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "mandatory HR compliance filing package"
+consumers = ["hr_compliance_lead", "general_counsel"]
+cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Identify filing"
+instruction = "Determine which mandatory report is due (EEO-1, OSHA 300, ACA, BLS, VETS-4212) and its agency format and deadline."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Pull source data"
+instruction = "Gather the underlying headcount, injury, or coverage records from internal HR documents for the reporting period."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft report"
+instruction = "Populate the report in the required agency schema and reconcile totals against the source records."
+[[workflow]]
+name = "Reconcile counts"
+instruction = "Cross-check every category total against headcount or incident logs and flag any discrepancy before filing."
+[[workflow]]
+name = "Route filing"
+instruction = "Route the completed filing package to the compliance lead for human-gated submission to the agency."
+gate = "approval"

@@ -26,6 +26,13 @@ Lightwork is proprietary, commercially licensed software (see
   trail for every action.
 - **Multi-channel deployment**: Telegram, Discord, Slack, Signal,
   Email, Matrix, WhatsApp, SMS, iMessage — one config, all channels.
+- **Build an agent from a demonstration**: watch a person do their job,
+  then synthesize the agent that does it — `maverick learn-demo <file>`
+  ingests an observed transcript, induces a profile through the same
+  intake clamp + review gate, and provisions the skills/tools it needs.
+  The factory also improves itself: `maverick factory-learn` mines
+  provisioning/approval gaps back into future pack generation
+  (off by default, never widens an envelope).
 
 ## Quick start
 
@@ -76,4 +83,4 @@ platform remain proprietary.
 - [Features → Dreaming / Hindsight / Fleet memory](FEATURES.md) — the full learning lifecycle: consolidation, regression detection, value proof, and the cross-vendor memory plane
 - [Features](FEATURES.md) — everything Lightwork does today (shipped capabilities + tools)
 - [Roadmap](ROADMAP.md) — the forward backlog (what isn't built yet)
-- [Contributing](CONTRIBUTING.md) — how to send PRs
+- [Contributing](../CONTRIBUTING.md) — how to send PRs

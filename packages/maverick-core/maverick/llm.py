@@ -351,6 +351,32 @@ def _feed_circuit(provider: str, error: bool) -> None:
         pass
 
 
+def _enforce_provider_cap(provider: str) -> None:
+    """Deployment-wide provider spend ceiling gate ([budget.provider_caps]).
+
+    Raises ``ProviderCapExceeded`` when the provider's period spend has reached
+    its cap -- so a failover chain moves to the next provider, or (no chain) the
+    call fails closed. A NO-OP unless a cap is configured for this provider, so
+    the default install is unchanged. ProviderCapExceeded is deliberately NOT
+    caught here: it must propagate. Only a missing module is swallowed."""
+    try:
+        from .provider_cost_cap import enforce
+    except ImportError:  # pragma: no cover -- module always present
+        return
+    enforce(provider)
+
+
+def _record_provider_spend(provider: str, dollars: float) -> None:
+    """Add one call's spend to the provider's period ledger (the data the cap
+    enforces against). Fail-soft -- accounting never crashes the run that
+    produced the spend; no-op for non-positive amounts inside record()."""
+    try:
+        from .provider_cost_cap import record
+        record(provider, dollars)
+    except Exception:  # pragma: no cover -- accounting never blocks a call
+        pass
+
+
 def _hedge_ms() -> float | None:
     """Tail-latency hedging delay (ms): opt-in, default OFF.
 
@@ -700,6 +726,7 @@ class LLM:
         from .privacy_egress import maybe_redact_egress
         system, messages = maybe_redact_egress(provider, system, messages)
         _record_provider_call(provider)
+        _enforce_provider_cap(provider)  # deployment-wide $ ceiling (opt-in)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         kwargs: dict[str, Any] = dict(
@@ -770,6 +797,7 @@ class LLM:
             # Price THIS call's own usage rather than diffing the shared
             # budget.dollars counter, which races concurrent sub-agents.
             _spent = _call_spend(model_id, _resp, budget, _d0)
+            _record_provider_spend(provider, _spent)  # feed the $ ceiling ledger
             try:
                 from .provider_health import get as _h
                 _h().record(provider, model_id,
@@ -827,6 +855,7 @@ class LLM:
         from .privacy_egress import maybe_redact_egress
         system, messages = maybe_redact_egress(provider, system, messages)
         _record_provider_call(provider)
+        _enforce_provider_cap(provider)  # deployment-wide $ ceiling (opt-in)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         import time as _time
@@ -942,6 +971,7 @@ class LLM:
             # Price THIS call's own usage rather than diffing the shared
             # budget.dollars counter, which races concurrent sub-agents.
             _spent = _call_spend(model_id, _resp, budget, _d0)
+            _record_provider_spend(provider, _spent)  # feed the $ ceiling ledger
             try:
                 from .provider_health import get as _h
                 _h().record(provider, model_id,

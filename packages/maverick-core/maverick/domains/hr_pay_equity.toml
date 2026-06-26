@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "pay-equity regression & remediation memo"
+consumers = ["compensation_lead", "employment_counsel"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Define cohorts"
+instruction = "Read compensation and job-grade data and group employees into comparable pay-analysis cohorts on an aggregate basis only."
+tools = ["read_file"]
+[[workflow]]
+name = "Confirm methodology"
+instruction = "Check current pay-equity regression methodology and legal thresholds against company policy and authoritative sources."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Run regression"
+instruction = "Run the regression on legitimate job-related factors only, excluding any protected-class data or proxy, and identify unexplained gaps."
+tools = ["read_file"]
+[[workflow]]
+name = "Model remediation"
+instruction = "Draft remediation scenarios sizing the adjustment needed to close each unexplained gap, with assumptions stated."
+[[workflow]]
+name = "Route to counsel"
+instruction = "Hand the privileged regression and remediation memo to compensation lead and employment counsel for the consequential pay decision."
+gate = "review"

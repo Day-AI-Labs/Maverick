@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "GTM segmentation & ICP plan"
+consumers = ["vp_sales", "marketing_lead"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Gather inputs"
+instruction = "Read existing GTM plans, win/loss notes, and pricing data, then pull market benchmarks to frame the segmentation question."
+tools = ["read_file", "web_search", "knowledge_search"]
+[[workflow]]
+name = "Define ICP"
+instruction = "Cluster accounts into segments and sharpen the ICP using firmographic and fit criteria grounded in the source data."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Model packaging"
+instruction = "Analyze pricing and packaging options against each segment and quantify expected coverage and price sensitivity."
+tools = ["read_file"]
+[[workflow]]
+name = "Stress-test assumptions"
+instruction = "Flag segments that rely on thin data or unproven willingness-to-pay so no price or discount is committed without evidence."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Package the segmentation and ICP plan with pricing recommendations for the VP of Sales to review before adoption."
+gate = "review"

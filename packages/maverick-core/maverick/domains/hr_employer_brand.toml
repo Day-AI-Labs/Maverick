@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "EEO-reviewed job posting & careers copy"
+consumers = ["recruiting_lead", "hiring_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Gather role inputs"
+instruction = "Read the role requisition, leveling guide, and existing brand guidelines for the position being marketed."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Benchmark messaging"
+instruction = "Research current market language and competitor postings to position the role authentically without overclaiming."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft inclusive copy"
+instruction = "Write the job posting and careers content using inclusive, EEO-compliant language free of age, gender, or other protected-class signals."
+[[workflow]]
+name = "Bias scan"
+instruction = "Scan the draft for coded or exclusionary terms and replace any that could deter protected groups or imply a discriminatory preference."
+[[workflow]]
+name = "Route for approval"
+instruction = "Route the finalized copy to the recruiting lead and hiring manager for approval before publication."
+gate = "approval"

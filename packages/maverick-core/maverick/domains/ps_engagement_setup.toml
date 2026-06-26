@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "engagement setup package"
+consumers = ["engagement_partner", "finance_operations"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Gather intake"
+instruction = "Read the client intake form and engagement letter to extract client, scope, fee arrangement, and staffing needs."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compliance checks"
+instruction = "Verify conflicts clearance, client onboarding, and required approvals are complete and cite the supporting records."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Draft codes"
+instruction = "Draft the engagement code, staffing plan, and budget consistent with the fee arrangement and scope."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag blockers"
+instruction = "Surface any missing clearance, unstaffed role, or budget gap that must be resolved before the engagement can open."
+[[workflow]]
+name = "Partner approval"
+instruction = "Route the complete setup package to the engagement partner to approve opening the engagement."
+gate = "approval"

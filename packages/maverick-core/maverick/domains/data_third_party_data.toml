@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "licensed-data register"
+consumers = ["data_governance_lead", "procurement_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Load licenses"
+instruction = "Read each third-party data license agreement to capture permitted use, refresh terms, and expiry dates."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Inventory usage"
+instruction = "Query where each licensed dataset is stored and consumed to confirm actual use stays within permitted scope."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check refresh & expiry"
+instruction = "Compare last-refresh and contract expiry against terms and flag stale, expiring, or out-of-scope datasets."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Compile register"
+instruction = "Assemble the licensed-data register with permitted use, refresh status, expiry, and any compliance exceptions."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Governance review"
+instruction = "Route the register to the governance lead and procurement for review before renewals or retirements are actioned."
+gate = "review"

@@ -18,3 +18,24 @@ deliverable = "Vendor risk & oversight register"
 consumers = ["risk_officer", "compliance_officer"]
 cadence = "annual"
 gate = "review"
+
+[[workflow]]
+name = "Inventory vendors"
+instruction = "Pull the third-party vendor inventory and identify files due for periodic review this cycle."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Verify documentation"
+instruction = "Check each vendor file for current contracts, SOC reports, insurance, and financials against the regulatory requirements."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Score risk"
+instruction = "Assess inherent and residual risk tiers and flag gaps, expired documents, or overdue reviews."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build register"
+instruction = "Compile the vendor oversight register listing risk tier, review status, and required remediation per vendor."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Officer review"
+instruction = "Route the register and flagged gaps to the risk and compliance officers for review before files are closed."
+gate = "review"

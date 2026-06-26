@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "investor update & Q&A brief"
+consumers = ["cfo", "ceo", "investor_relations_lead"]
+cadence = "quarterly"
+gate = "approval"
+
+[[workflow]]
+name = "Confirm approved figures"
+instruction = "Pull only the finalized, approved financial and operating figures for the period from source documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Tie out numbers"
+instruction = "Verify each figure to be cited matches the reconciled system-of-record and flag anything not yet approved."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Draft update"
+instruction = "Draft the investor update narrative strictly from approved figures, citing the source for each material number."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build Q&A brief"
+instruction = "Anticipate likely investor questions and prepare grounded answers with no forward-looking statements beyond approved guidance."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Executive approval"
+instruction = "Submit the update and Q&A brief to the executive and IR lead for approval before any external use."
+gate = "approval"

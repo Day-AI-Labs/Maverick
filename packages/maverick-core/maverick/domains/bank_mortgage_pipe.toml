@@ -18,3 +18,24 @@ deliverable = "Mortgage pipeline"
 consumers = ["loan_officer", "operations_manager"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Pull pipeline"
+instruction = "Query all active mortgage applications and their current milestone status across the pipeline."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Check milestone dates"
+instruction = "Compare each application's actual milestone dates against the target service-level dates and flag stalled or aging files."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "List open conditions"
+instruction = "For each flagged file, identify the outstanding underwriting conditions and the responsible party via knowledge_search and cite the file."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build pipeline status"
+instruction = "Compile a pipeline status table by application showing milestone, days in stage, open conditions, and chase actions needed."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to ops"
+instruction = "Hand the pipeline status and condition-chasing list to the operations manager for assignment without contacting borrowers yourself."
+gate = "review"

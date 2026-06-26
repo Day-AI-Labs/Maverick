@@ -91,28 +91,83 @@ def encryption_group() -> None:
 @encryption_group.command("migrate")
 @click.option("--dry-run", is_flag=True,
               help="Report what would be sealed without writing.")
+@click.option("--backup/--no-backup", default=False,
+              help="Opt in to a pre-migration plaintext backup next to the DB.")
 @click.pass_context
-def encryption_migrate_cmd(ctx, dry_run: bool) -> None:
+def encryption_migrate_cmd(ctx, dry_run: bool, backup: bool) -> None:
     """Seal existing plaintext in the world DB (turns, facts, messages, questions).
 
     Enabling encryption only seals NEW writes; this seals data written before it
     was on. Idempotent and safe to re-run. Requires at-rest encryption enabled.
+
+    The reseal is in place. By default no plaintext backup is written; pass
+    --backup to write a timestamped plaintext snapshot alongside the DB first
+    (mode 0600), and delete that backup once you have verified the migration.
     """
     from pathlib import Path
 
     from ..crypto_at_rest import EncryptionUnavailable
-    from ..encryption_migrate import migrate_world_db
+    from ..encryption_migrate import backup_world_db, migrate_world_db
+    db = Path(ctx.obj["db"])
     try:
-        report = migrate_world_db(Path(ctx.obj["db"]), dry_run=dry_run)
+        if not dry_run and backup and db.exists():
+            # Only snapshot when there is plaintext left to seal, so idempotent
+            # re-runs don't litter identical backups. The CLI owns the backup
+            # (so it can echo the path); the real run below skips its own.
+            if sum(migrate_world_db(db, dry_run=True).values()):
+                bpath = backup_world_db(db)
+                click.echo(f"backed up plaintext world DB to {bpath} "
+                           "(mode 0600; delete once the migration is verified)")
+        report = migrate_world_db(db, dry_run=dry_run, backup=False)
     except EncryptionUnavailable as e:
         raise click.ClickException(str(e)) from e
     verb = "would seal" if dry_run else "sealed"
     for key in sorted(report):
         click.echo(f"  {key}: {verb} {report[key]}")
+    total = sum(report.values())
     click.echo(
-        f"{verb} {sum(report.values())} value(s) total"
-        + (" (dry run)" if dry_run else "")
+        f"{verb} {total} value(s) total" + (" (dry run)" if dry_run else "")
     )
+    # Once legacy rows are sealed, strict mode (treat an unsealed value in a
+    # sealed column as tampering, instead of trusting it as plaintext) becomes
+    # safe to turn on -- nudge the operator there, since nothing else does.
+    if not dry_run:
+        try:
+            from ..crypto_at_rest import strict_at_rest
+            if not strict_at_rest():
+                click.echo(
+                    "tip: now that legacy rows are sealed, set [encryption] "
+                    "strict = true (or MAVERICK_ENCRYPT_STRICT=1) so an unsealed "
+                    "value in a sealed column is treated as tampering."
+                )
+        except Exception:  # pragma: no cover - never fail the command on a tip
+            pass
+
+
+@encryption_group.command("backup-key")
+@click.option("--to", "dest", required=True,
+              type=click.Path(file_okay=False, dir_okay=True),
+              help="Directory to copy the key material into (created 0700).")
+def encryption_backup_key_cmd(dest: str) -> None:
+    """Copy the at-rest key material to a directory for secure escrow.
+
+    The key file is the ONLY way to read sealed data -- if it is lost, that data
+    is unrecoverable. This copies the primary key and any rotation-keyring keys
+    (each 0600) so you can store them in a secrets manager / offline vault. Keep
+    the copies at least as protected as the originals; do not leave them next to
+    the data they unlock.
+    """
+    from pathlib import Path
+
+    from ..crypto_at_rest import EncryptionUnavailable, backup_key_material
+    try:
+        written = backup_key_material(Path(dest))
+    except EncryptionUnavailable as e:
+        raise click.ClickException(str(e)) from e
+    for p in written:
+        click.echo(f"  backed up {p}")
+    click.echo(f"copied {len(written)} key file(s) to {dest} -- store them "
+               "securely and delete any working copy you don't need.")
 
 
 @encryption_group.command("rotate")

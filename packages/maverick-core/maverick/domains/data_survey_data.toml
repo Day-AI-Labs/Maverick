@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "weighted survey crosstabs"
+consumers = ["research_analyst", "insights_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Load methodology"
+instruction = "Read the survey questionnaire, weighting scheme, and methodology notes so transformations preserve documented intent."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Clean responses"
+instruction = "Query the raw responses to drop speeders and duplicates, recode out-of-range values, and reconcile counts to the field report."
+tools = ["sql_query"]
+[[workflow]]
+name = "Apply weights"
+instruction = "Apply the documented weighting factors and verify weighted base sizes match the sampling plan targets."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Tabulate crosstabs"
+instruction = "Produce the weighted crosstabs by banner, flagging cells below minimum base for low-sample suppression."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Analyst review"
+instruction = "Route the tabulations with methodology notes to the research analyst for review before release."
+gate = "review"

@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "event plan & invitation package"
+consumers = ["marketing_manager", "field_marketer"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Define event brief"
+instruction = "Read the event objectives, target audience, and budget constraints to frame the plan."
+tools = ["read_file"]
+[[workflow]]
+name = "Pull registration data"
+instruction = "Gather venue, session, and registration details from the event platforms for the program."
+tools = ["eventbrite_read", "cvent_read"]
+[[workflow]]
+name = "Build invite list"
+instruction = "Assemble the target invitee segment and screen it against consent and suppression status."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft invites and follow-up"
+instruction = "Draft the invitation copy and post-event follow-up sequence with an AI-disclosure line."
+tools = ["web_search"]
+[[workflow]]
+name = "Route for send approval"
+instruction = "Hand the invitation package to the marketing manager for approval before any send."
+gate = "approval"

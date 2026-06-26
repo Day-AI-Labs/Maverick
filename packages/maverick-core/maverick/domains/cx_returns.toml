@@ -11,3 +11,27 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "RMA reconciliation & refund register"
+consumers = ["returns_supervisor", "accounting_manager"]
+cadence = "daily"
+gate = "approval"
+
+[[workflow]]
+name = "Verify eligibility"
+instruction = "Read the return request, order record, and warranty terms to confirm the unit qualifies under returns policy."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Ground in policy"
+instruction = "Retrieve the applicable RMA and refund policy and cite the clauses that govern this return."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Match received goods"
+instruction = "Reconcile returned units logged in the system against the refunds requested and flag any mismatch."
+tools = ["sql_query"]
+[[workflow]]
+name = "Stage refund batch"
+instruction = "Stage the reconciled refund and RMA instructions for human approval, never issuing credits directly."
+gate = "approval"

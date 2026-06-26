@@ -10,3 +10,34 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["re"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "comparable & income-approach workpaper"
+consumers = ["appraiser", "asset_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull subject record"
+instruction = "Read the subject property record, prior appraisal, and assignment scope from the knowledge base."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather comps"
+instruction = "Assemble candidate comparable sales and leases from internal records and external market sources."
+tools = ["knowledge_search", "web_search", "sql_query"]
+[[workflow]]
+name = "Adjust comparables"
+instruction = "Adjust each comp to the subject and document every adjustment and its rationale in the workpaper."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build income approach"
+instruction = "Develop the cap-rate and income-approach analysis from the rent roll and verified market assumptions."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "State limitations"
+instruction = "Note data gaps, confidence, and any unsupported assumptions plainly rather than overstating precision."
+[[workflow]]
+name = "Hand to appraiser"
+instruction = "Route the workpaper to the licensed appraiser, who alone signs and adopts the opinion of value."
+gate = "review"

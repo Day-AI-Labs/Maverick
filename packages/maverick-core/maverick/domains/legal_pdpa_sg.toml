@@ -10,3 +10,29 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "PDPA consent, DNC & breach-duty assessment"
+consumers = ["data_protection_officer", "legal_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather request"
+instruction = "Read the company documents, policies, and facts relevant to the PDPA question or incident at hand."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map obligations"
+instruction = "Identify the applicable PDPA consent, DNC, and breach-notification duties and cite the exact section for each."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Assess compliance"
+instruction = "Compare current practice against the obligations, stating assumptions and flagging jurisdiction questions explicitly."
+[[workflow]]
+name = "Draft assessment"
+instruction = "Draft the assessment with cited sections and a list of unknowns, preserving privilege markings."
+[[workflow]]
+name = "Route to DPO"
+instruction = "Hand the cited assessment to the DPO or counsel for the legal decision and any regulator notification."
+gate = "review"

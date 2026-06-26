@@ -96,6 +96,11 @@ class EventKind:
     RETENTION_PURGE = "retention_purge"
     HALT            = "halt"
     CONFIG_REMEDIATED = "config_remediated"
+    # A tenant's billing terms changed (plan or daily spend cap). One signed row
+    # per change so a plan upgrade / cap change is a provable control-plane act,
+    # not a silent edit. payload: tenant, field ("plan"|"quota"), old, new.
+    TENANT_PLAN_CHANGED = "tenant_plan_changed"
+    TENANT_QUOTA_CHANGED = "tenant_quota_changed"
     FEDERATION_DELEGATE = "federation_delegate"
     # Agent Trust Plane: an external agent was refused an inbound action or an
     # outbound dial because it is absent from the [agent_trust] registry, its
@@ -122,6 +127,22 @@ class EventKind:
     # not rest on the mutable world-model `approvals` row alone (audit H28).
     # payload: approval_id:int, status:str (approved|denied), decided_by:str.
     APPROVAL_DECISION = "approval_decision"
+    # AI system lifecycle: an AI system/component was retired (decommissioned).
+    # Closes the ISO/IEC 42001 A.6.2 lifecycle at the far end — the signed chain
+    # records the deliberate end-of-life the same way it records learning
+    # promotions, so a system that stops appearing is provably retired, not
+    # silently dropped. payload: system_id:str, reason:str, decided_by:str,
+    # data_disposition:str (retain|archive|erase), archived:bool, erased:bool,
+    # disposal_detail:dict (counts of erased world facts / audit events).
+    AI_SYSTEM_RETIRED = "ai_system_retired"
+    # Continuous group-fairness monitoring (ISO/IEC 42001 A.6.2.6): the rolling
+    # window breached the four-fifths rule or drifted below its baseline, so a
+    # fairness regression is anchored in the signed chain instead of passing
+    # silently. payload: reason:str (adverse_impact|drift|adverse_impact+drift),
+    # min_impact_ratio:float, demographic_parity_diff:float,
+    # equal_opportunity_diff:float|None, failing_groups:list[str], samples:int,
+    # threshold:float.
+    FAIRNESS_ALERT = "fairness_alert"
 
 
 @dataclass

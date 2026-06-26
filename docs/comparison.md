@@ -25,13 +25,13 @@ the deepest agent framework available.
 | | Lightwork | Devin | Hermes / OpenClaw | Cline / Aider |
 |---|---|---|---|---|
 | Primary form | Self-hosted platform + CLI | Hosted product | Coding agents | IDE / CLI coding agents |
-| Prebuilt business specialists | **1,118 across 26 suites** (lint-audited envelopes) | No | No | No |
+| Prebuilt business specialists | **2,020 across 53 suites** (lint-audited envelopes) | No | No | No |
 | Learns from use (governed) | **Yes** — consolidation, regression detection, rollback, signed learning audit | No | No | No |
-| Runs in your environment | **Yes** (7 sandbox backends) | Hosted | Varies | Yes (local) |
+| Runs in your environment | **Yes** (9 sandbox backends) | Hosted | Varies | Yes (local) |
 | Multi-agent swarm | **Yes** (orchestrator + specialists) | Yes | Single-agent focus | Single-agent |
 | Governance / compliance plane | **Yes** (oversight, regimes, audit, DSAR, SOC2) | Limited | No | No |
 | Multi-tenant hosting | **Yes** (tenancy, KMS, egress, billing) | n/a (vendor-hosted) | No | No |
-| Channels (chat/voice/etc.) | **14** | No | Some | No |
+| Channels (chat/voice/etc.) | **17** | No | Some | No |
 | Model choice | **User-owned, 12 providers** | Vendor | Varies | User keys |
 | Safety chokepoint (shield) | **Input/tool/output** | Internal | Varies | No |
 | License | Proprietary (lite edition TBD) | Proprietary | Mixed | Open source |
@@ -47,7 +47,7 @@ deliberately coarse to avoid asserting details that may be stale.
 - **Self-host first.** Every capability that would otherwise need a hosted
   service ships with a self-hostable path (see the
   [reference architectures](./reference-architectures.md)).
-- **Breadth on a governed core.** 500+ tools, 14 channels, 7 sandbox backends,
+- **Breadth on a governed core.** 100+ tools, 17 channels, 9 sandbox backends,
   12 LLM providers — all behind config knobs and the shield.
 - **Long-horizon multi-agent work.** Planning topologies (tree-of-thought,
   debate, speculative, latency-aware best-of-N), durable resume, reflexion.

@@ -67,17 +67,35 @@ def lock_path() -> Path:
     return data_dir() / "plugins.lock.json"
 
 
+def _enterprise_default_policy() -> str:
+    """Lock policy when nothing is configured: ``enforce`` under enterprise mode
+    (a regulated deployment refuses drifted/unpinned plugins once a lockfile
+    exists -- and it's a no-op with no lockfile, so it never breaks a fresh
+    install), ``off`` for single-tenant/dev."""
+    try:
+        from .enterprise import enterprise_enabled
+        return "enforce" if enterprise_enabled() else "off"
+    except Exception:  # pragma: no cover -- config never blocks discovery
+        return "off"
+
+
 def lock_policy() -> str:
+    """``MAVERICK_PLUGIN_LOCK_POLICY`` env wins over ``[plugins] lock_policy``.
+    When neither is set the default depends on the deployment profile (see
+    :func:`_enterprise_default_policy`); an explicit setting always wins."""
     env = os.environ.get("MAVERICK_PLUGIN_LOCK_POLICY", "").strip().lower()
     if env in _POLICIES:
         return env
     try:
         from .config import load_config
-        pol = str(((load_config() or {}).get("plugins") or {})
-                  .get("lock_policy", "off")).strip().lower()
-        return pol if pol in _POLICIES else "off"
+        raw = ((load_config() or {}).get("plugins") or {}).get("lock_policy")
     except Exception:  # pragma: no cover -- config never blocks discovery
-        return "off"
+        return _enterprise_default_policy()
+    if raw is not None:
+        pol = str(raw).strip().lower()
+        if pol in _POLICIES:
+            return pol
+    return _enterprise_default_policy()
 
 
 def _active_plugin_dists() -> dict[str, str]:
@@ -116,17 +134,13 @@ def write_lock(path: Path | None = None) -> dict[str, str]:
     pins = _active_plugin_dists()
     hashes = {n: h for n in pins if (h := _dist_content_hash(n)) is not None}
     p = Path(path) if path else lock_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(
+    # Unique temp + os.replace (0600): a fixed ".tmp" collides if two CLI
+    # invocations regenerate the lockfile concurrently.
+    from .file_lock import atomic_write_text
+    atomic_write_text(p, json.dumps(
         {"generated_at": time.time(), "pins": pins, "hashes": hashes},
         indent=2, sort_keys=True,
-    ), encoding="utf-8")
-    os.replace(tmp, p)
-    try:
-        os.chmod(p, 0o600)
-    except OSError:
-        pass
+    ))
     return pins
 
 

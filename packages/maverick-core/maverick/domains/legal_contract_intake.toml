@@ -16,3 +16,29 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "contract intake triage record"
+consumers = ["contract_manager", "legal_operations"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture request"
+instruction = "Read the incoming contract request and attachments to capture counterparty, contract type, business owner, and urgency."
+tools = ["read_file"]
+[[workflow]]
+name = "Check repository"
+instruction = "Search the CLM repository for any existing or related agreement with this counterparty to avoid duplicates and surface prior terms."
+tools = ["ironclad_read", "contractbook_read", "knowledge_search"]
+[[workflow]]
+name = "Tag metadata"
+instruction = "Assign accurate metadata and tags such as agreement type, parties, effective and renewal dates, and governing terms."
+[[workflow]]
+name = "Triage and route"
+instruction = "Classify the request and route substantive legal questions to an attorney while filing routine intake for legal operations review."
+[[workflow]]
+name = "Confirm filing"
+instruction = "Present the completed intake record for contract operations to confirm before it is filed in the repository."
+gate = "review"

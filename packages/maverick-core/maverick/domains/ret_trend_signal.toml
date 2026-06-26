@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "emerging trend signal brief"
+consumers = ["buyer", "merchandising_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Scan signals"
+instruction = "Search external sources for emerging product trends relevant to the assortment."
+tools = ["web_search"]
+[[workflow]]
+name = "Date evidence"
+instruction = "Capture each trend signal with a dated, attributable source citation."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Validate internally"
+instruction = "Cross-check signals against internal sell-through and search data to gauge early traction."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Rank for buyers"
+instruction = "Score trends by strength and fit and flag noise or fads versus durable signals."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Brief buyers"
+instruction = "Route the dated trend brief to buyers and merchandising for review."
+gate = "review"

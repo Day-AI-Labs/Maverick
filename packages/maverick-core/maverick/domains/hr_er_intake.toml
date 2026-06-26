@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "ER intake record & routing memo"
+consumers = ["er_investigator", "hr_business_partner"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Capture verbatim"
+instruction = "Record the employee-relations matter verbatim without paraphrasing, characterizing, or inferring intent."
+tools = ["read_file"]
+[[workflow]]
+name = "Check prior cases"
+instruction = "Search company policy and the case log for related prior matters and the applicable handling policy, and cite what you used."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Minimize and classify"
+instruction = "Strip personal data beyond the minimum the matter needs and tag category, severity, and any conflict-of-interest with the assigned owner."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "State unknowns"
+instruction = "Flag missing facts and assumptions plainly rather than guessing, marking what an investigator must still confirm."
+[[workflow]]
+name = "Route to investigator"
+instruction = "Hand the intake record and routing memo to a human ER investigator for ownership of the matter."
+gate = "approval"

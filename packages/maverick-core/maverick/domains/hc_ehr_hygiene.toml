@@ -7,7 +7,36 @@ persona = """You are the EHR Data Hygiene Agent for this business -- a healthcar
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "low"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "duplicate-record merge queue"
+consumers = ["him_manager", "data_steward"]
+cadence = "weekly"
+gate = "approval"
+
+[[workflow]]
+name = "Scan records"
+instruction = "Query the patient index for candidate duplicates and inconsistent demographic fields across the dataset."
+tools = ["sql_query"]
+[[workflow]]
+name = "Score matches"
+instruction = "Score candidate pairs on matching identifiers and tabulate likely duplicates with their conflicting fields."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check policy"
+instruction = "Retrieve the organization's matching and merge policy to confirm which discrepancies qualify for a merge candidate."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify evidence"
+instruction = "Read each flagged record pair to confirm the supporting evidence and exclude false positives before queuing."
+tools = ["read_file"]
+[[workflow]]
+name = "Queue for merge"
+instruction = "Queue the validated duplicate pairs for a human steward to approve each merge decision."
+gate = "approval"

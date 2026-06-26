@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "QBR cadence and OKR status pack"
+consumers = ["coo", "ceo", "strategy_lead"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Set cadence"
+instruction = "Read the operating calendar and QBR template to scope which reviews and OKR sets this cycle covers."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Collect OKRs"
+instruction = "Gather current OKR progress and business-review inputs from each function's source documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Score progress"
+instruction = "Roll up OKR scores and reconcile reported progress against the underlying metrics, flagging off-track objectives."
+tools = ["read_file"]
+[[workflow]]
+name = "Surface risks"
+instruction = "Identify execution gaps and dependencies that threaten the quarter and state what would change the read."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route to COO"
+instruction = "Deliver the QBR and OKR status pack to the COO and CEO for the cadence review."
+gate = "review"

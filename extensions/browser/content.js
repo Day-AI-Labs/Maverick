@@ -213,6 +213,13 @@ function getPageContext() {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // Defense in depth: only answer messages from THIS extension (popup /
+  // background), never a page. The manifest declares no externally_connectable,
+  // so a web page can't reach chrome.runtime today -- but pin it so a future
+  // manifest change can't silently let an attacker page harvest page context.
+  if (_sender && _sender.id !== chrome.runtime.id) {
+    return;
+  }
   if (msg && msg.type === "getPageContext") {
     sendResponse(getPageContext());
   }

@@ -14,3 +14,31 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "model training & evaluation report"
+consumers = ["ml_lead", "data_science_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame problem"
+instruction = "Read the modeling task and dataset spec, map the repo, and search knowledge for prior experiments and baselines."
+tools = ["read_file", "repo_map", "knowledge_search"]
+[[workflow]]
+name = "Build pipeline"
+instruction = "Implement the training and feature pipeline in the sandbox with MLflow experiment tracking wired in."
+tools = ["apply_patch", "ast_edit", "str_replace_editor"]
+[[workflow]]
+name = "Train and eval"
+instruction = "Run training runs and compute holdout metrics, capturing each experiment to MLflow for comparison."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Check overfit"
+instruction = "Validate against the baseline and check for overfitting, data leakage, and metric regressions before proposing promotion."
+tools = ["code_exec"]
+[[workflow]]
+name = "Open PR"
+instruction = "Open a PR with the evaluation report and route it to the ML lead for review and promotion approval."
+gate = "review"

@@ -18,3 +18,24 @@ deliverable = "CDD onboarding file"
 consumers = ["bsa_officer", "compliance_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Intake application"
+instruction = "Read the new account application and gather the customer identity and beneficial-ownership documents on file."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify identity"
+instruction = "Cross-check provided identity and ownership data against internal records and screen for name and address discrepancies."
+tools = ["sql_query"]
+[[workflow]]
+name = "Apply risk rating"
+instruction = "Score the customer against the CDD risk-rating matrix using geography, product, and entity-type factors with citations."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Flag EDD triggers"
+instruction = "Identify any high-risk indicators that require enhanced due diligence and note missing or unresolved documentation."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "BSA review"
+instruction = "Route the completed CDD onboarding file to the BSA officer for the approval decision."
+gate = "review"

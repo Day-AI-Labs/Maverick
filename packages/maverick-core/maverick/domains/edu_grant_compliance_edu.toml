@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "subrecipient compliance monitoring log"
+consumers = ["grants_manager", "compliance_officer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "List subrecipients"
+instruction = "Read the active subaward agreements and the reporting obligations each one carries."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Track report status"
+instruction = "Record which required reports and certifications have been received versus outstanding per subrecipient."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check against terms"
+instruction = "Compare submitted reports to agreement terms and Uniform Guidance thresholds and flag compliance gaps."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Flag overdue risk"
+instruction = "Escalate subrecipients with overdue reports or unresolved findings as monitoring risks."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to grants manager"
+instruction = "Deliver the monitoring log to the grants manager for follow-up and corrective action."
+gate = "review"

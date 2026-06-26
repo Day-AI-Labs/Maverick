@@ -10,3 +10,32 @@ max_risk = "low"
 
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "reportable infection event & notification tracker"
+consumers = ["infection_preventionist", "compliance_officer"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Gather events"
+instruction = "Pull candidate infection-control events from the source records for the reporting period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Apply reportability"
+instruction = "Match each event against reportable-condition criteria and notification deadlines in facility and public-health policy."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build deadline log"
+instruction = "Record each reportable event with its required notification, recipient, and statutory deadline date."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag at-risk"
+instruction = "Highlight notifications approaching or past their deadline as the missed-reporting failure mode."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to IP"
+instruction = "Hand the tracker with deadline flags to the infection preventionist for filing decisions."
+tools = ["spreadsheet"]
+gate = "review"

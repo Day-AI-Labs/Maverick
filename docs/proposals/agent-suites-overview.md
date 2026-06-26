@@ -2,7 +2,7 @@
 
 At-a-glance index of the business-function agent suites designed for the platform.
 Full detail lives in the per-suite docs below; this is the summary to skim later.
-**Twenty-six suites, 1,118 shipped agents** — the original eight functional
+**Fifty-three suites, 2,020 shipped agents** — the original eight functional
 suites below plus customer experience, marketing, procurement, data &
 analytics, security ops, executive office, facilities/EHS, tax preparation
 (CPA firms), and ten industry verticals (healthcare, insurance, banking,
@@ -45,7 +45,16 @@ All build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
 
 - **Each agent is one `DomainProfile` pack** — `compartment` seal + `persona` +
   attenuating `allow_tools`/`deny_tools` + `max_risk` + `allow_hosts` +
-  `mcp_servers` + `knowledge_sources`.
+  `mcp_servers` + `knowledge_sources`, plus the consumption + governance surface:
+  an `[output]` contract (deliverable/consumers/cadence/gate), an editable
+  `[[workflow]]` playbook, an `effort` tier (right-sized reasoning), and a
+  `refuse` list of hard, no-approval-path prohibitions. All 2,020 carry these.
+- **Tooling over the roster** — `maverick domains-lint` (well-formedness +
+  envelope/gate/effort/deny-floor rules), `domains-audit` (governance-posture
+  inventory: what's reachable, what's denied, refusals, sign-off — `--json` for
+  GRC), `domains-eval` (behavioral golden cases + rubric scorer), and a
+  query-based router (`list_specialists query=<task>`, hybrid lexical +
+  embeddings) that narrows the roster to a shortlist.
 - **The platform's own primitives *are* the controls.** Capabilities = access
   control (segregation of duties); the signed Ed25519 **Merkle audit chain** = the
   tamper-evident record; `governance.py` = the policy engine (allow/deny/**require_human**);
@@ -98,9 +107,14 @@ regulatory capital · cost-allocation/ABC · insurance · ESG · escheatment.
 `require_human` gate · SOX book of record = the signed Merkle chain · money tools
 are already `high`-risk so they auto-pause.
 
-**The one load-bearing gap to build:** amount-aware authorization (dollar/DoA
-thresholds) — `governance.evaluate()` is action/risk-based, not amount-based.
-Everything in L3 / the DoA matrix depends on it.
+**Amount-aware authorization — shipped.** `governance.evaluate()` now takes an
+`amount`/`currency` and gates on the policy's dollar tiers (`deny_above` /
+`require_human_above`), and the agent chokepoint extracts the transaction amount
+from tool args (`agent._governance_amount`), so the L3 / DoA dollar thresholds
+are live. Remaining refinement (not a blocker): per-pack DoA thresholds — today
+the tiers are org-level config, and every pack denies its irreversible tools
+outright, so a per-role authority matrix only matters once a pack carries L3
+automation.
 
 ---
 

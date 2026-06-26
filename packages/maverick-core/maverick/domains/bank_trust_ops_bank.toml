@@ -17,3 +17,24 @@ deliverable = "Trust account administration review"
 consumers = ["trust_officer", "compliance_officer"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Pull account activity"
+instruction = "Query trust account balances, transactions, and pending distributions for the accounts under review."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Check against instrument"
+instruction = "Verify each transaction and fee against the governing trust instrument and account directions."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Reconcile holdings"
+instruction = "Reconcile asset holdings and income postings to the custodian statement and flag discrepancies."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft statements"
+instruction = "Prepare the trust account statement and transaction package noting any exceptions or unauthorized activity."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Officer approval"
+instruction = "Route the statement package and exceptions to the trust officer and compliance officer for review and sign-off."
+gate = "review"

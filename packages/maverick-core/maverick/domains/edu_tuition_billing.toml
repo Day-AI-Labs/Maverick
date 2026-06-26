@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "tuition billing & payment-plan statement"
+consumers = ["bursar", "student_accounts"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull enrollment"
+instruction = "Read the student's enrolled credits, course fees, and existing payment-plan terms from billing records."
+tools = ["read_file"]
+[[workflow]]
+name = "Apply rate policy"
+instruction = "Verify tuition rates, mandatory fees, and applicable waivers against the documented billing policy for the term."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compute charges"
+instruction = "Calculate the net balance and payment-plan installment schedule, reconciling against prior payments and aid posted."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Catch mismatches"
+instruction = "Flag any charge that diverges from policy or any plan that fails to reconcile to the balance and note the discrepancy."
+[[workflow]]
+name = "Bursar review"
+instruction = "Route the billing statement to the bursar for sign-off before it posts to the student account."
+gate = "review"

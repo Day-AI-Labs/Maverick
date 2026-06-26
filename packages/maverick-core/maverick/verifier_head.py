@@ -52,9 +52,12 @@ class LinearHead:
         return cls(w=[list(map(float, row)) for row in d["w"]], b=list(map(float, d["b"])))
 
     def save(self, path: str | Path) -> None:
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(self.to_dict(), sort_keys=True), encoding="utf-8")
+        # Atomic temp+replace: a bare write_text truncates in place, so a serving
+        # process re-loading the head while a training run writes it would see a
+        # half-written file and json.load would raise. Each save writes a
+        # complete head, so atomic replace is sufficient (no lock needed).
+        from .file_lock import atomic_write_text
+        atomic_write_text(path, json.dumps(self.to_dict(), sort_keys=True))
 
     @classmethod
     def load(cls, path: str | Path) -> LinearHead:

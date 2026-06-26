@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "environment monitoring excursion report"
+consumers = ["quality_manager", "production_supervisor"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull readings"
+instruction = "Query the controlled-environment sensor readings for the monitoring period and zones in scope."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load specs"
+instruction = "Retrieve the applicable environmental specification limits for each zone via knowledge_search."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Detect excursions"
+instruction = "Compare each reading to its limit and isolate excursions with start time, duration, and magnitude."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify data integrity"
+instruction = "Confirm flagged excursions are real readings and not sensor dropouts or calibration gaps before reporting."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route to quality"
+instruction = "Deliver the excursion report to the quality manager for review and disposition."
+gate = "review"

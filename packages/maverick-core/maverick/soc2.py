@@ -308,10 +308,23 @@ def _probe_audit_chain() -> dict[str, Any]:
 def _probe_signing_key() -> dict[str, Any]:
     """Report whether an audit signing key (the chain's trust anchor) is present.
 
-    A present private ``.key`` means this host can sign new audit rows; without
-    it the log is append-only NDJSON but not cryptographically tamper-evident.
-    Fail-soft: any error -> ``status`` ``unknown``.
+    A present trust anchor means this host can sign new audit rows; without one
+    the log is append-only NDJSON but not cryptographically tamper-evident. The
+    anchor can take two forms, BOTH of which count as present:
+
+      - a local private ``.key`` file, or
+      - an **off-host** key (KMS / secrets-manager), held in memory and injected
+        at deploy time via ``MAVERICK_AUDIT_SIGNING_KEY`` /
+        ``MAVERICK_AUDIT_SIGNING_KEY_WRAPPED``. Such a key leaves a ``.injected``
+        marker + ``.pub`` next to the (deliberately absent) ``.key``.
+
+    Counting only ``.key`` files would report ``absent`` for the *more secure*
+    off-host custody that enterprise mode actually **requires**
+    (``signing.require_offhost_signing``) -- failing the SOC 2 gate precisely when
+    key custody is strongest. Fail-soft: any error -> ``status`` ``unknown``.
     """
+    import os
+
     result: dict[str, Any] = {"status": STATUS_UNKNOWN}
     try:
         from .audit import signing
@@ -329,9 +342,18 @@ def _probe_signing_key() -> dict[str, Any]:
     if keys is None:
         result["error"] = "could not enumerate key directory"
         return result
-    result["present"] = bool(keys)
+    # Off-host key custody: a provisioned injected key (``.injected`` marker) or a
+    # signing key configured via env (raw or KMS-wrapped). Either is a real anchor.
+    injected = _safe(lambda: sorted(p.name for p in key_dir.glob("*.injected")), []) or []
+    offhost_env = bool(
+        os.environ.get("MAVERICK_AUDIT_SIGNING_KEY")
+        or os.environ.get("MAVERICK_AUDIT_SIGNING_KEY_WRAPPED")
+    )
+    present = bool(keys or injected or offhost_env)
+    result["present"] = present
     result["key_count"] = len(keys)
-    result["status"] = STATUS_ENABLED if keys else STATUS_ABSENT
+    result["offhost_key"] = bool(injected or offhost_env)
+    result["status"] = STATUS_ENABLED if present else STATUS_ABSENT
     return result
 
 

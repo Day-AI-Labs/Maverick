@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "space reallocation proposal"
+consumers = ["space_planner", "category_manager"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull space data"
+instruction = "Query category sales, margin, and linear-foot allocation across the store fleet."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load space rules"
+instruction = "Retrieve macro-space planning rules and adjacency constraints from company documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute productivity"
+instruction = "Calculate sales and margin per linear foot by category to rank space productivity."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Model reallocation"
+instruction = "Propose space shifts toward higher-productivity categories within fixture and adjacency limits."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route proposal"
+instruction = "Hand the space reallocation proposal to the space planner for review before any reset."
+gate = "review"

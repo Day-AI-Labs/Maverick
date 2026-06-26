@@ -198,8 +198,10 @@ class FirecrackerBackend:
                 stdout="",
                 stderr=(
                     f"firecracker kernel/rootfs not found at "
-                    f"{kernel} / {rootfs}. Run `maverick init --target=vps` "
-                    "(future) or follow deploy/firecracker/README.md."
+                    f"{kernel} / {rootfs}. Build them with "
+                    "deploy/firecracker/fetch-kernel.sh + "
+                    "deploy/firecracker/build-rootfs.sh (see "
+                    "deploy/firecracker/README.md)."
                 ),
             )
         args = [

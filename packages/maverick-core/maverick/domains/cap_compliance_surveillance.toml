@@ -10,3 +10,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "place_trade", "execute_fx_trade", "create_order_instruction", "browser"]
 knowledge_sources = ["cap"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "surveillance flag dossier"
+consumers = ["compliance_officer", "surveillance_analyst"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull activity"
+instruction = "Retrieve the trade, order, and communication activity for the surveillance window from the surveillance data store."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Scan patterns"
+instruction = "Screen activity for wash trades, front-running signals, and information-barrier anomalies against current policy thresholds."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Triage hits"
+instruction = "Assess each candidate flag, cite the underlying activity, and state a confidence level for every potential conduct issue."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Seal MNPI"
+instruction = "Treat any material non-public information as sealed evidence and route it through compliance channels only, never into open output."
+[[workflow]]
+name = "Escalate to compliance"
+instruction = "Hand the assembled flag dossier to the compliance team for review and disposition."
+gate = "review"

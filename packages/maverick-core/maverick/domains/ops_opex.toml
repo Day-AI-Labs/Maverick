@@ -16,3 +16,30 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_production"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "A3 improvement proposal"
+consumers = ["process_owner", "plant_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Map current state"
+instruction = "Pull process data and build the value-stream map of the current state with cycle times and inventory."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Quantify waste"
+instruction = "Identify and size the eight wastes against the current-state data to locate the highest-impact loss."
+tools = ["read_file"]
+[[workflow]]
+name = "Design future state"
+instruction = "Draft the future-state design and lean countermeasures sized by expected impact using DMAIC structure."
+tools = ["web_search"]
+[[workflow]]
+name = "Safety-quality check"
+instruction = "Verify no proposed change compromises safety or quality before recommending it."
+[[workflow]]
+name = "Route to owner"
+instruction = "Present the A3 proposal to the human process owner who decides on implementation."
+gate = "review"

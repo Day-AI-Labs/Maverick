@@ -7,6 +7,35 @@ persona = """You are the Transfer Pricing Documenter for this business -- a fina
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "high"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Intercompany transfer-pricing documentation file"
+consumers = ["tax_analyst", "controller"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Map transactions"
+instruction = "Identify the intercompany transactions and entities requiring transfer-pricing documentation for the period."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull benchmarks"
+instruction = "Gather the benchmarking comparables and pricing data tied to each intercompany flow with period and currency labeled."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Assemble file"
+instruction = "Maintain the transfer-pricing documentation and benchmarking workpapers, citing the source for each figure and stating assumptions."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check gaps"
+instruction = "Flag any transaction lacking current documentation or comparables rather than guessing the position."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for review"
+instruction = "Route the documentation file to the tax analyst and controller for review before certification."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "OEE by line with loss breakdown"
+consumers = ["production_manager", "continuous_improvement_lead"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull run data"
+instruction = "Query runtime, downtime, count, and reject data by line for the reporting period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Confirm definitions"
+instruction = "Verify planned time, ideal cycle, and reject rules against the company OEE definitions before computing."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute OEE"
+instruction = "Calculate availability, performance, and quality and reconcile the product back to recorded good count."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Break down losses"
+instruction = "Categorize the availability, performance, and quality losses by cause so the top losses are visible."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Publish to production"
+instruction = "Route the OEE report to the production manager for the daily review."
+gate = "review"

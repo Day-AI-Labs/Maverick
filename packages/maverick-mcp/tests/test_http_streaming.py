@@ -52,7 +52,7 @@ def test_sse_emits_progress_with_token(monkeypatch):
     # event before the final result.
     monkeypatch.setenv("MAVERICK_MCP_SSE_HEARTBEAT", "0.05")
 
-    def _slow_dispatch(server, method, params, *, task_owner=None):
+    def _slow_dispatch(server, method, params, *, task_owner=None, caller_identity=None):
         time.sleep(0.3)
         return {"ok": True}
 
@@ -73,7 +73,7 @@ def test_sse_emits_progress_with_token(monkeypatch):
 def test_sse_no_progress_without_token(monkeypatch):
     monkeypatch.setenv("MAVERICK_MCP_SSE_HEARTBEAT", "0.05")
 
-    def _slow_dispatch(server, method, params, *, task_owner=None):
+    def _slow_dispatch(server, method, params, *, task_owner=None, caller_identity=None):
         time.sleep(0.2)
         return {"ok": True}
 
@@ -112,7 +112,7 @@ def test_sse_caps_progress_events(monkeypatch):
     monkeypatch.setenv("MAVERICK_MCP_SSE_HEARTBEAT", "0.01")
     monkeypatch.setenv("MAVERICK_MCP_SSE_MAX_PROGRESS_EVENTS", "2")
 
-    def _slow_dispatch(server, method, params, *, task_owner=None):
+    def _slow_dispatch(server, method, params, *, task_owner=None, caller_identity=None):
         time.sleep(0.08)
         return {"ok": True}
 
@@ -137,6 +137,26 @@ def test_sse_streams_error_as_event(monkeypatch):
     body = resp.text
     assert '"error"' in body
     assert "-32601" in body
+
+
+def test_dispatch_binds_caller_identity_for_fleet_ops(monkeypatch):
+    # The authenticated caller identity must reach fleet_memory's ContextVar so
+    # a fleet tool cannot act AS another rostered agent. Capture what the handler
+    # sees mid-dispatch.
+    from maverick import fleet_memory
+
+    seen = {}
+
+    def _capture(params, *, task_owner=None):
+        seen["caller"] = fleet_memory._caller.get()
+        return {"ok": True}
+
+    server = MCPServer()
+    monkeypatch.setattr(server, "handle_tools_call", _capture)
+    ht._dispatch(server, "tools/call", {}, caller_identity="vega")
+    assert seen["caller"] == "vega"
+    # ...and the binding is unwound after dispatch (no cross-request leak).
+    assert fleet_memory._caller.get() is None
 
 
 def test_heartbeat_seconds_env(monkeypatch):

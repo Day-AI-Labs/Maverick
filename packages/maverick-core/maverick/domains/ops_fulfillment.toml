@@ -15,3 +15,31 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_logistics"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "order exception & allocation worklist"
+consumers = ["fulfillment_manager", "customer_ops"]
+cadence = "daily"
+gate = "approval"
+
+[[workflow]]
+name = "Pull open orders"
+instruction = "Read open orders, allocation status, and exceptions for the fulfillment queue."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify inventory"
+instruction = "Confirm available-to-promise inventory and allocation against source records before committing."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Check shipments"
+instruction = "Validate shipping rates, labels, and tracking for affected orders with the carrier connectors."
+tools = ["easypost_read", "shippo_read"]
+[[workflow]]
+name = "Classify exceptions"
+instruction = "Categorize each exception and resolve by escalating rather than guessing at customer intent."
+tools = ["read_file"]
+[[workflow]]
+name = "Route worklist"
+instruction = "Route the allocation and exception worklist to the fulfillment manager since customer commitments are human-authorized."
+gate = "approval"

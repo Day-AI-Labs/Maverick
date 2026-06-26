@@ -10,3 +10,35 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["re"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "capital draw package"
+consumers = ["asset_manager", "owner"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull project records"
+instruction = "Read the project budget, contract, schedule of values, and prior draws from the records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Update budget vs actual"
+instruction = "Reconcile committed costs, change orders, and retainage to maintain budget-versus-actuals."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Verify draw"
+instruction = "Reconcile the draw request line by line against the schedule of values and supporting invoices."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Check waivers"
+instruction = "Confirm lien waivers are present and flag overruns, missing waivers, or out-of-sequence work."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Assemble package"
+instruction = "Compile the draw package with invoices, waivers, and the reconciliation for owner review."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Send the draw package to the owner or asset manager, who alone approves the disbursement."
+gate = "review"

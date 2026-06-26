@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "ergonomic assessment & equipment recommendation"
+consumers = ["ehs_manager", "facilities_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Read request"
+instruction = "Read the employee's ergonomic request, symptoms, and workstation details from the intake record."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check policy"
+instruction = "Pull the company's ergonomics policy and approved equipment catalog to scope eligible remedies."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Assess fit"
+instruction = "Map reported issues to assessment criteria and select matching adjustments or equipment."
+tools = ["spreadsheet", "web_search"]
+[[workflow]]
+name = "Draft recommendation"
+instruction = "Draft the assessment and itemized equipment request with cost and justification per item."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to approver"
+instruction = "Hand the assessment and equipment request to the EHS manager for approval."
+gate = "approval"

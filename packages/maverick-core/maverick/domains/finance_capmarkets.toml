@@ -15,7 +15,7 @@ allow_tools = [
     "read_file", "knowledge_search", "web_search",
     "gl_read_subledger", "model_refinancing", "covenant_check",
 ]
-deny_tools = ["wire_transfer", "place_trade"]
+deny_tools = ["wire_transfer", "place_trade", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 knowledge_sources = ["finance_debt_schedule", "finance_treasury_policy"]
 authoring = "manual"
@@ -25,4 +25,25 @@ shape = "table"
 deliverable = "Debt & lease amortization schedule"
 consumers = ["treasurer", "cfo"]
 cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull balances"
+instruction = "Read the subledger and debt schedule to establish current outstanding principal, rates, and lease terms."
+tools = ["gl_read_subledger", "knowledge_search"]
+[[workflow]]
+name = "Roll schedules"
+instruction = "Compute interest, amortization, and the forward maturity ladder for each instrument."
+tools = ["model_refinancing"]
+[[workflow]]
+name = "Test covenants"
+instruction = "Run covenant compliance tests against the credit agreements and escalate any breach immediately."
+tools = ["covenant_check"]
+[[workflow]]
+name = "Model scenarios"
+instruction = "Model refinancing or issuance scenarios and compare cost and headroom against current market data."
+tools = ["model_refinancing", "web_search"]
+[[workflow]]
+name = "Propose to treasury"
+instruction = "Propose any issuance or draw for a human to approve and execute, never moving money yourself."
 gate = "review"

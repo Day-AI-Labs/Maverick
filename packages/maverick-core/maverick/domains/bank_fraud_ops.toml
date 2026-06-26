@@ -18,3 +18,24 @@ deliverable = "Fraud case file"
 consumers = ["fraud_analyst", "risk_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Pull alerts"
+instruction = "Query open fraud alerts on accounts and payments with their amounts, channels, and trigger reasons."
+tools = ["sql_query"]
+[[workflow]]
+name = "Gather context"
+instruction = "Read account history, recent transactions, and prior cases for each alerted customer to assemble the picture."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Score and dedupe"
+instruction = "Rank alerts by loss exposure and pattern strength and merge duplicate alerts tied to the same scheme so investigators see one case."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check typologies"
+instruction = "Match each case against known fraud typologies and red-flag guidance to avoid dismissing a true positive as noise."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Stage cases"
+instruction = "Assemble the prioritized case file and hand it to the fraud analyst for investigation and disposition."
+gate = "review"

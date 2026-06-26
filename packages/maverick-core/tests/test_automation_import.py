@@ -129,8 +129,34 @@ class TestIR:
     def test_template_name_is_a_slug(self):
         a = n8n.translate(WEBHOOK_WORKFLOW)
         name = a.template_name()
-        assert name == "n8n-new-lead-slack-crm"
+        # readable prefix + short source_id hash (collision-resistant)
+        assert name.startswith("n8n-new-lead-slack-crm-")
         assert all(c.isalnum() or c == "-" for c in name)
+
+    def test_template_name_distinct_for_same_name_different_id(self):
+        # Two distinct automations with the SAME name must NOT collide (the
+        # second would otherwise overwrite the first on bulk import).
+        a1 = ir.ImportedAutomation("n8n", "1", "Daily", ir.ImportedTrigger())
+        a2 = ir.ImportedAutomation("n8n", "2", "Daily", ir.ImportedTrigger())
+        assert a1.template_name() != a2.template_name()
+
+    def test_template_name_idempotent_for_same_id(self):
+        a1 = ir.ImportedAutomation("n8n", "1", "Daily", ir.ImportedTrigger())
+        a2 = ir.ImportedAutomation("n8n", "1", "Daily", ir.ImportedTrigger())
+        assert a1.template_name() == a2.template_name()  # re-import overwrites itself
+
+    def test_template_name_length_capped_for_long_names(self):
+        # A 300-char name would overflow the 255-byte filename limit on save.
+        a = ir.ImportedAutomation("n8n", "wf1", "X" * 300, ir.ImportedTrigger())
+        name = a.template_name()
+        assert len(name) + len(".md") <= 255
+        assert a.source_id  # still unique via the hash suffix
+
+    def test_step_render_caps_large_param_value(self):
+        s = ir.ImportedStep(name="big", app="http", params={"body": "A" * 5000})
+        out = s.render(1)
+        assert "truncated" in out
+        assert len(out) < 1000  # not the full 5000-char value
 
     def test_unknown_trigger_kind_falls_back_to_event(self):
         t = ir.ImportedTrigger(kind="bogus")
@@ -180,7 +206,7 @@ class TestMaterialize:
         a = n8n.translate(WEBHOOK_WORKFLOW)
         res = ai.materialize(a)
         assert res.created_template is True
-        assert res.template_name == "n8n-new-lead-slack-crm"
+        assert res.template_name.startswith("n8n-new-lead-slack-crm-")
         assert res.suggested_trigger == {
             "kind": "webhook", "template": res.template_name, "name": res.template_name,
         }
@@ -198,7 +224,24 @@ class TestMaterialize:
         assert res.schedule is not None
         assert res.schedule["cron"] == "0 9 * * *"
         assert q.enqueued and q.enqueued[0][0] == "start_goal"
-        assert q.enqueued[0][1]["template"] == res.template_name
+        payload = q.enqueued[0][1]
+        # The worker's start_goal handler mints a goal from a non-empty "text";
+        # a {"template": ...} payload (no text) would fail at run time. The
+        # payload must match the dashboard /api/v1/schedules shape.
+        assert payload["text"] and "Send email" in payload["text"]
+        assert payload["title"]
+        assert payload["__cron__"] == "0 9 * * *"
+        assert payload["schedule_id"]
+        assert "template" not in payload  # snapshot the brief, not a template ref
+
+    def test_scheduled_payload_satisfies_worker_contract(self):
+        # Regression: feed the enqueued payload straight to the worker's
+        # start_goal validation so an empty-text payload can't slip back in.
+        a = n8n.translate(CRON_WORKFLOW)
+        q = _FakeQueue()
+        ai.materialize(a, queue=q)
+        payload = q.enqueued[0][1]
+        assert (payload.get("text") or "").strip(), "worker rejects empty text"
 
     def test_schedule_without_queue_suggests_it(self):
         a = n8n.translate(CRON_WORKFLOW)

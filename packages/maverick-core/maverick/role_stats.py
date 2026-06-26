@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -143,12 +142,11 @@ def _load(path: Path) -> dict[str, RoleStat]:
 
 
 def _save(stats: dict[str, RoleStat], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({k: asdict(v) for k, v in stats.items()}), encoding="utf-8")
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+    # Atomic temp+replace: a bare write_text truncates in place, so a concurrent
+    # _load() reader sees a half-written file -> its JSONDecodeError is swallowed
+    # as an empty store and all accumulated routing credit is silently discarded.
+    from .file_lock import atomic_write_text
+    atomic_write_text(path, json.dumps({k: asdict(v) for k, v in stats.items()}))
 
 
 def record(role: str, credit: float, path: Path | None = None, *,
@@ -169,7 +167,11 @@ def record(role: str, credit: float, path: Path | None = None, *,
         domain_key = safe_role(domain)
         if domain_key:
             keys.append(f"{domain_key}{_SCOPE_SEP}{role_key}")
-    with _lock:
+    # In-process lock + cross-process flock: this is a per-fan-out hot path hit
+    # from multiple concurrent processes; without the flock two writers both
+    # load the same store and the second save clobbers the first's credit.
+    from .file_lock import cross_process_lock
+    with _lock, cross_process_lock(path):
         try:
             stats = _load(path)
             for key in keys:

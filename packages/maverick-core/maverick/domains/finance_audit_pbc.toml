@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "PBC request tracker"
+consumers = ["controller", "auditor"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Parse request list"
+instruction = "Read the auditor's PBC request list and itemize each request with its owner and due date."
+tools = ["read_file"]
+[[workflow]]
+name = "Locate support"
+instruction = "Find the source documents for each request in the company's own records and cite what was used."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Tie to records"
+instruction = "Tie every requested figure to its system of record with period and currency labeled and note any unknowns."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Version package"
+instruction = "Assemble the versioned support package and mark each item open, in-progress, or complete."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to controller"
+instruction = "Route the assembled tracker and support to the controller to review before release to the auditor."
+gate = "review"

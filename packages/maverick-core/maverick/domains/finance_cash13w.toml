@@ -17,3 +17,24 @@ deliverable = "13-week cash forecast"
 consumers = ["fpa_analyst", "treasurer"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Pull actuals"
+instruction = "Query the cash ledger and bank actuals for the closed week and roll the 13-week window forward one period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Refresh drivers"
+instruction = "Pull AR collection timing, AP disbursement timing, and payroll dates from source documents to rebuild each weekly inflow and outflow line."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Rebuild forecast"
+instruction = "Recompute the rolling 13-week forecast in the model with period and currency labeled on every figure."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Variance commentary"
+instruction = "Compare forecast to last week's actuals and write commentary explaining every material variance and its assumption."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "FP&A review"
+instruction = "Hand the refreshed forecast and variance notes to the FP&A analyst and treasurer for sign-off before distribution."
+gate = "review"

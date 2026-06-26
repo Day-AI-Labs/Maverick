@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "patient recall outreach list & outcome log"
+consumers = ["care_coordinator", "practice_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Define cohort"
+instruction = "Read the recall protocol to determine which due-care services and intervals trigger outreach."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Query due patients"
+instruction = "Query the panel for patients overdue for the targeted care and assemble their contact preferences."
+tools = ["sql_query"]
+[[workflow]]
+name = "Suppress exclusions"
+instruction = "Remove deceased, opted-out, or already-scheduled patients to avoid improper or duplicate outreach."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Build outreach list"
+instruction = "Compile the recall list with channel, message template, and an outcome-tracking column for each patient."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Coordinator review"
+instruction = "Route the outreach list to the care coordinator for review before any campaign is sent."
+gate = "review"

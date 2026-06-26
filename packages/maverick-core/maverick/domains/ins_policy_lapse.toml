@@ -17,3 +17,24 @@ deliverable = "Lapse/reinstatement notice"
 consumers = ["agency_manager", "compliance_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Pull policy"
+instruction = "Read the policy record with premium due dates, grace period, and payment history for the affected policy."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Apply filed rules"
+instruction = "Determine lapse or reinstatement eligibility and exact effective dates per the filed rules for the state and product."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Verify dates"
+instruction = "Recompute grace, lapse, and reinstatement dates against the calendar and flag any gap in coverage."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft notice"
+instruction = "Draft the lapse or reinstatement notice with exact dates and required disclosures cited to the filed rule."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the drafted notice to the agency manager or compliance officer for sign-off."
+gate = "review"

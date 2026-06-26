@@ -9,3 +9,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["hosp"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "dynamic-pricing recommendation"
+consumers = ["revenue_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull pace signals"
+instruction = "Read demand, pace, and booking-curve data for the period under review."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Scan compset"
+instruction = "Gather compset rates and market context from the company's own revenue documents and public sources, citing each."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Model pricing moves"
+instruction = "Analyze the signals and model candidate rate moves by room type and date with explicit rationale."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "State assumptions"
+instruction = "State the assumptions and unknowns behind each move so nothing reads as a committed price."
+[[workflow]]
+name = "Route to manager"
+instruction = "Hand the prepared pricing recommendation to the revenue manager to review and commit."
+gate = "review"

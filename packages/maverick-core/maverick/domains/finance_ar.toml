@@ -16,7 +16,7 @@ allow_tools = [
     "draft_invoice", "propose_cash_application",
     "chargebee_read", "netsuite_read",   # read seat (low) -- pull vendor data
 ]
-deny_tools = ["send_invoice", "write_off_balance"]
+deny_tools = ["send_invoice", "write_off_balance", "shell", "write_file", "apply_patch", "str_edit", "browser"]
 max_risk = "medium"
 allow_hosts = ["*.stripe.com", "*.chargebee.com", "*.netsuite.com"]
 mcp_servers = ["Billing_Stripe"]
@@ -28,4 +28,25 @@ shape = "table"
 deliverable = "AR aging & collections"
 consumers = ["accounting_manager", "credit_officer"]
 cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull receivables"
+instruction = "Read the AR aging, open invoices, and bank transactions to see what is owed and what has been received."
+tools = ["ar_read_aging", "ar_read_invoice", "bank_read_transactions"]
+[[workflow]]
+name = "Apply cash"
+instruction = "Propose cash-receipt applications matching bank receipts to open invoices, using tokens only and never echoing a PAN."
+tools = ["propose_cash_application"]
+[[workflow]]
+name = "Draft invoices"
+instruction = "Generate draft invoices for billable items pulled from the billing systems."
+tools = ["draft_invoice", "chargebee_read", "netsuite_read"]
+[[workflow]]
+name = "Flag credit risk"
+instruction = "Run the aging and flag credit-risk and bad-debt candidates against the credit policy."
+tools = ["ar_read_aging", "knowledge_search"]
+[[workflow]]
+name = "Route for send"
+instruction = "Route the drafted invoices and collections actions to a human to approve and send."
 gate = "review"

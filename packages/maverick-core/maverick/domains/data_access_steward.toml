@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "access-request decision memo"
+consumers = ["data_owner", "security_officer"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Intake request"
+instruction = "Read the access request to capture the requester, the datasets sought, the business justification, and the intended use."
+tools = ["read_file"]
+[[workflow]]
+name = "Classify datasets"
+instruction = "Look up each requested dataset's classification level and handling rules in the company's policies before deciding anything."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Match to policy"
+instruction = "Compare the requester's role and justification against the classification rules and flag any grant that exceeds least-privilege."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Draft decision"
+instruction = "Write a decision memo recommending grant, scope-down, or deny with the cited rule and assumptions for each dataset."
+tools = ["read_file"]
+[[workflow]]
+name = "Owner approval"
+instruction = "Route the decision memo to the data owner for documented sign-off before any access is provisioned."
+gate = "approval"

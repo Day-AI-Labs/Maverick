@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "DORA obligations tracker"
+consumers = ["compliance_counsel", "ict_risk_officer"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Scope entities"
+instruction = "Read the request to identify the in-scope entities and which DORA ICT-risk and resilience-testing obligations apply."
+tools = ["read_file"]
+[[workflow]]
+name = "Ground in docs"
+instruction = "Search the company documents for the relevant policies, contracts, and registers and cite exactly what was used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Map articles"
+instruction = "Map each obligation to the exact DORA article or section and note current compliance status against the company evidence."
+tools = ["web_search"]
+[[workflow]]
+name = "Flag assumptions"
+instruction = "State jurisdiction assumptions, gaps, and unknowns plainly rather than guessing and preserve privilege throughout."
+[[workflow]]
+name = "Hand to counsel"
+instruction = "Deliver the obligations tracker to counsel for review and sign-off."
+gate = "review"

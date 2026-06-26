@@ -80,6 +80,11 @@ class Reflexion:
     # the dreaming loop consolidate per department. Older log lines without
     # the key load as None — fully backward compatible.
     domain: str | None = None
+    # The model that produced this failure. The self-harness loop mines
+    # weaknesses PER MODEL (a harness edit for one model must not leak into
+    # another's), so it needs the model tagged on the trace. Older lines without
+    # the key load as None — fully backward compatible.
+    model_id: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -105,6 +110,7 @@ def record(
     channel: str | None = None,
     user_id: str | None = None,
     domain: str | None = None,
+    model_id: str | None = None,
     path: Path | None = None,
 ) -> bool:
     """Append a Reflexion. Returns True on success.
@@ -123,6 +129,7 @@ def record(
         channel=channel,
         user_id=user_id,
         domain=domain,
+        model_id=model_id,
     )
     with _lock:
         try:
@@ -333,7 +340,7 @@ def list_recent(
                         k: data.get(k) for k in (
                             "ts", "goal_text", "failure_class",
                             "failure_msg", "reflection", "tools_used",
-                            "channel", "user_id", "domain",
+                            "channel", "user_id", "domain", "model_id",
                         )
                     }))
                 except TypeError:

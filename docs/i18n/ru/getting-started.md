@@ -93,7 +93,7 @@ maverick resume
 maverick init
 ```
 
-Или отредактируйте `~/.maverick/config.toml` напрямую. Секция `[models]` сопоставляет каждой роли агента строку вида `provider:model-id`. Схема описана в [`configuration.md`](./configuration.md).
+Или отредактируйте `~/.maverick/config.toml` напрямую. Секция `[models]` сопоставляет каждой роли агента строку вида `provider:model-id`. Схема описана в [`configuration.md`](../../configuration.md).
 
 ## Где хранятся данные
 

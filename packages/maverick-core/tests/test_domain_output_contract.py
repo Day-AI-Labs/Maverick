@@ -151,7 +151,8 @@ class TestFinanceSuiteContracts:
         # guard against a typo'd / one-off role drifting in.
         allowed = {"controller", "fpa_analyst", "treasurer", "tax_analyst",
                    "auditor", "risk_officer", "credit_officer", "cfo",
-                   "accounting_manager", "ir_lead", "internal_auditor"}
+                   "accounting_manager", "ir_lead", "internal_auditor",
+                   "tax_manager", "payroll_manager"}
         roles = {r for p in self._finance_with_contract().values() for r in p.output.consumers}
         assert roles and roles <= allowed, f"unexpected roles: {roles - allowed}"
 
@@ -215,7 +216,7 @@ class TestItGrcSuiteContracts:
 
     _ALLOWED = {"risk_officer", "ciso", "compliance_officer", "internal_auditor",
                 "privacy_officer", "security_analyst", "vendor_risk_manager",
-                "control_owner"}
+                "control_owner", "it_manager", "iam_lead"}
 
     def _with_contract(self):
         return {n: p for n, p in available_domains().items()

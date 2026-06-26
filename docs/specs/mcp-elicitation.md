@@ -129,8 +129,9 @@ When a tool/flow needs user input and the connected client advertised
   `_await_elicit_response`; tests: `tests/test_server_elicitation.py`. Not yet
   done: eliciting *arbitrary* tool flows (only the parked-question path), and the
   `approvals`-table/dashboard surface (answers flow through `questions`).
-- **Phase 3 — URL mode** both directions (the secrets-never-transit-model path);
-  dovetails with §B2 remote-server OAuth.
+- **Phase 3 — URL mode** ✅ shipped — `server._elicit_url` / `elicit_url_action`
+  (https-only, shield-screened prompt, action-only response so secrets never
+  transit the model); dovetails with §B2 remote-server OAuth.
 
 ## 7. Test plan
 - Client: an external server emits `elicitation/create`; assert it surfaces in the

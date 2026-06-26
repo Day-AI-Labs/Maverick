@@ -25,11 +25,13 @@ class FakeStore:
     """
 
     def __init__(self):
-        self.docs: dict[str, tuple[str, dict]] = {}
+        # id -> (document, metadata, embedding|None)
+        self.docs: dict[str, tuple[str, dict, list | None]] = {}
 
-    def add(self, documents, *, ids=None, metadatas=None):
+    def add(self, documents, *, ids=None, metadatas=None, embeddings=None):
         for i, doc in enumerate(documents):
-            self.docs[ids[i]] = (doc, (metadatas or [{}])[i])
+            emb = embeddings[i] if embeddings is not None else None
+            self.docs[ids[i]] = (doc, (metadatas or [{}])[i], emb)
 
     def delete(self, ids):
         for i in ids:
@@ -38,21 +40,29 @@ class FakeStore:
     def count(self):
         return len(self.docs)
 
-    def query(self, text, *, top_k=5):
-        q = set(text.lower().split())
+    def query(self, text=None, *, top_k=5, embedding=None):
         scored = []
-        for doc_id, (doc, meta) in self.docs.items():
+        if embedding is not None:
+            # Sealed mode: rank by Euclidean distance to the stored vectors.
+            for doc_id, (doc, meta, emb) in self.docs.items():
+                if emb is None:
+                    dist = 1.0
+                else:
+                    dist = sum((a - b) ** 2
+                               for a, b in zip(embedding, emb, strict=False)) ** 0.5
+                scored.append((dist, doc_id, doc, meta))
+            scored.sort(key=lambda r: r[0])
+            return [{"id": i, "document": d, "distance": dist, "metadata": m}
+                    for dist, i, d, m in scored[:top_k]]
+        q = set((text or "").lower().split())
+        for doc_id, (doc, meta, _emb) in self.docs.items():
             d = set(doc.lower().split())
             overlap = len(q & d) / len(q | d) if (q | d) else 0.0
             scored.append((overlap, doc_id, doc, meta))
         scored.sort(key=lambda r: r[0], reverse=True)
-        out = []
-        for overlap, doc_id, doc, meta in scored[:top_k]:
-            out.append({
-                "id": doc_id, "document": doc,
-                "distance": 1.0 - overlap, "metadata": meta,
-            })
-        return out
+        return [{"id": doc_id, "document": doc,
+                 "distance": 1.0 - overlap, "metadata": meta}
+                for overlap, doc_id, doc, meta in scored[:top_k]]
 
 
 class _Goal:
@@ -89,7 +99,19 @@ class TestIndexAndSearch:
         hits = sr.search("deploy the web app", store=store)
         assert hits is not None
         assert hits[0][1]["goal_id"] == 1
-        assert hits[0][1]["result"] == "used docker"
+        # Sensitive fields are NOT duplicated into the vector store's metadata --
+        # callers hydrate title/result from the sealed world DB by goal_id.
+        assert "result" not in hits[0][1]
+        assert "title" not in hits[0][1]
+
+    def test_index_omits_sensitive_metadata(self):
+        store = FakeStore()
+        sr.index_goal(_Goal(1, "deploy app", result="SECRET 4111111111111111"),
+                      store=store)
+        # The stored metadata holds no verbatim copy of the sensitive result.
+        _doc, meta, _emb = store.docs["goal:1"]
+        assert "4111111111111111" not in str(meta)
+        assert set(meta) <= {"goal_id", "status"}
 
     def test_index_upserts_not_duplicates(self):
         store = FakeStore()
@@ -99,7 +121,7 @@ class TestIndexAndSearch:
         sr.index_goal(g, store=store)
         assert store.count() == 1
         hits = sr.search("summarize sales", store=store)
-        assert hits[0][1]["result"] == "v2"
+        assert hits[0][1]["goal_id"] == 1
 
     def test_search_excludes_current_goal(self):
         store = FakeStore()
@@ -127,11 +149,12 @@ class TestOrchestratorRouting:
         monkeypatch.setenv("MAVERICK_AUTO_RECALL", "1")
         store = FakeStore()
         monkeypatch.setattr(sr, "build_store", lambda backend=None: store)
-        sr.index_goal(
-            _Goal(11, "build a sales CSV report", result="wrote report.csv"),
-            store=store,
-        )
         world = WorldModel(tmp_path / "w.db")
+        # The prior goal is a REAL world goal (title/result come from the sealed
+        # DB now, not from vector metadata); index that world goal.
+        prior = world.create_goal("build a sales CSV report", "group + sum")
+        world.set_goal_status(prior, "done", result="wrote report.csv")
+        sr.index_goal(world.get_goal(prior), store=store)
         cur = world.get_goal(
             world.create_goal("build a sales CSV report v2", "group + sum")
         )
@@ -257,3 +280,96 @@ class TestTenantCollectionIsolation:
         assert b.startswith("t_") and b.endswith("__goals")
         assert len(a) <= 63
         assert len(b) <= 63
+
+
+import importlib.util  # noqa: E402
+
+requires_crypto = pytest.mark.skipif(
+    importlib.util.find_spec("cryptography") is None,
+    reason="cryptography extra is not installed",
+)
+
+
+def _fake_embed(texts):
+    """Deterministic stand-in for the fastembed model: identical text -> identical
+    vector (so the FakeStore can match by vector), different text -> different."""
+    out = []
+    for t in texts:
+        toks = t.lower().split()
+        out.append([float(len(toks)), float(len(t)), float(sum(map(ord, t)) % 97)])
+    return out
+
+
+class TestAtRestSealing:
+    """Under at-rest encryption the stored document is sealed and the embedding is
+    precomputed client-side (so search still works); qdrant/weaviate fall back."""
+
+    @pytest.fixture
+    def _sealed(self, monkeypatch, tmp_path):
+        import maverick.crypto_at_rest as car
+        monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+        monkeypatch.delenv("MAVERICK_ENCRYPTION_KEY", raising=False)
+        monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: {})
+        monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "keys" / "at_rest.key")
+        monkeypatch.setattr("maverick.skill.embeddings.embed", _fake_embed)
+
+    @requires_crypto
+    def test_document_is_sealed_and_embedding_precomputed(self, _sealed):
+        import maverick.crypto_at_rest as car
+        store = FakeStore()
+        sr.index_goal(_Goal(1, "alpha task", result="SSN 123-45-6789"), store=store)
+        doc, meta, emb = store.docs["goal:1"]
+        assert car.is_sealed_str(doc)              # ciphertext, not plaintext
+        assert "alpha task" not in doc
+        assert emb == _fake_embed(["alpha task"])[0]   # vector from plaintext
+        assert set(meta) <= {"goal_id", "status"}
+
+    @requires_crypto
+    def test_sealed_search_matches_by_vector(self, _sealed):
+        store = FakeStore()
+        sr.index_goal(_Goal(1, "alpha unique"), store=store)
+        sr.index_goal(_Goal(2, "beta different"), store=store)
+        hits = sr.search("alpha unique", store=store)
+        assert hits and hits[0][1]["goal_id"] == 1
+
+    def test_no_embedder_skips_index_under_at_rest(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+        monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: {})
+        monkeypatch.setattr("maverick.skill.embeddings.embed", lambda texts: None)
+        store = FakeStore()
+        # No local embedder under at-rest -> skip rather than leak plaintext.
+        assert sr.index_goal(_Goal(1, "x y z"), store=store) is False
+        assert store.count() == 0
+
+    def test_at_rest_off_stores_plaintext_unchanged(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "0")
+        store = FakeStore()
+        sr.index_goal(_Goal(1, "plain text goal"), store=store)
+        doc, _meta, emb = store.docs["goal:1"]
+        assert doc == "plain text goal" and emb is None
+
+    def test_qdrant_and_weaviate_disabled_under_at_rest(self, monkeypatch, caplog):
+        import logging
+        monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+        monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: {})
+        sr._sealed_warned.clear()
+        with caplog.at_level(logging.WARNING, logger="maverick.semantic_recall"):
+            assert sr.build_store("qdrant") is None
+            assert sr.build_store("weaviate") is None
+        assert any("disabled for the 'qdrant'" in r.message for r in caplog.records)
+
+    def test_chroma_collection_gets_sealed_suffix(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+        monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: {})
+        import maverick.vector_store as vs
+        from maverick import paths
+        captured = {}
+
+        class _Fake:
+            def __init__(self, collection=None, **kw):
+                captured["c"] = collection
+
+        monkeypatch.setattr(vs, "ChromaStore", _Fake)
+        monkeypatch.setattr(paths, "current_tenant", lambda: None)
+        sr.build_store("chroma")
+        assert captured["c"] == "goals_s"

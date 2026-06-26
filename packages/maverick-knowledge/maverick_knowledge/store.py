@@ -133,14 +133,156 @@ class SqliteVectorStore:
         self.close()
 
 
+def _to_pgvector(vec: list[float]) -> str:
+    """A pgvector text literal (``[1,2,3]``) -- passed with a ``::vector`` cast so
+    the backend needs only ``psycopg`` + the Postgres ``vector`` extension, not
+    the optional ``pgvector`` Python package."""
+    return "[" + ",".join(repr(float(x)) for x in vec) + "]"
+
+
+class PgVectorStore:
+    """pgvector-backed scale-out vector store -- the opt-in backend for corpora
+    too large for the brute-force SQLite index.
+
+    Same surface + collection-scoped compartments as :class:`SqliteVectorStore`,
+    but cosine search runs in Postgres via the ``<=>`` operator (with an IVFFlat
+    index), so retrieval doesn't scan every row in the process. Vectors are
+    passed as text literals cast to ``::vector``; only ``psycopg`` and the
+    Postgres ``vector`` extension are required (no numpy / pgvector-python).
+
+    Connection-shared across threads like the SQLite store (ingestion runs on a
+    threadpool); a single psycopg connection is NOT thread-safe, so every
+    statement is serialized under a lock.
+    """
+
+    def __init__(self, dsn: str | None = None, *, dim: int = 1024,
+                 table: str = "knowledge_chunks") -> None:
+        try:
+            import psycopg
+        except ImportError as e:  # pragma: no cover -- exercised only without psycopg
+            raise ImportError(
+                "pgvector store needs psycopg. Run: "
+                "pip install 'maverick-knowledge[pgvector]'"
+            ) from e
+        import os
+        self._dsn = dsn or os.environ.get("MAVERICK_KNOWLEDGE_DSN") \
+            or os.environ.get("MAVERICK_PG_DSN") or ""
+        if not self._dsn:
+            raise RuntimeError(
+                "pgvector store requires MAVERICK_KNOWLEDGE_DSN / MAVERICK_PG_DSN "
+                "or [knowledge] dsn in config.toml."
+            )
+        if dim <= 0:
+            raise ValueError(f"pgvector store needs a positive dim, got {dim}")
+        self._dim = int(dim)
+        # Identifier is operator/config-derived, not agent input; still constrain
+        # it to a safe charset so it can be interpolated into DDL without an
+        # injection surface.
+        if not table.replace("_", "").isalnum():
+            raise ValueError(f"invalid table name {table!r}")
+        self._table = table
+        self._lock = threading.Lock()
+        self._db = psycopg.connect(self._dsn, autocommit=True)
+        try:
+            self._db.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        except Exception as e:  # pragma: no cover -- perms vary by deployment
+            raise RuntimeError(
+                "pgvector store: could not enable the 'vector' extension "
+                f"({e}). Install pgvector and grant CREATE on the database."
+            ) from e
+        self._db.execute(
+            f"CREATE TABLE IF NOT EXISTS {self._table} ("
+            "collection TEXT, id TEXT, text TEXT, "
+            f"embedding vector({self._dim}), meta JSONB, "
+            "PRIMARY KEY (collection, id))"
+        )
+        # Cosine IVFFlat index -- approximate but the point of the scale backend.
+        self._db.execute(
+            f"CREATE INDEX IF NOT EXISTS {self._table}_embedding_idx "
+            f"ON {self._table} USING ivfflat (embedding vector_cosine_ops) "
+            "WITH (lists = 100)"
+        )
+
+    def add(self, collection, items) -> None:
+        if not items:
+            return
+        with self._lock, self._db.cursor() as cur:
+            cur.executemany(
+                f"INSERT INTO {self._table} (collection, id, text, embedding, meta) "
+                "VALUES (%s, %s, %s, %s::vector, %s::jsonb) "
+                "ON CONFLICT (collection, id) DO UPDATE SET "
+                "text = EXCLUDED.text, embedding = EXCLUDED.embedding, "
+                "meta = EXCLUDED.meta",
+                [
+                    (collection, cid, text, _to_pgvector(vec), json.dumps(meta))
+                    for cid, text, vec, meta in items
+                ],
+            )
+
+    def search(self, collection, vector, k: int = 5) -> list[Match]:
+        if k <= 0:
+            return []
+        if len(vector) != self._dim:
+            # Mirror the SQLite store: a query embedded at a different dim than
+            # the corpus is a misconfiguration, not an empty result.
+            raise ValueError(
+                f"knowledge: query vector dim {len(vector)} != store dim "
+                f"{self._dim}; the corpus was embedded with a different "
+                "embedder/model than this query"
+            )
+        with self._lock, self._db.cursor() as cur:
+            rows = cur.execute(
+                f"SELECT text, meta, 1 - (embedding <=> %s::vector) AS score "
+                f"FROM {self._table} WHERE collection = %s "
+                "ORDER BY embedding <=> %s::vector LIMIT %s",
+                (_to_pgvector(vector), collection, _to_pgvector(vector), int(k)),
+            ).fetchall()
+        # psycopg adapts JSONB to a dict already; tolerate a str just in case.
+        return [
+            Match(float(score), text,
+                  meta if isinstance(meta, dict) else json.loads(meta or "{}"))
+            for text, meta, score in rows
+        ]
+
+    def delete_collection(self, collection: str) -> None:
+        with self._lock:
+            self._db.execute(
+                f"DELETE FROM {self._table} WHERE collection = %s", (collection,))
+
+    def count(self, collection: str) -> int:
+        with self._lock, self._db.cursor() as cur:
+            (n,) = cur.execute(
+                f"SELECT COUNT(*) FROM {self._table} WHERE collection = %s",
+                (collection,),
+            ).fetchone()
+        return int(n)
+
+    def close(self) -> None:
+        """Close the underlying connection (idempotent)."""
+        db = getattr(self, "_db", None)
+        if db is not None:
+            db.close()
+            self._db = None
+
+    def __enter__(self) -> PgVectorStore:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+
 def build_store(cfg: dict | None = None):
     """Select a vector store from config. Defaults to embedded SQLite; pgvector
-    (``[knowledge] store = "pgvector"``) is the opt-in scale backend."""
+    (``[knowledge] store = "pgvector"``) is the opt-in scale backend.
+
+    pgvector reads its DSN from ``[knowledge] dsn`` /
+    ``MAVERICK_KNOWLEDGE_DSN`` / ``MAVERICK_PG_DSN`` and its vector width from
+    ``[knowledge] dim`` (default 1024 -- matches ``voyage-3``)."""
     cfg = cfg or {}
     backend = str(cfg.get("store", "sqlite")).lower()
     if backend == "pgvector":
-        raise NotImplementedError(
-            "pgvector store is not bundled yet; use the default sqlite store "
-            "([knowledge] store = 'sqlite')."
+        return PgVectorStore(
+            dsn=cfg.get("dsn") or None,
+            dim=int(cfg.get("dim", 1024)),
         )
     return SqliteVectorStore(cfg.get("path") or ":memory:")

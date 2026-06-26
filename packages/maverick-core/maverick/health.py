@@ -82,6 +82,26 @@ def _check_config() -> dict:
     return load_config(p)
 
 
+def _check_config_lint(cfg: dict) -> None:
+    """Schema-lint the loaded config so a mistyped section/key -- e.g. a budget
+    cap typo (`[budget] max_dollarss`) that would otherwise silently run
+    UNCAPPED -- surfaces in `maverick doctor`, not only in the dedicated
+    `maverick config-lint`. Advisory: findings are warnings, never failures."""
+    if not cfg:
+        return  # no config / corrupt -- _check_config already reported it
+    try:
+        from .config_lint import lint_config
+        findings = lint_config(cfg)
+    except Exception:  # pragma: no cover -- linting must never break the doctor
+        return
+    if not findings:
+        _row(GREEN, "config-lint", "no unknown or mistyped keys")
+        return
+    for i, f in enumerate(findings[:8]):
+        _row(YELLOW, "config-lint", getattr(f, "message", str(f)),
+             fix="run `maverick config-lint` for the full report" if i == 0 else "")
+
+
 def _check_anthropic() -> None:
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not key:
@@ -369,6 +389,33 @@ def _check_shield() -> None:
              fix="set [safety] profile = \"balanced\" in ~/.maverick/config.toml to re-enable")
 
 
+def _check_profile() -> None:
+    """Surface the active deployment profile + security posture so an operator
+    can confirm which posture is live (the single ``MAVERICK_PROFILE`` /
+    ``[profile] name`` switch). Informational; a misconfigured enterprise
+    boundary is reported in depth by ``maverick enterprise verify``."""
+    try:
+        from .enterprise import enterprise_enabled
+        from .profile import active_profile
+        from .security_defaults import secure_by_default
+    except Exception:  # pragma: no cover - never break doctor
+        return
+    prof = active_profile()
+    ent = enterprise_enabled()
+    sec = secure_by_default()
+    posture = []
+    posture.append("egress lock ON" if ent else "egress lock off (cloud-capable)")
+    posture.append("hardened defaults ON" if sec else "hardened defaults OFF")
+    if prof == "enterprise":
+        _row(GREEN, "profile",
+             f"deployment profile = enterprise ({', '.join(posture)})")
+    else:
+        _row(GREEN, "profile",
+             f"deployment profile = standard ({', '.join(posture)})",
+             fix="set MAVERICK_PROFILE=enterprise (or [profile] name) for the "
+                 "regulated, data-boundary posture")
+
+
 def _check_data_residency(cfg: dict) -> None:
     """When the deployment DECLARES a data-residency requirement
     (``[residency] region`` / ``MAVERICK_RESIDENCY_REGION``), warn about any
@@ -524,6 +571,35 @@ def _check_tls_cert_expiry() -> None:
             _row(YELLOW, f"tls:{section}", f"cert unreadable: {type(e).__name__}")
 
 
+def _check_proxy_auth() -> None:
+    """Flag an insecure reverse-proxy-SSO config: proxy auth enabled, but no
+    `trusted_proxies` pin and the loopback fallback still active -- any
+    co-located loopback process (a sidecar, a pod-netns neighbour, an SSRF pivot
+    to 127.0.0.1) could then spoof the forwarded identity header. Advisory only;
+    off-by-default proxy auth and a pinned/enterprise config are silent."""
+    try:
+        from .proxy_auth import (
+            _section,
+            _trust_loopback_fallback,
+            proxy_auth_enabled,
+        )
+    except Exception:  # pragma: no cover -- never break the doctor
+        return
+    if not proxy_auth_enabled():
+        return  # off by default -> nothing to flag
+    trusted = _section().get("trusted_proxies")
+    if isinstance(trusted, (list, tuple)) and trusted:
+        _row(GREEN, "proxy-auth", "trusted_proxies pinned")
+    elif _trust_loopback_fallback():
+        _row(YELLOW, "proxy-auth",
+             "enabled with no trusted_proxies pin; any loopback process can spoof "
+             "the identity header",
+             fix="pin [auth.proxy] trusted_proxies, or set trust_loopback = false "
+                 "(enterprise mode disables the fallback automatically)")
+    else:
+        _row(GREEN, "proxy-auth", "loopback fallback disabled")
+
+
 def diagnose() -> int:
     """Run every health check, print the report, and return the number of
     failed (✗) checks. 0 == healthy. The CLI exits nonzero when this is
@@ -531,9 +607,12 @@ def diagnose() -> int:
     _FAILURES.clear()
     click.echo(click.style("Maverick health check\n", bold=True))
     cfg = _check_config()
+    _check_config_lint(cfg)
     _check_config_perms()
+    _check_profile()
     _check_data_residency(cfg)
     _check_client_binding()
+    _check_proxy_auth()
     _check_anthropic()
     _check_openai()
     _check_sandbox(cfg)

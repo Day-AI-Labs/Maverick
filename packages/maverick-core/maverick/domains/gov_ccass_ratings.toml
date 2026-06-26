@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "facility clearance & DD-254 obligation register"
+consumers = ["facility_security_officer", "contracts_manager"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull DD-254s"
+instruction = "Read the DD-254 and security classification guidance for each active classified contract and capture the required clearance levels and access categories."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map FCL status"
+instruction = "Map each contract's required facility clearance and safeguarding level against the company's current FCL and storage capability."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Verify flowdowns"
+instruction = "Verify subcontractor DD-254 flowdowns and reciprocal clearance obligations are documented for each classified award."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag any clearance shortfall, missing DD-254, or upcoming clearance expiration that puts an obligation out of compliance."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to FSO"
+instruction = "Hand the clearance obligation register to the Facility Security Officer for action."
+gate = "review"

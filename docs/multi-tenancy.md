@@ -25,13 +25,13 @@ single-tenant install and behaves exactly as before.
 | Cross-session memory | per-tenant dir | `tenants/<id>/memory/` |
 | Audit log | per-tenant, signed/hash-chained | `tenants/<id>/audit/` |
 | Knowledge store | per-tenant via Workspace | `tenants/<id>/knowledge.db` |
-| Encryption-at-rest key | distinct DEK per tenant (AEAD-bound) | `tenant_kms` |
+| Encryption-at-rest key | distinct DEK per tenant (AEAD-bound); per-tenant BYOK + fleet KEK rotation | `tenant/kms.py`, `tenant/kms_fleet.py`, `maverick tenant kms-rotate` |
 | **Config & credentials** | per-tenant overlay | `tenants/<id>/config.toml` |
 | **Calibration / learning-freeze** | per-tenant | `tenants/<id>/calibration*` |
 | **Concurrency ceiling** | per-tenant, from plan | `billing.entitlements` |
 | **RBAC role** | per-tenant membership overrides global | `dashboard-tenant-roles.json` |
-| Spend cap | per-tenant `max_daily_dollars` | tenant registry |
-| Postgres rows | optional row-level security | `MAVERICK_PG_RLS=1` |
+| Spend cap | per-tenant `max_daily_dollars` (clamps the per-run budget) | tenant registry |
+| Postgres rows | row-level security; auto-on under enterprise, else opt-in | `MAVERICK_PG_RLS` / `MAVERICK_PROFILE=enterprise` |
 
 ## Per-tenant credentials
 
@@ -121,3 +121,35 @@ SQLite is single-writer (one replica per state volume). To run multiple
 replicas, move the world model to Postgres — see
 [`deploy/postgres/README.md`](../deploy/postgres/README.md). Row-level security
 (`MAVERICK_PG_RLS=1`) enforces the tenant boundary in the database itself.
+
+### Enabling RLS safely (auto-on under enterprise; guided opt-in otherwise)
+
+RLS auto-enables under enterprise mode (`MAVERICK_PROFILE=enterprise`) along with
+strict per-tenant reads (`MAVERICK_STRICT_TENANT_ISOLATION`); an explicit
+`MAVERICK_PG_RLS=0/1` always wins over the enterprise default. Because its policy
+is strict, fail-closed equality (a row is visible/writable only when its
+`tenant_id` equals the active tenant), the **enterprise auto-on path runs a boot
+preflight that refuses to start** if legacy `tenant_id IS NULL` rows are present
+(rather than silently freezing them) — so the sharp edges below must be cleared
+first. An operator who sets `MAVERICK_PG_RLS=1` explicitly keeps the fail-closed
+install path with no boot refusal (a knowing opt-in). The two sharp edges:
+
+- **Pre-tenancy rows have `tenant_id IS NULL`** and would become invisible *and*
+  frozen the moment RLS is forced (`NULL = <tenant>` is never true).
+- **Only the table owner** may install the policy; a non-owner app role fails at
+  startup instead.
+
+So enabling RLS is a sequenced migration, not a config flip:
+
+```
+maverick tenant rls-preflight              # per-table: does this role own it?
+                                           # how many legacy NULL-tenant rows?
+maverick tenant backfill --tenant <id>     # assign those NULL rows to a tenant
+maverick tenant backfill --tenant <id> --dry-run   # preview first
+```
+
+Once `rls-preflight` reports **READY** (every table owned by the app role, no
+NULL-tenant rows left), set `[world_model] rls = true` (or `MAVERICK_PG_RLS=1`).
+The installer's advanced step writes this with the same reminder. RLS is
+defense-in-depth: the app-layer `_tenant_scope` predicate already isolates
+tenants NULL-tolerantly, so single-tenant and SQLite installs need none of this.

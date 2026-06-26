@@ -11,3 +11,29 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "call summary & after-call work packet"
+consumers = ["support_agent", "support_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read transcript"
+instruction = "Load the voice transcript and the linked case record for context."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Verify facts"
+instruction = "Check stated entitlements and policies against company knowledge and cite the sources used."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Summarize call"
+instruction = "Write a concise summary capturing the issue, resolution, and customer sentiment without inventing details not in the transcript."
+[[workflow]]
+name = "Extract commitments"
+instruction = "List every follow-up commitment with owner and due date so no promise is dropped."
+[[workflow]]
+name = "Agent review"
+instruction = "Route the summary and after-call work to the support agent to confirm accuracy before it is logged."
+gate = "review"
