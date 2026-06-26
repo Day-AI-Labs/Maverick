@@ -260,6 +260,21 @@ class TestMaterialize:
         assert payload["schedule_id"]
         assert "template" not in payload  # snapshot the brief, not a template ref
 
+    def test_schedule_automation_with_identity_preserves_runner_context(self):
+        a = n8n.translate(CRON_WORKFLOW)
+        q = _FakeQueue()
+        ai.materialize(
+            a,
+            queue=q,
+            owner="user:alice",
+            channel="api",
+            user_id="alice",
+        )
+        payload = q.enqueued[0][1]
+        assert payload["owner"] == "user:alice"
+        assert payload["channel"] == "api"
+        assert payload["user_id"] == "alice"
+
     def test_scheduled_payload_satisfies_worker_contract(self):
         # Regression: feed the enqueued payload straight to the worker's
         # start_goal validation so an empty-text payload can't slip back in.
