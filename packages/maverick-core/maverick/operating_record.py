@@ -205,12 +205,11 @@ def export_capsule(
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     # Atomic write: a crash mid-write must not leave a truncated capsule that
-    # verify_capsule would then flag as unreadable / invalid-signature. Write a
-    # temp sibling, then atomically replace -- the path is always either the old
-    # capsule or the complete new one.
-    tmp = out.with_name(out.name + ".tmp")
-    tmp.write_text(json.dumps(capsule, indent=2, default=str), encoding="utf-8")
-    tmp.replace(out)
+    # verify_capsule would then flag as unreadable / invalid-signature. The
+    # capsule may contain learned operational state, so stage it with 0600
+    # permissions before atomically replacing the destination.
+    from .file_lock import atomic_write_text
+    atomic_write_text(out, json.dumps(capsule, indent=2, default=str), mode=0o600)
     try:
         from .audit import EventKind, record
         record(EventKind.LEARNING_UPDATE, agent="operating_record",
