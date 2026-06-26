@@ -693,7 +693,7 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
     spawn depth, works like a professional with its department's memory.
     """
     from .agent import Agent
-    from .agent_autonomy import render_autonomy_prompt
+    from .agent_autonomy import default_profile_for, render_autonomy_prompt
     from .domain_discipline import augment_persona
     from .domain_refusals import render_refusals
     principal = principal or f"agent:{profile.name}-{depth}"
@@ -719,5 +719,5 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
         capability=cap,
         knowledge_sources=profile.knowledge_sources,
         domain_effort=profile.effort,
-        autonomy=profile.autonomy,
+        autonomy=profile.autonomy or default_profile_for(profile.name),
     )
