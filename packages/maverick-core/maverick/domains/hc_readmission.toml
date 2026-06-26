@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "discharge follow-up risk list"
+consumers = ["care_coordinator", "discharge_nurse"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull discharges"
+instruction = "Query the recent discharge roster for the period needing follow-up triage."
+tools = ["sql_query"]
+[[workflow]]
+name = "Read risk criteria"
+instruction = "Read the documented readmission risk-factor criteria the care team uses for stratification."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Tag risk factors"
+instruction = "Match each discharged patient against the documented risk factors and record which apply."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Compile follow-up list"
+instruction = "Assemble the prioritized follow-up list grouped by documented risk without assigning clinical urgency yourself."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to care team"
+instruction = "Hand the follow-up list to the care coordinator for outreach sign-off."
+gate = "review"

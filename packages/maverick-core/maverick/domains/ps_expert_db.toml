@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "expert reference dossier"
+consumers = ["case_attorney", "knowledge_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull records"
+instruction = "Query the expert and reference database for the candidate experts and their stored engagement history."
+tools = ["sql_query"]
+[[workflow]]
+name = "Verify history"
+instruction = "Cross-check each expert's prior matters, testimony, and conflicts against the firm engagement records and cite sources."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Update entries"
+instruction = "Compile corrected and newly verified engagement-history entries into the dossier table with citations."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag conflicts"
+instruction = "Surface any expert with a conflict, adverse prior engagement, or unverifiable credential as a blocker."
+[[workflow]]
+name = "Attorney review"
+instruction = "Route the expert dossier to the case attorney and knowledge manager for review before it is relied upon."
+gate = "review"

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 from pathlib import Path
@@ -134,16 +133,13 @@ def consolidate(
                     "note": pref,
                 })
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for n in notes:
-                f.write(json.dumps(n, default=str) + "\n")
-        os.replace(tmp, p)
-        try:
-            os.chmod(p, 0o600)
-        except OSError:
-            pass
+        # Atomic unique-temp write under a cross-process lock: consolidate (a
+        # full rebuild from the world) and erase_notes both rewrite this whole
+        # file, so serialize them and drop the fixed-".tmp" collision.
+        from .file_lock import atomic_write_text, cross_process_lock
+        body = "".join(json.dumps(n, default=str) + "\n" for n in notes)
+        with cross_process_lock(p):
+            atomic_write_text(p, body)
     except OSError as e:
         log.warning("user_notes: write failed: %s", e)
         return 0
@@ -199,29 +195,26 @@ def erase_notes(
     if not p.exists():
         return 0
 
-    kept: list[str] = []
     removed = 0
     try:
-        with open(p, encoding="utf-8") as f:
-            for raw in f:
-                try:
-                    d = json.loads(raw)
-                except json.JSONDecodeError:
+        # Hold the lock across the read-filter-write so a concurrent erase /
+        # consolidate can't interleave and lose this removal.
+        from .file_lock import atomic_write_text, cross_process_lock
+        with cross_process_lock(p):
+            kept: list[str] = []
+            with open(p, encoding="utf-8") as f:
+                for raw in f:
+                    try:
+                        d = json.loads(raw)
+                    except json.JSONDecodeError:
+                        kept.append(raw)
+                        continue
+                    if d.get("channel") == channel and d.get("user_id") in targets:
+                        removed += 1
+                        continue
                     kept.append(raw)
-                    continue
-                if d.get("channel") == channel and d.get("user_id") in targets:
-                    removed += 1
-                    continue
-                kept.append(raw)
-        if removed:
-            tmp = p.with_suffix(".tmp")
-            with open(tmp, "w", encoding="utf-8") as f:
-                f.writelines(kept)
-            os.replace(tmp, p)
-            try:
-                os.chmod(p, 0o600)
-            except OSError:
-                pass
+            if removed:
+                atomic_write_text(p, "".join(kept))
     except OSError as e:
         log.warning("user_notes: erase failed: %s", e)
         return 0

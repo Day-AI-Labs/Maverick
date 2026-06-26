@@ -10,3 +10,31 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["util"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "billing exception worksheet"
+consumers = ["billing_analyst", "revenue_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull reads"
+instruction = "Read the meter reads for the billing period and label each with its date and read type."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Validate reads"
+instruction = "Check reads for plausibility and flag estimated reads and missing or out-of-range values."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Apply tariff"
+instruction = "Apply the correct published tariff and rate schedule and draft the bill calculation for each account."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Surface exceptions"
+instruction = "Compile estimation cases and rate ambiguities into an exception worksheet for human resolution before billing."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for approval"
+instruction = "Hand the draft calculations and exceptions to the billing analyst for review before any bill is posted."
+gate = "review"

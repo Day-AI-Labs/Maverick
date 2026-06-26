@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "POC plan & technical response"
+consumers = ["account_executive", "solutions_architect"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Intake request"
+instruction = "Read the prospect's technical questions, security questionnaire, or POC ask and list every item to address."
+tools = ["read_file"]
+[[workflow]]
+name = "Review discovery"
+instruction = "Review the discovery and technical calls in Gong to confirm the prospect's environment, requirements, and success criteria."
+tools = ["gong_read"]
+[[workflow]]
+name = "Ground answers"
+instruction = "Answer each technical and security item only from approved documentation, citing sources and making no commitments."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft POC plan"
+instruction = "Draft the POC plan or questionnaire response with scope, success criteria, and open items flagged as assumptions."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to AE"
+instruction = "Hand the technical response and POC plan to the account executive for review before it reaches the prospect."
+gate = "review"

@@ -21,3 +21,23 @@ deliverable = "Cross-border transfer impact assessment"
 consumers = ["privacy_officer", "compliance_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Map transfers"
+instruction = "Read data-flow records to identify each cross-border transfer, its data categories, and importer/exporter jurisdictions."
+tools = ["read_file"]
+[[workflow]]
+name = "Check adequacy"
+instruction = "Determine the transfer mechanism by checking adequacy decisions, SCCs, and DPF eligibility under GDPR Chapter V."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Run TIA"
+instruction = "Assess destination-country surveillance law and supplementary measures per Schrems II to complete the transfer impact assessment."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft assessment"
+instruction = "Write the transfer impact assessment with mechanism, residual risk, and recommended safeguards without finalizing any decision."
+[[workflow]]
+name = "Route to privacy"
+instruction = "Submit the cross-border transfer impact assessment to the privacy officer and compliance officer for review."
+gate = "review"

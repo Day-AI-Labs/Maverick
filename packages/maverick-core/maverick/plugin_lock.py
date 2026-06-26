@@ -31,31 +31,72 @@ log = logging.getLogger(__name__)
 _POLICIES = ("off", "warn", "enforce")
 
 
-def _dist_content_hash(dist_name: str) -> str | None:
-    """SHA-256 over a distribution's installed Python sources (deterministic).
+def _hashable_dist_path(path: str) -> bool:
+    parts = Path(path).parts
+    return (
+        bool(parts)
+        and not Path(path).is_absolute()
+        and ".." not in parts
+        and not path.endswith(".pyc")
+        and "__pycache__" not in parts
+    )
 
-    Closes the "same version, different bytes" hole that version pinning alone
-    can't catch: a malicious rebuild that keeps the version number, or a locally
-    tampered file, changes this hash. Hashes only ``.py`` sources (sorted by
-    path) so compiled ``.pyc`` nondeterminism and metadata churn don't perturb
-    it. Returns None when the file list isn't introspectable (then we fall back
-    to version-only pinning rather than pinning a partial/empty hash)."""
+
+def _dist_content_hash(dist_name: str) -> str | None:
+    """SHA-256 over a distribution's installed load-affecting files.
+
+    The lockfile is meant to detect a same-version plugin whose installed bytes
+    changed. Plugin loading is controlled not only by Python source files, but
+    also by distribution metadata (notably entry_points.txt), native extensions,
+    package data, and occasionally generated files omitted from RECORD. Hash the
+    recorded file list plus recursively discovered files under the distribution's
+    package and metadata roots, excluding only nondeterministic bytecode caches.
+    Returns None when the file list is not introspectable or any candidate file
+    cannot be read, rather than pinning a partial hash.
+    """
     try:
         from importlib.metadata import files as _meta_files
         pkg_files = _meta_files(dist_name) or []
     except Exception:
         return None
-    pys = sorted((f for f in pkg_files if str(f).endswith(".py")), key=str)
-    if not pys:
+    if not pkg_files:
+        return None
+
+    candidates: dict[str, Path] = {}
+    roots: set[tuple[str, Path]] = set()
+    for f in pkg_files:
+        rel = str(f)
+        if not _hashable_dist_path(rel):
+            continue
+        try:
+            path = Path(f.locate())
+        except Exception:
+            return None
+        candidates[rel] = path
+        first = Path(rel).parts[0]
+        if first.endswith((".dist-info", ".egg-info")) or "." not in first:
+            roots.add((first, path.parents[len(Path(rel).parts) - 1]))
+
+    for root_name, root_path in roots:
+        try:
+            if root_path.is_dir():
+                for child in root_path.rglob("*"):
+                    if child.is_file():
+                        rel = str(Path(root_name, child.relative_to(root_path)))
+                        if _hashable_dist_path(rel):
+                            candidates.setdefault(rel, child)
+        except Exception:
+            return None
+
+    if not candidates:
         return None
     h = hashlib.sha256()
-    for f in pys:
+    for rel in sorted(candidates):
         try:
-            # PackagePath exposes locate() (the concrete path), not read_bytes().
-            data = Path(f.locate()).read_bytes()
+            data = candidates[rel].read_bytes()
         except Exception:
-            return None  # can't read a source -> don't pin a partial hash
-        h.update(str(f).encode("utf-8"))
+            return None
+        h.update(rel.encode("utf-8"))
         h.update(b"\0")
         h.update(data)
         h.update(b"\0")
@@ -67,17 +108,35 @@ def lock_path() -> Path:
     return data_dir() / "plugins.lock.json"
 
 
+def _enterprise_default_policy() -> str:
+    """Lock policy when nothing is configured: ``enforce`` under enterprise mode
+    (a regulated deployment refuses drifted/unpinned plugins once a lockfile
+    exists -- and it's a no-op with no lockfile, so it never breaks a fresh
+    install), ``off`` for single-tenant/dev."""
+    try:
+        from .enterprise import enterprise_enabled
+        return "enforce" if enterprise_enabled() else "off"
+    except Exception:  # pragma: no cover -- config never blocks discovery
+        return "off"
+
+
 def lock_policy() -> str:
+    """``MAVERICK_PLUGIN_LOCK_POLICY`` env wins over ``[plugins] lock_policy``.
+    When neither is set the default depends on the deployment profile (see
+    :func:`_enterprise_default_policy`); an explicit setting always wins."""
     env = os.environ.get("MAVERICK_PLUGIN_LOCK_POLICY", "").strip().lower()
     if env in _POLICIES:
         return env
     try:
         from .config import load_config
-        pol = str(((load_config() or {}).get("plugins") or {})
-                  .get("lock_policy", "off")).strip().lower()
-        return pol if pol in _POLICIES else "off"
+        raw = ((load_config() or {}).get("plugins") or {}).get("lock_policy")
     except Exception:  # pragma: no cover -- config never blocks discovery
-        return "off"
+        return _enterprise_default_policy()
+    if raw is not None:
+        pol = str(raw).strip().lower()
+        if pol in _POLICIES:
+            return pol
+    return _enterprise_default_policy()
 
 
 def _active_plugin_dists() -> dict[str, str]:
@@ -116,17 +175,13 @@ def write_lock(path: Path | None = None) -> dict[str, str]:
     pins = _active_plugin_dists()
     hashes = {n: h for n in pins if (h := _dist_content_hash(n)) is not None}
     p = Path(path) if path else lock_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(
+    # Unique temp + os.replace (0600): a fixed ".tmp" collides if two CLI
+    # invocations regenerate the lockfile concurrently.
+    from .file_lock import atomic_write_text
+    atomic_write_text(p, json.dumps(
         {"generated_at": time.time(), "pins": pins, "hashes": hashes},
         indent=2, sort_keys=True,
-    ), encoding="utf-8")
-    os.replace(tmp, p)
-    try:
-        os.chmod(p, 0o600)
-    except OSError:
-        pass
+    ))
     return pins
 
 

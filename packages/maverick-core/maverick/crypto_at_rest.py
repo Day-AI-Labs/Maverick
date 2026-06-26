@@ -7,9 +7,14 @@ sensitive data: anyone who can read ``~/.maverick`` sees everything.
 
 This module provides authenticated at-rest encryption for bytes/text plus key
 management that reuses the local-keyfile pattern of the audit signer. It is
-**opt-in**: enable it with ``[encryption] at_rest = true`` /
-``MAVERICK_ENCRYPT_AT_REST=1``, and it is **implied by enterprise mode** (handling
-sensitive data -> seal it at rest). Off by default -> behaviour is unchanged.
+**on by default** (secure-by-default): new writes are sealed and the key
+auto-generates on first use. Disable it with ``[encryption] at_rest = false`` /
+``MAVERICK_ENCRYPT_AT_REST=0`` (or the whole posture via ``[security]
+secure_defaults = false`` / ``MAVERICK_SECURE_DEFAULT=0``); it is also **implied
+by enterprise mode** and **forced by a compliance floor** (e.g. HIPAA), which an
+opt-out cannot override. Existing installs are safe to leave on -- reads are
+plaintext-tolerant, so rows written before it was enabled are returned unchanged
+until rewritten (``maverick encryption migrate`` seals them eagerly).
 
 Key resolution (first match wins):
   1. ``MAVERICK_ENCRYPTION_KEY`` — a 32-byte key as hex or base64, so an operator
@@ -43,7 +48,6 @@ import hashlib
 import logging
 import os
 import secrets
-import shutil
 import stat
 from pathlib import Path
 
@@ -81,13 +85,16 @@ def _truthy(value: object) -> bool:
 
 
 def at_rest_enabled() -> bool:
-    """Opt-in unless required by an active compliance profile.
+    """On by default (secure-by-default), overridable per deployment.
 
     Compliance floors are mandatory and strictest-wins: HIPAA-mode at-rest
     encryption cannot be disabled by leaving or setting the standalone
     encryption knob false. With no such floor, ``MAVERICK_ENCRYPT_AT_REST`` env
     wins over ``[encryption] at_rest`` in config, which wins over enterprise
-    mode. Off by default.
+    mode, which falls back to
+    :func:`maverick.security_defaults.secure_by_default` -- ON unless explicitly
+    disabled (``MAVERICK_ENCRYPT_AT_REST=0`` / ``[encryption] at_rest = false``,
+    or the whole hardened cluster via ``MAVERICK_SECURE_DEFAULT=0``).
     """
     try:
         from .compliance_profiles import FLOOR_ENCRYPTION_AT_REST, requires_floor
@@ -298,6 +305,11 @@ def backup_key_material(dest_dir: Path) -> list[Path]:
         )
     try:
         dest_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        dest_stat = dest_dir.lstat()
+        if stat.S_ISLNK(dest_stat.st_mode) or not stat.S_ISDIR(dest_stat.st_mode):
+            raise OSError("backup destination must be a real directory")
+        if hasattr(os, "geteuid") and dest_stat.st_uid != os.geteuid():
+            raise OSError("backup destination must be owned by the current user")
         os.chmod(dest_dir, 0o700)
     except OSError as e:
         raise EncryptionUnavailable(
@@ -307,8 +319,20 @@ def backup_key_material(dest_dir: Path) -> list[Path]:
     for src in sources:
         dst = dest_dir / src.name
         try:
-            shutil.copyfile(src, dst)
-            os.chmod(dst, 0o600)
+            with src.open("rb") as src_f:
+                fd = os.open(
+                    dst,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600,
+                )
+                try:
+                    with os.fdopen(fd, "wb") as dst_f:
+                        fd = -1
+                        for chunk in iter(lambda: src_f.read(1024 * 1024), b""):
+                            dst_f.write(chunk)
+                finally:
+                    if fd != -1:
+                        os.close(fd)
         except OSError as e:
             raise EncryptionUnavailable(
                 f"cannot copy key {src} -> {dst}: {e}"

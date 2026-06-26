@@ -62,6 +62,8 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from ._envparse import is_truthy
+
 if TYPE_CHECKING:  # import only for type-checkers/IDEs; never at runtime
     from .capability import Capability
 
@@ -94,9 +96,6 @@ def _managed_locked():
     return stack
 
 
-_TRUE_WORDS = {"1", "true", "yes", "on"}
-
-
 class AgentTrustError(ValueError):
     """A registry entry or request the trust plane refuses to deal with."""
 
@@ -106,7 +105,7 @@ def valid_agent_id(agent_id: object) -> bool:
 
 
 def _truthy(value: object) -> bool:
-    return str(value).strip().lower() in _TRUE_WORDS
+    return is_truthy(str(value))
 
 
 def _risk(value: object) -> str | None:

@@ -15,3 +15,27 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_facilities"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "lease critical-date & exposure brief"
+consumers = ["facilities_manager", "finance_controller"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Load portfolio"
+instruction = "Read the lease portfolio records, terms, and option clauses for the tracked sites."
+tools = ["read_file"]
+[[workflow]]
+name = "Track critical dates"
+instruction = "Identify upcoming renewal, termination, and option-exercise dates and the notice windows that gate them."
+tools = ["read_file"]
+[[workflow]]
+name = "Cost exposure"
+instruction = "Quantify rent escalations and cost exposure tied to each upcoming critical date."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route to finance"
+instruction = "Surface the draft brief to facilities and finance early so any commitment runs through lease accounting and legal."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "refund case for approval"
+consumers = ["support_lead", "finance_approver"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull order history"
+instruction = "Retrieve the customer's order, payment, and prior refund history for the case in question."
+tools = ["sql_query"]
+[[workflow]]
+name = "Cite policy basis"
+instruction = "Find the specific refund or credit policy clause that applies and quote it as the basis for the case."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute amount"
+instruction = "Calculate the eligible refund or credit amount from the order totals and policy, showing the line-item math."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check duplicates"
+instruction = "Confirm no overlapping refund or chargeback already exists for the same order before queuing the case."
+tools = ["sql_query"]
+[[workflow]]
+name = "Queue for approval"
+instruction = "Assemble the order history, policy basis, and amount into a refund case and queue it for human approval."
+gate = "approval"

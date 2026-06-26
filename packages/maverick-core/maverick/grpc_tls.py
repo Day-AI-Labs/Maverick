@@ -27,13 +27,13 @@ requirement is configured, behaviour is unchanged (insecure, single-tenant dev).
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
+from ._envparse import coerce_bool, env_bool
+
 log = logging.getLogger(__name__)
 
-_TRUE = {"1", "true", "yes", "on"}
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "[::1]", ""}
 
 
@@ -51,7 +51,7 @@ def _is_loopback_address(address: str) -> bool:
 
 def _insecure_grpc_allowed() -> bool:
     """Explicit opt-out for plaintext on a non-loopback address (trusted net)."""
-    return os.environ.get("MAVERICK_ALLOW_INSECURE_GRPC", "").strip().lower() in _TRUE
+    return env_bool("MAVERICK_ALLOW_INSECURE_GRPC")
 
 
 def _section(name: str) -> dict:
@@ -78,7 +78,7 @@ class TlsConfigError(RuntimeError):
 def tls_enabled(section: str, cfg: dict | None = None) -> bool:
     """Has the operator turned TLS on for this surface (``[<section>] tls``)?"""
     c = cfg if cfg is not None else _section(section)
-    return str(c.get("tls") or "").strip().lower() in _TRUE
+    return coerce_bool(c.get("tls"))
 
 
 def tls_required(section: str, cfg: dict | None = None) -> bool:
@@ -90,7 +90,7 @@ def tls_required(section: str, cfg: dict | None = None) -> bool:
     closed rather than falling back to an insecure port/channel.
     """
     c = cfg if cfg is not None else _section(section)
-    if str(c.get("tls_required") or "").strip().lower() in _TRUE:
+    if coerce_bool(c.get("tls_required")):
         return True
     try:
         from .client import client_binding_enforced

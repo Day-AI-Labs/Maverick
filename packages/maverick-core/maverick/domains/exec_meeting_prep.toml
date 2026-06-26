@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "meeting pre-read brief"
+consumers = ["executive", "chief_of_staff"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Confirm meeting basics"
+instruction = "Establish the meeting's purpose, attendees, and the party being met from the calendar and source documents."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull relationship history"
+instruction = "Gather prior correspondence, past meetings, and the running history with this party."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Research the party"
+instruction = "Add current external context on the party or topic and cite each source used."
+tools = ["web_search"]
+[[workflow]]
+name = "Compile open items"
+instruction = "List outstanding action items, decisions pending, and the objectives for this meeting."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Draft pre-read"
+instruction = "Assemble the pre-read with context, history, open items, and suggested talking points, then submit for review."
+gate = "review"

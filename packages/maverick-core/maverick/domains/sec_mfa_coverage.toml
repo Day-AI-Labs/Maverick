@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "MFA enrollment gap register"
+consumers = ["security_lead", "it_admin"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Define scope"
+instruction = "Pull the MFA policy and the list of in-scope systems and user populations that must be enrolled."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Pull enrollment"
+instruction = "Query each system's directory for enrolled versus unenrolled accounts and join against the active roster."
+tools = ["sql_query"]
+[[workflow]]
+name = "Rank gaps"
+instruction = "Build the gap register ranked by account privilege and system sensitivity, excluding documented exemptions."
+tools = ["read_file"]
+[[workflow]]
+name = "Assign owners"
+instruction = "Tag each open gap with its accountable system owner and a closure due date per policy SLA."
+[[workflow]]
+name = "Send for chase"
+instruction = "Route the gap register to the security lead to authorize owner outreach and closure tracking."
+gate = "review"

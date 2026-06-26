@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "markdown cadence plan"
+consumers = ["merchant", "planning_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull aging"
+instruction = "Query on-hand units, weeks of supply, and sell-through by SKU and store to find aged inventory."
+tools = ["sql_query"]
+[[workflow]]
+name = "Score clearance"
+instruction = "Score each aged SKU on sell-through velocity and remaining stock to set markdown urgency tiers."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Propose cadence"
+instruction = "Propose markdown depth and timing steps per tier referencing company clearance policy thresholds."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Margin check"
+instruction = "Project residual margin and clearance sell-through at each step and flag cadences that liquidate below floor."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Merchant approval"
+instruction = "Send the markdown cadence plan to the merchant for sign-off before any price change is executed."
+gate = "review"

@@ -25,13 +25,13 @@ single-tenant install and behaves exactly as before.
 | Cross-session memory | per-tenant dir | `tenants/<id>/memory/` |
 | Audit log | per-tenant, signed/hash-chained | `tenants/<id>/audit/` |
 | Knowledge store | per-tenant via Workspace | `tenants/<id>/knowledge.db` |
-| Encryption-at-rest key | distinct DEK per tenant (AEAD-bound) | `tenant_kms` |
+| Encryption-at-rest key | distinct DEK per tenant (AEAD-bound); per-tenant BYOK + fleet KEK rotation | `tenant/kms.py`, `tenant/kms_fleet.py`, `maverick tenant kms-rotate` |
 | **Config & credentials** | per-tenant overlay | `tenants/<id>/config.toml` |
 | **Calibration / learning-freeze** | per-tenant | `tenants/<id>/calibration*` |
 | **Concurrency ceiling** | per-tenant, from plan | `billing.entitlements` |
 | **RBAC role** | per-tenant membership overrides global | `dashboard-tenant-roles.json` |
-| Spend cap | per-tenant `max_daily_dollars` | tenant registry |
-| Postgres rows | optional row-level security | `MAVERICK_PG_RLS=1` |
+| Spend cap | per-tenant `max_daily_dollars` (clamps the per-run budget) | tenant registry |
+| Postgres rows | row-level security; auto-on under enterprise, else opt-in | `MAVERICK_PG_RLS` / `MAVERICK_PROFILE=enterprise` |
 
 ## Per-tenant credentials
 
@@ -122,12 +122,17 @@ replicas, move the world model to Postgres — see
 [`deploy/postgres/README.md`](../deploy/postgres/README.md). Row-level security
 (`MAVERICK_PG_RLS=1`) enforces the tenant boundary in the database itself.
 
-### Enabling RLS safely (guided opt-in)
+### Enabling RLS safely (auto-on under enterprise; guided opt-in otherwise)
 
-RLS is **opt-in**, not on by default, because its policy is strict, fail-closed
-equality: a row is visible/writable only when its `tenant_id` equals the active
-tenant. That has two sharp edges you must clear *before* turning it on, or you
-will break a running install:
+RLS auto-enables under enterprise mode (`MAVERICK_PROFILE=enterprise`) along with
+strict per-tenant reads (`MAVERICK_STRICT_TENANT_ISOLATION`); an explicit
+`MAVERICK_PG_RLS=0/1` always wins over the enterprise default. Because its policy
+is strict, fail-closed equality (a row is visible/writable only when its
+`tenant_id` equals the active tenant), the **enterprise auto-on path runs a boot
+preflight that refuses to start** if legacy `tenant_id IS NULL` rows are present
+(rather than silently freezing them) — so the sharp edges below must be cleared
+first. An operator who sets `MAVERICK_PG_RLS=1` explicitly keeps the fail-closed
+install path with no boot refusal (a knowing opt-in). The two sharp edges:
 
 - **Pre-tenancy rows have `tenant_id IS NULL`** and would become invisible *and*
   frozen the moment RLS is forced (`NULL = <tenant>` is never true).

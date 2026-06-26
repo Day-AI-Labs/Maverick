@@ -18,3 +18,24 @@ deliverable = "Statutory financial statement"
 consumers = ["controller", "compliance_officer", "actuary"]
 cadence = "annual"
 gate = "approval"
+
+[[workflow]]
+name = "Pull ledgers"
+instruction = "Query the general ledger balances and investment data needed for the Annual or Quarterly blank exhibits."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load NAIC rules"
+instruction = "Retrieve NAIC blank instructions and prior filings via knowledge_search and cite the controlling instruction for each exhibit."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build bridge"
+instruction = "Compute the GAAP-to-STAT bridge, Schedule P, IMR/AVR, and RBC inputs in a spreadsheet tying every figure to source."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Tie and check"
+instruction = "Cross-foot exhibits against the ledger and prior filing and flag any balance that fails to tie."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route blanks"
+instruction = "Hand the compiled statutory statement and schedules to the controller and Appointed Actuary for sign-off and filing."
+gate = "approval"

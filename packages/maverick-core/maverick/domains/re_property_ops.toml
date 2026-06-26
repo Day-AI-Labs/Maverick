@@ -10,3 +10,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["re"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "work-order triage recommendation"
+consumers = ["property_manager", "maintenance_supervisor"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Read request"
+instruction = "Read the incoming work order or tenant request and the relevant property record."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Classify issue"
+instruction = "Classify the issue type and check any applicable SLA or service standard."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Set priority"
+instruction = "Judge priority and escalate any life-safety or habitability issue immediately."
+[[workflow]]
+name = "Draft dispatch"
+instruction = "Draft a recommended assignment and tenant response, flagging missing information rather than guessing."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route to manager"
+instruction = "Send the triage recommendation to the property manager, who alone dispatches the vendor."
+gate = "review"

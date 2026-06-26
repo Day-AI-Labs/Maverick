@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "EHS training compliance matrix"
+consumers = ["ehs_manager", "site_supervisor"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull roster"
+instruction = "Read the active personnel roster with role and site and the completed-training records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map requirements"
+instruction = "Determine the required EHS courses for each role and site from the training matrix and applicable regulations."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Compute gaps"
+instruction = "Cross-reference completions against requirements and flag missing, overdue, and soon-to-expire training by person."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route matrix"
+instruction = "Route the training compliance matrix highlighting overdue assignments to the EHS manager for review."
+gate = "review"

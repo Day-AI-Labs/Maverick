@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "cycle-count variance reconciliation"
+consumers = ["inventory_control_manager", "plant_controller"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Select count groups"
+instruction = "Pull the ABC-ranked locations and SKUs due for this cycle from the inventory system."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compare to system"
+instruction = "Reconcile counted quantities against system on-hand and isolate every variance line."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Investigate variances"
+instruction = "Trace each material variance to receipts, issues, or moves and document the root cause with citations from knowledge_search."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build reconciliation"
+instruction = "Assemble the variance table with proposed adjustments, root cause, and accuracy metrics by group."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for posting"
+instruction = "Submit the reconciliation to the inventory control manager for approval before adjustments are posted."
+gate = "review"

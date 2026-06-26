@@ -1239,7 +1239,38 @@ def base_registry(
     _apply_rate_limits(reg, fail_silently=True)
     _apply_deferred_loading(reg)
 
+    # Opt-in: route configured enterprise-connector WRITES through GovernedActions
+    # (preview + approval-gate). Off by default; no-op unless
+    # [governed_connectors] enable. Done last so it wraps the final tool objects.
+    try:
+        from ..governed_tools import apply_governed_connectors
+        apply_governed_connectors(reg)
+    except Exception:  # pragma: no cover -- governance must never break assembly
+        pass
+
     return reg
+
+
+def base_tool_names() -> set[str] | None:
+    """Best-effort set of the built-in tool names, for callers that need to
+    diff a pack's declared tools against what actually exists (the agent
+    factory's capability-provisioning step).
+
+    Builds the base registry against an in-memory world and a local sandbox --
+    no provider keys, no network, no optional high-impact tools. Returns the
+    registered names, or ``None`` if assembly fails (a caller then skips
+    tool-existence checks rather than guessing). Never raises.
+    """
+    try:
+        from ..sandbox.local import LocalBackend
+        from ..world_model import open_world
+
+        reg = base_registry(open_world(None), LocalBackend())
+        return {t.name for t in reg.all()}
+    except Exception as e:  # pragma: no cover -- best-effort introspection
+        import logging as _logging
+        _logging.getLogger(__name__).debug("base_tool_names unavailable: %s", e)
+        return None
 
 
 def _register_optional_tools(

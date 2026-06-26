@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "LOTO procedure review status log"
+consumers = ["ehs_manager", "maintenance_supervisor"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "List procedures"
+instruction = "Read the machine-specific LOTO procedures and their current revisions and last-review dates via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull equipment"
+instruction = "Query the active equipment list and energy-isolation points to confirm every machine has a current procedure."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check currency"
+instruction = "Compare each procedure's last-review date against the annual cycle and flag overdue or missing reviews."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag equipment with no LOTO procedure, stale revisions, or isolation points not covered."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "EHS review"
+instruction = "Route the review-status log with overdue and missing procedures to the EHS manager for sign-off."
+gate = "review"

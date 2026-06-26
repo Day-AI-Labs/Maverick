@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Japan consumption-tax filing worksheet"
+consumers = ["tax_manager", "controller"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull transactions"
+instruction = "Query taxable sales and purchases for the period labeled by tax rate and regime."
+tools = ["sql_query"]
+[[workflow]]
+name = "Verify invoices"
+instruction = "Confirm each input-credit line is backed by a qualified-invoice record and cite the source."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute tax"
+instruction = "Build the consumption-tax worksheet computing output tax, creditable input tax, and net payable."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Reconcile ledger"
+instruction = "Tie the computed net tax back to the ledger and flag any unreconciled differences."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Hand to filer"
+instruction = "Route the filing worksheet to the tax manager for certification and filing."
+gate = "review"

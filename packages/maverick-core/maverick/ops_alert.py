@@ -18,9 +18,9 @@ from __future__ import annotations
 import logging
 import os
 
-log = logging.getLogger(__name__)
+from ._envparse import coerce_bool, is_truthy
 
-_TRUE = {"1", "true", "yes", "on"}
+log = logging.getLogger(__name__)
 
 # Map a severity to the notification priority understood by notifications.notify.
 _PRIORITY = {"critical": "max", "high": "high", "warning": "default", "info": "low"}
@@ -31,11 +31,10 @@ def alerts_enabled() -> bool:
     ``[alerts] enabled``; off by default."""
     env = os.environ.get("MAVERICK_ALERTS")
     if env is not None and env.strip() != "":
-        return env.strip().lower() in _TRUE
+        return is_truthy(env)
     try:
         from .config import load_config
-        return str(((load_config() or {}).get("alerts") or {}).get("enabled")
-                   or "").strip().lower() in _TRUE
+        return coerce_bool(((load_config() or {}).get("alerts") or {}).get("enabled"))
     except Exception:  # pragma: no cover - config never blocks an alert path
         return False
 

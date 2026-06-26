@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "daily T&M ticket register"
+consumers = ["project_manager", "cost_accountant"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Collect tickets"
+instruction = "Gather the day's time-and-material tickets covering labor hours, equipment, and materials for extra work performed."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify signatures"
+instruction = "Confirm each ticket has the owner or GC representative signature captured the same day the work occurred."
+tools = ["read_file"]
+[[workflow]]
+name = "Price the work"
+instruction = "Apply contract labor, equipment, and material rates to each ticket and total the extended cost."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Flag unsigned work"
+instruction = "Flag any ticket missing a signature, missing rate backup, or not tied to an authorized change directive."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to PM"
+instruction = "Hand the priced T&M register to the project manager for review before it is billed."
+gate = "review"

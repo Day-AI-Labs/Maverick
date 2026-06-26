@@ -17,3 +17,24 @@ deliverable = "Workers'-comp claim tracking"
 consumers = ["claims_adjuster", "claims_manager"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Open claim record"
+instruction = "Read the first report of injury and claim file to classify the claim as indemnity or medical-only."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map state deadlines"
+instruction = "Identify the controlling state and list each required form with its statutory filing deadline."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Track payments"
+instruction = "Compile indemnity and medical payment activity and reconcile against the reserve and benefit schedule."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag overdue forms"
+instruction = "Surface any state form whose deadline is approaching or missed and note the compliance exposure."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to adjuster"
+instruction = "Hand the claim-tracking package to the claims adjuster for review before any filing or benefit decision."
+gate = "review"

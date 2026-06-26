@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "supplier comparison shortlist"
+consumers = ["procurement_manager", "category_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Clarify requirements"
+instruction = "Read the requisition and specifications to extract the must-have and nice-to-have selection criteria."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Find candidates"
+instruction = "Search the market and approved-vendor records for suppliers that plausibly meet the requirements."
+tools = ["web_search", "knowledge_search", "sql_query"]
+[[workflow]]
+name = "Score comparison"
+instruction = "Build a weighted comparison matrix scoring each candidate against the documented criteria with cited evidence."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check coverage"
+instruction = "Verify no incumbent or qualified diverse supplier was overlooked and note gaps in the candidate pool."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Route shortlist"
+instruction = "Route the ranked shortlist and evidence to the category manager for the award decision."
+gate = "review"

@@ -7,6 +7,39 @@ persona = """You are the Clinical Research IRB Tracker for this business -- a he
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "high"
 
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "IRB approval & deadline tracker"
+consumers = ["principal_investigator", "research_compliance_officer"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull protocols"
+instruction = "Query active protocols with their IRB approval dates, expiration dates, and renewal status."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Flag renewals"
+instruction = "Identify approvals expiring within the renewal window and protocols with overdue continuing reviews."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Log deviations"
+instruction = "Reconcile reported protocol deviations against their required IRB reporting deadlines."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Verify dates"
+instruction = "Confirm every approval and deadline against the IRB correspondence on file and note unknowns plainly."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft tracker"
+instruction = "Compile the tracker listing upcoming renewals, overdue reviews, and open deviation reports with citations."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "PI review"
+instruction = "Route the tracker to the principal investigator to action filings before deadlines."
+gate = "review"

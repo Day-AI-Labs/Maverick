@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "press statement & messaging draft"
+consumers = ["chief_communications_officer", "ceo", "legal"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Frame the ask"
+instruction = "Read the triggering event, prior statements, and approved messaging guardrails from the knowledge base."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Scan coverage"
+instruction = "Search current press and social coverage to gauge narrative, sentiment, and the questions reporters are asking."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft narrative"
+instruction = "Draft the statement and Q&A holding lines aligned to the approved narrative and tone."
+[[workflow]]
+name = "Materiality check"
+instruction = "Confirm the draft discloses nothing material non-public and clears the Reg-FD gate before release."
+[[workflow]]
+name = "Route to approve"
+instruction = "Send the statement to comms leadership and legal for sign-off ahead of any external release."
+gate = "approval"

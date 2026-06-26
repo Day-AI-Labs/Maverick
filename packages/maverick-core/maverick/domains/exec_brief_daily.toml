@@ -11,3 +11,25 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "daily executive morning brief"
+consumers = ["executive", "chief_of_staff"]
+cadence = "daily"
+
+[[workflow]]
+name = "Scan overnight"
+instruction = "Read overnight updates, open decision items, and inbound notes from the company's documents since the last brief."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check metrics"
+instruction = "Pull the latest KPI values and identify which metrics moved materially against target or prior period."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "List due items"
+instruction = "Compile pending decisions, deadlines due today, and items awaiting the executive's input with their owners."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft brief"
+instruction = "Write a concise brief covering decisions pending, metrics moved, and items due, citing each source and noting any unknowns."

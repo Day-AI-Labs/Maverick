@@ -10,3 +10,29 @@ max_risk = "medium"
 
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "insider-risk case file"
+consumers = ["hr_partner", "legal_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope case"
+instruction = "Confirm the case scope, subject, and authorizing request before collecting any evidence."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Gather evidence"
+instruction = "Query the relevant activity and access records for the scoped subject and timeframe only."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Document neutrally"
+instruction = "Record each fact with its source and timestamp in neutral language without drawing conclusions about intent."
+[[workflow]]
+name = "Check completeness"
+instruction = "Verify chain of custody is noted and flag any evidence gaps or out-of-scope material to exclude."
+[[workflow]]
+name = "Route to HR/legal"
+instruction = "Hand the documented case file to the HR partner and legal counsel for review and any action."
+gate = "review"

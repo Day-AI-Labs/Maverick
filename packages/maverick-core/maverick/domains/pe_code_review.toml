@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "code review with inline comments"
+consumers = ["author", "engineering_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read the diff"
+instruction = "Read the changed files and surrounding context to understand the intent of the change."
+tools = ["read_file"]
+[[workflow]]
+name = "Check correctness"
+instruction = "Inspect the diff for logic errors, edge cases, and regressions against the existing code."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Scan quality"
+instruction = "Review static-analysis findings and flag simplification, reuse, and standards violations."
+tools = ["sonarqube_read", "knowledge_search"]
+[[workflow]]
+name = "Draft comments"
+instruction = "Write specific inline review comments tied to file and line without merging the change."
+[[workflow]]
+name = "Return to author"
+instruction = "Deliver the review for the author and lead to sign off before merge."
+gate = "review"

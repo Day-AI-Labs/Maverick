@@ -14,3 +14,35 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "WCAG 2.2 audit & fix PR"
+consumers = ["frontend_lead", "design_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope screens"
+instruction = "Read the target views and component source to identify which flows and templates are in scope for the audit."
+tools = ["read_file", "repo_map"]
+[[workflow]]
+name = "Run a11y scan"
+instruction = "Execute axe and Lighthouse against the in-scope pages and collect the WCAG 2.2 violations with their selectors."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Confirm criteria"
+instruction = "Map each finding to its specific WCAG success criterion against company accessibility standards before proposing a fix."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft fixes"
+instruction = "Apply the smallest accessible-markup or ARIA patch per violation in the sandbox without altering unrelated behavior."
+tools = ["apply_patch", "ast_edit", "str_replace_editor"]
+[[workflow]]
+name = "Verify no regress"
+instruction = "Re-run the scanner on the patched build to confirm violations clear and no new ones appear."
+tools = ["code_exec"]
+[[workflow]]
+name = "Open review PR"
+instruction = "Open a pull request bundling the fixes and audit summary for the frontend lead to review and merge."
+gate = "review"

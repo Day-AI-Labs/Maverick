@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "lien waiver collection tracker"
+consumers = ["project_manager", "accounts_payable"]
+cadence = "monthly"
+gate = "approval"
+
+[[workflow]]
+name = "Map payment tiers"
+instruction = "Read the pay application and subcontract ledger to list every subcontractor and supplier tier owed payment this cycle."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Match waivers"
+instruction = "Match each received lien waiver to its payee, amount, and through-date, confirming conditional versus unconditional and correct statutory form."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Find gaps"
+instruction = "Identify tiers with missing, mismatched, or stale-dated waivers that must clear before any payment releases."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify form"
+instruction = "Confirm each waiver matches the jurisdiction's required statutory wording, checking the governing rule when uncertain."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Authorize release"
+instruction = "Route the waiver tracker with the cleared-to-pay list to the project manager to authorize payment release."
+gate = "approval"

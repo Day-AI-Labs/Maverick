@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "rollout & rollback plan"
+consumers = ["release_manager", "sre_lead"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Read state"
+instruction = "Read ArgoCD and Harness deployment state to capture current versions, sync status, and environment health."
+tools = ["argocd_read", "harness_read", "read_file"]
+[[workflow]]
+name = "Confirm readiness"
+instruction = "Verify the candidate build passed its gates and check known-issue guidance before staging a rollout."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft rollout"
+instruction = "Draft the phased rollout sequence with health checkpoints and explicit promotion criteria per stage."
+[[workflow]]
+name = "Define rollback"
+instruction = "Define the rollback trigger thresholds and the exact revert steps for each rollout stage."
+[[workflow]]
+name = "Submit for deploy"
+instruction = "Submit the rollout and rollback plan for a human to approve and execute the production deploy."
+gate = "approval"

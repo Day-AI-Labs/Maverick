@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "public-affairs position brief"
+consumers = ["chief_executive", "general_counsel", "board_secretary"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scan policy"
+instruction = "Monitor pending legislation, regulatory dockets, and agency actions relevant to the company and date-stamp each item."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Assess exposure"
+instruction = "Read company filings and prior positions to map how each development helps or threatens the business and quantify the stake."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Draft position"
+instruction = "Draft a public-affairs position separating verified facts from inference and noting what evidence would change the stance."
+[[workflow]]
+name = "Disclosure check"
+instruction = "Confirm no material non-public information leaks the compartment and flag any lobbying-disclosure obligation triggered by proposed engagement."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route brief"
+instruction = "Send the position brief to the executive and general counsel for sign-off before any external engagement."
+gate = "review"

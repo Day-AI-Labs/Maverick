@@ -17,3 +17,24 @@ deliverable = "Covenant breach-risk alert"
 consumers = ["treasurer", "cfo"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Load covenants"
+instruction = "Read covenant definitions and the latest compliance schedule to know each threshold being monitored."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull latest"
+instruction = "Query the most recent financials and forecast inputs to refresh each covenant ratio for the current period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Project headroom"
+instruction = "Project each ratio forward and rank covenants by how close they are to breaching, labeling assumptions plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Raise alert"
+instruction = "Draft a breach-risk alert for any covenant trending toward its threshold with the driving figures cited."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Treasurer review"
+instruction = "Send the breach-risk alert to the treasurer and CFO for review and decision on next steps."
+gate = "review"

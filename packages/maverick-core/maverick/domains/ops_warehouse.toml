@@ -15,3 +15,29 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_logistics"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "wave, slotting & labor plan"
+consumers = ["warehouse_supervisor", "operations_manager"]
+cadence = "daily"
+gate = "approval"
+
+[[workflow]]
+name = "Pull order profile"
+instruction = "Read the order backlog, inventory positions, and dock schedule for the shift being planned."
+tools = ["read_file", "easypost_read", "samsara_read"]
+[[workflow]]
+name = "Plan waves"
+instruction = "Group orders into pick/pack waves balanced against carrier cutoffs and available capacity."
+[[workflow]]
+name = "Optimize slotting"
+instruction = "Recommend slotting moves that shorten travel for high-velocity SKUs given current demand."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check safety"
+instruction = "Validate labor and dock assignments against safety and staffing limits and flag any throughput plan that breaches them."
+[[workflow]]
+name = "Route for release"
+instruction = "Route the drafted wave, slotting, and labor plan to the supervisor for human release to the floor."
+gate = "approval"

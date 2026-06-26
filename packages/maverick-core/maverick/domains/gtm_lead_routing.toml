@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "lead routing & SLA assignment plan"
+consumers = ["sales_manager", "revops_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull lead queue"
+instruction = "Read the inbound lead and account queue plus the active routing rules and SLA targets."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Enrich accounts"
+instruction = "Enrich each lead with firmographic and territory data to confirm segment and owner eligibility."
+tools = ["apollo_read", "zoominfo_read"]
+[[workflow]]
+name = "Apply routing rules"
+instruction = "Assign each lead by round-robin or territory rule, balance rep load, and check suppression and consent status before assignment."
+[[workflow]]
+name = "Flag SLA breaches"
+instruction = "Identify unrouted or stale leads breaching the response SLA and propose reassignment for them."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the proposed assignment plan to the sales manager for review before any owner changes are committed."
+gate = "review"

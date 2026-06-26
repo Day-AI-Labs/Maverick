@@ -25,11 +25,14 @@ Externally-managed key (enterprise / H29): set
 base64). It then becomes the active signer and is held IN MEMORY ONLY -- the
 private key is never written to the local key dir, so the chain's trust anchor
 can be custodied in a KMS / HSM / secrets manager and injected at deploy time
-instead of generated-and-left on the host. Only the public half (plus an
-``.injected`` marker) is persisted, so local ``verify_chain`` still trusts the
-chain. An injected key takes precedence over any on-disk key; rotate it in your
-secret manager (the ``key_id`` is derived from the public key, so a new key
-chains additively exactly like ``rotate_audit_keypair``).
+instead of generated-and-left on the host. Maverick consumes and removes this
+environment entry the first time audit signing loads, then caches only decoded
+key material in memory; inherited startup environments are not an HSM/KMS
+security boundary. Only the public half (plus an ``.injected`` marker) is
+persisted, so local ``verify_chain`` still trusts the chain. An injected key
+takes precedence over any on-disk key; rotate it in your secret manager (the
+``key_id`` is derived from the public key, so a new key chains additively
+exactly like ``rotate_audit_keypair``).
 
 Optional [audit-signing] extra (cryptography>=44.0.1).
 """
@@ -60,6 +63,10 @@ log = logging.getLogger(__name__)
 # no-tenant default stays exactly ``~/.maverick/audit/keys``.
 _LEGACY_KEY_DIR = data_dir("audit", "keys")
 KEY_DIR = _LEGACY_KEY_DIR
+
+
+class OffHostSigningRequiredError(RuntimeError):
+    """Raised when audit signing must use off-host key material."""
 
 
 def _key_dir() -> Path:
@@ -113,6 +120,10 @@ def _key_paths_for_id(key_id: str) -> tuple[Path, Path] | tuple[None, None]:
 # at deploy time rather than generated-and-left on local disk. See
 # ``_injected_keypair`` and the module docstring (H29 / enterprise key custody).
 _SIGNING_KEY_ENV = "MAVERICK_AUDIT_SIGNING_KEY"
+_INJECTED_KEYPAIR_UNREAD = object()
+_INJECTED_KEYPAIR_CACHE: tuple[bytes, bytes, str] | None | object = (
+    _INJECTED_KEYPAIR_UNREAD
+)
 
 
 def _injected_marker_for_id(key_id: str) -> Path | None:
@@ -169,15 +180,25 @@ def _decode_injected_key(raw: str) -> bytes | None:
 def _injected_keypair() -> tuple[bytes, bytes, str] | None:
     """Return (priv, pub, key_id) for an env-injected signing key, or None.
 
-    Reads :data:`_SIGNING_KEY_ENV`. The private key is held in memory only; the
-    caller writes just the public key (+ an ``.injected`` marker) so verification
-    still trusts the chain without the secret ever touching local disk. A
-    malformed value logs a warning and returns None (fall back to disk keys).
+    Consumes :data:`_SIGNING_KEY_ENV` once, removes it from ``os.environ`` as
+    early as possible, and caches only decoded key material. This keeps local
+    shell tools from recovering the secret from the parent process environment
+    via same-user ``/proc`` reads; inherited startup environments are not an
+    HSM/KMS boundary. The caller writes just the public key (+ an ``.injected``
+    marker) so verification still trusts the chain without the secret ever
+    touching local disk. A malformed value logs a warning and returns None
+    (fall back to disk keys).
     """
-    raw = os.environ.get(_SIGNING_KEY_ENV)
+    global _INJECTED_KEYPAIR_CACHE
+    if _INJECTED_KEYPAIR_CACHE is not _INJECTED_KEYPAIR_UNREAD:
+        return _INJECTED_KEYPAIR_CACHE
+
+    raw = os.environ.pop(_SIGNING_KEY_ENV, None)
     if not raw:
+        _INJECTED_KEYPAIR_CACHE = None
         return None
     if not _have_crypto():
+        _INJECTED_KEYPAIR_CACHE = None
         return None
     priv_bytes = _decode_injected_key(raw)
     if priv_bytes is None:
@@ -186,6 +207,7 @@ def _injected_keypair() -> tuple[bytes, bytes, str] | None:
             "falling back to the on-disk audit signing key",
             _SIGNING_KEY_ENV,
         )
+        _INJECTED_KEYPAIR_CACHE = None
         return None
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -196,7 +218,8 @@ def _injected_keypair() -> tuple[bytes, bytes, str] | None:
         format=serialization.PublicFormat.Raw,
     )
     key_id = hashlib.sha256(pub_bytes).hexdigest()[:16]
-    return priv_bytes, pub_bytes, key_id
+    _INJECTED_KEYPAIR_CACHE = (priv_bytes, pub_bytes, key_id)
+    return _INJECTED_KEYPAIR_CACHE
 
 
 def _provision_injected_pubkey(pub: bytes, key_id: str) -> None:
@@ -334,20 +357,117 @@ def rotate_audit_keypair() -> str:
     return key_id
 
 
+_KMS_WRAPPED_KEY_ENV = "MAVERICK_AUDIT_SIGNING_KEY_WRAPPED"
+
+
+def require_offhost_signing() -> bool:
+    """Whether the audit signing key MUST live off-host (KMS / injected), so the
+    on-disk generated-and-left key is refused.
+
+    On by default under enterprise mode -- the audit chain is the tamper-evidence
+    a regulator relies on, and a same-host on-disk private key lets a local root
+    rewrite history and re-sign it. Also flips on via ``[audit]
+    require_offhost_key`` / ``MAVERICK_AUDIT_REQUIRE_OFFHOST_KEY``. Off by default
+    otherwise (the local-key happy path is unchanged)."""
+    env = os.environ.get("MAVERICK_AUDIT_REQUIRE_OFFHOST_KEY", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    try:
+        from ..config import load_config
+        val = ((load_config() or {}).get("audit") or {}).get("require_offhost_key")
+        if val is not None:
+            return bool(val) if not isinstance(val, str) else val.strip().lower() in {
+                "1", "true", "yes", "on"}
+    except Exception:  # pragma: no cover -- config never weakens posture silently
+        pass
+    try:
+        from ..enterprise import enterprise_enabled
+        return bool(enterprise_enabled())
+    except Exception:  # pragma: no cover
+        return False
+
+
+def _kms_wrapped_keypair() -> tuple[bytes, bytes, str] | None:
+    """Source the signing key from a KMS-wrapped blob, unwrapped into memory.
+
+    ``MAVERICK_AUDIT_SIGNING_KEY_WRAPPED`` (hex/base64 of a KMS-wrapped 32-byte
+    Ed25519 private key) + a configured cloud KMS (``[encryption.kms]`` AWS / GCP
+    / Vault) lets the audit signer's private key live in KMS custody and be
+    unwrapped only into process memory at startup -- never written to local disk.
+    Returns ``(priv, pub, key_id)`` or ``None`` (no config / crypto absent / any
+    error -> fall through to the next key source)."""
+    raw = os.environ.get(_KMS_WRAPPED_KEY_ENV)
+    if not raw or not _have_crypto():
+        return None
+    import base64
+    import binascii
+    s = raw.strip()
+    wrapped: bytes | None = None
+    try:
+        wrapped = bytes.fromhex(s)
+    except ValueError:
+        try:
+            wrapped = base64.b64decode(s, validate=True)
+        except (binascii.Error, ValueError):
+            wrapped = None
+    if not wrapped:
+        log.warning("%s is set but is not valid hex/base64; ignoring", _KMS_WRAPPED_KEY_ENV)
+        return None
+    try:
+        from ..config import load_config
+        from ..kms_backends import build_cloud_kms
+        provider = str(((load_config() or {}).get("kms") or {}).get("provider") or "").strip()
+        kek = build_cloud_kms(provider)
+        priv_bytes = kek.unwrap(wrapped, context=b"maverick-audit-signing")
+    except Exception as e:
+        log.warning("audit signing KMS unwrap failed (%s); falling back", e)
+        return None
+    if len(priv_bytes) != 32:
+        log.warning("KMS-unwrapped audit key is %d bytes, expected 32; ignoring",
+                    len(priv_bytes))
+        return None
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    priv = ed25519.Ed25519PrivateKey.from_private_bytes(priv_bytes)
+    pub_bytes = priv.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)
+    key_id = hashlib.sha256(pub_bytes).hexdigest()[:16]
+    return priv_bytes, pub_bytes, key_id
+
+
 def _load_or_create_keypair() -> tuple[bytes, bytes, str]:
     """Load the most-recent keypair or generate one if none exists.
 
-    An env-injected key (:func:`_injected_keypair`) takes precedence over any
-    on-disk key: when ``MAVERICK_AUDIT_SIGNING_KEY`` is set, that key is the
-    active signer and is never persisted to disk (only its public half is, for
-    verification). This lets the audit chain's trust anchor live in a KMS / HSM
-    / secrets manager instead of being generated-and-left on the local host.
+    Key-source precedence: an env-injected key (:func:`_injected_keypair`) >
+    a KMS-wrapped key (:func:`_kms_wrapped_keypair`) > the on-disk key. The first
+    two keep the private key off local disk (only the public half is persisted,
+    for verification) so the audit chain's trust anchor can live in a KMS / HSM /
+    secrets manager. When :func:`require_offhost_signing` is on (enterprise mode)
+    and neither off-host source is available, this RAISES rather than generate a
+    same-host on-disk key a local root could use to rewrite + re-sign history.
     """
     injected = _injected_keypair()
     if injected is not None:
         priv, pub, key_id = injected
         _provision_injected_pubkey(pub, key_id)
         return priv, pub, key_id
+
+    kms = _kms_wrapped_keypair()
+    if kms is not None:
+        priv, pub, key_id = kms
+        _provision_injected_pubkey(pub, key_id)
+        return priv, pub, key_id
+
+    if require_offhost_signing():
+        raise OffHostSigningRequiredError(
+            "off-host audit signing is required (enterprise mode / [audit] "
+            "require_offhost_key) but no off-host key is configured. Set "
+            f"{_SIGNING_KEY_ENV} (a KMS/secrets-manager-sourced Ed25519 key) or "
+            f"{_KMS_WRAPPED_KEY_ENV} (a KMS-wrapped key) so the audit signing key "
+            "never lives generated-and-left on the local host."
+        )
 
     key_dir = _key_dir()
     if key_dir.exists():

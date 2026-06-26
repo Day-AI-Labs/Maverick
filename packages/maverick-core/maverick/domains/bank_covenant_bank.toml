@@ -18,3 +18,25 @@ deliverable = "Loan covenant compliance"
 consumers = ["credit_officer", "risk_officer"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Gather financials"
+instruction = "Read the borrower's latest compliance certificate and financial statements for the reporting period."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compute ratios"
+instruction = "Calculate each covenant metric such as leverage, DSCR, and tangible net worth from the reported figures."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Test thresholds"
+instruction = "Compare each computed ratio against the covenant threshold in the credit agreement and tag any breach or cushion."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Trace breaches"
+instruction = "For every flagged breach cite the source statement line and the governing covenant clause to support the alert."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route to officer"
+instruction = "Hand the covenant compliance package with breach alerts to the credit officer for sign-off."
+tools = ["spreadsheet"]
+gate = "review"

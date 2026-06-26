@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "territory & quota plan"
+consumers = ["sales_leadership", "revops"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Gather inputs"
+instruction = "Pull headcount, account lists, segmentation, and prior-period attainment from CRM and enrichment sources."
+tools = ["read_file", "zoominfo_read", "knowledge_search"]
+[[workflow]]
+name = "Map coverage"
+instruction = "Assess account density and white space by geography and segment to size balanced, coverable territories."
+tools = ["zoominfo_read", "web_search"]
+[[workflow]]
+name = "Model quotas"
+instruction = "Draft per-rep quota and capacity targets that reconcile bottom-up territory potential against the top-down revenue goal."
+[[workflow]]
+name = "Check fairness"
+instruction = "Verify no territory is over- or under-loaded and that total capacity covers the number without overcommitting rep ramp."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Present the territory and quota plan to sales leadership for review and approval before rollout."
+gate = "review"

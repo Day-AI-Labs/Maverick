@@ -22,6 +22,7 @@ behaves exactly as before.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -51,17 +52,25 @@ def _probe_regex():
     return _RX_REGEX
 
 
-def probe_features(text: str) -> dict[str, float]:
+def probe_features(text: str, *, ngram_buckets: int = 0,
+                   ngram_sizes: tuple[int, ...] = (3, 4, 5)) -> dict[str, float]:
     """Numeric features for a text, the model's input vector.
 
     Binary signals mirror the heuristic probe; ``non_ascii_ratio`` and
     ``log_length`` give the model continuous signal the heuristic discretizes.
-    Stable feature names are the model's contract."""
+    Stable feature names are the model's contract.
+
+    When ``ngram_buckets > 0`` the vector is ADDITIVELY extended with hashed
+    character n-gram features ``ng:<bucket>`` (TF-normalised), giving a model
+    lexical content the 7 hand-named signals can't carry. The hashing is
+    deterministic (blake2b, not the randomised built-in ``hash``) so train and
+    inference agree across processes. ``ngram_buckets = 0`` (the default) yields
+    exactly the original 7 features, so every existing model is unaffected."""
     if not text:
         return {}
     n = len(text)
     non_ascii = sum(1 for c in text if ord(c) > 127)
-    return {
+    feats = {
         "regex_hit": 1.0 if _probe_regex().search(text.lower()) else 0.0,
         "unicode_tag": 1.0 if _TAG_RE.search(text) else 0.0,
         "zero_width": 1.0 if _INVISIBLE_RE.search(text) else 0.0,
@@ -70,6 +79,26 @@ def probe_features(text: str) -> dict[str, float]:
         "non_ascii_ratio": non_ascii / max(n, 1),
         "log_length": math.log10(n + 1),
     }
+    if ngram_buckets > 0:
+        _add_ngram_features(feats, text.lower(), ngram_buckets, ngram_sizes)
+    return feats
+
+
+def _ngram_bucket(gram: str, buckets: int) -> int:
+    """Deterministic, process-stable hash of an n-gram into ``[0, buckets)``."""
+    digest = hashlib.blake2b(gram.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "big") % buckets
+
+
+def _add_ngram_features(feats: dict[str, float], text: str, buckets: int,
+                        sizes: tuple[int, ...]) -> None:
+    grams = [text[i:i + s] for s in sizes for i in range(len(text) - s + 1)]
+    if not grams:
+        return
+    inc = 1.0 / len(grams)  # TF-normalise so values stay bounded in [0, 1]
+    for g in grams:
+        key = f"ng:{_ngram_bucket(g, buckets)}"
+        feats[key] = feats.get(key, 0.0) + inc
 
 
 def _sigmoid(z: float) -> float:
@@ -98,9 +127,13 @@ class LinearProbeModel:
     bias: float = 0.0
     weights: dict[str, float] = None  # type: ignore[assignment]
     threshold: float = 0.5
+    # n-gram feature config; 0 = the original 7-feature contract (back-compat).
+    ngram_buckets: int = 0
+    ngram_sizes: tuple[int, ...] = (3, 4, 5)
 
     def score(self, text: str) -> float:
-        feats = probe_features(text)
+        feats = probe_features(text, ngram_buckets=self.ngram_buckets,
+                               ngram_sizes=self.ngram_sizes)
         z = float(self.bias)
         for name, w in (self.weights or {}).items():
             z += float(w) * feats.get(name, 0.0)
@@ -115,10 +148,13 @@ class LinearProbeModel:
             raise ValueError("probe model 'weights' must be an object")
         # Coerce + validate numerics up front so scoring can't raise later.
         clean = {str(k): float(v) for k, v in weights.items()}
+        sizes = data.get("ngram_sizes") or (3, 4, 5)
         return cls(
             bias=float(data.get("bias", 0.0)),
             weights=clean,
             threshold=float(data.get("threshold", 0.5)),
+            ngram_buckets=int(data.get("ngram_buckets", 0) or 0),
+            ngram_sizes=tuple(int(s) for s in sizes),
         )
 
 

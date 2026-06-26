@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Nexus threshold & filing calendar"
+consumers = ["tax_manager", "controller"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull sales data"
+instruction = "Query sales by jurisdiction for the period with revenue and transaction counts labeled by period and currency."
+tools = ["sql_query"]
+[[workflow]]
+name = "Test thresholds"
+instruction = "Compare each jurisdiction's activity against its economic and physical nexus thresholds and identify where nexus is triggered or approaching."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Tie to source"
+instruction = "Cite the source data and threshold rule behind every triggered jurisdiction and state assumptions and unknowns plainly."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build calendar"
+instruction = "Prepare the registration and filing-calendar table listing due dates and required actions per jurisdiction."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Tax review"
+instruction = "Route the nexus and filing calendar to the tax director to confirm before any registration or filing is made."
+gate = "review"

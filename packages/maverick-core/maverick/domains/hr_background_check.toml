@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "FCRA adverse-action packet"
+consumers = ["recruiting_manager", "hr_compliance"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull report"
+instruction = "Read the background-check report from the vendor and the role's screening criteria."
+tools = ["read_file"]
+[[workflow]]
+name = "Check timing"
+instruction = "Research ban-the-box timing and FCRA pre-adverse waiting-period rules for the candidate's jurisdiction."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Assess relevance"
+instruction = "Assess each flagged item for job-relevance without using protected-class data or its proxies."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft notices"
+instruction = "Draft the pre-adverse and adverse-action notices with the dispute window and copy of the report."
+tools = ["read_file"]
+[[workflow]]
+name = "Route decision"
+instruction = "Route the recommendation and notices to the human who makes the final adverse-action decision."
+gate = "approval"

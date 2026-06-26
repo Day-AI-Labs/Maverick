@@ -8,6 +8,8 @@ persisted, so local ``verify_chain`` still trusts the chain.
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 from maverick.audit import signing
 
@@ -16,6 +18,9 @@ from maverick.audit import signing
 def _temp_keys(tmp_path, monkeypatch):
     pytest.importorskip("cryptography")
     monkeypatch.setattr(signing, "KEY_DIR", tmp_path / "keys")
+    monkeypatch.setattr(
+        signing, "_INJECTED_KEYPAIR_CACHE", signing._INJECTED_KEYPAIR_UNREAD
+    )
     monkeypatch.delenv(signing._SIGNING_KEY_ENV, raising=False)
     yield
 
@@ -48,6 +53,17 @@ def test_injected_key_signs_without_writing_private_to_disk(monkeypatch):
     # key_id is the deterministic fingerprint of the public key.
     import hashlib
     assert key_id == hashlib.sha256(pub).hexdigest()[:16]
+
+
+def test_injected_key_is_removed_from_process_environment(monkeypatch):
+    key_hex, _ = _fresh_key_hex()
+    monkeypatch.setenv(signing._SIGNING_KEY_ENV, key_hex)
+
+    first = signing._load_or_create_keypair()
+    second = signing._load_or_create_keypair()
+
+    assert signing._SIGNING_KEY_ENV not in os.environ
+    assert second == first
 
 
 def test_injected_key_chain_verifies_via_marker(tmp_path, monkeypatch):
@@ -99,3 +115,57 @@ def test_decode_injected_key_rejects_wrong_length(monkeypatch):
     # A valid 32-byte hex round-trips.
     _, raw = _fresh_key_hex()
     assert signing._decode_injected_key(raw.hex()) == raw
+
+
+# ----- off-host signing enforcement + KMS-wrapped key source (council H5) -----
+
+def test_offhost_not_required_by_default(monkeypatch):
+    # No enterprise mode, no flag, no off-host key -> on-disk key is allowed.
+    monkeypatch.delenv("MAVERICK_AUDIT_REQUIRE_OFFHOST_KEY", raising=False)
+    monkeypatch.delenv(signing._SIGNING_KEY_ENV, raising=False)
+    monkeypatch.delenv(signing._KMS_WRAPPED_KEY_ENV, raising=False)
+    monkeypatch.setattr(signing, "require_offhost_signing", lambda: False)
+    priv, pub, _ = signing._load_or_create_keypair()
+    assert len(priv) == 32 and len(pub) == 32
+
+
+def test_offhost_required_refuses_on_disk_key(monkeypatch):
+    monkeypatch.setenv("MAVERICK_AUDIT_REQUIRE_OFFHOST_KEY", "1")
+    monkeypatch.delenv(signing._SIGNING_KEY_ENV, raising=False)
+    monkeypatch.delenv(signing._KMS_WRAPPED_KEY_ENV, raising=False)
+    with pytest.raises(RuntimeError, match="off-host audit signing is required"):
+        signing._load_or_create_keypair()
+
+
+def test_offhost_required_satisfied_by_injected_key(monkeypatch):
+    # An env-injected (KMS-sourced) key satisfies the requirement -- no raise.
+    monkeypatch.setenv("MAVERICK_AUDIT_REQUIRE_OFFHOST_KEY", "1")
+    key_hex, raw = _fresh_key_hex()
+    monkeypatch.setenv(signing._SIGNING_KEY_ENV, key_hex)
+    priv, pub, _ = signing._load_or_create_keypair()
+    assert priv == raw
+
+
+def test_kms_wrapped_key_source(monkeypatch):
+    # A KMS-wrapped blob unwraps (via the configured cloud KMS) into memory.
+    import base64
+    from unittest import mock
+    key32 = bytes(range(32))
+    monkeypatch.setenv(signing._KMS_WRAPPED_KEY_ENV, base64.b64encode(b"wrapped").decode())
+
+    class _FakeKEK:
+        def unwrap(self, wrapped, *, context=None):
+            assert context == b"maverick-audit-signing"
+            return key32
+
+    monkeypatch.setattr("maverick.config.load_config", lambda: {"kms": {"provider": "vault"}})
+    with mock.patch("maverick.kms_backends.build_cloud_kms", return_value=_FakeKEK()):
+        res = signing._kms_wrapped_keypair()
+    assert res is not None and res[0] == key32
+
+
+def test_require_offhost_env_overrides(monkeypatch):
+    monkeypatch.setenv("MAVERICK_AUDIT_REQUIRE_OFFHOST_KEY", "on")
+    assert signing.require_offhost_signing() is True
+    monkeypatch.setenv("MAVERICK_AUDIT_REQUIRE_OFFHOST_KEY", "off")
+    assert signing.require_offhost_signing() is False

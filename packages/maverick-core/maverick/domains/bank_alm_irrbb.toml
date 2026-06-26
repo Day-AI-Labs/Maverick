@@ -18,3 +18,28 @@ deliverable = "ALM / IRRBB sensitivity"
 consumers = ["treasurer", "risk_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull balance sheet"
+instruction = "Read current balance-sheet positions with contractual repricing and maturity terms from the core."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Apply behavior"
+instruction = "Layer deposit beta, decay, and non-maturity-deposit behavioral assumptions grounded in the bank's behavioral studies."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build gap schedule"
+instruction = "Construct the repricing-gap schedule by bucket from contractual and behavioral cash flows."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Run rate shocks"
+instruction = "Compute EVE and NII sensitivity across the prescribed rate-shock scenarios and reconcile to prior period."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Assemble ALCO pack"
+instruction = "Draft the IRRBB reporting pack with results, assumption disclosures, and limit breaches for ALCO."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Route to ALCO"
+instruction = "Hand the IRRBB pack to the treasurer and risk officer for ALCO review."
+gate = "review"

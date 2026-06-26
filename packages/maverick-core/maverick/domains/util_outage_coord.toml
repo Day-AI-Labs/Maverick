@@ -10,3 +10,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["util"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "outage status & restoration briefing"
+consumers = ["control_room_operator", "customer_comms_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read status"
+instruction = "Pull current OMS and SCADA outage status read-only and label each datum with its timestamp."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Correlate events"
+instruction = "Correlate related outage events to identify affected circuits and the likely scope."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Estimate restoration"
+instruction = "Ground a restoration estimate in the records, cite sources, and clearly mark it as an estimate not a commitment."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft comms"
+instruction = "Draft the crew, customer, and regulator communications conveying the outage scope and restoration estimate."
+[[workflow]]
+name = "Route to operator"
+instruction = "Hand the draft communications and estimate to the control-room operator for review before release."
+gate = "review"

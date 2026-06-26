@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Visa lifecycle case brief"
+consumers = ["immigration_counsel", "hr_business_partner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Open case"
+instruction = "Read the case file and worker data to confirm visa type, timeline, and global-mobility triggers."
+tools = ["read_file", "deel_read"]
+[[workflow]]
+name = "Check requirements"
+instruction = "Look up current requirements for the H-1B, L-1, O-1, PERM, or green-card stage in play."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Assess triggers"
+instruction = "Evaluate LCA public-access obligations and expat or shadow-payroll triggers for this assignment."
+[[workflow]]
+name = "Draft brief"
+instruction = "Draft the case brief with required filings, deadlines, and stated assumptions and unknowns."
+[[workflow]]
+name = "Route to counsel"
+instruction = "Send the brief to immigration counsel for legal sign-off before any filing."
+gate = "review"

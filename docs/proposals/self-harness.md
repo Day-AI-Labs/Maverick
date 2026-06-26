@@ -1,0 +1,96 @@
+# Self-Harness: a governed loop that learns a model-specific harness addendum
+
+**Status:** shipped (opt-in, OFF by default) · **Module:** `maverick.self_harness`
+· **Reference:** *Self-Harness: Harnesses That Improve Themselves* (arXiv 2606.09498)
+
+## Motivation
+
+Maverick already learns **behaviors** — skills and dream insights distilled from
+experience and recalled as prompt context. But the **harness itself** (the
+operating instructions a model runs under) was static and operator-owned: a
+model that keeps making the same class of mistake never adjusts how it is
+instructed.
+
+The Self-Harness paper shows that treating the harness as a *model-specific,
+learnable* artifact — mining a model's own failure traces, proposing minimal
+edits, and regression-validating them — is worth double-digit gains
+(+14–21pt pass-rate on Terminal-Bench-2.0 across MiniMax/Qwen/GLM, same models,
+harness-only change). The companion paper *Understanding the Challenges in
+Iterative Generative Optimization with LLMs* (arXiv 2603.23994) explains why so
+few systems do this safely: the make-or-break design choices are hidden, and an
+edit that overfits its own examples silently regresses unseen cases.
+
+## What ships
+
+A four-stage loop that **reuses Maverick's existing governance spine** rather
+than adding a new ungoverned optimizer:
+
+1. **MINE** — `mine_failures(reflexions, model_id=…)` clusters one model's
+   failure reflexions into recurring *weakness signatures*. Model-specific by
+   construction: a weakness mined for one model can never leak into another's
+   harness (the paper's key lever). A `model_id` was added to the reflexion
+   record to enable this; older lines load as `None` (backward compatible).
+2. **PROPOSE** — `propose_addendum(sig, propose_fn=…)` produces a single
+   *minimal* operating-guidance line targeting the signature. The LLM proposer
+   is an injected seam; a deterministic fallback templates a line so the loop
+   runs and is testable without a provider.
+3. **VALIDATE** — `validate_proposal(...)` runs the paper's acceptance test: the
+   edit must not regress **either** a held-in split (the mined cases) or a
+   **held-out** split (unseen cases — the overfitting guard), and must help at
+   least one. Scorers are injected; a live A/B needs a real model, exactly like
+   `learning_rollout`'s constraints.
+4. **GATE** — each validated proposal becomes a `self_improvement.Candidate` on
+   the `prompt` rung and goes through `consider()`. It therefore inherits the
+   evidence floor, the calibration-freeze interlock (no learning while the
+   verifier is drifting), capability non-escalation, the reversibility
+   requirement, and the signed learning audit. **Promotion requires
+   `[self_improvement] enable`** — self-harness proposes, the shared gate
+   decides.
+
+The accepted addendum is a small per-model block **recalled into the system
+prompt** at build time (`recall_addendum(model_id)`, wired into
+`Agent._build_system`), keyed on the agent's resolved model so a worker's lesson
+never bleeds into the orchestrator's. It is **never a mutation of the kernel
+templates** — it is a file entry, and removing it is the rollback handle. This
+keeps it inside the same "behavior recalled as context, snapshot + rollback"
+safety model as skills and insights.
+
+## Safety properties
+
+- **OFF by default** (`[self_harness] enable` / `MAVERICK_SELF_HARNESS=1`); when
+  off, `recall_addendum` returns `""` and the prompt is byte-for-byte unchanged.
+- **Trace-poisoning is closed (two layers).** The addendum is recalled into
+  every future run of a model across all channels/tenants, so an attacker who
+  could plant text in a failure trace could otherwise poison it. (1) `mine_failures`
+  only considers **unscoped** failures — no `channel`, no `user_id` — i.e.
+  operator-local runs, never remote-user-driven ones (mirrors dreaming's
+  unscoped-only guard). (2) Every proposed line — deterministic *or* from an LLM
+  proposer — passes through `_sanitize_line`: control chars stripped, all
+  whitespace collapsed to single spaces (no multi-line break-out), secrets
+  scrubbed, length bounded. A corrupt/tampered store with non-string values is
+  rejected by `load_addenda` (no literal `"None"` reaching a prompt).
+- **Two gates, not one:** self-harness only proposes; promotion needs the
+  self-improvement controller. A frozen verifier or a disabled controller leaves
+  the store untouched.
+- **No overfitting promotion:** the held-out split is mandatory; a pure trade is
+  rejected.
+- **Reversible + audited:** every applied line has a rollback handle and a signed
+  `LEARNING_UPDATE` audit row.
+- **Bounded:** an addendum is capped (`_MAX_LINES_PER_MODEL`, `_MAX_ADDENDUM_CHARS`)
+  so it can't bloat every prompt.
+
+## Operating it
+
+- `maverick self-harness [--model M] [--min-support N]` — read-only dry run:
+  shows the weaknesses and the lines it *would* propose, writes nothing.
+- Automatic operation: an operator/scheduler calls `run_self_harness(...)` with a
+  live held-in/held-out scorer (the A/B over the candidate prompt) and the
+  self-improvement controller engaged.
+
+## Addresses paper #2's "hidden design choices"
+
+The loop makes the previously-implicit choices explicit and tunable:
+*starting artifact* = the current per-model addendum; *editability scope* = a
+single appended guidance line on the `prompt` rung (never code/tools);
+*credit horizon* = the failure signature mined from traces; *batching* =
+`min_support` (the evidence floor) and the held-in/held-out split sizes.

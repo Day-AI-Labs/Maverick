@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "Ticket resolution & KB article"
+consumers = ["it_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Triage ticket"
+instruction = "Read the incoming ticket, classify it, set priority, and disclose that you are an AI assistant."
+tools = ["read_file"]
+[[workflow]]
+name = "Search knowledge"
+instruction = "Search the knowledge base and known errors for an existing fix or fulfillment procedure."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft resolution"
+instruction = "Draft the resolution steps or request fulfillment and flag sensitive cases for escalation."
+[[workflow]]
+name = "Update KB"
+instruction = "Draft or update the knowledge-base article capturing the resolution for reuse."
+[[workflow]]
+name = "Agent review"
+instruction = "Route the resolution and KB article to a human agent for sign-off before publishing."
+gate = "review"

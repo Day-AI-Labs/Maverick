@@ -45,6 +45,10 @@ KNOWN_SCHEMA: dict[str, set[str] | None] = {
         "max_tool_calls",
         "max_input_tokens",
         "max_output_tokens",
+        # Opt-in per-task-class self-tuning of max_dollars (self_tuning_budget.py
+        # reads [budget] self_tuning; self_healing.py recommends it). Without it
+        # here, a client enabling the documented knob got a false "unknown key".
+        "self_tuning",
     },
     "safety": {
         "profile",
@@ -76,7 +80,7 @@ KNOWN_SCHEMA: dict[str, set[str] | None] = {
     # and migrate.py already lists it; config-lint flagged the whole section as
     # unknown ("did you mean auth?"), telling a regulated client their flagship
     # signed-audit config looked like a typo (client-journey finding).
-    "audit": {"sign"},
+    "audit": {"sign", "worm"},
     "durable": {"enabled", "keep_last"},
     "persona": {"name", "style", "addendum"},
     # The dashboard reads more than the auth token: theme/density/allow_extension

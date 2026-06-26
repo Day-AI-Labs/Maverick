@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "sourced candidate pipeline"
+consumers = ["recruiter", "hiring_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Read req"
+instruction = "Read the open requisition and intake notes from Greenhouse or Lever to confirm the role's must-haves."
+tools = ["greenhouse_read", "lever_read", "read_file"]
+[[workflow]]
+name = "Build search"
+instruction = "Build sourcing search criteria from job-relevant skills only, excluding any protected-class targeting or proxies."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Source candidates"
+instruction = "Identify and shortlist candidates across the ATS and public profiles against the defined criteria."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft outreach"
+instruction = "Draft the pipeline summary and personalized outreach messages for each shortlisted candidate."
+[[workflow]]
+name = "Gate outreach"
+instruction = "Route the candidate pipeline and outreach drafts to the recruiter for approval before any contact is sent."
+gate = "approval"

@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "API contract & versioning proposal"
+consumers = ["engineering_lead", "platform_architect"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather requirements"
+instruction = "Read the feature spec and existing contracts to establish the resources, operations, and consumers the new API must serve."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check conventions"
+instruction = "Confirm naming, versioning, and error conventions against company API standards and current OpenAPI/GraphQL/gRPC best practice."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft contract"
+instruction = "Draft the OpenAPI 3.1, GraphQL, or gRPC schema with explicit versioning and backward-compatibility notes."
+[[workflow]]
+name = "Plan contract tests"
+instruction = "Specify the Pact contract tests and flag any breaking change that requires a consumer migration path."
+[[workflow]]
+name = "Submit for decision"
+instruction = "Hand the contract proposal and compatibility analysis to the engineering lead to approve before implementation."
+gate = "review"

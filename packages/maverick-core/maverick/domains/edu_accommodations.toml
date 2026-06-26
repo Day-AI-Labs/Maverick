@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "accommodation plan letter"
+consumers = ["disability_services_director", "registrar"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather documentation"
+instruction = "Read the student's request and supporting clinical or eligibility documentation for the accommodation."
+tools = ["read_file"]
+[[workflow]]
+name = "Check policy"
+instruction = "Search institutional policy and FERPA-aligned precedent to confirm which accommodations are supported and what evidence each requires."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Map accommodations"
+instruction = "Match the documented need to specific approved accommodations and note any that lack sufficient documentation."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Confidentiality check"
+instruction = "Verify the draft discloses only the minimum information needed and never the underlying diagnosis to instructors."
+[[workflow]]
+name = "Director sign-off"
+instruction = "Route the drafted accommodation plan to the disability services director for approval before it is shared."
+gate = "review"

@@ -10,3 +10,35 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "APQP phase gate readiness package"
+consumers = ["program_manager", "quality_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull deliverable list"
+instruction = "Retrieve the APQP element checklist, gate dates, and current document revisions for the program from the knowledge base."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Check status"
+instruction = "Query each APQP deliverable's completion status and owner against the master timing plan."
+tools = ["sql_query"]
+[[workflow]]
+name = "Flag gate risks"
+instruction = "Identify deliverables that are late, missing a current revision, or blocking the next phase gate."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify revisions"
+instruction = "Confirm every cited document carries the correct controlled revision and that no quality hold is open against it."
+tools = ["read_file"]
+[[workflow]]
+name = "Compile readiness"
+instruction = "Assemble the gate readiness summary listing complete, at-risk, and open items with owners and due dates."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to gate"
+instruction = "Submit the readiness package to the program and quality managers for phase gate sign-off."
+gate = "review"

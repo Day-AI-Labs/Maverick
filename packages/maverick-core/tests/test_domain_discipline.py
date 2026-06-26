@@ -154,7 +154,7 @@ class TestLintProfile:
         errors, warnings = lint_profile(DomainProfile(
             name="finance_sox", description="SOX control testing",
             persona="x" * 250, allow_tools=["read_file"],
-            deny_tools=["shell"], max_risk="low",
+            deny_tools=["shell", "write_file"], max_risk="low",
             knowledge_sources=["finance"],
         ))
         assert errors == [] and warnings == []

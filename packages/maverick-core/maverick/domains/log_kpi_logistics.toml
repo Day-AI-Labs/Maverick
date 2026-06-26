@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "logistics KPI scorecard"
+consumers = ["logistics_director", "operations_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Confirm definitions"
+instruction = "Retrieve the agreed OTIF, cost-per-unit, and damage-rate formulas and measurement windows via knowledge_search."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Pull source data"
+instruction = "Query shipment, cost, and claims tables for the reporting period needed to compute each metric."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute metrics"
+instruction = "Calculate OTIF, cost per unit, and damage rate in the spreadsheet and reconcile totals against source counts."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Explain variances"
+instruction = "Annotate each metric with its stated definition, period-over-period movement, and root-cause notes."
+[[workflow]]
+name = "Route scorecard"
+instruction = "Send the KPI scorecard with definitions to the logistics director for review."
+gate = "review"

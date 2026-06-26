@@ -32,10 +32,10 @@ def _max_scan_chars() -> int:
     invisible-strip/space-sub, casefold, homoglyph-fold, shell-deobfuscate) and
     runs ~40 regexes over each, so cost is linear in input length. The MCP HTTP
     transport accepts a 2 MB body and feeds it straight in: ~2.7s of CPU per
-    scan, a linear-amplification DoS at the default 600 req/min. Cap the scanned
-    prefix so worst-case cost is bounded. Default 256 KB is far above any real
-    prompt/command/tool-output and above the latency gate's 200 KB probe, so
-    detection on realistic payloads is unchanged; operators can override.
+    scan, a linear-amplification DoS at the default 600 req/min. Treat inputs
+    above this operator-tunable ceiling as unsafe instead of scanning only a
+    prefix; otherwise malicious content in an unscanned suffix could bypass the
+    fallback shield while still reaching downstream agents.
     """
     raw = os.environ.get("MAVERICK_SHIELD_MAX_SCAN_CHARS")
     if raw:
@@ -429,11 +429,13 @@ def scan(
     threshold_idx = _threshold_to_min_severity(block_threshold)
     # Bound the scanned length first: candidate generation + ~40 regexes are
     # linear in input size, so an oversized body (the MCP transport allows 2 MB)
-    # is a linear-amplification CPU DoS. Truncate to a generous, operator-tunable
-    # ceiling before the expensive de-obfuscation.
+    # is a linear-amplification CPU DoS. Do not scan a prefix and allow the
+    # original oversized text through: that turns the cap into a deterministic
+    # bypass for malicious suffixes. Oversized inputs are conservatively blocked
+    # before the expensive de-obfuscation.
     max_chars = _max_scan_chars()
     if len(text) > max_chars:
-        text = text[:max_chars]
+        return True, "critical", ["input_too_large"]
     # Scan the original text AND its de-obfuscated / base64-decoded variants,
     # so an encoded or quoted payload still trips the rule it was hiding from.
     candidates = _candidates(text)

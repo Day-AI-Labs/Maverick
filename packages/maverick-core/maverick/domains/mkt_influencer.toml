@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "partner & influencer vetting dossier"
+consumers = ["partnerships_lead", "brand_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define criteria"
+instruction = "Read the campaign brief and audience profile to set the fit, reach, and risk criteria for vetting."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Profile candidate"
+instruction = "Research each candidate's content, audience, and past brand work across public channels."
+tools = ["web_search"]
+[[workflow]]
+name = "Test authenticity"
+instruction = "Examine engagement and follower patterns for signs of inauthentic or bought reach and record the evidence."
+tools = ["web_search", "spreadsheet"]
+[[workflow]]
+name = "Screen risk"
+instruction = "Check each candidate for brand-safety, conflict, or regulatory concerns and note unknowns plainly."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Route dossier"
+instruction = "Hand the scored vetting dossier to the partnerships lead and brand manager for selection sign-off."
+gate = "review"

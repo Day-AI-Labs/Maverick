@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "data contract & change notice"
+consumers = ["data_producer", "downstream_consumer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Locate contract"
+instruction = "Read the existing producer-consumer contract and the current schema for the affected dataset."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Diff schema"
+instruction = "Query the live table and compare its columns, types, and nullability against the contract to detect drift."
+tools = ["sql_query"]
+[[workflow]]
+name = "Assess breakage"
+instruction = "Determine whether each change is additive or breaking and identify every downstream consumer affected."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Draft notice"
+instruction = "Draft the updated contract and a change notice stating the change, impact, and effective date."
+[[workflow]]
+name = "Stakeholder review"
+instruction = "Send the draft contract and change notice to producer and consumer owners for sign-off before it takes effect."
+gate = "review"

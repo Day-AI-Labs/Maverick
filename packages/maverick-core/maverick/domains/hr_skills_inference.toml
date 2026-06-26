@@ -12,3 +12,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "internal-mobility match & skill-gap report"
+consumers = ["talent_mobility_lead", "hiring_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read history"
+instruction = "Read work history, project records, and the open opportunity or gig requirements from HR records."
+tools = ["read_file"]
+[[workflow]]
+name = "Infer skills"
+instruction = "Infer skills from the work history and map them to the managed taxonomy, refusing any emotion, personality, or behavioral inference."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Surface matches"
+instruction = "Surface candidate-to-opportunity matches and per-person skill gaps without using protected-class data or proxies as inputs."
+tools = ["web_search"]
+[[workflow]]
+name = "Recommend only"
+instruction = "Compile a recommendation report that never auto-allocates or screens anyone out, leaving every decision to a human."
+[[workflow]]
+name = "Route to lead"
+instruction = "Route the match and skill-gap report to the talent-mobility lead and hiring manager for action."
+gate = "review"

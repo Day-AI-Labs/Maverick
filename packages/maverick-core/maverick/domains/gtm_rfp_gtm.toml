@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gtm"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "completed RFP response package"
+consumers = ["account_executive", "proposal_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Parse RFP"
+instruction = "Read the inbound RFP and extract every question, requirement, and submission constraint into a tracker."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Match answers"
+instruction = "Map each RFP question to the approved answer library and cite the source for every reused response."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Mark questions with no approved answer as open and state the assumption rather than promising any feature, date, or price."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Assemble draft"
+instruction = "Assemble the matched answers into the RFP template in the buyer's required format and order."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to AE"
+instruction = "Hand the assembled response to the account executive for review and gap fills before submission."
+gate = "review"

@@ -17,3 +17,24 @@ deliverable = "FX exposure & hedge proposals"
 consumers = ["treasurer", "fpa_analyst"]
 cadence = "weekly"
 gate = "review"
+
+[[workflow]]
+name = "Pull positions"
+instruction = "Query monetary positions by entity and currency from the system of record for the period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Tie to source"
+instruction = "Reconcile each exposure figure to its source document and label period and currency."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Net by entity"
+instruction = "Aggregate gross positions into net currency exposure per entity in the tracker."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft hedge proposals"
+instruction = "Propose indicative hedges against the net exposures, stating assumptions and unknowns plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Treasurer review"
+instruction = "Hand the exposure table and hedge proposals to the treasurer for review."
+gate = "review"

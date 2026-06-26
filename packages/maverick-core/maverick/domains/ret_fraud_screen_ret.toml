@@ -10,3 +10,30 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "fraud screening case file"
+consumers = ["fraud_reviewer", "risk_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull order"
+instruction = "Read the flagged order's details, payment, shipping, and account history for the screening request."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Load fraud rules"
+instruction = "Retrieve the company fraud policy and signal thresholds to know which indicators carry weight."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Gather signals"
+instruction = "Assemble velocity, address-mismatch, and device signals against the order and check external risk indicators."
+tools = ["spreadsheet", "web_search"]
+[[workflow]]
+name = "Document case"
+instruction = "Summarize each signal with its source and a fraud-likelihood read, citing the policy rule it maps to."
+[[workflow]]
+name = "Route to reviewer"
+instruction = "Hand the documented case file to the fraud reviewer for the approve, decline, or hold decision."
+gate = "review"

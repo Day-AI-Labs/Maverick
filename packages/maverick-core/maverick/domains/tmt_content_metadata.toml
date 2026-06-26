@@ -9,3 +9,31 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["tmt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "normalized metadata draft package"
+consumers = ["content_editor", "taxonomy_owner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather assets"
+instruction = "Read the source content records and pull the governing taxonomy and style rules from the knowledge base."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Query records"
+instruction = "Query the metadata store for the current field values and related records that need normalization."
+tools = ["sql_query"]
+[[workflow]]
+name = "Normalize draft"
+instruction = "Map each field to the controlled taxonomy and style rules and assemble the normalized metadata draft."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag every missing required field, ambiguous value, and assumption with a citation to the source used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Editorial review"
+instruction = "Route the cited metadata draft to the content editor to review and publish."
+gate = "review"

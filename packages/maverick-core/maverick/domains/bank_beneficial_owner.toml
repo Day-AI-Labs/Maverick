@@ -17,3 +17,24 @@ deliverable = "Beneficial-ownership register"
 consumers = ["bsa_officer", "compliance_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Pull register"
+instruction = "Read the current beneficial-ownership register and the legal-entity customer list from the core."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Check requirements"
+instruction = "Confirm the required ownership and control fields and refresh triggers against FinCEN beneficial-ownership rules."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Find gaps"
+instruction = "Flag entities with missing, expired, or stale beneficial-ownership certifications or trigger events requiring re-collection."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Compile register"
+instruction = "Assemble the updated register with each entity's owners, control persons, certification date, and citation."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Route to BSA"
+instruction = "Hand the register and the gap list to the BSA and compliance officers for disposition."
+gate = "review"

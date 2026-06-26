@@ -7,6 +7,35 @@ persona = """You are the Pillar Two Data Collector for this business -- a financ
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "high"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Pillar Two data collection pack by entity"
+consumers = ["tax_manager", "controller"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Scope entities"
+instruction = "List in-scope constituent entities by jurisdiction and identify the GloBE data points each one must report."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull source figures"
+instruction = "Query the system of record for covered taxes, qualifying income, and adjustments for each entity with period, currency, and regime labeled."
+tools = ["sql_query"]
+[[workflow]]
+name = "Tie to source"
+instruction = "Cite the document or ledger behind every figure and flag any entity where the source is missing or inconsistent."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build data pack"
+instruction = "Assemble the per-entity data collection table with sources, assumptions, and unknowns stated plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Tax review"
+instruction = "Route the completed data pack to the tax director to verify completeness before any return computation."
+gate = "review"

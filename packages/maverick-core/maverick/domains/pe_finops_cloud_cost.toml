@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "cloud cost optimization & showback package"
+consumers = ["engineering_manager", "finance_partner", "platform_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull spend"
+instruction = "Read the billing exports, Kubernetes usage, and tagging docs for the period to build the unit-cost baseline."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Find waste"
+instruction = "Identify rightsizing, idle, and commitment-coverage gaps and quantify the dollar savings of each."
+[[workflow]]
+name = "Size commitments"
+instruction = "Model reserved-instance and savings-plan coverage against forecast usage and check pricing assumptions against current vendor rates."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Build showback"
+instruction = "Allocate spend per team or service into showback/chargeback views with anomalies flagged."
+[[workflow]]
+name = "Package for review"
+instruction = "Assemble the savings recommendations and showback into a package for engineering and finance to approve the IaC change."
+gate = "review"

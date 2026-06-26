@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "BAS lodgment worksheet"
+consumers = ["tax_manager", "controller"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull GST ledger"
+instruction = "Query the GST control accounts and tax codes for the BAS period from the ledger system of record."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Reconcile to ledger"
+instruction = "Reconcile GST collected and paid to the general ledger balances and tie every figure to its period, currency, and regime."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Verify policy"
+instruction = "Confirm GST treatment, input-credit eligibility, and BAS field mappings against company tax policy via knowledge_search."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag variances"
+instruction = "Flag unreconciled differences, missing tax codes, and GST-free or input-taxed classification errors rather than forcing the BAS to balance."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand to lodger"
+instruction = "Route the reconciled BAS worksheet to the tax manager to review and lodge with the ATO."
+gate = "review"

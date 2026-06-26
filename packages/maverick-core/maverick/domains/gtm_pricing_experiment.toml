@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "pricing experiment design & rollout plan"
+consumers = ["deal_desk", "pricing_lead", "revops_director"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame hypothesis"
+instruction = "Define the pricing or packaging hypothesis and the segments, metrics, and success criteria it must move."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather baseline"
+instruction = "Pull current price points, willingness-to-pay signals, and competitor benchmarks to ground the experiment in evidence."
+tools = ["read_file", "web_search", "knowledge_search"]
+[[workflow]]
+name = "Model elasticity"
+instruction = "Model price elasticity and revenue/conversion impact across the candidate price tiers and packaging splits."
+[[workflow]]
+name = "Draft guardrails"
+instruction = "Design the test variants, exposure, and the guardrails that auto-halt the experiment on margin, churn, or consent breach."
+[[workflow]]
+name = "Route to deal-desk"
+instruction = "Hand the experiment design and rollout plan to deal-desk and a human owner who commits any live price change."
+gate = "review"

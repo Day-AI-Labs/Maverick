@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["ops"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "feasible master schedule with capacity check"
+consumers = ["production_planner", "operations_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Load schedule"
+instruction = "Read the current master schedule, demand, and demonstrated-capacity data via knowledge_search and SQL and cite the sources used."
+tools = ["read_file", "knowledge_search", "sql_query"]
+[[workflow]]
+name = "Model capacity"
+instruction = "Compare scheduled load against demonstrated capacity by work center to find overloaded periods."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Resolve overloads"
+instruction = "Draft schedule changes that restore feasibility while never bypassing safety interlocks or quality holds."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify traceability"
+instruction = "Confirm units, revisions, and traceability identifiers travel with every changed record and state remaining assumptions."
+[[workflow]]
+name = "Route to planner"
+instruction = "Submit the feasible master schedule to the production planner for sign-off."
+gate = "review"

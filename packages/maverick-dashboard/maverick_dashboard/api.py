@@ -84,12 +84,40 @@ from .auth import (
     execution_user_id_from_request,
     goal_owner_filter,
     is_dashboard_admin,
+    require_global_permission,
     require_permission,
 )
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
+
+# Shared-store channel for Idempotency-Key dedup on goal creation (see
+# create_goal). Distinct from the channel/webhook idempotency namespaces.
+_IDEMPOTENCY_CHANNEL = "idempotency:api:goals"
+
+
+def _shared_halt_backend() -> bool:
+    """Whether the cluster-wide (shared-store) halt is in play. Only on a shared
+    backend (Postgres); on single-host SQLite the local HALT file is the whole
+    mechanism and the killswitch never consults the shared row, so the dashboard
+    leaves it untouched (keeps single-host behavior unchanged)."""
+    try:
+        from maverick.world_model_backends import is_postgres_configured
+        return bool(is_postgres_configured())
+    except Exception:
+        return False
+
+
+def _require_halt_permission(request: Request) -> None:
+    """Gate dashboard halt toggles at the correct blast radius.
+
+    In local/SQLite mode the halt is process-local and remains an operator action.
+    In shared Postgres mode the halt row is fleet-wide and untenanted, so toggling
+    it is a global control-plane action reserved for dashboard admins.
+    """
+    require_permission(request, "admin" if _shared_halt_backend() else "operate")
+
 
 _PERF_SLA_CACHE_TTL_SECONDS = 60.0
 _PERF_SLA_LOCK = asyncio.Lock()
@@ -147,14 +175,48 @@ def _get_tenant_or_404(tenant_id: str):
 
 @router.get("/admin/tenants", response_model=list[TenantOut])
 async def list_tenants(request: Request) -> list[TenantOut]:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick.tenant import registry as tenant_registry
     return [_to_tenant_out(r) for r in tenant_registry.list_tenants()]
 
 
+@router.get("/workforce/posture")
+async def workforce_posture(request: Request) -> dict:
+    """The workforce autonomy dial: fleet posture + graduation candidates.
+
+    Read-only surface for the dashboard -- whether per-agent autonomy levels are
+    on, the distribution of baseline authority rungs across the roster, how many
+    hires are still onboarding, and which have earned graduation from a clean
+    approval record (advisory; the client lifts onboarding to act on it).
+    """
+    require_permission(request, "view")
+    from maverick.agent_autonomy import graduation_candidates, levels_enabled
+    from maverick.domain_audit import audit_roster, summarize
+    s = summarize(audit_roster())
+    out: dict = {
+        "levels_enabled": levels_enabled(),
+        "autonomy_posture": s.get("autonomy_posture", {}),
+        "packs_onboarding": s.get("packs_onboarding", 0),
+        "graduation_candidates": [],
+    }
+    try:
+        from maverick.domain import available_domains
+        from maverick.world_model import DEFAULT_DB, WorldModel
+        wm = WorldModel(DEFAULT_DB)
+        cands = graduation_candidates(wm.list_approvals(limit=5000), sorted(available_domains()))
+        out["graduation_candidates"] = [
+            {"name": c.name, "sample": c.sample, "approve_rate": c.approve_rate,
+             "confidence": c.confidence, "reason": c.reason}
+            for c in cands
+        ]
+    except Exception:  # pragma: no cover -- no DB / empty install -> empty list
+        pass
+    return out
+
+
 @router.post("/admin/tenants", response_model=TenantOut, status_code=201)
 async def create_tenant(request: Request, body: TenantCreateIn) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick.tenant import registry as tenant_registry
     try:
         rec = tenant_registry.create_tenant(
@@ -169,13 +231,13 @@ async def create_tenant(request: Request, body: TenantCreateIn) -> TenantOut:
 
 @router.get("/admin/tenants/{tenant_id}", response_model=TenantOut)
 async def get_tenant(request: Request, tenant_id: str) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     return _to_tenant_out(_get_tenant_or_404(tenant_id))
 
 
 @router.post("/admin/tenants/{tenant_id}/suspend", response_model=TenantOut)
 async def suspend_tenant(request: Request, tenant_id: str) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.suspend_tenant(tenant_id))
@@ -183,7 +245,7 @@ async def suspend_tenant(request: Request, tenant_id: str) -> TenantOut:
 
 @router.post("/admin/tenants/{tenant_id}/resume", response_model=TenantOut)
 async def resume_tenant(request: Request, tenant_id: str) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.resume_tenant(tenant_id))
@@ -193,7 +255,7 @@ async def resume_tenant(request: Request, tenant_id: str) -> TenantOut:
 async def set_tenant_plan(
     request: Request, tenant_id: str, body: TenantPlanIn,
 ) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.set_plan(tenant_id, body.plan))
@@ -203,7 +265,7 @@ async def set_tenant_plan(
 async def set_tenant_quota(
     request: Request, tenant_id: str, body: TenantQuotaIn,
 ) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(
@@ -215,7 +277,7 @@ async def set_tenant_quota(
 async def delete_tenant(
     request: Request, tenant_id: str, purge: bool = False,
 ) -> Response:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick.tenant import registry as tenant_registry
     _get_tenant_or_404(tenant_id)
     tenant_registry.delete_tenant(tenant_id, purge=purge)
@@ -226,9 +288,31 @@ async def delete_tenant(
 # memberships override the global role for that tenant only (bootstrap admins
 # stay globally admin). Managed admin-only.
 
+def _reject_tenant_role_assignment_under_per_user_tenancy() -> None:
+    """Per-tenant RBAC keys on the request's active tenant, but per-user tenancy
+    (``MAVERICK_TENANT_BY_USER``) force-pins every request to the caller's own
+    isolated tenant (``api:<principal>``) -- so a role assigned to any named
+    tenant can never be the active tenant and would be stored but DEAD. Reject
+    the mutation so the silent no-op becomes an explicit error instead of a
+    footgun (an admin thinking they scoped a user when they did not). Use the
+    global per-user role assignment (``POST /users/set``) in that mode.
+
+    Deletions remain allowed: stale roles for generated ``api:<principal>``
+    tenants can still be active under the read path and must be revocable.
+    """
+    from maverick.paths import tenant_by_user_enabled
+    if tenant_by_user_enabled():
+        raise HTTPException(
+            status_code=409,
+            detail="per-tenant roles do not apply under per-user tenancy "
+                   "(MAVERICK_TENANT_BY_USER): each user is isolated in their own "
+                   "tenant. Assign a global role via POST /users/set instead.",
+        )
+
+
 @router.get("/admin/tenants/{tenant_id}/roles", response_model=dict[str, str])
 async def list_tenant_roles(request: Request, tenant_id: str) -> dict[str, str]:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     return rbac.list_tenant_roles(tenant_id)
@@ -238,7 +322,8 @@ async def list_tenant_roles(request: Request, tenant_id: str) -> dict[str, str]:
 async def set_tenant_role(
     request: Request, tenant_id: str, principal: str, body: TenantRoleIn,
 ) -> Response:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
+    _reject_tenant_role_assignment_under_per_user_tenancy()
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     rbac.set_tenant_role(tenant_id, principal, body.role)
@@ -249,7 +334,7 @@ async def set_tenant_role(
 async def remove_tenant_role(
     request: Request, tenant_id: str, principal: str,
 ) -> Response:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     rbac.remove_tenant_role(tenant_id, principal)
@@ -287,7 +372,33 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
     w = _world()
+    # Idempotency-Key (optional, RFC-style): a client whose POST times out at the
+    # LB and retries must not double-create / double-bill a paid run -- and on a
+    # multi-replica deployment the retry can land on a different replica, so the
+    # dedup must be in the shared store (reusing the backend-agnostic
+    # mark/lookup_processed_message primitive). The key is scoped to the caller so
+    # it can't collide across principals. A replay returns the ORIGINAL goal and
+    # dispatches no second run.
+    idem_key = (request.headers.get("Idempotency-Key") or "").strip()
+    idem_ext = ""
+    if idem_key:
+        if len(idem_key) > 255:
+            raise HTTPException(status_code=400, detail="Idempotency-Key too long (max 255)")
+        idem_ext = f"{caller_principal(request) or ''}:{idem_key}"
+        prior = w.lookup_processed_message(_IDEMPOTENCY_CHANNEL, idem_ext)
+        if prior is not None:
+            g0 = w.get_goal(prior)
+            if g0 is not None:
+                return _to_goal_out(g0)  # replay: original goal, no new run
     goal_id = w.create_goal(title[:200], description, owner=caller_principal(request) or "")
+    if idem_key and not w.mark_message_processed(
+        _IDEMPOTENCY_CHANNEL, idem_ext, goal_id=goal_id
+    ):
+        # Lost a concurrent race on the same key: return the winner's goal and do
+        # NOT dispatch a run for this (now-orphaned, never-run) goal row.
+        prior = w.lookup_processed_message(_IDEMPOTENCY_CHANNEL, idem_ext)
+        g0 = w.get_goal(prior) if prior is not None else None
+        return _to_goal_out(g0 or w.get_goal(goal_id))
     from maverick.runner import run_goal_in_thread
     # Enforce server-side execution caps even when callers request larger values.
     max_dollars = min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
@@ -517,6 +628,7 @@ async def upload_attachment(
     `list_attachments` tool exposes the uploaded set, and image
     attachments are auto-embedded as vision blocks on the first message.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -1118,6 +1230,20 @@ async def halt_status() -> dict:
             out["armed_at"] = p.stat().st_mtime
         except OSError:
             pass
+    # Reflect the cluster-wide halt too: on a shared backend it may be armed by
+    # another replica with no local file here. Postgres only; best-effort.
+    shared = None
+    if _shared_halt_backend():
+        try:
+            shared = _world().active_halt()
+        except Exception:
+            shared = None
+    if shared:
+        out["active"] = True
+        out["cluster_halt"] = True
+        out["reason"] = out["reason"] or (shared.get("reason") or None)
+        out["armed_at"] = out["armed_at"] or shared.get("armed_at")
+        out["armed_by"] = shared.get("armed_by") or None
     return out
 
 
@@ -1128,20 +1254,33 @@ async def halt_set(request: Request, payload: HaltIn) -> None:
     Honoured by every agent at the next tool-call boundary. Use the
     DELETE endpoint or ``rm ~/.maverick/HALT`` to clear.
     """
-    require_permission(request, "operate")
+    _require_halt_permission(request)
     from maverick.killswitch import _halt_file_path
+    reason = payload.reason or "manual via dashboard"
     p = _halt_file_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text((payload.reason or "manual via dashboard") + "\n")
+        p.write_text(reason + "\n")
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"cannot write halt file: {e}") from e
+    # Also arm the cluster-wide halt in the shared store so the stop propagates
+    # to every replica (the file only halts this one). Only on a shared backend
+    # (Postgres): on single-host SQLite the file halt is the whole mechanism and
+    # the killswitch doesn't consult the shared row. Best-effort -- a shared-store
+    # error must not fail the local arm, which already took effect above.
+    if _shared_halt_backend():
+        try:
+            _world().arm_halt(reason, source="dashboard",
+                              armed_by=caller_principal(request) or "")
+        except Exception:
+            log.warning("cluster-wide halt arm failed (local file halt still set)",
+                        exc_info=True)
 
 
 @router.delete("/halt", status_code=204)
 async def halt_clear(request: Request) -> None:
     """Clear the killswitch (delete ~/.maverick/HALT)."""
-    require_permission(request, "operate")
+    _require_halt_permission(request)
     from maverick.killswitch import _halt_file_path, clear
     p = _halt_file_path()
     if p.exists():
@@ -1150,6 +1289,13 @@ async def halt_clear(request: Request) -> None:
         except OSError as e:
             raise HTTPException(status_code=500, detail=f"cannot remove halt file: {e}") from e
     clear()
+    # Clear the cluster-wide halt too (Postgres only; see halt_set). Best-effort
+    # so a shared-store error doesn't block clearing the local halt.
+    if _shared_halt_backend():
+        try:
+            _world().disarm_halt()
+        except Exception:
+            log.warning("cluster-wide halt clear failed", exc_info=True)
 
 
 @router.post("/goals/{goal_id}/cancel", status_code=204)
@@ -1569,6 +1715,48 @@ async def delete_schedule(request: Request, job_id: int) -> dict:
 # it runs only an operator-registered template, never arbitrary text.
 
 _WEBHOOK_RUN_PATH = "/webhook/run"
+_IMPORT_MAX_DEFINITIONS = 25
+_IMPORT_MAX_DEFINITION_BYTES = 64_000
+_IMPORT_MAX_TOTAL_DEFINITION_BYTES = 512_000
+_IMPORT_MAX_RENDERED_BODY_CHARS = 16_000
+
+
+def _definition_size(raw: dict) -> int:
+    return len(json.dumps(raw, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def _bounded_import_definitions(raws: list[dict]) -> list[dict]:
+    if len(raws) > _IMPORT_MAX_DEFINITIONS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"too many import definitions (max {_IMPORT_MAX_DEFINITIONS})",
+        )
+    total = 0
+    for raw in raws:
+        size = _definition_size(raw)
+        if size > _IMPORT_MAX_DEFINITION_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=("import definition is too large "
+                        f"(max {_IMPORT_MAX_DEFINITION_BYTES} bytes)"),
+            )
+        total += size
+        if total > _IMPORT_MAX_TOTAL_DEFINITION_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=("import definitions are too large "
+                        f"(max {_IMPORT_MAX_TOTAL_DEFINITION_BYTES} bytes total)"),
+            )
+    return raws
+
+
+def _ensure_import_body_size(body: str) -> None:
+    if len(body) > _IMPORT_MAX_RENDERED_BODY_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=("rendered import template is too large "
+                    f"(max {_IMPORT_MAX_RENDERED_BODY_CHARS} characters)"),
+        )
 
 
 def _require_triggers() -> None:
@@ -1676,12 +1864,17 @@ async def import_run_endpoint(request: Request, payload: ImportRunIn) -> ImportR
 
     # Definitions from the request (offline/connect) or a live fetch (env creds).
     if payload.definitions is not None:
-        raws = [d for d in payload.definitions if isinstance(d, dict)]
+        raws = _bounded_import_definitions([
+            d for d in payload.definitions if isinstance(d, dict)
+        ])
     else:
         try:
-            raws = await run_in_threadpool(get_importer(payload.source).fetch)
+            fetched = await run_in_threadpool(get_importer(payload.source).fetch)
         except ImporterError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
+        raws = _bounded_import_definitions([
+            d for d in fetched if isinstance(d, dict)
+        ])
 
     automations = translate_all(payload.source, raws)
     if not automations:
@@ -1698,9 +1891,22 @@ async def import_run_endpoint(request: Request, payload: ImportRunIn) -> ImportR
     from maverick.config import get_features
     triggers_on = get_features().get("triggers", True)
     from maverick_dashboard import triggers_store
+    owner = caller_principal(request) or ""
+    user_id = execution_user_id_from_request(request)
+    channel = "api" if user_id else None
+
     results: list[dict] = []
     for a in automations:
-        res = materialize(a, save=not payload.dry_run, queue=queue)
+        _, body = a.render()
+        _ensure_import_body_size(body)
+        res = materialize(
+            a,
+            save=not payload.dry_run,
+            queue=queue,
+            owner=owner,
+            channel=channel,
+            user_id=user_id,
+        )
         webhook_trigger = None
         # Wire the inbound webhook trigger when asked and the automation is
         # webhook-triggered (the one step the CLI can't do: triggers_store is
@@ -2136,24 +2342,54 @@ def _audit_approval_decision(approval_id: int, status: str, decided_by: str) -> 
         pass
 
 
+def _record_vote_or_raise(world, approval_id: int, status: str, who: str) -> None:
+    """Apply one approver's vote, mapping rejection to the right HTTP error.
+
+    Under N-of-M dual control a vote can be refused for segregation-of-duties
+    reasons (the requester can't self-approve, or an approver identity is needed)
+    -- distinguish that (403) from an unknown/already-decided approval (404)."""
+    if world.decide_approval(approval_id, status, decided_by=who):
+        return
+    st = world.approval_state(approval_id)
+    if st is None or st.get("status") != "pending":
+        raise HTTPException(status_code=404, detail="no such pending approval")
+    raise HTTPException(
+        status_code=403,
+        detail="vote not accepted: the requester can't approve their own request "
+               "(segregation of duties), or an approver identity is required for "
+               "multi-party approval",
+    )
+
+
 @router.post("/approvals/{approval_id}/approve", status_code=204)
 async def approve_approval(request: Request, approval_id: int) -> None:
-    """Approve a parked action; the polling consent path then proceeds."""
+    """Record an approval vote; once the required quorum of distinct approvers is
+    met the polling consent path proceeds (N-of-M dual control)."""
     require_permission(request, "operate")
     who = _supervisor(request)
-    if not _world().decide_approval(approval_id, "approved", decided_by=who):
-        raise HTTPException(status_code=404, detail="no such pending approval")
+    _record_vote_or_raise(_world(), approval_id, "approved", who)
     _audit_approval_decision(approval_id, "approved", who)
 
 
 @router.post("/approvals/{approval_id}/deny", status_code=204)
 async def deny_approval(request: Request, approval_id: int) -> None:
-    """Deny a parked action; the polling consent path then refuses it."""
+    """Deny a parked action (a single deny rejects it); the polling consent path
+    then refuses it."""
     require_permission(request, "operate")
     who = _supervisor(request)
-    if not _world().decide_approval(approval_id, "denied", decided_by=who):
-        raise HTTPException(status_code=404, detail="no such pending approval")
+    _record_vote_or_raise(_world(), approval_id, "denied", who)
     _audit_approval_decision(approval_id, "denied", who)
+
+
+@router.get("/approvals/{approval_id}/state")
+async def approval_state(request: Request, approval_id: int) -> dict:
+    """N-of-M quorum progress for an approval (status, approvers so far vs.
+    required) — the operator view of an in-flight multi-party decision."""
+    require_permission(request, "operate")
+    st = _world().approval_state(approval_id)
+    if st is None:
+        raise HTTPException(status_code=404, detail="no such approval")
+    return st
 
 
 @router.post("/approvals/{approval_id}/claim")
@@ -2362,6 +2598,15 @@ async def run_fleet_agent(
             allow_paths=caller_cap.allow_paths or None,
             allow_hosts=caller_cap.allow_hosts or None,
         )
+    # Department-deployed agents carry their specialist pack: bind the run to
+    # that pack's capability envelope (least privilege per domain), on top of
+    # the role + caller grants. domain_capability only narrows (never broadens),
+    # and an unknown/disabled pack leaves the grant unchanged.
+    if agent.domain:
+        from maverick.domain import available_domains, domain_capability
+        prof = available_domains().get(agent.domain)
+        if prof is not None:
+            cap = domain_capability(prof, cap, agent_principal)
     max_dollars = (
         min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
         if payload.max_dollars is not None else DEFAULT_MAX_DOLLARS
@@ -2370,9 +2615,14 @@ async def run_fleet_agent(
     w = _world()
     goal_id = w.create_goal(prompt[:200], prompt, owner=fleet.owner)
     record_run(fleet_name, agent.name, goal_id)
+    # Schedule against the authenticated caller (or the shared anonymous lane
+    # when auth is off), not the fleet-agent audit principal.  Agent names are
+    # user-created, so using them as scheduler principals lets one caller mint
+    # many lanes and bypass MAVERICK_MAX_CONCURRENT_GOALS_PER_PRINCIPAL.
     bg.add_task(
         run_goal_in_thread, goal_id, max_dollars,
         channel="fleet", user_id=agent_principal, capability=cap,
+        concurrency_principal=principal,
     )
     return {"goal_id": goal_id, "principal": agent_principal, "role": agent.role}
 
@@ -2813,6 +3063,7 @@ async def create_child_goal(request: Request, goal_id: int, payload: ChildIn) ->
     run — start it later via chat or POST /api/v1/goals. It inherits the
     parent's owner so the subtree stays visible to the same principal.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -3128,6 +3379,7 @@ async def export_walkthrough(request: Request, goal_id: int) -> dict:
     whether it happened (``encoded``/``detail``) and carries the exact ffmpeg
     command for out-of-band encoding when it didn't.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
@@ -3196,3 +3448,166 @@ async def resume_goal(goal_id: int, request: Request, bg: BackgroundTasks) -> No
         bg.add_task(run_goal_in_thread, goal_id, channel="api", user_id=user_id)
     else:
         bg.add_task(run_goal_in_thread, goal_id)
+
+
+# ---------------------------------------------------------------------------
+# Workforce packaging: departments, outcomes, marketplace, reviews.
+#
+# Read-only JSON over capabilities that already ship (maverick.departments /
+# .outcomes / .worker_review / .marketplace.storefront). These present the
+# 1,000+ specialist packs as buyable teams with delivery and a governed review
+# — the buyer-facing surfaces, not new platform. No mutation, so no extra
+# permission gate beyond the dashboard's read access (cf. /overview).
+# ---------------------------------------------------------------------------
+def _department_request_tenant() -> str | None:
+    """Tenant id for department entitlement checks in dashboard requests."""
+    try:
+        from maverick.paths import current_tenant_id
+        return current_tenant_id()
+    except Exception:  # pragma: no cover - tenant lookup must not break self-host
+        return None
+
+
+def _has_managed_tenant_roster() -> bool:
+    """Whether this install has provisioned tenants but no request tenant."""
+    try:
+        from maverick.tenant import registry as tenant_registry
+        return bool(tenant_registry.list_tenants())
+    except Exception:  # pragma: no cover - registry lookup must not break self-host
+        return False
+
+
+def _department_entitled_for_request(key: str) -> bool:
+    """Department entitlement for this dashboard request.
+
+    No active tenant remains fail-open for legacy self-host installs. Once a
+    tenant roster exists, however, a dashboard request with no pinned tenant is
+    an ambiguous managed request; report the paid add-on as unavailable rather
+    than letting the core billing gate treat it as self-hosted.
+    """
+    from maverick.departments import department_entitled
+    tenant = _department_request_tenant()
+    if tenant is None and _has_managed_tenant_roster():
+        return False
+    return department_entitled(key, tenant=tenant)
+
+
+@router.get("/departments")
+async def list_departments_api(request: Request) -> list[dict]:
+    """Departments (suites) as deployable teams: title, charter, headcount.
+
+    Each entry carries ``entitled`` — whether the active tenant's plan includes
+    the paid ``departments`` add-on, so the UI shows Deploy vs. Add-on-required.
+    """
+    from maverick.departments import list_departments
+    out = []
+    for d in list_departments():
+        row = d.to_dict()
+        row["entitled"] = _department_entitled_for_request(d.key)
+        out.append(row)
+    return out
+
+
+@router.get("/departments/{key}")
+async def get_department_api(request: Request, key: str) -> dict:
+    """One department with its specialist roster (name + description + risk)."""
+    from maverick.departments import get_department, roster
+    dept = get_department(key)
+    if dept is None:
+        raise HTTPException(status_code=404, detail="no such department")
+    out = dept.to_dict()
+    out["entitled"] = _department_entitled_for_request(key)
+    out["roster"] = [
+        {"name": p.name, "description": p.description or "",
+         "max_risk": p.max_risk or "low"}
+        for p in roster(key)
+    ]
+    return out
+
+
+@router.post("/departments/{key}/deploy", status_code=201)
+async def deploy_department_api(request: Request, key: str) -> dict:
+    """Deploy a department as a fleet of its specialists — a PAID ADD-ON.
+
+    Gated three ways: ``operate`` RBAC (a viewer is 403'd), owner-scoping (you
+    cannot clobber another owner's fleet — that 404s), and the ``departments``
+    entitlement (a tenant without the add-on is 402'd). Mirrors
+    ``maverick.departments.deploy_department`` so the CLI enforces the same gate.
+    """
+    require_permission(request, "operate")
+    from maverick.departments import (
+        EntitlementError,
+        deploy_department,
+        fleet_name_for,
+        get_department,
+    )
+    from maverick.fleet import load_fleet
+
+    if get_department(key) is None:
+        raise HTTPException(status_code=404, detail="no such department")
+
+    principal = caller_principal(request)
+    owner = principal or ""
+    fleet_name = fleet_name_for(key, owner)
+    existing = load_fleet(fleet_name)
+    if (
+        existing is not None and existing.owner != owner
+        and principal is not None and not is_dashboard_admin(principal)
+    ):
+        raise HTTPException(status_code=404, detail="no such fleet")
+
+    tenant = _department_request_tenant()
+    if tenant is None and _has_managed_tenant_roster():
+        raise HTTPException(
+            status_code=402,
+            detail="departments add-on requires an active tenant",
+        )
+
+    try:
+        fleet = deploy_department(key, owner, tenant=tenant)
+    except EntitlementError as e:
+        raise HTTPException(status_code=402, detail=str(e)) from e
+    if fleet is None:  # suite disabled between the check and the deploy
+        raise HTTPException(status_code=404, detail="no such department")
+    return {"fleet": fleet.to_dict()}
+
+
+@router.get("/departments/{key}/review")
+async def department_review_api(request: Request, key: str) -> dict:
+    """A governed performance review: delivery + authority + learning."""
+    from maverick.worker_review import review
+    r = review(_world(), key, owner=goal_owner_filter(request))
+    if r is None:
+        raise HTTPException(status_code=404, detail="no such department")
+    return r
+
+
+@router.get("/outcomes")
+async def outcomes_api(request: Request, top: int = 0) -> dict:
+    """Per-worker delivery cards + a firm-wide rollup, from the Operating Record."""
+    from maverick.operating_record import assemble
+    from maverick.outcomes import firm_totals, worker_cards
+    w = _world()
+    owner = goal_owner_filter(request)
+    cards = worker_cards(w, top=(max(0, int(top)) or None), owner=owner)
+    return {
+        "firm": firm_totals(assemble(w, owner=owner)).to_dict(),
+        "workers": [c.to_dict() for c in cards],
+    }
+
+
+@router.get("/marketplace/packs")
+async def marketplace_packs_api(request: Request, q: str = "") -> dict:
+    """Pack marketplace grouped by department, or a flat search when ``q`` set."""
+    from maverick.marketplace.storefront import pack_marketplace, search_packs
+    query = (q or "").strip()
+    if query:
+        return {"query": query, "results": search_packs(query)}
+    return {"departments": pack_marketplace()}
+
+
+@router.get("/marketplace/connectors")
+async def marketplace_connectors_api(request: Request, q: str = "") -> dict:
+    """Connector marketplace: honest total + optional substring search."""
+    from maverick.marketplace.storefront import connector_marketplace
+    return connector_marketplace(q or None)

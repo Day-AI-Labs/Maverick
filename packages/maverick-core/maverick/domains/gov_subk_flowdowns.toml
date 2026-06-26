@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "subcontract clause flowdown matrix"
+consumers = ["subcontracts_administrator", "contracts_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull prime clauses"
+instruction = "Retrieve the prime contract's FAR/DFARS clause list and the subcontract type and value for the award."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Determine mandatory flowdowns"
+instruction = "Confirm which clauses are mandatory or conditional flowdowns for this subcontract against the cited clause text."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Build flowdown matrix"
+instruction = "Build the clause-by-clause flowdown matrix mapping each required clause to its applicability and modification for this subcontract."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Identify required flowdowns missing from the subcontract draft or applied incorrectly for the award type."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for inclusion"
+instruction = "Hand the flowdown matrix with cited clauses to the subcontracts administrator for review before award."
+gate = "review"

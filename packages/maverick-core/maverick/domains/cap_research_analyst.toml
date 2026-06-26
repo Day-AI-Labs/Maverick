@@ -10,3 +10,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "place_trade", "execute_fx_trade", "create_order_instruction", "browser"]
 knowledge_sources = ["cap"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "research note draft"
+consumers = ["analyst_of_record", "research_director"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame thesis"
+instruction = "Define the security and the research question and gather the firm's prior research and approved data on the name."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build model"
+instruction = "Construct the valuation or credit model and label every figure with its definition and as-of date."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Check MNPI"
+instruction = "Verify no material non-public information has entered the analysis and keep any such information sealed out of the note."
+[[workflow]]
+name = "Draft note"
+instruction = "Write the thesis and published note with cited sources and assumptions and unknowns stated plainly."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Route to analyst"
+instruction = "Hand the draft to the analyst of record who owns the rating and the position for sign-off."
+gate = "review"

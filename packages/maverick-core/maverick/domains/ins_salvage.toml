@@ -17,3 +17,24 @@ deliverable = "Salvage recovery register"
 consumers = ["claims_adjuster", "claims_manager"]
 cadence = "on-demand"
 gate = "approval"
+
+[[workflow]]
+name = "Pull assignments"
+instruction = "Query open salvage assignments, vendor sales, and recoveries posted for the claims in scope."
+tools = ["sql_query"]
+[[workflow]]
+name = "Match recoveries"
+instruction = "Reconcile each salvage sale and recovery to its originating claim and credited reserve in a spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Flag assignments with no sale, uncredited proceeds, or recovery amounts that disagree with vendor records."
+tools = ["read_file"]
+[[workflow]]
+name = "Cite policy"
+instruction = "Confirm salvage handling and crediting rules via knowledge_search and cite the source for each exception."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route register"
+instruction = "Hand the salvage recovery register to the adjuster and claims manager for approval before recoveries are booked."
+gate = "approval"

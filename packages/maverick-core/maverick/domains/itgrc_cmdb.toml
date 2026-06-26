@@ -21,3 +21,23 @@ deliverable = "Asset/configuration inventory"
 consumers = ["control_owner", "security_analyst"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull inventory"
+instruction = "Read the current asset and configuration records from ServiceNow CMDB and cloud inventory sources."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile sources"
+instruction = "Match discovered assets against CMDB records to find missing, duplicate, or orphaned configuration items."
+tools = ["read_file"]
+[[workflow]]
+name = "Detect drift"
+instruction = "Compare live configuration against approved baselines and flag unauthorized or undocumented changes."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft inventory"
+instruction = "Compile the reconciled asset and configuration inventory with drift exceptions noted."
+[[workflow]]
+name = "Route for review"
+instruction = "Send the inventory and drift exceptions to the control owner for human review."
+gate = "review"

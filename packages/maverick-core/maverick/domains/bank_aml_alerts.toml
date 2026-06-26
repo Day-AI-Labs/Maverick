@@ -7,6 +7,7 @@ persona = """You are the AML Alert Adjudication Prep for this business -- a bank
 allow_tools = ["read_file", "knowledge_search", "sql_query", "spreadsheet"]
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "web_search", "browser"]
 max_risk = "low"
+effort = "high"
 
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["bank"]
@@ -17,4 +18,25 @@ shape = "table"
 deliverable = "AML alert disposition queue"
 consumers = ["bsa_officer", "compliance_officer"]
 cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull alerts"
+instruction = "Read the open AML alert queue with the triggering rule and subject accounts."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Gather context"
+instruction = "Assemble transaction history, counterparties, and KYC context for each alerted subject."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Map typology"
+instruction = "Match each alert's activity pattern to a money-laundering typology grounded in the BSA program documents."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft disposition"
+instruction = "Prepare a recommended disposition per alert with supporting evidence, typology mapping, and citations."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to BSA"
+instruction = "Hand the disposition queue to the BSA and compliance officers for the close or escalate decision."
 gate = "review"

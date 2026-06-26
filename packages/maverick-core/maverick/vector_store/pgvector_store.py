@@ -140,7 +140,8 @@ class PgVectorStore:
         return "tenant_id = %s", (tenant_id,), tenant_id
 
     def add(self, documents: list[str], *, ids: list[str] | None = None,
-            metadatas: list[dict] | None = None) -> None:
+            metadatas: list[dict] | None = None,
+            embeddings: list[list[float]] | None = None) -> None:
         if not documents:
             return
         if ids is None:
@@ -150,7 +151,12 @@ class PgVectorStore:
         if metadatas is not None and len(metadatas) != len(documents):
             raise ValueError(
                 f"metadatas length {len(metadatas)} != documents length {len(documents)}")
-        vecs = self._embed(documents)
+        if embeddings is not None and len(embeddings) != len(documents):
+            raise ValueError(
+                f"embeddings length {len(embeddings)} != documents length {len(documents)}")
+        # Precomputed vectors (at-rest mode) let the caller store a SEALED
+        # document while the vector came from the plaintext; else embed here.
+        vecs = embeddings if embeddings is not None else self._embed(documents)
         self._ensure_vector_column(self._dim or len(vecs[0]))
         tenant_id = _active_tenant()
         with self._lock, self._conn.cursor() as cur:
@@ -166,10 +172,16 @@ class PgVectorStore:
                     "metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding",
                     (self._stored_id(ids[i], tenant_id), self._collection, tenant_id, doc, meta, vec))
 
-    def query(self, text: str, *, top_k: int = 5) -> list[dict]:
-        if not text:
+    def query(self, text: str | None = None, *, top_k: int = 5,
+              embedding: list[float] | None = None) -> list[dict]:
+        # Precomputed query vector (at-rest mode) searches sealed-document rows;
+        # else embed the query text here.
+        if embedding is not None:
+            vec = embedding
+        elif text:
+            vec = self._embed([text])[0]
+        else:
             return []
-        vec = self._embed([text])[0]
         qvec = "[" + ",".join(repr(float(x)) for x in vec) + "]"
         tenant_sql, tenant_params, _ = self._tenant_predicate()
         with self._lock, self._conn.cursor() as cur:

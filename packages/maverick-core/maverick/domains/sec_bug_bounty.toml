@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "bug bounty triage report with researcher response"
+consumers = ["security_manager", "engineering_owner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read report"
+instruction = "Read the incoming researcher submission and capture the asset, reproduction steps, and claimed impact."
+tools = ["read_file"]
+[[workflow]]
+name = "Validate finding"
+instruction = "Confirm the vulnerability is reproducible and in scope, distinguishing true positives from duplicates and noise."
+tools = ["knowledge_search", "web_search", "sql_query"]
+[[workflow]]
+name = "Rate and reward"
+instruction = "Assign severity and the corresponding bounty tier from the program policy and note the routing owner."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft researcher reply"
+instruction = "Draft a clear, respectful response to the researcher stating the disposition, severity, and next steps."
+tools = ["read_file"]
+[[workflow]]
+name = "Submit for sign-off"
+instruction = "Route the triage decision and researcher reply to the security manager for sign-off before sending."
+gate = "review"

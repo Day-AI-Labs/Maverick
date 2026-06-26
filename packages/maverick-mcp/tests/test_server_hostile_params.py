@@ -71,3 +71,33 @@ def test_various_non_dict_params_never_crash(monkeypatch):
         # tools/list ignores params, so this should succeed (result), never crash.
         assert msgs and msgs[-1].get("id") == 7
         assert "result" in msgs[-1] or "error" in msgs[-1]
+
+
+def test_handle_tools_call_non_string_name_raises_protocol_error():
+    # A non-hashable `name` (list/dict) raised TypeError on the `name not in
+    # _TOOL_NAMES` set-membership test, escaping as a scrubbed -32603.
+    srv = MCPServer()
+    for bad in (["x"], {"a": 1}, 5, None):
+        with pytest.raises(_ProtocolError) as ei:
+            srv.handle_tools_call({"name": bad, "arguments": {}})
+        assert ei.value.code == -32602
+
+
+def test_non_hashable_tool_name_is_invalid_params_not_crash(monkeypatch):
+    req = (
+        '{"jsonrpc":"2.0","id":3,"method":"tools/call",'
+        '"params":{"name":["x"],"arguments":{}}}'
+    )
+    msgs = _run_lines(monkeypatch, req)
+    assert msgs and msgs[-1].get("id") == 3
+    assert msgs[-1].get("error", {}).get("code") == -32602, msgs[-1]
+
+
+def test_handle_resources_read_non_string_uri_raises_protocol_error():
+    # A non-string `uri` (number/null/list -- `null` even overrides the ""
+    # default) raised AttributeError/TypeError on `.startswith`, scrubbed to -32603.
+    srv = MCPServer()
+    for bad in (5, None, ["maverick://goals"], {"x": 1}):
+        with pytest.raises(_ProtocolError) as ei:
+            srv.handle_resources_read({"uri": bad})
+        assert ei.value.code == -32602

@@ -260,3 +260,60 @@ def test_validate_agent_override_requires_pack_admin(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "caller_principal", lambda request: "user:alice")
     monkeypatch.setattr(api, "is_dashboard_admin", lambda principal: False)
     assert c.post("/api/v1/agents/orchestrator/validate", json={}).status_code == 403
+
+
+def test_shared_halt_requires_admin(monkeypatch, tmp_path):
+    # The shared Postgres halt is a global, untenanted fleet control. A tenant
+    # operator may operate local goals, but must not arm the cluster-wide halt.
+    monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "")
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import api, rbac
+
+    monkeypatch.setenv("MAVERICK_HALT_FILE", str(tmp_path / "HALT"))
+    monkeypatch.setattr(api, "_shared_halt_backend", lambda: True)
+    rbac.set_role("user:op-halt", "operator")
+    _as(monkeypatch, "user:op-halt")
+
+    r = c.post("/api/v1/halt", json={"reason": "tenant halt"})
+    assert r.status_code == 403
+    assert not (tmp_path / "HALT").exists()
+
+    r = c.delete("/api/v1/halt")
+    assert r.status_code == 403
+
+
+def test_shared_halt_allows_admin(monkeypatch, tmp_path):
+    # Dashboard admins retain the ability to toggle the global shared halt.
+    monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "user:root")
+    c = _client(monkeypatch, tmp_path)
+    from maverick_dashboard import api
+
+    class FakeWorld:
+        def __init__(self):
+            self.armed = False
+
+        def arm_halt(self, reason="", source="manual", armed_by=""):
+            self.armed = True
+            self.reason = reason
+            self.source = source
+            self.armed_by = armed_by
+
+        def disarm_halt(self):
+            self.armed = False
+
+    fake_world = FakeWorld()
+    monkeypatch.setenv("MAVERICK_HALT_FILE", str(tmp_path / "HALT"))
+    monkeypatch.setattr(api, "_shared_halt_backend", lambda: True)
+    monkeypatch.setattr(api, "_world", lambda: fake_world)
+    _as(monkeypatch, "user:root")
+
+    r = c.post("/api/v1/halt", json={"reason": "admin halt"})
+    assert r.status_code == 204
+    assert fake_world.armed is True
+    assert fake_world.reason == "admin halt"
+    assert (tmp_path / "HALT").exists()
+
+    r = c.delete("/api/v1/halt")
+    assert r.status_code == 204
+    assert fake_world.armed is False
+    assert not (tmp_path / "HALT").exists()

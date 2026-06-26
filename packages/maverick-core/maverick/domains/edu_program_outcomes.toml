@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "program outcomes data report"
+consumers = ["program_director", "grants_manager"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Load logic model"
+instruction = "Read the program logic model to identify the outcome indicators, targets, and data sources to be reported."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Collect outcome data"
+instruction = "Gather the actual outcome measures for each indicator from program records and tracking spreadsheets."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Reconcile to targets"
+instruction = "Compare collected results against targets and flag gaps, missing data, or figures that cannot be traced to a source."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft honest report"
+instruction = "Draft the outcomes report stating results, shortfalls, and data limitations plainly without overstating impact."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the outcomes report to the program director for review before it informs any funder filing."
+gate = "review"

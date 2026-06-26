@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "hazmat compliance verification"
+consumers = ["compliance_officer", "shipping_supervisor"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Pull shipment"
+instruction = "Read the hazmat shipment material, quantity, packaging, and declared classification details."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Verify classification"
+instruction = "Check the UN number, hazard class, and packing group against current regulatory references and cite the rule applied."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Check docs and labels"
+instruction = "Confirm shipping papers, marks, labels, and placarding match the verified classification and quantity."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag noncompliance"
+instruction = "Identify missing or misclassified documentation and labeling defects that block lawful shipment."
+[[workflow]]
+name = "Approve release"
+instruction = "Route the compliance verification to the compliance officer to approve or hold the shipment."
+gate = "approval"

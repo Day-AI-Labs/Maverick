@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Workforce · Lightwork{% endblock %}
+{% block content %}
+  <h2>Workforce</h2>
+
+  <div class="panel">
+    <p class="muted">
+      Your specialist packs as deployable <strong>departments</strong> — pick a
+      team, see what it delivered, and open a governed performance review. Built
+      from <code>maverick.departments</code>, <code>maverick.outcomes</code>, and
+      <code>maverick.worker_review</code>; reviews load from
+      <code>/api/v1/departments/&lt;key&gt;/review</code>.
+    </p>
+    <div class="card-grid">
+      <div class="stat"><strong>{{ departments|length }}</strong><span class="muted">departments</span></div>
+      <div class="stat"><strong>{{ pack_total }}</strong><span class="muted">specialists</span></div>
+      <div class="stat"><strong>{{ connector_total }}</strong><span class="muted">connectors</span></div>
+      <div class="stat"><strong>{{ firm.goals_completed }}</strong><span class="muted">goals completed</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Delivery</h3>
+    <p class="muted">Firm-wide rollup from the Operating Record — delivery, not usage.</p>
+    <table>
+      <thead><tr><th scope="col">Metric</th><th scope="col">Value</th></tr></thead>
+      <tbody>
+        <tr><td>Goals completed</td><td>{{ firm.goals_completed }} / {{ firm.goals_total }}</td></tr>
+        <tr><td>Human approvals</td><td>{{ firm.human_decisions }} / {{ firm.approvals }}</td></tr>
+        <tr><td>Spend</td><td>${{ '%.2f'|format(firm.spend_dollars) }}</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Top performers</h3>
+    {% if leaders %}
+    <table>
+      <thead><tr><th scope="col">Specialist</th><th scope="col">Department</th><th scope="col">Delivered</th></tr></thead>
+      <tbody>
+        {% for c in leaders %}
+        <tr><td>{{ c.worker }}</td><td>{{ c.suite_title or '—' }}</td><td>{{ c.headline }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No work recorded yet — deploy a department to start the record.</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h3>Integrations</h3>
+    <p class="muted">{{ connector_total }} connectors ready to configure.</p>
+    <label for="conn-search">Search connectors</label>
+    <input id="conn-search" type="search" placeholder="e.g. zendesk, salesforce" aria-label="Search connectors" />
+    <ul id="conn-results" class="muted"></ul>
+  </div>
+
+  <div class="panel">
+    <h3>Departments</h3>
+    <div class="card-grid" id="dept-grid">
+      {% for d in departments %}
+      <article class="card" data-key="{{ d.key }}">
+        <h4>{{ d.title }}</h4>
+        <p class="muted">{{ d.charter }}</p>
+        <p>
+          <span class="badge">{{ d.headcount }} specialists</span>
+          {% if not entitlements.get(d.key) %}<span class="badge">Add-on required</span>{% endif %}
+        </p>
+        <p>
+          <button type="button" class="btn btn--ghost" data-key="{{ d.key }}" data-act="team">View team</button>
+          <button type="button" class="btn btn--ghost" data-key="{{ d.key }}" data-act="review">Performance review</button>
+          {% if entitlements.get(d.key) %}
+          <button type="button" class="btn btn--primary" data-key="{{ d.key }}" data-act="deploy">Deploy team</button>
+          {% else %}
+          <button type="button" class="btn btn--primary" data-key="{{ d.key }}" data-act="deploy" aria-describedby="addon-note-{{ d.key }}">Deploy team</button>
+          <span id="addon-note-{{ d.key }}" class="muted">paid add-on</span>
+          {% endif %}
+        </p>
+        <div class="dept-detail" hidden></div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      function esc(s) {
+        return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+        });
+      }
+
+      function renderTeam(d) {
+        var rows = (d.roster || []).map(function (p) {
+          return "<tr><td>" + esc(p.name) + "</td><td>" + esc(p.description) +
+            "</td><td>" + esc(p.max_risk) + "</td></tr>";
+        }).join("");
+        return "<table><caption>" + esc(d.title) + " — roster</caption>" +
+          "<thead><tr><th scope=\"col\">Specialist</th><th scope=\"col\">Does</th>" +
+          "<th scope=\"col\">Max risk</th></tr></thead><tbody>" + rows + "</tbody></table>";
+      }
+
+      function renderReview(r) {
+        var dl = r.delivery || {}, au = r.authority || {}, le = r.learning || {};
+        return "<table><caption>" + esc(r.department.title) + " — performance review</caption>" +
+          "<tbody>" +
+          "<tr><td>Goals completed</td><td>" + esc(dl.goals_completed) + " / " + esc(dl.goals_total) +
+          " (" + Math.round((dl.completion_rate || 0) * 100) + "%)</td></tr>" +
+          "<tr><td>Active specialists</td><td>" + esc(dl.active_workers) + "</td></tr>" +
+          "<tr><td>Authority</td><td>" + esc(au.summary) + "</td></tr>" +
+          "<tr><td>Learned-state coverage</td><td>" +
+          (le.status === "ok" ? (Math.round((le.coverage_rate || 0) * 100) + "% of " +
+            esc(le.goals_evaluated) + " goals") : "insufficient data") + "</td></tr>" +
+          "</tbody></table>" +
+          "<p class=\"muted\">" + esc(r.governance_note) + "</p>";
+      }
+
+      document.getElementById("dept-grid").addEventListener("click", function (ev) {
+        var btn = ev.target.closest("button[data-act]");
+        if (!btn) return;
+        var key = btn.getAttribute("data-key");
+        var act = btn.getAttribute("data-act");
+        var box = btn.closest(".card").querySelector(".dept-detail");
+        box.hidden = false;
+        box.textContent = "Loading…";
+
+        if (act === "deploy") {
+          fetch("/api/v1/departments/" + encodeURIComponent(key) + "/deploy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+          }).then(function (r) {
+            return r.json().then(function (d) { return { ok: r.ok, status: r.status, body: d }; });
+          }).then(function (res) {
+            if (res.ok) {
+              var f = res.body.fleet || {};
+              box.innerHTML = "<p>Deployed <strong>" + esc(f.name) + "</strong> — " +
+                esc((f.agents || []).length) + " specialists. " +
+                "Run them from <a href=\"/fleets\">Fleets</a>.</p>";
+            } else if (res.status === 402) {
+              box.innerHTML = "<p class=\"muted\">This department is a paid add-on. " +
+                esc(res.body.detail || "Contact your administrator to enable it.") + "</p>";
+            } else {
+              box.textContent = esc(res.body.detail || "Could not deploy.");
+            }
+          }).catch(function () { box.textContent = "Could not deploy."; });
+          return;
+        }
+
+        var url = act === "review"
+          ? "/api/v1/departments/" + encodeURIComponent(key) + "/review"
+          : "/api/v1/departments/" + encodeURIComponent(key);
+        fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+          box.innerHTML = act === "review" ? renderReview(d) : renderTeam(d);
+        }).catch(function () { box.textContent = "Could not load."; });
+      });
+
+      var search = document.getElementById("conn-search");
+      var results = document.getElementById("conn-results");
+      var timer = null;
+      search.addEventListener("input", function () {
+        var q = search.value.trim();
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+          if (!q) { results.innerHTML = ""; return; }
+          fetch("/api/v1/marketplace/connectors?q=" + encodeURIComponent(q))
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              results.innerHTML = (d.connectors || []).slice(0, 20).map(function (c) {
+                return "<li>" + esc(c.label) + " <span class=\"muted\">(" + esc(c.name) + ")</span></li>";
+              }).join("") || "<li>No match.</li>";
+            });
+        }, 200);
+      });
+    })();
+  </script>
+{% endblock %}

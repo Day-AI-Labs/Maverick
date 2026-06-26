@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "legislative & regulatory tracker brief"
+consumers = ["general_counsel", "ceo"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Scan developments"
+instruction = "Scan legislative and regulatory feeds for new or changed items relevant to the company's footprint."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Verify primary source"
+instruction = "Confirm each development against the official bill text, rule, or agency notice rather than secondary reporting."
+tools = ["web_search", "read_file"]
+[[workflow]]
+name = "Assess impact"
+instruction = "Map each verified item to the affected business area and rate likelihood, timing, and exposure."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Draft tracker brief"
+instruction = "Update the tracker with status changes, impact ratings, and recommended watch items, citing each source."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Counsel review"
+instruction = "Route the brief to legal or the executive sponsor for review before circulation."
+gate = "review"

@@ -13,3 +13,27 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["ops"]
 
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "near-term demand sensing adjustments & DDMRP buffer signals"
+consumers = ["demand_planner", "replenishment_planner"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull signals"
+instruction = "Read POS, recent orders, and external near-term signals and query the data for the current short-horizon demand picture."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Compare baseline"
+instruction = "Difference the sensed signal against the standing near-term forecast to isolate where actual demand is diverging."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Draft adjustments"
+instruction = "Compute proposed near-term forecast adjustments and flag SKUs where DDMRP buffers should move, citing the signal behind each."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Route adjustments"
+instruction = "Send the draft sensing adjustments and buffer-move flags to the demand planner for sign-off before any replenishment acts on them."
+gate = "review"

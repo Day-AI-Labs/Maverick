@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "press release draft and media brief"
+consumers = ["comms_lead", "marketing_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Gather facts"
+instruction = "Read the announcement brief and approved messaging to confirm the news, quotes, and boundaries."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Scan media"
+instruction = "Monitor current media and social coverage for context, sentiment, and timing risks."
+tools = ["web_search", "sprinklr_read"]
+[[workflow]]
+name = "Draft release"
+instruction = "Draft the press release and media brief grounded only in approved facts, with no unapproved dates, features, or pricing."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Fact check"
+instruction = "Verify every claim, quote, and figure against cited approved sources and flag anything unverifiable."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route approval"
+instruction = "Route the draft to the comms lead for approval before any external release."
+gate = "approval"

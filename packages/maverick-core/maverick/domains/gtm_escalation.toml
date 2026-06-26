@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "customer incident status comms draft"
+consumers = ["support_manager", "incident_commander"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Gather incident facts"
+instruction = "Read the incident record, affected accounts, and current status to establish the confirmed facts."
+tools = ["read_file"]
+[[workflow]]
+name = "Confirm severity"
+instruction = "Verify scope, impact, and severity against runbooks and prior incident precedent before drafting."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft status comms"
+instruction = "Draft the customer-facing status update with an AI-disclosure line and no unconfirmed commitments."
+[[workflow]]
+name = "Scrub claims"
+instruction = "Remove any speculation, ETAs, or liability admissions not approved by the incident owner."
+[[workflow]]
+name = "Route for approval"
+instruction = "Send the status comms draft to the incident commander for approval before any external post."
+gate = "approval"

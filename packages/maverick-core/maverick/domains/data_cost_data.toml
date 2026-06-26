@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["data"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "warehouse cost & savings report"
+consumers = ["data_platform_lead", "finance_analyst"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull spend"
+instruction = "Query warehouse billing and usage tables to attribute compute and storage spend to each workload for the period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Define metrics"
+instruction = "Label every cost metric with its definition and data freshness so figures are not misread."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Find drivers"
+instruction = "Rank the workloads, queries, and tables driving the largest spend and isolate anomalous growth."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Size savings"
+instruction = "Propose specific savings such as warehouse sizing, scheduling, or retention changes with an estimated dollar impact each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Platform review"
+instruction = "Hand the report and ranked savings to the data platform lead for sign-off before any change is requested."
+gate = "review"

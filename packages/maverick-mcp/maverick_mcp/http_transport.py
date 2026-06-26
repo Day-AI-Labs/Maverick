@@ -259,8 +259,14 @@ def _rate_ok(key: str) -> bool:
         return True
 
 
-def _check_bearer(authorization: str | None) -> bool:
+def _check_bearer(authorization: str | None) -> tuple[bool, str]:
     """Bearer-token gate for network HTTP transport.
+
+    Returns ``(ok, caller_identity)`` -- ``caller_identity`` is the per-caller
+    :class:`TrustedAgent` id when a per-caller ``[agent_trust] mcp_token``
+    authenticated the request, or ``""`` for the shared ``MAVERICK_MCP_TOKEN``
+    (which carries no per-caller identity). The transport binds this identity
+    onto fleet-memory ops so a caller cannot act AS another rostered agent.
 
     Unlike stdio, HTTP requests are network-reachable; token auth is
     therefore mandatory. Two accepted credentials: the shared
@@ -276,7 +282,7 @@ def _check_bearer(authorization: str | None) -> bool:
     if authorization and authorization.startswith("Bearer "):
         given = authorization[len("Bearer "):].strip()
     if not given:
-        return False
+        return False, ""
     agent = None
     try:
         from maverick.agent_trust import agent_for_token
@@ -288,8 +294,10 @@ def _check_bearer(authorization: str | None) -> bool:
         or agent is not None
     )
     if not authed:
-        return False
-    return _mcp_trust_ok(agent)
+        return False, ""
+    if not _mcp_trust_ok(agent):
+        return False, ""
+    return True, (agent.id if agent is not None else "")
 
 
 def _mcp_trust_ok(agent) -> bool:
@@ -396,6 +404,7 @@ def _sse_stream(
     method: str,
     params: dict,
     task_owner: str | None,
+    caller_identity: str | None = None,
     subscriptions: set,
     request_id,
     should_persist_session: bool,
@@ -412,7 +421,8 @@ def _sse_stream(
 
     def _dispatch_with_updates():
         with server.resource_update_scope(subscriptions):
-            result = _dispatch(server, method, params, task_owner=task_owner)
+            result = _dispatch(server, method, params, task_owner=task_owner,
+                               caller_identity=caller_identity)
             updates = server.drain_resource_updates()
             return result, updates
 
@@ -544,7 +554,8 @@ def build_app(server) -> FastAPI:
                 status_code=403,
                 detail="cross-origin request blocked (set MAVERICK_MCP_ALLOWED_ORIGINS to allow)",
             )
-        if not _check_bearer(authorization):
+        authed, caller_identity = _check_bearer(authorization)
+        if not authed:
             raise HTTPException(status_code=401, detail="invalid bearer")
         # Per-caller rate limit (after auth so unauthenticated probes can't
         # exhaust a victim's budget). Returns 429 over the per-minute cap.
@@ -602,6 +613,7 @@ def build_app(server) -> FastAPI:
                 method=method,
                 params=params,
                 task_owner=task_owner,
+                caller_identity=caller_identity,
                 subscriptions=subscriptions,
                 request_id=request_id,
                 should_persist_session=should_persist_session,
@@ -615,7 +627,8 @@ def build_app(server) -> FastAPI:
         # for the same asyncio.run reason as above.
         def _dispatch_for_session():
             with server.resource_update_scope(subscriptions):
-                return _dispatch(server, method, params, task_owner=task_owner)
+                return _dispatch(server, method, params, task_owner=task_owner,
+                                 caller_identity=caller_identity)
 
         try:
             result = await asyncio.to_thread(_dispatch_for_session)
@@ -674,8 +687,16 @@ def _dispatch(
     params: dict,
     *,
     task_owner: str | None = None,
+    caller_identity: str | None = None,
 ) -> dict:
-    """Route a JSON-RPC method to the corresponding handle_* method."""
+    """Route a JSON-RPC method to the corresponding handle_* method.
+
+    ``caller_identity`` (the authenticated per-caller agent id, ``""`` for the
+    shared bearer) is bound for the duration of the handler so fleet-memory
+    tools cannot act AS another rostered agent. Bound here -- inside the worker
+    thread both dispatch paths funnel through -- so it cannot leak across
+    concurrent requests (the ContextVar is set in this thread's context copy).
+    """
     if method == "notifications/initialized":
         return {}
     if method == "ping":
@@ -685,15 +706,20 @@ def _dispatch(
         from .server import _ProtocolError
         raise _ProtocolError(-32601, f"method not found: {method}")
     handler = getattr(server, handler_name)
-    if method == "tools/call" or method.startswith("tasks/"):
-        return handler(params, task_owner=task_owner)
-    return handler(params)
+    from maverick.fleet_memory import bind_caller
+    with bind_caller(caller_identity):
+        if method == "tools/call" or method.startswith("tasks/"):
+            return handler(params, task_owner=task_owner)
+        return handler(params)
 
 
 def serve(host: str = "127.0.0.1", port: int = 8771) -> None:
     """Run the HTTP transport on host:port. Blocking."""
+    from maverick.deployment import require_enterprise_or_die
+
     from .server import MCPServer
 
+    require_enterprise_or_die()
     # build_app() raises a friendly "install maverick-mcp-server[http]" error
     # if fastapi is missing -- do it BEFORE importing uvicorn so the user
     # sees that hint, not a bare ModuleNotFoundError on uvicorn.

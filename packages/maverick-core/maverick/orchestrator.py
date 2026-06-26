@@ -422,6 +422,13 @@ def _maybe_record_reflexion(
         goal_text = f"{getattr(goal, 'title', '')}\n{getattr(goal, 'description', '') or ''}"
         goal_text = reflexion._sanitize_text(goal_text, shield=shield)
         tools_used = reflexion.tools_from_blackboard(blackboard)
+        # Tag the orchestrator model so the self-harness loop can mine weaknesses
+        # per model. Best-effort: resolution never blocks the failure path.
+        try:
+            from .llm import model_for_role
+            model_id = model_for_role("orchestrator")
+        except Exception:  # pragma: no cover -- model tag is optional
+            model_id = None
         reflexion.record(
             goal_text=goal_text,
             failure_class=failure_class,
@@ -433,6 +440,7 @@ def _maybe_record_reflexion(
             channel=channel,
             user_id=user_id,
             domain=domain,
+            model_id=model_id,
         )
 
 
@@ -853,6 +861,21 @@ async def run_goal(  # noqa: C901  -- core goal-execution loop
         world.set_goal_status(goal_id, "blocked", result=f"over quota: {_quota_reason}")
         log.warning("goal #%s refused: %s", goal_id, _quota_reason)
         return _quota_reason
+
+    # Per-tenant daily-spend cap. The channel door already enforces this, but
+    # dashboard/CLI/gRPC-initiated runs bypass that door, so enforce here too.
+    # Opt-in: tenant_over_quota returns None unless a provisioned tenant has a
+    # cap (or [billing] enforce_plan_caps). Fail-soft; no-op for single-tenant.
+    try:
+        from .paths import current_tenant_id
+        from .tenant.registry import tenant_over_quota
+        _tenant_reason = tenant_over_quota(current_tenant_id())
+    except Exception:  # pragma: no cover -- tenant quota is fully fail-soft
+        _tenant_reason = None
+    if _tenant_reason:
+        world.set_goal_status(goal_id, "blocked", result=f"over quota: {_tenant_reason}")
+        log.warning("goal #%s refused: %s", goal_id, _tenant_reason)
+        return _tenant_reason
 
     _quota_usage_recorded = False
 
@@ -1634,8 +1657,12 @@ async def run_goal_best_of_n(
             max_output_tokens=budget.max_output_tokens,
             max_tool_calls=budget.max_tool_calls,
         )
-        prior_temp = os.environ.get("MAVERICK_TEMPERATURE")
-        os.environ["MAVERICK_TEMPERATURE"] = str(per_temp)
+        # Per-attempt sampling temperature via a ContextVar, NOT a process-
+        # global env var: a concurrent goal on the same process must not inherit
+        # this attempt's temperature. The value propagates into the provider
+        # (incl. across asyncio.to_thread) for this goal task only.
+        from .providers.base import reset_sampling_temperature, set_sampling_temperature
+        _temp_token = set_sampling_temperature(float(per_temp))
         try:
             try:
                 # Wave 12 fix (council F14, biggest accuracy loss):
@@ -1673,11 +1700,8 @@ async def run_goal_best_of_n(
                     break
                 continue
         finally:
-            # Restore env so the next call site isn't surprised.
-            if prior_temp is None:
-                os.environ.pop("MAVERICK_TEMPERATURE", None)
-            else:
-                os.environ["MAVERICK_TEMPERATURE"] = prior_temp
+            # Restore the prior context temperature (None outside best-of-N).
+            reset_sampling_temperature(_temp_token)
 
         # Roll ALL of this attempt's spend into the parent (cache tokens +
         # tool_calls included, not just dollars/in/out) and note if the

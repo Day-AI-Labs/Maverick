@@ -11,3 +11,27 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "contracted rate register & expiry tracker"
+consumers = ["procurement_lead", "logistics_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Read agreements"
+instruction = "Retrieve executed carrier contracts and amendments to capture rates, accessorials, and effective and expiry dates."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compare loaded rates"
+instruction = "Query the rates currently loaded in the system and reconcile them line by line against the contracted terms."
+tools = ["sql_query"]
+[[workflow]]
+name = "Flag discrepancies"
+instruction = "List loaded rates that diverge from contract and rates expiring within the renewal window for action."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route corrections"
+instruction = "Hand the discrepancy and expiry register to procurement to approve rate updates before they are loaded."
+gate = "review"

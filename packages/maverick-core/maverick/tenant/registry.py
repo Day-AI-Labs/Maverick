@@ -16,12 +16,38 @@ unprovisioned deployments are unchanged.
 from __future__ import annotations
 
 import json
+import logging
+import os
 import threading
 import time
 from dataclasses import dataclass, replace
 
 from ..file_lock import atomic_write_text, cross_process_lock
 from ..paths import _tenant_segment, maverick_home
+
+log = logging.getLogger(__name__)
+
+
+def _warn_if_unknown_plan(plan: str) -> str | None:
+    """Warn (and return the message) if ``plan`` is not a known billing plan.
+
+    ``billing.entitlements_for`` silently resolves an unknown plan to the
+    ``free`` entitlements, so an operator who typos ``--plan pro`` would think a
+    tenant is paid when it is not. We warn rather than raise so a plan can be
+    pre-assigned before it is defined in ``[billing.plans]``."""
+    p = str(plan or "free")
+    try:
+        from ..billing import known_plan_names
+        known = known_plan_names()
+    except Exception:  # pragma: no cover -- never block provisioning on billing
+        return None
+    if p in known:
+        return None
+    msg = (f"plan {p!r} is not a known billing plan "
+           f"({', '.join(sorted(known))}); its entitlements fall back to 'free' "
+           f"until it is defined in [billing.plans]")
+    log.warning("tenant registry: %s", msg)
+    return msg
 
 ACTIVE = "active"
 SUSPENDED = "suspended"
@@ -153,6 +179,7 @@ def create_tenant(
 ) -> TenantRecord:
     """Provision a tenant + its workspace dir. Raises ValueError if it exists."""
     tid = _validate_id(tenant_id)
+    _warn_if_unknown_plan(plan)
     with _locked():
         records = _load()
         if tid in records:
@@ -192,12 +219,34 @@ def resume_tenant(tenant_id: str) -> TenantRecord:
     return _mutate(tenant_id, status=ACTIVE)
 
 
+def _audit_billing_change(field: str, tenant_id: str, *, old, new) -> None:
+    """Record a tamper-evident audit row for a change to a tenant's billing
+    terms (plan / daily cap), so an upgrade or cap change is provable rather than
+    a silent edit. Fail-soft: an audit error never blocks the mutation."""
+    try:
+        from ..audit import EventKind, record
+        kind = (EventKind.TENANT_PLAN_CHANGED if field == "plan"
+                else EventKind.TENANT_QUOTA_CHANGED)
+        record(kind, agent="operator", tenant=tenant_id, field=field,
+               old=old, new=new)
+    except Exception:  # pragma: no cover -- audit must never break provisioning
+        pass
+
+
 def set_quota(tenant_id: str, max_daily_dollars: float) -> TenantRecord:
-    return _mutate(tenant_id, max_daily_dollars=max(0.0, float(max_daily_dollars or 0.0)))
+    old = get_tenant(tenant_id)
+    rec = _mutate(tenant_id, max_daily_dollars=max(0.0, float(max_daily_dollars or 0.0)))
+    _audit_billing_change("quota", rec.id, old=(old.max_daily_dollars if old else None),
+                          new=rec.max_daily_dollars)
+    return rec
 
 
 def set_plan(tenant_id: str, plan: str) -> TenantRecord:
-    return _mutate(tenant_id, plan=str(plan or "free"))
+    _warn_if_unknown_plan(plan)
+    old = get_tenant(tenant_id)
+    rec = _mutate(tenant_id, plan=str(plan or "free"))
+    _audit_billing_change("plan", rec.id, old=(old.plan if old else None), new=rec.plan)
+    return rec
 
 
 def delete_tenant(tenant_id: str, *, purge: bool = False) -> bool:
@@ -265,8 +314,31 @@ def tenant_spend_today(tenant_id: str) -> float:
             float((days.get(day) or {}).get("dollars", 0.0))
             for days in data.values() if isinstance(days, dict)
         )
-    except Exception:  # pragma: no cover -- spend read never blocks serving
+    except Exception as e:
+        # Spend read never blocks serving, but it must not be SILENT: an
+        # unreadable ledger counts as 0 spend, which under-enforces the daily
+        # cap (a tenant at its limit looks unused). Surface it.
+        log.warning("tenant_spend_today: unreadable usage ledger for %r: %s; "
+                    "counting 0 spend (daily cap under-enforced)", tenant_id, e)
         return 0.0
+
+
+def _enforce_plan_caps() -> bool:
+    """Opt-in: when a tenant has no explicit registry spend cap, fall back to its
+    billing plan's entitlement-level daily cap so a config-defined plan cap is
+    actually enforced rather than decorative (audit #81).
+
+    Off by default: a registry cap of 0 means "unlimited" today, so enabling this
+    changes already-provisioned tenants. ``MAVERICK_ENFORCE_PLAN_CAPS`` env wins
+    over ``[billing] enforce_plan_caps``."""
+    env = os.environ.get("MAVERICK_ENFORCE_PLAN_CAPS")
+    if env is not None and env.strip() != "":
+        return env.strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        from ..config import load_config
+        return bool(((load_config() or {}).get("billing") or {}).get("enforce_plan_caps"))
+    except Exception:  # pragma: no cover -- config never blocks quota resolution
+        return False
 
 
 def tenant_over_quota(tenant_id: str | None) -> str | None:
@@ -280,15 +352,52 @@ def tenant_over_quota(tenant_id: str | None) -> str | None:
     tid = (tenant_id or "").strip()
     if not tid:
         return None
-    rec = _load().get(tid)
-    if rec is None or rec.max_daily_dollars <= 0:
+    if _load().get(tid) is None:
+        return None
+    cap = _tenant_daily_cap(tid)
+    if cap <= 0:
         return None
     spent = tenant_spend_today(tid)
-    if spent >= rec.max_daily_dollars:
+    if spent >= cap:
         return (f"workspace {tid!r} is over its daily spend cap "
-                f"(${spent:.2f} >= ${rec.max_daily_dollars:.2f}); "
-                "resets at midnight UTC")
+                f"(${spent:.2f} >= ${cap:.2f}); resets at midnight UTC")
     return None
+
+
+def _tenant_daily_cap(tenant_id: str) -> float:
+    """The effective daily spend cap (USD) for ``tenant_id``: the registry cap,
+    falling back to the plan entitlement cap when plan-cap enforcement is on.
+    ``0`` means no cap. Shared by :func:`tenant_over_quota` and
+    :func:`tenant_remaining_today` so both read the same ceiling."""
+    rec = _load().get((tenant_id or "").strip())
+    if rec is None:
+        return 0.0
+    cap = rec.max_daily_dollars
+    if cap <= 0 and _enforce_plan_caps():
+        try:
+            from ..billing import entitlements_for
+            cap = entitlements_for(rec.plan).max_daily_dollars
+        except Exception:  # pragma: no cover -- billing never blocks quota
+            cap = 0.0
+    return cap if cap > 0 else 0.0
+
+
+def tenant_remaining_today(tenant_id: str | None) -> float | None:
+    """Dollars a tenant may still spend today before hitting its daily cap.
+
+    Returns ``None`` when no cap applies (no tenant, unprovisioned, cap 0/unset,
+    enforcement off) so callers leave their own ceiling untouched. Otherwise the
+    non-negative remainder ``cap - spent_today`` -- which a per-run budget can
+    clamp to so a single run can't overshoot the tenant's aggregate ceiling
+    (#78). Coordinates the per-run cap with the per-tenant cap; without it the
+    over-quota gate only fires *between* runs, after the overshoot."""
+    tid = (tenant_id or "").strip()
+    if not tid:
+        return None
+    cap = _tenant_daily_cap(tid)
+    if cap <= 0:
+        return None
+    return max(0.0, cap - tenant_spend_today(tid))
 
 
 __all__ = [
@@ -296,5 +405,5 @@ __all__ = [
     "list_tenants", "get_tenant", "create_tenant", "suspend_tenant",
     "resume_tenant", "delete_tenant", "set_quota", "set_plan",
     "is_active", "assert_tenant_active", "tenant_spend_today",
-    "tenant_over_quota",
+    "tenant_over_quota", "tenant_remaining_today",
 ]

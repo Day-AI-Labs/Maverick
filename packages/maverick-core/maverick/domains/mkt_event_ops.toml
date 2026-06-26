@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "event ops checklist & lead handoff"
+consumers = ["event_manager", "sales_ops"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Build run sheet"
+instruction = "Read the event brief and venue details and assemble the logistics checklist with owners and deadlines."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Track vendors"
+instruction = "Log vendor commitments and outstanding follow-ups in a status grid and flag anything past due."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify readiness"
+instruction = "Reconcile the checklist against confirmations to catch missing permits, AV, or staffing before the date."
+[[workflow]]
+name = "Compile leads"
+instruction = "Collect post-event leads and enrich them against company records for the sales handoff."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Route handoff"
+instruction = "Hand the completed checklist and lead list to the event manager and sales ops for sign-off."
+gate = "review"

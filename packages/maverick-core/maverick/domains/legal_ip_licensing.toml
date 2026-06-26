@@ -16,3 +16,29 @@ deny_tools = ["shell", "write_file"]
 mcp_servers = ["CourtListener"]
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "infringement analysis & enforcement letter draft"
+consumers = ["ip_counsel", "general_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope the matter"
+instruction = "Read the license terms, claimed mark or work, and the alleged infringing use to frame the question."
+tools = ["read_file", "ironclad_read", "docusign_read"]
+[[workflow]]
+name = "Pull case law"
+instruction = "Search infringement and licensing precedent in CourtListener and verify the controlling authority for each cited holding."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Analyze infringement"
+instruction = "Compare the protected right against the accused use element by element and assess the strength of the enforcement position."
+[[workflow]]
+name = "Draft enforcement letter"
+instruction = "Draft the cease-and-desist or licensing-position letter grounded in the verified analysis without committing the license."
+[[workflow]]
+name = "Route to counsel"
+instruction = "Route the analysis and letter draft to IP counsel for sign-off before any letter is sent."
+gate = "review"

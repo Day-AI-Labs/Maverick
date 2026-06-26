@@ -10,3 +10,31 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "place_trade", "execute_fx_trade", "create_order_instruction", "browser"]
 knowledge_sources = ["cap"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "client performance review pack"
+consumers = ["relationship_manager", "compliance_officer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Confirm scope"
+instruction = "Identify the client, accounts, and reporting period and pull the approved performance and holdings data from the firm's books."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Tie to books"
+instruction = "Reconcile every holding, return, and balance against the firm's records and label each figure with its definition and as-of date."
+tools = ["read_file", "sql_query", "spreadsheet"]
+[[workflow]]
+name = "Draft pack"
+instruction = "Write the statement, performance summary, and holdings breakdown with cited sources for the relationship manager."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Flag discrepancies"
+instruction = "Surface any stale input, unexplained variance, or unreconciled number for human resolution before it reaches the client."
+tools = ["sql_query"]
+[[workflow]]
+name = "Route to RM"
+instruction = "Hand the finished review pack to the relationship manager for sign-off before any client send."
+gate = "review"

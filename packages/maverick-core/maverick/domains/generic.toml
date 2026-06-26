@@ -17,8 +17,29 @@ fact."""
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 # The generalist is read-only by design: anything that mutates state belongs
 # to a specialist pack with the right envelope and review path.
-deny_tools = ["shell", "apply_patch", "str_edit", "browser"]
+deny_tools = ["shell", "apply_patch", "str_edit", "browser", "write_file"]
 max_risk = "low"
 
 knowledge_sources = ["generic"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "document-grounded answer brief"
+consumers = ["business_owner", "operations_lead"]
+cadence = "on-demand"
+
+[[workflow]]
+name = "Parse request"
+instruction = "Determine what the user is actually asking and whether it belongs to a specialist business function."
+[[workflow]]
+name = "Search documents"
+instruction = "Search the company's uploaded documents first for a grounded answer and read the relevant passages."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Fill gaps"
+instruction = "Where the documents are silent, note the gap plainly and consult the web only for general public context."
+tools = ["web_search"]
+[[workflow]]
+name = "Compose or route"
+instruction = "Write a concise cited answer, or recommend routing to the correct specialist suite when the request is clearly a function's job."

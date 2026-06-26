@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "opportunity validation brief"
+consumers = ["product_manager", "product_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame question"
+instruction = "Read the product hypothesis and define the jobs-to-be-done and assumptions to test."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather signal"
+instruction = "Collect user research, market data, and competitor evidence relevant to the problem."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Validate problem"
+instruction = "Triangulate the evidence to confirm the problem is real, frequent, and underserved before sizing it."
+[[workflow]]
+name = "Assess opportunity"
+instruction = "Weigh demand, reach, and differentiation and flag where evidence is thin or contradictory."
+[[workflow]]
+name = "Hand to PM"
+instruction = "Deliver the validation brief to the product manager to decide whether to pursue."
+gate = "review"

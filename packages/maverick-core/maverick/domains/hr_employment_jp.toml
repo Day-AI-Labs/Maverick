@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "work-rules & overtime filing advisory memo"
+consumers = ["hr_business_partner", "employment_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame the filing"
+instruction = "Determine the work-rule, overtime agreement, or notice question and the worksites it covers."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull filing basis"
+instruction = "Retrieve the company's current work rules and prior labor-standards filings and cite them."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Map obligations"
+instruction = "Lay out the required work-rule filings, overtime agreement limits, and notice steps for the case."
+tools = ["spreadsheet", "web_search"]
+[[workflow]]
+name = "Flag filing gaps"
+instruction = "Highlight where a filing or overtime agreement is missing or out of date and state assumptions plainly."
+[[workflow]]
+name = "Counsel review"
+instruction = "Route the Japan work-rules and overtime memo to employment counsel for sign-off."
+gate = "review"

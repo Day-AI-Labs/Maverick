@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "demo booking & AE handoff brief"
+consumers = ["account_executive", "sdr_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull request"
+instruction = "Read the inbound demo request, prospect account context, and any prior touch history for the contact."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check consent"
+instruction = "Confirm the contact is not opted-out or suppressed before proposing any meeting outreach."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Research account"
+instruction = "Research the account to surface use case, fit, and questions the AE should be ready for."
+tools = ["web_search"]
+[[workflow]]
+name = "Draft handoff"
+instruction = "Draft the proposed meeting slot, agenda, and a context-rich handoff brief for the assigned AE."
+[[workflow]]
+name = "Route to AE"
+instruction = "Hand the booking proposal and handoff brief to the account executive for review before the invite goes out."
+gate = "review"

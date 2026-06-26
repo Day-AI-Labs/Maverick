@@ -11,3 +11,32 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "onboarding status & blocker report"
+consumers = ["onboarding_manager", "account_owner"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Load account plan"
+instruction = "Pull the customer's onboarding milestones and activation criteria from the account record and setup playbook."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Check progress"
+instruction = "Compare current account state against each milestone to determine which steps are complete, pending, or overdue."
+tools = ["sql_query"]
+[[workflow]]
+name = "Identify blockers"
+instruction = "For each incomplete milestone, pinpoint the specific blocker and the owner responsible for clearing it."
+tools = ["read_file"]
+[[workflow]]
+name = "Draft nudges"
+instruction = "Draft milestone-specific follow-up messages chasing the blocking party without promising any policy exceptions."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Confirm activation"
+instruction = "Verify all activation criteria are met and route the status report to the onboarding manager for sign-off."
+tools = ["sql_query"]
+gate = "review"

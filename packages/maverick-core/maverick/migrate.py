@@ -59,8 +59,8 @@ KNOWN_SECTIONS = frozenset({
     "sandbox", "screening", "search", "security", "self_learning",
     "session_providers", "sharing", "shield", "skill_synthesis", "skills",
     "system", "telemetry", "template_registries", "tenancy", "thinking",
-    "tools", "tui", "verification", "voice", "webhooks", "workspace",
-    "world_model",
+    "tools", "tui", "verification", "voice", "webhooks", "workforce",
+    "workspace", "world_model",
 })
 
 
@@ -128,7 +128,7 @@ REWRITES: list[tuple[str, str]] = []
 
 def _apply_rewrites(cfg: dict) -> list[Finding]:
     findings = []
-    for old, new in REWRITES:  # pragma: no cover -- table is empty today
+    for old, new in REWRITES:
         old_parts, new_parts = old.split("."), new.split(".")
         node = cfg
         for p in old_parts[:-1]:

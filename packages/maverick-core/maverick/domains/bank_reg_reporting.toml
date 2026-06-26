@@ -18,3 +18,24 @@ deliverable = "Regulatory call report"
 consumers = ["controller", "compliance_officer"]
 cadence = "quarterly"
 gate = "approval"
+
+[[workflow]]
+name = "Confirm scope"
+instruction = "Identify the scheduled report's required schedules, line definitions, and filing deadline from current instructions."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Extract source data"
+instruction = "Query the source systems for each reportable line item over the reporting period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile to GL"
+instruction = "Reconcile every report line back to the general ledger and source subsystems and resolve any tie-out variance."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Validate edits"
+instruction = "Run the report's intra- and inter-schedule edit checks and document any flagged validation exceptions."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Route package"
+instruction = "Hand the reconciled report package with tie-outs to the controller and compliance officer for approval and filing."
+gate = "approval"

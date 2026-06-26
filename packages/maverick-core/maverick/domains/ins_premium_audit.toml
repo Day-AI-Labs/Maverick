@@ -18,3 +18,24 @@ deliverable = "Premium audit workpapers"
 consumers = ["premium_auditor", "controller"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Gather exposure records"
+instruction = "Pull the policy, payroll registers, and exposure ledgers for the audit period from the company records."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Reconcile to source"
+instruction = "Reconcile reported payroll and exposures against the source records and cite each figure with knowledge_search."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Classify exposures"
+instruction = "Map payroll and operations to the correct class codes and compute audited exposures by classification."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag variances"
+instruction = "Flag every variance between estimated and audited exposure and note assumptions or missing documentation for each."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand off workpapers"
+instruction = "Assemble the premium audit workpapers and route them to the premium auditor for review."
+gate = "review"

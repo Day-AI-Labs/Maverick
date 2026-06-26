@@ -10,3 +10,27 @@ max_risk = "low"
 
 knowledge_sources = ["tax"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "engagement letter and 7216 consent"
+consumers = ["tax_partner", "tax_preparer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Confirm scope"
+instruction = "Read the client's return type and prior engagement to confirm the correct scope and fee schedule for this year."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull template"
+instruction = "Select the firm's current engagement letter and IRC 7216 use/disclosure consent templates matching that return type."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag deltas"
+instruction = "Compare against the prior-year letter and flag every change in scope, fee, or consent for the partner's attention."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for signature"
+instruction = "Assemble the drafted letter and consent and route them to the partner for signature, never executing or sending them."
+gate = "review"

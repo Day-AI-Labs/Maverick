@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "store operational audit findings report"
+consumers = ["store_manager", "regional_director"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Scope audit"
+instruction = "Pull the audit checklist and store standards for the target location from company documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Sample records"
+instruction = "Query inventory, compliance, and operational records for the store and period under audit."
+tools = ["sql_query"]
+[[workflow]]
+name = "Test controls"
+instruction = "Compare observed records against each standard and log pass/fail with cited evidence."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Assign findings"
+instruction = "Rate each failed control by severity and assign a named owner and remediation due date."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Submit report"
+instruction = "Route the findings report to the store manager and regional director for review."
+gate = "review"

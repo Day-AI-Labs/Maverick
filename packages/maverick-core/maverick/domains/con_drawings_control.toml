@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "current drawing set register"
+consumers = ["project_manager", "field_superintendent"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Gather transmittals"
+instruction = "Read the latest drawing transmittals, ASIs, and bulletins to identify every sheet that has a new revision."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compare revisions"
+instruction = "Compare each incoming sheet revision against the register to find superseded sheets still in the field set."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Update register"
+instruction = "Update the current-set register with revision number, date, and the source transmittal cited for each changed sheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag stale prints"
+instruction = "List sheets where the field is still building from a superseded revision so they can be recalled and reissued."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "PM sign-off"
+instruction = "Route the updated register and recall list to the project manager for confirmation before the field set is reissued."
+gate = "review"

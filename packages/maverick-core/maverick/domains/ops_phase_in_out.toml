@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ops"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "transition & obsolescence runout plan"
+consumers = ["supply_planner", "product_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull transition data"
+instruction = "Query on-hand inventory, open orders, and demand for the outgoing and incoming SKUs from company records."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Verify traceability"
+instruction = "Confirm units, revisions, and traceability identifiers travel with each record and respect quality holds."
+tools = ["read_file"]
+[[workflow]]
+name = "Build runout plan"
+instruction = "Model runout timing and last-buy quantities to minimize obsolete inventory at the cutover date."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag obsolescence risk"
+instruction = "Highlight SKUs and quantities at risk of becoming obsolete and state assumptions and unknowns plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to planner"
+instruction = "Present the transition runout plan to the human supply planner for the cutover decision."
+gate = "review"

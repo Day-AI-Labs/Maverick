@@ -10,3 +10,30 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "place_trade", "execute_fx_trade", "create_order_instruction", "browser"]
 knowledge_sources = ["cap"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Form ADV/PF filing package"
+consumers = ["compliance_officer", "chief_compliance_officer"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Confirm form"
+instruction = "Identify the filing and reporting period and pull the current form instructions and thresholds."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Gather records"
+instruction = "Collect the firm's AUM, fund, and client figures and supporting records needed for each disclosure schedule."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Assemble filing"
+instruction = "Populate the disclosures, narrative, and supporting schedules with each figure cited to its source."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Flag estimates"
+instruction = "Mark every estimated number or ambiguous field and never guess at a regulatory threshold you cannot verify."
+[[workflow]]
+name = "Route to CCO"
+instruction = "Hand the assembled filing package to a compliance officer to review and file, since filing is a human act."
+gate = "review"

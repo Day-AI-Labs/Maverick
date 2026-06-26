@@ -31,3 +31,24 @@ def test_maverick_mcp_help_still_advertises_cross_language():
     assert "cross-language" in low
     for lang in ("typescript", "go", "rust"):
         assert lang in low
+
+
+def test_maverick_mcp_runs_enterprise_preflight_before_stdio(monkeypatch):
+    import maverick.deployment as deployment
+    import maverick_mcp.server as server
+
+    calls = {"gate": 0, "run": 0}
+
+    def _gate():
+        calls["gate"] += 1
+        raise RuntimeError("enterprise gate blocked")
+
+    monkeypatch.setattr(deployment, "require_enterprise_or_die", _gate)
+    monkeypatch.setattr(server.MCPServer, "run", lambda self: calls.__setitem__("run", calls["run"] + 1))
+
+    from maverick.cli import main
+    result = CliRunner().invoke(main, ["mcp"])
+
+    assert result.exit_code != 0
+    assert "enterprise gate blocked" in repr(result.exception)
+    assert calls == {"gate": 1, "run": 0}

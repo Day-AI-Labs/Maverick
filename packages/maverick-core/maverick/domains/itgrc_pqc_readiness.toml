@@ -18,3 +18,23 @@ deliverable = "PQC migration roadmap"
 consumers = ["security_analyst", "ciso"]
 cadence = "quarterly"
 gate = "review"
+
+[[workflow]]
+name = "Inventory crypto"
+instruction = "Build the crypto-asset inventory of algorithms, key lengths, certificates, and protocols from architecture and config docs."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Map to NIST"
+instruction = "Map each asset's quantum exposure to NIST FIPS 203/204/205 and identify quantum-vulnerable primitives."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Flag HNDL"
+instruction = "Flag Harvest-Now-Decrypt-Later risk where long-lived secrets traverse untrusted channels under vulnerable ciphers."
+tools = ["read_file"]
+[[workflow]]
+name = "Prioritize roadmap"
+instruction = "Draft a prioritized migration roadmap sequencing assets by exposure, data lifetime, and migration effort."
+[[workflow]]
+name = "Route to owner"
+instruction = "Hand the roadmap to the CISO to review and authorize remediation, making no crypto changes yourself."
+gate = "review"

@@ -196,6 +196,50 @@ def _set_theme_cookie(response, theme: str) -> None:
         )
 
 
+def _require_auth_enabled() -> bool:
+    """Opt-in guard: refuse to serve the dashboard with no auth configured.
+    ``MAVERICK_DASHBOARD_REQUIRE_AUTH`` env wins over ``[dashboard] require_auth``;
+    off by default so the single-tenant local flow is unchanged."""
+    env = os.environ.get("MAVERICK_DASHBOARD_REQUIRE_AUTH", "").strip().lower()
+    if env:
+        return env in {"1", "true", "yes", "on"}
+    try:
+        from maverick.config import load_config
+        return bool(((load_config() or {}).get("dashboard") or {}).get("require_auth"))
+    except Exception:  # pragma: no cover -- config never blocks startup
+        return False
+
+
+def _assert_dashboard_auth_configured() -> None:
+    """When ``require_auth`` is set, refuse to boot if NO auth mechanism is
+    configured (a dashboard token, OIDC, or reverse-proxy SSO), so an operator
+    who asked for auth can never accidentally serve the (loopback) control
+    surface unauthenticated. No-op unless ``require_auth`` is explicitly on, so
+    a fresh single-tenant install is never locked out."""
+    if not _require_auth_enabled():
+        return
+    if os.environ.get("MAVERICK_DASHBOARD_TOKEN"):
+        return
+    try:
+        from maverick.oidc import oidc_enabled
+        if oidc_enabled():
+            return
+    except Exception:  # pragma: no cover
+        pass
+    try:
+        from maverick.proxy_auth import proxy_auth_enabled
+        if proxy_auth_enabled():
+            return
+    except Exception:  # pragma: no cover
+        pass
+    raise RuntimeError(
+        "[dashboard] require_auth is set, but no auth mechanism is configured. "
+        "Set MAVERICK_DASHBOARD_TOKEN, enable OIDC ([auth.oidc]), or enable "
+        "reverse-proxy SSO ([auth.proxy]) -- refusing to serve the dashboard "
+        "unauthenticated."
+    )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Application lifespan: run startup tasks, then yield to serve.
@@ -217,6 +261,9 @@ async def _lifespan(app: FastAPI):
     """
     from maverick.deployment import require_enterprise_or_die
     require_enterprise_or_die()
+    from maverick.residency import require_residency_or_die
+    require_residency_or_die()  # strict region pin (#41); no-op unless opted in
+    _assert_dashboard_auth_configured()
     await _reclaim_orphans()
     await _install_queue_dispatcher()
     yield
@@ -257,6 +304,20 @@ app.include_router(api_router)
 # flow isn't fully configured, so including the router unconditionally is inert
 # off by default. See maverick_dashboard.oidc_login.
 app.include_router(oidc_login_router)
+# SCIM 2.0 user provisioning (/scim/v2). Self-gates on MAVERICK_SCIM_TOKEN and
+# 404s when unset, so including it is inert off by default. It carries its own
+# static IdP bearer, so the /scim/ prefix is exempted from the dashboard-token
+# middleware and the OIDC gate below.
+from .scim import router as scim_router  # noqa: E402
+
+app.include_router(scim_router)
+# SAML 2.0 SP browser SSO (/saml/...). 404s until [auth.saml] is configured, so
+# including it is inert off by default. The IdP POSTs the assertion to the ACS
+# with no dashboard bearer, so the /saml/ prefix is exempted from the
+# dashboard-token middleware and the OIDC gate (it's how a browser gets a session).
+from .saml import router as saml_router  # noqa: E402
+
+app.include_router(saml_router)
 a2a.mount(app)
 
 _DOCS_CSP = (
@@ -345,15 +406,30 @@ async def _reclaim_orphans() -> None:
 
 
 async def _install_queue_dispatcher() -> None:
-    """If ``[queue] backend`` selects a task queue, install the QueueDispatcher
-    so this (producer) process enqueues goals for the worker pool instead of
-    running them in-process. No-op for the default in-process install."""
+    """Install an out-of-process goal dispatcher if one is configured.
+
+    ``[queue] backend`` selects the arq/Redis QueueDispatcher; ``[grpc_dispatch]
+    target`` selects the gRPC remote-worker dispatcher. Both make this (producer)
+    process hand goals to a worker pool instead of running them in-process. The
+    queue takes precedence when both are set (they share the single dispatcher
+    slot); the gRPC dispatcher is only attempted when the queue didn't install.
+    No-op for the default in-process install."""
     try:
         from maverick.queue_dispatcher import install_from_config
         if install_from_config():
             log.info("queue dispatcher installed: goals run out-of-process")
+            return
     except Exception:
         log.exception("queue dispatcher install failed (running in-process)")
+    # gRPC dispatch had a complete install_from_config() that nothing called, so
+    # [grpc_dispatch] target was silently ignored and goals kept running
+    # in-process. Wire it in as the fallback out-of-process path.
+    try:
+        from maverick.grpc_dispatcher import install_from_config as install_grpc
+        if install_grpc():
+            log.info("gRPC dispatcher installed: goals run on a remote worker")
+    except Exception:
+        log.exception("gRPC dispatcher install failed (running in-process)")
 
 _AUTH_EXEMPT = {
     "/healthz", "/livez", "/readyz",
@@ -568,12 +644,29 @@ def _is_proxied(request: Request) -> bool:
 @app.middleware("http")
 async def bearer_auth(request: Request, call_next):
     expected = os.environ.get("MAVERICK_DASHBOARD_TOKEN")
-    if request.url.path in _AUTH_EXEMPT or request.url.path.startswith("/share/"):
+    if (request.url.path in _AUTH_EXEMPT or request.url.path.startswith("/share/")
+            or request.url.path.startswith("/scim/")
+            or request.url.path.startswith("/saml/")):
         # /share/<token> self-authenticates with its signed, revocable token
         # (verified in the route, which 404s an invalid/expired/revoked one) --
         # an external recipient has no dashboard bearer, like the webhook paths.
         return await call_next(request)
     if not expected:
+        if _require_auth_enabled():
+            # A configured OIDC or reverse-proxy SSO layer must get a chance to
+            # enforce identity. Do not satisfy require_auth with the historical
+            # loopback/no-token fallback.
+            try:
+                from maverick.oidc import oidc_enabled
+                from maverick.proxy_auth import proxy_auth_enabled
+                if oidc_enabled() or proxy_auth_enabled():
+                    return await call_next(request)
+            except Exception:  # pragma: no cover - fall through to fail closed
+                pass
+            return JSONResponse(
+                {"detail": "dashboard require_auth is set but no auth mechanism accepted the request"},
+                status_code=401,
+            )
         # Client-bound / enterprise: loopback-trust (no-token) mode is DISABLED.
         # In a hosted/regulated deployment any process sharing the loopback
         # namespace (a sidecar, a co-located container, an SSRF pivot to
@@ -799,6 +892,26 @@ async def extension_cors(request: Request, call_next):
     elif "origin" not in vary.lower():
         response.headers["Vary"] = f"{vary}, Origin"
     return response
+
+
+@app.middleware("http")
+async def tenant_pinning(request: Request, call_next):
+    """Reset any per-request tenant pin established by authentication.
+
+    The actual pin is set inside ``require_principal`` after FastAPI has resolved
+    the verified caller but before route handlers run. This outer middleware owns
+    cleanup so the ContextVar token never leaks across requests/tasks.
+    """
+    try:
+        return await call_next(request)
+    finally:
+        token = getattr(request.state, "tenant_pin_token", None)
+        if token is not None:
+            try:
+                from maverick.paths import reset_tenant
+                reset_tenant(token)
+            except Exception:  # pragma: no cover
+                pass
 
 
 # ----- goal-creation rate limit -----
@@ -1071,6 +1184,37 @@ async def overview(request: Request) -> HTMLResponse:
 async def redact_page(request: Request) -> HTMLResponse:
     """Granular redaction UI (preview/select/scrub via /api/v1/redact/preview)."""
     return templates.TemplateResponse(request, "redact.html", {})
+
+
+@app.get("/workforce", response_class=HTMLResponse)
+async def workforce_page(request: Request) -> HTMLResponse:
+    """The workforce: specialist packs as departments, with delivery outcomes.
+
+    Presents the 1,000+ packs as buyable teams (charter + headcount), a
+    firm-wide delivery rollup from the Operating Record, and the catalog counts.
+    Per-department governed reviews load from /api/v1/departments/{key}/review.
+    """
+    from maverick.departments import department_entitled, list_departments
+    from maverick.marketplace.storefront import connector_marketplace
+    from maverick.operating_record import assemble
+    from maverick.outcomes import firm_totals, worker_cards
+
+    w = _world()
+    depts = list_departments()
+    owner = goal_owner_filter(request)
+    firm = firm_totals(assemble(w, owner=owner)).to_dict()
+    leaders = [c.to_dict() for c in worker_cards(w, top=5, owner=owner)]
+    return templates.TemplateResponse(
+        request, "workforce.html",
+        {
+            "departments": depts,
+            "entitlements": {d.key: department_entitled(d.key) for d in depts},
+            "firm": firm,
+            "leaders": leaders,
+            "pack_total": sum(d.headcount for d in depts),
+            "connector_total": connector_marketplace()["total"],
+        },
+    )
 
 
 @app.get("/perf", response_class=HTMLResponse)

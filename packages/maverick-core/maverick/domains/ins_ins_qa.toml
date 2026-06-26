@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ins"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Claims QA sampling findings"
+consumers = ["claims_manager", "compliance_officer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Define sample"
+instruction = "Select a representative sample of closed claims for the period using the agreed sampling criteria."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load standards"
+instruction = "Retrieve the current claims quality standards and scoring rubric to grade against."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Score claims"
+instruction = "Assess each sampled claim against the rubric and record pass/fail per criterion with the supporting file citation."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Theme findings"
+instruction = "Aggregate scores into recurring themes and error rates without naming or blaming individual adjusters."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Manager review"
+instruction = "Route the QA sampling findings to the claims manager and quality lead for sign-off."
+gate = "review"

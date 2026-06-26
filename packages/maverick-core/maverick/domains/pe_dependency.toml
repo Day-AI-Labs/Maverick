@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file", "self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "dependency remediation brief"
+consumers = ["engineering_lead", "security_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Inventory deps"
+instruction = "Read the manifests, lockfiles, and SBOM to enumerate direct and transitive dependencies and their versions."
+tools = ["read_file", "jfrog_read"]
+[[workflow]]
+name = "Scan CVEs"
+instruction = "Search advisories and the artifact registry for CVEs, EOL packages, and copyleft licenses affecting the inventory."
+tools = ["web_search", "jfrog_read", "knowledge_search"]
+[[workflow]]
+name = "Apply hard floor"
+instruction = "Flag every critical-CVE and copyleft dependency as a non-negotiable must-fix and separate it from optional upgrades."
+[[workflow]]
+name = "Draft upgrade plan"
+instruction = "Propose target versions with changelog and breaking-change notes ordered by risk and effort."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Route to owner"
+instruction = "Hand the remediation brief to the engineering and security leads to decide which updates to schedule."
+gate = "review"
