@@ -2618,16 +2618,15 @@ def open_world(path: Path | None = None) -> Any:
 # WAL + a write lock, so one instance is safely shared across the FastAPI
 # threadpool / goal tasks.
 MAX_TENANT_WORLDS = 128
-# LRU cache of per-tenant WorldModels (insertion/access order = recency). An
-# OrderedDict so a full cache evicts the least-recently-used tenant instead of
-# hard-failing the next one.
+# LRU cache of per-tenant WorldModels (insertion/access order = recency).
+# New tenants are rejected at the cap so remote per-user tenancy cannot create
+# unbounded on-disk tenant databases or in-flight SQLite connections.
 _tenant_worlds: OrderedDict[str, WorldModel] = OrderedDict()
 _tenant_worlds_lock = threading.Lock()
 
 
 class TenantWorldLimitError(RuntimeError):
-    """Retained for back-compat. No longer raised: the cache now evicts the
-    least-recently-used tenant rather than hard-failing at the ceiling."""
+    """Raised when creating a new tenant world would exceed the process cap."""
 
 
 def world_for_tenant(tenant: str | None = None) -> WorldModel:
@@ -2640,14 +2639,12 @@ def world_for_tenant(tenant: str | None = None) -> WorldModel:
     world/memory/audit all land under the same tenant dir.
 
     Repeated calls for the same tenant return the SAME instance. The cache holds
-    up to ``MAX_TENANT_WORLDS`` tenant connections as an LRU: reaching the
-    ceiling EVICTS the least-recently-used tenant (so a busy fleet of many
-    tenants keeps working) rather than raising. The legacy shared (``None``)
-    world is never evicted. Eviction drops the cache reference only -- it does
-    not force-close the connection (an in-flight caller may still hold it); the
-    underlying SQLite connection is reclaimed when its last reference drops.
-    Does NOT consult the Postgres backend -- it is the per-tenant SQLite factory
-    the server uses for goal/conversation/turn writes.
+    up to ``MAX_TENANT_WORLDS`` tenant connections. Reaching the ceiling rejects
+    creation of additional tenant worlds instead of evicting entries and
+    creating unbounded on-disk tenant databases. The legacy shared (``None``)
+    world does not count against the tenant cap. Does NOT consult the Postgres
+    backend -- it is the per-tenant SQLite factory the server uses for
+    goal/conversation/turn writes.
     """
     from .paths import data_dir
 
@@ -2659,19 +2656,22 @@ def world_for_tenant(tenant: str | None = None) -> WorldModel:
         if world is not None:
             _tenant_worlds.move_to_end(key)  # mark most-recently-used
             return world
-        if tenant is not None and len(_tenant_worlds) >= MAX_TENANT_WORLDS:
-            _evict_lru_tenant_world(shared_key)
+        if (
+            tenant is not None
+            and _cached_tenant_world_count(shared_key) >= MAX_TENANT_WORLDS
+        ):
+            raise TenantWorldLimitError(
+                f"too many tenant worlds cached (limit {MAX_TENANT_WORLDS})"
+            )
         world = WorldModel(path)
         _tenant_worlds[key] = world
         _tenant_worlds.move_to_end(key)
         return world
 
 
-def _evict_lru_tenant_world(shared_key: str) -> None:
-    """Drop the least-recently-used TENANT world from the cache (never the
-    shared ``None`` world). Caller holds ``_tenant_worlds_lock``."""
-    for k in list(_tenant_worlds):  # oldest-first
-        if k == shared_key:
-            continue
-        _tenant_worlds.pop(k, None)
-        return
+def _cached_tenant_world_count(shared_key: str) -> int:
+    """Return cached tenant worlds, excluding the legacy shared world.
+
+    Caller holds ``_tenant_worlds_lock``.
+    """
+    return sum(1 for k in _tenant_worlds if k != shared_key)
