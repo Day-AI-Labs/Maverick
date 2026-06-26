@@ -143,3 +143,47 @@ def test_main_with_sidecar_passes_data_path_then_needs_torch(tmp_path, capsys):
     # which fails only because torch isn't installed here.
     assert "1/1 pair(s) have it" in err
     assert rc == 1 and "needs torch" in err
+
+
+# ---------- DPO row resolution (shared by full-param + QLoRA paths) ----------
+
+def test_resolve_pair_text_precedence_and_require():
+    pair = {"chosen_text": "cached", "chosen_id": "a"}
+    assert rlaif.resolve_pair_text(pair, "chosen") == "cached"
+    # real text via sidecar when no cached text
+    p2 = {"chosen_id": "a"}
+    assert rlaif.resolve_pair_text(
+        p2, "chosen", rows_by_id={"a": {"id": "a"}},
+        text_sidecar={"a": "real"}) == "real"
+    # require_real with no text -> raises
+    import pytest
+    with pytest.raises(ValueError):
+        rlaif.resolve_pair_text(
+            p2, "chosen", rows_by_id={"a": {"id": "a"}}, require_real_text=True)
+
+
+def test_pairs_to_dpo_rows_builds_and_skips_incomplete():
+    pairs = [
+        {"chosen_text": "good1", "rejected_text": "bad1", "weight": 0.9},
+        {"chosen_text": "good2", "rejected_id": "z"},  # missing rejected text
+    ]
+    # require_real -> the incomplete pair is skipped, not raised
+    rows = rlaif.pairs_to_dpo_rows(pairs, require_real_text=True)
+    assert len(rows) == 1
+    assert rows[0] == {"chosen": "good1", "rejected": "bad1", "weight": 0.9}
+
+
+# ---------- QLoRA path: graceful missing-dep (no torch/peft here) ----------
+
+def test_main_lora_path_needs_qlora_deps(tmp_path, capsys):
+    data = _klear(tmp_path)
+    side = tmp_path / "texts.jsonl"
+    side.write_text('{"id": "a", "text": "c"}\n{"id": "b", "text": "r"}\n',
+                    encoding="utf-8")
+    rc = rlaif.main([
+        "--data", str(data), "--base-model", "Qwen/Qwen3-Coder-30B-A3B",
+        "--out", str(tmp_path / "out"), "--require-real-text",
+        "--text-sidecar", str(side), "--lora", "--bits", "4",
+    ])
+    err = capsys.readouterr().err
+    assert rc == 1 and "QLoRA DPO needs" in err  # routed to the QLoRA backend
