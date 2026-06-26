@@ -265,11 +265,18 @@ def build_demo_proposer(demo: Demonstration, llm, *, model: str | None = None, b
     the result flows through the identical clamp. Returns ``{}`` on any failure;
     ``generate_profile`` then falls back to its safe default and clamps anyway.
     """
-    from .intake import _parse_proposal
+    from .intake import _parse_proposal, _slug
 
     def propose(_spec) -> dict:
+        system = _DEMO_PROPOSER_SYSTEM
+        try:  # fold in promoted factory guidance (no-op while self-improvement off)
+            from .domain import suite_for
+            from .factory_learning import augment_system_prompt
+            system = augment_system_prompt(_DEMO_PROPOSER_SYSTEM, suite=suite_for(_slug(demo.title)))
+        except Exception:  # pragma: no cover -- guidance must never break generation
+            pass
         resp = llm.complete(
-            system=_DEMO_PROPOSER_SYSTEM,
+            system=system,
             messages=[{"role": "user", "content": demo.render()}],
             model=model, budget=budget, max_tokens=1500,
         )

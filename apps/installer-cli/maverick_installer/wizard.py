@@ -1384,6 +1384,14 @@ def pick_advanced() -> dict[str, Any]:
             "what it adjusted for. Requires self-improvement enabled.",
             default=False,
         ),
+        "factory_learning": _q_confirm(
+            "Self-improving agent factory? Mine recurring pack-generation gaps (a tool a "
+            "draft kept omitting, a skill its workflow kept needing) into proposer "
+            "corrections and promote them through the self-improvement gate, so future "
+            "packs are drafted better. Guidance text only -- never widens an envelope. "
+            "Requires self-improvement enabled.",
+            default=True,
+        ),
         "rehearsal": _q_confirm(
             "Pre-execution rehearsal? Before a risky plan runs, simulate it against the "
             "learned world-model of your environment and gate on the prediction: proceed "
@@ -2867,13 +2875,22 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[credit]")
         lines.append("enable = true")
-    if advanced.get("causal_promotion"):
+    # The [self_improvement] block carries several sub-toggles; emit it if any
+    # diverges from its default (causal_promotion defaults off, factory_learning
+    # defaults on -- so we only write factory_learning when the user opts out).
+    declined_factory = "factory_learning" in advanced and not advanced.get("factory_learning")
+    if advanced.get("causal_promotion") or declined_factory:
         lines.append("")
         lines.append("[self_improvement]")
-        lines.append("# Promote learned changes on their confounder-adjusted causal")
-        lines.append("# effect (maverick.promotion_effect), not a correlation. Applies")
-        lines.append("# when self-improvement is enabled.")
-        lines.append("causal_promotion = true")
+        if advanced.get("causal_promotion"):
+            lines.append("# Promote learned changes on their confounder-adjusted causal")
+            lines.append("# effect (maverick.promotion_effect), not a correlation. Applies")
+            lines.append("# when self-improvement is enabled.")
+            lines.append("causal_promotion = true")
+        if declined_factory:
+            lines.append("# Keep the agent factory's generator static (do not mine")
+            lines.append("# pack-generation gaps into proposer corrections).")
+            lines.append("factory_learning = false")
     if advanced.get("rehearsal"):
         lines.append("")
         lines.append("[rehearsal]")

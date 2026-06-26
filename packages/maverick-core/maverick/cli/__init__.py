@@ -547,15 +547,21 @@ def _show_capability_plan(profile):
     return plan
 
 
-def _apply_capability_plan(plan, llm) -> None:
+def _apply_capability_plan(profile, plan, llm) -> None:
     """Equip an approved pack: install catalog skills + synthesize declared
-    tools through the governed paths. No-op unless self-learning is enabled."""
+    tools through the governed paths. No-op unless self-learning is enabled.
+    Records the gaps as factory-learning signals (no-op unless that's on)."""
     if plan is None or plan.is_empty():
         return
     from ..provision import apply_plan
     result = apply_plan(plan, approved=True, llm=llm)
     if result.acquired or result.generated or result.failed:
         click.echo(click.style(f"Provisioning: {result.summary()}", fg="cyan"))
+    try:
+        from .. import factory_learning
+        factory_learning.record_provisioning(profile, plan, result)
+    except Exception:  # pragma: no cover -- learning must never break onboarding
+        pass
 
 
 @main.command()
@@ -684,10 +690,10 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
     click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
     click.echo(f"Domain '{profile.name}' is now available to the swarm.")
 
-    _apply_capability_plan(plan, llm)
+    _apply_capability_plan(profile, plan, llm)
 
 
-@main.command()
+@main.command("learn-demo")
 @click.argument("demo_file", type=click.Path(exists=True, dir_okay=False))
 @click.option("--name", default=None, help="Task title (otherwise the file name).")
 @click.option("--industry", default="", help="Industry context (optional).")
@@ -697,7 +703,7 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
               help="Derive the pack deterministically from the steps (no LLM).")
 @click.option("--yes", is_flag=True, help="Skip the approval prompt.")
 @click.pass_context
-def demo(ctx: click.Context, demo_file, name, industry, source, no_llm, yes) -> None:
+def learn_demo(ctx: click.Context, demo_file, name, industry, source, no_llm, yes) -> None:
     """Synthesize a specialist agent from a watched task (programming by demo).
 
     Reads a demonstration -- an ordered log of what a person did (JSONL, or
@@ -746,7 +752,45 @@ def demo(ctx: click.Context, demo_file, name, industry, source, no_llm, yes) -> 
     click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
     click.echo(f"Domain '{profile.name}' is now available to the swarm.")
 
-    _apply_capability_plan(plan, llm)
+    _apply_capability_plan(profile, plan, llm)
+
+
+@main.command("factory-learn")
+@click.option("--min-support", default=3, show_default=True,
+              help="Distinct packs that must exhibit a gap before it's a correction.")
+@click.option("--dry-run", is_flag=True,
+              help="Show mined corrections without promoting any.")
+def factory_learn(min_support, dry_run) -> None:
+    """Improve the agent factory from what its packs got wrong.
+
+    Mines recurring provisioning/approval gaps into proposer corrections and
+    promotes those the self-improvement gate accepts; promoted guidance is then
+    folded into future pack generation. Off unless [self_improvement] enable
+    (or MAVERICK_FACTORY_LEARNING) is set.
+    """
+    from .. import factory_learning
+
+    if not factory_learning.enabled():
+        click.echo("Factory learning is OFF. Enable [self_improvement] or set "
+                   "MAVERICK_FACTORY_LEARNING=1 to mine and promote corrections.")
+        return
+    corrections = factory_learning.mine_corrections(min_support=min_support)
+    if not corrections:
+        click.echo("No recurring factory gaps meet the support threshold yet.")
+        return
+    click.echo(click.style(f"{len(corrections)} candidate correction(s):", bold=True))
+    for c in corrections:
+        click.echo(f"  - [{c.scope}/{c.signal}] support={c.support}: {c.guidance}")
+    if dry_run:
+        click.echo("\n(dry run: nothing promoted)")
+        return
+    promoted = factory_learning.review_and_promote(min_support=min_support)
+    if promoted:
+        click.echo(click.style(f"\nPromoted {len(promoted)} correction(s) through "
+                               "the self-improvement gate.", fg="green"))
+    else:
+        click.echo("\nNothing cleared the gate this pass "
+                   "(insufficient evidence, or calibration frozen).")
 
 
 @main.command()

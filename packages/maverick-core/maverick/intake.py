@@ -362,8 +362,15 @@ def build_llm_proposer(llm, *, model: str | None = None, budget=None):
     path ("describe the business, we synthesize the pack"). The result is still
     run through ``validate_profile``, so the model can't widen the envelope."""
     def propose(spec: IntakeSpec) -> dict:
+        system = _PROPOSER_SYSTEM
+        try:  # fold in promoted factory guidance (no-op while self-improvement off)
+            from .domain import suite_for
+            from .factory_learning import augment_system_prompt
+            system = augment_system_prompt(_PROPOSER_SYSTEM, suite=suite_for(_slug(spec.name)))
+        except Exception:  # pragma: no cover -- guidance must never break generation
+            pass
         resp = llm.complete(
-            system=_PROPOSER_SYSTEM,
+            system=system,
             messages=[{"role": "user", "content": _intake_prompt(spec)}],
             model=model, budget=budget, max_tokens=1500,
         )

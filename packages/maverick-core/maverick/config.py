@@ -924,6 +924,11 @@ def get_self_improvement() -> dict:
         # baseline/candidate diff. Off by default; the controller only consults a
         # causal effect when this is set.
         "causal_promotion": bool(cfg.get("causal_promotion", False)),
+        # Self-improving agent factory (maverick.factory_learning): mine recurring
+        # pack-generation gaps into proposer corrections and promote them through
+        # this same gate. Sub-toggle of the master switch -- on once
+        # self-improvement is accepted; set false to keep the generator static.
+        "factory_learning": bool(cfg.get("factory_learning", True)),
     }
 
 
