@@ -38,6 +38,15 @@ log = logging.getLogger(__name__)
 _KINDS = ("action", "narration", "observation")
 _MAX_STEP_CHARS = 400
 _MAX_WORKFLOW_STEPS = 8
+# Bound the work BEFORE the regex-heavy redaction sweep. Only this many chars of a
+# raw field can survive the final cap, so scanning a multi-MB paste is wasted CPU;
+# the window leaves generous margin for a secret token starting inside the kept
+# region. Plus hard caps on the whole capture so an attacker-supplied log can't
+# drive unbounded CPU/RAM through induction.
+_REDACT_WINDOW = _MAX_STEP_CHARS * 4
+_MAX_DEMO_BYTES = 2_000_000        # cap how much of a demonstration file we read
+_MAX_DEMO_STEPS = 2_000            # cap how many steps we parse/retain
+_MAX_JSON_LINE = 65_536            # don't hand a giant line to the recursive JSON scanner
 # A real job uses a handful of tools; cap the derived envelope so a pathological
 # demonstration (thousands of distinct tool hints) can't synthesize a pack with
 # an unbounded allow_tools list. validate_profile clamps by RISK, not by COUNT.
@@ -67,9 +76,12 @@ def _clean(text: str) -> str:
     A raw (programmatically built) DemoStep can carry a multi-line credential
     paste; the parser only ever yields single lines, so normalize both paths to
     the same shape -- redacted, one line, bounded -- before anything is persisted
-    or sent to a provider."""
-    cleaned = " ".join(_redact(text or "").split())
-    return cleaned[:_MAX_STEP_CHARS]
+    or sent to a provider. The raw field is truncated to ``_REDACT_WINDOW`` BEFORE
+    the (regex-heavy) redaction sweep so a multi-MB paste costs O(window), not
+    O(field): only the kept window can survive the final ``_MAX_STEP_CHARS`` cap
+    anyway."""
+    windowed = " ".join((text or "")[:_REDACT_WINDOW].split())
+    return _redact(windowed)[:_MAX_STEP_CHARS]
 
 
 @dataclass
@@ -148,10 +160,12 @@ def parse_demonstration(text: str) -> list[DemoStep]:
     """
     steps: list[DemoStep] = []
     for raw in (text or "").splitlines():
+        if len(steps) >= _MAX_DEMO_STEPS:  # bound count for an attacker-supplied log
+            break
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        if line.startswith("{") and line.endswith("}"):
+        if line.startswith("{") and line.endswith("}") and len(line) <= _MAX_JSON_LINE:
             try:
                 d = json.loads(line)
                 if isinstance(d, dict) and (d.get("summary") or d.get("text")):
@@ -195,10 +209,13 @@ def load_demonstration(
     """Read a demonstration file (JSONL or prefixed text) into a Demonstration.
 
     ``title`` defaults to the file stem. Never raises on a malformed body --
-    unparseable lines are dropped by ``parse_demonstration``.
+    unparseable lines are dropped by ``parse_demonstration``. At most
+    ``_MAX_DEMO_BYTES`` are read so an oversized (or attacker-supplied) capture
+    log can't drive unbounded work through induction.
     """
     p = Path(path)
-    text = p.read_text(encoding="utf-8", errors="replace")
+    with p.open("r", encoding="utf-8", errors="replace") as fh:
+        text = fh.read(_MAX_DEMO_BYTES)
     return Demonstration(
         title=title or p.stem.replace("_", " "),
         steps=parse_demonstration(text),
