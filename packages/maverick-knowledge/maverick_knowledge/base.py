@@ -110,10 +110,17 @@ class KnowledgeBase:
     def ingest_text(self, collection: str, text: str, source: str = "") -> int:
         """Chunk, shield-scan, embed and store one document's text. Returns the
         number of chunks stored (poisoned chunks are dropped)."""
-        chunks = [
-            c for c in chunk_text(text, self.chunk_size, self.chunk_overlap)
-            if self._safe(c)
-        ]
+        raw_chunks = list(chunk_text(text, self.chunk_size, self.chunk_overlap))
+        chunks = [c for c in raw_chunks if self._safe(c)]
+        # Boundary-split evasion guard: an attacker can straddle an injection
+        # tripwire across a chunk edge (or pick a small chunk_size) so no single
+        # chunk matches the marker even though the full document does. If every
+        # chunk passed yet the FULL text trips the screen, the payload was split
+        # -- drop the whole document rather than ingest the poison.
+        if len(chunks) == len(raw_chunks) and not self._safe(text):
+            log.warning("knowledge: dropping document with boundary-split "
+                        "injection marker on ingest")
+            return 0
         if not chunks:
             return 0
         vectors = self.embedder.embed(chunks)
