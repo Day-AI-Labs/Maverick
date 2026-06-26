@@ -569,6 +569,15 @@ class Agent:
         # the pack's [autonomy] block; a child inherits its parent's so a sub-tree
         # shares the hire's authority. None == the default SUGGEST profile.
         self._autonomy = autonomy if autonomy is not None else getattr(parent, "_autonomy", None)
+        # Workforce overrides are tied to the profile's original hire, not to an
+        # ad-hoc child role. Otherwise a model-selected spawn_subagent role could
+        # layer a more permissive [workforce.agents.<role>] override over an
+        # inherited low-authority profile. Explicit profile spawns establish a new
+        # override anchor; inherited profiles keep their parent's anchor.
+        self._autonomy_name = (
+            role if autonomy is not None
+            else getattr(parent, "_autonomy_name", role)
+        )
         # Optional domain-pack persona, appended to the system prompt below.
         self._domain_persona = persona
         # Domain knowledge collections this agent may query (the DomainProfile's
@@ -1457,7 +1466,8 @@ class Agent:
             # communicates) are never gated by the dial.
             if (_aa.levels_enabled() and _rr(_risk) > 0
                     and name not in _aa.COORDINATION_TOOLS):
-                _al = _aa.decide(self.role, getattr(self, "_autonomy", None),
+                _al = _aa.decide(getattr(self, "_autonomy_name", self.role),
+                                 getattr(self, "_autonomy", None),
                                  action=name, risk=_risk)
                 _amap = {"allow": _GD.ALLOW, "require_human": _GD.REQUIRE_HUMAN,
                          "deny": _GD.DENY}
