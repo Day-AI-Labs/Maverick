@@ -102,3 +102,14 @@ packages/maverick-core/maverick/grpc_api/*_pb2_grpc.py
 
 # repo-root scratch dir for ad-hoc stress/repro scripts (never committed)
 /scratchpad/
+
+# Self-learning training artifacts — DATA + WEIGHTS, never commit. These hold
+# RAW run transcripts (proposer_texts) and large model files; keep them on
+# Hugging Face Hub (private) / object storage, not in git. See
+# docs/self-learning-runbook.md.
+trajectories.jsonl
+proposer_texts.jsonl
+prm_linear.json
+scores.json
+proposer_dpo/
+maverick-train-out/
