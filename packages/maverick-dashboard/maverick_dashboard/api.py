@@ -76,6 +76,7 @@ from .auth import (
     execution_user_id_from_request,
     goal_owner_filter,
     is_dashboard_admin,
+    require_global_permission,
     require_permission,
 )
 
@@ -139,14 +140,14 @@ def _get_tenant_or_404(tenant_id: str):
 
 @router.get("/admin/tenants", response_model=list[TenantOut])
 async def list_tenants(request: Request) -> list[TenantOut]:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick import tenant_registry
     return [_to_tenant_out(r) for r in tenant_registry.list_tenants()]
 
 
 @router.post("/admin/tenants", response_model=TenantOut, status_code=201)
 async def create_tenant(request: Request, body: TenantCreateIn) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick import tenant_registry
     try:
         rec = tenant_registry.create_tenant(
@@ -161,13 +162,13 @@ async def create_tenant(request: Request, body: TenantCreateIn) -> TenantOut:
 
 @router.get("/admin/tenants/{tenant_id}", response_model=TenantOut)
 async def get_tenant(request: Request, tenant_id: str) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     return _to_tenant_out(_get_tenant_or_404(tenant_id))
 
 
 @router.post("/admin/tenants/{tenant_id}/suspend", response_model=TenantOut)
 async def suspend_tenant(request: Request, tenant_id: str) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick import tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.suspend_tenant(tenant_id))
@@ -175,7 +176,7 @@ async def suspend_tenant(request: Request, tenant_id: str) -> TenantOut:
 
 @router.post("/admin/tenants/{tenant_id}/resume", response_model=TenantOut)
 async def resume_tenant(request: Request, tenant_id: str) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick import tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.resume_tenant(tenant_id))
@@ -185,7 +186,7 @@ async def resume_tenant(request: Request, tenant_id: str) -> TenantOut:
 async def set_tenant_plan(
     request: Request, tenant_id: str, body: TenantPlanIn,
 ) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick import tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(tenant_registry.set_plan(tenant_id, body.plan))
@@ -195,7 +196,7 @@ async def set_tenant_plan(
 async def set_tenant_quota(
     request: Request, tenant_id: str, body: TenantQuotaIn,
 ) -> TenantOut:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick import tenant_registry
     _get_tenant_or_404(tenant_id)
     return _to_tenant_out(
@@ -207,7 +208,7 @@ async def set_tenant_quota(
 async def delete_tenant(
     request: Request, tenant_id: str, purge: bool = False,
 ) -> Response:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick import tenant_registry
     _get_tenant_or_404(tenant_id)
     tenant_registry.delete_tenant(tenant_id, purge=purge)
@@ -220,7 +221,7 @@ async def delete_tenant(
 
 @router.get("/admin/tenants/{tenant_id}/roles", response_model=dict[str, str])
 async def list_tenant_roles(request: Request, tenant_id: str) -> dict[str, str]:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     return rbac.list_tenant_roles(tenant_id)
@@ -230,7 +231,7 @@ async def list_tenant_roles(request: Request, tenant_id: str) -> dict[str, str]:
 async def set_tenant_role(
     request: Request, tenant_id: str, principal: str, body: TenantRoleIn,
 ) -> Response:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     rbac.set_tenant_role(tenant_id, principal, body.role)
@@ -241,7 +242,7 @@ async def set_tenant_role(
 async def remove_tenant_role(
     request: Request, tenant_id: str, principal: str,
 ) -> Response:
-    require_permission(request, "admin")
+    require_global_permission(request, "admin")
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     rbac.remove_tenant_role(tenant_id, principal)
