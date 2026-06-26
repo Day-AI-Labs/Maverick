@@ -217,6 +217,32 @@ class TestIngest:
         assert traj.steps[2].action_type == "final"
         assert traj.steps[2].promise_label >= 0.9
 
+    def test_build_trajectory_sets_task_family(self):
+        """DPO pairs only form WITHIN a task_family; ingest must set it from the
+        task_brief_hash (repeated attempts at one task share that hash). It used
+        to be left None, so build_preference_pairs skipped every row -> 0 pairs.
+        """
+        from maverick.training.ingest import build_trajectory
+        traj = build_trajectory({"task_brief_hash": "abc", "ts": 1}, [])
+        assert traj.task_family == "abc"
+
+    def test_ingested_rows_pair_when_rewards_differ(self):
+        """End-to-end: two attempts at the SAME task with a reward gap produce a
+        DPO pair once task_family is populated (regression for 0-pairs bug)."""
+        from maverick.training.ingest import build_trajectory
+        from maverick.training.rlaif import build_preference_pairs
+        from maverick.training.schema import to_klear_jsonl
+        good = to_klear_jsonl(build_trajectory(
+            {"task_brief_hash": "fam", "ts": 1, "outcome": "success",
+             "reward": 1.0, "verifier_confidence": 0.95}, []))
+        weak = to_klear_jsonl(build_trajectory(
+            {"task_brief_hash": "fam", "ts": 2, "outcome": "success",
+             "reward": 0.6, "verifier_confidence": 0.6}, []))
+        pairs = build_preference_pairs([good, weak], min_margin=0.25)
+        assert len(pairs) == 1
+        assert pairs[0]["task_family"] == "fam"
+        assert pairs[0]["chosen_reward"] > pairs[0]["rejected_reward"]
+
     def test_load_donations_empty_dir(self, tmp_path):
         from maverick.training.ingest import load_donations
         out = list(load_donations(tmp_path))
