@@ -2893,12 +2893,19 @@ def _propagate_coding_flags(coding_mode: bool, best_of_n: int) -> None:
 @click.option("--dry-cost", is_flag=True,
               help="Estimate cost from similar past runs and exit "
                    "(no LLM key needed, no swarm run, no goal created).")
+@click.option("--repeat", default=1, type=int,
+              help="Run the SAME goal N times. Repeated attempts at one task "
+                   "share a task_family, so their better-vs-worse outcomes form "
+                   "the preference pairs DPO needs (pair with [telemetry] "
+                   "donate_min_entropy = 0 to capture them). Non-clean runs are "
+                   "kept, not fatal, in repeat mode.")
 @click.pass_context
 @_humane_errors
 def start(
     ctx, title, description, template_name, params,
     max_dollars, max_wall_seconds, max_depth, workdir, sandbox_backend,
     domain, coding_mode, best_of_n, fail_to_pass, pass_to_pass, dry_cost,
+    repeat,
 ) -> None:
     """Start a new goal and run the swarm."""
     # Coding-mode flags propagate via env so coding_mode.from_env()
@@ -2989,70 +2996,76 @@ def start(
         sys.exit(2)
 
     k = _kernel()
-    world = open_world(ctx.obj["db"])
-    goal_id = world.create_goal(title, description)
-    click.echo(f"goal #{goal_id} created: {title}")
     llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
-    # Honor [budget] in config.toml (start used to build Budget() directly,
-    # so config caps were silently ignored). Precedence: built-in defaults
-    # < config < explicit CLI flags. A None flag passes through as "unset".
+    sandbox = k.build_sandbox(workdir=workdir, backend=sandbox_backend)
+    import threading
     import types as _types
 
     from ..budget import budget_from_config
     from ..orchestrator import _budget_task_class
-    bud = budget_from_config(
-        defaults={"max_dollars": 5.0, "max_wall_seconds": 3600.0},
-        # Learned per-class default cap (lowest precedence; opt-in via
-        # [budget] self_tuning). Department runs use their own class so
-        # finance runs are sized by finance history.
-        task_class=_budget_task_class(
-            _types.SimpleNamespace(title=title), domain,
-        ),
-        max_dollars=max_dollars,
-        max_wall_seconds=max_wall_seconds,
-    )
-    sandbox = k.build_sandbox(workdir=workdir, backend=sandbox_backend)
 
-    # Council UX finding: `maverick start "..."` used to look hung
-    # between "goal created" and the final printout. A background poller
-    # streams goal_events to stderr so the user sees the swarm thinking
-    # in real time. Non-tty output (e.g. piped to a file) skips the
-    # poller so logs aren't littered with progress lines.
-    import threading
-    stop_poll = threading.Event()
-    poller = _maybe_start_progress_poller(world.path, goal_id, stop_poll)
+    # --repeat N runs the SAME task N times so its attempts share a task_family
+    # and form DPO preference pairs. A fresh goal row + budget per run.
+    n_runs = max(1, repeat)
+    for _run_i in range(n_runs):
+        world = open_world(ctx.obj["db"])
+        goal_id = world.create_goal(title, description)
+        _label = f" [{_run_i + 1}/{n_runs}]" if n_runs > 1 else ""
+        click.echo(f"goal #{goal_id} created{_label}: {title}")
+        # Honor [budget] in config.toml (start used to build Budget() directly,
+        # so config caps were silently ignored). Precedence: built-in defaults
+        # < config < explicit CLI flags. A None flag passes through as "unset".
+        bud = budget_from_config(
+            defaults={"max_dollars": 5.0, "max_wall_seconds": 3600.0},
+            # Learned per-class default cap (lowest precedence; opt-in via
+            # [budget] self_tuning). Department runs use their own class so
+            # finance runs are sized by finance history.
+            task_class=_budget_task_class(
+                _types.SimpleNamespace(title=title), domain,
+            ),
+            max_dollars=max_dollars,
+            max_wall_seconds=max_wall_seconds,
+        )
 
-    try:
-        if coding_mode and best_of_n > 1:
-            import asyncio as _asyncio
+        # Council UX finding: `maverick start "..."` used to look hung
+        # between "goal created" and the final printout. A background poller
+        # streams goal_events to stderr so the user sees the swarm thinking
+        # in real time. Non-tty output (e.g. piped to a file) skips the
+        # poller so logs aren't littered with progress lines.
+        stop_poll = threading.Event()
+        poller = _maybe_start_progress_poller(world.path, goal_id, stop_poll)
 
-            from ..orchestrator import run_goal_best_of_n
-            result = _asyncio.run(run_goal_best_of_n(
-                llm, world, bud, goal_id,
-                sandbox=sandbox, max_depth=max_depth, n=best_of_n,
-            ))
-        else:
-            result = k.run_goal_sync(
-                llm, world, bud, goal_id,
-                sandbox=sandbox, max_depth=max_depth, domain=domain,
-            )
-        # Capture the kernel's final verdict before the DB is closed so the
-        # exit code can reflect it (see _run_outcome_blocked).
-        _blocked = _run_outcome_blocked(world, goal_id)
-    finally:
-        stop_poll.set()
-        if poller is not None:
-            poller.join(timeout=2.0)
-        # Close so WorldModel.close()'s WAL TRUNCATE checkpoint runs; the
-        # poller thread (already joined) used its own connection.
-        world.close()
-    click.echo("")
-    click.echo(result)
-    if _blocked:
-        # Exit nonzero so a script / CI can tell a halted or paused run from a
-        # clean success; the human-readable reason is already printed above.
-        # (start used to exit 0 for every outcome -- user-testing finding.)
-        sys.exit(2)
+        try:
+            if coding_mode and best_of_n > 1:
+                import asyncio as _asyncio
+
+                from ..orchestrator import run_goal_best_of_n
+                result = _asyncio.run(run_goal_best_of_n(
+                    llm, world, bud, goal_id,
+                    sandbox=sandbox, max_depth=max_depth, n=best_of_n,
+                ))
+            else:
+                result = k.run_goal_sync(
+                    llm, world, bud, goal_id,
+                    sandbox=sandbox, max_depth=max_depth, domain=domain,
+                )
+            # Capture the kernel's final verdict before the DB is closed so the
+            # exit code can reflect it (see _run_outcome_blocked).
+            _blocked = _run_outcome_blocked(world, goal_id)
+        finally:
+            stop_poll.set()
+            if poller is not None:
+                poller.join(timeout=2.0)
+            # Close so WorldModel.close()'s WAL TRUNCATE checkpoint runs; the
+            # poller thread (already joined) used its own connection.
+            world.close()
+        click.echo("")
+        click.echo(result)
+        # Single-run keeps the exit-2-on-blocked contract (scripts/CI rely on
+        # it). In repeat mode a non-clean run is EXPECTED (it's what produces
+        # the worse-attempt half of a preference pair), so keep going.
+        if _blocked and n_runs == 1:
+            sys.exit(2)
 
 
 @main.command("report-issue")

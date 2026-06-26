@@ -14,6 +14,16 @@ from maverick.donation import (
 )
 
 
+def _config(monkeypatch, telemetry: dict) -> None:
+    """Point ``load_config`` at a stub config with the given ``[telemetry]``.
+
+    ``_donation_thresholds`` does ``from .config import load_config`` at call
+    time, so patching the attribute on the config module takes effect.
+    """
+    import maverick.config as cfg
+    monkeypatch.setattr(cfg, "load_config", lambda: {"telemetry": dict(telemetry)})
+
+
 class TestSelectionGate:
     def test_only_success_donated(self):
         assert should_donate("failure", 0.9, 0.9) is False
@@ -146,6 +156,71 @@ class TestWriteRecord:
         )
         path = write_record(rec, outbox=tmp_path)
         assert path is None
+
+
+class TestConfigurableThresholds:
+    """The donation bar is configurable via ``[telemetry]``.
+
+    The default (entropy ≥ 0.5) only captures high-disagreement swarm runs --
+    typical single-agent goals have disagreement_entropy=0 and donate nothing,
+    so the learning loop never sees data from normal use. Setting
+    ``donate_min_entropy = 0`` captures every successful, high-confidence run.
+    """
+
+    def test_default_bar_rejects_zero_disagreement(self, monkeypatch):
+        # No config keys -> fall back to the gold-row defaults (0.5 / 0.75).
+        _config(monkeypatch, {})
+        assert should_donate("success", 0.9, 0.0) is False
+
+    def test_zero_min_entropy_captures_single_agent_success(self, monkeypatch):
+        _config(monkeypatch, {"donate_min_entropy": 0})
+        # A clean single-agent run (no swarm disagreement) now donates.
+        assert should_donate("success", 0.9, 0.0) is True
+        # Confidence still gates: the default 0.75 floor stays in force.
+        assert should_donate("success", 0.5, 0.0) is False
+
+    def test_lowered_confidence_floor(self, monkeypatch):
+        _config(monkeypatch, {"donate_min_entropy": 0, "donate_min_confidence": 0.4})
+        assert should_donate("success", 0.5, 0.0) is True
+        assert should_donate("success", 0.3, 0.0) is False
+
+    def test_explicit_kwargs_override_config(self, monkeypatch):
+        # Config says capture-everything, but an explicit call can re-raise the bar.
+        _config(monkeypatch, {"donate_min_entropy": 0, "donate_min_confidence": 0.0})
+        assert should_donate("success", 0.9, 0.0, min_entropy=0.5) is False
+        assert should_donate("success", 0.9, 0.6, min_entropy=0.5) is True
+
+    def test_failure_never_donated_regardless_of_config(self, monkeypatch):
+        _config(monkeypatch, {"donate_min_entropy": 0, "donate_min_confidence": 0.0})
+        assert should_donate("failure", 1.0, 1.0) is False
+
+    def test_thresholds_helper_reads_config(self, monkeypatch):
+        _config(monkeypatch, {"donate_min_entropy": 0.0, "donate_min_confidence": 0.6})
+        assert donation._donation_thresholds() == (0.0, 0.6)
+
+    def test_thresholds_helper_fails_open_to_defaults(self, monkeypatch):
+        import maverick.config as cfg
+
+        def _boom():
+            raise RuntimeError("no config")
+
+        monkeypatch.setattr(cfg, "load_config", _boom)
+        assert donation._donation_thresholds() == (0.5, 0.75)
+
+    def test_write_record_honors_zero_entropy_config(self, tmp_path, monkeypatch):
+        """End-to-end: with donate_min_entropy=0, a zero-disagreement success
+        passes the gate inside write_record and lands in the outbox."""
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: False)
+        _config(monkeypatch, {"donate_min_entropy": 0})
+        rec = TrajectoryRecord(
+            task_brief_hash="single",
+            outcome="success",
+            verifier_confidence=0.9,
+            disagreement_entropy=0.0,  # solo run, no swarm
+        )
+        path = write_record(rec, outbox=tmp_path)
+        assert path is not None and path.exists()
 
 
 class TestHashBrief:
