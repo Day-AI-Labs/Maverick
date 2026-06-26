@@ -276,14 +276,18 @@ async def delete_tenant(
 # memberships override the global role for that tenant only (bootstrap admins
 # stay globally admin). Managed admin-only.
 
-def _reject_tenant_roles_under_per_user_tenancy() -> None:
+def _reject_tenant_role_assignment_under_per_user_tenancy() -> None:
     """Per-tenant RBAC keys on the request's active tenant, but per-user tenancy
     (``MAVERICK_TENANT_BY_USER``) force-pins every request to the caller's own
     isolated tenant (``api:<principal>``) -- so a role assigned to any named
     tenant can never be the active tenant and would be stored but DEAD. Reject
     the mutation so the silent no-op becomes an explicit error instead of a
     footgun (an admin thinking they scoped a user when they did not). Use the
-    global per-user role assignment (``POST /users/set``) in that mode."""
+    global per-user role assignment (``POST /users/set``) in that mode.
+
+    Deletions remain allowed: stale roles for generated ``api:<principal>``
+    tenants can still be active under the read path and must be revocable.
+    """
     from maverick.paths import tenant_by_user_enabled
     if tenant_by_user_enabled():
         raise HTTPException(
@@ -307,7 +311,7 @@ async def set_tenant_role(
     request: Request, tenant_id: str, principal: str, body: TenantRoleIn,
 ) -> Response:
     require_permission(request, "admin")
-    _reject_tenant_roles_under_per_user_tenancy()
+    _reject_tenant_role_assignment_under_per_user_tenancy()
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     rbac.set_tenant_role(tenant_id, principal, body.role)
@@ -319,7 +323,6 @@ async def remove_tenant_role(
     request: Request, tenant_id: str, principal: str,
 ) -> Response:
     require_permission(request, "admin")
-    _reject_tenant_roles_under_per_user_tenancy()
     from maverick_dashboard import rbac
     _get_tenant_or_404(tenant_id)
     rbac.remove_tenant_role(tenant_id, principal)
