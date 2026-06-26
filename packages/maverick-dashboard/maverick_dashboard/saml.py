@@ -23,10 +23,12 @@ NOTE: untested against a live IdP in this build -- the pysaml2 calls
 attribute mapping and session minting are unit-tested with the client mocked;
 certify a real Okta/Entra round-trip before relying on it.
 """
+
 from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,7 +39,9 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 
-_SESSION_TTL = 8 * 60 * 60   # 8h, matching the OIDC browser session
+_SESSION_TTL = 8 * 60 * 60  # 8h, matching the OIDC browser session
+_MAX_ACS_BODY_BYTES = 1024 * 1024
+_MAX_SAML_RESPONSE_BYTES = 768 * 1024
 
 
 class SamlUnavailable(RuntimeError):
@@ -53,13 +57,51 @@ class SamlConfig:
     sp_cert_file: str = ""
     sp_key_file: str = ""
     want_assertions_signed: bool = True
-    name_attr: str = ""           # attribute to prefer for display, optional
+    name_attr: str = ""  # attribute to prefer for display, optional
     default_relay_state: str = "/"
+
+
+def _content_length(headers: Mapping[str, str]) -> int | None:
+    raw = headers.get("content-length")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+async def _cache_limited_body(request: Request, *, limit: int) -> bool:
+    """Cache the request body only if it fits within ``limit`` bytes.
+
+    The SAML ACS endpoint is intentionally unauthenticated because IdPs POST to
+    it before a browser session exists.  Avoid ``request.form()`` until this has
+    bounded the body: Starlette/FastAPI form parsing buffers the full request.
+    """
+    length = _content_length(request.headers)
+    if length is not None and length > limit:
+        return False
+    size = 0
+    chunks: list[bytes] = []
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            return False
+        chunks.append(chunk)
+    # Starlette's Request.stream()/body()/form() use this cache when present.
+    request._body = b"".join(chunks)  # noqa: SLF001 -- deliberate pre-parse cap
+    return True
+
+
+def _form_value_too_large(value: str, *, limit: int) -> bool:
+    return len(value.encode("utf-8")) > limit
 
 
 def _auth_saml_cfg() -> dict[str, Any]:
     try:
         from maverick.config import load_config
+
         cfg = ((load_config() or {}).get("auth") or {}).get("saml") or {}
     except Exception:  # pragma: no cover -- config never blocks a request
         return {}
@@ -85,8 +127,9 @@ def saml_enabled(cfg: SamlConfig | None = None) -> bool:
     """Configured = an SP entity id + ACS URL + an IdP metadata source. With any
     missing the surface 404s (inert)."""
     cfg = cfg or load_saml_config()
-    return bool(cfg.sp_entity_id and cfg.acs_url
-                and (cfg.idp_metadata_url or cfg.idp_metadata_file))
+    return bool(
+        cfg.sp_entity_id and cfg.acs_url and (cfg.idp_metadata_url or cfg.idp_metadata_file)
+    )
 
 
 def _session_secret() -> str:
@@ -94,6 +137,7 @@ def _session_secret() -> str:
     is accepted by the same verifier. Empty -> SAML can't issue a session."""
     try:
         from maverick.oidc import load_oidc_config
+
         return str(getattr(load_oidc_config(), "session_secret", "") or "")
     except Exception:  # pragma: no cover
         return ""
@@ -101,8 +145,10 @@ def _session_secret() -> str:
 
 # --- pysaml2 isolation (untestable here; mocked in tests) -------------------
 
+
 def _pysaml2_config(cfg: SamlConfig) -> dict:
     from saml2 import BINDING_HTTP_POST, BINDING_HTTP_REDIRECT  # type: ignore
+
     metadata: dict = {}
     if cfg.idp_metadata_url:
         metadata["remote"] = [{"url": cfg.idp_metadata_url}]
@@ -110,15 +156,17 @@ def _pysaml2_config(cfg: SamlConfig) -> dict:
         metadata.setdefault("local", []).append(cfg.idp_metadata_file)
     conf: dict = {
         "entityid": cfg.sp_entity_id,
-        "service": {"sp": {
-            "endpoints": {
-                "assertion_consumer_service": [(cfg.acs_url, BINDING_HTTP_POST)],
-            },
-            "allow_unsolicited": True,
-            "authn_requests_signed": bool(cfg.sp_key_file),
-            "want_assertions_signed": cfg.want_assertions_signed,
-            "want_response_signed": False,
-        }},
+        "service": {
+            "sp": {
+                "endpoints": {
+                    "assertion_consumer_service": [(cfg.acs_url, BINDING_HTTP_POST)],
+                },
+                "allow_unsolicited": True,
+                "authn_requests_signed": bool(cfg.sp_key_file),
+                "want_assertions_signed": cfg.want_assertions_signed,
+                "want_response_signed": False,
+            }
+        },
         "metadata": metadata,
         "allow_unknown_attributes": True,
     }
@@ -136,8 +184,7 @@ def _client(cfg: SamlConfig | None = None):  # pragma: no cover -- needs pysaml2
         from saml2.client import Saml2Client  # type: ignore
         from saml2.config import Config  # type: ignore
     except ImportError as e:
-        raise SamlUnavailable(
-            "SAML SSO needs pysaml2 (pip install 'maverick-agent[saml]')") from e
+        raise SamlUnavailable("SAML SSO needs pysaml2 (pip install 'maverick-agent[saml]')") from e
     conf = Config()
     conf.load(_pysaml2_config(cfg))
     return Saml2Client(config=conf)
@@ -145,16 +192,20 @@ def _client(cfg: SamlConfig | None = None):  # pragma: no cover -- needs pysaml2
 
 def sp_metadata_xml(client=None, cfg: SamlConfig | None = None) -> str:  # pragma: no cover
     from saml2.metadata import create_metadata_string  # type: ignore
+
     client = client or _client(cfg)
     return create_metadata_string(None, config=client.config).decode("utf-8")
 
 
-def login_redirect_url(client=None, cfg: SamlConfig | None = None,
-                       *, relay_state: str = "/") -> str:  # pragma: no cover
+def login_redirect_url(
+    client=None, cfg: SamlConfig | None = None, *, relay_state: str = "/"
+) -> str:  # pragma: no cover
     from saml2 import BINDING_HTTP_REDIRECT  # type: ignore
+
     client = client or _client(cfg)
     _reqid, info = client.prepare_for_authenticate(
-        relay_state=relay_state, binding=BINDING_HTTP_REDIRECT)
+        relay_state=relay_state, binding=BINDING_HTTP_REDIRECT
+    )
     return dict(info["headers"]).get("Location", "")
 
 
@@ -162,12 +213,14 @@ def verify_acs_response(saml_response: str) -> SamlIdentity:  # pragma: no cover
     """Verify a posted SAMLResponse (pysaml2 checks the XML signature) and return
     the identity. Isolated so the ACS route logic is testable with this mocked."""
     from saml2 import BINDING_HTTP_POST  # type: ignore
+
     client = _client()
     authn = client.parse_authn_request_response(saml_response, BINDING_HTTP_POST)
     return extract_identity(authn)
 
 
 # --- mapping + session (testable) -------------------------------------------
+
 
 @dataclass(frozen=True)
 class SamlIdentity:
@@ -209,6 +262,7 @@ def mint_session_cookie(name_id: str, *, secret: str | None = None) -> str:
     """Sign an ``mvk_session`` value for ``user:<name_id>`` -- the SAME cookie the
     OIDC browser login issues, so it verifies through the shared session path."""
     from maverick.web_session import sign_session
+
     secret = secret if secret is not None else _session_secret()
     if not secret:
         raise SamlUnavailable(
@@ -228,9 +282,13 @@ def _safe_relay_state(value: str | None, default: str) -> str:
 
 # --- routes -----------------------------------------------------------------
 
+
 def _disabled() -> JSONResponse | None:
-    return None if saml_enabled() else JSONResponse(
-        {"detail": "SAML SSO is not enabled"}, status_code=404)
+    return (
+        None
+        if saml_enabled()
+        else JSONResponse({"detail": "SAML SSO is not enabled"}, status_code=404)
+    )
 
 
 @router.get("/saml/metadata")
@@ -242,6 +300,7 @@ async def saml_metadata(request: Request):
     except SamlUnavailable as e:
         return JSONResponse({"detail": str(e)}, status_code=503)
     from fastapi.responses import Response
+
     return Response(content=xml, media_type="application/samlmetadata+xml")
 
 
@@ -250,15 +309,13 @@ async def saml_login(request: Request):
     if (off := _disabled()) is not None:
         return off
     cfg = load_saml_config()
-    relay = _safe_relay_state(request.query_params.get("return_to"),
-                              cfg.default_relay_state)
+    relay = _safe_relay_state(request.query_params.get("return_to"), cfg.default_relay_state)
     try:
         url = login_redirect_url(cfg=cfg, relay_state=relay)
     except SamlUnavailable as e:
         return JSONResponse({"detail": str(e)}, status_code=503)
     if not url:
-        return JSONResponse({"detail": "could not build SAML AuthnRequest"},
-                            status_code=502)
+        return JSONResponse({"detail": "could not build SAML AuthnRequest"}, status_code=502)
     return RedirectResponse(url, status_code=303)
 
 
@@ -266,10 +323,15 @@ async def saml_login(request: Request):
 async def saml_acs(request: Request):
     if (off := _disabled()) is not None:
         return off
+    if not await _cache_limited_body(request, limit=_MAX_ACS_BODY_BYTES):
+        return JSONResponse({"detail": "SAML ACS request too large"}, status_code=413)
     form = await request.form()
     saml_response = str(form.get("SAMLResponse") or "")
-    relay = _safe_relay_state(str(form.get("RelayState") or ""),
-                              load_saml_config().default_relay_state)
+    if _form_value_too_large(saml_response, limit=_MAX_SAML_RESPONSE_BYTES):
+        return JSONResponse({"detail": "SAMLResponse too large"}, status_code=413)
+    relay = _safe_relay_state(
+        str(form.get("RelayState") or ""), load_saml_config().default_relay_state
+    )
     if not saml_response:
         return JSONResponse({"detail": "missing SAMLResponse"}, status_code=400)
     try:
@@ -279,16 +341,28 @@ async def saml_acs(request: Request):
         return JSONResponse({"detail": str(e)}, status_code=503)
     except Exception:  # noqa: BLE001 -- never leak why verification failed
         log.warning("SAML ACS: assertion verification failed")
-        return JSONResponse({"detail": "SAML assertion did not verify"},
-                            status_code=401)
+        return JSONResponse({"detail": "SAML assertion did not verify"}, status_code=401)
     # Reuse the OIDC login cookie hardening so SAML/OIDC sessions are identical.
     from .oidc_login import SESSION_COOKIE, _is_loopback_request, _set_cookie
+
     response = RedirectResponse(relay, status_code=303)
-    _set_cookie(response, SESSION_COOKIE, cookie, max_age=_SESSION_TTL,
-                secure=not _is_loopback_request(request))
+    _set_cookie(
+        response,
+        SESSION_COOKIE,
+        cookie,
+        max_age=_SESSION_TTL,
+        secure=not _is_loopback_request(request),
+    )
     return response
 
 
-__all__ = ["router", "saml_enabled", "load_saml_config", "SamlConfig",
-           "SamlIdentity", "SamlUnavailable", "extract_identity",
-           "mint_session_cookie"]
+__all__ = [
+    "router",
+    "saml_enabled",
+    "load_saml_config",
+    "SamlConfig",
+    "SamlIdentity",
+    "SamlUnavailable",
+    "extract_identity",
+    "mint_session_cookie",
+]

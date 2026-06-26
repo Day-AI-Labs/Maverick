@@ -6,6 +6,7 @@ isolated and monkeypatched, so the routing, NameID->principal mapping, session
 minting, relay-state safety and fail-closed gating are all exercised without a
 live IdP. (A real Okta/Entra round-trip still needs certifying separately.)
 """
+
 from __future__ import annotations
 
 import maverick_dashboard.saml as saml_mod
@@ -35,11 +36,13 @@ def _enabled(monkeypatch):
 
 # --- gating -----------------------------------------------------------------
 
+
 def test_enabled_requires_full_config(monkeypatch):
     monkeypatch.setattr(saml_mod, "_auth_saml_cfg", dict)
     assert saml_mod.saml_enabled() is False
-    monkeypatch.setattr(saml_mod, "_auth_saml_cfg",
-                        lambda: {"sp_entity_id": "x"})   # missing acs + idp
+    monkeypatch.setattr(
+        saml_mod, "_auth_saml_cfg", lambda: {"sp_entity_id": "x"}
+    )  # missing acs + idp
     assert saml_mod.saml_enabled() is False
     monkeypatch.setattr(saml_mod, "_auth_saml_cfg", lambda: dict(ENABLED_CFG))
     assert saml_mod.saml_enabled() is True
@@ -54,6 +57,7 @@ def test_routes_404_when_disabled(monkeypatch):
 
 
 # --- mapping + session ------------------------------------------------------
+
 
 class _FakeNID:
     text = "alice@example.com"
@@ -123,12 +127,16 @@ def test_mint_session_requires_secret():
 
 # --- ACS --------------------------------------------------------------------
 
+
 def test_acs_verifies_sets_session_and_redirects(_enabled, monkeypatch):
-    monkeypatch.setattr(saml_mod, "verify_acs_response",
-                        lambda r: saml_mod.SamlIdentity(name_id="alice@example.com"))
+    monkeypatch.setattr(
+        saml_mod,
+        "verify_acs_response",
+        lambda r: saml_mod.SamlIdentity(name_id="alice@example.com"),
+    )
     res = _client().post(
-        "/saml/acs", data={"SAMLResponse": "signed", "RelayState": "/goals"},
-        follow_redirects=False)
+        "/saml/acs", data={"SAMLResponse": "signed", "RelayState": "/goals"}, follow_redirects=False
+    )
     assert res.status_code == 303
     assert res.headers["location"] == "/goals"
     cookie = res.cookies.get("mvk_session")
@@ -145,37 +153,44 @@ def test_acs_missing_response_is_400(_enabled):
 def test_acs_verification_failure_is_401(_enabled, monkeypatch):
     def _boom(_r):
         raise ValueError("bad signature")
+
     monkeypatch.setattr(saml_mod, "verify_acs_response", _boom)
-    res = _client().post("/saml/acs", data={"SAMLResponse": "tampered"},
-                         follow_redirects=False)
+    res = _client().post("/saml/acs", data={"SAMLResponse": "tampered"}, follow_redirects=False)
     assert res.status_code == 401
     assert "did not verify" in res.text
 
 
 def test_acs_blocks_open_redirect_relay_state(_enabled, monkeypatch):
-    monkeypatch.setattr(saml_mod, "verify_acs_response",
-                        lambda r: saml_mod.SamlIdentity(name_id="a"))
+    monkeypatch.setattr(
+        saml_mod, "verify_acs_response", lambda r: saml_mod.SamlIdentity(name_id="a")
+    )
     res = _client().post(
-        "/saml/acs", data={"SAMLResponse": "x", "RelayState": "https://evil.example/"},
-        follow_redirects=False)
+        "/saml/acs",
+        data={"SAMLResponse": "x", "RelayState": "https://evil.example/"},
+        follow_redirects=False,
+    )
     assert res.status_code == 303
-    assert res.headers["location"] == "/"   # external relay rejected -> default
+    assert res.headers["location"] == "/"  # external relay rejected -> default
 
 
 def test_acs_503_without_pysaml2(_enabled, monkeypatch):
     def _boom(_r):
         raise saml_mod.SamlUnavailable("needs pysaml2")
+
     monkeypatch.setattr(saml_mod, "verify_acs_response", _boom)
-    res = _client().post("/saml/acs", data={"SAMLResponse": "x"},
-                         follow_redirects=False)
+    res = _client().post("/saml/acs", data={"SAMLResponse": "x"}, follow_redirects=False)
     assert res.status_code == 503
 
 
 # --- login + metadata -------------------------------------------------------
 
+
 def test_login_redirects_to_idp(_enabled, monkeypatch):
-    monkeypatch.setattr(saml_mod, "login_redirect_url",
-                        lambda cfg=None, relay_state="/": "https://idp.example.com/sso?x=1")
+    monkeypatch.setattr(
+        saml_mod,
+        "login_redirect_url",
+        lambda cfg=None, relay_state="/": "https://idp.example.com/sso?x=1",
+    )
     res = _client().get("/saml/login", follow_redirects=False)
     assert res.status_code == 303
     assert res.headers["location"].startswith("https://idp.example.com/sso")
@@ -184,5 +199,32 @@ def test_login_redirects_to_idp(_enabled, monkeypatch):
 def test_metadata_503_without_pysaml2(_enabled, monkeypatch):
     def _boom(*a, **k):
         raise saml_mod.SamlUnavailable("needs pysaml2")
+
     monkeypatch.setattr(saml_mod, "sp_metadata_xml", _boom)
     assert _client().get("/saml/metadata").status_code == 503
+
+
+def test_acs_rejects_oversized_body_before_form_parse(_enabled, monkeypatch):
+    def _should_not_verify(_r):
+        raise AssertionError("oversized ACS body reached SAML verification")
+
+    monkeypatch.setattr(saml_mod, "verify_acs_response", _should_not_verify)
+    res = _client().post(
+        "/saml/acs",
+        data={"SAMLResponse": "x", "RelayState": "/" + ("a" * (1024 * 1024))},
+        follow_redirects=False,
+    )
+    assert res.status_code == 413
+
+
+def test_acs_rejects_oversized_saml_response_before_verification(_enabled, monkeypatch):
+    def _should_not_verify(_r):
+        raise AssertionError("oversized SAMLResponse reached SAML verification")
+
+    monkeypatch.setattr(saml_mod, "verify_acs_response", _should_not_verify)
+    res = _client().post(
+        "/saml/acs",
+        data={"SAMLResponse": "x" * (768 * 1024 + 1)},
+        follow_redirects=False,
+    )
+    assert res.status_code == 413
