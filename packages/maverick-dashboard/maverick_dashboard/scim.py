@@ -191,7 +191,7 @@ def _iso(ts: float | None) -> str:
 
 
 # --------------------------------------------------------------------------
-# Tenant linkage (best-effort: SCIM remains the source of truth for users)
+# Tenant linkage (provisioning is best-effort; deprovisioning must fail closed)
 # --------------------------------------------------------------------------
 def _provision_tenant(uid: str, display_name: str) -> None:
     try:
@@ -232,31 +232,28 @@ def _revoke_user_sessions(rec: dict) -> None:
 def _set_tenant_active(uid: str, active: bool, rec: dict | None = None) -> None:
     if not active and rec is not None:
         _revoke_user_sessions(rec)
-    try:
-        from maverick.tenant import registry
-        if registry.get_tenant(uid) is None:
-            return
-        (registry.resume_tenant if active else registry.suspend_tenant)(uid)
-    except Exception:  # pragma: no cover
-        pass
+    from maverick.tenant import registry
+    if registry.get_tenant(uid) is None:
+        return
+    (registry.resume_tenant if active else registry.suspend_tenant)(uid)
 
 
 def _delete_tenant(uid: str, rec: dict | None = None) -> None:
     if rec is not None:
         _revoke_user_sessions(rec)
-        # Hard delete: purge the user's subject-directory entries too (the
-        # mapping is no longer needed and shouldn't outlive the account).
+    from maverick.tenant import registry
+    registry.delete_tenant(uid)
+    if rec is not None:
+        # Hard delete: purge the user's subject-directory entries after the
+        # tenant is gone; the mapping is no longer needed and shouldn't outlive
+        # the account. Cleanup remains best-effort and must not turn a completed
+        # tenant deletion into a SCIM failure.
         try:
             from .subject_directory import forget
             forget([str(rec.get(k) or "") for k in
                     ("externalId", "userName", "email", "id")])
         except Exception:  # pragma: no cover -- cleanup never blocks SCIM
             pass
-    try:
-        from maverick.tenant import registry
-        registry.delete_tenant(uid)
-    except Exception:  # pragma: no cover
-        pass
 
 
 # --------------------------------------------------------------------------
@@ -384,10 +381,13 @@ async def replace_user(uid: str, request: Request):
     if not rec["userName"]:
         rec["userName"] = existing.get("userName", "")
     was_active = bool(existing.get("active", True))
+    if rec["active"] != was_active:
+        try:
+            _set_tenant_active(uid, rec["active"], rec)
+        except Exception:
+            return _scim_error(500, "tenant lifecycle update failed")
     users[uid] = rec
     _save(users)
-    if rec["active"] != was_active:
-        _set_tenant_active(uid, rec["active"], rec)
     return JSONResponse(_to_scim(rec), media_type="application/scim+json")
 
 
@@ -405,10 +405,13 @@ async def patch_user(uid: str, request: Request):
     if applied is None:
         return _scim_error(400, "unsupported PATCH operation", scim_type="invalidValue")
     rec["updated_at"] = time.time()
+    if bool(rec.get("active", True)) != was_active:
+        try:
+            _set_tenant_active(uid, bool(rec.get("active", True)), rec)
+        except Exception:
+            return _scim_error(500, "tenant lifecycle update failed")
     users[uid] = rec
     _save(users)
-    if bool(rec.get("active", True)) != was_active:
-        _set_tenant_active(uid, bool(rec.get("active", True)), rec)
     return JSONResponse(_to_scim(rec), media_type="application/scim+json")
 
 
@@ -420,9 +423,12 @@ async def delete_user(uid: str, request: Request):
     if uid not in users:
         return _scim_error(404, f"user {uid} not found")
     rec = users.get(uid)
+    try:
+        _delete_tenant(uid, rec)
+    except Exception:
+        return _scim_error(500, "tenant deletion failed")
     del users[uid]
     _save(users)
-    _delete_tenant(uid, rec)
     return JSONResponse(None, status_code=204)
 
 
