@@ -366,3 +366,78 @@ def test_a2a_rejects_cross_origin_browser_request(monkeypatch):
     monkeypatch.setenv("MAVERICK_A2A_ALLOWED_ORIGINS", "https://trusted.example")
     assert client.post("/a2a/v1", headers={"Origin": "https://trusted.example"},
                        json=rpc).status_code == 200
+
+
+# ---- concurrency cap -------------------------------------------------
+
+def test_concurrent_goals_capped_to_max_concurrency(monkeypatch):
+    """N concurrent message/send goals must not all execute at once: the
+    MAVERICK_A2A_MAX_CONCURRENCY limiter bounds how many run on the shared
+    default ThreadPoolExecutor simultaneously, so one caller can't saturate it.
+    Without the limiter, the executor admits up to its full worker count and
+    the observed peak exceeds the cap."""
+    import threading
+
+    monkeypatch.setenv("MAVERICK_A2A_MAX_CONCURRENCY", "2")
+
+    state = {"live": 0, "peak": 0}
+    lock = threading.Lock()
+    # All runners are released together, so without a cap they'd all run at once.
+    release = threading.Event()
+
+    def runner(text, *, max_dollars, max_wall, max_depth):
+        with lock:
+            state["live"] += 1
+            state["peak"] = max(state["peak"], state["live"])
+        # Hold the slot long enough that later goals would pile on if uncapped.
+        release.wait(timeout=2.0)
+        with lock:
+            state["live"] -= 1
+        return f"ran:{text}"
+
+    eng = TaskEngine(runner=runner)
+
+    async def drive():
+        tasks = [asyncio.create_task(eng.send(_msg(f"g{i}"))) for i in range(6)]
+        # Give the workers a moment to climb to their peak, then release.
+        await asyncio.sleep(0.3)
+        release.set()
+        return await asyncio.gather(*tasks)
+
+    results = asyncio.run(drive())
+    assert all(r["status"]["state"] == "completed" for r in results)
+    assert state["peak"] <= 2, f"peak concurrency {state['peak']} exceeded cap 2"
+
+
+def test_max_concurrency_zero_disables_cap(monkeypatch):
+    """Setting the knob to 0 lifts the limiter (no slot acquisition), so a
+    larger batch can run concurrently on the executor."""
+    import threading
+
+    monkeypatch.setenv("MAVERICK_A2A_MAX_CONCURRENCY", "0")
+
+    state = {"live": 0, "peak": 0}
+    lock = threading.Lock()
+    release = threading.Event()
+
+    def runner(text, *, max_dollars, max_wall, max_depth):
+        with lock:
+            state["live"] += 1
+            state["peak"] = max(state["peak"], state["live"])
+        release.wait(timeout=2.0)
+        with lock:
+            state["live"] -= 1
+        return "ok"
+
+    eng = TaskEngine(runner=runner)
+
+    async def drive():
+        tasks = [asyncio.create_task(eng.send(_msg(f"g{i}"))) for i in range(4)]
+        await asyncio.sleep(0.3)
+        release.set()
+        return await asyncio.gather(*tasks)
+
+    asyncio.run(drive())
+    # The default executor on this box has >=4 workers; with the cap disabled
+    # all 4 short goals overlap.
+    assert state["peak"] >= 2

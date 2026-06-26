@@ -283,8 +283,12 @@ class TaskStore:
 
     def cancel(self, task_id: str, *, owner: str | None = None) -> dict:
         self._purge_expired()
+        # A hostile client can send a non-string taskId (list/dict); coerce it to
+        # "" so the lookup yields a clean -32602 instead of an unhashable-key
+        # TypeError (mirrors a2a_tasks._owned).
+        key = task_id if isinstance(task_id, str) else ""
         with self._lock:
-            task = self._tasks.get(task_id or "")
+            task = self._tasks.get(key)
             if task is None or not self._owner_matches(task, owner):
                 raise TaskError(_INVALID_PARAMS, "task not found")
             if task.status in TASK_TERMINAL:
@@ -320,8 +324,11 @@ class TaskStore:
 
     def _require(self, task_id: str, *, owner: str | None = None) -> McpTask:
         self._purge_expired()
+        # Coerce a non-string taskId (hostile list/dict) to "" so the lookup
+        # raises a clean -32602 rather than an unhashable-key TypeError.
+        key = task_id if isinstance(task_id, str) else ""
         with self._lock:
-            task = self._tasks.get(task_id or "")
+            task = self._tasks.get(key)
         if task is None or not self._owner_matches(task, owner):
             raise TaskError(_INVALID_PARAMS, "task not found")
         return task

@@ -77,3 +77,50 @@ def test_worker_reclaims_stale_jobs_on_start(tmp_path):
     w.run_forever()
 
     assert q.get(jid).status == "pending"
+
+
+def test_worker_reclaims_peer_orphan_while_running(tmp_path):
+    """A live daemon re-runs reclaim periodically, recovering a peer's orphan
+    that appeared *after* startup -- not just the one-shot reclaim on start.
+
+    Without the in-loop periodic reclaim, a job orphaned in 'running' by a
+    crashed peer after this daemon started would stay stuck forever (claim()
+    only picks 'pending' rows), so the no-op handler never runs and the job
+    never reaches 'done'.
+    """
+    import threading
+    import time
+
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+
+    processed = threading.Event()
+
+    w = Worker(queue=q, reclaim_lease=2.0, idle_sleep=0.02)
+    w.register("recovered", lambda job: processed.set())
+
+    t = threading.Thread(target=w.run_forever, daemon=True)
+    t.start()
+    try:
+        # Daemon is up and past its startup reclaim. Now simulate a *peer*
+        # worker that claimed this job and then hard-crashed: drive it into
+        # 'running' with an ancient updated_at so it is well past the lease.
+        jid = q.enqueue("recovered", {}, run_at=1000.0)
+        claimed = q.claim(now=1000.0)
+        assert claimed is not None and claimed.id == jid
+        assert q.get(jid).status == "running"
+
+        # The in-loop periodic reclaim (interval = reclaim_lease/2 = 1s) must
+        # requeue it and the daemon must then claim + process it.
+        assert processed.wait(timeout=10.0), "peer orphan was never reclaimed"
+    finally:
+        w.stop()
+        t.join(timeout=5.0)
+
+    # Settle: the recovered job ran to completion.
+    deadline = time.monotonic() + 5.0
+    while q.get(jid).status not in ("done", "failed") and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert q.get(jid).status == "done"

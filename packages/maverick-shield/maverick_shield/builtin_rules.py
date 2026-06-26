@@ -118,10 +118,17 @@ def _shell_deobfuscate(text: str) -> str:
 
 def _decode_b64_blobs(text: str) -> list[str]:
     out: list[str] = []
-    useful_blobs = 0
+    # Bound TOTAL decode work, not the count of text-yielding blobs. The old
+    # `useful_blobs >= _MAX_B64_BLOBS` break was order-dependent: an attacker
+    # could prepend 20+ short benign base64 tokens that each decode to text,
+    # exhausting the budget before finditer reached the real payload blob -- so
+    # the payload was never decoded and the attack bypassed every rule. A global
+    # window budget keeps the pre-pass linear while letting later blobs still be
+    # reached, and we always grant each blob its first phase-0 window so a
+    # trailing payload is never starved by benign decoys preceding it.
+    total_windows = 0
+    max_total_windows = _MAX_B64_BLOBS * _MAX_B64_WINDOWS_PER_BLOB
     for m in _B64_BLOB.finditer(text):
-        if useful_blobs >= _MAX_B64_BLOBS:
-            break
         # Decode bounded, overlapping windows across the whole blob. Decoding
         # only the leading slice let attackers prepend benign bytes and hide a
         # malicious instruction later in the same regex match. Keep the window
@@ -129,7 +136,6 @@ def _decode_b64_blobs(text: str) -> list[str]:
         blob = m.group(0)
         window = _MAX_B64_DECODE_CHARS & ~3
         step = _B64_DECODE_STEP_CHARS & ~3
-        blob_had_text = False
         windows_used = 0
         # Try all 4 phase alignments. _B64_BLOB greedily grabs any leading
         # base64-alphabet chars, so an attacker can prepend 1-3 filler chars
@@ -142,10 +148,18 @@ def _decode_b64_blobs(text: str) -> list[str]:
                 break
             shifted = blob[phase:]
             starts = range(0, len(shifted), step) if step else (0,)
-            for start in starts:
+            for i, start in enumerate(starts):
                 if windows_used >= _MAX_B64_WINDOWS_PER_BLOB:
                     break
+                # Always decode each blob's very first window (phase 0, start 0)
+                # even after the global budget is spent, so a trailing payload
+                # blob is still scanned no matter how many benign decoys precede
+                # it. All other windows draw from the shared global budget.
+                is_first_window = phase == 0 and i == 0
+                if not is_first_window and total_windows >= max_total_windows:
+                    break
                 windows_used += 1
+                total_windows += 1
                 chunk = shifted[start:start + window]
                 if not chunk:
                     continue
@@ -157,9 +171,6 @@ def _decode_b64_blobs(text: str) -> list[str]:
                 # Only keep decodes that look like text (the attack is in words).
                 if decoded and any(c.isalpha() for c in decoded):
                     out.append(decoded)
-                    blob_had_text = True
-        if blob_had_text:
-            useful_blobs += 1
     return out
 
 

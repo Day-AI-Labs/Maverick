@@ -26,6 +26,7 @@ import email
 import email.utils
 import imaplib
 import logging
+import os
 import re
 import smtplib
 from email.message import EmailMessage
@@ -44,6 +45,11 @@ SMTP_TIMEOUT = 30.0
 # Twilio/Meta HMAC channels have).
 _SPF_RE = re.compile(r"\bspf=(\w+)")
 _DKIM_RE = re.compile(r"\bdkim=(\w+)")
+# The authserv-id (first token before the first ';') identifies the ADMD that
+# stamped a given Authentication-Results header. Per RFC 8601 we may only trust
+# the header our own receiving MX added; lower headers are message body that any
+# upstream hop -- including the sender -- can forge.
+_AUTHSERV_RE = re.compile(r"\s*([^\s;]+)")
 
 
 def _authentication_verdict(msg) -> str:
@@ -53,11 +59,35 @@ def _authentication_verdict(msg) -> str:
     explicit failure (spf=fail/softfail or dkim=fail) with nothing passing --
     i.e. the From is very likely forged. 'none' covers no Authentication-Results
     header, or only neutral/none results (a domain without published records).
+
+    Only the TOPMOST Authentication-Results header is evaluated (RFC 8601):
+    the receiving MX prepends its own result, so the genuine verdict is first.
+    Lower headers are part of the message body and trivially forgeable -- joining
+    all of them let a forged ``spf=pass`` from an attacker-controlled relay mask
+    the trusted MX's ``spf=fail``. If ``EMAIL_TRUSTED_AUTHSERV_ID`` is set, the
+    topmost header is only trusted when its authserv-id matches (a stricter
+    guard against a hop that prepends a header above our own MX's).
     """
     headers = msg.get_all("Authentication-Results") or []
     if not headers:
         return "none"
-    text = " ".join(str(h).lower() for h in headers)
+    trusted = _trusted_authserv_id()
+    header = None
+    if trusted:
+        for h in headers:
+            authserv = _AUTHSERV_RE.match(str(h))
+            if authserv and authserv.group(1).lower() == trusted:
+                header = str(h)
+                break
+        if header is None:
+            # No header carries our trusted authserv-id -- treat as unevaluated
+            # rather than trusting a stranger's verdict.
+            return "none"
+    else:
+        # No configured trust anchor: trust only the topmost header, which the
+        # receiving MX stamps on. Never join lower (forgeable) headers in.
+        header = str(headers[0])
+    text = header.lower()
     spf = _SPF_RE.findall(text)
     dkim = _DKIM_RE.findall(text)
     if "pass" in spf or "pass" in dkim:
@@ -65,6 +95,16 @@ def _authentication_verdict(msg) -> str:
     if any(v in ("fail", "softfail") for v in spf) or "fail" in dkim:
         return "fail"
     return "none"
+
+
+def _trusted_authserv_id() -> str:
+    """Optional configured authserv-id whose Authentication-Results we trust.
+
+    Defaults to empty (trust the topmost header). Set
+    ``EMAIL_TRUSTED_AUTHSERV_ID`` to the receiving MX's authserv-id to require an
+    exact match before any verdict is honored.
+    """
+    return (os.environ.get("EMAIL_TRUSTED_AUTHSERV_ID") or "").strip().lower()
 
 
 class EmailChannel(Channel):

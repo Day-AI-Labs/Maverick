@@ -219,32 +219,34 @@ def set_channel(name: str, enabled: bool, values: dict | None = None) -> None:
     if spec is None:
         raise ValueError("unknown channel")
     values = values or {}
-    data = load_overlay()
-    ccfg = data.setdefault("channels", {}).setdefault(name, {})
-    ccfg["enabled"] = bool(enabled)
-    for field in spec["fields"]:
-        key = field["key"]
-        raw = values.get(key)
-        val = raw.strip() if isinstance(raw, str) else raw
-        if val in (None, ""):
-            continue  # blank -> keep the stored value (don't wipe a hidden secret)
-        if field.get("type") == "int":
-            try:
-                ccfg[key] = int(val)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"{field['label']} must be a number") from exc
-        else:
-            ccfg[key] = str(val)
-    _write(data)
+    with _locked():
+        data = load_overlay()
+        ccfg = data.setdefault("channels", {}).setdefault(name, {})
+        ccfg["enabled"] = bool(enabled)
+        for field in spec["fields"]:
+            key = field["key"]
+            raw = values.get(key)
+            val = raw.strip() if isinstance(raw, str) else raw
+            if val in (None, ""):
+                continue  # blank -> keep the stored value (don't wipe a hidden secret)
+            if field.get("type") == "int":
+                try:
+                    ccfg[key] = int(val)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"{field['label']} must be a number") from exc
+            else:
+                ccfg[key] = str(val)
+        _write(data)
 
 
 def clear_channel(name: str) -> None:
     """Remove a channel's overlay table entirely (reverts to config.toml/env)."""
     if name not in _CHANNELS_BY_NAME:
         raise ValueError("unknown channel")
-    data = load_overlay()
-    (data.get("channels") or {}).pop(name, None)
-    _write(data)
+    with _locked():
+        data = load_overlay()
+        (data.get("channels") or {}).pop(name, None)
+        _write(data)
 
 
 def _raw_config_providers() -> dict:

@@ -21,6 +21,12 @@ _HEADING_RE = re.compile(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*$")
 
 
 def _convert_slack_segment(seg: str) -> str:
+    # Escape Slack mrkdwn control chars FIRST so literal user/agent text can't
+    # inject <!channel>/<!here>/<@U..> broadcasts or <url|label> links. Slack's
+    # API requires senders to replace & < > before sending mrkdwn=True text.
+    # Only the <...> spans this function itself emits below stay live, matching
+    # the Discord adapter's AllowedMentions.none() no-mention guarantee.
+    seg = seg.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     seg = _LINK_RE.sub(r"<\2|\1>", seg)          # [text](url) -> <url|text>
     seg = _BOLD_STAR_RE.sub(r"*\1*", seg)        # **bold** -> *bold*
     seg = _BOLD_UNDER_RE.sub(r"*\1*", seg)       # __bold__ -> *bold*

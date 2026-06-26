@@ -59,6 +59,15 @@ log = logging.getLogger(__name__)
 # crafted name can't smuggle extra `docker run` semantics.
 _SAFE_ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# `image` comes from a repo-supplied devcontainer.json and is placed as the
+# IMAGE positional in `docker run`. Docker's CLI parses any leading-dash token
+# before the first positional as a FLAG, so an `image` value like
+# "--privileged" injects a run option that negates our --cap-drop/no-new-
+# privileges hardening. Require a docker reference shape and reject anything
+# starting with '-' (mirrors the leading-dash guards in git_advanced /
+# ffmpeg_tool).
+_SAFE_IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/@-]*$")
+
 
 def _strip_jsonc(text: str) -> str:
     """Strip // line comments + /* block */ comments + trailing commas."""
@@ -112,6 +121,15 @@ def _parse_devcontainer(path: Path) -> DevcontainerSpec:
             )
         raise RuntimeError(f"{path}: missing required `image` field")
 
+    image = str(image)
+    if not _SAFE_IMAGE_RE.match(image):
+        # A leading-dash / option-shaped image would be parsed by `docker run`
+        # as a flag (e.g. `--privileged`), defeating the sandbox hardening.
+        raise RuntimeError(
+            f"{path}: refusing option-like `image` value {image!r} "
+            "(must be a plain image reference, not start with '-')"
+        )
+
     run_args = data.get("runArgs") or []
     if run_args:
         raise RuntimeError(
@@ -123,7 +141,7 @@ def _parse_devcontainer(path: Path) -> DevcontainerSpec:
     if path.parent.name == ".devcontainer":
         repo_name = path.parent.parent.name
     return DevcontainerSpec(
-        image=str(image),
+        image=image,
         remote_user=str(data.get("remoteUser") or "root"),
         workspace_folder=str(
             data.get("workspaceFolder") or f"/workspaces/{repo_name}",

@@ -179,6 +179,59 @@ def test_restore_detects_corruption(tmp_path):
     assert (data_dir() / "agent_trust.json").read_text() == original
 
 
+def test_restore_clears_stale_wal_sidecar():
+    """DR scenario: a stale, uncheckpointed world.db-wal in the live root must
+    NOT survive a restore and replay post-backup mutations back over the
+    restored DB. Backups exclude the -wal/-shm sidecars on purpose (the
+    consistent .db copy already folds them in), so restore is responsible for
+    removing any pre-existing ones in the live root."""
+    from maverick.paths import data_dir
+    root = data_dir()
+
+    # Baseline world.db (WAL mode, fully checkpointed) holding only the content
+    # the backup will capture.
+    root.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(root / "world.db"))
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("CREATE TABLE t (v TEXT)")
+    con.execute("INSERT INTO t VALUES ('secret-data')")
+    con.commit()
+    con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    con.close()
+    (root / "agent_trust.json").write_text('[{"id":"vega"}]')
+
+    tar = backup.create_backup()  # snapshots the clean baseline only
+
+    # A post-backup mutation that lives ONLY in the WAL (never checkpointed):
+    # keep the connection open so SQLite cannot checkpoint, capture the live
+    # sidecar bytes, then close. Writing those bytes back recreates exactly the
+    # post-crash stale-WAL-on-disk state (close-time checkpoint truncates it,
+    # so we must reconstruct it to model the hard-crash case).
+    con = sqlite3.connect(str(root / "world.db"))
+    con.execute("PRAGMA wal_autocheckpoint=0")
+    con.execute("INSERT INTO t VALUES ('post-backup-mutation')")
+    con.commit()
+    wal_bytes = (root / "world.db-wal").read_bytes()
+    shm_path = root / "world.db-shm"
+    shm_bytes = shm_path.read_bytes() if shm_path.exists() else None
+    assert wal_bytes, "test needs a non-empty stale WAL"
+    con.close()
+    (root / "world.db-wal").write_bytes(wal_bytes)
+    if shm_bytes is not None:
+        shm_path.write_bytes(shm_bytes)
+    assert (root / "world.db-wal").stat().st_size > 0
+
+    backup.restore_backup(tar, force=True)
+
+    # The stale WAL must be gone, and reopening must show ONLY the backed-up
+    # content — the post-backup mutation must not have been replayed back in.
+    assert not (root / "world.db-wal").exists()
+    con = sqlite3.connect(str(root / "world.db"))
+    rows = {r[0] for r in con.execute("SELECT v FROM t").fetchall()}
+    con.close()
+    assert rows == {"secret-data"}, rows
+
+
 def test_create_errors_when_no_data(monkeypatch, tmp_path):
     # Point at an empty home with a fresh client -> no data root.
     monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "empty"))

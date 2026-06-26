@@ -30,6 +30,7 @@ safety shield when installed (fail-open).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import logging
@@ -67,6 +68,62 @@ def _max_tasks() -> int:
 
 
 _MAX_TASKS = _max_tasks()
+
+
+def _max_concurrency() -> int:
+    """Max A2A goals that may execute concurrently. Default small (4) so one
+    caller can't saturate the process-wide default ThreadPoolExecutor (which
+    asyncio.to_thread uses) with long-running goals and stall every other
+    to_thread consumer in the dashboard process. 0 disables the cap."""
+    try:
+        return max(0, int(os.environ.get("MAVERICK_A2A_MAX_CONCURRENCY", "4")))
+    except ValueError:
+        return 4
+
+
+# One semaphore per running event loop. The engine is constructed once at
+# mount, but a Semaphore must be awaited on the loop it was created on; keying
+# by the running loop keeps this correct across the test harness's per-call
+# loops and under a single long-lived server loop in production. The map is
+# bounded so a churn of short-lived loops can't leak entries -- a missing entry
+# just recreates the (cheap) semaphore for the current loop.
+_RUN_SEM_LOCK = Lock()
+_RUN_SEMAPHORES: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
+_RUN_SEM_MAX_LOOPS = 64
+
+
+def _run_semaphore() -> asyncio.Semaphore | None:
+    """The concurrency limiter for the current event loop, or None when the
+    cap is disabled (MAVERICK_A2A_MAX_CONCURRENCY=0)."""
+    limit = _max_concurrency()
+    if limit <= 0:
+        return None
+    loop = asyncio.get_running_loop()
+    with _RUN_SEM_LOCK:
+        sem = _RUN_SEMAPHORES.get(loop)
+        if sem is None:
+            if len(_RUN_SEMAPHORES) >= _RUN_SEM_MAX_LOOPS:
+                # Sweep semaphores bound to loops that have closed; drop the
+                # oldest if none are reclaimable so the map stays bounded.
+                for stale in [lp for lp in _RUN_SEMAPHORES if lp.is_closed()]:
+                    _RUN_SEMAPHORES.pop(stale, None)
+                while len(_RUN_SEMAPHORES) >= _RUN_SEM_MAX_LOOPS:
+                    _RUN_SEMAPHORES.pop(next(iter(_RUN_SEMAPHORES)))
+            sem = asyncio.Semaphore(limit)
+            _RUN_SEMAPHORES[loop] = sem
+    return sem
+
+
+@contextlib.asynccontextmanager
+async def _run_slot() -> AsyncIterator[None]:
+    """Hold a concurrency slot for the duration of a goal run, or admit freely
+    when the cap is disabled. Sized by MAVERICK_A2A_MAX_CONCURRENCY (default 4)."""
+    sem = _run_semaphore()
+    if sem is None:
+        yield
+        return
+    async with sem:
+        yield
 
 # JSON-RPC error codes used by the engine (-32000..-32099 is the
 # server-defined range; the standard codes like parse/invalid-request are
@@ -520,13 +577,17 @@ class TaskEngine:
         # (the contextvar copies into the worker thread).
         cv = _caller_agent.set(_agent_id_of(task.principal))
         try:
-            result = await asyncio.to_thread(
-                self._runner,
-                text,
-                max_dollars=limits["max_dollars"],
-                max_wall=limits["max_wall"],
-                max_depth=limits["max_depth"],
-            )
+            # Cap concurrently executing goals so one caller can't saturate the
+            # process-wide default ThreadPoolExecutor (asyncio.to_thread) for up
+            # to the max_wall ceiling and stall every other to_thread consumer.
+            async with _run_slot():
+                result = await asyncio.to_thread(
+                    self._runner,
+                    text,
+                    max_dollars=limits["max_dollars"],
+                    max_wall=limits["max_wall"],
+                    max_depth=limits["max_depth"],
+                )
         except Exception as e:
             log.exception("a2a task %s failed", task.id)
             task.set_state("failed")
@@ -573,12 +634,13 @@ class TaskEngine:
         limits = self._limits(task)
         cv = _caller_agent.set(_agent_id_of(task.principal))
         try:
-            result = await asyncio.to_thread(
-                self._runner, text,
-                max_dollars=limits["max_dollars"],
-                max_wall=limits["max_wall"],
-                max_depth=limits["max_depth"],
-            )
+            async with _run_slot():
+                result = await asyncio.to_thread(
+                    self._runner, text,
+                    max_dollars=limits["max_dollars"],
+                    max_wall=limits["max_wall"],
+                    max_depth=limits["max_depth"],
+                )
         except Exception as e:
             log.exception("a2a stream task %s failed", task.id)
             task.set_state("failed")

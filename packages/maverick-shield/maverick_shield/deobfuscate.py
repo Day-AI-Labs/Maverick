@@ -30,10 +30,22 @@ from urllib.parse import unquote
 # _MAX_LEN matches builtin_rules' own scan cap (256 KB) so the pre-pass does not
 # silently *stop decoding* on inputs the detectors still scan -- the prior 20k
 # bail let `"a"*20001 + base64(payload)` slip an encoded attack past the decode
-# step. Total work stays bounded by _MAX_VARIANTS regardless of input size.
-_MAX_VARIANTS = 16
+# step. The first decode layer is bounded by _MAX_LEN (and _HARD_CAP); deeper,
+# multiplicative recursion is bounded by _MAX_VARIANTS.
+# _MAX_VARIANTS bounds deeper-layer expansion. It is NOT used to cap the count of
+# first-layer decodes: a count cap there would be order-dependent, letting an
+# attacker prepend >cap benign base64 tokens to starve the real (trailing)
+# payload out of the scanned set (the same trap builtin_rules avoids by always
+# granting each blob a decode). _MAX_B64_BLOBS mirrors builtin_rules' constant
+# and bounds only the EXTRA phase-realignment work, not the blob count itself.
+_MAX_B64_BLOBS = 20
+_MAX_VARIANTS = 24
+# Absolute ceiling on total variants (incl. a fully-decoded first layer) so a
+# pathological many-blob input can't exhaust memory; the first layer is bounded
+# anyway by _MAX_LEN, so this only ever trips on adversarial decode-bomb input.
+_HARD_CAP = 4096
 _MAX_LEN = 262_144
-_MAX_DEPTH = 3  # tolerate triple-nested encodings (still bounded by _MAX_VARIANTS)
+_MAX_DEPTH = 3  # tolerate triple-nested encodings (deeper layers bounded by _MAX_VARIANTS)
 
 # Zero-width / bidi / tag chars (mirrors cascade; combining marks added so a
 # "zalgo"-stacked payload collapses to its base letters). Written with \\uXXXX
@@ -103,17 +115,47 @@ def _strip_unicode(text: str) -> str | None:
 
 def _decode_base64(text: str) -> list[str]:
     out: list[str] = []
+    # Bound the EXTRA phase-realignment work (phases 1-3) globally so a hostile
+    # input can't turn the pre-pass into a decode bomb -- but, like
+    # builtin_rules._decode_b64_blobs, always grant every blob its phase-0
+    # decode even after that budget is spent, so a trailing payload blob is
+    # never starved by however many benign base64 decoys precede it. Capping by
+    # blob count instead would be order-dependent: an attacker just prepends
+    # enough benign blobs to exhaust the budget before finditer reaches the
+    # real payload.
+    extra_phase_budget = _MAX_B64_BLOBS * 3
     for rx in (_B64_RE, _B64URL_RE):
         for m in rx.finditer(text):
             blob = m.group(0)
-            pad = "=" * (-len(blob) % 4)
-            for fn in (base64.b64decode, base64.urlsafe_b64decode):
-                try:
-                    decoded = _maybe_text(fn(blob + pad))
-                except (binascii.Error, ValueError):
-                    continue
-                if decoded and decoded != text:
-                    out.append(decoded)
+            # Try all 4 phase alignments. The regex greedily grabs any leading
+            # base64-alphabet chars, so an attacker can prepend 1-3 filler chars
+            # ("ABCignore..." base64'd) -- that shifts every 4-byte boundary so
+            # the real payload decodes to garbage, silently defeating decode
+            # coverage. Decoding from each offset re-aligns one of them.
+            for phase in range(4):
+                # Phase 0 is always free; phases 1-3 draw from the shared budget.
+                if phase != 0:
+                    if extra_phase_budget <= 0:
+                        break
+                    extra_phase_budget -= 1
+                shifted = blob[phase:]
+                if len(shifted) < 4:
+                    break
+                pad = "=" * (-len(shifted) % 4)
+                hit = False
+                for fn in (base64.b64decode, base64.urlsafe_b64decode):
+                    try:
+                        decoded = _maybe_text(fn(shifted + pad))
+                    except (binascii.Error, ValueError):
+                        continue
+                    if decoded and decoded != text:
+                        out.append(decoded)
+                        hit = True
+                        break
+                if hit and phase == 0:
+                    # Phase 0 already yielded text -- the blob was 4-byte
+                    # aligned, so the other phases would only produce shifted
+                    # garbage. Skip them to keep the pre-pass linear.
                     break
     return out
 
@@ -164,7 +206,13 @@ def decoded_variants(text: str) -> list[str]:
     """De-obfuscated variants of ``text`` for the detectors to additionally scan.
 
     Excludes ``text`` itself and any duplicates. Recurses up to ``_MAX_DEPTH``
-    (an attacker may double-encode) and is capped at ``_MAX_VARIANTS`` total.
+    (an attacker may double-encode). The FIRST decode layer is scanned in full
+    (its size is already bounded by ``_MAX_LEN``) so a payload blob is never
+    starved by benign decoys preceding it -- capping the first layer by *count*
+    would be order-dependent, letting an attacker prepend >cap benign base64
+    tokens to push the real payload past the limit. Deeper layers, where an
+    attacker could otherwise multiply the work, are bounded by ``_MAX_VARIANTS``;
+    an absolute ``_HARD_CAP`` ceiling guards against a pathological first layer.
     Never raises -- a decode failure simply yields fewer variants.
     """
     if not isinstance(text, str) or not text or len(text) > _MAX_LEN:
@@ -174,7 +222,12 @@ def decoded_variants(text: str) -> list[str]:
     frontier = [text]
     depth = 0
     try:
-        while frontier and depth < _MAX_DEPTH and len(ordered) < _MAX_VARIANTS:
+        while frontier and depth < _MAX_DEPTH and len(ordered) < _HARD_CAP:
+            # The first layer (depth 0) is decoded fully so a trailing payload is
+            # always scanned; from depth 1 on, stop once _MAX_VARIANTS variants
+            # have accumulated to keep recursive expansion bounded.
+            if depth >= 1 and len(ordered) >= _MAX_VARIANTS:
+                break
             nxt: list[str] = []
             for item in frontier:
                 for v in _layer(item):
@@ -183,7 +236,7 @@ def decoded_variants(text: str) -> list[str]:
                     seen.add(v)
                     ordered.append(v)
                     nxt.append(v)
-                    if len(ordered) >= _MAX_VARIANTS:
+                    if len(ordered) >= _HARD_CAP:
                         return ordered
             frontier = nxt
             depth += 1

@@ -280,6 +280,37 @@ def _safe_relay_state(value: str | None, default: str) -> str:
     return value
 
 
+# Attribute names IdPs commonly carry the stable email / UPN under. SCIM
+# deprovision revokes by externalId/userName/email/id, so recording the SAML
+# NameID against these lets ``subject_directory.subs_for`` reach a session whose
+# sub is a persistent/transient NameID that matches no SCIM attribute.
+_EMAIL_UPN_ATTRS = (
+    "email", "mail", "emailaddress", "emailAddress",
+    "upn", "userPrincipalName", "userprincipalname",
+    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn",
+)
+
+
+def _record_session_subject(identity: SamlIdentity) -> None:
+    """Map the SAML NameID (the session sub) to the user's stable email/UPN
+    identifiers so a later SCIM deprovision can revoke this live session even
+    when the IdP uses a persistent/transient NameID (the recommended format),
+    which appears in no SCIM attribute. Best-effort: never blocks the login."""
+    try:
+        from .subject_directory import record_login
+
+        ids: list[str] = [identity.name_id]
+        attrs = identity.attributes or {}
+        for key in _EMAIL_UPN_ATTRS:
+            for val in attrs.get(key) or ():
+                if isinstance(val, str):
+                    ids.append(val)
+        record_login(identity.name_id, ids)
+    except Exception:  # pragma: no cover -- directory never blocks login
+        return
+
+
 # --- routes -----------------------------------------------------------------
 
 
@@ -342,6 +373,10 @@ async def saml_acs(request: Request):
     except Exception:  # noqa: BLE001 -- never leak why verification failed
         log.warning("SAML ACS: assertion verification failed")
         return JSONResponse({"detail": "SAML assertion did not verify"}, status_code=401)
+    # Record the NameID (the session sub) so SCIM deprovision can revoke this
+    # live session even for a persistent/transient NameID that maps to no SCIM
+    # attribute. Mirrors the OIDC callback's record_login.
+    _record_session_subject(identity)
     # Reuse the OIDC login cookie hardening so SAML/OIDC sessions are identical.
     from .oidc_login import SESSION_COOKIE, _is_loopback_request, _set_cookie
 
