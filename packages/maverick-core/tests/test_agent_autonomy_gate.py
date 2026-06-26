@@ -48,7 +48,7 @@ def _high_risk_act(monkeypatch):
 
     import maverick.agent_autonomy as aa
     tr = importlib.import_module("maverick.safety.tool_risk")
-    fake = lambda n, *a, **k: "high" if n == "act" else "low"  # noqa: E731
+    fake = lambda n, *a, **k: "high" if n in {"act", "spawn_specialist"} else "low"  # noqa: E731
     monkeypatch.setattr(tr, "tool_risk", fake)          # the gate's `from ... import`
     monkeypatch.setattr(aa, "tool_risk", fake)          # resolver's module-level copy
 
@@ -119,9 +119,8 @@ async def test_client_override_grants_auto(monkeypatch, tmp_path, _high_risk_act
 
 
 @pytest.mark.asyncio
-async def test_coordination_not_gated_by_dial(monkeypatch, tmp_path, _high_risk_act):
-    """Even an OBSERVE hire with levels on may spawn/message peers -- the
-    coordination control-plane is exempt from the autonomy dial."""
+async def test_coordination_gated_by_dial(monkeypatch, tmp_path, _high_risk_act):
+    """An OBSERVE hire may not bypass autonomy by using high-risk coordination."""
     _enable(monkeypatch)
     agent = _agent(tmp_path, AutonomyProfile(default=AutonomyLevel.OBSERVE, onboarding=False))
     agent.tools.register(Tool(
@@ -129,7 +128,8 @@ async def test_coordination_not_gated_by_dial(monkeypatch, tmp_path, _high_risk_
         input_schema={"type": "object", "properties": {}},
     ))
     out = await agent._run_tool("spawn_specialist", {})
-    assert "spawned" in out  # not gated despite OBSERVE + high-risk classification
+    assert "spawned" not in out
+    assert "DENIED" in out
 
 
 if __name__ == "__main__":

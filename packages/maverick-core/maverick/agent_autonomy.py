@@ -59,10 +59,9 @@ log = logging.getLogger(__name__)
 
 # The control-plane tools that let a specialist participate in the workforce
 # (discover peers, spawn specialists, fan out a swarm, message/delegate across
-# the agent bus). Canonically defined in :mod:`maverick.capability` (it is the
-# capability FLOOR there); re-exported here because the autonomy dial also EXEMPTS
-# them -- coordinating is not a consequential external action, so it is never held
-# for human approval; the spawned children, budget, and depth limits govern it.
+# the agent bus). Canonically defined in :mod:`maverick.capability` and
+# re-exported here for callers/tests that need the grouped tool names. These
+# tools are not exempt from the autonomy dial.
 from .capability import COORDINATION_TOOLS  # noqa: E402
 
 
