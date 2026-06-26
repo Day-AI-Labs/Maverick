@@ -36,6 +36,7 @@ import math
 import os
 import re
 import threading
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -230,21 +231,29 @@ class HarnessProposal:
 # (the model proposing how to avoid its OWN recurring failure). Pure/seam.
 ProposeFn = Callable[[FailureSignature], str]
 
-# Control characters (except none -- we drop them all): a guidance line is
-# plain prose. Newlines/tabs/escapes could break the line out of its framed
-# block or smuggle role/instruction markers, so they are removed.
-_CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
-
-
 def _sanitize_line(text: str) -> str:
     """Neutralize a proposed addendum line before it can enter a prompt.
 
     Defense-in-depth on top of the unscoped-only mining guard: the line still
     derives from trace text and (with an LLM proposer) from model output, so
     strip control chars, collapse all whitespace to single spaces (no multi-line
-    break-out), and scrub secrets. The result is one bounded plain-prose line."""
-    line = _CTRL_RE.sub(" ", str(text or ""))
-    line = " ".join(line.split())  # collapse all whitespace incl. newlines
+    break-out), and scrub secrets. The result is one bounded plain-prose line.
+
+    Stripping is by UNICODE CATEGORY, not an ASCII regex: every control char
+    (category ``Cc`` -- C0, the C1 0x80-0x9f block, and DEL) and every format
+    char (``Cf`` -- zero-width ZWSP/ZWNJ/ZWJ, the BOM, and bidi overrides like
+    RLO/LRO/isolates) is replaced with a space. An ASCII-only ``[\\x00-\\x1f\\x7f]``
+    pass let the whole non-ASCII slice through, and this line lands in EVERY
+    system prompt for the model AND in the signed audit + addenda.json a human
+    reviews: a C1 byte injects a terminal escape when that log is cat'd, a
+    zero-width char splits a trigger word past a downstream filter, and an RLO
+    visually reverses the guidance an auditor reads. Zl/Zp/Zs separators are
+    Unicode whitespace, so ``split()`` below already collapses them. (Found by
+    the adversarial input-fuzzing battery.)"""
+    raw = str(text or "")
+    cleaned = "".join(
+        " " if unicodedata.category(c) in {"Cc", "Cf"} else c for c in raw)
+    line = " ".join(cleaned.split())  # collapse all whitespace incl. newlines
     try:
         from .secrets import scrub
         line = scrub(line)
