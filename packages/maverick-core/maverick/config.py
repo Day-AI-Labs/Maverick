@@ -540,6 +540,11 @@ def get_self_learning() -> dict:
         "enable": bool(cfg.get("enable", False)),
         "preflight": bool(cfg.get("preflight", True)),
         "create_tools": bool(cfg.get("create_tools", True)),
+        # The agent factory equips a freshly approved pack with the catalog
+        # skills + synthesized tools its workflow needs (maverick.provision).
+        # On by default once self-learning is accepted; still bounded by
+        # ``max_acquisitions`` and the per-tool consent gate.
+        "provision_packs": bool(cfg.get("provision_packs", True)),
         # Agent-proposed MCP-server acquisition is the highest-trust knob:
         # even gated behind catalog-pinning + operator consent it can start
         # a third-party subprocess, so it ships OFF independently of the

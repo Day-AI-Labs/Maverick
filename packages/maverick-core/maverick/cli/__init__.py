@@ -526,6 +526,38 @@ def support(output: str | None) -> None:
         click.echo(text)
 
 
+def _show_capability_plan(profile):
+    """Analyse a draft pack for capability gaps and print them. Read-only;
+    returns the plan (or None if analysis was unavailable) for later apply."""
+    from ..provision import analyze_profile
+    try:
+        from ..tools import base_tool_names
+        plan = analyze_profile(profile, known_tools=base_tool_names())
+    except Exception as e:  # analysis must never block onboarding
+        click.echo(f"(capability analysis skipped: {e})", err=True)
+        return None
+    if plan.is_empty():
+        return plan
+    click.echo(click.style("\nCapability gaps the factory can close:", bold=True))
+    for g in plan.gaps:
+        click.echo(f"  - {g.describe()}")
+    from .. import self_learning
+    if not self_learning.enabled():
+        click.echo("  (enable [self_learning] to auto-provision these on approval)")
+    return plan
+
+
+def _apply_capability_plan(plan, llm) -> None:
+    """Equip an approved pack: install catalog skills + synthesize declared
+    tools through the governed paths. No-op unless self-learning is enabled."""
+    if plan is None or plan.is_empty():
+        return
+    from ..provision import apply_plan
+    result = apply_plan(plan, approved=True, llm=llm)
+    if result.acquired or result.generated or result.failed:
+        click.echo(click.style(f"Provisioning: {result.summary()}", fg="cyan"))
+
+
 @main.command()
 @click.option("--name", default=None, help="Business name (otherwise prompted).")
 @click.option("--doc", "docs", multiple=True,
@@ -639,6 +671,10 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
     click.echo(f"  knowledge:   {', '.join(profile.knowledge_sources) or '(none)'}")
     click.echo(f"  persona:     {profile.persona[:400]}")
 
+    # Capability provisioning: surface (and, on approval, close) the skills/
+    # tools this pack needs but doesn't have yet. Analysis is always safe.
+    plan = _show_capability_plan(profile)
+
     if not yes and not click.confirm("\nApprove and activate this agent?", default=False):
         click.echo("Discarded. Nothing was saved.")
         return
@@ -647,6 +683,8 @@ def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) 
     path = save_profile(profile, approved=True)
     click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
     click.echo(f"Domain '{profile.name}' is now available to the swarm.")
+
+    _apply_capability_plan(plan, llm)
 
 
 @main.command()

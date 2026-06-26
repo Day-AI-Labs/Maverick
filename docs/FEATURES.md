@@ -1317,6 +1317,17 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 
 - **Conversational intake** — interviews a user, collects docs, and proposes a
   domain configuration (intake agent + LLM proposer + `run_intake`).
+- **Capability provisioning** (`provision.py`) — the agent factory equips a
+  pack *at birth*, not reactively mid-run: `analyze_profile` diffs a draft's
+  workflow + declared `allow_tools` against the installed skills and live tool
+  registry (`tools.base_tool_names`) and surfaces the gaps at the approval gate;
+  on approval, `apply_plan` installs the matching catalog skills
+  (`self_learning.acquire_skill`) and synthesizes any missing declared tools
+  (`self_learning.write_generated_tool` — stdlib-only, import-validated
+  out-of-host, consent-gated). Analysis is read-only and always safe; applying
+  it is gated on `[self_learning] enable` + the new `provision_packs` sub-knob
+  (wizard step) + the same human approval `save_profile` requires, and never
+  widens the pack's already-clamped envelope.
 - **Domain packs** — spawn domain agents from profiles (legal / privacy / generic
   packs) on the sector-seal foundation.
 - **Pack output contract** — a pack's optional `[output]` block declares the
