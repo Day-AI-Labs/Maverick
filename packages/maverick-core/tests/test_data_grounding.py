@@ -105,3 +105,13 @@ def test_empty_allowlist_pack_is_not_broadened():
             cap = domain_capability(p, None, f"agent:{name}-1")
             assert not cap.allow_tools, f"{name}: empty allowlist must stay open"
             break
+
+
+def test_config_file_kill_switch_withholds_the_grant(monkeypatch):
+    monkeypatch.delenv("MAVERICK_WORKFORCE_DATA_GROUNDING", raising=False)
+    monkeypatch.setattr("maverick.config.load_config",
+                        lambda *a, **k: {"workforce": {"data_grounding": False}})
+    name, p = _pick("healthcare")
+    cap = domain_capability(p, None, f"agent:{name}-1")
+    assert not cap.permits("openfda")
+    assert cap.permits("knowledge_search")

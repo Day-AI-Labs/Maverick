@@ -153,3 +153,33 @@ def test_finnhub_uses_its_custom_token_header(monkeypatch, capture):
     _tools()["finnhub"].fn({"op": "get", "path": "/api/v1/quote", "params": {"symbol": "AAPL"}})
     assert capture["headers"].get("X-Finnhub-Token") == "fh_key"
     assert "api_key" not in capture["params"]
+
+
+def test_rest_connector_honors_capability_host_scope(capture):
+    t = make_rest_tool(
+        name="scoped", base_url_env="SCOPED_BASE_URL", token_env="SCOPED_API_KEY",
+        keyless=True, read_only=True, default_base_url="https://data.example.gov",
+        description="x")
+    out = t.fn({
+        "op": "get",
+        "path": "/v1/thing",
+        "_capability_allow_hosts": ("*.moderntreasury.com",),
+    })
+    assert out.startswith("ERROR:"), out
+    assert "capability policy" in out
+    assert "data.example.gov" in out
+    assert "url" not in capture
+
+
+def test_rest_connector_allows_capability_scoped_host(capture):
+    t = make_rest_tool(
+        name="scoped_ok", base_url_env="SCOPED_OK_BASE_URL", token_env="SCOPED_OK_API_KEY",
+        keyless=True, read_only=True, default_base_url="https://data.example.gov",
+        description="x")
+    out = t.fn({
+        "op": "get",
+        "path": "/v1/thing",
+        "_capability_allow_hosts": ("*.example.gov",),
+    })
+    assert not out.startswith("ERROR"), out
+    assert capture["url"] == "https://data.example.gov/v1/thing"

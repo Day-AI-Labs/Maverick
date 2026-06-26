@@ -625,7 +625,10 @@ def get_workforce() -> dict:
                 k: entry[k] for k in ("default", "low", "medium", "high", "onboarding")
                 if k in entry
             }
-    return {"levels": bool(cfg.get("levels", False)), "agents": agents}
+    out = {"levels": bool(cfg.get("levels", False)), "agents": agents}
+    if "data_grounding" in cfg:
+        out["data_grounding"] = bool(cfg.get("data_grounding"))
+    return out
 
 
 def get_calibration() -> dict:
