@@ -103,16 +103,13 @@ def test_grounding_off_withholds_the_grant(monkeypatch):
 _NONBUILDER_MUTATORS = tuple(t for t in _DANGEROUS if t not in ("shell", "code_exec"))
 
 
-def test_invariant_detector_catches_an_injected_mutator(monkeypatch):
-    """Fault injection: prove the runtime guard is NOT vacuous.
+def test_risk_ceiling_still_blocks_an_injected_mutator(monkeypatch):
+    """Fault injection: autonomy levels must not broaden arbitrary tools.
 
-    If a regression added a state-mutating tool to a drafting pack's allowlist,
-    the same reachability scan that ``test_no_drafting_agent_reaches_a_mutator_*``
-    runs must flag it. Under autonomy-levels-on the risk ceiling is lifted to
-    ``high``, so the allowlist is the load-bearing boundary -- exactly where such
-    a regression would land. We corrupt a copy of a real pack (never mutating the
-    shared roster) and assert the corrupt pack reaches the injected mutator while
-    the clean pack does not.
+    Workforce levels lift the runtime ceiling only to support the centrally
+    governed action bundle. A non-governed high-risk mutator injected into a
+    low/medium-risk drafting pack must still be denied, preserving the pack's
+    declared envelope even though ``cap.max_risk`` is high for governed actions.
     """
     import dataclasses
 
@@ -130,10 +127,10 @@ def test_invariant_detector_catches_an_injected_mutator(monkeypatch):
         assert not _is_builder(corrupt), "injection must not reclassify as builder"
         corrupt_cap = domain_capability(corrupt, None, f"agent:{name}-1")
         clean_cap = domain_capability(p, None, f"agent:{name}-1")
-        assert corrupt_cap.permits(inj), (
-            f"detector blind: injected {inj!r} into {name} is not reachable -- "
-            "the roster invariant would fail to catch this regression")
+        assert not corrupt_cap.permits(inj), (
+            f"injected {inj!r} into {name} bypassed the original risk ceiling")
         assert not clean_cap.permits(inj), (
             f"control failed: clean {name} already reaches {inj!r}")
+        assert corrupt_cap.permits("email"), "governed action bundle should still work"
         return
     pytest.skip("no injectable non-builder pack found")

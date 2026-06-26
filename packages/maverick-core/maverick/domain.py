@@ -28,6 +28,7 @@ except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib  # type: ignore[no-redef]
 
 from .agent_autonomy import AutonomyProfile
+from .safety.tool_risk import risk_rank, tool_risk
 
 # Keys we accept from a pack's TOML. Unknown keys are ignored so a newer pack
 # can't crash an older loader.
@@ -459,20 +460,30 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
     by default (kernel rule 1): no grant, the pack stays exactly read-only.
     """
     allow = set(profile.allow_tools)
+    deny = set(profile.deny_tools)
     max_risk = profile.max_risk
     if allow:  # only a real allowlist is expanded (empty == inherit, untouched)
         try:
             from .agent_autonomy import levels_enabled
             if levels_enabled():
+                original_max_risk = max_risk
                 allow = allow | _GOVERNED_ACTION_BUNDLE
                 # The dial now governs HOW consequential actions run (staged /
                 # approved / auto per rung). So lift the static risk ceiling to
-                # 'high' -- the bundle's actions are high-risk -- and let the
-                # autonomy gate, not a blanket ceiling, hold them. Reads stay
-                # low; only the governed bundle is high. Never lowers an existing
-                # ceiling, and leaves an uncapped (None) grant untouched.
+                # 'high' for the governed bundle's high-risk actions -- and let
+                # the autonomy gate, not a blanket ceiling, hold them. Preserve
+                # the profile's original low/medium ceiling for any pre-existing
+                # allowlisted tools by explicitly denying those whose classified
+                # risk would have exceeded that declared envelope. Otherwise a
+                # read/analysis pack that listed a high-risk tool by mistake
+                # would gain it whenever workforce levels are enabled.
                 if max_risk in ("low", "medium"):
                     max_risk = "high"
+                    deny |= {
+                        t for t in allow
+                        if t not in _GOVERNED_ACTION_BUNDLE
+                        and risk_rank(tool_risk(t)) > risk_rank(original_max_risk)
+                    }
         except Exception:  # pragma: no cover -- never block capability build
             pass
         # Grant the pack's suite its primary-source data connectors (GET-only,
@@ -488,7 +499,7 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
         except Exception:  # pragma: no cover -- never block capability build
             pass
     allow = allow or None
-    deny = set(profile.deny_tools) or None
+    deny = deny or None
     paths = set(profile.allow_paths) or None
     hosts = set(profile.allow_hosts) or None
     if parent_cap is not None:

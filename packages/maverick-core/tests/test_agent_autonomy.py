@@ -272,6 +272,19 @@ def test_action_grant_when_levels_on(monkeypatch, tmp_path):
     assert cap.permits("read_file")          # reads still fine
 
 
+def test_action_grant_preserves_pack_risk_ceiling_for_existing_tools(monkeypatch, tmp_path):
+    from maverick.domain import domain_capability
+
+    monkeypatch.setenv("MAVERICK_WORKFORCE_LEVELS", "1")
+    monkeypatch.setattr("maverick.config.get_workforce", lambda: {"levels": True, "agents": {}})
+    cap = domain_capability(_pack(tmp_path), None, "agent:fin_clerk")
+    assert cap.permits("email")              # governed high-risk actions still work
+    assert cap.max_risk == "high"            # ceiling lift is scoped by denies
+    assert "sql_query" in cap.allow_tools     # original allowlist is preserved
+    assert "sql_query" in cap.deny_tools      # but original medium ceiling still wins
+    assert not cap.permits("sql_query")
+
+
 # -- graduation (onboarding -> trusted) ------------------------------------
 
 def _approval(agent, status):
