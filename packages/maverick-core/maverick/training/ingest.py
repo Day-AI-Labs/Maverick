@@ -115,6 +115,12 @@ def build_trajectory(
         trajectory_id=record.get("task_brief_hash", "") + "-"
                       + str(int(record.get("ts", 0))),
         task_brief_hash=record.get("task_brief_hash", ""),
+        # DPO pairs are built WITHIN a task_family (build_preference_pairs skips
+        # any row whose family is empty). Repeated attempts at the same task
+        # share a task_brief_hash, so it IS the family key -- without this every
+        # ingested row had task_family=None and pairing produced 0 pairs no
+        # matter how the rewards differed.
+        task_family=record.get("task_brief_hash") or None,
         model_id=record.get("model_id", ""),
         outcome=record.get("outcome", ""),
         terminal_reward=record.get("reward", 0.0),
