@@ -18,6 +18,7 @@ on top of it, supplying the ``propose`` callable and the human-approval step.
 """
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import secrets
@@ -80,26 +81,62 @@ def _default_persona(_spec: IntakeSpec) -> str:
 
 
 _MAX_PERSONA_CHARS = 2000
+_MAX_WORKFLOW_NAME_CHARS = 120
+_MAX_WORKFLOW_INSTRUCTION_CHARS = 600
+
+
+def _shield_allows_generated_prompt(text: str) -> bool:
+    """Return whether optional Shield accepts generated prompt text.
+
+    Generated personas and workflow steps are untrusted model output that become
+    system-prompt instructions. Shield remains optional for kernel deployments,
+    so scanner import/configuration/runtime failures fail open.
+    """
+    try:
+        shield_mod = importlib.import_module("maverick_shield")
+        shield = shield_mod.Shield.from_config(warn_if_missing=False)
+        verdict = shield.scan_output(text)
+        return bool(getattr(verdict, "allowed", True))
+    except Exception:  # shield optional -> fail-open
+        return True
 
 
 def _safe_persona(persona: str, spec: IntakeSpec) -> str:
-    """A generated persona is untrusted model output that becomes the agent's
-    system prompt -- a prime injection target. Cap its length and shield-scan it;
-    if it trips the shield, fall back to the safe templated persona. Fail-open if
-    the shield isn't installed (kernel rule 1)."""
+    """Cap and Shield-scan generated persona text before prompt use."""
     persona = (persona or "").strip()[:_MAX_PERSONA_CHARS]
     if not persona:
         return _default_persona(spec)
-    try:
-        from maverick_shield import Shield
-        verdict = Shield.from_config(warn_if_missing=False).scan_output(persona)
-        if not getattr(verdict, "allowed", True):
-            log.warning("intake: generated persona tripped the shield; using the "
-                        "safe default persona")
-            return _default_persona(spec)
-    except Exception:  # shield optional -> fail-open
-        pass
+    if not _shield_allows_generated_prompt(persona):
+        log.warning("intake: generated persona tripped the shield; using the "
+                    "safe default persona")
+        return _default_persona(spec)
     return persona
+
+
+def _safe_workflow_text(text: str, *, max_chars: int) -> str:
+    return (text or "").strip()[:max_chars]
+
+
+def _safe_workflow_step(step: WorkflowStep) -> WorkflowStep | None:
+    """Cap and Shield-scan generated workflow text before prompt use.
+
+    Workflow names and instructions are rendered into the same system-prompt
+    surface as the persona, so a blocked step is dropped rather than persisted.
+    """
+    name = _safe_workflow_text(step.name, max_chars=_MAX_WORKFLOW_NAME_CHARS)
+    instruction = _safe_workflow_text(
+        step.instruction, max_chars=_MAX_WORKFLOW_INSTRUCTION_CHARS,
+    )
+    if not name:
+        return None
+    prompt_text = name if not instruction else f"{name}: {instruction}"
+    if not _shield_allows_generated_prompt(prompt_text):
+        log.warning("intake: generated workflow step tripped the shield; dropping it")
+        return None
+    return WorkflowStep(
+        name=name, instruction=instruction,
+        tools=step.tools, gate=step.gate,
+    )
 
 
 def _default_workflow() -> list[WorkflowStep]:
@@ -146,14 +183,14 @@ def _sanitize_consumption(profile: DomainProfile) -> None:
     seen: set[str] = set()
     clean: list[WorkflowStep] = []
     for step in profile.workflow:
-        name = (step.name or "").strip()
-        if not name or name in seen:
+        safe_step = _safe_workflow_step(step)
+        if safe_step is None or safe_step.name in seen:
             continue
-        seen.add(name)
+        seen.add(safe_step.name)
         clean.append(WorkflowStep(
-            name=name, instruction=step.instruction,
-            tools=[t for t in step.tools if t in allow],
-            gate=step.gate if step.gate in _VALID_GATES else None,
+            name=safe_step.name, instruction=safe_step.instruction,
+            tools=[t for t in safe_step.tools if t in allow],
+            gate=safe_step.gate if safe_step.gate in _VALID_GATES else None,
         ))
     profile.workflow = clean or _default_workflow()
     o = profile.output
