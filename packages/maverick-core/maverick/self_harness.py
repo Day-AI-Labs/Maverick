@@ -50,6 +50,11 @@ log = logging.getLogger(__name__)
 # lines is the whole point ("minimal" in the paper).
 _MAX_ADDENDUM_CHARS = 1500
 _MAX_LINES_PER_MODEL = 8
+# DoS backstop for mining: greedy clustering is worst-case O(n^2), so an
+# unbounded trace list could hang a pass. Generous -- the runner feeds at most
+# ``limit`` (500) recent traces, so this never trips in normal use; it only
+# bounds a pathological direct caller. See mine_failures.
+_MAX_MINE_TRACES = 4000
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
 
@@ -162,6 +167,17 @@ def mine_failures(
             if isinstance(r, dict)
             and str(r.get("model_id") or "") == str(model_id)
             and r.get("channel") is None and r.get("user_id") is None]
+    # DoS backstop: greedy clustering is O(n*clusters) -- worst case O(n^2) when
+    # every trace is a distinct goal. The runner already feeds only the most
+    # recent ``limit`` (500) traces, but mine_failures is public; a direct caller
+    # passing a huge list would otherwise hang the pass. Cap at a generous bound
+    # (well above the runner's 500) and keep the most RECENT slice, so a runaway
+    # input is bounded without affecting any realistic call. (Found by the
+    # algorithmic-complexity battery.)
+    if len(mine) > _MAX_MINE_TRACES:
+        log.warning("self_harness: mining %d traces capped to %d (most recent)",
+                    len(mine), _MAX_MINE_TRACES)
+        mine = mine[-_MAX_MINE_TRACES:]
     # Canonicalize order so mining is DETERMINISTIC and permutation-invariant:
     # the greedy clustering and the by-class grouping both depend on iteration
     # order, so the same failures in a different log order would otherwise mine
@@ -176,14 +192,24 @@ def mine_failures(
     out: list[FailureSignature] = []
     for fclass, recs in by_class.items():
         clusters: list[list[dict]] = []
+        # Cache each cluster HEAD's token set (parallel to ``clusters``). The
+        # head's goal text never changes, so re-tokenizing it on every
+        # comparison -- as a naive ``_tokens(cluster[0][...])`` in the inner loop
+        # does -- is pure waste: it turned the greedy pass into a tokenize-bound
+        # O(n^2) that took ~69s on 8k traces. Tokenize each head once instead.
+        # Behaviour is identical: ``heads[i]`` is the token set of ``clusters[i]``'s
+        # first member, exactly what the old code recomputed. (Found by the
+        # algorithmic-complexity battery.)
+        heads: list[set[str]] = []
         for r in recs:
             rt = _tokens(str(r.get("goal_text", "")))
-            for cluster in clusters:
-                if _jaccard(rt, _tokens(str(cluster[0].get("goal_text", "")))) >= similarity:
-                    cluster.append(r)
+            for i, htok in enumerate(heads):
+                if _jaccard(rt, htok) >= similarity:
+                    clusters[i].append(r)
                     break
             else:
                 clusters.append([r])
+                heads.append(rt)
         for cluster in clusters:
             if len(cluster) < min_support:
                 continue
