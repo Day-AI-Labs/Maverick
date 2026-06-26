@@ -17,6 +17,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from .. import killswitch
+from ..budget import BudgetExceeded
 from ..config import load_config
 
 
@@ -481,6 +483,16 @@ class ToolRegistry:
                 except Exception:  # pragma: no cover
                     pass
                 return result
+            except (BudgetExceeded, killswitch.Halted):
+                # Control-flow stop signals are NOT tool errors: a spawned
+                # child (spawn_subagent/spawn_swarm/spawn_specialist) shares
+                # the parent Budget and killswitch, and re-raises these to
+                # halt the whole run immediately. They must propagate to the
+                # agent loop's `except (BudgetExceeded, killswitch.Halted)`
+                # handler (agent.py) instead of being folded into an "ERROR:"
+                # string by the blanket handler below — otherwise the budget
+                # cap / killswitch is not enforced and the run keeps going.
+                raise
             except Exception as e:
                 # Tool errors (incl. an injected tool_dispatch chaos failure)
                 # are surfaced as a tool-result string so the agent can react

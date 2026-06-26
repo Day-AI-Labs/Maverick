@@ -44,25 +44,60 @@ def _toml_value(value) -> str:
     raise TypeError(f"unsupported TOML value: {type(value).__name__}")
 
 
+def _is_table_array(value) -> bool:
+    """A non-empty list whose items are all dicts -> a TOML array-of-tables."""
+    return (
+        isinstance(value, list)
+        and len(value) > 0
+        and all(isinstance(item, dict) for item in value)
+    )
+
+
+def _emit_table_body(lines: list[str], table: dict) -> None:
+    """Emit ``k = v`` rows for one table's scalar/list-of-scalar entries.
+
+    Real packs nest only scalars and lists-of-scalars inside ``[output]`` and
+    each ``[[workflow]]`` item; a dict/array-of-tables nested a further level
+    deep still raises via :func:`_toml_value`, matching the "raise rather than
+    write a corrupt pack" contract.
+    """
+    for k, v in table.items():
+        lines.append(f"{k} = {_toml_value(v)}")
+
+
 def render_pack(data: dict) -> str:
     """Serialize a domain-pack dict back to TOML.
 
-    Covers the shapes a :class:`DomainProfile` uses (strings, lists of
-    strings, numbers, and one level of string-valued tables like
-    ``models``); raises on anything else rather than writing a corrupt pack.
+    Covers the shapes a :class:`DomainProfile` uses: top-level strings, lists
+    of scalars, and numbers; ``[table]`` blocks for dict values (e.g.
+    ``models``, ``output``); and ``[[array_of_tables]]`` blocks for lists of
+    dicts (e.g. the ``workflow`` step list every shipped domain pack carries).
+    Raises on anything deeper rather than writing a corrupt pack.
+
+    Top-level scalars/lists are emitted first so the tables and table-arrays
+    they precede are not accidentally captured as members of an earlier
+    ``[table]`` header (TOML scopes bare keys under the most recent header).
     """
     lines: list[str] = []
     tables: list[tuple[str, dict]] = []
+    table_arrays: list[tuple[str, list]] = []
     for key, value in data.items():
         if isinstance(value, dict):
             tables.append((key, value))
+            continue
+        if _is_table_array(value):
+            table_arrays.append((key, value))
             continue
         lines.append(f"{key} = {_toml_value(value)}")
     for key, table in tables:
         lines.append("")
         lines.append(f"[{key}]")
-        for k, v in table.items():
-            lines.append(f"{k} = {_toml_value(v)}")
+        _emit_table_body(lines, table)
+    for key, items in table_arrays:
+        for item in items:
+            lines.append("")
+            lines.append(f"[[{key}]]")
+            _emit_table_body(lines, item)
     return "\n".join(lines) + "\n"
 
 

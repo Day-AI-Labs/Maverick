@@ -220,6 +220,15 @@ class Worker:
                         job.id, err.splitlines()[-1])
         return True
 
+    def _reclaim_stale(self) -> None:
+        """Requeue 'running' jobs orphaned by a crashed worker; log if any."""
+        reclaimed = self.queue.reclaim_stale(
+            self.reclaim_lease, max_attempts=self.max_attempts,
+        )
+        if reclaimed:
+            log.info("worker: reclaimed %d stale job(s) from a prior crash",
+                     reclaimed)
+
     def run_forever(self) -> None:
         """Loop until ``stop()`` is called or SIGTERM is received."""
         self._wire_signals()
@@ -227,13 +236,24 @@ class Worker:
                  self.queue.db_path, self.idle_sleep)
         # Recover jobs orphaned in 'running' by a previously-crashed worker
         # before draining the queue, so they aren't stuck forever.
-        reclaimed = self.queue.reclaim_stale(
-            self.reclaim_lease, max_attempts=self.max_attempts,
-        )
-        if reclaimed:
-            log.info("worker: reclaimed %d stale job(s) from a prior crash",
-                     reclaimed)
+        self._reclaim_stale()
+        # ...then keep re-running it on an interval: claim() only ever picks
+        # 'pending' rows, so a *peer* worker's hard crash (kill -9/OOM, which
+        # skip run_once's except path) would otherwise leave its job stuck
+        # 'running' until THIS daemon restarts -- which, for a long-lived
+        # daemon in a multi-worker cluster, may be never. Re-reclaim every
+        # reclaim_lease/2 so a still-running job is never stolen but a crashed
+        # peer's orphan is recovered within ~one lease without a restart.
+        reclaim_interval = max(self.reclaim_lease / 2.0, 1.0)
+        last_reclaim = time.monotonic()
         while not self._stop.is_set():
+            now = time.monotonic()
+            if now - last_reclaim >= reclaim_interval:
+                try:
+                    self._reclaim_stale()
+                except Exception:
+                    log.exception("worker: periodic reclaim failed")
+                last_reclaim = now
             ran = False
             try:
                 ran = self.run_once()

@@ -1,6 +1,8 @@
 """Archive-best adoption into domain packs (operator-gated)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from maverick_evolve.adopt import adopt_best, plan_adoption, render_pack
 from maverick_evolve.archive import Archive, Candidate
@@ -109,6 +111,57 @@ def test_render_pack_roundtrips_tables(tmp_path):
     data = tomllib.loads(text)
     assert data["models"] == {"orchestrator": "m1"}
     assert 'quoted' in data["persona"] and "\n" in data["persona"]
+
+
+def test_render_pack_roundtrips_workflow_array_of_tables():
+    # Every shipped domain pack carries a [[workflow]] array-of-tables (a list
+    # of dicts) and an [output] table. render_pack used to TypeError on the
+    # list-of-dicts, so adopt_best crashed on 100% of real packs. It must now
+    # round-trip the full structure byte-for-structure.
+    pack = {
+        "name": "x",
+        "persona": "evolved",
+        "allow_tools": ["read_file", "sql_query"],
+        "output": {"shape": "table", "consumers": ["auditor", "owner"]},
+        "workflow": [
+            {"name": "step1", "tools": ["read_file"]},
+            {"name": "step2", "instruction": "do it"},  # no tools key
+        ],
+    }
+    data = tomllib.loads(render_pack(pack))
+    assert data == pack
+    assert isinstance(data["workflow"], list) and len(data["workflow"]) == 2
+    assert data["output"]["consumers"] == ["auditor", "owner"]
+
+
+def test_adopt_best_roundtrips_real_shipped_pack(tmp_path):
+    # End-to-end on an ACTUAL shipped pack (not the [[workflow]]-free fixture):
+    # overlaying an adoptable key must not lose the workflow/output blocks.
+    import maverick
+
+    src = Path(maverick.__file__).parent / "domains" / "itgrc_sod_it.toml"
+    with open(src, "rb") as f:
+        original = tomllib.load(f)
+    assert original.get("workflow"), "fixture pack must carry [[workflow]]"
+
+    pack = tmp_path / src.name
+    pack.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+    archive = Archive()
+    archive.add(Candidate(config={"persona": "Evolved SoD scanner."}, score=0.95))
+    apath = tmp_path / "archive.json"
+    archive.save(apath)
+
+    out = tmp_path / "user-domains"
+    dest = adopt_best(apath, pack, out_dir=out)  # previously raised TypeError
+    assert dest is not None
+    with open(dest, "rb") as f:
+        adopted = tomllib.load(f)
+    assert adopted["persona"] == "Evolved SoD scanner."
+    # Every untouched structural key survives the re-serialization intact.
+    assert adopted["workflow"] == original["workflow"]
+    assert adopted["output"] == original["output"]
+    assert adopted["allow_tools"] == original["allow_tools"]
 
 
 def test_concurrent_adopt_keeps_one_bak_and_no_temp(tmp_path):

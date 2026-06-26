@@ -236,6 +236,34 @@ def test_replay_nonce_pruned_by_age():
     assert env["sig"] not in applier._seen_sigs
 
 
+def test_handler_failure_releases_nonce_so_retry_redelivers():
+    """A transient handler exception must NOT poison the replay cache: the
+    at-least-once redelivery has to re-run the handler instead of being dropped
+    as 'replayed envelope' (data loss). apply() also honors its never-raises
+    contract — the handler exception is reported, not propagated."""
+    env = _envelope(text="transfer funds")
+    calls = {"n": 0}
+
+    def flaky(msg):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("DB busy")
+        return "done"
+
+    applier = InboundApplier(
+        flaky, peers=_peers(env), local="home",
+        limiter=TokenBucket(rate_per_min=600, clock=lambda: 0.0))
+
+    out = applier.apply(env)                       # handler raises on first try
+    assert out["applied"] is False
+    assert "handler error" in out["reason"]
+    assert env["sig"] not in applier._seen_sigs    # nonce released for retry
+
+    retry = applier.apply(env)                      # at-least-once redelivery
+    assert retry["applied"] and retry["result"] == "done"
+    assert calls["n"] == 2                          # handler re-ran, not dropped
+
+
 def test_apply_many_iterates_injected_receive():
     handled: list = []
     env1 = _envelope(text="one")

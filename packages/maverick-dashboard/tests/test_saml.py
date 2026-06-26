@@ -228,3 +228,49 @@ def test_acs_rejects_oversized_saml_response_before_verification(_enabled, monke
         follow_redirects=False,
     )
     assert res.status_code == 413
+
+
+# --- SCIM deprovision reach (persistent NameID) -----------------------------
+
+
+def test_acs_records_persistent_nameid_for_scim_revocation(_enabled, monkeypatch, tmp_path):
+    """A persistent/transient NameID matches no SCIM attribute, so SCIM
+    deprovision can only reach the live SAML session if the ACS recorded the
+    NameID against the user's email/UPN in the subject directory. Without that
+    recording, ``subs_for([email])`` is empty and the session survives."""
+    from maverick_dashboard import subject_directory as sd
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+
+    name_id = "_persistent-okta-abc123"  # not an email; absent from SCIM attrs
+    monkeypatch.setattr(
+        saml_mod,
+        "verify_acs_response",
+        lambda r: saml_mod.SamlIdentity(
+            name_id=name_id, attributes={"email": ["alice@example.com"]}
+        ),
+    )
+
+    res = _client().post(
+        "/saml/acs", data={"SAMLResponse": "signed"}, follow_redirects=False
+    )
+    assert res.status_code == 303
+
+    # SCIM deprovision looks the sub up by the user's stable identifiers; the
+    # persistent NameID must now be reachable via the email attribute.
+    assert name_id in sd.subs_for(["alice@example.com"])
+    assert name_id in sd.subs_for([name_id])
+
+
+def test_record_session_subject_skips_when_no_email_attr(_enabled, monkeypatch, tmp_path):
+    """With no email/UPN attribute the NameID is still recorded under itself
+    (covers an email-format NameID that IS the SCIM identifier)."""
+    from maverick_dashboard import subject_directory as sd
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+
+    ident = saml_mod.SamlIdentity(name_id="bob@example.com", attributes={})
+    saml_mod._record_session_subject(ident)
+    assert "bob@example.com" in sd.subs_for(["bob@example.com"])

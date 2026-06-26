@@ -268,6 +268,21 @@ def test_get_and_result_unknown_task_raise_invalid_params():
         store.shutdown()
 
 
+def test_non_string_task_id_raises_invalid_params_not_typeerror():
+    """A hostile client can send a truthy non-string taskId (list/dict). It must
+    resolve to a clean -32602 'task not found', not blow up dict.get() with an
+    unhashable-key TypeError that escapes as a scrubbed -32603 internal error."""
+    store = TaskStore(lambda n, a: _ok("x"))
+    try:
+        for fn in (store.get, store.result, store.cancel):
+            for bad in ({"evil": 1}, [1, 2], {"a": {"b": 1}}):
+                with pytest.raises(TaskError) as ei:
+                    fn(bad)
+                assert ei.value.code == -32602
+    finally:
+        store.shutdown()
+
+
 def test_list_paginates_with_opaque_cursor():
     store = TaskStore(lambda n, a: _ok("x"), page_size=2)
     try:

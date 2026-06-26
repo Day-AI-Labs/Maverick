@@ -87,3 +87,43 @@ def test_anthropic_path_unaffected():
     cost = _response_call_cost("claude-sonnet-4-6", resp)  # (3.0, 15.0)
     expected = (30_000 / 1e6) * 3.0 + (50_000 / 1e6) * 3.0 * 0.1 + (3_000 / 1e6) * 15.0
     assert cost == pytest.approx(expected, rel=1e-9)
+
+
+def test_anthropic_cache_write_priced_at_configured_ttl(monkeypatch):
+    # Audit (llm unit): cache_creation_tokens are surfaced only by the Anthropic
+    # provider, which writes breakpoints at the configured TTL. The interactive
+    # default is "1h" (2.0x write surcharge) -- the authoritative
+    # Budget.record_tokens bills it at 2.0x. _response_call_cost previously
+    # hardcoded the 5m 1.25x rate, under-counting 1h cache-write spend by ~37.5%
+    # in the cross-run provider-cap ledger. Force the interactive default TTL.
+    monkeypatch.delenv("MAVERICK_ANTHROPIC_CACHE_TTL", raising=False)
+    monkeypatch.delenv("MAVERICK_CODING_MODE", raising=False)  # -> "1h"
+    resp = _Resp(_UsageAnthropic(inp=1_000, out=100), cache_creation=2_000_000)
+    cost = _response_call_cost("claude-opus-4-8", resp)  # (5.0, 25.0)
+    # 1h TTL bills cache writes at 2.0x, not 1.25x.
+    expected = (
+        (1_000 / 1e6) * 5.0
+        + (2_000_000 / 1e6) * 5.0 * 2.0  # cache write @ 1h surcharge
+        + (100 / 1e6) * 25.0
+    )
+    assert cost == pytest.approx(expected, rel=1e-9)
+    # Guard against the old 1.25x-everywhere behaviour.
+    wrong = (
+        (1_000 / 1e6) * 5.0
+        + (2_000_000 / 1e6) * 5.0 * 1.25
+        + (100 / 1e6) * 25.0
+    )
+    assert cost != pytest.approx(wrong, rel=1e-9)
+
+
+def test_anthropic_cache_write_respects_explicit_5m_ttl(monkeypatch):
+    # An explicit 5m TTL override must still price writes at 1.25x.
+    monkeypatch.setenv("MAVERICK_ANTHROPIC_CACHE_TTL", "5m")
+    resp = _Resp(_UsageAnthropic(inp=1_000, out=100), cache_creation=2_000_000)
+    cost = _response_call_cost("claude-opus-4-8", resp)  # (5.0, 25.0)
+    expected = (
+        (1_000 / 1e6) * 5.0
+        + (2_000_000 / 1e6) * 5.0 * 1.25  # cache write @ 5m surcharge
+        + (100 / 1e6) * 25.0
+    )
+    assert cost == pytest.approx(expected, rel=1e-9)

@@ -442,7 +442,22 @@ class InboundApplier:
             user_id=str(user_id)[:MAX_USER_ID_CHARS],
             text=str(text)[:MAX_TEXT_CHARS],
         )
-        result = self.handler(msg)
+        # The nonce was recorded in _replay_seen above so concurrent/at-least-once
+        # redeliveries dedup. But a transient handler failure (DB busy, downstream
+        # timeout, shield not ready) must stay retryable: drop the just-recorded
+        # nonce so the peer's redelivery re-runs the handler instead of being
+        # rejected as "replayed envelope" (which would silently lose the message).
+        try:
+            result = self.handler(msg)
+        except Exception as exc:  # noqa: BLE001 — honor the never-raises contract
+            sig = str(envelope.get("sig") or "")
+            if sig:
+                with self._seen_lock:
+                    self._seen_sigs.pop(sig, None)
+            log.warning("channel federation: handler failed, nonce released "
+                        "for retry: %s", exc)
+            return {"applied": False, "reason": f"handler error: {exc}",
+                    "result": None}
         return {"applied": True, "reason": "ok", "result": result}
 
     def apply_many(self, envelopes: Iterable[object]) -> list[dict]:

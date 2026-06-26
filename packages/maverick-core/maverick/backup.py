@@ -275,6 +275,16 @@ def restore_backup(tarball: str | Path, *, force: bool = False) -> Path:
         for src in staged_files:
             dst = root / src.relative_to(staged)
             dst.parent.mkdir(parents=True, exist_ok=True)
+            # Backups deliberately exclude SQLite sidecars (_SKIP_SUFFIXES): the
+            # consistent .db copy already folds in their content. But the LIVE
+            # root may still carry a stale/uncheckpointed world.db-wal (precisely
+            # the post-crash DR case) that SQLite would replay over the freshly
+            # restored bytes on next open — silently reverting the restore. Drop
+            # any pre-existing sidecars for each restored DB before writing it so
+            # nothing survives to be replayed against the restored content.
+            if dst.suffix == ".db":
+                for suffix in ("-wal", "-shm", "-journal"):
+                    Path(str(dst) + suffix).unlink(missing_ok=True)
             dst.write_bytes(src.read_bytes())
             os.chmod(dst, 0o600)
     log.info("restore complete into %s (from client=%s, %d files verified)",

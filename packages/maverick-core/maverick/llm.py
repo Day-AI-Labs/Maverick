@@ -583,7 +583,19 @@ def _response_call_cost(model_id, resp) -> float | None:
         openai_cached = min(_openai_cached_tokens(usage), in_tok)
         in_tok -= openai_cached
     in_rate, out_rate = _lookup_price(model_id)
-    write_mult = _cache_write_mult_from_ttl(None)
+    # ``cache_write`` (cache_creation_tokens) is only ever surfaced by the
+    # Anthropic provider, which writes its breakpoints at the configured TTL
+    # (``_default_cache_ttl()`` -- "1h" in interactive mode, billed at 2.0x).
+    # Hardcoding ``None`` here priced every write at the 5m 1.25x rate, so this
+    # cross-run provider-cap ledger under-counted 1h cache-write spend by ~37.5%
+    # vs the authoritative Budget.record_tokens (which receives the real TTL),
+    # letting a deployment overshoot its configured provider cap. Match the TTL
+    # the real per-run path bills at.
+    if cache_write:
+        from .providers.anthropic_provider import _default_cache_ttl
+        write_mult = _cache_write_mult_from_ttl(_default_cache_ttl())
+    else:
+        write_mult = _cache_write_mult_from_ttl(None)
     cost = (in_tok / 1_000_000) * in_rate
     cost += (cache_read / 1_000_000) * in_rate * _CACHE_READ_MULT          # Anthropic 0.1x
     cost += (openai_cached / 1_000_000) * in_rate * CACHE_READ_MULT_OPENAI  # OpenAI-family 0.5x
