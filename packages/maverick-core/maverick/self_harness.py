@@ -35,6 +35,7 @@ import logging
 import math
 import os
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -375,14 +376,26 @@ def _rollback_handle(path: Path | None = None) -> Callable[[], None]:
     return _rollback
 
 
+# Serializes the store's load-modify-save so concurrent passes (the runner, a
+# manual CLI, parallel per-model passes) can't clobber each other. The whole
+# read-compose-write is one critical section -- an in-process lock plus a
+# cross-process flock -- because without it two writers that both read the old
+# store both write back, losing one's addendum (8 concurrent promotions
+# collapsed to 1 in a forced-interleaving probe).
+_lock = threading.Lock()
+
+
 def _apply_addendum(proposal: HarnessProposal, path: Path | None = None) -> None:
-    """Write the accepted line into the model's addendum block."""
+    """Write the accepted line into the model's addendum block (atomically)."""
     p = path if path is not None else _store_path()
-    before = load_addenda(p)
-    after = dict(before)
-    after[proposal.model_id] = _compose_addendum(
-        proposal.model_id, before.get(proposal.model_id, ""), proposal.addendum_line)
-    _write_addenda(after, p)
+    from .file_lock import cross_process_lock
+    with _lock, cross_process_lock(p):
+        before = load_addenda(p)
+        after = dict(before)
+        after[proposal.model_id] = _compose_addendum(
+            proposal.model_id, before.get(proposal.model_id, ""),
+            proposal.addendum_line)
+        _write_addenda(after, p)
 
 
 # ---- DRIVE (mine -> propose -> validate -> gate) --------------------------
