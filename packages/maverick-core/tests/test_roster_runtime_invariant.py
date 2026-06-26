@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 from maverick.domain import available_domains, domain_capability, suite_for
-from maverick.domain_audit import _DANGEROUS
+from maverick.domain_audit import _HOST_CONTROL
 from maverick.safety.tool_risk import tool_risk
 from maverick.tools.enterprise_connectors import (
     PUBLIC_DATA_CONNECTOR_NAMES,
@@ -45,7 +45,7 @@ def test_no_drafting_agent_reaches_a_mutator_on_the_runtime_path(_most_permissiv
         if _is_builder(p):
             continue  # builders are *supposed* to reach shell/code_exec
         cap = domain_capability(p, None, f"agent:{name}-1")
-        reach = [t for t in _DANGEROUS if cap.permits(t)]
+        reach = [t for t in _HOST_CONTROL if cap.permits(t)]
         if reach:
             offenders.append((name, reach))
     assert not offenders, f"{len(offenders)} drafting packs reach a mutator: {offenders[:10]}"
@@ -100,7 +100,7 @@ def test_grounding_off_withholds_the_grant(monkeypatch):
 # non-builder, so the "no drafting agent reaches a mutator" check still applies
 # to it (injecting shell/code_exec would instead reclassify it as a builder and
 # legitimately exempt it -- which would NOT prove the detector fires).
-_NONBUILDER_MUTATORS = tuple(t for t in _DANGEROUS if t not in ("shell", "code_exec"))
+_NONBUILDER_MUTATORS = tuple(t for t in _HOST_CONTROL if t not in ("shell", "code_exec"))
 
 
 def test_invariant_detector_catches_an_injected_mutator(monkeypatch):
