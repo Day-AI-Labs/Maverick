@@ -91,15 +91,17 @@ def load_addenda(path: Path | None = None) -> dict[str, str]:
 
 
 def _write_addenda(addenda: dict[str, str], path: Path | None = None) -> None:
+    # Route through atomic_write_text: a UNIQUE temp + os.replace + chmod 0600
+    # that CLEANS THE TEMP UP on any failure. A hand-rolled fixed "<name>.tmp"
+    # instead would (a) leave a stale .tmp behind whenever os.replace fails
+    # (disk full / read-only FS / target is a dir) and (b) let an UNLOCKED
+    # rollback racing a locked apply collide on the shared temp -- one
+    # os.replace moving the temp out from under the other. The store itself
+    # stays atomic either way, but the stray temp is real. (Found by the
+    # fault-injection battery.)
+    from .file_lock import atomic_write_text
     p = path if path is not None else _store_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(addenda, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, p)
-    try:
-        os.chmod(p, 0o600)
-    except OSError:  # pragma: no cover
-        pass
+    atomic_write_text(p, json.dumps(addenda, indent=2, sort_keys=True), mode=0o600)
 
 
 def recall_addendum(model_id: str | None, path: Path | None = None) -> str:
