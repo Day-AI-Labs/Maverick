@@ -21,10 +21,10 @@ Safety:
     agent capability but not actual mouse control).
   - Host-safety guard (opt-in): when sandboxing is required --
     ``MAVERICK_COMPUTER_REQUIRE_SANDBOX=1`` or enterprise mode -- the tool
-    refuses to drive what looks like the operator's real display (``DISPLAY``
-    ``:0``) unless ``MAVERICK_COMPUTER_ALLOW_HOST=1`` or a remote display
-    (``MAVERICK_COMPUTER_DISPLAY``, or a non-``:0`` ``DISPLAY``) is configured.
-    Off by default: behavior is unchanged unless explicitly required.
+    refuses to drive the display unless ``MAVERICK_COMPUTER_ALLOW_HOST=1`` is
+    set or ``DISPLAY`` is explicitly pointed at the same non-host display named
+    by ``MAVERICK_COMPUTER_DISPLAY``. Off by default: behavior is unchanged
+    unless explicitly required.
 """
 from __future__ import annotations
 
@@ -353,8 +353,7 @@ _PYAUTOGUI_ACTIONS = {
 }
 
 
-# X11 :0 is the local console -- the operator's real seat. Any other display
-# (a remote/sandboxed X server, Xvfb, RDP, etc.) is presumed safe to drive.
+# X11 :0 is the local console -- the operator's real seat.
 _DEFAULT_HOST_DISPLAYS = frozenset({":0", ":0.0"})
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
@@ -381,17 +380,20 @@ def _host_drive_allowed() -> bool:
     """True when it is safe to drive this display.
 
     Safe means an explicit operator override (``MAVERICK_COMPUTER_ALLOW_HOST=1``)
-    or a non-default display: ``MAVERICK_COMPUTER_DISPLAY`` set, or ``DISPLAY``
-    pointing somewhere other than the local console ``:0``.
+    or that the process ``DISPLAY`` has actually been pointed at the same
+    non-host display named by ``MAVERICK_COMPUTER_DISPLAY``. Merely setting the
+    Maverick-specific variable is not enough because screenshot and input
+    backends read the real ``DISPLAY`` environment variable.
     """
     if os.environ.get("MAVERICK_COMPUTER_ALLOW_HOST", "").strip().lower() in _TRUTHY:
         return True
-    if (os.environ.get("MAVERICK_COMPUTER_DISPLAY") or "").strip():
-        return True
     display = (os.environ.get("DISPLAY") or "").strip()
-    # A remote display (host:0) contains a host part before the colon and is
-    # not the bare local console, so it is treated as safe.
-    return bool(display) and display not in _DEFAULT_HOST_DISPLAYS
+    configured_display = (os.environ.get("MAVERICK_COMPUTER_DISPLAY") or "").strip()
+    return (
+        bool(display)
+        and display == configured_display
+        and display not in _DEFAULT_HOST_DISPLAYS
+    )
 
 
 def _host_safety_error() -> str | None:
@@ -406,8 +408,9 @@ def _host_safety_error() -> str | None:
         "ERROR: computer-use refused -- sandboxing is required "
         "(MAVERICK_COMPUTER_REQUIRE_SANDBOX=1 or enterprise mode) and this looks "
         f"like the operator's real display (DISPLAY={display}). Run the agent "
-        "against a remote/sandboxed display (set MAVERICK_COMPUTER_DISPLAY or "
-        "point DISPLAY at a non-:0 X server / Xvfb), or, only if you intend to "
+        "against a remote/sandboxed display by setting DISPLAY to the same "
+        "non-host value as MAVERICK_COMPUTER_DISPLAY (for example, both :99), "
+        "or, only if you intend to "
         "drive this machine, set MAVERICK_COMPUTER_ALLOW_HOST=1."
     )
 
