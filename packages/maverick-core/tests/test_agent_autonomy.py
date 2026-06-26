@@ -347,48 +347,40 @@ def test_coerce_approvals_from_objects():
     assert v.graduated is True
 
 
-# -- coordination floor (agents can always communicate) --------------------
+# -- coordination tools obey least privilege -------------------------------
 
-def test_capability_permits_coordination_despite_narrow_allowlist():
-    """A specialist with a narrow allowlist and a low risk ceiling still keeps
-    the workforce control-plane (spawn/bus/delegate), even under enforcement."""
+def test_capability_gates_coordination_with_narrow_allowlist():
+    """Coordination tools must not bypass an operator's allowlist or risk ceiling."""
     from maverick.capability import COORDINATION_TOOLS, Capability
 
     cap = Capability(
         principal="agent:fin_clerk-0",
         allow_tools=frozenset({"read_file", "sql_query"}),
-        max_risk="low",  # spawn_specialist is high-risk, yet must still pass
+        max_risk="low",
     )
     for t in COORDINATION_TOOLS:
-        assert cap.permits(t), f"{t} should be permitted (coordination floor)"
+        assert not cap.permits(t), f"{t} should obey the narrow allowlist"
     assert cap.permits("read_file")
-    assert not cap.permits("email")  # non-coordination, not in allowlist
+    assert not cap.permits("email")
 
 
-def test_coordination_floor_respects_deny():
-    """deny_tools still wins -- an operator can revoke a coordination tool."""
+def test_capability_gates_coordination_with_risk_ceiling():
+    """High-risk spawn/delegate tools must obey max_risk even without an allowlist."""
     from maverick.capability import Capability
 
-    cap = Capability(
-        principal="x", allow_tools=frozenset({"read_file"}),
-        deny_tools=frozenset({"spawn_swarm"}),
-    )
+    cap = Capability(principal="x", max_risk="low")
     assert not cap.permits("spawn_swarm")
-    assert cap.permits("spawn_specialist")  # others still permitted
+    assert not cap.permits("spawn_specialist")
+    assert not cap.permits("delegate_to_agent")
+    assert cap.permits("list_specialists")
 
 
-def test_domain_agent_coordinates_under_enforcement():
-    from pathlib import Path
+def test_capability_fail_closed_denies_coordination_tools():
+    """The deny-all sentinel must fail closed for coordination tools too."""
+    from maverick.capability import _DENY_ALL, COORDINATION_TOOLS, Capability
 
-    import maverick.domain as d
-    from maverick.capability import COORDINATION_TOOLS
-    from maverick.domain import domain_capability, load_domains
-
-    packs = load_domains(Path(d.__file__).parent / "domains")
-    # any read-only specialist with a narrow allowlist
-    name = next(iter(packs))
-    cap = domain_capability(packs[name], None, f"agent:{name}-0")
-    assert all(cap.permits(t) for t in COORDINATION_TOOLS)
+    cap = Capability(principal="x", allow_tools=frozenset({_DENY_ALL}), max_risk="low")
+    assert not any(cap.permits(t) for t in COORDINATION_TOOLS)
 
 
 if __name__ == "__main__":

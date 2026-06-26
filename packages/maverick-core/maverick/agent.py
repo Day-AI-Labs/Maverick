@@ -1429,7 +1429,9 @@ class Agent:
         # Per-agent autonomy level (the agent-as-employee authority dial):
         # compose strictest-wins with the org governance verdict. Only
         # consequential (non-low-risk) tools are gated -- reading/searching is
-        # always allowed regardless of the hire's rung. Independent of whether an
+        # always allowed regardless of the hire's rung. Coordination tools such
+        # as spawn/delegate are intentionally gated by their risk like any other
+        # consequential action. Independent of whether an
         # [governance] policy is set; no-op unless [workforce] levels is enabled.
         # Fail-open: a bug here must never wedge a tool.
         try:
@@ -1440,11 +1442,10 @@ class Agent:
             from .safety.tool_risk import tool_risk as _tr
             _risk = _tr(name)
             # Disabled => the gate is a strict no-op (kernel rule 1: byte-for-byte
-            # historical behaviour). Low-risk tools (reads/searches) and the
-            # coordination control-plane (spawn/bus/delegate -- how the workforce
-            # communicates) are never gated by the dial.
-            if (_aa.levels_enabled() and _rr(_risk) > 0
-                    and name not in _aa.COORDINATION_TOOLS):
+            # historical behaviour). Low-risk tools (reads/searches) are never
+            # gated by the dial; non-low-risk coordination tools are gated by
+            # their classified risk.
+            if _aa.levels_enabled() and _rr(_risk) > 0:
                 _al = _aa.decide(self.role, getattr(self, "_autonomy", None),
                                  action=name, risk=_risk)
                 _amap = {"allow": _GD.ALLOW, "require_human": _GD.REQUIRE_HUMAN,
