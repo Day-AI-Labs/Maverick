@@ -65,6 +65,8 @@ This is the differentiator. Most agent startups at this stage have a demo. Maver
 - **Enterprise mode** — fail-closed egress lock + at-rest sealing, with an **enforceable preflight** that refuses to boot a deployment claiming hardening it doesn't actually have. OIDC/PKCE SSO, RBAC, per-tenant isolation (Postgres RLS).
 - **Self-hostable** — Helm chart, container sandboxing (docker/podman/gVisor/…), MCP interop. Nothing has to leave the customer boundary.
 - Plus a **library of 2,020 specialist packs across 53 suites** as ready-made, governed use cases.
+- **Primary-source data grounding** — every analyst pack is auto-granted 37 read-only primary-source / public-data connectors by suite (SEC EDGAR, FRED, Treasury, World Bank, FDIC, Census, BLS, EIA, openFDA, CourtListener, ...); GET-only, low-risk, ON by default with an env/config kill-switch and a wizard step, so claims are grounded in authoritative sources, not just model memory.
+- **Roster-wide governance invariants, fault-injected** — six invariants (tool-reachability, autonomy dial, capability attenuation, compartment isolation, hard refusals, budget caps) verified across all 2,020 packs and fault-injected at 1,000,000 iterations, each with a non-vacuity control, plus hostile-argument fuzzing of every connector and tool. This is the test evidence behind the governance claims.
 
 The honest framing: each primitive is individually copyable; *the assembled, tested, self-hostable governed runtime is a multi-year build* — and it already exists.
 

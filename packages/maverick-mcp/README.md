@@ -58,7 +58,8 @@ chokepoints, same budget caps, same per-role model routing.
 
 ## Protocol
 
-Minimal JSON-RPC 2.0 over stdio, matching the MCP 2024-11-05 spec
+Minimal JSON-RPC 2.0 over stdio, matching the MCP 2025-11-25 spec
+(with a 2024-11-05 fallback)
 (`initialize`, `tools/list`, `tools/call`). No external dependencies.
 The full `mcp` Python SDK is an option for a future hardening pass;
 this hand-rolled version keeps the dependency footprint tiny.

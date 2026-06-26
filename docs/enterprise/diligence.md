@@ -32,12 +32,14 @@ rely on are in place and verifiable now.
 | **Audit & evidence** | Tamper-evident, exportable logs? | [security-overview.md §Audit](security-overview.md#audit--evidence) | `maverick audit verify` (validates the hash chain); `maverick audit export` |
 | **Threat model** | What's defended, what isn't? | [threat-model.md](../security/threat-model.md) (STRIDE, trust boundaries, out-of-scope) | n/a (design doc; cross-referenced by the test suites) |
 | **AI/agent safety** | Prompt-injection / unsafe actions? | [shield-benchmark.md](../security/shield-benchmark.md) (layered detection + a decode/defang pre-pass that defeats base64/hex/homoglyph obfuscation on input, tool-call, and output surfaces + confirm-gated writes + container-isolated shell + budget caps) | `python benchmarks/security/detector_score.py`; latency/ReDoS CI gate |
+| **Roster governance invariants** | Do the safety rails hold across *every* agent? | Roster-wide governance invariant test suite — six invariants verified across all 2,020 specialist packs (tool-reachability, autonomy dial, capability attenuation, compartment isolation, hard refusals, budget caps), fault-injected at 1,000,000 iterations with a non-vacuity control per test, plus hostile-argument fuzzing of all connectors/tools | governance invariant suite in CI (each invariant has a fault-injection control proving it is non-vacuous) |
 | **Vulnerability mgmt** | Deps, SAST, secrets? | [audit-readiness.md §Static-analysis gates](../security/audit-readiness.md#4-reproducible-verification-harness) | `pip-audit`; `bandit`; detect-secrets baseline; all blocking in CI |
 | **Supply chain** | SBOM, provenance, third-party code? | SBOM produced in CI (CycloneDX); third-party **plugin isolation** (out-of-process under enterprise) + **content-hash lockfile** (drifted/unpinned plugins refused) | CI `audit` job artifact; `[plugins] isolation` / `lock_policy` |
 | **SOC 2 readiness** | Control coverage + gaps? | [soc2-controls.md](../compliance/soc2-controls.md) (CC1–CC9, A/PI/C/P mapping + honest gap list) | `python -c "from maverick.soc2 import collect_soc2_evidence as c; print(c())"` |
 | **Deployment / topology** | How does it run in our env? | [security-overview.md §Reference architecture](security-overview.md#reference-architecture-self-host--air-gap) (laptop / VPC / k8s / air-gap) | `maverick enterprise verify` on the target host |
 | **Regulatory mapping** | GDPR / EU AI Act / DSAR? | [regulated-deployment.md](../regulated-deployment.md); `ai_act.py`; DSAR via `dsar.py` | `maverick compliance --strict` |
 | **IP / licensing** | What are we acquiring? | [LICENSE](../../LICENSE) (proprietary), [editions.md](editions.md), dependency licenses | CI license gate (denies strong-copyleft) |
+| **Data grounding / outbound connectors** | What primary-source data do agents reach, and can it leak? | Primary-source data grounding — 37 read-only, GET-only public-data connectors (SEC EDGAR, FRED, Treasury, World Bank, FDIC, Census, BLS, EIA, openFDA, NPPES, ClinicalTrials, USAspending, SAM.gov, CourtListener, Federal Register, GLEIF, OpenCorporates, NWS/NOAA, EPA, Climatiq, …) auto-granted per analyst pack by suite (`SUITE_DATA_CONNECTORS`, layered in `domain_capability`); low-risk, deferred, ON by default; separate from the 214 write-capable long-tail enterprise connectors | kill-switch `[workforce] data_grounding = false` / `MAVERICK_WORKFORCE_DATA_GROUNDING=off`; installer wizard step; hostile-argument connector fuzzing in the governance invariant suite |
 
 ## Honest status
 
@@ -72,6 +74,9 @@ enumerated in [soc2-controls.md §Gap summary](../compliance/soc2-controls.md).
 penetration test, and SCIM/SAML provisioning (OIDC ships today).
 
 ## Reproduce the whole verification pass
+
+> **Robustness hardening.** The stress sweep behind the governance invariant suite drove fixes now in code: connectors return an ERROR string (no longer raise) on a non-string op/path/query; `Skill.parse` raises `ValueError` (not `AttributeError`) on malformed/untrusted frontmatter; `format_money` degrades gracefully on a None/empty currency.
+
 
 ```bash
 maverick enterprise verify          # egress lock + at-rest sealing actually hold

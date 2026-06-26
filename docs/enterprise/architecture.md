@@ -120,6 +120,20 @@ customers adopt ahead of the deadline, not under it.
 - **Seven execution sandboxes, egress lock, tenancy, quotas, OIDC/proxy SSO,
   RBAC, SIEM export** — the enterprise-ops surface.
 - **The recursive swarm** — the multi-agent substrate the fleet and supervisor
+- **Roster-wide governance invariant suite** — six governance invariants
+  (tool-reachability, autonomy dial, capability attenuation, compartment
+  isolation, unstrippable hard refusals, budget caps) verified across ALL 2,020
+  specialist packs and fault-injected at 1,000,000 iterations, each with a
+  fault-injection control proving the test is non-vacuous, plus hostile-argument
+  fuzzing of every connector and tool. This is the machine-checkable evidence
+  under the Art 14 oversight / NIST *Measure* obligations: the controls aren't
+  asserted, they're proven to hold fleet-wide.
+- **Primary-source data grounding** — analyst packs are auto-granted 37
+  read-only, GET-only public-data connectors (SEC EDGAR, FRED, Treasury, World
+  Bank, FDIC, Census, BLS, EIA, openFDA, NPPES, CourtListener, Federal Register,
+  GLEIF, OpenCorporates, NWS/NOAA, EPA, …) by suite, so consequential analysis is
+  grounded in authoritative sources rather than model memory. On by default;
+  kill-switch `[workforce] data_grounding = false` / `MAVERICK_WORKFORCE_DATA_GROUNDING=off`.
   are built from.
 
 The pivot is not a rebuild; it is **promoting these from per-run features to a

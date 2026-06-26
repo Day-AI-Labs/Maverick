@@ -1,6 +1,6 @@
 # 09 — SaaS Architecture Readiness: Adversarial Teardown
 
-> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,118 lint-clean agents across 26 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../../FEATURES.md).
+> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 2,020 lint-clean agents across 53 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../../FEATURES.md).
 >
 > **Substrate status — superseded by a code-level re-audit.** This teardown's
 > three "structural facts" (no data-plane tenant boundary, controls fail-open,

@@ -37,6 +37,9 @@ fail-closed (`maverick/enterprise.py`):
   `plugin_lock.py`).
 
 **Prove it, don't trust the flag.** `maverick enterprise verify`
+
+**Governance invariants proven across the whole roster.** Beyond per-deployment checks, a roster-wide invariant test suite verifies six safety invariants across **all 2,020 specialist packs**, each fault-injected at 1,000,000 iterations with a non-vacuity control: (1) **tool-reachability** — no drafting/non-builder agent can reach a state-mutating tool; (2) **autonomy dial** — an onboarding agent is never autonomous and a high-risk action is never autonomous even when graduated; (3) **capability attenuation** — a spawned child can never exceed its parent's grant; (4) **compartment isolation** — a quarantine seal never bleeds across compartments/suites; (5) **hard refusals** — the universal refusal floor is unstrippable; (6) **budget caps** — no cap is ever silently exceeded. Hostile-argument fuzzing covers all connectors and tools.
+
 (`deployment.py`) *actively exercises* the load-bearing guarantees — it confirms
 the egress lock refuses a cloud provider and that at-rest sealing round-trips on
 the host — so a pass means the boundary holds, not merely that a config flag reads
