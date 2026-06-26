@@ -81,6 +81,8 @@ def _default_persona(_spec: IntakeSpec) -> str:
 
 
 _MAX_PERSONA_CHARS = 2000
+_MAX_REFUSAL_CHARS = 500
+_MAX_REFUSALS = 20
 _MAX_WORKFLOW_NAME_CHARS = 120
 _MAX_WORKFLOW_INSTRUCTION_CHARS = 600
 
@@ -111,6 +113,26 @@ def _safe_persona(persona: str, spec: IntakeSpec) -> str:
                     "safe default persona")
         return _default_persona(spec)
     return persona
+
+
+def _safe_refusals(refusals: list[str]) -> list[str]:
+    """Sanitize generated refusal text before it can become prompt material.
+
+    Pack-specific refusals are rendered into future specialists' system prompts,
+    just like personas. Treat proposer-supplied entries as untrusted model output:
+    trim and cap them, Shield-scan each entry, and drop entries that trip the
+    shield while preserving safe refusal functionality.
+    """
+    clean: list[str] = []
+    for raw in refusals[:_MAX_REFUSALS]:
+        item = str(raw or "").strip()[:_MAX_REFUSAL_CHARS]
+        if not item:
+            continue
+        if not _shield_allows_generated_prompt(item):
+            log.warning("intake: generated refusal tripped the shield; dropping it")
+            continue
+        clean.append(item)
+    return clean
 
 
 def _safe_workflow_text(text: str, *, max_chars: int) -> str:
@@ -267,6 +289,7 @@ def generate_profile(spec: IntakeSpec, propose=None) -> DomainProfile:
         output=output,
     )
     profile.persona = _safe_persona(profile.persona, spec)
+    profile.refuse = _safe_refusals(profile.refuse)
     return validate_profile(profile)
 
 
