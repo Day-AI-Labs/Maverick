@@ -4867,6 +4867,59 @@ def hindsight(ctx, before: str, limit: int, all_goals: bool, ledger: bool,
         )
 
 
+@main.command("prove-learning")
+@click.option("--scores", "scores_path", required=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help='JSON file {"baseline": [...], "treatment": [...]} of paired '
+                   "per-task success scores in [0,1]: the SAME held-out tasks "
+                   "run with learning FROZEN (control) vs LIVE (treatment), e.g. "
+                   "via MAVERICK_LEARNING_FROZEN=1 then =0.")
+@click.option("--confidence", default=0.95, show_default=True,
+              help="Confidence level for the bootstrap CI.")
+@click.option("--seed", default=1234, show_default=True,
+              help="Bootstrap seed -- the reported lift is reproducible per seed.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the result as JSON.")
+@click.option("--strict", is_flag=True,
+              help="Exit non-zero unless learning SIGNIFICANTLY improved the "
+                   "suite (a provable-learning CI gate).")
+def prove_learning(scores_path: str, confidence: float, seed: int,
+                   as_json: bool, strict: bool) -> None:
+    """Prove whether self-learning improves success on a held-out suite.
+
+    Takes paired success scores -- the same held-out tasks run with learning
+    FROZEN (control) vs LIVE (treatment) -- and reports the mean paired lift
+    with a seeded bootstrap CI, so the verdict is reproducible and falsifiable.
+    Collect the two arms by running your suite under MAVERICK_LEARNING_FROZEN=1
+    then =0 (the kernel honors that hard override). --strict turns it into a CI
+    gate that fails unless learning significantly helped (never on a regression).
+    """
+    import json as _json
+    from dataclasses import asdict
+
+    from ..learning_proof import paired_lift
+    try:
+        data = _json.loads(Path(scores_path).read_text(encoding="utf-8"))
+        baseline = [float(x) for x in data["baseline"]]
+        treatment = [float(x) for x in data["treatment"]]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        raise click.ClickException(
+            'scores file must be {"baseline": [...], "treatment": [...]} with '
+            f"equal-length numeric lists: {e}"
+        ) from e
+    try:
+        result = paired_lift(
+            baseline, treatment, confidence=confidence, seed=seed,
+        )
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(_json.dumps(asdict(result), indent=2) if as_json
+               else result.summary())
+    if strict and not result.improved:
+        raise click.ClickException(
+            "learning did not significantly improve the held-out suite"
+        )
+
+
 @main.command("domains-lint")
 @click.option("--ci", is_flag=True,
               help="Exit non-zero when any pack has an ERROR-level finding.")
