@@ -72,6 +72,41 @@ def test_scrub_env_strips_secret_shaped_vars():
     assert out["PLAIN_SETTING"] == "keep"
 
 
+def test_scrub_env_keeps_git_config_injection_consistent():
+    """A partially-scrubbed GIT_CONFIG_COUNT/KEY_*/VALUE_* family aborts every
+    git command with exit 128 ("missing config key GIT_CONFIG_KEY_0").
+
+    _SECRET_ENV_RE matches GIT_CONFIG_KEY_* (the "KEY" token) and strips it, but
+    leaves GIT_CONFIG_COUNT and GIT_CONFIG_VALUE_*, corrupting git's atomic
+    env-config protocol. Hosts that inject git config via env -- GitHub Actions,
+    Codespaces, devcontainers (url.insteadOf credential rewriting) -- would break
+    every host-subprocess git invocation. scrub_env must keep the family
+    all-or-nothing: if any member is stripped, drop them all so git cleanly falls
+    back to file config. Regression for the stress-test git-cluster finding.
+    """
+    from maverick.sandbox.local import scrub_env
+    src = {
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": "credential.interactive",
+        "GIT_CONFIG_VALUE_0": "false",
+        "GIT_CONFIG_KEY_1": "url.https://github.com/.insteadOf",
+        "GIT_CONFIG_VALUE_1": "git@github.com:",
+        "PATH": "/usr/bin",
+    }
+    out = scrub_env(src)
+    leftovers = {k for k in out if k.startswith("GIT_CONFIG_")}
+    # Never leave a dangling COUNT without its full KEY/VALUE complement.
+    if "GIT_CONFIG_COUNT" in out:
+        count = int(out["GIT_CONFIG_COUNT"])
+        for i in range(count):
+            assert f"GIT_CONFIG_KEY_{i}" in out, leftovers
+            assert f"GIT_CONFIG_VALUE_{i}" in out, leftovers
+    else:
+        # Family dropped wholesale (the secret filter strips KEY_*): nothing left.
+        assert not leftovers, leftovers
+    assert out["PATH"] == "/usr/bin"  # unrelated vars untouched
+
+
 # --- SSRF guard must refuse non-public addresses ---------------------------
 
 def _fake_getaddrinfo(*ips):
