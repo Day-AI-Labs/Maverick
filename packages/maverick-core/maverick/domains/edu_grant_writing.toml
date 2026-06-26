@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "funder grant application package"
+consumers = ["grants_manager", "program_director"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read RFP spec"
+instruction = "Read the funder's RFP, eligibility rules, and required application components in full."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Gather program inputs"
+instruction = "Pull the program narrative, outcomes, and supporting evidence from company records."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Build budget"
+instruction = "Assemble the project budget and confirm every line ties to the narrative and funder cost rules."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Check spec compliance"
+instruction = "Verify the assembled application meets every funder format, length, and attachment requirement before submission."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to grants manager"
+instruction = "Hand the complete application package to the grants manager for review before it is filed under their name."
+gate = "review"

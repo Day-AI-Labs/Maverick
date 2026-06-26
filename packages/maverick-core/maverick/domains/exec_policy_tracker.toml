@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["exec"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "leadership commitments register"
+consumers = ["executive", "chief_of_staff"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Capture commitments"
+instruction = "Read transcripts, memos, and public statements to identify every commitment leadership has made internally or publicly."
+tools = ["read_file", "web_search", "knowledge_search"]
+[[workflow]]
+name = "Log register"
+instruction = "Record each commitment with its source, owner, audience, and promised date in the tracking spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify fulfillment"
+instruction = "Check each commitment against evidence of delivery and mark it fulfilled, in-progress, or overdue."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Flag exposure"
+instruction = "Surface overdue or unverifiable public commitments that carry reputational or compliance risk."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Executive review"
+instruction = "Route the commitments register to the executive for sign-off before status is reported externally."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "catalog update worksheet"
+consumers = ["category_manager", "procurement_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull catalog"
+instruction = "Read the current purchasing catalog entries and their effective pricing and supplier mappings."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Match contracts"
+instruction = "Cross-check each catalog price against the governing negotiated contract or price list for that supplier."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Find drift"
+instruction = "Identify entries that diverge from negotiated pricing, are expired, or violate purchasing policy."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft updates"
+instruction = "Prepare the corrected catalog rows with the negotiated price and citation for each change."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route updates"
+instruction = "Hand the catalog update worksheet to the category manager to approve before publishing."
+gate = "review"

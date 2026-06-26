@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Section 889 supply-chain compliance assessment"
+consumers = ["contracts_manager", "compliance_officer"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull BOM"
+instruction = "Read the bill of materials, supplier list, and prior 889 certifications from company records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Identify covered items"
+instruction = "Screen each component and vendor against the named prohibited telecom and video-surveillance entities in the cited 889 source."
+tools = ["spreadsheet", "web_search"]
+[[workflow]]
+name = "Verify clause"
+instruction = "Confirm the applicable FAR 52.204-25 representation language against the cited clause text rather than memory."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Flag exposures"
+instruction = "List any covered equipment, missing supplier attestations, or unverified assertions as open compliance gaps."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route certification"
+instruction = "Hand the assessment with the draft representation to the authorized official for signature."
+gate = "review"

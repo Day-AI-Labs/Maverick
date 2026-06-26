@@ -11,3 +11,32 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "referral intake & eligibility status board"
+consumers = ["intake_supervisor", "scheduling_coordinator"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull referrals"
+instruction = "Query incoming referrals and their intake-packet completeness for the queue."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check packet items"
+instruction = "Verify each packet against the required-document checklist in intake policy and note missing items."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Verify eligibility"
+instruction = "Confirm insurance eligibility and authorization status for each referral from the source records."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Flag blockers"
+instruction = "Surface incomplete packets and unverified eligibility as the intake blockers that stall scheduling."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to supervisor"
+instruction = "Present the intake status board with blockers to the intake supervisor for follow-up assignment."
+tools = ["spreadsheet"]
+gate = "review"

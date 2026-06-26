@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "consolidated creative review feedback"
+consumers = ["creative_lead", "brand_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather creative"
+instruction = "Read the creative asset, the brief it answers to, and the list of required reviewers for this round."
+tools = ["read_file"]
+[[workflow]]
+name = "Check brand fit"
+instruction = "Compare the creative against brand and regulatory guidelines and flag any claims that need substantiation."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Collect feedback"
+instruction = "Capture each reviewer's comments in a tracking grid so no note is dropped between rounds."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Consolidate notes"
+instruction = "Merge overlapping and conflicting feedback into a single prioritized, deduplicated set of changes."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the consolidated feedback to the creative lead and brand manager for round sign-off."
+gate = "review"

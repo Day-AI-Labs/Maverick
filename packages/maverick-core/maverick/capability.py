@@ -24,6 +24,20 @@ from fnmatch import fnmatch
 
 from .safety.tool_risk import RISK_LEVELS, risk_rank, tool_risk
 
+# The coordination control-plane: the tools that let a specialist participate in
+# the workforce -- discover peers, spawn specialists, fan out a swarm, and
+# message/delegate across the agent bus. These are how "individual agents
+# communicate to complete things", so a capability PERMITS them by default even
+# when a narrow allowlist or a low risk-ceiling would otherwise block them
+# (several are classified high-risk because they fan out budget). An operator can
+# still revoke coordination for a specific principal by listing a tool in
+# ``deny_tools`` -- deny always wins. The fan-out stays bounded by max_depth, the
+# budget, and each spawned child's own (attenuated) envelope.
+COORDINATION_TOOLS: frozenset[str] = frozenset({
+    "spawn_specialist", "spawn_swarm", "spawn_subagent", "list_specialists",
+    "send_to_agent", "recv_from_agent", "delegate_to_agent", "ask_user",
+})
+
 
 @dataclass(frozen=True)
 class Capability:
@@ -79,6 +93,11 @@ class Capability:
             return False
         if tool_name in self.deny_tools:
             return False
+        # Coordination floor: the workforce control-plane is permitted unless the
+        # operator explicitly denied it above -- a narrow allowlist or a low risk
+        # ceiling must not isolate an agent from spawning/messaging its peers.
+        if tool_name in COORDINATION_TOOLS:
+            return True
         if self.allow_tools == frozenset({_DENY_ALL}):
             return False
         if self.allow_tools and tool_name not in self.allow_tools:

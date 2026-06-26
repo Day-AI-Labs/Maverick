@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "conflict-free course schedule grid"
+consumers = ["registrar", "department_chair"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather constraints"
+instruction = "Read the course catalog, faculty availability, room capacities, and prior-term enrollment data."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Confirm rules"
+instruction = "Search scheduling policy for required sequencing, contact-hour, and room-type rules each section must satisfy."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build grid"
+instruction = "Assign sections to rooms, times, and instructors within all stated capacity and availability constraints."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Detect conflicts"
+instruction = "Scan the draft grid for room double-bookings, faculty overlaps, and student cohort clashes and resolve each."
+[[workflow]]
+name = "Registrar review"
+instruction = "Route the conflict-free schedule grid to the registrar for approval before publication."
+gate = "review"

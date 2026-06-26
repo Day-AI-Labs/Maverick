@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "Statutory filing calendar by entity"
+consumers = ["controller", "tax_analyst"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "List entities"
+instruction = "Enumerate each legal entity and its filing jurisdiction and statutory regime from the company's records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull requirements"
+instruction = "Look up the local statutory filing requirements, forms, and statutory deadlines applicable to each entity."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Build calendar"
+instruction = "Assemble the entity-by-deadline filing calendar with period, currency, and regime labeled and tied to its system of record."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Flag risk"
+instruction = "Identify entities with approaching or missing deadlines and state any unknowns or assumptions plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand to controller"
+instruction = "Route the statutory filing calendar to the controller for review before any filing is certified."
+gate = "review"

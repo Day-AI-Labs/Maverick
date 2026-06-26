@@ -953,6 +953,11 @@ def pick_self_learning() -> dict[str, Any]:
         "  Pre-acquire likely skills before each run (one extra LLM call)?",
         default=True,
     )
+    provision_packs = _q_confirm(
+        "  Equip newly onboarded packs: install the catalog skills and "
+        "synthesize the tools a pack's workflow needs, at approval time?",
+        default=True,
+    )
     console.print(
         "[dim]  MCP acquisition: the agent may PROPOSE adding a curated, "
         "hash-pinned catalog MCP server (never a free-text command). Each one "
@@ -971,6 +976,7 @@ def pick_self_learning() -> dict[str, Any]:
         "enable": True,
         "preflight": preflight,
         "create_tools": create_tools,
+        "provision_packs": provision_packs,
         "allow_mcp_acquisition": allow_mcp,
         "distill_local": distill_local,
         "max_acquisitions": 5,
@@ -1237,6 +1243,14 @@ def pick_advanced() -> dict[str, Any]:
             "on the next similar goal.",
             default=False,
         ),
+        "self_harness": _q_confirm(
+            "Self-harness? Learn a MODEL-SPECIFIC operating-guidance addendum from "
+            "recurring failures -- mined, validated on held-out cases, and gated "
+            "through the same promotion ladder as every other learned change -- "
+            "then recalled into that model's system prompt. Inspect or roll it "
+            "back any time with `maverick harness`. OFF by default.",
+            default=False,
+        ),
         "fleet_memory": _q_confirm(
             "Fleet memory? Let EXTERNAL agents (Agentforce, Copilot, custom) "
             "deposit experience into and recall from Maverick's governed "
@@ -1322,6 +1336,22 @@ def pick_advanced() -> dict[str, Any]:
             "agent action (writes, shell) so a run's actions are auditable end-to-end.",
             default=False,
         ),
+        "workforce_levels": _q_confirm(
+            "Per-agent autonomy levels? Treat each agent like a hire with a level of "
+            "authority you set -- observe / suggest / request-approval / autonomous, "
+            "per action risk -- starting supervised (onboarding) and graduating on a "
+            "clean record. Off by default, every agent stages actions for human "
+            "execution. Per-agent overrides go under [workforce.agents].",
+            default=False,
+        ),
+        "workforce_data_grounding": _q_confirm(
+            "Primary-source data grounding? Give each analyst pack its suite's "
+            "public/government data connectors (SEC EDGAR, FRED, openFDA, "
+            "USAspending, weather, ...) so it grounds work in primary sources. "
+            "GET-only, low-risk, deferred (no context cost), and inert without "
+            "each source's API key. On by default; turn off to withhold them.",
+            default=True,
+        ),
         "calibration_enforce": _q_confirm(
             "Calibration interlock? Freeze self-improvement (trajectory donation) "
             "if the verifier stops telling correct answers from incorrect ones on "
@@ -1361,6 +1391,14 @@ def pick_advanced() -> dict[str, Any]:
             "with success. Each promotion records the effect, its confidence interval, and "
             "what it adjusted for. Requires self-improvement enabled.",
             default=False,
+        ),
+        "factory_learning": _q_confirm(
+            "Self-improving agent factory? Mine recurring pack-generation gaps (a tool a "
+            "draft kept omitting, a skill its workflow kept needing) into proposer "
+            "corrections and promote them through the self-improvement gate, so future "
+            "packs are drafted better. Guidance text only -- never widens an envelope. "
+            "Requires self-improvement enabled.",
+            default=True,
         ),
         "rehearsal": _q_confirm(
             "Pre-execution rehearsal? Before a risky plan runs, simulate it against the "
@@ -2526,6 +2564,29 @@ AGENT_SUITES: list[tuple[str, str]] = [
     ("telecom_media", "Telecom / Media & Entertainment"),
     ("hospitality", "Hospitality / Travel"),
     ("capital_markets", "Capital Markets / Asset Management"),
+    # New industry suites (2026 build-out).
+    ("oil_gas", "Oil & Gas / Energy (Upstream-Downstream)"),
+    ("automotive", "Automotive (OEM / Dealership / Mobility)"),
+    ("public_sector", "Public Sector (State & Local Government Operations)"),
+    ("agriculture", "Agriculture / Agribusiness"),
+    ("aerospace_defense", "Aerospace & Defense"),
+    ("maritime", "Maritime / Shipping & Ports"),
+    ("travel_aviation", "Travel / Airlines & Aviation"),
+    ("mining_metals", "Mining & Metals"),
+    ("crypto_digital_assets", "Crypto & Digital Assets"),
+    ("chemicals", "Chemicals (Bulk / Specialty / Petrochemical)"),
+    ("food_beverage_cpg", "Food, Beverage & CPG"),
+    ("medical_devices", "Medical Devices & Diagnostics"),
+    ("private_equity_vc", "Private Equity & Venture Capital"),
+    ("water_utilities", "Water & Wastewater Utilities"),
+    ("renewables_cleantech", "Renewables & Clean Energy"),
+    ("semiconductors", "Semiconductors & Electronics"),
+    # Horizontal-function suites.
+    ("esg_sustainability", "ESG & Sustainability"),
+    ("enterprise_risk", "Enterprise Risk & Corporate Insurance"),
+    ("knowledge_management", "Knowledge Management"),
+    ("trust_safety", "Trust & Safety"),
+    ("process_automation", "Process Automation & Workflows"),
 ]
 
 
@@ -2788,6 +2849,16 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[actions]")
         lines.append("enable = true")
+    # data_grounding defaults ON, so emit the knob only to DISABLE it. Both keys
+    # share one [workforce] section.
+    _wf_disable_grounding = advanced.get("workforce_data_grounding") is False
+    if advanced.get("workforce_levels") or _wf_disable_grounding:
+        lines.append("")
+        lines.append("[workforce]")
+        if advanced.get("workforce_levels"):
+            lines.append("levels = true")
+        if _wf_disable_grounding:
+            lines.append("data_grounding = false")
     if advanced.get("calibration_enforce"):
         lines.append("")
         lines.append("[calibration]")
@@ -2812,13 +2883,22 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[credit]")
         lines.append("enable = true")
-    if advanced.get("causal_promotion"):
+    # The [self_improvement] block carries several sub-toggles; emit it if any
+    # diverges from its default (causal_promotion defaults off, factory_learning
+    # defaults on -- so we only write factory_learning when the user opts out).
+    declined_factory = "factory_learning" in advanced and not advanced.get("factory_learning")
+    if advanced.get("causal_promotion") or declined_factory:
         lines.append("")
         lines.append("[self_improvement]")
-        lines.append("# Promote learned changes on their confounder-adjusted causal")
-        lines.append("# effect (maverick.promotion_effect), not a correlation. Applies")
-        lines.append("# when self-improvement is enabled.")
-        lines.append("causal_promotion = true")
+        if advanced.get("causal_promotion"):
+            lines.append("# Promote learned changes on their confounder-adjusted causal")
+            lines.append("# effect (maverick.promotion_effect), not a correlation. Applies")
+            lines.append("# when self-improvement is enabled.")
+            lines.append("causal_promotion = true")
+        if declined_factory:
+            lines.append("# Keep the agent factory's generator static (do not mine")
+            lines.append("# pack-generation gaps into proposer corrections).")
+            lines.append("factory_learning = false")
     if advanced.get("rehearsal"):
         lines.append("")
         lines.append("[rehearsal]")
@@ -2977,6 +3057,10 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
     if advanced.get("reflexion"):
         lines.append("")
         lines.append("[reflexion]")
+        lines.append("enable = true")
+    if advanced.get("self_harness"):
+        lines.append("")
+        lines.append("[self_harness]")
         lines.append("enable = true")
     if advanced.get("fleet_memory"):
         lines.append("")

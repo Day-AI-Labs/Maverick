@@ -261,6 +261,8 @@ async def _lifespan(app: FastAPI):
     """
     from maverick.deployment import require_enterprise_or_die
     require_enterprise_or_die()
+    from maverick.residency import require_residency_or_die
+    require_residency_or_die()  # strict region pin (#41); no-op unless opted in
     _assert_dashboard_auth_configured()
     await _reclaim_orphans()
     await _install_queue_dispatcher()
@@ -404,15 +406,30 @@ async def _reclaim_orphans() -> None:
 
 
 async def _install_queue_dispatcher() -> None:
-    """If ``[queue] backend`` selects a task queue, install the QueueDispatcher
-    so this (producer) process enqueues goals for the worker pool instead of
-    running them in-process. No-op for the default in-process install."""
+    """Install an out-of-process goal dispatcher if one is configured.
+
+    ``[queue] backend`` selects the arq/Redis QueueDispatcher; ``[grpc_dispatch]
+    target`` selects the gRPC remote-worker dispatcher. Both make this (producer)
+    process hand goals to a worker pool instead of running them in-process. The
+    queue takes precedence when both are set (they share the single dispatcher
+    slot); the gRPC dispatcher is only attempted when the queue didn't install.
+    No-op for the default in-process install."""
     try:
         from maverick.queue_dispatcher import install_from_config
         if install_from_config():
             log.info("queue dispatcher installed: goals run out-of-process")
+            return
     except Exception:
         log.exception("queue dispatcher install failed (running in-process)")
+    # gRPC dispatch had a complete install_from_config() that nothing called, so
+    # [grpc_dispatch] target was silently ignored and goals kept running
+    # in-process. Wire it in as the fallback out-of-process path.
+    try:
+        from maverick.grpc_dispatcher import install_from_config as install_grpc
+        if install_grpc():
+            log.info("gRPC dispatcher installed: goals run on a remote worker")
+    except Exception:
+        log.exception("gRPC dispatcher install failed (running in-process)")
 
 _AUTH_EXEMPT = {
     "/healthz", "/livez", "/readyz",
@@ -879,31 +896,16 @@ async def extension_cors(request: Request, call_next):
 
 @app.middleware("http")
 async def tenant_pinning(request: Request, call_next):
-    """Pin the active tenant from the authenticated principal for the request.
+    """Reset any per-request tenant pin established by authentication.
 
-    Council #6: the world model's tenant scoping (the app-layer ``_tenant_scope``
-    predicate AND the Postgres RLS ``maverick.tenant`` GUC) only engages when a
-    tenant is pinned, but no dashboard request ever pinned one -- isolation rested
-    on each call site remembering to, with no central enforcement. This pins the
-    tenant from the verified principal for the request's duration (ContextVar,
-    reset on exit so it never leaks across requests/tasks).
-
-    No-op unless per-user tenancy is enabled (``[tenancy] by_user`` /
-    ``MAVERICK_TENANT_BY_USER``) -- the single-tenant default is unchanged -- and
-    only when a principal resolves (an authenticated request). Fail-open: a
-    resolution error never blocks the request."""
-    token = None
-    try:
-        from maverick.paths import set_tenant, tenant_by_user_enabled
-        if tenant_by_user_enabled():
-            principal = caller_principal(request)
-            if principal:
-                token = set_tenant(f"api:{principal}")
-    except Exception:  # pragma: no cover -- pinning never blocks a request
-        token = None
+    The actual pin is set inside ``require_principal`` after FastAPI has resolved
+    the verified caller but before route handlers run. This outer middleware owns
+    cleanup so the ContextVar token never leaks across requests/tasks.
+    """
     try:
         return await call_next(request)
     finally:
+        token = getattr(request.state, "tenant_pin_token", None)
         if token is not None:
             try:
                 from maverick.paths import reset_tenant
@@ -1199,8 +1201,9 @@ async def workforce_page(request: Request) -> HTMLResponse:
 
     w = _world()
     depts = list_departments()
-    firm = firm_totals(assemble(w)).to_dict()
-    leaders = [c.to_dict() for c in worker_cards(w, top=5)]
+    owner = goal_owner_filter(request)
+    firm = firm_totals(assemble(w, owner=owner)).to_dict()
+    leaders = [c.to_dict() for c in worker_cards(w, top=5, owner=owner)]
     return templates.TemplateResponse(
         request, "workforce.html",
         {

@@ -14,3 +14,32 @@ deny_tools = ["self_edit"]
 knowledge_sources = ["pe"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "versioned data-product contract & port spec PR"
+consumers = ["data_platform_lead", "domain_data_owner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Map consumers"
+instruction = "Read consumer needs, upstream sources, and existing semantic-layer definitions to frame the data product."
+tools = ["read_file", "repo_map", "knowledge_search"]
+[[workflow]]
+name = "Define ports"
+instruction = "Specify the input and output ports, SLAs, and semantic-layer bindings as a versioned contract."
+tools = ["apply_patch", "ast_edit", "str_replace_editor"]
+[[workflow]]
+name = "Validate contract"
+instruction = "Run the contract checks to confirm the output port conforms to the declared schema and SLA."
+tools = ["code_exec", "shell"]
+[[workflow]]
+name = "Check breaking change"
+instruction = "Diff the new contract against the prior version and flag any breaking change to existing consumers."
+tools = ["read_file", "code_exec"]
+[[workflow]]
+name = "Open PR"
+instruction = "Open a PR with the contract and port spec for human promotion sign-off; never self-promote."
+tools = ["apply_patch"]
+gate = "review"

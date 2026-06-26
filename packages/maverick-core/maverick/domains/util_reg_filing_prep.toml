@@ -10,3 +10,31 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["util"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "rate-case exhibit package"
+consumers = ["regulatory_counsel", "rates_director"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Scope the case"
+instruction = "Identify the governing FERC or state-PUC rules and the cost-of-service tests applicable to this rate case."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Pull cost data"
+instruction = "Gather rate-base and cost-of-service data from the utility's records for the test period."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Build exhibits"
+instruction = "Assemble cost-of-service schedules and rate-base exhibits and cite each figure to its source record."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag contested figures"
+instruction = "Mark every estimated or contested figure and any standard you cannot verify against the governing rules."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Route for filing"
+instruction = "Hand the exhibit package and supporting testimony to the regulatory team to review before filing."
+gate = "review"

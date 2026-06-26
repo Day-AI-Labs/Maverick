@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "client proposal package"
+consumers = ["engagement_partner", "pursuit_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather inputs"
+instruction = "Pull the approved qualifications, team bios, and current rate cards relevant to the opportunity from the knowledge base."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Confirm rates"
+instruction = "Verify each proposed rate against the effective rate card and the engagement scope before quoting."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Assemble draft"
+instruction = "Assemble the scope, qualifications, staffing, and pricing sections into one proposal, citing the source document for each claim."
+tools = ["read_file"]
+[[workflow]]
+name = "Flag assumptions"
+instruction = "Call out every assumption, scope boundary, and unknown explicitly rather than filling gaps with guesses."
+[[workflow]]
+name = "Partner review"
+instruction = "Route the assembled proposal to the engagement partner for sign-off on scope and pricing before it leaves the firm."
+gate = "review"

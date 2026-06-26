@@ -63,3 +63,103 @@ def test_rls_covers_projects_and_fact_history():
     assert "fact_history" not in postgres._TENANT_TABLES
     # Every v10 tenant table is still RLS-covered.
     assert set(postgres._TENANT_TABLES).issubset(set(postgres._RLS_TABLES))
+
+
+# --- #51/#57: enterprise auto-on for strict isolation + RLS ----------------
+
+@pytest.fixture
+def _clean_toggle_env(monkeypatch):
+    for var in ("MAVERICK_STRICT_TENANT_ISOLATION", "MAVERICK_PG_RLS"):
+        monkeypatch.delenv(var, raising=False)
+    # No config and not enterprise unless a test opts in.
+    monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: {})
+    monkeypatch.setattr("maverick.enterprise.enterprise_enabled", lambda: False)
+
+
+def test_toggles_default_off_without_enterprise(_clean_toggle_env):
+    assert postgres._strict_tenant_isolation() is False
+    assert postgres._rls_enabled() is False
+    assert postgres._rls_explicitly_set() is False
+
+
+def test_toggles_auto_on_under_enterprise(_clean_toggle_env, monkeypatch):
+    monkeypatch.setattr("maverick.enterprise.enterprise_enabled", lambda: True)
+    assert postgres._strict_tenant_isolation() is True
+    assert postgres._rls_enabled() is True
+    # Auto-on is NOT an explicit operator choice -> the boot preflight applies.
+    assert postgres._rls_explicitly_set() is False
+
+
+def test_explicit_env_off_overrides_enterprise(_clean_toggle_env, monkeypatch):
+    monkeypatch.setattr("maverick.enterprise.enterprise_enabled", lambda: True)
+    monkeypatch.setenv("MAVERICK_PG_RLS", "0")
+    monkeypatch.setenv("MAVERICK_STRICT_TENANT_ISOLATION", "off")
+    assert postgres._rls_enabled() is False
+    assert postgres._strict_tenant_isolation() is False
+    assert postgres._rls_explicitly_set() is True
+
+
+def test_explicit_env_on_is_explicit(_clean_toggle_env, monkeypatch):
+    monkeypatch.setenv("MAVERICK_PG_RLS", "1")
+    assert postgres._rls_enabled() is True
+    assert postgres._rls_explicitly_set() is True
+
+
+def test_config_toggle_resolves_when_env_absent(_clean_toggle_env, monkeypatch):
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {"world_model": {"rls": True, "strict_tenant_isolation": "yes"}},
+    )
+    assert postgres._rls_enabled() is True
+    assert postgres._strict_tenant_isolation() is True
+    assert postgres._rls_explicitly_set() is True
+
+
+def test_preflight_refuses_boot_on_legacy_null_rows_when_auto_on(monkeypatch):
+    # Enterprise auto-on (not explicit) + a table with NULL-tenant rows -> refuse.
+    monkeypatch.setattr(postgres, "_rls_explicitly_set", lambda: False)
+    monkeypatch.setattr(
+        "maverick.world_model_backends.pg_rls.preflight",
+        lambda conn: {"role": "app", "ready": False, "tables": {
+            "goals": {"null_tenant_rows": 3, "owned_by_current_role": True},
+            "facts": {"null_tenant_rows": 0, "owned_by_current_role": True},
+        }},
+    )
+    world = PostgresWorldModel.__new__(PostgresWorldModel)
+    world._pool = None
+    world.conn = object()
+    with pytest.raises(RuntimeError, match="tenant backfill"):
+        world._preflight_rls_or_die()
+
+
+def test_preflight_passes_when_no_null_rows(monkeypatch):
+    monkeypatch.setattr(postgres, "_rls_explicitly_set", lambda: False)
+    monkeypatch.setattr(
+        "maverick.world_model_backends.pg_rls.preflight",
+        lambda conn: {"role": "app", "ready": True, "tables": {
+            "goals": {"null_tenant_rows": 0, "owned_by_current_role": True},
+        }},
+    )
+    world = PostgresWorldModel.__new__(PostgresWorldModel)
+    world._pool = None
+    world.conn = object()
+    world._preflight_rls_or_die()  # no raise
+
+
+def test_preflight_skipped_when_explicitly_opted_in(monkeypatch):
+    # Explicit MAVERICK_PG_RLS=1 keeps the old fail-closed path: no boot refusal
+    # even with NULL rows present (operator knowingly opted in).
+    monkeypatch.setattr(postgres, "_rls_explicitly_set", lambda: True)
+    called = {"preflight": False}
+
+    def _should_not_run(conn):  # pragma: no cover -- asserted not called
+        called["preflight"] = True
+        return {"tables": {}}
+
+    monkeypatch.setattr(
+        "maverick.world_model_backends.pg_rls.preflight", _should_not_run)
+    world = PostgresWorldModel.__new__(PostgresWorldModel)
+    world._pool = None
+    world.conn = object()
+    world._preflight_rls_or_die()
+    assert called["preflight"] is False

@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "commission attainment & payout statement"
+consumers = ["finance_manager", "sales_operations"]
+cadence = "monthly"
+gate = "approval"
+
+[[workflow]]
+name = "Read comp plan"
+instruction = "Read the current comp plan, quotas, accelerators, and clawback rules for the pay period."
+tools = ["read_file"]
+[[workflow]]
+name = "Pull bookings"
+instruction = "Gather closed-won bookings and attainment data per rep for the period."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Calculate payouts"
+instruction = "Compute attainment and commission per rep applying accelerators, splits, and clawbacks against the plan."
+[[workflow]]
+name = "Reconcile exceptions"
+instruction = "Flag negative draws, plan-cap breaches, and disputed credits as exceptions for finance to resolve."
+[[workflow]]
+name = "Route to finance"
+instruction = "Stage the payout statement for finance to approve before any commission is paid."
+gate = "approval"

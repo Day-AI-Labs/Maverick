@@ -12,3 +12,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "interactive-process case file"
+consumers = ["accommodation_reviewer", "hr_compliance"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Log request"
+instruction = "Read the accommodation request and intake the limitation described without inferring or naming any disability."
+tools = ["read_file"]
+[[workflow]]
+name = "Research options"
+instruction = "Research candidate accommodations and the relevant ADA and PWFA standards for the stated limitation."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Map dialogue"
+instruction = "Assemble the interactive-dialogue history and the candidate accommodation options against the essential job functions."
+tools = ["read_file"]
+[[workflow]]
+name = "Undue-hardship check"
+instruction = "Document any undue-hardship analysis and confirm no medical or protected data leaks outside the sealed compartment."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to reviewer"
+instruction = "Route the complete case file to the human accommodation reviewer who makes every grant or deny decision."
+gate = "review"

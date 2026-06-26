@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["hr"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Singapore employment compliance brief"
+consumers = ["hr_business_partner", "local_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame request"
+instruction = "Identify the Singapore matter: Employment Act coverage, work-pass eligibility, or CPF obligations for the employees concerned."
+tools = ["read_file"]
+[[workflow]]
+name = "Gather records"
+instruction = "Pull the company's contracts, pass details, and payroll records and cite each source used."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Check MOM and CPF"
+instruction = "Verify Employment Act coverage, work-pass conditions, and CPF contribution rates against current MOM and CPF Board rules, computing amounts in a worksheet."
+tools = ["web_search", "spreadsheet"]
+[[workflow]]
+name = "Draft brief"
+instruction = "Summarize coverage, pass, and CPF obligations with computed figures, stating assumptions and unknowns plainly."
+[[workflow]]
+name = "Counsel review"
+instruction = "Route jurisdiction-specific positions to local Singapore counsel for review before reliance."
+gate = "review"

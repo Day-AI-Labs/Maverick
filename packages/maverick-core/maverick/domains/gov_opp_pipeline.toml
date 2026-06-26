@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "qualified opportunity pipeline with bid/no-bid recommendations"
+consumers = ["capture_manager", "business_development_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Scan solicitations"
+instruction = "Search SAM.gov, agency forecasts, and known sources for new solicitations matching the company's NAICS and capabilities."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Match fit"
+instruction = "Compare each opportunity's scope and set-aside against the company's past performance and qualifications from internal records."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Score pipeline"
+instruction = "Rank candidates by p-win, value, and deadline in the pipeline tracker and note assumptions and unknowns."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft bid/no-bid"
+instruction = "Write a bid/no-bid rationale for each high-priority opportunity citing the supporting evidence."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route decision"
+instruction = "Present the ranked pipeline and bid/no-bid packages to the capture manager for the go decision."
+gate = "review"

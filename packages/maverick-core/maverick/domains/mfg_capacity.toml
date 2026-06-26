@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "load-versus-capacity by work center"
+consumers = ["production_planner", "operations_director"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull demand"
+instruction = "Retrieve the open order and production schedule load by work center for the planning horizon."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Pull capacity"
+instruction = "Read available hours, shift patterns, and efficiency factors for each work center."
+tools = ["read_file"]
+[[workflow]]
+name = "Model load"
+instruction = "Compute load versus available capacity per work center and period to surface over- and under-load."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag bottlenecks"
+instruction = "Identify overloaded work centers and constraint periods and note feasible offload or overtime options."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to planner"
+instruction = "Send the load-versus-capacity model with bottleneck flags to the planner for the leveling decision."
+gate = "review"

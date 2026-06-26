@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "partner ecosystem QBR & attribution package"
+consumers = ["partner_manager", "revops_lead"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull partner pipeline"
+instruction = "Read PRM deal registrations, partner-sourced and partner-influenced opportunities for the period."
+tools = ["read_file"]
+[[workflow]]
+name = "Reconcile attribution"
+instruction = "Reconcile sourced versus influenced credit against the attribution rules and flag any deal-registration conflicts."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Score co-sell health"
+instruction = "Assess co-sell motion health and PRM hygiene gaps per partner using benchmark context."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Flag conflicts"
+instruction = "Isolate deal-reg conflicts and partner-discount decisions that require a human owner rather than reconciliation."
+[[workflow]]
+name = "Route QBR package"
+instruction = "Hand the assembled attribution and co-sell QBR package to the partner manager for sign-off before any claim is published."
+gate = "review"

@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "returns disposition register"
+consumers = ["returns_supervisor", "inventory_manager"]
+cadence = "daily"
+gate = "approval"
+
+[[workflow]]
+name = "Pull returns"
+instruction = "Query the day's open return records with SKU, reason code, and condition grade."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load policy"
+instruction = "Retrieve the returns disposition policy and restock/refurbish/write-off thresholds from company documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Classify dispositions"
+instruction = "Assign each returned unit a restock, refurbish, or write-off disposition per the policy condition grades."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag exceptions"
+instruction = "Surface units outside policy thresholds or with ambiguous condition codes for manual judgment."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route register"
+instruction = "Hand the disposition register to the returns supervisor to approve before any inventory write-off posts."
+gate = "approval"

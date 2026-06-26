@@ -15,3 +15,31 @@ deny_tools = ["shell", "write_file"]
 
 knowledge_sources = ["ops_maintenance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "downtime RCA & reliability recommendations"
+consumers = ["maintenance_manager", "reliability_engineer"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull failure data"
+instruction = "Read CMMS work-order history and downtime logs for the asset under study."
+tools = ["read_file", "samsara_read"]
+[[workflow]]
+name = "Compute metrics"
+instruction = "Calculate MTBF and MTTR and fit Weibull parameters to characterize the failure pattern."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Root-cause"
+instruction = "Run downtime root-cause analysis and isolate the dominant failure mode behind the losses."
+tools = ["read_file"]
+[[workflow]]
+name = "Optimize spares"
+instruction = "Recommend RCM/TPM actions and spare-parts levels with the failure data shown behind each one."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Route to maintenance"
+instruction = "Hand the draft recommendations to the maintenance manager who authorizes execution and spares purchasing."
+gate = "review"

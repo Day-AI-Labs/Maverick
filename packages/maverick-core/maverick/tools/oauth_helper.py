@@ -62,31 +62,35 @@ def _fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
 
 
-def _persist_to_vault(payload: dict, provider: str) -> str | None:
-    """Seal the token response into the per-tenant OAuth vault (encrypted at
-    rest). Returns a status string when stored, else None. Fail-soft: any error
-    falls back to the file path so a capture is never silently lost."""
-    try:
-        from ..oauth_vault import enabled, get_vault
-        if not (enabled() and provider):
-            return None
-        get_vault().put(provider, payload)
-        return f"sealed in the per-tenant OAuth vault (provider={provider})"
-    except Exception:  # pragma: no cover -- vault is best-effort over the file
-        return None
+def _persist_to_vault(payload: dict, provider: str) -> str:
+    """Seal the token response into the per-tenant OAuth vault.
+
+    Vault mode is a fail-closed sink: once enabled, callers must provide a
+    provider key and any vault/KMS/crypto failure must stop persistence rather
+    than falling back to the legacy plaintext out-file.
+    """
+    from ..oauth_vault import get_vault
+
+    if not provider:
+        raise ValueError("provider is required when [oauth] vault is enabled")
+    get_vault().put(provider, payload)
+    return f"sealed in the per-tenant OAuth vault (provider={provider})"
 
 
 def _persist_tokens(payload: dict, provider: str | None = None) -> str | None:
-    """Persist the full token response. When the sealed OAuth vault is enabled
-    and a ``provider`` is given, store it encrypted-at-rest under the tenant
-    DEK; otherwise write the operator-named out-file (0600).
+    """Persist the full token response.
 
-    Returns a human status string, or None when neither sink is configured (then
-    only the summary exists and the caller must enable the vault or set
-    MAVERICK_OAUTH_OUT to capture the secret material)."""
-    sealed = _persist_to_vault(payload, provider or "")
-    if sealed:
-        return sealed
+    When the sealed OAuth vault is enabled, store encrypted-at-rest under the
+    tenant DEK and never fall back to the plaintext out-file. When vault mode is
+    disabled, write the operator-named out-file (0600) if configured.
+
+    Returns a human status string, or None when neither sink is configured.
+    Raises when vault mode is enabled but cannot safely seal the tokens.
+    """
+    from ..oauth_vault import enabled
+
+    if enabled():
+        return _persist_to_vault(payload, (provider or "").strip())
     out = os.environ.get("MAVERICK_OAUTH_OUT", "").strip()
     if not out:
         return None
@@ -164,7 +168,10 @@ def _exchange(args: dict[str, Any]) -> str:
     if not resp.get("access_token"):
         return "ERROR: no access_token in response"
     lines = _summarise(resp)
-    saved = _persist_tokens(resp, args.get("provider"))
+    try:
+        saved = _persist_tokens(resp, args.get("provider"))
+    except Exception as e:
+        return f"ERROR: token persistence failed: {e}"
     lines.append(f"full tokens {saved}" if saved else
                  "enable [oauth] vault or set MAVERICK_OAUTH_OUT=<path> to capture "
                  "the full tokens")
@@ -189,7 +196,10 @@ def _refresh(args: dict[str, Any]) -> str:
     if not resp.get("access_token"):
         return "ERROR: no access_token in response"
     lines = _summarise(resp)
-    saved = _persist_tokens(resp, args.get("provider"))
+    try:
+        saved = _persist_tokens(resp, args.get("provider"))
+    except Exception as e:
+        return f"ERROR: token persistence failed: {e}"
     if saved:
         lines.append(f"full tokens {saved}")
     return "\n".join(lines)

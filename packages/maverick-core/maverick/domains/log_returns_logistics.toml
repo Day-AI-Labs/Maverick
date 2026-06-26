@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "return authorization & receipt tracker"
+consumers = ["warehouse_supervisor", "customer_service_lead"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull return requests"
+instruction = "Query open return requests and their original orders to confirm eligibility against the returns policy."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Authorize returns"
+instruction = "Check each eligible request against policy and warranty terms and assign return authorizations and labels."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Track inbound"
+instruction = "Monitor carrier tracking on authorized returns and update the in-transit status of each shipment."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Confirm receipt"
+instruction = "Reconcile warehouse scans against authorized returns and flag missing, late, or condition-discrepant receipts."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand off for credit"
+instruction = "Compile the confirmed-receipt tracker for customer service to approve refunds or replacements."
+gate = "review"

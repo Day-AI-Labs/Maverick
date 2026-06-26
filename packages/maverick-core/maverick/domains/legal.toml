@@ -15,3 +15,25 @@ deny_tools = ["shell", "write_file"]
 mcp_servers = ["CourtListener"]
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "legal research memo"
+consumers = ["general_counsel", "attorney"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame question"
+instruction = "Identify the legal issue, jurisdiction, and governing standard the research must address."
+[[workflow]]
+name = "Find authorities"
+instruction = "Search case law and internal knowledge for controlling authorities and read the relevant opinions and documents."
+tools = ["web_search", "knowledge_search", "read_file"]
+[[workflow]]
+name = "Verify citations"
+instruction = "Confirm each authority's case name, court, and year and quote the controlling text exactly rather than paraphrasing."
+[[workflow]]
+name = "Draft memo for review"
+instruction = "Write the research memo separating analysis from advice and route it to the attorney for sign-off before anything is filed or sent."
+gate = "review"

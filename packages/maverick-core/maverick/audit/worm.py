@@ -101,6 +101,20 @@ class LocalWormSink:
         return {"target": "local", "path": str(dest),
                 "retain_until": retain_until.isoformat()}
 
+    def verify(self, locator: dict, expected_sha256: str) -> bool:
+        if locator.get("target") != "local":
+            return False
+        try:
+            path = Path(str(locator.get("path") or "")).resolve(strict=True)
+            root = self._dir.resolve(strict=True)
+            if root not in (path, *path.parents) or not path.is_file():
+                return False
+            if path.stat().st_mode & 0o222:
+                return False
+            return _sha256(path.read_bytes()) == expected_sha256
+        except OSError:
+            return False
+
 
 class S3WormSink:
     """Ship each closed day-file to S3 (or compatible) with Object-Lock so it
@@ -133,14 +147,39 @@ class S3WormSink:
 
     def put(self, name: str, data: bytes, *, retain_until: _dt.datetime) -> dict:
         key = f"{self._prefix}{name}"
-        self._s3().put_object(
+        resp = self._s3().put_object(
             Bucket=self._bucket, Key=key, Body=data,
             ObjectLockMode=self._mode,
             ObjectLockRetainUntilDate=retain_until,
             ChecksumAlgorithm="SHA256",
         )
-        return {"target": "s3", "bucket": self._bucket, "key": key,
-                "mode": self._mode, "retain_until": retain_until.isoformat()}
+        locator = {"target": "s3", "bucket": self._bucket, "key": key,
+                   "mode": self._mode, "retain_until": retain_until.isoformat()}
+        version_id = resp.get("VersionId") if isinstance(resp, dict) else None
+        if version_id:
+            locator["version_id"] = version_id
+        return locator
+
+    def verify(self, locator: dict, expected_sha256: str) -> bool:
+        if locator.get("target") != "s3":
+            return False
+        bucket = str(locator.get("bucket") or "")
+        key = str(locator.get("key") or "")
+        if bucket != self._bucket or not key:
+            return False
+        kwargs = {"Bucket": bucket, "Key": key}
+        version_id = locator.get("version_id")
+        if version_id:
+            kwargs["VersionId"] = str(version_id)
+        try:
+            obj = self._s3().get_object(**kwargs)
+            body = obj.get("Body")
+            data = body.read() if hasattr(body, "read") else body
+            if not isinstance(data, bytes):
+                return False
+            return _sha256(data) == expected_sha256
+        except Exception:
+            return False
 
 
 def build_sink(cfg: dict[str, Any] | None = None):
@@ -190,6 +229,44 @@ def _load_manifest(audit_dir: Path) -> dict[str, dict]:
         pass
     return latest
 
+
+
+def _locator_verified(
+    rec: dict, expected_sha256: str, sink: Any | None = None, audit_dir: Path | None = None
+) -> bool:
+    locator = rec.get("locator")
+    if not isinstance(locator, dict):
+        return False
+    if sink is not None and hasattr(sink, "verify"):
+        try:
+            return bool(sink.verify(locator, expected_sha256))
+        except Exception:
+            return False
+    target = locator.get("target")
+    if target == "local":
+        cfg = _worm_cfg()
+        directory = None
+        if str(cfg.get("provider") or "").strip().lower() == "local":
+            directory = cfg.get("dir")
+        if directory is None and audit_dir is not None:
+            directory = audit_dir / "worm" / "store"
+        if directory is None:
+            return False
+        return LocalWormSink(directory).verify(locator, expected_sha256)
+    if target == "s3":
+        try:
+            cfg = dict(_worm_cfg())
+            cfg.update({
+                "provider": "s3",
+                "bucket": locator.get("bucket"),
+                "prefix": "",
+                "mode": locator.get("mode") or cfg.get("mode") or "COMPLIANCE",
+            })
+            sink = build_sink(cfg)
+            return bool(sink.verify(locator, expected_sha256))
+        except Exception:
+            return False
+    return False
 
 def _append_manifest(audit_dir: Path, rec: dict) -> None:
     path = _manifest_path(audit_dir)
@@ -278,7 +355,7 @@ def push_closed_dayfiles(
             continue
         digest = _sha256(data)
         prior = manifest.get(p.name)
-        if prior and prior.get("sha256") == digest:
+        if prior and prior.get("sha256") == digest and _locator_verified(prior, digest, sink, audit_dir):
             report[p.name] = "already pushed"
             continue
         changed = prior is not None
@@ -323,7 +400,7 @@ def verify(*, audit_dir: Path | None = None) -> dict[str, str]:
         if prior is None:
             report[p.name] = "NOT pushed"
         elif prior.get("sha256") == digest:
-            report[p.name] = "ok"
+            report[p.name] = "ok" if _locator_verified(prior, digest, audit_dir=audit_dir) else "NOT durably present"
         else:
             report[p.name] = "changed since push"
     return report

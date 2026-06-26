@@ -39,3 +39,17 @@ def test_budget_summary_contains_expected_fields():
     assert "tokens" in s
     assert "wall" in s
     assert "tools" in s
+
+
+def test_cache_hit_rate_consolidates_across_providers():
+    b = Budget(max_dollars=1000.0, max_input_tokens=10_000_000)
+    # No traffic yet -> 0.0, never divides by zero.
+    assert b.cache_hit_rate() == 0.0
+    # 200 billable input + 800 cache-read => 80% served from cache.
+    b.record_tokens(200, 10, cache_read_tok=800)
+    assert b.cache_hit_rate() == 0.8
+    stats = b.cache_stats()
+    assert stats["cache_read_tokens"] == 800
+    assert stats["billable_input_tokens"] == 200
+    assert stats["hit_rate"] == 0.8
+    assert "hit_rate" in b.summary()

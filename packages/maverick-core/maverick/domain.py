@@ -27,12 +27,16 @@ try:
 except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib  # type: ignore[no-redef]
 
+from .agent_autonomy import AutonomyProfile
+from .safety.tool_risk import risk_rank, tool_risk
+
 # Keys we accept from a pack's TOML. Unknown keys are ignored so a newer pack
 # can't crash an older loader.
 _FIELDS = frozenset({
     "compartment", "description", "persona", "allow_tools", "deny_tools",
     "max_risk", "allow_paths", "allow_hosts", "mcp_servers", "models",
-    "knowledge_sources", "authoring", "extends", "workflow", "output",
+    "knowledge_sources", "authoring", "extends", "workflow", "output", "effort",
+    "refuse", "autonomy",
 })
 
 
@@ -86,9 +90,12 @@ class DomainProfile:
     models: dict[str, str] = field(default_factory=dict)
     knowledge_sources: list[str] = field(default_factory=list)
     authoring: str = "manual"      # "manual" | "generated"
+    effort: str | None = None      # reasoning tier (applied only when [effort] on)
+    refuse: list[str] = field(default_factory=list)  # pack-specific hard refusals
     extends: str = ""              # overlay base: inherit a pack, patch the rest
     workflow: list[WorkflowStep] = field(default_factory=list)  # editable playbook
     output: OutputContract = field(default_factory=OutputContract)  # the deliverable
+    autonomy: AutonomyProfile | None = None  # explicit [autonomy] block; None -> suite default
 
     def __post_init__(self) -> None:
         if not self.compartment:
@@ -157,6 +164,11 @@ def _coerce(name: str, data: dict) -> DomainProfile:
         fields["workflow"] = _coerce_workflow(fields["workflow"])
     if "output" in fields:
         fields["output"] = _coerce_output(fields["output"])
+    if "refuse" in fields:
+        raw = fields["refuse"]
+        fields["refuse"] = ([str(r) for r in raw] if isinstance(raw, list) else [])
+    if "autonomy" in fields:
+        fields["autonomy"] = AutonomyProfile.from_toml(fields["autonomy"])
     return DomainProfile(name=name, **fields)
 
 
@@ -252,6 +264,8 @@ def overlay_profile(base: DomainProfile, patch: dict) -> DomainProfile:
         "models": dict(base.models),
         "knowledge_sources": list(base.knowledge_sources),
         "authoring": base.authoring,
+        "effort": base.effort,
+        "refuse": list(base.refuse),
         "workflow": list(base.workflow),
         "output": base.output,
     }
@@ -339,6 +353,29 @@ SUITE_PREFIXES: dict[str, str] = {
     "tmt_": "telecom_media",
     "hosp_": "hospitality",
     "cap_": "capital_markets",
+    # New industry suites (2026 build-out).
+    "oilgas_": "oil_gas",
+    "auto_": "automotive",
+    "pubsec_": "public_sector",
+    "ag_": "agriculture",
+    "aero_": "aerospace_defense",
+    "mar_": "maritime",
+    "trv_": "travel_aviation",
+    "min_": "mining_metals",
+    "crypto_": "crypto_digital_assets",
+    "chem_": "chemicals",
+    "fbcpg_": "food_beverage_cpg",
+    "meddev_": "medical_devices",
+    "pevc_": "private_equity_vc",
+    "water_": "water_utilities",
+    "clean_": "renewables_cleantech",
+    "semi_": "semiconductors",
+    # New horizontal-function suites (2026 build-out).
+    "esg_": "esg_sustainability",
+    "risk_": "enterprise_risk",
+    "km_": "knowledge_management",
+    "tns_": "trust_safety",
+    "bpa_": "process_automation",
 }
 
 
@@ -380,6 +417,35 @@ def enabled_domains(cfg: dict | None = None) -> dict[str, DomainProfile]:
     }
 
 
+# Governed office actions a hire may EXECUTE once per-agent autonomy levels are
+# on -- comms and scheduling, every one classified high-risk so the autonomy
+# dial + governance gate hold them to the agent's authority (staged or approved
+# per rung; never raw). This is the dial-coupled grant that turns a read-only
+# specialist into one that can actually take governed actions. Domain-specific
+# governed writes (update a record, file a doc) are layered per suite on top.
+_GOVERNED_ACTION_BUNDLE = frozenset({"email", "notify", "calendar"})
+
+
+def data_grounding_enabled() -> bool:
+    """Whether packs are granted their suite's primary-source data connectors.
+
+    ON by default (these are GET-only, LOW-risk public/government data readers,
+    deferred so they cost no context until ``find_tools`` surfaces them, and
+    inert without their env key). ``MAVERICK_WORKFORCE_DATA_GROUNDING`` overrides
+    the ``[workforce] data_grounding`` config either way. Never raises."""
+    import os
+    env = os.environ.get("MAVERICK_WORKFORCE_DATA_GROUNDING", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    try:
+        from .config import get_workforce
+        return bool(get_workforce().get("data_grounding", True))
+    except Exception:  # pragma: no cover -- config must never block a run
+        return True
+
+
 def domain_capability(profile: DomainProfile, parent_cap, principal: str):
     """The Capability a domain agent runs under.
 
@@ -387,21 +453,73 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
     broaden); otherwise mint the profile's own envelope. Empty profile fields
     pass ``None`` so they inherit the parent's scope rather than emptying it --
     an empty allow-set means "all", which would *broaden* the grant.
+
+    When the client has enabled per-agent autonomy levels (``[workforce]
+    levels``), a non-empty allowlist is expanded with the governed action bundle
+    so the hire can execute its job's output -- gated by its autonomy rung. Off
+    by default (kernel rule 1): no grant, the pack stays exactly read-only.
     """
-    allow = set(profile.allow_tools) or None
+    allow = set(profile.allow_tools)
+    max_risk = profile.max_risk
+    if allow:  # only a real allowlist is expanded (empty == inherit, untouched)
+        try:
+            from .agent_autonomy import levels_enabled
+            if levels_enabled():
+                # The governed action bundle is high-risk, so packs with a
+                # low/medium ceiling need a high runtime ceiling for those
+                # actions to pass through to the autonomy gate. Keep that lift
+                # scoped to the new governed tools: tools that were already in
+                # the pack but above its declared ceiling were not reachable
+                # before levels were enabled and must not become reachable just
+                # because email/notify/calendar were added.
+                if max_risk in ("low", "medium"):
+                    allow = {
+                        tool for tool in allow
+                        if risk_rank(tool_risk(tool)) <= risk_rank(max_risk)
+                    }
+                    max_risk = "high"
+                allow = allow | _GOVERNED_ACTION_BUNDLE
+        except Exception:  # pragma: no cover -- never block capability build
+            pass
+        # Grant the pack's suite its primary-source data connectors (GET-only,
+        # LOW risk, deferred) so the analyst reaches for FRED/SEC EDGAR/openFDA/
+        # etc. by default. Additive to the allowlist; the LOW risk keeps them
+        # under a read-only pack's ceiling. allow_hosts is deliberately NOT
+        # widened -- a host-restricted pack stays restricted (the connector
+        # returns a graceful egress error) until an operator opts the host in.
+        try:
+            if data_grounding_enabled():
+                from .tools.enterprise_connectors import data_connectors_for_suite
+                allow = allow | set(data_connectors_for_suite(suite_for(profile.name)))
+        except Exception:  # pragma: no cover -- never block capability build
+            pass
+    allow = allow or None
     deny = set(profile.deny_tools) or None
     paths = set(profile.allow_paths) or None
     hosts = set(profile.allow_hosts) or None
     if parent_cap is not None:
         return parent_cap.attenuate(
             principal=principal, allow=allow, deny=deny,
-            max_risk=profile.max_risk, allow_paths=paths, allow_hosts=hosts,
+            max_risk=max_risk, allow_paths=paths, allow_hosts=hosts,
         )
-    return profile.capability(principal)
+    from .capability import Capability
+    return Capability(
+        principal=principal,
+        allow_tools=frozenset(allow or ()),
+        deny_tools=frozenset(deny or ()),
+        max_risk=max_risk,
+        allow_paths=frozenset(paths or ()),
+        allow_hosts=frozenset(hosts or ()),
+    )
 
 
 _VALID_RISKS = frozenset({"low", "medium", "high"})
+# Reasoning-effort tiers a pack may declare (mirrors maverick.effort._LEVELS).
+_VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 _VALID_GATES = frozenset({"approval", "review"})
+# Sign-off strength: a deliverable must not claim a lighter gate than the
+# human-handoff its own playbook ends on (approval > review > none).
+_GATE_RANK = {None: 0, "review": 1, "approval": 2}
 # Render archetypes the dashboard knows how to present a deliverable as. An
 # unknown shape is a warning, not an error: it falls back to prose rendering, so
 # a newer pack naming a future shape still loads on an older dashboard.
@@ -475,6 +593,9 @@ def lint_profile(profile: DomainProfile) -> tuple[list[str], list[str]]:
     elif profile.max_risk not in _VALID_RISKS:
         errors.append(f"max_risk {profile.max_risk!r} is not one of "
                       f"{sorted(_VALID_RISKS)}")
+    if profile.effort is not None and profile.effort not in _VALID_EFFORTS:
+        errors.append(f"effort {profile.effort!r} is not one of "
+                      f"{sorted(_VALID_EFFORTS)}")
     overlap = set(profile.allow_tools) & set(profile.deny_tools)
     if overlap:
         warnings.append("tools both allowed and denied (deny wins): "
@@ -506,6 +627,15 @@ def lint_profile(profile: DomainProfile) -> tuple[list[str], list[str]]:
     wf_errors, wf_warnings = _lint_workflow(profile)
     errors.extend(wf_errors)
     warnings.extend(wf_warnings)
+    # The deliverable's sign-off must not be lighter than the human-handoff its
+    # own playbook ends on -- otherwise the contract under-states the gate.
+    if profile.output.deliverable and profile.workflow:
+        final_gate = profile.workflow[-1].gate
+        if _GATE_RANK.get(final_gate, 0) > _GATE_RANK.get(profile.output.gate, 0):
+            warnings.append(
+                f"output.gate {profile.output.gate!r} is lighter than the final "
+                f"workflow step's gate {final_gate!r}: raise output.gate so the "
+                "deliverable's sign-off matches its playbook")
     return errors, warnings
 
 
@@ -569,7 +699,9 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
     spawn depth, works like a professional with its department's memory.
     """
     from .agent import Agent
+    from .agent_autonomy import default_profile_for, render_autonomy_prompt
     from .domain_discipline import augment_persona
+    from .domain_refusals import render_refusals
     principal = principal or f"agent:{profile.name}-{depth}"
     if parent is not None and hasattr(parent, "_effective_capability"):
         parent_cap = parent._effective_capability("spawn_specialist")
@@ -587,7 +719,11 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
         depth=depth, parent=parent,
         domain=profile.compartment,
         persona=(augment_persona(profile.name, profile.persona)
+                 + render_refusals(profile.name, profile.refuse)
+                 + render_autonomy_prompt(profile.name, profile.autonomy)
                  + render_workflow_prompt(profile.workflow)),
         capability=cap,
         knowledge_sources=profile.knowledge_sources,
+        domain_effort=profile.effort,
+        autonomy=profile.autonomy or default_profile_for(profile.name),
     )

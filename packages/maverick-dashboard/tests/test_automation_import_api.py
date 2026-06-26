@@ -37,6 +37,32 @@ N8N_WF = {
 }
 
 
+N8N_CRON_WF = {
+    "id": "2", "name": "Daily digest", "active": True,
+    "nodes": [
+        {"name": "Every morning", "type": "n8n-nodes-base.cron",
+         "parameters": {"cronExpression": "0 9 * * *"}},
+        {"name": "Send email", "type": "n8n-nodes-base.emailSend",
+         "parameters": {"operation": "send"}},
+    ],
+    "connections": {
+        "Every morning": {"main": [[{"node": "Send email", "type": "main", "index": 0}]]},
+    },
+}
+
+
+class _FakeQueue:
+    last = None
+
+    def __init__(self):
+        self.enqueued = []
+        type(self).last = self
+
+    def enqueue(self, kind, payload, run_at=None):
+        self.enqueued.append((kind, payload, run_at))
+        return len(self.enqueued)
+
+
 def test_sources_lists_modes():
     r = _client().get("/api/v1/import/sources")
     assert r.status_code == 200
@@ -100,6 +126,28 @@ def test_webhook_trigger_respects_features_gate(monkeypatch):
     assert any("triggers is off" in n for n in item["notes"])
 
 
+def test_activate_schedules_preserves_request_identity(monkeypatch):
+    import maverick.job_queue as job_queue
+    import maverick_dashboard.api as api
+
+    _FakeQueue.last = None
+    monkeypatch.setattr(job_queue, "JobQueue", _FakeQueue)
+    monkeypatch.setattr(api, "caller_principal", lambda request: "user:alice")
+    monkeypatch.setattr(api, "execution_user_id_from_request", lambda request: "alice")
+
+    r = _client().post("/api/v1/import/run", json={
+        "source": "n8n",
+        "definitions": [N8N_CRON_WF],
+        "activate_schedules": True,
+    })
+    assert r.status_code == 200, r.text
+    assert _FakeQueue.last is not None
+    payload = _FakeQueue.last.enqueued[0][1]
+    assert payload["owner"] == "user:alice"
+    assert payload["channel"] == "api"
+    assert payload["user_id"] == "alice"
+
+
 def test_gate_blocks_when_disabled(monkeypatch):
     monkeypatch.setenv("MAVERICK_AUTOMATION_IMPORT", "0")
     r = _client().post("/api/v1/import/run", json={"source": "n8n", "definitions": [N8N_WF]})
@@ -130,3 +178,23 @@ def test_automations_page_hides_import_when_disabled(monkeypatch):
     r = _client().get("/automations")
     assert r.status_code == 200
     assert "Import from another platform" not in r.text
+
+
+def test_run_rejects_too_many_definitions():
+    definitions = [dict(N8N_WF, id=str(i), name=f"WF {i}") for i in range(26)]
+    r = _client().post("/api/v1/import/run", json={"source": "n8n", "definitions": definitions})
+    assert r.status_code == 422
+
+
+def test_run_rejects_oversized_definition():
+    wf = dict(N8N_WF)
+    wf["nodes"] = [
+        {"name": "Hook", "type": "n8n-nodes-base.webhook", "parameters": {}},
+        {
+            "name": "Notify",
+            "type": "n8n-nodes-base.slack",
+            "parameters": {"operation": "post", "body": "x" * 65_000},
+        },
+    ]
+    r = _client().post("/api/v1/import/run", json={"source": "n8n", "definitions": [wf]})
+    assert r.status_code == 413

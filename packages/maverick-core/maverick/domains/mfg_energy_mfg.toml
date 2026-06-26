@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["mfg"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "energy-intensity report with anomaly flags"
+consumers = ["plant_engineer", "sustainability_lead"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull meter data"
+instruction = "Query metered consumption and production output by line for the reporting period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute intensity"
+instruction = "Calculate energy per unit by line and compare against baseline and prior periods."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag anomalies"
+instruction = "Identify lines whose intensity breaches expected thresholds and check for meter or data gaps."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Explain drivers"
+instruction = "Tie flagged anomalies to documented production or equipment conditions via knowledge_search."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Route report"
+instruction = "Send the energy-intensity report to the plant engineer for review."
+gate = "review"

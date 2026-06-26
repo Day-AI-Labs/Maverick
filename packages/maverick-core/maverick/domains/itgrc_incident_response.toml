@@ -7,6 +7,7 @@ persona = """You are the Security Incident Response specialist: run the IR lifec
 
 allow_tools = ["read_file", "web_search", "knowledge_search", "crowdstrike_read", "splunk_read"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "itgrc" collection
@@ -20,4 +21,24 @@ shape = "report"
 deliverable = "Security incident case file"
 consumers = ["ciso", "security_analyst"]
 cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Triage alert"
+instruction = "Read the triggering alerts and detection data to confirm the incident and set initial severity."
+tools = ["crowdstrike_read", "splunk_read"]
+[[workflow]]
+name = "Scope and map"
+instruction = "Map observed activity to MITRE ATT&CK and determine affected hosts, accounts, and data."
+tools = ["splunk_read", "crowdstrike_read", "knowledge_search"]
+[[workflow]]
+name = "Preserve evidence"
+instruction = "Document the timeline and indicators preserving chain-of-custody for every artifact collected."
+tools = ["read_file"]
+[[workflow]]
+name = "Draft containment"
+instruction = "Recommend containment actions per NIST 800-61r3 noting which require human-gated quarantine or kill."
+[[workflow]]
+name = "CISO approval"
+instruction = "Route the incident case file and containment plan to the CISO for approval before any action."
 gate = "approval"

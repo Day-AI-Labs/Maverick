@@ -22,3 +22,31 @@ allow_hosts = ["*.moderntreasury.com", "*.kyriba.com"]
 mcp_servers = ["Treasury_ModernTreasury"]
 knowledge_sources = ["finance_debt_schedule", "finance_treasury_policy"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "daily cash position & funding proposals"
+consumers = ["treasurer", "cfo"]
+cadence = "daily"
+gate = "approval"
+
+[[workflow]]
+name = "Pull balances"
+instruction = "Read current balances and cleared transactions from every bank account via the banking reads."
+tools = ["bank_read_balance", "bank_read_transactions", "modern_treasury_read"]
+[[workflow]]
+name = "Build position"
+instruction = "Consolidate balances into a single dollar-accurate cash position citing the bank source for each line."
+tools = ["read_file", "build_cashflow_forecast"]
+[[workflow]]
+name = "Check covenants"
+instruction = "Test the position against debt covenants and flag any breach or negative-balance risk immediately."
+tools = ["covenant_check", "knowledge_search"]
+[[workflow]]
+name = "Draft sweeps"
+instruction = "Propose the transfers, sweeps, and fundings needed to cover shortfalls and concentrate idle cash."
+tools = ["propose_transfer"]
+[[workflow]]
+name = "Route to treasurer"
+instruction = "Hand the funding proposals to the human treasurer to approve and release the wires."
+gate = "approval"

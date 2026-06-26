@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "post-award grant administration package"
+consumers = ["grants_manager", "finance_director"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Load award terms"
+instruction = "Read the executed award, approved budget, and effort-certification requirements for each active grant."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Track budget burn"
+instruction = "Compare actual expenditures to the approved budget by category and flag over- or under-spend."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify effort certs"
+instruction = "Confirm required effort certifications are current and consistent with charged payroll for the period."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Check allowability"
+instruction = "Test flagged costs against funder and Uniform Guidance allowability rules before they are reported."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Route to grants manager"
+instruction = "Deliver the post-award administration package to the grants manager for sign-off."
+gate = "review"

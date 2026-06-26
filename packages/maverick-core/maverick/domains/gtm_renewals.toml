@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "renewal forecast & notice package"
+consumers = ["renewals_manager", "revenue_operations"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull renewal book"
+instruction = "Read the upcoming renewal book with contract terms, dates, and current ARR from Gainsight and account files."
+tools = ["read_file", "gainsight_read"]
+[[workflow]]
+name = "Verify entitlements"
+instruction = "Confirm contracted terms, dates, and pricing against the company's own contract records before forecasting."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Forecast renewals"
+instruction = "Project renewal likelihood and expected ARR per account, never auto-renewing or committing a price or discount."
+tools = ["gainsight_read"]
+[[workflow]]
+name = "Draft notices"
+instruction = "Draft renewal notices and paperwork from approved templates with a clear AI-assistant disclosure and no committed price."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Submit the forecast and draft notices to the renewals manager for human approval before anything is sent."
+gate = "review"

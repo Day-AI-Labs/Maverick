@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["proc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "RFP solicitation package & scoring matrix"
+consumers = ["procurement_manager", "sourcing_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Gather requirements"
+instruction = "Collect the scope, specifications, and evaluation criteria for the sourcing event from stakeholders and prior solicitations."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Benchmark terms"
+instruction = "Research market norms and comparable solicitations to inform realistic requirements and standard terms."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft package"
+instruction = "Assemble the complete RFP/RFQ package with scope, instructions, terms, and a weighted scoring rubric."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Tabulate responses"
+instruction = "Enter received supplier responses into the scoring matrix for fair side-by-side comparison."
+tools = ["spreadsheet", "sql_query"]
+[[workflow]]
+name = "Route for award"
+instruction = "Deliver the solicitation package and scored matrix to the sourcing lead, who owns the award decision."
+gate = "review"

@@ -17,9 +17,11 @@ class _Chan:
     def __init__(self):
         self.id = 555
         self.sent: list[str] = []
+        self.mentions: list = []
 
-    async def send(self, chunk):
+    async def send(self, chunk, allowed_mentions=None):
         self.sent.append(chunk)
+        self.mentions.append(allowed_mentions)
 
 
 class _Msg:
@@ -74,6 +76,24 @@ def test_discord_empty_reply_is_not_sent():
         allowed_user_ids={"123"}, dispatch_text=empty))
 
     assert chan.sent == []  # nothing sent, no empty-message API error
+
+
+def test_discord_suppresses_mention_amplification(monkeypatch):
+    # Agent output containing @everyone must NOT ping the guild: every send
+    # pins an AllowedMentions that suppresses mentions. We stub _no_mentions to
+    # a sentinel so the assertion holds whether or not discord.py is installed.
+    chan = _Chan()
+    monkeypatch.setattr(dmod, "_no_mentions", lambda: "SUPPRESSED")
+
+    async def echo(m):
+        return "@everyone free nitro"
+
+    asyncio.run(dmod._handle_discord_message(
+        _Msg("123", "hi", chan), bot_user=object(),
+        allowed_user_ids={"123"}, dispatch_text=echo))
+
+    assert chan.sent == ["@everyone free nitro"]   # text still delivered
+    assert chan.mentions == ["SUPPRESSED"]          # ...with mentions suppressed
 
 
 def test_discord_handler_error_does_not_leak_internals():

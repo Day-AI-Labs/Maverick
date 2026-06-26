@@ -18,3 +18,24 @@ deliverable = "Endorsement/service fulfillment"
 consumers = ["agency_manager"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Read request"
+instruction = "Capture the endorsement, certificate, or policy question and identify the affected policy and effective date."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Locate filed form"
+instruction = "Find the correct filed form and rating rule for the requested change or certificate."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Compute change"
+instruction = "Calculate any premium or limit change and confirm it conforms to the filed form before drafting."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft fulfillment"
+instruction = "Draft the endorsement, certificate, or answer using exact filed-form language cited to source."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the drafted service item to the agency manager for sign-off before issuance."
+gate = "review"

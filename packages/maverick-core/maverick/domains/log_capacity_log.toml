@@ -11,3 +11,29 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "lane capacity & tender-risk watchlist"
+consumers = ["logistics_manager", "procurement_lead"]
+cadence = "daily"
+
+[[workflow]]
+name = "Pull tenders"
+instruction = "Query tender acceptance and rejection history by lane and carrier for the period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Scan market"
+instruction = "Gather external market capacity and spot-rate signals for the relevant lanes."
+tools = ["web_search"]
+[[workflow]]
+name = "Compute rejection"
+instruction = "Calculate tender rejection rates per lane and compare against contracted volume commitments."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag at-risk lanes"
+instruction = "Identify lanes where rising rejections and tightening market capacity threaten coverage."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Brief planners"
+instruction = "Deliver the capacity watchlist with at-risk lanes to the logistics manager for tender or sourcing action."

@@ -9,3 +9,31 @@ max_risk = "low"
 deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 knowledge_sources = ["tmt"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "reconciled royalty statement"
+consumers = ["finance_reviewer", "royalty_accountant"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull terms"
+instruction = "Read the governing contracts and pull the royalty and residual rate terms from the knowledge base."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Query usage"
+instruction = "Query usage and sales data for the statement period tied to each rights holder."
+tools = ["sql_query"]
+[[workflow]]
+name = "Compute statement"
+instruction = "Apply the contract rates and tiers to the usage data and compute residuals and royalty totals."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Reconcile figures"
+instruction = "Reconcile computed totals against the agreement minimums and prior statements and flag every variance and assumption."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Finance review"
+instruction = "Route the cited royalty statement to the finance reviewer to approve before payout."
+gate = "review"

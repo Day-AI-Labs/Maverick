@@ -26,3 +26,24 @@ deliverable = "Earnings release & investor deck"
 consumers = ["ir_lead", "cfo"]
 cadence = "quarterly"
 gate = "approval"
+
+[[workflow]]
+name = "Pull results"
+instruction = "Read the trial balance and prior filings to establish the GAAP results for the period."
+tools = ["gl_read_trial_balance", "knowledge_search"]
+[[workflow]]
+name = "Reconcile non-GAAP"
+instruction = "Reconcile every non-GAAP measure to its GAAP basis per Reg G and flag forward-looking statements."
+tools = ["read_file"]
+[[workflow]]
+name = "Draft materials"
+instruction = "Draft the earnings release and investor deck consistent with the filing and prior disclosures."
+tools = ["draft_earnings_materials"]
+[[workflow]]
+name = "Check Reg FD"
+instruction = "Review for selective-disclosure and consistency risks against public sources before handoff."
+tools = ["web_search"]
+[[workflow]]
+name = "Route for release"
+instruction = "Route the earnings materials to the IR lead and CFO for approval before any external release."
+gate = "approval"

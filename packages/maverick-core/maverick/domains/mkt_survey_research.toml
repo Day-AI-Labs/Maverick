@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "market survey findings report"
+consumers = ["market_research_manager", "product_marketing_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Frame objectives"
+instruction = "Clarify the research questions, target audience, and decisions the survey must inform from the brief."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Draft instrument"
+instruction = "Write unbiased, non-leading questions with balanced scales and proper screening and routing logic."
+tools = ["read_file", "web_search"]
+[[workflow]]
+name = "Plan fielding"
+instruction = "Specify the sampling frame, target n, and quotas needed for representative, analyzable results."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Analyze results"
+instruction = "Tabulate responses and report findings with confidence intervals and sample-size caveats stated plainly."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Hand to manager"
+instruction = "Route the findings report to the research manager for sign-off before it informs decisions."
+gate = "review"

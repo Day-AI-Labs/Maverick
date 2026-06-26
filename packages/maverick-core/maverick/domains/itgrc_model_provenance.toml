@@ -18,3 +18,23 @@ deliverable = "Model-provenance evidence package"
 consumers = ["ciso", "compliance_officer"]
 cadence = "on-demand"
 gate = "approval"
+
+[[workflow]]
+name = "Collect artifacts"
+instruction = "Retrieve signing, attestation, and weights-provenance records for the candidate model artifact."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Verify chain"
+instruction = "Validate the fine-tune chain-of-custody and signature attestations back to a trusted origin."
+tools = ["read_file"]
+[[workflow]]
+name = "Scan for tampering"
+instruction = "Check the artifact against known backdoor and tampering indicators using external threat references."
+tools = ["web_search"]
+[[workflow]]
+name = "Assemble package"
+instruction = "Compile the provenance evidence package documenting attestations, gaps, and residual supply-chain risk."
+[[workflow]]
+name = "Route for approval"
+instruction = "Submit the evidence package to the CISO for the human deployment-approval gate."
+gate = "approval"

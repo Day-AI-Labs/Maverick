@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "campaign brief"
+consumers = ["marketing_director", "creative_lead"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture objective"
+instruction = "Read the campaign request and confirm the business objective, target audience, and success metric with cited sources."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Ground in brand"
+instruction = "Pull approved positioning, brand guidelines, and prior-campaign results to anchor message and channel choices."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Size budget"
+instruction = "Estimate channel mix, budget allocation, and projected reach in the spreadsheet from comparable past campaigns."
+tools = ["spreadsheet", "web_search"]
+[[workflow]]
+name = "Draft brief"
+instruction = "Write the brief covering audience, message, channels, budget, and measurement, marking assumptions and unknowns plainly."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Route the draft brief to the marketing director and creative lead for review before execution."
+gate = "review"

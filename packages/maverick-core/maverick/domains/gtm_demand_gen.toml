@@ -14,3 +14,30 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "campaign plan & pipeline brief"
+consumers = ["demand_gen_manager", "marketing_ops"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Set targets"
+instruction = "Read the pipeline goal, ICP segments, and budget envelope for the campaign."
+tools = ["read_file"]
+[[workflow]]
+name = "Research audience"
+instruction = "Research segment pain points, channels, and competitive messaging to inform positioning."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Baseline performance"
+instruction = "Pull prior campaign engagement and source-of-pipeline data from the MAP to set realistic targets."
+tools = ["marketo_read", "klaviyo_read"]
+[[workflow]]
+name = "Plan channels"
+instruction = "Draft the multi-channel plan, asset list, and projected pipeline contribution by channel."
+[[workflow]]
+name = "Submit for review"
+instruction = "Route the campaign plan and budget ask to the demand-gen manager for review before any spend."
+gate = "review"

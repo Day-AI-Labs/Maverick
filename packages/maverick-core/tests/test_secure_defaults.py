@@ -6,8 +6,26 @@ default and verify each control comes up hardened.
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
 from maverick.security_defaults import secure_by_default
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
+
+def _core_project_metadata() -> dict:
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    return tomllib.loads(pyproject.read_text(encoding="utf-8"))
+
+
+def test_core_install_requires_at_rest_crypto_backend():
+    deps = _core_project_metadata()["project"]["dependencies"]
+    assert any(dep.startswith("cryptography>=") for dep in deps)
 
 
 @pytest.fixture
@@ -57,6 +75,8 @@ def test_at_rest_encryption_on_by_default(secure, monkeypatch, tmp_path):
     from maverick import crypto_at_rest as car
     monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "keys" / "at_rest.key")
     assert car.at_rest_enabled() is True
+    if not car._have_crypto():
+        pytest.skip("cryptography is now a base dependency but is not installed in this environment")
     # Zero-config round-trip: the key auto-generates and seal->unseal restores.
     sealed = car.seal_to_str("PHI: patient record")
     assert sealed != "PHI: patient record"          # actually sealed

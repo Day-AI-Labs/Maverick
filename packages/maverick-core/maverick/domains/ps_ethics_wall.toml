@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "information barrier memo"
+consumers = ["general_counsel", "engagement_partner"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Identify conflict"
+instruction = "Read the conflicts check result and matter records to determine which parties and personnel trigger the barrier."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Scope wall"
+instruction = "Determine the specific files, systems, and individuals that must be screened on each side of the wall."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Document barrier"
+instruction = "Draft the screening memo listing screened personnel, restricted access, and acknowledgement requirements."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify coverage"
+instruction = "Cross-check the documented screen against the matter team roster to confirm no conflicted person retains access."
+tools = ["sql_query"]
+[[workflow]]
+name = "Counsel approval"
+instruction = "Route the information barrier memo to general counsel and the engagement partner for approval before it takes effect."
+gate = "approval"

@@ -21,3 +21,22 @@ deliverable = "DPIA"
 consumers = ["privacy_officer", "compliance_officer"]
 cadence = "on-demand"
 gate = "approval"
+
+[[workflow]]
+name = "Scope processing"
+instruction = "Read the processing description, data flows, and lawful basis for the activity under assessment."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Test necessity"
+instruction = "Assess necessity and proportionality of the processing against the stated purpose under GDPR Art 35."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Build risk register"
+instruction = "Enumerate risks to data subjects with likelihood and severity following the ISO 29134 method."
+[[workflow]]
+name = "Propose measures"
+instruction = "Propose mitigating measures and assess residual risk, flagging any that would require prior consultation with the regulator."
+[[workflow]]
+name = "Route to privacy owner"
+instruction = "Route the completed DPIA to the privacy officer for sign-off since the agent never closes a finding or notifies a regulator itself."
+gate = "approval"

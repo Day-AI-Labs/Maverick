@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["edu"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "consented beneficiary impact story"
+consumers = ["development_director", "communications_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Identify candidates"
+instruction = "Search program records and prior reports to identify beneficiaries whose journeys illustrate the program's intended impact."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Verify consent"
+instruction = "Confirm a signed release and FERPA/privacy consent is on file for each beneficiary and quote of theirs before any story is drafted."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Draft story"
+instruction = "Draft the impact narrative grounded only in documented facts and consented quotes, flagging any detail not backed by a source."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Strip identifiers"
+instruction = "Remove or redact any identifying detail not covered by the consent scope and log which permission file authorizes each remaining element."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the drafted story and its consent log to the development director for review before any external use."
+gate = "review"

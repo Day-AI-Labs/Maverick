@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "punch list by responsible party"
+consumers = ["superintendent", "project_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Compile items"
+instruction = "Read inspection notes and walk records to compile all open punch items by location and trade."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Assign party"
+instruction = "Assign each item to the responsible subcontractor and capture the contractual basis for the callout."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Track status"
+instruction = "Maintain status, due dates, and aging for each item in the punch list spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Verify closeout"
+instruction = "Confirm each item marked complete has documented evidence before closing it rather than taking the sub's word."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Report open"
+instruction = "Route the remaining open items by responsible party to the superintendent for push to completion."
+gate = "review"

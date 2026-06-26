@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "billing dispute finding"
+consumers = ["billing_analyst", "support_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Capture dispute"
+instruction = "Read the customer's dispute to identify the exact charge, period, and amount being contested."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile records"
+instruction = "Pull the invoice, usage records, and plan terms and reconcile the disputed charge line by line against them."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Determine validity"
+instruction = "Conclude whether the charge is correct, partially correct, or in error, and quantify any discrepancy with citations."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Assemble finding"
+instruction = "Assemble the finding with evidence and a recommended remedy, without promising a refund or credit to the customer."
+[[workflow]]
+name = "Billing review"
+instruction = "Route the finding to the billing team for sign-off before any adjustment is communicated to the customer."
+gate = "review"

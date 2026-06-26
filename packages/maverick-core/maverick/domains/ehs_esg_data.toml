@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ehs"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "ESG metrics package with methodology"
+consumers = ["sustainability_lead", "esg_reporting_manager"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Scope metrics"
+instruction = "Read the ESG reporting framework to confirm which metrics and boundaries are in scope this period."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Gather source data"
+instruction = "Collect the underlying source records for each metric from the company's own documents."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Validate & compute"
+instruction = "Apply the documented methodology, recompute each metric, and reconcile against source totals."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Document basis"
+instruction = "Record the methodology, conversion factors, assumptions, and gaps behind each reported figure."
+tools = ["spreadsheet", "web_search"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the metrics package and methodology notes to the sustainability lead for sign-off."
+gate = "review"

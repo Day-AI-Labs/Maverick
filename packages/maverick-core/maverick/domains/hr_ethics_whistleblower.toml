@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file", "web_search"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "whistleblower triage & routing memo"
+consumers = ["ethics_officer", "general_counsel"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Intake report"
+instruction = "Capture the hotline report verbatim and confirm the reporter's chosen anonymity or confidentiality level."
+tools = ["read_file"]
+[[workflow]]
+name = "Match policy"
+instruction = "Search the code of conduct and escalation matrix for the applicable category and routing owner, and cite what you used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Triage severity"
+instruction = "Assign category, severity, and urgency and flag any conflict requiring an independent channel."
+[[workflow]]
+name = "Strip identifiers"
+instruction = "Redact reporter-identifying details to preserve anonymity before the memo leaves intake."
+[[workflow]]
+name = "Route to ethics"
+instruction = "Hand the confidential triage memo to the Ethics Officer or General Counsel for investigation assignment."
+gate = "approval"

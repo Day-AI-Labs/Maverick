@@ -56,10 +56,13 @@ Each plugin entry must conform to a contract:
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import re
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from .embeddable import no_cli
@@ -340,20 +343,34 @@ def _plugin_signing_policy() -> tuple[str | None, bool, set[str]]:
             require = True
     except Exception:  # pragma: no cover
         pass
+    # Honor the CA's *signed* CRL (maverick plugin-ca revoke), not just the
+    # config list -- otherwise revoking a compromised publisher via the CA had
+    # zero effect at load time. A present-but-unverifiable CRL (tampered sig /
+    # bad JSON) is a security event: we can't prove a cert ISN'T revoked, so
+    # fail closed (revoked=None -> verify_artifact refuses every signed plugin).
+    # A genuinely-absent CRL just means "no CA revocations yet" -> config-only.
+    if root:
+        try:
+            from .plugin_ca import PluginCA
+            ca = PluginCA()
+            if ca._crl_path.exists():
+                revoked |= ca.revoked_serials(root_pub=root)
+        except Exception:
+            return (root or None, True, None)
     return (root or None, require or bool(root), revoked)
 
 
-def _ep_module_file(ep):
-    """On-disk path of the entry point's module WITHOUT importing it.
-
-    Resolved through the providing distribution's file manifest so the
-    signature can be checked BEFORE ``ep.load()`` runs any plugin code. ``None``
-    when it can't be located (caller fails closed under require_signing).
-    """
-    from pathlib import Path
+def _ep_module_name(ep) -> str:
     module = (getattr(ep, "value", "") or "").split(":", 1)[0].strip()
     if not module:
         module = getattr(ep, "module", "") or ""
+    return module
+
+
+def _ep_module_file(ep):
+    """On-disk path of the entry point's module WITHOUT importing it."""
+    from pathlib import Path
+    module = _ep_module_name(ep)
     dist = getattr(ep, "dist", None)
     if not module or dist is None:
         return None
@@ -372,12 +389,59 @@ def _ep_module_file(ep):
     return None
 
 
+def _ep_importable_files(ep) -> dict[str, str] | None:
+    """Return importable plugin Python files and sha256s without importing code."""
+    module = _ep_module_name(ep)
+    dist = getattr(ep, "dist", None)
+    if not module or dist is None:
+        return None
+    top = module.split(".", 1)[0]
+    module_rel = module.replace(".", "/")
+    try:
+        dist_files = list(dist.files or [])
+    except Exception:
+        return None
+    files: dict[str, str] = {}
+    for f in dist_files:
+        rel = str(f).replace("\\", "/")
+        is_module = rel in {module_rel + ".py", module_rel + "/__init__.py"}
+        is_package_file = rel.startswith(top + "/") and rel.endswith(".py")
+        if not (is_module or is_package_file):
+            continue
+        try:
+            data = Path(dist.locate_file(f)).read_bytes()
+        except Exception:
+            return None
+        files[rel] = hashlib.sha256(data).hexdigest()
+    if module_rel + ".py" not in files and module_rel + "/__init__.py" not in files:
+        return None
+    return dict(sorted(files.items()))
+
+
+def _plugin_manifest_digest(manifest: dict) -> str:
+    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _expected_plugin_signature_manifest(ep) -> dict | None:
+    files = _ep_importable_files(ep)
+    if not files:
+        return None
+    return {
+        "schema": "maverick-plugin-signature-manifest-v1",
+        "dist": _ep_dist_name(ep) or "",
+        "entry_point": getattr(ep, "name", "") or "",
+        "module": _ep_module_name(ep),
+        "files": files,
+    }
+
+
 def _ep_signature_bundle(ep):
     """The plugin's signing bundle (plugin_ca: digest/sig/cert), or ``None``.
 
     Convention: the publisher ships ``maverick_plugin.sig.json`` -- a
-    :func:`maverick.plugin_ca.sign_artifact` bundle over the entry point's module
-    file -- as a data file in the distribution.
+    :func:`maverick.plugin_ca.sign_digest` bundle over a manifest that binds the
+    distribution, entry point, module path, and importable package file digests.
     """
     from pathlib import Path
     dist = getattr(ep, "dist", None)
@@ -400,20 +464,22 @@ def _ep_signature_bundle(ep):
 def _plugin_signature_ok(ep, root_pub: str | None, revoked: set[str]) -> bool:
     """Fail-closed plugin-artifact verification against the configured CA root.
 
-    Returns True only when the entry point's module file carries a bundle that
+    Returns True only when the plugin distribution carries a manifest bundle that
     chains to ``root_pub`` (cert signed by root, unexpired, unrevoked, artifact
     digest + signature valid). require_signing with no root anchor (``root_pub``
     None) cannot be satisfied safely, so it returns False.
     """
     if not root_pub:
         return False
-    from .plugin_ca import verify_artifact
-    artifact = _ep_module_file(ep)
+    from .plugin_ca import verify_digest
     bundle = _ep_signature_bundle(ep)
-    if artifact is None or not bundle:
+    manifest = _expected_plugin_signature_manifest(ep)
+    if not bundle or not manifest or bundle.get("manifest") != manifest:
         return False
     try:
-        res = verify_artifact(artifact, bundle, root_pub=root_pub, revoked=revoked)
+        res = verify_digest(
+            _plugin_manifest_digest(manifest), bundle, root_pub=root_pub, revoked=revoked
+        )
     except Exception as e:  # pragma: no cover -- verifier bug must fail closed
         log.warning("plugin signature verification error: %s", e)
         return False

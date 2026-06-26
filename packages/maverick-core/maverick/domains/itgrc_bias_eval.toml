@@ -7,6 +7,7 @@ persona = """You are the Bias & Fairness Evaluation specialist: evaluate consequ
 
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "itgrc" collection
@@ -20,4 +21,24 @@ shape = "report"
 deliverable = "Bias audit"
 consumers = ["privacy_officer", "compliance_officer"]
 cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Define protected groups"
+instruction = "Read the system documentation and applicable rules to identify the consequential decision, protected classes, and outcome definitions."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify data"
+instruction = "Confirm the outcome and demographic data is representative and sufficient before computing any fairness metric."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Compute metrics"
+instruction = "Calculate four-fifths, demographic parity, and equalized odds across groups and identify where disparate impact appears."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Draft audit"
+instruction = "Draft the bias-audit export with methodology, metric results, limitations, and recommended mitigations."
+[[workflow]]
+name = "Privacy review"
+instruction = "Route the bias audit to the privacy officer for review before it informs any deployment decision."
 gate = "review"

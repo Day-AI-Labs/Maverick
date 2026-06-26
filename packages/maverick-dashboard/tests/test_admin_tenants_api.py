@@ -81,5 +81,31 @@ def test_admin_required_when_caller_is_viewer(monkeypatch):
     # the caller's role, and "view" lacks "admin".
     monkeypatch.setattr(auth, "caller_principal", lambda request: "user:viewer")
     monkeypatch.setattr(auth, "role_for_principal", lambda principal: "viewer")
+    monkeypatch.setattr(auth, "global_role_for_principal", lambda principal: "viewer")
     assert client.get("/api/v1/admin/tenants").status_code == 403
     assert client.post("/api/v1/admin/tenants", json={"id": "x"}).status_code == 403
+
+
+def test_tenant_admin_cannot_manage_other_tenant_roles(monkeypatch):
+    """Tenant-scoped admin must not satisfy global tenant-admin APIs."""
+    from maverick.paths import reset_tenant, set_tenant
+    from maverick_dashboard import auth, rbac
+
+    assert client.post("/api/v1/admin/tenants", json={"id": "acme"}).status_code == 201
+    assert client.post("/api/v1/admin/tenants", json={"id": "globex"}).status_code == 201
+    rbac.set_role("user:alice", "viewer")
+    rbac.set_tenant_role("acme", "user:alice", "admin")
+    monkeypatch.setattr(auth, "caller_principal", lambda request: "user:alice")
+
+    tok = set_tenant("acme")
+    try:
+        assert auth.role_for_principal("user:alice") == "admin"
+        r = client.put(
+            "/api/v1/admin/tenants/globex/roles/user:bob",
+            json={"role": "viewer"},
+        )
+    finally:
+        reset_tenant(tok)
+
+    assert r.status_code == 403
+    assert rbac.get_tenant_role("globex", "user:bob") is None

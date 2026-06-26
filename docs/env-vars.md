@@ -16,7 +16,7 @@ for false unless noted otherwise.
 | Env var | Default | Description |
 | --- | --- | --- |
 | `MAVERICK_CONFIG` | `~/.maverick/config.toml` | Path to an alternate config file. |
-| `MAVERICK_CODING_MODE` | unset | When `1`/`true`/`yes`, switches the agent into coding mode (set by the `maverick code` CLI path); affects prompts, fs/shell tool defaults, and cache TTL. |
+| `MAVERICK_CODING_MODE` | unset | When `1`/`true`/`yes`, switches the agent into coding mode (set by `maverick start --coding-mode`); affects prompts, fs/shell tool defaults, and cache TTL. |
 | `MAVERICK_LANGUAGE` | unset | Primary project language hint (e.g. `python`, `go`). Feeds sandbox/toolchain selection and coding mode. |
 | `MAVERICK_MAX_STEPS` | `25` | Global cap on agent loop steps per goal. |
 | `MAVERICK_STEP_BUDGET_WARNING` | `3` | When this many tool-using turns remain before `MAVERICK_MAX_STEPS`, the loop nudges the agent to give its FINAL answer (so a long run isn't cut off mid-work). `0` disables. |
@@ -75,6 +75,8 @@ for false unless noted otherwise.
 | `MAVERICK_TOT_CANDIDATES` | built-in | Number of candidate plans tree-of-thought forks. |
 | `MAVERICK_REFLEXION` | config `[reflexion] enable` (off) | Enable the reflexion self-critique loop. |
 | `MAVERICK_DREAMING` | config `[dreaming] enable` (off) | Enable offline experience consolidation (`maverick dream`). |
+| `MAVERICK_SELF_HARNESS` | config `[self_harness] enable` (off) | Enable the self-harness loop: learn a model-specific, regression-validated operating-guidance addendum from failure traces (`maverick self-harness`; promotion also needs `[self_improvement] enable`). |
+| `MAVERICK_FACTORY_LEARNING` | config `[self_improvement] enable` (off) | Force-enable the self-improving-factory loop: mine provisioning/approval gaps into proposer corrections, promoted on the `prompt` rung and folded into future pack generation (`maverick factory-learn`; needs `[self_improvement] enable`). Overrides config. |
 | `MAVERICK_DATA_ENGINE` | config `[data_engine] enable` (off) | Enable the Cognitive Data Engine flywheel: causal failure triage → guardrails → habits (`maverick flywheel`). |
 | `MAVERICK_OPERATIONS_SCIENTIST` | config `[operations_scientist] enable` (off) | Enable the Operations Scientist: propose + simulate a better process before a real experiment. |
 | `MAVERICK_CONSEQUENCE` | config `[consequence] enable` (off) | Ground learning in real downstream outcomes over the verifier proxy (`maverick record-outcome`). |
@@ -102,7 +104,7 @@ for false unless noted otherwise.
 | `MAVERICK_SELF_LEARNING` | config `[self_learning] enable` (off) | Enable the self-learning loop. |
 | `MAVERICK_SKILL_DECAY` | `1` (on) | Set `0` to disable time-decay of skill usefulness stats. |
 | `MAVERICK_ALLOW_SKILL_INSTALL` | unset (off) | Opt in to installing skills from free-text URLs. |
-| `MAVERICK_VECTOR_STORE` | config `[memory] backend` | Semantic-recall backend: `chroma`, `qdrant`, or unset/`none` to disable. |
+| `MAVERICK_VECTOR_STORE` | config `[memory] backend` | Semantic-recall backend: `chroma`, `qdrant`, `weaviate`, `pgvector`, or unset/`none` to disable. |
 | `MAVERICK_CHROMA_PATH` | `~/.maverick/...` default | On-disk path for the Chroma vector store. |
 | `MAVERICK_QDRANT_URL` | unset | Qdrant server URL (remote mode). |
 | `MAVERICK_QDRANT_PATH` | default path | Qdrant local on-disk path (embedded mode). |
@@ -116,8 +118,10 @@ for false unless noted otherwise.
 
 | Env var | Default | Description |
 | --- | --- | --- |
-| `MAVERICK_STRICT_TENANT_ISOLATION` | config `[world_model] strict_tenant_isolation` (off) | Postgres reads return ONLY the active tenant's rows (drop NULL-legacy tolerance). Enable after backfilling `tenant_id`. |
-| `MAVERICK_KMS_KEK` | derived from the at-rest key | The per-tenant-DEK Key Encryption Key (32 bytes, hex/base64) for `tenant_kms`. |
+| `MAVERICK_STRICT_TENANT_ISOLATION` | config `[world_model] strict_tenant_isolation`; **auto-on under enterprise mode** | Postgres reads return ONLY the active tenant's rows (drop NULL-legacy tolerance). Enable after backfilling `tenant_id`. Env wins over config wins over enterprise default. |
+| `MAVERICK_PG_RLS` | config `[world_model] rls`; **auto-on under enterprise mode** | DB-native Postgres Row-Level Security on the tenant tables (defense-in-depth over the app predicate). When auto-enabled by enterprise mode, a boot preflight refuses to start on legacy `tenant_id IS NULL` rows (run `maverick tenant backfill`); explicit `=1` keeps the fail-closed opt-in path. |
+| `MAVERICK_KMS_KEK` | derived from the at-rest key | The per-tenant-DEK Key Encryption Key (32 bytes, hex/base64) for `tenant/kms.py`. |
+| `MAVERICK_KMS_DEK_CACHE_TTL` | config `[kms] dek_cache_ttl` (`0` = process lifetime) | Seconds a tenant DEK stays cached before it must be re-unwrapped by the KMS. A positive TTL bounds how long a *revoked* cloud-KMS key keeps opening data (the next access re-hits the KMS and fails closed). Per-tenant **BYOK** is configured in each tenant's own `tenants/<id>/config.toml` `[kms]` section (provider/key_id/region), resolved deterministically by `get_kms(tenant_id)`. **Rolling the local KEK** across the fleet: `maverick tenant kms-rotate --old-kek-file /run/secrets/old-kek --new-kek-file /run/secrets/new-kek` (re-wrap only, idempotent/resumable, `--dry-run` to preview; omit file options to use hidden prompts). Avoid passing KEKs in command-line arguments; set `MAVERICK_KMS_KEK` to the new value live only after rotation reports 0 failed. Cloud/BYOK rotation uses `tenant.kms.rotate_kek_fleet` with per-tenant resolvers. |
 | `MAVERICK_MCP_ANALYTICS` | config `[analytics] mcp_client_language` (off) | Opt-in, consent-gated tally of MCP-client language (feeds the language-bindings gate). |
 | `IRC_ALLOWED_ACCOUNTS` | — | Comma-separated allowlist of authenticated IRC account names that may drive the agent over the IRC channel. Requires an IRC server that provides the IRCv3 `account-tag` capability. |
 | `GLASSES_ALLOWED_USER_IDS` | — | Allowlist for the glasses/wearable channel. |
@@ -147,6 +151,7 @@ Config equivalents live under `[effort]` (`enabled`, `default`, `<role>`) and
 | Env var | Default | Description |
 | --- | --- | --- |
 | `MAVERICK_COMPACT_HISTORY` | config `[context] compact` (off) | Enable history compaction. |
+| `MAVERICK_COMPACT_TIKTOKEN` | `1` | Use a real local BPE tokenizer (tiktoken) for compaction token counts when installed; `0` forces the `len/4` heuristic. Fails open to the heuristic if tiktoken is absent. |
 | `MAVERICK_HISTORY_WINDOW` | config `[context]` | Max number of recent turns kept verbatim. |
 | `MAVERICK_HISTORY_TOKENS` | config `[context]` | Max history tokens before compaction triggers. |
 | `MAVERICK_COMPACT_KEEP_RECENT` | `4` | Recent turns always kept uncompacted. |
@@ -207,6 +212,18 @@ Config equivalents live under `[effort]` (`enabled`, `default`, `<role>`) and
 | `MAVERICK_AI_DISCLOSURE` | config `[compliance] disclosure_text` | AI-disclosure text appended to outputs; empty string opts out. |
 | `MAVERICK_STRIPE_ENABLE_REFUNDS` | unset (off) | Required to allow the Stripe tool to issue real refunds. |
 
+## Secrets, residency & audit forwarding
+
+| Env var | Default | Description |
+| --- | --- | --- |
+| `MAVERICK_SECRETS_BACKEND` | config `[secrets] backend` (`env`) | Where deployment secrets are read from. `env` = process environment (default, unchanged). `file` = mounted secret files (Vault Agent / Secrets Store CSI / Docker/podman secrets), one secret per file, with env fallback. Applies to OIDC client/session secrets, the inbound webhook secret, and the SCIM bearer. |
+| `MAVERICK_SECRETS_DIR` | config `[secrets] dir` | Directory the `file` backend reads (`<dir>/MAVERICK_OIDC_CLIENT_SECRET`, etc.; trailing newline trimmed). |
+| `MAVERICK_RESIDENCY_STRICT` | config `[residency] strict` (off) | Refuse to boot when the declared data region is missing or outside the allowed set (`require_residency_or_die`). Off = informational only. |
+| `MAVERICK_DATA_REGION` | config `[residency] region` | The deployment's declared data region (ISO code or group, e.g. `DE`, `EU`). |
+| `MAVERICK_RESIDENCY_ALLOWED` | config `[residency] allowed_regions` | Comma-separated permitted storage regions; `EU`/`EEA` groups expand to members. Empty = region unconstrained. |
+| `MAVERICK_SIEM_DEST` | config `[audit] siem_dest` | Destination for `maverick audit forward`: `tcp://host:port` / `udp://host:port` (syslog) or `http(s)://host/path` (Splunk HEC `/raw`, etc.). |
+| `MAVERICK_SIEM_TOKEN` | — | Bearer sent on HTTP(S) audit forwarding (read via the secret provider). |
+
 ## Observability
 
 | Env var | Default | Description |
@@ -259,6 +276,8 @@ system-specific shapes (e.g. `SERVICENOW_INSTANCE_URL`, `SNOWFLAKE_ACCOUNT`,
 | `<SYSTEM>_BASE_URL` / `<SYSTEM>_TOKEN` | unset | Per-connector endpoint + credential; see [connectors.md](connectors.md). Writes stay confirm-gated regardless. |
 | `DATABASE_URL` | unset | SQLAlchemy URL for the `database` tool (Postgres / MySQL / SQL Server / Oracle / Redshift / ...). |
 | `MAVERICK_ENABLE_CRED_TOOLS` | unset (off) | `1`/`true` registers connectors that can use ambient host credentials (AWS Lambda/DynamoDB, Google Drive, Airtable, Asana, ClickUp, Vercel). Off by default. |
+| `MAVERICK_WORKFORCE_DATA_GROUNDING` | config `[workforce] data_grounding` (on) | Kill-switch for primary-source data grounding. When on, each analyst pack is auto-granted its suite's 37 read-only public-data connectors (SEC EDGAR, FRED, openFDA, USAspending, NWS/NOAA weather, ...) — GET-only, low-risk, deferred. Set `off`/`0` to withhold them. See [connectors.md](connectors.md). |
+| `MAVERICK_WORKFORCE_LEVELS` | config `[workforce] levels` (off) | Enable per-agent autonomy levels (observe/suggest/request/auto). Off = every agent stages actions for human execution. |
 
 ## Agent-to-agent (A2A)
 

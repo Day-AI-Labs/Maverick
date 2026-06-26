@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "3PL inventory reconciliation & discrepancy log"
+consumers = ["inventory_manager", "third_party_logistics_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull system counts"
+instruction = "Query system-of-record on-hand by SKU and location for the reconciliation period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Load 3PL report"
+instruction = "Read the 3PL-reported inventory file and the warehouse contract terms via knowledge_search."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Reconcile variances"
+instruction = "Match 3PL quantities to system records by SKU and quantify unit and dollar variances in the spreadsheet."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Open discrepancy cases"
+instruction = "Classify each material variance by likely cause and draft a discrepancy case with supporting evidence."
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Send the reconciliation and discrepancy log to the inventory manager for review before any 3PL dispute."
+gate = "review"

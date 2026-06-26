@@ -540,6 +540,11 @@ def get_self_learning() -> dict:
         "enable": bool(cfg.get("enable", False)),
         "preflight": bool(cfg.get("preflight", True)),
         "create_tools": bool(cfg.get("create_tools", True)),
+        # The agent factory equips a freshly approved pack with the catalog
+        # skills + synthesized tools its workflow needs (maverick.provision).
+        # On by default once self-learning is accepted; still bounded by
+        # ``max_acquisitions`` and the per-tool consent gate.
+        "provision_packs": bool(cfg.get("provision_packs", True)),
         # Agent-proposed MCP-server acquisition is the highest-trust knob:
         # even gated behind catalog-pinning + operator consent it can start
         # a third-party subprocess, so it ships OFF independently of the
@@ -582,6 +587,48 @@ def get_autonomy() -> dict:
         # (headless / batch / benchmark runs). Default off.
         "headless_assume": bool(cfg.get("headless_assume", False)),
     }
+
+
+def get_workforce() -> dict:
+    """Return the ``[workforce]`` section: per-agent autonomy levels.
+
+    This is the client's control over how much rope each hired agent gets (see
+    :mod:`maverick.agent_autonomy`). OFF by default (kernel rule 1): when
+    ``levels`` is not enabled, every agent resolves to ``suggest`` (draft, a
+    human commits) -- the platform's historical behavior.
+
+    ``[workforce]
+       levels = true
+       [[workforce.agents]]
+       name = "fin_ap_clerk"
+       default = "auto"          # this hire acts autonomously by default
+       high = "human"            # ...but high-risk actions stay human-in-loop
+       onboarding = false        # graduated past the supervised phase``
+
+    Returns ``{"levels": bool, "agents": {name: {default, low, medium, high,
+    onboarding}}}`` with only the keys an operator set (the resolver layers them
+    over each pack's declared ``[autonomy]`` default). Never raises.
+    """
+    cfg = load_config().get("workforce", {})
+    if not isinstance(cfg, dict):
+        return {"levels": False, "agents": {}}
+    agents: dict[str, dict] = {}
+    raw = cfg.get("agents")
+    if isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            if not name:
+                continue
+            agents[name] = {
+                k: entry[k] for k in ("default", "low", "medium", "high", "onboarding")
+                if k in entry
+            }
+    out = {"levels": bool(cfg.get("levels", False)), "agents": agents}
+    if "data_grounding" in cfg:
+        out["data_grounding"] = bool(cfg.get("data_grounding"))
+    return out
 
 
 def get_calibration() -> dict:
@@ -880,6 +927,11 @@ def get_self_improvement() -> dict:
         # baseline/candidate diff. Off by default; the controller only consults a
         # causal effect when this is set.
         "causal_promotion": bool(cfg.get("causal_promotion", False)),
+        # Self-improving agent factory (maverick.factory_learning): mine recurring
+        # pack-generation gaps into proposer corrections and promote them through
+        # this same gate. Sub-toggle of the master switch -- on once
+        # self-improvement is accepted; set false to keep the generator static.
+        "factory_learning": bool(cfg.get("factory_learning", True)),
     }
 
 

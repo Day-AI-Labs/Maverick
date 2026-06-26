@@ -11,3 +11,26 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "fraud-flag review packet"
+consumers = ["fraud_analyst", "cx_manager"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Pull interaction history"
+instruction = "Query the account's support, refund, and login history for the patterns that signal refund abuse or takeover."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Score against patterns"
+instruction = "Compare observed behavior to documented fraud and ATO indicators and assemble the matching evidence."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Assess and justify"
+instruction = "Assign a risk rating with the specific signals that drove it, distinguishing confirmed indicators from assumptions."
+[[workflow]]
+name = "Route to fraud review"
+instruction = "Hand the flagged packet to the fraud analyst for human review before any account action is taken."
+gate = "review"

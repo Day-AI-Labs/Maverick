@@ -43,3 +43,19 @@ def test_refuses_to_write_unsigned_under_a_compliance_floor(tmp_path, monkeypatc
     log = writer.AuditLog(tmp_path / "audit")
     with pytest.raises(RuntimeError, match="refusing to write UNSIGNED"):
         log.record(_event())
+
+
+def test_offhost_requirement_refuses_unsigned_audit_write(tmp_path, monkeypatch):
+    def _offhost_required(_path):
+        raise signing.OffHostSigningRequiredError(
+            "off-host audit signing is required but no off-host key is configured"
+        )
+
+    monkeypatch.setattr(signing, "AuditSigner", _offhost_required)
+
+    log = writer.AuditLog(tmp_path / "audit", sign=True)
+    with pytest.raises(signing.OffHostSigningRequiredError, match="off-host audit signing is required"):
+        log.record(_event())
+
+    rows = list((tmp_path / "audit").glob("*.ndjson"))
+    assert not rows or all(path.read_text() == "" for path in rows)

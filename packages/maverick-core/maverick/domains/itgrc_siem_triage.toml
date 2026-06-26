@@ -14,3 +14,31 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["itgrc"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Alert triage & detection-rule package"
+consumers = ["security_analyst", "ciso"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull alerts"
+instruction = "Read the open alert queue and the underlying logs from Splunk and QRadar for the triage window."
+tools = ["splunk_read", "qradar_read", "read_file"]
+[[workflow]]
+name = "Correlate events"
+instruction = "Correlate related log events and map observed behavior to MITRE ATT&CK techniques."
+tools = ["splunk_read", "qradar_read"]
+[[workflow]]
+name = "Enrich and score"
+instruction = "Enrich each alert with threat intel and context to separate true positives from noise."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Tune detections"
+instruction = "Draft or refine Sigma detection rules translated to SPL or KQL to close the gaps the alerts revealed."
+tools = ["read_file"]
+[[workflow]]
+name = "Route to analyst"
+instruction = "Hand the triaged alerts and proposed rule and suppression changes to the security analyst for review."
+gate = "review"

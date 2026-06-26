@@ -11,3 +11,31 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ret"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "item-master data quality package"
+consumers = ["category_manager", "merchandising_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull item records"
+instruction = "Query the item master for the items in scope with their attributes, image references, and compliance flags."
+tools = ["sql_query"]
+[[workflow]]
+name = "Check standards"
+instruction = "Retrieve the data standards and compliance requirements from knowledge for each affected category."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Audit completeness"
+instruction = "Score each item for missing attributes, absent or mismatched images, and unset compliance flags against the standard."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Propose corrections"
+instruction = "Draft the proposed attribute, image, and flag corrections with the source justifying each change."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Submit the data quality package and proposed edits to the category manager for approval before any master-data change."
+gate = "review"

@@ -14,3 +14,32 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["gtm"]
 
 authoring = "manual"
+
+[output]
+shape = "forecast"
+deliverable = "NRR/GRR retention bridge"
+consumers = ["revops_lead", "cfo", "cs_leadership"]
+cadence = "monthly"
+gate = "review"
+
+[[workflow]]
+name = "Pull movement"
+instruction = "Read the period's expansion, contraction, and churn records from the system of record read-only."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Build bridge"
+instruction = "Assemble the NRR and GRR waterfall from starting ARR through expansion, contraction, and churn to ending ARR."
+[[workflow]]
+name = "Attribute drivers"
+instruction = "Attribute each movement to its driver without inventing or restating any committed forecast number."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Reconcile total"
+instruction = "Verify the bridge ties out to the source ARR balances before any number leaves the model."
+[[workflow]]
+name = "Draft plan"
+instruction = "Draft the retention plan addressing the largest contraction and churn drivers in the bridge."
+[[workflow]]
+name = "Route to RevOps"
+instruction = "Hand the bridge and retention plan to the RevOps lead for human commit before it feeds finance."
+gate = "review"

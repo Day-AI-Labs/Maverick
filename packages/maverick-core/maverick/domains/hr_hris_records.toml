@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Employee master-data quality package"
+consumers = ["hris_analyst", "people_operations_lead"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull master data"
+instruction = "Read employee master records from the HRIS using the minimum special-category fields the task needs."
+tools = ["bamboohr_read", "rippling_read", "read_file"]
+[[workflow]]
+name = "Check standards"
+instruction = "Look up the data-quality and retention standards governing the records being reviewed."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Detect anomalies"
+instruction = "Compare records against the standards and flag missing, stale, or inconsistent fields."
+[[workflow]]
+name = "Draft corrections"
+instruction = "Prepare a gated list of proposed record changes with the rationale and source for each."
+[[workflow]]
+name = "Route for approval"
+instruction = "Send the proposed record changes to a human records owner to approve before any update."
+gate = "review"

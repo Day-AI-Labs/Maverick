@@ -18,3 +18,24 @@ deliverable = "Exam/audit PBC package"
 consumers = ["internal_auditor", "compliance_officer"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Parse request list"
+instruction = "Read the examiner or auditor request list and break it into discrete, owned PBC items."
+tools = ["read_file"]
+[[workflow]]
+name = "Locate evidence"
+instruction = "Find the source document or query result satisfying each request item via knowledge_search and sql_query."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Check completeness"
+instruction = "Reconcile gathered evidence against the request list and flag missing, stale, or partial items with owners and due dates."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Index package"
+instruction = "Assemble the indexed PBC package with each item cross-referenced to its request number and source citation."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Route to audit"
+instruction = "Hand the indexed PBC package to the internal auditor and compliance officer for review before delivery to examiners."
+gate = "review"

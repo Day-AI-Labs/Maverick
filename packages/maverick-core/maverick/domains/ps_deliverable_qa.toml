@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["ps"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "deliverable QA sign-off report"
+consumers = ["engagement_manager", "engagement_partner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read scope"
+instruction = "Read the engagement letter and scope definition to extract the required deliverables and acceptance criteria."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull standards"
+instruction = "Retrieve the firm quality standards and prior approved deliverables of the same type as the benchmark."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Check deliverable"
+instruction = "Compare the draft deliverable against scope and quality standards and record each pass or fail with the source citation."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Flag gaps"
+instruction = "Surface any out-of-scope content, unmet criteria, or unsupported claims as blocking issues for resolution."
+[[workflow]]
+name = "Partner sign-off"
+instruction = "Route the QA report to the engagement manager and partner for release sign-off."
+gate = "review"

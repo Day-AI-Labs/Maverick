@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["mkt"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "brand & claims compliance review"
+consumers = ["brand_manager", "legal_reviewer", "content_owner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Receive asset"
+instruction = "Take in the outbound asset and identify its channel, audience, and intended claims."
+tools = ["read_file"]
+[[workflow]]
+name = "Load guidelines"
+instruction = "Pull the current brand, legal, and claims guidelines that apply to this asset."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Check violations"
+instruction = "Compare the asset against each guideline and list exact violations with their location."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Cite basis"
+instruction = "Trace each flagged violation to the specific guideline clause it breaches."
+tools = ["read_file"]
+[[workflow]]
+name = "Route review"
+instruction = "Send the violation list to the content owner and brand manager for sign-off."
+gate = "review"

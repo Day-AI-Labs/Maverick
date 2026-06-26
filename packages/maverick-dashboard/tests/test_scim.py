@@ -83,6 +83,44 @@ class TestAuth:
         assert c.get("/scim/v2/Users", headers=_auth(tok)).status_code == 200
         assert c.get("/scim/v2/Users", headers=_auth("wrong")).status_code == 401
 
+    def test_deprovision_revokes_live_sessions(self, client):
+        # Deprovisioning must end current access (#58), not just future logins:
+        # the SCIM user's identifiers get a revocation epoch so live sessions die.
+        from maverick_dashboard import session_revocation as sr
+        r = _make_user(client, externalId="okta-sub-123")
+        uid = r.json()["id"]
+        assert sr.revocation_epoch("okta-sub-123") == 0.0
+        client.delete(f"/scim/v2/Users/{uid}", headers=_auth())
+        assert sr.revocation_epoch("okta-sub-123") > 0.0   # externalId (= OIDC sub)
+        assert sr.revocation_epoch("alice@example.com") > 0.0  # userName too
+
+    def test_deprovision_revokes_pairwise_sub_via_directory(self, client):
+        # Entra case: the OIDC `sub` is pairwise and appears in NO SCIM attribute.
+        # The subject directory recorded it at login keyed by the user's email;
+        # deprovision must look it up and revoke it, not just the SCIM ids.
+        from maverick_dashboard import session_revocation as sr
+        from maverick_dashboard import subject_directory as sd
+        # Login recorded: email/oid -> the pairwise session sub.
+        sd.record_login("pairwise-AAA", ["bob@example.com", "aad-oid-9"])
+        r = _make_user(client, username="bob@example.com", externalId="aad-oid-9")
+        uid = r.json()["id"]
+        assert sr.revocation_epoch("pairwise-AAA") == 0.0   # not a SCIM attribute
+        client.patch(f"/scim/v2/Users/{uid}", headers=_auth(), json={
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            "Operations": [{"op": "replace", "path": "active", "value": False}],
+        })
+        # The pairwise sub -- the actual session key -- is now revoked.
+        assert sr.revocation_epoch("pairwise-AAA") > 0.0
+
+    def test_hard_delete_forgets_directory_entry(self, client):
+        from maverick_dashboard import subject_directory as sd
+        sd.record_login("pairwise-BBB", ["carol@example.com"])
+        r = _make_user(client, username="carol@example.com")
+        uid = r.json()["id"]
+        client.delete(f"/scim/v2/Users/{uid}", headers=_auth())
+        # The mapping shouldn't outlive the deleted account.
+        assert sd.subs_for(["carol@example.com"]) == set()
+
 
 class TestDiscovery:
     def test_service_provider_config(self, client):
@@ -197,3 +235,32 @@ class TestLifecycle:
         assert client.get(f"/scim/v2/Users/{uid}", headers=_auth()).status_code == 404
         from maverick.tenant import registry
         assert registry.get_tenant(uid) is None
+
+    def test_patch_tenant_suspend_failure_does_not_commit_scim_inactive(self, client, monkeypatch):
+        uid = _make_user(client).json()["id"]
+        from maverick.tenant import registry
+
+        def fail_suspend(_uid):
+            raise RuntimeError("simulated suspend failure")
+
+        monkeypatch.setattr(registry, "suspend_tenant", fail_suspend)
+        r = client.patch(f"/scim/v2/Users/{uid}", headers=_auth(), json={
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            "Operations": [{"op": "replace", "path": "active", "value": False}],
+        })
+        assert r.status_code == 500
+        assert client.get(f"/scim/v2/Users/{uid}", headers=_auth()).json()["active"] is True
+        assert registry.get_tenant(uid).active is True
+
+    def test_delete_tenant_failure_keeps_scim_user_for_retry(self, client, monkeypatch):
+        uid = _make_user(client).json()["id"]
+        from maverick.tenant import registry
+
+        def fail_delete(_uid):
+            raise RuntimeError("simulated delete failure")
+
+        monkeypatch.setattr(registry, "delete_tenant", fail_delete)
+        r = client.delete(f"/scim/v2/Users/{uid}", headers=_auth())
+        assert r.status_code == 500
+        assert client.get(f"/scim/v2/Users/{uid}", headers=_auth()).status_code == 200
+        assert registry.get_tenant(uid) is not None

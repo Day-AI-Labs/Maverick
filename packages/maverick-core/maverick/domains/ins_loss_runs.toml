@@ -18,3 +18,24 @@ deliverable = "Loss run"
 consumers = ["underwriter", "agency_manager"]
 cadence = "on-demand"
 gate = "review"
+
+[[workflow]]
+name = "Scope request"
+instruction = "Confirm the requested policy, coverage lines, and the valuation period for the loss run."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Pull claims"
+instruction = "Query the claims system for all matching claims with paid, reserved, and incurred amounts as of the valuation date."
+tools = ["sql_query"]
+[[workflow]]
+name = "Reconcile totals"
+instruction = "Tie claim-level paid and incurred figures to the loss summary and flag any open reserves or subrogation that affect totals."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Format run"
+instruction = "Assemble the loss run in the standard layout with claimant, date of loss, status, and amounts, citing the source records."
+tools = ["spreadsheet", "read_file"]
+[[workflow]]
+name = "Route for review"
+instruction = "Hand the completed loss run to the underwriter or agency manager for sign-off before release."
+gate = "review"

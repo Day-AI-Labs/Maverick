@@ -230,14 +230,15 @@ def test_mcp_admits_registered_shared_token(monkeypatch):
     from maverick_mcp import http_transport as ht
     monkeypatch.setenv("MAVERICK_MCP_TOKEN", "shared")
     _patch(monkeypatch, {"mcp": TrustedAgent(id="mcp", direction="both")})
-    assert ht._check_bearer("Bearer shared") is True
+    # Shared bearer -> authed with NO per-caller identity (empty string).
+    assert ht._check_bearer("Bearer shared") == (True, "")
 
 
 def test_mcp_denies_when_engaged_no_entry(monkeypatch):
     from maverick_mcp import http_transport as ht
     monkeypatch.setenv("MAVERICK_MCP_TOKEN", "shared")
     _patch(monkeypatch, {})  # engaged, no "mcp" surface entry
-    assert ht._check_bearer("Bearer shared") is False
+    assert ht._check_bearer("Bearer shared") == (False, "")
 
 
 def test_mcp_per_caller_token(monkeypatch):
@@ -245,13 +246,14 @@ def test_mcp_per_caller_token(monkeypatch):
     monkeypatch.delenv("MAVERICK_MCP_TOKEN", raising=False)
     reg = {"vega": TrustedAgent(id="vega", mcp_token="v-tok", direction="both")}
     _patch(monkeypatch, reg)
-    assert ht._check_bearer("Bearer v-tok") is True
-    assert ht._check_bearer("Bearer nope") is False
+    # Per-caller token -> authed AND carries the resolved agent identity.
+    assert ht._check_bearer("Bearer v-tok") == (True, "vega")
+    assert ht._check_bearer("Bearer nope") == (False, "")
 
 
 def test_mcp_disengaged_auth_only(monkeypatch):
     from maverick_mcp import http_transport as ht
     monkeypatch.setenv("MAVERICK_MCP_TOKEN", "shared")
     _patch(monkeypatch, {}, enforced=False)
-    assert ht._check_bearer("Bearer shared") is True
-    assert ht._check_bearer("Bearer wrong") is False
+    assert ht._check_bearer("Bearer shared") == (True, "")
+    assert ht._check_bearer("Bearer wrong") == (False, "")

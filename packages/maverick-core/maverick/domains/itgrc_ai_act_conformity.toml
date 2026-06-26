@@ -7,6 +7,7 @@ persona = """You are the EU AI Act Conformity specialist: classify the risk tier
 
 allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
+effort = "high"
 deny_tools = ["shell", "write_file"]
 
 # Suite-level grounding fallback: docs uploaded to the "itgrc" collection
@@ -20,4 +21,25 @@ shape = "report"
 deliverable = "EU AI Act conformity package"
 consumers = ["compliance_officer", "ciso"]
 cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Scope the system"
+instruction = "Read the AI system's intended purpose, deployment context, and data flows to establish what is being classified."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Classify risk tier"
+instruction = "Apply Article 5, Annex III, and Article 50 tests against the current AI Act text to assign the risk tier."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Map Annex IV gaps"
+instruction = "Map existing documentation against the Annex IV technical-documentation requirements and identify each missing element."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Assemble scaffold"
+instruction = "Assemble the conformity package scaffold with the tier rationale, Annex IV sections, and evidence placeholders for owners to fill."
+tools = ["read_file"]
+[[workflow]]
+name = "Owner attests"
+instruction = "Route the conformity package to the compliance officer to confirm the tier and authorize any regulator-facing step."
 gate = "approval"

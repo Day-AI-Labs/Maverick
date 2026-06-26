@@ -17,3 +17,23 @@ deliverable = "Vendor SLA tracker"
 consumers = ["control_owner", "risk_officer"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull SLA terms"
+instruction = "Read each vendor contract to extract committed SLA targets, measurement windows, and service-credit formulas."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Query performance"
+instruction = "Query monitoring and ticketing data for actual uptime, response, and resolution metrics over the reporting period."
+tools = ["sql_query"]
+[[workflow]]
+name = "Detect breaches"
+instruction = "Compare measured performance to each SLA target and flag breaches, computing the service credits owed."
+[[workflow]]
+name = "Document evidence"
+instruction = "Cite the source records for every flagged breach and state any data gaps or measurement assumptions plainly."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Submit tracker"
+instruction = "Compile the SLA tracker with credits and breach documentation and route it to the control owner for review."
+gate = "review"

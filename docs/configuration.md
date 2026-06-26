@@ -70,6 +70,10 @@ role_editing = true  # allow editing the core roles (orchestrator, coder, ...)
                      #   system-prompt addendum + model/effort override per role
                      #   (winning over [models]/[effort]); false = read-only and
                      #   /api/v1/roles mutations 403.
+scheduling  = true   # allow arming recurring schedules (cron) from the dashboard;
+                     #   false = the scheduler editor + /api/v1 schedule routes 403.
+triggers    = true   # allow binding a saved template to an inbound webhook;
+                     #   false = the /api/v1/triggers editor + /webhook/run 404/403.
 
 [durable]
 # Crash-resume: checkpoint a goal's loop state each step so `maverick resume`
@@ -181,9 +185,50 @@ enable = true              # measure (never apply) the codec's token savings on
 [reflexion]                # cross-run failure lessons (default off)
 enable = true
 
+[self_harness]             # learn a model-specific operating-guidance addendum
+enable = false             # mine failures -> propose -> regression-validate ->
+                           #   gate. Promotion ALSO needs [self_improvement]
+                           #   enable. Operator commands: `maverick self-harness
+                           #   show` (what was learned), `preview` (dry-run of
+                           #   what it would propose), `log` (audit trail), and
+                           #   `forget` (roll a learned line back).
+
+[self_learning]            # local continuous learning (default off)
+enable = true
+provision_packs = true     # equip a freshly-approved pack with the skills + tools
+                           #   its workflow needs at creation time (capability
+                           #   provisioning at pack-birth). Default on once
+                           #   self-learning is enabled; the wizard sets it.
+                           #   Read-only analysis is always safe; applying it is
+                           #   gated on the same human approval `save_profile`
+                           #   requires and never widens the clamped envelope.
+                           #   Wired into `maverick onboard`. See FEATURES.md.
+
+[self_improvement]         # promotion ladder for learned guidance (default off)
+enable = true
+factory_learning = true    # close the loop onto generation quality: attribute
+                           #   provisioning/approval gaps to a pack's suite/signal,
+                           #   mine them into proposer corrections, promote on the
+                           #   `prompt` rung, and fold into future pack generation.
+                           #   Default on once self-improvement is enabled; the
+                           #   wizard sets it. Force-enable via MAVERICK_FACTORY_LEARNING.
+                           #   `maverick factory-learn [--dry-run]`. See FEATURES.md.
+
 [domains]                  # specialist-pack behavior (defaults shown)
 discipline = true          # suite operating-discipline appended at spawn
 memory = true              # department lessons injected at spawn
+
+[workforce]                # treat each agent like a hire (defaults shown)
+levels = false             # per-agent autonomy levels (observe/suggest/request/
+                           #   auto). OFF -> every agent stages actions for human
+                           #   execution. Per-agent overrides: [workforce.agents].
+                           #   Env: MAVERICK_WORKFORCE_LEVELS.
+data_grounding = true      # auto-grant each analyst pack its suite's primary-
+                           #   source data connectors (SEC EDGAR, FRED, openFDA,
+                           #   USAspending, weather, ...). GET-only, low-risk,
+                           #   deferred (no context cost), inert without each
+                           #   source's API key. Set false to withhold them.
+                           #   Env: MAVERICK_WORKFORCE_DATA_GROUNDING.
 
 [fleet_memory]             # external agents read/write governed memory
 enable = false             # explicit trust decision; roster-gated
@@ -243,8 +288,12 @@ Useful for VPS deployments where you want the config under `/etc/`.
 For desktop installs the dashboard binds to `127.0.0.1:8765` and bearer
 auth is optional. For VPS deploys (reachable from the open internet)
 set `MAVERICK_DASHBOARD_TOKEN` — every request to `/api/v1/*` and every
-HTML page is then gated. Only `/healthz`, `/openapi.json`, `/docs`, and
-`/redoc` are exempt (so monitoring + API discovery still works).
+HTML page is then gated. The probe/discovery paths `/healthz`, `/livez`,
+`/readyz`, `/openapi.json`, `/docs`, `/redoc`, and the agent-card
+well-knowns are exempt (so monitoring + API discovery still works). The
+inbound webhook routes (`/webhook/start`, `/webhook/run`, issue webhooks)
+and the `/share/`, `/scim/`, `/saml/` prefixes authenticate by their own
+mechanism (HMAC signature / share token / SSO) rather than the bearer.
 
 Two ways to authenticate:
 
@@ -300,7 +349,8 @@ threads simultaneously. Override with:
 MAVERICK_MAX_CONCURRENT_GOALS=4 maverick dashboard
 ```
 
-Default is 2. Raise on a beefy machine; lower on a Raspberry Pi.
+Default is 16. Raise on a beefy machine; lower on a Raspberry Pi. (A
+separate per-principal cap also limits concurrent goals from any one caller.)
 
 ## Environment variables
 

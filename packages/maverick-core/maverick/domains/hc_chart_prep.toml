@@ -11,3 +11,35 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "pre-visit chart prep packet"
+consumers = ["clinician", "care_coordinator"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Pull schedule"
+instruction = "Query the upcoming visit schedule and patient roster for the prep window."
+tools = ["sql_query"]
+[[workflow]]
+name = "Gather records"
+instruction = "Read each patient's chart, recent results, and active medication list from source records."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Find care gaps"
+instruction = "Cross-check records against the company's care-gap and screening guidelines to flag overdue items."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag outstanding results"
+instruction = "Identify ordered labs or imaging that have no filed result so nothing is missed at the visit."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Assemble packet"
+instruction = "Compile the per-patient prep packet with results, gaps, and reconciled med list, citing each source used."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Clinician review"
+instruction = "Route the assembled packet to the visiting clinician for review before the appointment."
+gate = "review"

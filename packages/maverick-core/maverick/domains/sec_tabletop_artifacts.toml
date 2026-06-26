@@ -10,3 +10,31 @@ max_risk = "medium"
 
 knowledge_sources = ["sec"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "IR runbook & contact-tree refresh"
+consumers = ["incident_commander", "security_lead"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Pull current artifacts"
+instruction = "Retrieve the existing incident-response runbooks, escalation paths, and contact trees from the knowledge base."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Verify contacts"
+instruction = "Cross-check each named owner, on-call role, and contact detail against the authoritative HR and on-call source of record."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Flag stale steps"
+instruction = "Identify runbook steps that reference retired systems or vacated roles and mark each gap with the source that contradicts it."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft refresh"
+instruction = "Compile the corrected runbook and contact-tree changes into a redline package citing every source used."
+tools = ["read_file"]
+[[workflow]]
+name = "Route for sign-off"
+instruction = "Hand the redlined artifacts to the incident commander for review before they replace the live versions."
+gate = "review"

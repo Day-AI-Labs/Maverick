@@ -11,3 +11,31 @@ deny_tools = ["shell", "write_file", "apply_patch", "str_edit", "browser"]
 
 knowledge_sources = ["finance"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "multistate escheatment reporting package"
+consumers = ["controller", "tax_manager"]
+cadence = "quarterly"
+gate = "review"
+
+[[workflow]]
+name = "Track dormancy"
+instruction = "Query the ledgers to identify property reaching dormancy by type and state against the applicable dormancy periods."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Verify ledgers"
+instruction = "Reconcile the dormant population back to source ledgers and prior filings, citing what was used and noting assumptions."
+tools = ["read_file", "spreadsheet"]
+[[workflow]]
+name = "Draft due-diligence"
+instruction = "Prepare the due-diligence letter population for owners meeting each state's notice threshold."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Assemble filings"
+instruction = "Compile the multistate report and Delaware VDA support package by jurisdiction."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route for filing"
+instruction = "Submit the reporting package to the controller for review before any human remits funds or files."
+gate = "review"

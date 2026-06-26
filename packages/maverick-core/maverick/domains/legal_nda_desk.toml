@@ -10,3 +10,30 @@ max_risk = "low"
 
 knowledge_sources = ["legal"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "NDA review memo"
+consumers = ["legal_counsel", "contract_requester"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Read NDA"
+instruction = "Read the submitted NDA and capture the counterparty, direction, and key terms."
+tools = ["read_file"]
+[[workflow]]
+name = "Load playbook"
+instruction = "Retrieve the company NDA playbook and approved fallback positions from knowledge."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Compare clauses"
+instruction = "Compare each NDA clause against the playbook and cite the exact deviating language."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Flag deviations"
+instruction = "Mark routine clauses as in-policy and isolate true deviations that require counsel attention."
+[[workflow]]
+name = "Counsel sign-off"
+instruction = "Route the review memo with flagged deviations to counsel for approval before execution."
+gate = "review"

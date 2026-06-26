@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["hc"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "open referral loop-closure tracker"
+consumers = ["referral_coordinator", "care_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull referrals"
+instruction = "Query outbound referrals with their order date, specialty, and current status from the referral system."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Match reports"
+instruction = "Reconcile each referral against received consult notes or results to mark loops closed versus still open."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Age the gaps"
+instruction = "Sort open referrals by days outstanding and flag those past the expected turnaround window."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Draft tracker"
+instruction = "Compile the loop-closure tracker listing open, aging, and at-risk referrals with cited source documents."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Coordinator review"
+instruction = "Route the tracker to the referral coordinator to chase the flagged open loops."
+gate = "review"

@@ -30,3 +30,24 @@ deliverable = "GL reconciliations & staged JEs"
 consumers = ["accounting_manager", "controller"]
 cadence = "monthly"
 gate = "approval"
+
+[[workflow]]
+name = "Pull trial balance"
+instruction = "Read the trial balance and subledger detail for the period being closed."
+tools = ["gl_read_trial_balance", "gl_read_subledger", "netsuite_read"]
+[[workflow]]
+name = "Reconcile accounts"
+instruction = "Reconcile each balance-sheet account to its supporting subledger and tie every entry to a source document."
+tools = ["reconcile_accounts", "gl_read_journal"]
+[[workflow]]
+name = "Run flux"
+instruction = "Run flux analysis on period-over-period movements and flag any item that cannot be tied out as unverified."
+tools = ["flux_analysis"]
+[[workflow]]
+name = "Stage JEs"
+instruction = "Draft and stage the required adjusting journal entries with full working shown."
+tools = ["stage_journal_entry"]
+[[workflow]]
+name = "Route for posting"
+instruction = "Submit the reconciliations and staged entries to the accountant to review and post."
+gate = "approval"

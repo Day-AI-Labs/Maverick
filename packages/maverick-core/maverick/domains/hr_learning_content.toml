@@ -14,3 +14,29 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["hr"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "course design package"
+consumers = ["learning_lead", "program_owner"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Analyze need"
+instruction = "Read the learning request and target-audience profile to define measurable learning objectives (ADDIE analyze)."
+tools = ["read_file", "cornerstone_read"]
+[[workflow]]
+name = "Source content"
+instruction = "Search authoritative sources and existing curriculum to ground the content and avoid duplication."
+tools = ["knowledge_search", "web_search"]
+[[workflow]]
+name = "Design module"
+instruction = "Design the course outline, microlearning units, and assessments aligned to each objective."
+[[workflow]]
+name = "Check accessibility"
+instruction = "Review the draft for accessibility, reading level, and inclusive non-protected-class examples before sign-off."
+[[workflow]]
+name = "Route to lead"
+instruction = "Route the design package to the learning lead and program owner for approval to build."
+gate = "review"

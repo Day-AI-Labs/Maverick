@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "FOIA responsive-records package with exemption log"
+consumers = ["foia_officer", "agency_counsel"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Parse request"
+instruction = "Read the FOIA request to fix the scope, date range, and specific records or subjects being sought."
+tools = ["read_file"]
+[[workflow]]
+name = "Search records"
+instruction = "Search company knowledge for all potentially responsive documents within the requested scope and citing each source."
+tools = ["knowledge_search", "read_file"]
+[[workflow]]
+name = "Assess responsiveness"
+instruction = "Sort the candidate records into responsive versus non-responsive against the request scope and log each call."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag exemptions"
+instruction = "Mark passages that may fall under FOIA exemptions with the candidate exemption and the cited clause for counsel to confirm."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Counsel review"
+instruction = "Route the responsive set and exemption log to agency counsel to confirm withholdings and redactions before release."
+gate = "review"

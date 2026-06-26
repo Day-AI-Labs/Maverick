@@ -81,19 +81,29 @@ def test_allow_flag_lets_it_proceed(monkeypatch):
     assert _host_safety_error() is None
 
 
-def test_explicit_remote_display_lets_it_proceed(monkeypatch):
+def test_configured_display_must_match_backend_display(monkeypatch):
     monkeypatch.setenv("MAVERICK_COMPUTER_REQUIRE_SANDBOX", "1")
     monkeypatch.setenv("MAVERICK_COMPUTER_DISPLAY", ":99")
-    assert _host_safety_error() is None
+    # MAVERICK_COMPUTER_DISPLAY is only a declaration; the backends still use
+    # DISPLAY, so leaving DISPLAY on the host console must not bypass the guard.
+    err = _host_safety_error()
+    assert err is not None and err.startswith("ERROR:")
 
 
-def test_nondefault_DISPLAY_lets_it_proceed(monkeypatch):
+def test_matching_configured_display_lets_it_proceed(monkeypatch):
     monkeypatch.setenv("MAVERICK_COMPUTER_REQUIRE_SANDBOX", "1")
-    # A remote / Xvfb display ( != :0 ) is treated as safe.
-    monkeypatch.setenv("DISPLAY", "remote-host:0")
-    assert _host_safety_error() is None
+    monkeypatch.setenv("MAVERICK_COMPUTER_DISPLAY", ":99")
     monkeypatch.setenv("DISPLAY", ":99")
     assert _host_safety_error() is None
+
+
+def test_nondefault_display_without_configured_display_errors(monkeypatch):
+    monkeypatch.setenv("MAVERICK_COMPUTER_REQUIRE_SANDBOX", "1")
+    # Real desktop sessions are not guaranteed to be on :0, so a non-default
+    # DISPLAY alone is not enough evidence that the backend is sandboxed.
+    monkeypatch.setenv("DISPLAY", ":99")
+    err = _host_safety_error()
+    assert err is not None and err.startswith("ERROR:")
 
 
 def test_allow_lets_full_action_path_proceed(monkeypatch):

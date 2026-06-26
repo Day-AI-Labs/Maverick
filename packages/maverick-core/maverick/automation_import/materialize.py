@@ -36,14 +36,20 @@ def materialize(
     budget_wall_seconds: float = 3600.0,
     queue: Any | None = None,
     overwrite: bool = True,
+    owner: str | None = None,
+    channel: str | None = None,
+    user_id: str | None = None,
 ) -> MaterializeResult:
     """Create the Template (and optionally a cron schedule) for one automation.
 
     ``queue`` (a ``maverick.job_queue.JobQueue``) enables auto-creating a cron
     schedule for ``schedule``-triggered automations whose cron we recovered.
+    ``owner``/``channel``/``user_id`` are copied into activated schedule payloads
+    so worker-created goals and runs preserve the caller's authenticated identity.
     Webhook/event triggers are returned as ``suggested_trigger`` for the caller
     to wire (the webhook trigger store is a dashboard concern).
     """
+    from ..catalog_trust import shield_scan
     from ..templates import save_user_template
 
     title, body = automation.render()
@@ -52,6 +58,7 @@ def materialize(
 
     created = False
     if save:
+        shield_scan(body, label=f"imported automation template {tname!r}")
         save_user_template(
             tname,
             title=title,
@@ -82,6 +89,8 @@ def materialize(
             # requires it to be non-empty (a {"template": ...} payload would fail
             # at run time). We snapshot the rendered brief as the goal text, like
             # the dashboard does, and carry a schedule_id for run provenance.
+            # Authenticated callers may also pass owner/channel/user_id to match
+            # the normal dashboard schedule path and avoid falling back to local.
             schedule_id = uuid4().hex
             payload = {
                 "text": body,
@@ -89,6 +98,15 @@ def materialize(
                 "__cron__": trig.cron,
                 "schedule_id": schedule_id,
             }
+            owner_value = str(owner or "").strip()
+            if owner_value:
+                payload["owner"] = owner_value
+            channel_value = str(channel or "").strip()
+            user_id_value = str(user_id or "").strip()
+            if user_id_value:
+                if channel_value:
+                    payload["channel"] = channel_value
+                payload["user_id"] = user_id_value
             try:
                 job_id, run_at = schedule_cron(queue, trig.cron, "start_goal", payload)
                 result.schedule = {

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "accommodation request tracker"
+consumers = ["accessibility_coordinator", "support_manager"]
+cadence = "daily"
+gate = "review"
+
+[[workflow]]
+name = "Intake request"
+instruction = "Read the customer's accessibility request and identify the specific accommodation being asked for."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify entitlement"
+instruction = "Check the company's accommodation policy and the customer's account to confirm what support is owed and feasible."
+tools = ["knowledge_search", "sql_query"]
+[[workflow]]
+name = "Draft accommodation"
+instruction = "Draft the accommodation plan and customer reply, citing the policy basis and noting any open dependencies."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Track to completion"
+instruction = "Record the request status and required follow-ups so no accommodation is left open past its commitment date."
+tools = ["sql_query"]
+[[workflow]]
+name = "Coordinator sign-off"
+instruction = "Route the accommodation plan to the accessibility coordinator for approval before it is sent to the customer."
+gate = "review"

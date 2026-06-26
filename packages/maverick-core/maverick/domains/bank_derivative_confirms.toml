@@ -17,3 +17,25 @@ deliverable = "Derivative confirmation reconciliation"
 consumers = ["treasurer", "operations_manager"]
 cadence = "daily"
 gate = "review"
+
+[[workflow]]
+name = "Pull trades"
+instruction = "Read the day's executed derivative trades and the matching counterparty confirmations received."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Match terms"
+instruction = "Reconcile notional, rate, maturity, and counterparty on each confirmation against the booked trade record."
+tools = ["sql_query", "spreadsheet"]
+[[workflow]]
+name = "Check collateral"
+instruction = "Compare margin and collateral call amounts against the CSA terms and current exposure for each counterparty."
+tools = ["knowledge_search", "spreadsheet"]
+[[workflow]]
+name = "Escalate exceptions"
+instruction = "Flag unconfirmed trades, term mismatches, and disputed collateral calls and cite the supporting trade and confirmation lines."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Route to treasury"
+instruction = "Hand the confirmation reconciliation with escalated exceptions to the treasurer for review."
+tools = ["spreadsheet"]
+gate = "review"

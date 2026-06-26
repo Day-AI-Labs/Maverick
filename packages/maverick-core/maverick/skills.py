@@ -100,7 +100,17 @@ class Skill:
             if not line:
                 continue
             if line.startswith("  - ") and current_key:
-                meta.setdefault(current_key, []).append(line[4:].strip())
+                bucket = meta.setdefault(current_key, [])
+                # A list item under a key that already holds a scalar value is
+                # malformed YAML (a key is a scalar OR a list, not both). Raise
+                # ValueError -- the documented failure mode for this function --
+                # rather than leaking AttributeError from str.append(), which an
+                # ``except ValueError`` around skill loading would not catch.
+                if not isinstance(bucket, list):
+                    raise ValueError(
+                        f"malformed skill frontmatter: '{current_key}:' has both a "
+                        "scalar value and a list item")
+                bucket.append(line[4:].strip())
             elif ":" in line:
                 k, _, v = line.partition(":")
                 k = k.strip()

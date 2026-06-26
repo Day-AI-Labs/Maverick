@@ -17,3 +17,24 @@ deliverable = "Asset lifecycle register"
 consumers = ["control_owner", "security_analyst"]
 cadence = "monthly"
 gate = "review"
+
+[[workflow]]
+name = "Pull asset data"
+instruction = "Query the asset and procurement records and read the lifecycle policy to establish the population in scope for the period."
+tools = ["sql_query", "read_file", "knowledge_search"]
+[[workflow]]
+name = "Verify states"
+instruction = "Confirm each asset's lifecycle stage from procurement to disposal against source records and cite what was used."
+tools = ["sql_query", "knowledge_search"]
+[[workflow]]
+name = "Check disposal"
+instruction = "Validate that retired assets have sanitization and disposal evidence, flagging any missing certificates of destruction."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Reconcile register"
+instruction = "Update the asset lifecycle register and note exceptions, assumptions, and unknowns plainly."
+tools = ["sql_query"]
+[[workflow]]
+name = "Control review"
+instruction = "Submit the reconciled register to the control owner and security analyst for review."
+gate = "review"

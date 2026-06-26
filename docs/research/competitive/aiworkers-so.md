@@ -80,7 +80,7 @@ Per the kernel rule, this is the right competitive frame: compete on
 | Dimension | Lightwork | Workers Delos (aiworkers.so) |
 |---|---|---|
 | Form factor | Self-hostable platform + CLI + dashboard + MCP | Hosted SaaS only |
-| Prebuilt specialists | **1,118 packs across 26 suites** (lint-audited) | ~50 worker profiles |
+| Prebuilt specialists | **2,020 packs across 53 suites** (lint-audited) | ~50 worker profiles |
 | Governed learning | **Yes** — dreaming/hindsight/proof, snapshot + **rollback**, **signed** learning audit | "Persistent memory" claim; no governed/auditable learning story |
 | Audit | **WORM, signed, sealed, federated, retention/erase** (`audit/`) | "Full audit log" (unspecified) |
 | Governance plane | **Yes** — `governance.py`, `access_policy.py`, RBAC, SCIM, DPIA, AI-Act pack, compliance regimes | RBAC + audit log only |
@@ -109,9 +109,26 @@ Per the kernel rule, this is the right competitive frame: compete on
 3. **Self-host + bring-your-own-model.** Regulated buyers (finance, health,
    gov, defense) cannot send data to a Paris SaaS. We run in their VPC, on
    their model keys, across 12 providers. Workers Delos has no self-host path.
-4. **Breadth on a governed core.** 1,118 specialists vs ~50; 289 tool modules;
-   14+ channels; shield on every I/O boundary; per-principal budget caps.
+4. **Breadth on a governed core.** 2,020 specialists vs ~50; 286 tool modules +
+   214 write-capable enterprise connectors + 37 read-only primary-source
+   connectors (SEC EDGAR, FRED, Treasury, World Bank, BLS, EIA, ...); 14+
+   channels; shield on every I/O boundary; per-principal budget caps.
 5. **Multi-tenant control plane.** Tenancy, KMS, egress policy, billing — we can
+6. **Primary-source data grounding.** Every analyst pack is auto-granted 37
+   read-only primary-source / public-data connectors by suite (SEC EDGAR, FRED,
+   Treasury, World Bank, FDIC, Census, BLS, EIA, openFDA, NPPES, ClinicalTrials,
+   USAspending, SAM.gov, CourtListener, Federal Register, GLEIF, OpenCorporates,
+   NWS/NOAA weather, EPA, Climatiq, ...). GET-only, low-risk, deferred, ON by
+   default (kill-switch `[workforce] data_grounding = false` or
+   `MAVERICK_WORKFORCE_DATA_GROUNDING=off`, with an installer wizard step). A
+   hosted black-box coworker answers from training data; ours grounds claims in
+   authoritative public sources — a defensible accuracy/trust moat.
+7. **Roster-wide governance invariant test suite.** Six invariants — tool
+   reachability, autonomy dial, capability attenuation, compartment isolation,
+   hard refusals, budget caps — are verified across all 2,020 packs and
+   fault-injected at 1,000,000 iterations, each with a non-vacuity control, plus
+   hostile-argument fuzzing of every connector and tool. "Full audit log"
+   doesn't survive this kind of provable, roster-wide governance evidence.
    *be* the platform a Workers-Delos-like product is built on.
 
 ## Where they win — and what we need to close it
@@ -121,7 +138,7 @@ are **packaging and GTM**, plus two real product items and one compliance item.
 
 ### P0 — Packaging / GTM (highest leverage, lowest engineering cost)
 
-1. **Ship a "Hire a worker" persona layer over the 1,118 packs.** Their entire
+1. **Ship a "Hire a worker" persona layer over the 2,020 packs.** Their entire
    advantage is that a buyer sees *"Victoria, SDR, her own email & phone"*
    instead of *"specialist pack envelope."* We have more and better specialists
    — we present them as infrastructure. Add: name, avatar, one-line persona,
@@ -142,9 +159,11 @@ are **packaging and GTM**, plus two real product items and one compliance item.
 ### P1 — Product
 
 5. **No-code connector breadth.** Match the "3000+ tools" perception with a
-   Zapier/Make/native-connector story surfaced in the UI. We have 289 tool
-   modules + `enterprise_connectors.py` + `oauth_helper.py` — but the *count and
-   discoverability* are the marketing gap. Consider a connector marketplace page.
+   Zapier/Make/native-connector story surfaced in the UI. We have 286 tool
+   modules + 214 write-capable enterprise connectors + 37 read-only
+   primary-source connectors (`enterprise_connectors.py`) + `oauth_helper.py` —
+   but the *count and discoverability* are the marketing gap. Consider a
+   connector marketplace page.
 6. **Outbound voice/phone, productized.** They lead with "workers that call your
    customers." We have voice + streaming voice as channels; package an outbound
    calling capability (with shield gating + recording/consent + audit) as a
@@ -195,11 +214,11 @@ card and on an exec "what your workforce did this week" digest.
 ### 2. "Department in a box" bundles
 
 They bundle marketing + dev + design + support into an "AI workforce." We have
-**26 suites / 1,118 packs** and a real fleet orchestrator (`fleet.py`,
+**53 suites / 2,020 packs** and a real fleet orchestrator (`fleet.py`,
 `fleet_memory.py`) — more depth, presented as parts. Package suites as **buyable
 teams** ("Finance Department," "RevOps Team," "Legal Desk") with a pre-wired org
 chart, shared fleet memory, and one-click deploy of the whole unit. Turns our
-breadth advantage into a single SKU instead of 1,118 line items.
+breadth advantage into a single SKU instead of 2,020 line items.
 
 ### 3. Governance as a visible product surface
 
@@ -224,13 +243,14 @@ The move they structurally cannot copy — make the audit/learning moat
 
 Match their "3000+ tools" perception with named, discoverable surfaces:
 
-- **Pack / suite marketplace** — the 1,118 packs plus partner-built and
+- **Pack / suite marketplace** — the 2,020 packs plus partner-built and
   **operator/intake-generated packs** (we already synthesize packs from customer
   SOPs). Browsable, deployable, with the persona layer on top.
-- **Connector marketplace** — the 289 tool modules + `enterprise_connectors.py`
-  + `oauth_helper.py`, presented as a catalog with categories and one-click
-  OAuth, so integration breadth is *countable and discoverable* rather than
-  buried in code.
+- **Connector marketplace** — the 286 tool modules + 214 write-capable
+  enterprise connectors + 37 read-only primary-source connectors
+  (`enterprise_connectors.py`) + `oauth_helper.py`, presented as a catalog with
+  categories and one-click OAuth, so integration breadth is *countable and
+  discoverable* rather than buried in code.
 
 > Caveat worth flagging to GTM: part of Workers Delos is a **human-freelancer
 > marketplace** ("our freelancers earn 23% more"). Their "AI worker" claims are

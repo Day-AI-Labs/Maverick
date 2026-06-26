@@ -96,6 +96,24 @@ def test_mint_session_roundtrips_through_shared_verifier():
     cookie = saml_mod.mint_session_cookie("bob@example.com", secret=SECRET)
     payload = verify_session(cookie, SECRET)
     assert payload and payload["sub"] == "bob@example.com" and payload["exp"] > 0
+    assert isinstance(payload["iat"], int) and payload["iat"] > 0
+
+
+def test_mint_session_after_revocation_has_fresh_iat(monkeypatch, tmp_path):
+    from maverick_dashboard import session_revocation as sr
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    sr.revoke_principal("bob@example.com", at=999.0)
+    monkeypatch.setattr(saml_mod.time, "time", lambda: 1000.0)
+
+    cookie = saml_mod.mint_session_cookie("bob@example.com", secret=SECRET)
+    payload = verify_session(cookie, SECRET, now=1000.0)
+
+    assert payload
+    assert payload["iat"] == 1000
+    assert payload["exp"] == 1000 + saml_mod._SESSION_TTL
+    assert sr.is_revoked(payload["sub"], payload["iat"]) is False
 
 
 def test_mint_session_requires_secret():

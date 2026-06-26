@@ -32,3 +32,32 @@ deny_tools = [
 max_risk = "high"
 knowledge_sources = ["finance_accounting_policy", "finance_doa_matrix"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "Maker-checker approval package"
+consumers = ["cfo", "controller"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Intake task"
+instruction = "Read the incoming finance task and policy to determine which tower agent or agents should handle it."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Route to towers"
+instruction = "Spawn each required tower agent with an attenuated grant respecting compartment seals and segregation of duties."
+tools = ["spawn_subagent", "spawn_swarm"]
+[[workflow]]
+name = "Consolidate results"
+instruction = "Gather the tower outputs and reconcile them against the trial balance and audit log into one decision package."
+tools = ["gl_read_trial_balance", "audit_log_read"]
+[[workflow]]
+name = "SoD scan"
+instruction = "Run a segregation-of-duties conflict scan and control assessment on the proposed action before it reaches a human."
+tools = ["sod_conflict_scan", "run_assessment"]
+[[workflow]]
+name = "Human sign-off"
+instruction = "Queue the action with its diff and evidence for a human to approve, asking the approver to certify post, pay, or file."
+tools = ["ask_user"]
+gate = "approval"

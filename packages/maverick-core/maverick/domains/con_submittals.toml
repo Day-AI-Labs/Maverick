@@ -11,3 +11,28 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "submittal register status report"
+consumers = ["project_manager", "architect"]
+cadence = "weekly"
+
+[[workflow]]
+name = "Open register"
+instruction = "Read the submittal register and the spec sections defining required submittal packages."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Track review cycles"
+instruction = "Update each package's review status, reviewer, and ball-in-court against the register."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Compute ages"
+instruction = "Calculate days in review and turnaround against contractual review periods for each open package."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag overdue"
+instruction = "Flag packages exceeding the allowed review time or returned revise-and-resubmit that block downstream procurement."
+[[workflow]]
+name = "Report status"
+instruction = "Route the submittal register status report to the project manager and architect."

@@ -11,3 +11,31 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["gov"]
 authoring = "manual"
+
+[output]
+shape = "prose"
+deliverable = "debrief request & evaluator-feedback memo"
+consumers = ["capture_manager", "contracts_manager"]
+cadence = "on-demand"
+gate = "approval"
+
+[[workflow]]
+name = "Confirm deadline"
+instruction = "Read the unsuccessful-offeror notice and award date to compute the debrief request window under FAR 15.506 before it lapses."
+tools = ["read_file", "web_search", "knowledge_search"]
+[[workflow]]
+name = "Draft request"
+instruction = "Draft a timely written debrief request listing the specific evaluation questions the team needs answered."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Capture feedback"
+instruction = "Record the evaluator feedback verbatim from the debrief and map each point to the affected proposal section."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Flag protest basis"
+instruction = "Identify any evaluation inconsistency that could support a protest and note the relevant GAO timeline."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Approve submission"
+instruction = "Route the debrief request to the contracts manager for approval before it is submitted to the contracting officer."
+gate = "approval"

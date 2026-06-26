@@ -10,3 +10,31 @@ max_risk = "low"
 
 knowledge_sources = ["con"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "end-of-warranty walk punch list"
+consumers = ["project_manager", "owner_representative"]
+cadence = "on-demand"
+gate = "review"
+
+[[workflow]]
+name = "Identify due walks"
+instruction = "Read closeout records to find projects approaching their end-of-warranty date and needing a walk scheduled."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Schedule walk"
+instruction = "Propose walk dates that fall before the warranty expiration and confirm attendees and unit access."
+tools = ["spreadsheet", "knowledge_search"]
+[[workflow]]
+name = "Log walk items"
+instruction = "Capture each deficiency found on the walk with location, trade, and severity into the punch list."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag expiring items"
+instruction = "Flag any item whose resolution must close before the warranty period lapses or that requires owner sign-off."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Route to PM"
+instruction = "Hand the warranty walk punch list to the project manager for review and assignment."
+gate = "review"

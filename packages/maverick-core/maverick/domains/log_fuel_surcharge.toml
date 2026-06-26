@@ -11,3 +11,30 @@ max_risk = "medium"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["log"]
 authoring = "manual"
+
+[output]
+shape = "table"
+deliverable = "fuel surcharge variance reconciliation"
+consumers = ["logistics_manager", "accounts_payable"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "Pull surcharges"
+instruction = "Query invoiced fuel surcharge amounts and their shipment dates and lanes for the audit period."
+tools = ["sql_query", "read_file"]
+[[workflow]]
+name = "Get index values"
+instruction = "Retrieve the published fuel index values and contract surcharge tables for the matching dates and cite each source."
+tools = ["web_search", "knowledge_search"]
+[[workflow]]
+name = "Recompute surcharge"
+instruction = "Recalculate the expected surcharge from the indexed rate and compute the variance against each billed charge."
+tools = ["spreadsheet"]
+[[workflow]]
+name = "Flag discrepancies"
+instruction = "Isolate surcharges that diverge from the index or contract beyond routine tolerance for dispute."
+[[workflow]]
+name = "Route reconciliation"
+instruction = "Route the surcharge variance reconciliation to the logistics manager to approve before challenging carriers."
+gate = "review"

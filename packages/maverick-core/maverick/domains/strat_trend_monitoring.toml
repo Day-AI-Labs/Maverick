@@ -14,3 +14,24 @@ deny_tools = ["shell", "write_file"]
 knowledge_sources = ["strat"]
 
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "disruption early-warning brief"
+consumers = ["strategy_lead", "ceo"]
+cadence = "weekly"
+
+[[workflow]]
+name = "Set watchlist"
+instruction = "Read the tracked industries, technologies, and regulatory themes from the monitoring brief to focus the scan."
+tools = ["read_file", "knowledge_search"]
+[[workflow]]
+name = "Scan signals"
+instruction = "Search news, filings, and company databases for emerging disruption signals across the watchlist."
+tools = ["web_search", "crunchbase_read"]
+[[workflow]]
+name = "Assess materiality"
+instruction = "Separate facts from inference, date-stamp each signal, and assess likelihood and impact on the business."
+[[workflow]]
+name = "Compile brief"
+instruction = "Compile the prioritized early-warning brief noting what evidence would change each conclusion."

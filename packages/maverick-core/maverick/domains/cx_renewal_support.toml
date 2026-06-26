@@ -11,3 +11,30 @@ max_risk = "low"
 # Suite-level grounding fallback; replace with curated collections as they exist.
 knowledge_sources = ["cx"]
 authoring = "manual"
+
+[output]
+shape = "report"
+deliverable = "pre-renewal open-issue clearance brief"
+consumers = ["account_manager", "renewal_manager"]
+cadence = "weekly"
+gate = "review"
+
+[[workflow]]
+name = "List renewals"
+instruction = "Pull accounts with renewal dates in the upcoming window and their open support cases."
+tools = ["sql_query"]
+[[workflow]]
+name = "Review case state"
+instruction = "Read each open ticket and account record to determine root cause and current blocker."
+tools = ["read_file", "sql_query"]
+[[workflow]]
+name = "Ground resolutions"
+instruction = "Find the documented fix, workaround, or policy for each issue and cite the source used."
+tools = ["knowledge_search"]
+[[workflow]]
+name = "Draft clearance"
+instruction = "Draft a per-account brief of resolved items and any remaining risks, never promising credits or exceptions directly."
+[[workflow]]
+name = "Hand to AM"
+instruction = "Route the clearance brief to the account manager before the commercial renewal conversation."
+gate = "review"
