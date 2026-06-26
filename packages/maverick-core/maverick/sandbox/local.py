@@ -19,7 +19,8 @@ from pathlib import Path
 # strings that embed creds (DATABASE_URL, SENTRY_DSN, MONGO_URI,
 # REDIS_URL, *_OAUTH, *_BEARER).
 _SECRET_ENV_RE = re.compile(
-    r"(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|DSN|URI|URL|CONN|OAUTH|BEARER|HEADER)",
+    r"(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|APIKEY|DSN|URI|URL|CONN"
+    r"|OAUTH|BEARER|HEADER|NETRC|COOKIE|AUTH)",
     re.IGNORECASE,
 )
 # Stripped explicitly even though the pattern already covers them — kept
