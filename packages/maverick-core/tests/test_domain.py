@@ -328,3 +328,36 @@ class TestLintReadOnlyDenyFloor:
         p = self._pack(["read_file", "shell"], ["self_edit"])
         _, warnings = lint_profile(p)
         assert not any("defense-in-depth" in w for w in warnings)
+
+
+class TestBuiltinCatalogCache:
+    """The built-in catalog parse (2,000+ packs) is memoised so it is paid once
+    per process, not on every available_domains() call (e.g. each /agents and
+    /workflows render). Tenant overrides must still apply live."""
+
+    def test_builtin_catalog_is_memoised(self):
+        from maverick import domain as d
+        first = d.builtin_domains()
+        second = d.builtin_domains()
+        # Same cached dict object: not re-parsed from disk on the second call.
+        assert first is second
+        info = d._load_builtin_domains.cache_info()
+        before = info.hits
+        d.builtin_domains()
+        assert d._load_builtin_domains.cache_info().hits == before + 1
+
+    def test_available_domains_matches_uncached_builtin_load(self):
+        # Caching must not change *what* the catalog contains.
+        fresh = load_domains(builtin_dir())
+        assert set(fresh) <= set(available_domains())
+
+    def test_overrides_apply_live_despite_builtin_cache(self, tmp_path, monkeypatch):
+        # An override written after the builtin cache is warm must still show up:
+        # only the built-in bases are cached, never the tenant overlay.
+        available_domains()  # warm the builtin cache
+        name = sorted(load_domains(builtin_dir()))[0]
+        monkeypatch.setenv("MAVERICK_DOMAINS_DIR", str(tmp_path))
+        (tmp_path / "ovr.toml").write_text(
+            f'name = "{name}"\ndescription = "overridden-in-test"\n'
+        )
+        assert available_domains()[name].description == "overridden-in-test"

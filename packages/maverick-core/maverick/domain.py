@@ -18,6 +18,7 @@ sector seal can quarantine an entire domain at once (see
 """
 from __future__ import annotations
 
+import functools
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -196,6 +197,29 @@ def load_domains(directory: str | Path) -> dict[str, DomainProfile]:
     return out
 
 
+@functools.lru_cache(maxsize=8)
+def _load_builtin_domains(directory: str, _mtime_ns: int) -> dict[str, DomainProfile]:
+    """Cached load of the shipped built-in pack catalog (2,000+ packs).
+
+    Keyed by ``(path, directory mtime)`` so adding/removing a pack invalidates
+    the entry; the catalog is otherwise static for a process, so this turns the
+    repeated ~700ms parse (paid on every ``available_domains()`` call, e.g. each
+    /agents and /workflows render) into a one-time cost. Tenant overrides are
+    NOT cached here — ``available_domains`` re-reads them live every call.
+    """
+    return load_domains(Path(directory))
+
+
+def builtin_domains() -> dict[str, DomainProfile]:
+    """The built-in catalog, memoised by the built-in dir's mtime."""
+    d = builtin_dir()
+    try:
+        mtime_ns = d.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+    return _load_builtin_domains(str(d), mtime_ns)
+
+
 def builtin_dir() -> Path:
     return Path(__file__).parent / "domains"
 
@@ -304,7 +328,7 @@ def available_domains() -> dict[str, DomainProfile]:
     *patches* that base, inheriting every field it doesn't set. A user pack with
     a brand-new name is added as a standalone pack. This is what lets a client
     customize an agent without re-stating the whole pack."""
-    builtin = load_domains(builtin_dir())
+    builtin = builtin_domains()
     resolved = dict(builtin)
     for name, patch in _load_raw_domains(user_dir()).items():
         base = resolved.get(str(patch.get("extends") or name))
