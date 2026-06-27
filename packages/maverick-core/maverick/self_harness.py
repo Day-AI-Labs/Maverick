@@ -123,6 +123,17 @@ def _bullets(block: str) -> list[str]:
             if ln.startswith("- ")]
 
 
+def _norm_line(s: str) -> str:
+    """Canonical form for delta-merge equality: case-folded, whitespace-collapsed,
+    trailing punctuation stripped. Two lines with the same normal form are the
+    SAME guidance reworded only trivially (e.g. an LLM proposer returning
+    "Verify the token." then later "verify the token") -- they should refresh,
+    not occupy two of the bounded slots. Deliberately EXACT-after-normalization,
+    not fuzzy: templated per-class lines differ by a single token, and a fuzzy
+    threshold would wrongly merge distinct failure classes."""
+    return " ".join(str(s or "").split()).casefold().rstrip(".,;:!? ")
+
+
 def list_learned(path: Path | None = None) -> dict[str, list[str]]:
     """The learned guidance lines per model, for operator inspection.
 
@@ -369,12 +380,83 @@ def _sanitize_line(text: str) -> str:
     return line.strip()
 
 
+# Failure-class-grounded guidance for the deterministic proposer. arXiv
+# 2603.23994 warns the STARTING ARTIFACT bounds what the loop can ever learn, so
+# a generic "slow down and verify" line is a weak seed. These per-class lines
+# are specific AND -- unlike the generic fallback -- do NOT embed the
+# trace-derived signature text into the prompt, so they need no sanitization.
+_CLASS_GUIDANCE: dict[str, str] = {
+    "timeout": "this kind of goal has timed out before; budget the work, prefer "
+               "incremental/streaming steps, and check for long-running "
+               "operations before you start.",
+    "auth": "this kind of goal has failed on authentication before; verify "
+            "credentials and token freshness (refresh if near expiry) before the call.",
+    "parse": "this kind of goal has failed on parsing before; validate the "
+             "response shape before parsing and handle malformed or partial data.",
+    "tool_error": "this kind of goal has hit a tool error before; check the "
+                  "tool's preconditions and arguments and read its error output "
+                  "before retrying.",
+    "shield": "this kind of goal has been blocked by the safety shield before; "
+              "stay within policy and avoid the action that tripped it.",
+    "max_steps": "this kind of goal has run out of steps before; plan the fewest "
+                 "steps to the result and avoid exploratory detours.",
+    "budget": "this kind of goal has exhausted its budget before; do the cheapest "
+              "sufficient work first and avoid redundant tool calls.",
+    "agent_error": "this kind of goal has failed mid-run before; re-read the "
+                   "error, confirm preconditions, and take the smallest safe "
+                   "next step rather than retrying blindly.",
+}
+
+
 def _default_propose(sig: FailureSignature) -> str:
-    """Deterministic fallback proposer (no LLM): template a guidance line from
-    the signature so the loop runs and is testable without a provider."""
+    """Deterministic fallback proposer (no LLM): a failure-class-grounded
+    guidance line, templated so the loop runs and is testable without a
+    provider. Specific by class; falls back to a generic (sanitized) line for an
+    unknown class."""
+    specific = _CLASS_GUIDANCE.get(sig.failure_class)
+    if specific:
+        return f"When a goal resembles your past {sig.failure_class} failures, {specific}"
     return (f"When a goal resembles your past {sig.failure_class} failures "
             f"({sig.signature}), slow down and verify the precondition that "
             f"tripped you before acting.")
+
+
+def llm_proposer(llm, *, budget=None, model: str | None = None,
+                 max_tokens: int = 200) -> ProposeFn:
+    """Build a REFLECTIVE proposer backed by an LLM -- the GEPA/RPT shape
+    (arXiv 2507.19457, 2605.21781): read the mined failure signature + example
+    goals and write ONE minimal operating-guidance line. Injected exactly like
+    any other ``propose_fn``; the model is NOT hard-coded (kernel rule 2) --
+    pass ``model`` or let the ``llm``'s own resolved model stand.
+
+    Fails OPEN to :func:`_default_propose` on any provider error, empty output,
+    or non-finite result, so a flaky model never blocks or skips a pass. The
+    returned line still flows through ``propose_addendum``'s ``_sanitize_line``
+    + length gate, so an attacker-influenced model cannot smuggle control chars,
+    secrets, or multi-line break-outs past the existing defenses."""
+    def _propose(sig: FailureSignature) -> str:
+        try:
+            system = (
+                "You tune a coding agent's operating guidance. Given a recurring "
+                "failure pattern for ONE model, write a single short imperative "
+                "guidance line (<=200 characters, no preamble, no markdown, no "
+                "newlines) that, added to that model's system prompt, would help "
+                "it avoid this class of failure. Be specific and minimal.")
+            examples = "\n".join(f"- {e}" for e in sig.examples[:3]) or "(none)"
+            user = (f"Model: {sig.model_id}\nFailure class: {sig.failure_class}\n"
+                    f"Signature: {sig.signature}\nExample goals that failed:\n"
+                    f"{examples}\n\nGuidance line:")
+            resp = llm.complete(system, [{"role": "user", "content": user}],
+                                budget=budget, max_tokens=max_tokens, model=model)
+            text = (getattr(resp, "text", "") or "")
+            line = next((s.strip() for s in text.splitlines() if s.strip()), "")
+            line = line.lstrip("-*•> ").strip().strip('"').strip()
+            if line:
+                return line
+        except Exception as e:  # pragma: no cover -- fail open to deterministic
+            log.warning("self_harness: llm proposer failed (%s); using fallback", e)
+        return _default_propose(sig)
+    return _propose
 
 
 def propose_addendum(sig: FailureSignature, *, propose_fn: ProposeFn | None = None,
@@ -469,12 +551,18 @@ def _compose_addendum(model_id: str, existing: str, line: str) -> str:
         if ln.startswith("- "):
             ln = ln[2:].strip()
         lines.append(ln)
-    # Re-promoting an existing line REFRESHES it to newest (renewed relevance),
-    # rather than leaving it at an old position where this pass's other new
-    # lines would evict it under the newest-wins cap -- which left a promoted
-    # line absent from the store (found by the 100k soak).
-    if line in lines:
-        lines.remove(line)
+    # Delta-merge (ACE anti-collapse, arXiv 2510.04618): drop any existing line
+    # that normalizes to the SAME guidance as the new one, then append the new
+    # one last (newest). This refreshes an exact OR trivially-reworded re-promote
+    # to newest (renewed relevance) rather than leaving it where this pass's
+    # other new lines would evict it under the newest-wins cap -- which left a
+    # promoted line absent from the store (found by the 100k soak) -- and stops a
+    # case/whitespace variant from consuming a second of the bounded slots and
+    # evicting DISTINCT guidance (the "context collapse / brevity bias" mode).
+    # Normalized-EXACT, not fuzzy: templated per-class lines differ by one token,
+    # so a similarity threshold would wrongly merge distinct failure classes.
+    nl = _norm_line(line)
+    lines = [ln for ln in lines if _norm_line(ln) != nl]
     lines.append(line)
     lines = lines[-_MAX_LINES_PER_MODEL:]
 
@@ -640,9 +728,17 @@ def _gate_and_apply(proposal: HarnessProposal, vr: ValidationResult, *,
     _apply_addendum(proposal, path=path)
     try:
         from .audit import EventKind, record
+        # Record the DIAGNOSTIC PROVENANCE alongside the line: which weakness it
+        # targets (signature/rationale) and the unseen-split evidence that
+        # promoted it (held-out delta over N samples). A reversible, signed
+        # learning audit should answer "why was this learned?", not just "what"
+        # -- the provenance a compliance review / rollback decision needs
+        # (arXiv 2508.07407's evaluation-and-safety requirement).
         record(EventKind.LEARNING_UPDATE, agent="self_harness",
                model_id=proposal.model_id, rung="prompt",
-               line=proposal.addendum_line, phase="apply")
+               line=proposal.addendum_line, phase="apply",
+               signature=proposal.signature, rationale=proposal.rationale,
+               held_out_delta=round(vr.held_out_delta, 4), samples=vr.samples)
     except Exception:  # pragma: no cover -- audit best-effort
         pass
     return True, "promoted"
@@ -652,7 +748,7 @@ __all__ = [
     "enabled", "recall_addendum", "load_addenda",
     "list_learned", "forget_addendum",
     "FailureSignature", "mine_failures", "count_eligible",
-    "HarnessProposal", "ProposeFn", "propose_addendum",
+    "HarnessProposal", "ProposeFn", "propose_addendum", "llm_proposer",
     "ValidationResult", "ScoreFn", "validate_proposal",
     "SelfHarnessReport", "run_self_harness",
 ]
