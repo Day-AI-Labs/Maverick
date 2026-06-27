@@ -380,6 +380,35 @@ def _sanitize_line(text: str) -> str:
     return line.strip()
 
 
+# Semantic policy-erosion screen for the proposed LINE itself. `_sanitize_line`
+# defends SYNTAX (control chars, secrets, multi-line) and the gate enforces
+# capability non-escalation on the CANDIDATE; neither reads the MEANING of the
+# prose that will ride in every future prompt for this model. A line that tells
+# the model to disable/bypass/ignore its own safety machinery is exactly the
+# poisoning a trace-influenced (or buggy) proposer could smuggle as plain prose.
+# Matches an erosion VERB near a safety-control NOUN within a clause. Deliberately
+# conservative: it refuses even negated mentions ("don't skip validation") because
+# the lesson should be stated POSITIVELY ("always run validation") -- a line that
+# talks about ignoring safety at all is a smell in always-on guidance. The
+# class-grounded fallback lines use only positive verbs (verify/check/validate/
+# avoid/refresh), so they never trip it. (Threat raised by an external review.)
+_POLICY_EROSION_RE = re.compile(
+    r"\b(?:ignore|bypass|disable|circumvent|evade|override|overrule|suppress|"
+    r"skip|conceal|hide|turn\s+off|opt\s+out\s+of)\b"
+    r"[\w\s,'\"()-]{0,40}?\b(?:safety|shield|guard\s?rails?|guardrails?|"
+    r"validations?|validator|verifier|verification|polic(?:y|ies)|approvals?|"
+    r"consent|authentication|authorization|auth|credentials?|permissions?|"
+    r"sandbox|audit|budget|spending|uncertainty|warnings?)\b",
+    re.IGNORECASE)
+
+
+def _erodes_policy(line: str) -> bool:
+    """Whether a proposed guidance line tells the model to weaken its own safety
+    machinery (disable/bypass/ignore validation, auth, budget, sandbox, audit,
+    ...). Refused in :func:`propose_addendum` as defense-in-depth."""
+    return bool(_POLICY_EROSION_RE.search(line or ""))
+
+
 # Failure-class-grounded guidance for the deterministic proposer. arXiv
 # 2603.23994 warns the STARTING ARTIFACT bounds what the loop can ever learn, so
 # a generic "slow down and verify" line is a weak seed. These per-class lines
@@ -473,6 +502,9 @@ def propose_addendum(sig: FailureSignature, *, propose_fn: ProposeFn | None = No
     line = _sanitize_line(line)  # control chars + multi-line + secrets neutralized
     if not line or len(line) > 280:
         return None
+    if _erodes_policy(line):  # semantic screen: no "bypass/ignore <safety>" guidance
+        log.warning("self_harness: refused policy-eroding proposal: %r", line)
+        return None
     return HarnessProposal(
         model_id=sig.model_id, signature=sig.signature,
         addendum_line=line,
@@ -503,6 +535,7 @@ ScoreFn = Callable[[str, list[str]], float]
 def validate_proposal(
     proposal: HarnessProposal, *, held_in: list[str], held_out: list[str],
     score_with: ScoreFn, score_without: ScoreFn,
+    min_delta: float = 0.0, min_held_out: int = 0,
 ) -> ValidationResult:
     """The Self-Harness acceptance test: a harness edit must not regress EITHER
     split and must help at least one (reject pure trades).
@@ -510,7 +543,12 @@ def validate_proposal(
     ``held_in`` are the mined cases the edit was written against; ``held_out``
     are unseen cases that guard against overfitting the edit to its own examples
     (the paper's central failure mode). ``score_with``/``score_without`` return
-    a success rate for the prompt WITH vs WITHOUT the candidate line."""
+    a success rate for the prompt WITH vs WITHOUT the candidate line.
+
+    ``min_delta`` (effect-size floor) and ``min_held_out`` (unseen-sample floor)
+    default OFF (0.0 / 0), preserving the base rule. A live caller should set
+    them: agent eval scores are NOISY, so a sub-threshold lift or a 1-of-1
+    held-out "win" is not durable evidence (external-review hardening)."""
     add = proposal.addendum_line
     in_with, in_without = score_with(add, held_in), score_without(add, held_in)
     out_with, out_without = score_with(add, held_out), score_without(add, held_out)
@@ -528,6 +566,11 @@ def validate_proposal(
     in_delta, out_delta = in_with - in_without, out_with - out_without
     # The gate sees the unseen split as the honest baseline/candidate evidence.
     base = dict(baseline_score=out_without, candidate_score=out_with, samples=n)
+    # Unseen-sample floor: too few held-out cases is not trustworthy generalization.
+    if min_held_out and len(held_out) < min_held_out:
+        return ValidationResult(False, in_delta, out_delta,
+                                f"too few held-out cases ({len(held_out)} < {min_held_out})",
+                                **base)
     # Non-negative on both, strictly positive on at least one.
     if in_delta < 0 or out_delta < 0:
         return ValidationResult(False, in_delta, out_delta,
@@ -535,6 +578,12 @@ def validate_proposal(
     if in_delta <= 0 and out_delta <= 0:
         return ValidationResult(False, in_delta, out_delta,
                                 "no improvement on either split", **base)
+    # Effect-size floor: a sub-threshold lift is noise, not a durable improvement.
+    if max(in_delta, out_delta) < min_delta:
+        return ValidationResult(
+            False, in_delta, out_delta,
+            f"improvement below threshold ({max(in_delta, out_delta):.4g} < {min_delta})",
+            **base)
     return ValidationResult(True, in_delta, out_delta, "validated", **base)
 
 
@@ -638,6 +687,7 @@ def run_self_harness(
     score_with: ScoreFn | None = None, score_without: ScoreFn | None = None,
     propose_fn: ProposeFn | None = None, controller=None,
     min_support: int = 3, path: Path | None = None,
+    require_held_out: bool = False, min_delta: float = 0.0, min_held_out: int = 0,
 ) -> SelfHarnessReport:
     """One self-harness pass for ``model_id``: mine weaknesses, propose minimal
     edits, validate on held-in/held-out, and GATE each survivor through the
@@ -673,10 +723,17 @@ def run_self_harness(
             if score_with is None or score_without is None:
                 report.skipped.append(f"no scorer (dry): {proposal.addendum_line}")
                 continue
+            # Held-out is the overfitting guard the docs call mandatory; with a
+            # live scorer, `require_held_out` makes that explicit -- never promote
+            # on only the mined examples (default off for back-compat).
+            if require_held_out and not held_out:
+                report.skipped.append(f"no held-out cases: {proposal.addendum_line}")
+                continue
             vr = validate_proposal(
                 proposal, held_in=held_in or list(sig.examples),
                 held_out=held_out or [], score_with=score_with,
-                score_without=score_without)
+                score_without=score_without,
+                min_delta=min_delta, min_held_out=min_held_out)
             if not vr.accepted:
                 report.skipped.append(f"rejected ({vr.reason}): {proposal.addendum_line}")
                 continue
