@@ -17,12 +17,26 @@ file is the standalone scoreboard around the same invariants.
 """
 from __future__ import annotations
 
+import atexit
 import hashlib
 import os
 import pathlib
+import shutil
 import sys
 import tempfile
 import threading
+
+# Run entirely inside a throwaway MAVERICK_HOME so the proof leaves NOTHING in
+# the operator's real ~/.maverick. The gate's promotion path writes a signed
+# LEARNING_UPDATE row to the global audit log (data_dir, not the per-call store
+# path), so pointing the store at a temp dir is not enough on its own -- without
+# this, running the proof injects fake "self_harness" rows into the real audit
+# trail (the sibling `maverick demo` makes the same "nothing touches your real
+# state" promise). Must be set BEFORE any maverick import resolves paths;
+# data_dir reads MAVERICK_HOME at call time, and all imports below are lazy.
+_ISOLATED_HOME = tempfile.mkdtemp(prefix="maverick-self-harness-proof-")
+os.environ["MAVERICK_HOME"] = _ISOLATED_HOME
+atexit.register(shutil.rmtree, _ISOLATED_HOME, ignore_errors=True)
 
 # Make the shipped package importable however this is launched (repo root, CI, ...).
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent

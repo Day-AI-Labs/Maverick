@@ -252,6 +252,14 @@ def self_harness_cmd(model_id: str | None, min_support: int, limit: int) -> None
         raise click.ClickException(
             "self-harness is off. Set [self_harness] enable = true or "
             "MAVERICK_SELF_HARNESS=1.")
+    if min_support < 1:
+        # mine_failures treats min_support < 1 as "disabled" and returns nothing;
+        # without this guard the command would silently print "No recurring
+        # weaknesses", which reads as "your model has none" rather than "you
+        # turned mining off". Fail loudly instead.
+        raise click.ClickException(
+            "--min-support must be >= 1 (a weakness needs at least one recurring "
+            "failure to be a pattern).")
     if not model_id:
         from ..llm import model_for_role
         model_id = model_for_role("orchestrator")

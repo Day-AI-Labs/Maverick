@@ -11,6 +11,7 @@ never touch a real install.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from click.testing import CliRunner
@@ -103,3 +104,23 @@ def test_log_smoke_and_records_forget(_home):
     CliRunner().invoke(main, ["self-harness", "forget", "--model", "claude-x", "--yes"])
     r = CliRunner().invoke(main, ["self-harness", "log"])
     assert r.exit_code == 0, r.output
+
+
+def test_log_renders_human_readable_timestamp(_home):
+    # The audit ts is an epoch float; the operator-facing log must render it as a
+    # calendar timestamp, not a raw 1.78e9 float (which answers "when?" with noise).
+    _seed()
+    CliRunner().invoke(main, ["self-harness", "forget", "--model", "claude-x", "--yes"])
+    r = CliRunner().invoke(main, ["self-harness", "log"])
+    assert r.exit_code == 0, r.output
+    assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", r.output), r.output
+    assert not re.search(r"\b1[0-9]{9}\.\d", r.output), r.output  # no raw epoch float
+
+
+def test_preview_rejects_nonpositive_min_support(_home):
+    # min_support < 1 disables mining; the command must say so loudly instead of
+    # printing "No recurring weaknesses" (which reads as "your model has none").
+    for bad in ("0", "-3"):
+        r = CliRunner().invoke(main, ["self-harness", "preview", "--min-support", bad])
+        assert r.exit_code != 0, r.output
+        assert "min-support" in r.output.lower(), r.output
