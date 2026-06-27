@@ -82,6 +82,35 @@ def test_register_validates_strategy():
         cp.register(_NoName())
 
 
+def test_hybrid_flag_warns_once_and_is_a_noop(monkeypatch, caplog):
+    """Enabling [compaction] hybrid (unwired) logs one warning and does NOT
+    change compaction output — the no-op is loud, not silent."""
+    import logging
+
+    monkeypatch.setattr(cp, "_HYBRID_NOOP_WARNED", False)
+    monkeypatch.setenv("MAVERICK_COMPACTION_HYBRID", "1")
+    monkeypatch.delenv("MAVERICK_COMPACTION_STRATEGY", raising=False)
+    monkeypatch.setattr("maverick.config.load_config", dict)
+    msgs = _msgs(3)
+    with caplog.at_level(logging.WARNING, logger="maverick.compaction.plugins"):
+        out = cp.compact_with(msgs)
+        cp.compact_with(msgs)  # second call must not warn again
+    assert out == msgs  # behavior unchanged
+    hybrid_warnings = [r for r in caplog.records if "hybrid" in r.getMessage()]
+    assert len(hybrid_warnings) == 1
+
+
+def test_hybrid_flag_off_does_not_warn(monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setattr(cp, "_HYBRID_NOOP_WARNED", False)
+    monkeypatch.delenv("MAVERICK_COMPACTION_HYBRID", raising=False)
+    monkeypatch.setattr("maverick.config.load_config", dict)
+    with caplog.at_level(logging.WARNING, logger="maverick.compaction.plugins"):
+        cp.compact_with(_msgs(3))
+    assert not [r for r in caplog.records if "hybrid" in r.getMessage()]
+
+
 def test_heuristic_strategy_actually_compacts():
     # a long list with a big tool_result should get digested by the built-in
     big = "x" * 100000

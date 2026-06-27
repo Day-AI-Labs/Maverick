@@ -35,6 +35,7 @@ __all__ = [
     "SSHBackend",
     "ExecResult",
     "build_sandbox",
+    "fs_is_host_visible",
     "SandboxPolicyError",
     "SDK_VERSION",
     "SandboxV2",
@@ -122,6 +123,23 @@ def _resolve_image(full_cfg: dict) -> str:
 
 
 _LOCAL_WARNING_EMITTED = False
+
+
+def fs_is_host_visible(sandbox: object | None) -> bool:
+    """Whether files the sandbox writes are visible to THIS (host) process.
+
+    True when there is no sandbox (commands fall back to a host subprocess) or
+    the backend runs against the host filesystem (``LocalBackend``, which sets
+    ``host_visible_fs = True``). Container / remote backends (docker, podman,
+    kubernetes, firecracker, ssh, modal) execute in a separate filesystem
+    namespace, so a host-side ``Path.exists()`` on an output path is meaningless
+    there -- callers should report the path rather than stat it. Unknown
+    backends default to NOT host-visible, the conservative choice: a tool then
+    states it can't verify instead of emitting a false "output missing" warning.
+    """
+    if sandbox is None:
+        return True
+    return bool(getattr(sandbox, "host_visible_fs", False))
 
 
 class SandboxPolicyError(RuntimeError):

@@ -103,7 +103,21 @@ def _op_convert(args: dict, sandbox, to_override: str | None = None) -> str:
     # LibreOffice prints "convert ... -> /path output_FILTER"; surface its line
     # too, but the derived dst is the predictable answer.
     tail = out.strip().splitlines()[-1] if out.strip() else ""
-    return f"wrote {dst}" + (f"\n{tail}" if tail else "")
+    suffix = f"\n{tail}" if tail else ""
+    # Verify the output exists -- but only when the sandbox filesystem is
+    # visible to this process. Under a container/remote backend the host can't
+    # stat the path, so a naive exists() check would mis-report every success
+    # as "missing"; there we report the path without claiming to have confirmed.
+    from ..sandbox import fs_is_host_visible
+    if not fs_is_host_visible(sandbox):
+        return f"wrote {dst} (in sandbox; not host-visible to verify here){suffix}"
+    try:
+        if dst.exists():
+            return f"wrote {dst} ({dst.stat().st_size} bytes){suffix}"
+    except OSError:
+        return f"wrote {dst}{suffix}"
+    return (f"WARNING: libreoffice exited 0 but {dst} is not present -- it may "
+            f"have written a different filename; check the output directory.{suffix}")
 
 
 def _op_formats(_args: dict, _sandbox) -> str:

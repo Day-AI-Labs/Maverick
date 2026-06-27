@@ -43,10 +43,19 @@ def test_off_allows_everything():
     assert _check("write_file", "off").startswith("ALLOW")
 
 
-def test_unknown_action_fails_open():
+def test_unknown_action_fails_closed_at_full():
+    # The maximal containment level denies anything it can't classify.
     out = _check("teleport", "full")
-    assert out.startswith("ALLOW")
-    assert "fail-open" in out
+    assert out.startswith("DENY")
+    assert "fail-closed" in out
+
+
+def test_unknown_action_fails_open_below_full():
+    # off/network make only targeted promises, so an unknown action fails open.
+    for level in ("off", "network"):
+        out = _check("teleport", level)
+        assert out.startswith("ALLOW")
+        assert "fail-open" in out
 
 
 def test_errors():

@@ -103,6 +103,38 @@ def test_requires_input(have_lo):
     assert out.startswith("ERROR") and "input_path" in out
 
 
+def test_container_sandbox_reports_unverified(tmp_path, have_lo):
+    """A non-host-visible (container/remote) sandbox can't be stat'd from here,
+    so we report the path without claiming to have confirmed it."""
+    sb = RecordingSandbox(tmp_path)  # no host_visible_fs -> treated as container
+    t = office_convert(sandbox=sb)
+    out = t.fn({"op": "convert", "input_path": "report.docx", "to": "pdf"})
+    assert out.startswith("wrote ")
+    assert "not host-visible to verify" in out
+
+
+def test_host_visible_confirms_existing_output(tmp_path, have_lo):
+    """A host-visible backend stats the real output and reports its size."""
+    (tmp_path / "report.pdf").write_bytes(b"%PDF-1.4 fake")
+    sb = RecordingSandbox(tmp_path)
+    sb.host_visible_fs = True
+    t = office_convert(sandbox=sb)
+    out = t.fn({"op": "convert", "input_path": "report.docx", "to": "pdf"})
+    assert out.startswith("wrote ")
+    assert "report.pdf" in out
+    assert "bytes)" in out  # size-confirmed
+
+
+def test_host_visible_warns_when_output_missing(tmp_path, have_lo):
+    """Exit 0 but no output file (e.g. an unexpected name) must not read as success."""
+    sb = RecordingSandbox(tmp_path)
+    sb.host_visible_fs = True
+    t = office_convert(sandbox=sb)
+    out = t.fn({"op": "convert", "input_path": "report.docx", "to": "pdf"})
+    assert out.startswith("WARNING")
+    assert "not present" in out
+
+
 def test_nonzero_exit_surfaces_stderr(tmp_path, have_lo):
     sb = RecordingSandbox(tmp_path, exit_code=1, stderr="source file could not be loaded")
     t = office_convert(sandbox=sb)

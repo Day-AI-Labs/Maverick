@@ -32,8 +32,14 @@ returns the ladder's pick — existing behavior.
 Status: EXPERIMENTAL — :func:`pick_strategy` is implemented and unit-tested but
 **not yet wired into the live agent compaction path** (``agent.py`` ->
 ``compaction.plugins.compact_with`` -> ``compaction.strategies``), which still
-uses the rule ladder. Setting ``[compaction] hybrid`` is therefore a no-op on
-real runs until a caller is added; see docs/ROADMAP.md (Performance).
+uses the rule ladder. Wiring it requires reconciling this module's abstract
+shrink vocabulary (``truncate | structural | retrieval | summarize``) with the
+live *implementation* vocabulary (``heuristic | learned | multimodal |
+streaming | graph``) — a non-trivial mapping, not a 1:1 rename. Setting
+``[compaction] hybrid`` is therefore a no-op on real runs until a caller is
+added; ``compaction.plugins.compact_with`` now logs a one-time warning when the
+flag is set so that no-op is explicit rather than silent. See docs/ROADMAP.md
+(Performance).
 """
 from __future__ import annotations
 
