@@ -88,6 +88,14 @@ class TrajectoryRecord:
     # the drafts it discards. The ``text`` is raw transcript content, so it is
     # stripped unless ``donate_text`` is also set (same rule as task_brief_text).
     rejected_attempts: list = field(default_factory=list)
+    # Best-of-N scored candidates: each ``{"text": patch, "score": float in [0,1],
+    # "all_pass": bool}``. When coding-mode best-of-N runs N attempts at one task,
+    # each candidate's OBJECTIVE local-test pass-rate is its score -- a passing
+    # patch (1.0) vs a failing one (~0.0) is a real DPO preference pair WITHOUT
+    # any verifier rejection (the verifier accepts ~everything, spread 0.03-0.10).
+    # The ``text`` is the unified-diff patch (the proposer artifact DPO trains on),
+    # stripped unless ``donate_text`` is set -- same rule as task_brief_text.
+    scored_candidates: list = field(default_factory=list)
     wall_seconds: float = 0.0
     cost_dollars: float = 0.0
     tokens_in: int = 0
@@ -236,6 +244,12 @@ def write_record(
             {k: v for k, v in a.items() if k != "text"}
             for a in (record.rejected_attempts or [])
             if isinstance(a, dict)
+        ]
+        # Same rule for best-of-N candidate patches: keep score/all_pass, drop text.
+        record.scored_candidates = [
+            {k: v for k, v in c.items() if k != "text"}
+            for c in (record.scored_candidates or [])
+            if isinstance(c, dict)
         ]
 
     # Scrub every text field that could carry secrets, including strings nested

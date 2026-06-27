@@ -1556,6 +1556,80 @@ def run_goal_sync(*args, **kwargs) -> str:
         reset_goal_context(token)
 
 
+def _donate_bestofn_candidates(llm, world, budget, goal_id, candidates, best) -> None:
+    """Donate the best-of-N candidates as DPO preference pairs.
+
+    Each candidate's OBJECTIVE local-test score is its reward, so a passing patch
+    (1.0) vs a failing one (~0.0) forms a real preference pair with NO verifier
+    rejection required -- the quality gradient the revise-to-success loop never
+    produces (the LLM verifier accepts ~everything, confidence spread 0.03-0.10).
+
+    Additive + fail-open: a donation bug must never affect the goal result (kernel
+    rule 7). Only fires under ``[telemetry] donate_trajectories``. Run with
+    ``MAVERICK_BON_EARLY_EXIT=0`` on ~50%-pass-rate tasks so both a pass and a
+    fail are captured (otherwise the ladder stops at the first pass -> no pair).
+    Skips ineligible candidates (apply/runner error, empty patch) so a crash 0.0
+    never masquerades as a genuine fail, and writes nothing unless >=2 candidates
+    have >=2 distinct scores (no gradient -> nothing to learn).
+    """
+    try:
+        from .donation import (
+            TrajectoryRecord,
+            _donations_enabled,
+            hash_brief,
+            write_record,
+        )
+        if not _donations_enabled() or best is None:
+            return
+        goal = world.get_goal(goal_id)
+        if goal is None:
+            return
+        scored = []
+        for c in candidates:
+            if (
+                c.error
+                or not (c.patch or "").strip()
+                or c.test_result is None
+                or c.test_result.error
+            ):
+                continue
+            reward = 1.0 if c.test_result.all_pass else float(c.test_result.score)
+            scored.append({
+                "text": c.patch,
+                "score": reward,
+                "all_pass": bool(c.test_result.all_pass),
+            })
+        distinct = {round(s["score"], 3) for s in scored}
+        if len(scored) >= 2 and len(distinct) >= 2:
+            desc = goal.description or ""
+            write_record(TrajectoryRecord(
+                task_brief_hash=hash_brief(goal.title + desc),
+                task_brief_text=(goal.title + "\n" + desc),
+                goal_id=goal_id,
+                model_id=getattr(llm, "model", ""),
+                outcome="success",
+                reward=float(best.score),
+                verifier_confidence=float(best.score),
+                disagreement_entropy=0.0,
+                scored_candidates=scored,
+                wall_seconds=budget.elapsed(),
+                cost_dollars=budget.dollars,
+                tokens_in=budget.input_tokens,
+                tokens_out=budget.output_tokens,
+            ))
+        else:
+            # No gradient -- make it diagnosable, not a silent no-op (this is the
+            # common off-frontier outcome the operator needs to see).
+            log.info(
+                "best-of-N: no DPO pair donated -- %d eligible candidate(s), "
+                "%d distinct score(s) (need >=2 of each; pick a task at the "
+                "model's ~50%% pass-rate frontier and set MAVERICK_BON_EARLY_EXIT=0)",
+                len(scored), len(distinct),
+            )
+    except Exception as e:  # pragma: no cover -- donation must never break a run
+        log.warning("best-of-N candidate donation skipped: %s", e)
+
+
 async def run_goal_best_of_n(
     llm: LLM,
     world: WorldModel,
@@ -1729,13 +1803,23 @@ async def run_goal_best_of_n(
         cand = await evaluate_candidate(patch, workdir, cfg, sandbox, i)
         candidates.append(cand)
 
-        if cand.test_result is not None and cand.test_result.all_pass:
+        if (
+            cand.test_result is not None
+            and cand.test_result.all_pass
+            and os.environ.get("MAVERICK_BON_EARLY_EXIT", "1") != "0"
+        ):
             # Early exit only when ALL tests genuinely pass. The old
             # `score >= 0.99` fired on a count-pooled partial score too: with a
             # large PASS_TO_PASS suite a candidate that resolves NONE of the
             # FAIL_TO_PASS tests still clears 0.99, so best-of-N stopped early
             # on a candidate that didn't fix the issue. all_pass requires every
             # FAIL_TO_PASS and PASS_TO_PASS test to pass (and >=1 test to run).
+            #
+            # MAVERICK_BON_EARLY_EXIT=0 disables this so the ladder runs ALL N
+            # attempts even after a pass -- needed when MINING DPO preference
+            # pairs, where we must capture BOTH a passing and a failing candidate
+            # in the same run (stopping at the first pass leaves one candidate and
+            # no pair to learn from).
             log.info("best-of-N early exit at attempt %d: all tests pass", i)
             break
         if cap_reached:
@@ -1745,6 +1829,7 @@ async def run_goal_best_of_n(
             break
 
     best = select_best_candidate(candidates)
+    _donate_bestofn_candidates(llm, world, budget, goal_id, candidates, best)
     if best is None or not best.patch:
         return (
             f"Stopped: none of the {len(candidates)} attempts produced an applyable patch.\n"
