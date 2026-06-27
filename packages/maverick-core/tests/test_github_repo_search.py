@@ -97,3 +97,57 @@ def test_run_uses_token_header(monkeypatch):
     assert "/search/repositories" in captured["url"]
     # The Bearer header is built from the env token.
     assert ghs._headers()["Authorization"] == "Bearer tok123"
+
+
+# --- redirect credential-leak regression -----------------------------------
+import http.server  # noqa: E402
+import threading  # noqa: E402
+
+from maverick.tools import github_repo_search as _ghs_redir  # noqa: E402
+
+
+class _GhsRecordingHandler(http.server.BaseHTTPRequestHandler):
+    received_headers: dict = {}
+
+    def do_GET(self):  # noqa: N802
+        type(self).received_headers = {k.lower(): v for k, v in self.headers.items()}
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def log_message(self, *a):
+        pass
+
+
+def _ghs_make_server(handler):
+    srv = http.server.HTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def test_cross_host_redirect_strips_authorization(monkeypatch):
+    """A 302 to a different host must NOT forward the Bearer GITHUB_TOKEN."""
+    sink = _ghs_make_server(_GhsRecordingHandler)
+    sink_url = f"http://localhost:{sink.server_address[1]}/leaked"
+
+    class _Redir(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", sink_url)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    redir = _ghs_make_server(_Redir)
+    try:
+        monkeypatch.setenv("GITHUB_TOKEN", "SECRET-GH-456")
+        url = f"http://127.0.0.1:{redir.server_address[1]}/start"
+        code, _ = _ghs_redir._http_get_json(url)
+        assert code == 200
+        got = _GhsRecordingHandler.received_headers
+        assert "authorization" not in got, got
+    finally:
+        sink.shutdown()
+        redir.shutdown()

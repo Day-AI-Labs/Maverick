@@ -19,6 +19,11 @@ DEFAULT_MAX_DOC_BYTES = 25 * 1024 * 1024
 # inflate to gigabytes (a zip bomb); python-docx applies no such limit, and the
 # on-disk cap above bounds only the compressed input, not the expansion. 0 off.
 DEFAULT_MAX_DOCX_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
+# Cap the page count of a PDF. PDF content streams are Flate-compressed, so a
+# small on-disk file can decompress to gigabytes and an attacker can pack
+# millions of pages via object streams; the on-disk cap above bounds only the
+# compressed input, not that expansion. Mirrors the DOCX zip-bomb guard. 0 off.
+DEFAULT_MAX_PDF_PAGES = 5000
 
 
 def _int_env(name: str, default: int) -> int:
@@ -56,6 +61,20 @@ def _check_docx_uncompressed_size(path: Path) -> None:
         raise ValueError(
             f"docx decompresses too large ({total} bytes > {cap} bytes); "
             "refusing to expand a possible zip bomb"
+        )
+
+
+def _check_pdf_page_count(reader) -> None:
+    """Reject a PDF whose page count exceeds the cap, BEFORE iterating pages and
+    decompressing their (Flate-compressed) content streams into memory."""
+    cap = _int_env("MAVERICK_KNOWLEDGE_MAX_PDF_PAGES", DEFAULT_MAX_PDF_PAGES)
+    if cap <= 0:
+        return
+    pages = len(reader.pages)
+    if pages > cap:
+        raise ValueError(
+            f"pdf has too many pages to ingest ({pages} > {cap}); raise "
+            "MAVERICK_KNOWLEDGE_MAX_PDF_PAGES to allow it"
         )
 
 
@@ -115,6 +134,7 @@ def extract_text(path: str | Path) -> str:
                 "pip install maverick-knowledge[parsers]"
             ) from e
         reader = PdfReader(str(path))
+        _check_pdf_page_count(reader)
         return "\n".join((page.extract_text() or "") for page in reader.pages)
     if suffix == ".docx":
         try:

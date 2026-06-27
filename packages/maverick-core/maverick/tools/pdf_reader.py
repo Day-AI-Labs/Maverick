@@ -49,21 +49,27 @@ def _parse_pages(spec: str, total: int) -> list[int]:
     if not spec:
         return list(range(total))
     out: set[int] = set()
-    for chunk in spec.split(","):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        if "-" in chunk:
-            a, _, b = chunk.partition("-")
-            start = int(a) if a else 1
-            end = int(b) if b else total
-            for n in range(start, end + 1):
+    try:
+        for chunk in spec.split(","):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            if "-" in chunk:
+                a, _, b = chunk.partition("-")
+                # Clamp both ends to [1, total] BEFORE building the range so a
+                # spec like '1-99999999' can't construct a ~10^8-element loop.
+                start = max(1, int(a)) if a else 1
+                end = min(total, int(b)) if b else total
+                for n in range(start, end + 1):
+                    out.add(n - 1)
+            else:
+                n = int(chunk)
                 if 1 <= n <= total:
                     out.add(n - 1)
-        else:
-            n = int(chunk)
-            if 1 <= n <= total:
-                out.add(n - 1)
+    except ValueError:
+        # Non-numeric spec (e.g. 'a-b'): fall back to all pages rather than
+        # letting ValueError escape the tool.
+        return list(range(total))
     return sorted(out)
 
 

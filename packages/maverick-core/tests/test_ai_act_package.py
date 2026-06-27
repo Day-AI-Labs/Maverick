@@ -44,6 +44,27 @@ def test_oversight_reflects_env(monkeypatch, tmp_path):
     assert "HALT" in p["human_oversight"]["killswitch_path"]
 
 
+def test_oversight_consent_mode_matches_real_resolver(monkeypatch, tmp_path):
+    """The reported default must mirror the actual resolver, not a guess.
+
+    Regression: _oversight() used to hardcode 'ask (default)' when no consent
+    mode was configured, telling an auditor human oversight was in place while
+    the real default (consent._resolve_mode) is 'auto-approve'.
+    """
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+    monkeypatch.delenv("MAVERICK_ENTERPRISE", raising=False)
+    from maverick.safety import consent
+
+    resolved = consent._resolve_mode()
+    p = pkg.build_package()
+    mode = p["human_oversight"]["consent_mode"]
+    assert mode.startswith(resolved), (resolved, mode)
+    # The fabricated posture must be gone.
+    assert mode != "ask (default)"
+    assert resolved == "auto-approve"
+
+
 def test_package_is_json_serializable(tmp_path, monkeypatch):
     monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
     json.dumps(pkg.build_package(), default=str)

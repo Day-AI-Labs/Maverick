@@ -9,7 +9,19 @@ from __future__ import annotations
 import zipfile
 
 import pytest
-from maverick_knowledge.parse import _check_docx_uncompressed_size, extract_text
+from maverick_knowledge.parse import (
+    _check_docx_uncompressed_size,
+    _check_pdf_page_count,
+    extract_text,
+)
+
+
+class _StubReader:
+    """Minimal stand-in for pypdf.PdfReader: only ``.pages`` is consulted by the
+    page-count guard, so we avoid needing the optional 'parsers' extra here."""
+
+    def __init__(self, n_pages):
+        self.pages = list(range(n_pages))
 
 
 def test_small_text_file_extracts(tmp_path):
@@ -67,3 +79,21 @@ def test_corrupt_zip_docx_rejected(tmp_path):
     z.write_bytes(b"not a zip at all")
     with pytest.raises(ValueError, match="corrupt zip"):
         _check_docx_uncompressed_size(z)
+
+
+def test_pdf_page_count_guard_rejects_too_many(monkeypatch):
+    # A PDF whose page count exceeds the cap is refused BEFORE the per-page
+    # extract loop decompresses each (Flate) content stream into memory.
+    monkeypatch.setenv("MAVERICK_KNOWLEDGE_MAX_PDF_PAGES", "10")
+    with pytest.raises(ValueError, match="too many pages"):
+        _check_pdf_page_count(_StubReader(11))
+
+
+def test_pdf_page_count_guard_allows_normal(monkeypatch):
+    monkeypatch.setenv("MAVERICK_KNOWLEDGE_MAX_PDF_PAGES", "10")
+    _check_pdf_page_count(_StubReader(10))  # no raise
+
+
+def test_pdf_page_count_guard_disabled_with_zero(monkeypatch):
+    monkeypatch.setenv("MAVERICK_KNOWLEDGE_MAX_PDF_PAGES", "0")
+    _check_pdf_page_count(_StubReader(1_000_000))  # no raise

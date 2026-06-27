@@ -126,6 +126,40 @@ def test_stream_episode_yields_events_then_terminal_status():
     assert shared["closes"] >= 1
 
 
+def test_stream_episode_drains_backlog_past_one_page_before_terminal():
+    # Regression: a terminal goal with >200 pending events must not drop the
+    # tail. goal_events here honours the LIMIT (like the real world model), so a
+    # naive single-read would stream only the first 200 and emit the synthetic
+    # status, stranding events 201..N.
+    shared = _shared()
+    shared["goals"][7] = _Goal(id=7, status="done", result="ok")
+    shared["events"] = [
+        _Event(i, 7, "worker", "tool", f"step {i}", float(i))
+        for i in range(1, 251)
+    ]
+
+    class _PagedWorld(_FakeWorld):
+        def goal_events(self, goal_id, since_id=0, limit=200):
+            rows = [
+                e for e in self.s["events"]
+                if e.goal_id == goal_id and e.id > since_id
+            ]
+            return rows[:limit]
+
+    svc = GoalService(
+        world_factory=lambda: _PagedWorld(shared),
+        dispatch=lambda gid, **k: None,
+        spawn=lambda fn: fn(),
+        sleep=lambda _s: None,
+    )
+    out = list(svc.stream_episode(7))
+
+    tool_events = [e for e in out if e.kind == "tool"]
+    assert len(tool_events) == 250  # all backlog drained, none dropped
+    assert [e.id for e in tool_events] == list(range(1, 251))
+    assert out[-1].kind == "status" and out[-1].content == "done"
+
+
 def test_stream_episode_stops_on_missing_goal():
     shared = _shared()  # goal 99 never created
     svc = _service(shared)

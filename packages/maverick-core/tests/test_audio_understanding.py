@@ -95,6 +95,36 @@ def test_decode_wav_rejects_malformed_as_valueerror():
             raise AssertionError(f"expected ValueError for {bad!r}")
 
 
+def test_decode_wav_rejects_oversized_audio(monkeypatch):
+    # Without a cap, decode_wav would materialize one Python float per PCM
+    # sample -> in-process OOM on attacker-sized audio. The cap must reject
+    # before allocating, both on raw byte length and on a lying/huge header.
+    import maverick.tools.audio_understanding as au
+
+    monkeypatch.setattr(au, "MAX_AUDIO_BYTES", 64)
+    big = _wav_bytes(n=1000)  # well over 64 bytes
+    try:
+        au.decode_wav(big)
+    except ValueError as e:
+        assert "too large" in str(e)
+    else:
+        raise AssertionError("expected ValueError for oversized audio")
+    # A small, in-cap clip still decodes fine.
+    monkeypatch.setattr(au, "MAX_AUDIO_BYTES", 64 * 1024 * 1024)
+    mono, _ = au.decode_wav(_wav_bytes(n=4))
+    assert len(mono) == 4
+
+
+def test_tool_rejects_oversized_audio_file(tmp_path, monkeypatch):
+    import maverick.tools.audio_understanding as au
+
+    monkeypatch.setattr(au, "MAX_AUDIO_BYTES", 64)
+    audio = tmp_path / "big.wav"
+    audio.write_bytes(_wav_bytes(n=1000))
+    out = _tool(tmp_path).fn({"op": "embed", "audio_path": str(audio)})
+    assert out.startswith("ERROR") and "too large" in out
+
+
 def test_decode_wav_rejects_non_16bit():
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:

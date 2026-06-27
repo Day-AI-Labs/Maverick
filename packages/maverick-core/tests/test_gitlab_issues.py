@@ -74,3 +74,60 @@ def test_create_posts_when_token_present(monkeypatch):
 
 def test_tool_is_not_parallel_safe():
     assert gli.gitlab_issues().parallel_safe is False
+
+
+# --- redirect credential-leak regression -----------------------------------
+import http.server  # noqa: E402
+import threading  # noqa: E402
+
+from maverick.tools import gitlab_issues as _gli_redir  # noqa: E402
+
+
+class _RecordingHandler(http.server.BaseHTTPRequestHandler):
+    received_headers: dict = {}
+
+    def do_GET(self):  # noqa: N802
+        type(self).received_headers = {k.lower(): v for k, v in self.headers.items()}
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b"[]")
+
+    def log_message(self, *a):  # silence
+        pass
+
+
+def _make_server(handler):
+    srv = http.server.HTTPServer(("127.0.0.1", 0), handler)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    return srv
+
+
+def test_cross_host_redirect_strips_private_token(monkeypatch):
+    """A 302 to a different host must NOT forward the PRIVATE-TOKEN PAT."""
+    sink = _make_server(_RecordingHandler)
+    sink_port = sink.server_address[1]
+    # Use a different hostname (localhost vs 127.0.0.1) so the host check trips.
+    sink_url = f"http://localhost:{sink_port}/leaked"
+
+    class _RedirectHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", sink_url)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    redir = _make_server(_RedirectHandler)
+    try:
+        monkeypatch.setenv("GITLAB_TOKEN", "SECRET-PAT-123")
+        url = f"http://127.0.0.1:{redir.server_address[1]}/start"
+        code, _ = _gli_redir._http_get_json(url)
+        assert code == 200
+        got = _RecordingHandler.received_headers
+        assert "private-token" not in got, got
+    finally:
+        sink.shutdown()
+        redir.shutdown()

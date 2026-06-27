@@ -80,6 +80,30 @@ def _headers() -> dict[str, str]:
     }
 
 
+# PRIVATE-TOKEN is a custom auth header; CPython's stock HTTPRedirectHandler
+# re-sends ALL original request headers (only content-length/content-type are
+# dropped) to a 3xx target with no host re-check. GITLAB_URL is operator/
+# self-host configurable, so a 30x off it (or any on-path 302) would leak the
+# 'api'-scoped PAT to an arbitrary host. Strip auth headers when the redirect
+# crosses to a different host (mirrors gitlab.py's follow_redirects=False).
+_AUTH_HEADERS = ("private-token", "authorization", "cookie")
+
+
+class _AuthStrippingRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None:
+            old_host = urllib.parse.urlparse(req.full_url).hostname
+            new_host = urllib.parse.urlparse(newurl).hostname
+            if old_host != new_host:
+                for h in _AUTH_HEADERS:
+                    new.remove_header(h.capitalize())
+        return new
+
+
+_OPENER = urllib.request.build_opener(_AuthStrippingRedirectHandler())
+
+
 def _http_get_json(url: str) -> tuple[int, Any]:
     req = urllib.request.Request(url, headers=_headers(), method="GET")
     return _send(req)
@@ -94,7 +118,7 @@ def _http_post_json(url: str, body: dict) -> tuple[int, Any]:
 
 def _send(req: urllib.request.Request) -> tuple[int, Any]:
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+        with _OPENER.open(req, timeout=30) as resp:  # noqa: S310
             raw = resp.read().decode("utf-8", errors="replace")
             return resp.status, (json.loads(raw) if raw else {})
     except urllib.error.HTTPError as e:  # type: ignore[attr-defined]

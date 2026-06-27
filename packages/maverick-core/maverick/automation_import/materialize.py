@@ -80,7 +80,14 @@ def materialize(
 
     trig = automation.trigger
     if trig.kind == TRIGGER_SCHEDULE:
-        if trig.cron and queue is not None and save:
+        if trig.cron and not automation.enabled:
+            # The source operator turned this automation OFF; never auto-activate
+            # a live schedule for it. Surface it as a suggestion so a human can
+            # wire it deliberately, matching the source's disabled state.
+            result.suggested_trigger = {"kind": "schedule", "cron": trig.cron, "template": tname}
+            notes.append("source automation is disabled; schedule not activated -- "
+                         "enable it at the source or wire it manually")
+        elif trig.cron and queue is not None and save:
             from uuid import uuid4
 
             from ..scheduler import CronError, schedule_cron

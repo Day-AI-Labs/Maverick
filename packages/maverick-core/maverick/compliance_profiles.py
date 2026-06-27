@@ -68,7 +68,11 @@ def compile_policy(keys) -> Policy:
 
     Unknown keys are ignored; no known keys yields an empty (default-open) Policy.
     """
-    selected = [PROFILES[k].policy for k in (keys or []) if k in PROFILES]
+    selected = [
+        PROFILES[k].policy
+        for k in (str(x).strip().lower() for x in (keys or []))
+        if k in PROFILES
+    ]
     return union_policies(selected)
 
 
@@ -113,7 +117,11 @@ def requires_floor(floor: str) -> bool:
 
 def profile_posture(keys) -> str:
     """Human-readable posture report for the selected profiles."""
-    known = [PROFILES[k] for k in (keys or []) if k in PROFILES]
+    known = [
+        PROFILES[k]
+        for k in (str(x).strip().lower() for x in (keys or []))
+        if k in PROFILES
+    ]
     if not known:
         return "compliance profiles: none active"
     lines = [f"compliance profiles: {', '.join(p.key for p in known)}"]

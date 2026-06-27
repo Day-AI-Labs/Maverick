@@ -25,6 +25,10 @@ from typing import Any
 # A goal in one of these states is finished; streaming stops.
 TERMINAL_STATUSES = frozenset({"done", "blocked", "failed", "cancelled"})
 
+# Page size for draining goal_events. Matches world_model.goal_events' default
+# LIMIT; a full page signals more backlog to drain before the terminal check.
+_PAGE = 200
+
 
 @dataclass(frozen=True)
 class EventDTO:
@@ -137,13 +141,18 @@ class GoalService:
         last = since_id
         try:
             while True:
-                events = world.goal_events(goal_id, since_id=last)
+                events = world.goal_events(goal_id, since_id=last, limit=_PAGE)
                 for e in events:
                     last = e.id
                     yield EventDTO(
                         id=e.id, goal_id=e.goal_id, agent=e.agent,
                         kind=e.kind, content=e.content, ts=e.ts,
                     )
+                # A full page means more backlog may be waiting; drain it before
+                # evaluating terminal status so a goal that finished while >1 page
+                # of events was pending does not strand events 201..N unsent.
+                if len(events) == _PAGE:
+                    continue
                 g = world.get_goal(goal_id)
                 if g is None:
                     return

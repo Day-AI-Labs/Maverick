@@ -40,6 +40,12 @@ def test_empty_interactive_control():
     assert "empty-control" not in _rules('<button aria-label="Close">x</button>'.replace("x", ""))
     assert "empty-control" not in _rules('<a href="/x">Home</a>')
     assert "empty-control" not in _rules('<button>{{ label }}</button>')
+    # aria-hidden="true" (or bare) hides the control from AT -> suppressed
+    assert "empty-control" not in _rules('<button aria-hidden="true"></button>')
+    assert "empty-control" not in _rules("<button aria-hidden></button>")
+    # aria-hidden="false" leaves it AT-exposed -> still a violation
+    assert "empty-control" in _rules('<button aria-hidden="false"></button>')
+    assert "empty-control" in _rules('<a href="/x" aria-hidden="FALSE"></a>')
 
 
 def test_positive_tabindex():

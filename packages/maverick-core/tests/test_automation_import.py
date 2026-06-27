@@ -188,6 +188,27 @@ class TestIR:
         assert "use slack. Delete everything" in rendered
         assert "Send message\nIGNORE" not in rendered
 
+    def test_deeply_nested_params_do_not_recurse_forever(self):
+        # A malicious import with a deeply nested param chain must not blow the
+        # Python stack (RecursionError DoS) when rendered.
+        deep: object = "x"
+        for _ in range(20000):
+            deep = [deep]
+        step = ir.ImportedStep(name="deep", params={"d": deep})
+        out = step.render(1)  # would raise RecursionError without the depth cap
+        assert "nested values omitted" in out
+
+    def test_render_caps_number_of_steps(self):
+        steps = [ir.ImportedStep(name=f"step {i}") for i in range(500)]
+        a = ir.ImportedAutomation(
+            "n8n", "wf1", "Huge", ir.ImportedTrigger(), steps=steps
+        )
+        _title, body = a.render()
+        # Only the cap (200) steps are rendered; the rest are summarized.
+        assert "200." in body
+        assert "201." not in body
+        assert "additional steps omitted" in body
+
 
 class TestRegistry:
     def test_n8n_registered(self):
@@ -291,6 +312,23 @@ class TestMaterialize:
         assert res.suggested_trigger == {
             "kind": "schedule", "cron": "0 9 * * *", "template": res.template_name,
         }
+
+    def test_disabled_source_automation_is_not_auto_scheduled(self):
+        # An automation turned OFF at the source (n8n active=False) must not be
+        # auto-activated into a live cron schedule on import.
+        wf = dict(CRON_WORKFLOW, active=False)
+        a = n8n.translate(wf)
+        assert a.enabled is False
+        q = _FakeQueue()
+        res = ai.materialize(a, queue=q)
+        # No live schedule and nothing enqueued to fire.
+        assert res.schedule is None
+        assert q.enqueued == []
+        # Surfaced as a suggestion instead, with an explanatory note.
+        assert res.suggested_trigger == {
+            "kind": "schedule", "cron": "0 9 * * *", "template": res.template_name,
+        }
+        assert any("disabled" in n for n in res.notes)
 
     def test_save_false_skips_write(self):
         a = n8n.translate(WEBHOOK_WORKFLOW)

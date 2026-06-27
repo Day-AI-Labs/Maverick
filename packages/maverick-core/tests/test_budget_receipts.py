@@ -186,6 +186,46 @@ def test_render_human_readable(tmp_path):
     assert br.render("garbage") == "budget receipt: MALFORMED"
 
 
+def test_chain_break_on_truncated_tail(tmp_path):
+    # Backward links stay self-consistent after dropping the LAST receipts;
+    # the high-water anchor is what catches a shaved tail.
+    path = tmp_path / "receipts.jsonl"
+    for goal in (7, 9, 7, 9, 7):
+        br.mint(_world(), goal, KEY, path=path)
+    assert br.verify_chain(path, KEY).ok
+    lines = path.read_text(encoding="utf-8").splitlines()
+    # Drop the two newest (e.g. most expensive) receipts.
+    path.write_text("\n".join(lines[:3]) + "\n", encoding="utf-8")
+    report = br.verify_chain(path, KEY)
+    assert not report.ok
+    assert report.count == 3
+    assert "truncated" in report.reason
+
+
+def test_concurrent_mint_keeps_chain_intact(tmp_path):
+    # Many minters racing on one chain must not fork the hash links: the
+    # read-prev -> append sequence is serialized, so verify_chain stays ok.
+    import threading
+
+    path = tmp_path / "receipts.jsonl"
+    n = 16
+    barrier = threading.Barrier(n)
+
+    def worker(goal):
+        barrier.wait()
+        br.mint(_world(), goal, KEY, path=path)
+
+    threads = [threading.Thread(target=worker, args=(7,)) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    report = br.verify_chain(path, KEY)
+    assert report.ok, report.reason
+    assert report.count == n
+
+
 def test_goal_with_no_episodes_mints_zero_receipt(tmp_path):
     line = br.mint(FakeWorld([]), 42, KEY, path=tmp_path / "r.jsonl")
     payload = json.loads(line)["payload"]
