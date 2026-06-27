@@ -102,6 +102,49 @@ def select_base_template(
     return WORKER_SYSTEM_TEMPLATE.format(role=role, depth=depth, max_depth=max_depth)
 
 
+def apply_global_overlays(base: str) -> str:
+    """Append the swarm-wide additive prompt overlays to ``base``.
+
+    Persona, output style, and the learned-habits prior are global (config /
+    data-engine state, not agent-specific), each optional and fail-open. Order
+    is preserved from the original inline assembly. Second PromptBuilder
+    collaborator extracted from ``Agent._build_system``; self-independent, so it
+    is a free function rather than a method.
+    """
+    # Persona (optional, additive).
+    try:
+        from .persona import render_persona_prompt
+        persona = render_persona_prompt()
+        if persona:
+            base = base + persona
+    except Exception:
+        pass
+
+    # Output style (optional, additive): the user-selected response style
+    # (dashboard runtime overlay). Tone/format only, like the persona block.
+    try:
+        from .styles import render_active_style_prompt
+        style = render_active_style_prompt()
+        if style:
+            base = base + style
+    except Exception:
+        pass
+
+    # Learned-habits prior (the Hippocampus, additive): when the data engine
+    # is on, surface the strongest causally-beneficial habits it has
+    # consolidated so the agent prefers what has worked. No-op unless
+    # [data_engine] is enabled and procedural memory exists; fail-open.
+    try:
+        from . import data_engine
+        if data_engine.enabled():
+            from .procedural_memory import recall_prompt
+            base = base + recall_prompt()
+    except Exception:
+        pass
+
+    return base
+
+
 # #611: fraction of the budget reserved for the TOP-level goal's synthesis /
 # write step. A deeper worker (depth > 0) stops once cumulative spend crosses
 # (1 - this) of the cap, so a recursive research swarm can't burn the budget
@@ -825,36 +868,10 @@ class Agent:
             coding_enabled=bool(_coding_cfg is not None and _coding_cfg.enabled),
         )
 
-        # Persona (optional, additive).
-        try:
-            from .persona import render_persona_prompt
-            persona = render_persona_prompt()
-            if persona:
-                base = base + persona
-        except Exception:
-            pass
-
-        # Output style (optional, additive): the user-selected response style
-        # (dashboard runtime overlay). Tone/format only, like the persona block.
-        try:
-            from .styles import render_active_style_prompt
-            style = render_active_style_prompt()
-            if style:
-                base = base + style
-        except Exception:
-            pass
-
-        # Learned-habits prior (the Hippocampus, additive): when the data engine
-        # is on, surface the strongest causally-beneficial habits it has
-        # consolidated so the agent prefers what has worked. No-op unless
-        # [data_engine] is enabled and procedural memory exists; fail-open.
-        try:
-            from . import data_engine
-            if data_engine.enabled():
-                from .procedural_memory import recall_prompt
-                base = base + recall_prompt()
-        except Exception:
-            pass
+        # Swarm-wide additive overlays (persona, output style, learned-habits
+        # prior) — global state, not agent-specific. Extracted as the second
+        # PromptBuilder collaborator.
+        base = apply_global_overlays(base)
 
         # Per-role client addendum (optional, additive): a tenant's custom
         # instructions for this role, edited via the dashboard roles editor.
