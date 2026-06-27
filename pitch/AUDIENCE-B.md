@@ -56,8 +56,8 @@
 **On slide:** Three compounding moats, all audited:
 - **Governance substrate** — capability tokens (attenuate-only), policy engine, egress lock, **signed hash-chained audit** (offline-verifiable).
 - **Provable-learning loop** — offline consolidation ("dreaming"), per-department memory, a causal flywheel; **every causal claim survives a placebo test**; snapshot / rollback.
-- **1,118 least-privilege specialist packs across 26 suites** — `maverick domains-lint`: **0 errors, 0 warnings**.
-- **Substance:** ~**310K LOC** across **8 PyPI packages**; **1,118 lint-clean packs** (0 errors).
+- **2,020 least-privilege specialist packs across 53 suites** — `maverick domains-lint`: **0 errors, 0 warnings**.
+- **Substance:** ~**310K LOC** across **8 PyPI packages**; **2,020 lint-clean packs** (0 errors).
 
 **Visual:** Three moat bars, each with a one-line proof; a substance stat-strip underneath.
 
@@ -105,7 +105,7 @@
 ## Slide 10 — Team & IP
 **On slide:**
 - `[FILL: founder + team — one-line credibility each]`
-- **IP:** ~310K LOC of governed-agent infrastructure, the 1,118-pack library, the signed-audit and learning-loop systems.
+- **IP:** ~310K LOC of governed-agent infrastructure, the 2,020-pack library, the signed-audit and learning-loop systems.
 - `[FILL: patents / trademarks / key hires]`
 
 **Visual:** Team row + an IP inventory list.

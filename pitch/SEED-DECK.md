@@ -100,10 +100,10 @@ flowchart LR
 **On slide:**
 - **Governance bound to every action** — capability tokens (attenuate-only), policy engine, egress lock, and a **signed, hash-chained audit log** with offline verification. Not a wrapper — deep infra.
 - **A workforce that provably improves** — an audited, snapshot-/rollback-able learning loop: offline consolidation ("dreaming"), per-department memory, and a causal "flywheel" that mines self-correcting guardrails from real outcomes. *Every causal claim must survive a placebo test before it changes behavior.*
-- **1,118 prebuilt, least-privilege specialist packs across 26 suites** — `maverick domains-lint`: **0 errors, 0 warnings.** Run it yourself.
+- **2,020 prebuilt, least-privilege specialist packs across 53 suites** — `maverick domains-lint`: **0 errors, 0 warnings.** Run it yourself.
 - **The thing a frontier lab won't ship into a bank:** a system that *rewrites itself in production* — governed, gated, and reversible.
 
-**Speaker notes:** "Three compounding moats: the governance substrate, the provable-learning loop, and the 1,118-pack library — all audited. None of it is a prompt over an API; it's ~310,000 lines of infrastructure. A competitor doesn't catch up in a quarter, and an incumbent's hosted product can't be self-hosted into an air-gapped bank."
+**Speaker notes:** "Three compounding moats: the governance substrate, the provable-learning loop, and the 2,020-pack library — all audited. None of it is a prompt over an API; it's ~310,000 lines of infrastructure. A competitor doesn't catch up in a quarter, and an incumbent's hosted product can't be self-hosted into an air-gapped bank."
 
 **Visual:** Three stacked "moat" bars (Governance · Provable learning · Governed library), each with a one-line proof underneath.
 
@@ -115,11 +115,11 @@ flowchart LR
 - **Bottom-up SOM:** ~10,000 US regulated financial institutions; 100 customers × ~$250k ACV ≈ $25M ARR from the BFSI beachhead. Gartner sizes AI-governance platforms at $1B+ by 2030.
 - **Beachhead:** **BFSI / finance** — leads governance spend, highest regulatory pain, clearest ROI. (The finance suite already declares ~29 governed deliverables across 11 roles.)
 - **Second wedge:** **tax-prep for CPA firms** — an unusually complete, deterministic, citation-backed pipeline (docs → first-pass 1040 + state return) with a signed tax-law update channel.
-- **Expansion:** 26 suites already built — healthcare, insurance, legal, gov-contracting — land-and-expand once the wedge is proven.
+- **Expansion:** 53 suites already built — healthcare, insurance, legal, gov-contracting — land-and-expand once the wedge is proven.
 
-**Speaker notes:** "We're not boiling the ocean despite having 26 suites built — we go deep in one regulated vertical where governance is the buying criterion, prove it, and expand into adjacent suites that already exist. Finance first because the pain and the budget are both highest."
+**Speaker notes:** "We're not boiling the ocean despite having 53 suites built — we go deep in one regulated vertical where governance is the buying criterion, prove it, and expand into adjacent suites that already exist. Finance first because the pain and the budget are both highest."
 
-**Visual:** A target: bullseye = BFSI; next ring = tax/insurance/healthcare; outer ring = the 26 suites. TAM numbers on the side.
+**Visual:** A target: bullseye = BFSI; next ring = tax/insurance/healthcare; outer ring = the 53 suites. TAM numbers on the side.
 
 ---
 
@@ -141,11 +141,11 @@ flowchart LR
 
 **On slide:**
 - **Annual platform license, self-hosted** — priced per deployment and seat-band. Land with one governed workflow.
-- **Land → expand:** pilot → production workflow → adjacent suites. 26 suites already built means expansion is a config change, not a new sale — net revenue retention by design.
+- **Land → expand:** pilot → production workflow → adjacent suites. 53 suites already built means expansion is a config change, not a new sale — net revenue retention by design.
 - **Why it compounds:** self-host + signed audit + the learning loop = high switching cost; software gross margins. The overlay motion (govern others' agents) adds a second revenue line.
 - Pricing scales with **governed surface area** — seats, agents, and suites under management. `[FILL: pilot price · production ACV band]`
 
-**Speaker notes:** "We sell an annual platform license, self-hosted, so the buyer's data never leaves. We land on one governed workflow and expand across the 26 suites that are already built — expansion is a config change, not a new sale. Self-host plus a signed audit trail and a learning loop make us very sticky, at software margins."
+**Speaker notes:** "We sell an annual platform license, self-hosted, so the buyer's data never leaves. We land on one governed workflow and expand across the 53 suites that are already built — expansion is a config change, not a new sale. Self-host plus a signed audit trail and a learning loop make us very sticky, at software margins."
 
 **Visual:** Three cards — How we charge · Land → expand · Why it compounds.
 
@@ -157,7 +157,7 @@ flowchart LR
 
 | | Governance + audit | Self-host / air-gap | Provable learning | Prebuilt regulated specialists |
 |---|:--:|:--:|:--:|:--:|
-| **Lightwork** | ✅ signed, hash-chained | ✅ | ✅ | ✅ 1,118 |
+| **Lightwork** | ✅ signed, hash-chained | ✅ | ✅ | ✅ 2,020 |
 | Sierra ($15.8B, CX agents) | partial | ❌ hosted | ❌ | ❌ |
 | Cognition / Devin (coding) | ❌ | ❌ | ❌ | ❌ |
 | LangChain (framework) | ❌ DIY | ✅ but DIY | ❌ | ❌ |
@@ -175,7 +175,7 @@ flowchart LR
 
 **On slide:**
 - **Built and installable today (alpha):** ~310K LOC across 8 packages on PyPI, native installers for Win/macOS/Linux, self-host or air-gap.
-- **The product proves itself:** signed Proof Pack, the governance guarantees scoreboard, 1,118 lint-clean packs (0 errors).
+- **The product proves itself:** signed Proof Pack, the governance guarantees scoreboard, 2,020 lint-clean packs (0 errors).
 - **Design partners / pilots:** `[FILL: e.g. "2 BFSI design partners in conversation; 1 signed LOI"]`
 - **Revenue:** `[FILL: pre-revenue / $X MRR / pilot value]`
 - **Roadmap to the milestone this round buys:** 3 design partners live · SOC 2 Type I in progress · first paid ARR.

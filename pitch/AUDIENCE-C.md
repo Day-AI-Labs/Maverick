@@ -76,7 +76,7 @@
 
 ## Slide 7 — The work it does
 **On slide:**
-- **1,118 least-privilege specialist packs across 26 suites.** (The finance suite alone declares ~**29 governed deliverables across 11 roles**.)
+- **2,020 least-privilege specialist packs across 53 suites.** (The finance suite alone declares ~**29 governed deliverables across 11 roles**.)
 - A goal's result renders as a **typed deliverable** → a per-role **inbox** → a human **certifies** it → it routes into **Salesforce / ServiceNow** (signed, audited).
 
 **Visual:** Deliverable → inbox → sign-off → system-of-record flow.
@@ -105,11 +105,11 @@
 
 ## Slide 10 — Proof it's real today
 **On slide:**
-- **Built and installable now (alpha):** ~**310K LOC** across **8 PyPI packages**, native installers for Win / macOS / Linux, **1,118 lint-clean packs** (0 errors).
+- **Built and installable now (alpha):** ~**310K LOC** across **8 PyPI packages**, native installers for Win / macOS / Linux, **2,020 lint-clean packs** (0 errors).
 - **Run the Proof Pack yourself.**
 - `[FILL: references / named design partners]`
 
-**Visual:** A "built ✅" checklist + a big honest stat: "1,118 packs, 0 lint errors."
+**Visual:** A "built ✅" checklist + a big honest stat: "2,020 packs, 0 lint errors."
 
 ---
 
@@ -118,7 +118,7 @@
 - A **design-partner pilot**: one regulated workflow, scoped.
 - **30 / 60 / 90-day plan** with success criteria you set.
 - `[FILL: pricing / pilot terms]`
-- Land one workflow, prove governance + ROI, **expand across the 26 suites**.
+- Land one workflow, prove governance + ROI, **expand across the 53 suites**.
 
 **Visual:** A 30 / 60 / 90 timeline.
 
