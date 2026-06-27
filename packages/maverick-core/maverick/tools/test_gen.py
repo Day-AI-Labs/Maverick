@@ -80,10 +80,14 @@ def _generate(func: ast.FunctionDef) -> str:
         f"def test_{func.name}_properties():"
     given_decorator = f"@given(\n{given_block}\n)" if params else "# no params to fuzz"
     return (
+        "import pytest\n"
         "from hypothesis import given, strategies as st\n\n"
-        f"# Property test scaffold for `{func.name}` — fill in the real invariant.\n"
+        f"# Property test scaffold for `{func.name}` — fill in the real invariant,\n"
+        f"# then DELETE the pytest.skip line so this test actually runs. Until then\n"
+        f"# it SKIPS (it must not pass on the tautology below and inflate coverage).\n"
         f"{given_decorator}\n"
         f"{body_sig}\n"
+        f'    pytest.skip("TODO: replace the tautological assertion with the real property")\n'
         f"    result = {call}\n"
         f"    # Smoke property: the function returns without raising on valid input.\n"
         f"    assert result is not None or result is None  # TODO: assert the real property\n"

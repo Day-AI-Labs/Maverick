@@ -100,7 +100,9 @@ def _app_js(plan: dict) -> str:
         lines.append("      e.preventDefault();")
         lines.append("      const data = Object.fromEntries(new FormData(form));")
         lines.append("      console.log(`form ${i} submitted`, data);")
-        lines.append("      // TODO: send `data` to your backend")
+        lines.append("      // TODO: POST `data` to your backend, then remove the alert below.")
+        lines.append("      // Until wired, fail VISIBLY rather than silently dropping the submission:")
+        lines.append("      alert('This form is not connected to a backend yet — your submission was NOT sent (generated scaffold).');")
         lines.append("    });")
         lines.append("  });")
     else:

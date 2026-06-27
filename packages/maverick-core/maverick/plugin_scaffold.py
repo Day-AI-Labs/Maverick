@@ -108,9 +108,13 @@ def _tool_class():
 
 
 def _run(args: dict[str, Any]) -> str:
-    # TODO: replace this with the actual tool body.
-    name = (args.get("name") or "world").strip()
-    return f"hello, {{name}} (from {slug})"
+    # TODO: replace this stub with the real tool body. Until you do it RAISES
+    # rather than returning a fake result, so an unfinished/un-edited tool fails
+    # visibly instead of silently "succeeding" with placeholder output.
+    _ = (args.get("name") or "world").strip()  # example: read an arg
+    raise NotImplementedError(
+        "{slug}: generated tool stub is not implemented yet -- fill in _run()"
+    )
 
 
 _SCHEMA: dict[str, Any] = {{

@@ -81,9 +81,11 @@ def test_scaffold_tool_factory_returns_tool(tmp_path: Path):
         tool = mod.my_weather_tool()
         assert isinstance(tool, Tool)
         assert tool.name == "my_weather"
-        # The default body runs and returns a greeting.
-        assert "world" in tool.fn({})
-        assert "Alice" in tool.fn({"name": "Alice"})
+        # The default body is a STUB: it fails visibly (raises) rather than
+        # returning placeholder output, so an un-edited generated tool can't
+        # silently ship as if it works.
+        with pytest.raises(NotImplementedError):
+            tool.fn({"name": "Alice"})
     finally:
         sys.path.remove(str(src))
         sys.modules.pop("my_weather", None)
