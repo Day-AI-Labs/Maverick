@@ -276,3 +276,64 @@ async def test_disabled_does_not_checkpoint(tmp_path, monkeypatch):
     # No checkpoints table writes when disabled.
     cp = ckpt_mod.Checkpointer(world)
     assert cp.latest(gid, agent.checkpoint_id, episode_id=ctx.episode_id) is None
+
+
+# ---------- CheckpointManager extraction (direct method tests) ----------
+# _run_inner's resume/save blocks were lifted into _resume_from_checkpoint /
+# _save_checkpoint. These pin the extracted methods directly; the Agent.run()
+# integration tests above remain the byte-identical safety net through the loop.
+
+def test_resume_from_checkpoint_restores_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_DURABLE", "1")
+    ctx, world, gid = _mk_ctx(tmp_path, _ScriptedLLM([]))
+    agent = Agent(ctx=ctx, role="researcher", brief="do it", depth=0)
+    b = Budget(max_dollars=1.0)
+    b.tool_calls = 4
+    b.dollars = 0.25
+    cp = ckpt_mod.Checkpointer(world)
+    cp.save(goal_id=gid, agent_id=agent.checkpoint_id, episode_id=ctx.episode_id,
+            step_seq=7, messages=[{"role": "user", "content": "prior"}], budget=b)
+
+    ckpt, start_step, messages = agent._resume_from_checkpoint(
+        [{"role": "user", "content": "fresh"}], ctx.blackboard, ctx.episode_id)
+    assert ckpt is not None
+    assert start_step == 7
+    assert messages == [{"role": "user", "content": "prior"}]
+    assert agent.ctx.budget.tool_calls == 4  # snapshot restored onto ctx
+
+
+def test_resume_from_checkpoint_noop_when_disabled(tmp_path, monkeypatch):
+    monkeypatch.delenv("MAVERICK_DURABLE", raising=False)
+    ctx, world, gid = _mk_ctx(tmp_path, _ScriptedLLM([]))
+    agent = Agent(ctx=ctx, role="researcher", brief="x", depth=0)
+    orig = [{"role": "user", "content": "fresh"}]
+    ckpt, start_step, messages = agent._resume_from_checkpoint(orig, ctx.blackboard, 0)
+    assert ckpt is None
+    assert start_step == 0
+    assert messages is orig  # untouched -> today's warm-restart behavior
+
+
+def test_resume_from_checkpoint_noop_for_deep_worker(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_DURABLE", "1")
+    ctx, world, gid = _mk_ctx(tmp_path, _ScriptedLLM([]))
+    # depth > 0: durable resume is scoped to the root agent (Phase 1).
+    agent = Agent(ctx=ctx, role="researcher", brief="x", depth=1)
+    orig = [{"role": "user", "content": "fresh"}]
+    ckpt, start_step, messages = agent._resume_from_checkpoint(orig, ctx.blackboard, 0)
+    assert (ckpt, start_step) == (None, 0)
+    assert messages is orig
+
+
+def test_save_checkpoint_persists_and_noop_when_none(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_DURABLE", "1")
+    ctx, world, gid = _mk_ctx(tmp_path, _ScriptedLLM([]))
+    agent = Agent(ctx=ctx, role="researcher", brief="x", depth=0)
+    cp = ckpt_mod.Checkpointer(world)
+    msgs = [{"role": "user", "content": "x"}]
+    # ckpt is None -> fail-open no-op, nothing persisted.
+    agent._save_checkpoint(None, step=3, messages=msgs, ep_id=ctx.episode_id)
+    assert cp.latest(gid, agent.checkpoint_id, episode_id=ctx.episode_id) is None
+    # Real checkpointer -> state persisted at the given step.
+    agent._save_checkpoint(cp, step=3, messages=msgs, ep_id=ctx.episode_id)
+    saved = cp.latest(gid, agent.checkpoint_id, episode_id=ctx.episode_id)
+    assert saved is not None and saved.step_seq == 3
