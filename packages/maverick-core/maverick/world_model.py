@@ -30,7 +30,7 @@ from .paths import data_dir
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = data_dir("world.db")
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -489,6 +489,11 @@ MIGRATIONS: dict[int, list[str]] = {
     # v23 cluster-wide provider spend ledger: the provider_spend table is in
     # SCHEMA (idempotent CREATE); listed here so existing DBs bump the version.
     23: [],
+    # v24 facts provenance columns (source/trust_tier/sensitivity): SQLite's base
+    # CREATE and the v17 migration already carry these, so this is empty -- it
+    # exists only to keep the SQLite head at v24 to match the Postgres ladder
+    # (which adds the columns at v24). See migration_governance head-parity gate.
+    24: [],
 }
 
 
