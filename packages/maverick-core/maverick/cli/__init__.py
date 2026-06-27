@@ -5902,8 +5902,13 @@ def cost(ctx, month: str | None, model: str | None, csv_out: bool) -> None:
             if start <= (e.started_at or 0) < end
         ]
     if model:
-        # Outcome strings carry model id in the format "model=X ...".
-        episodes = [e for e in episodes if model in (e.outcome or "")]
+        # Episode rows don't record a model id (EpisodeSpend has no model column
+        # and outcomes don't carry "model=X"), so this filter silently matched
+        # nothing. Fail honestly rather than return a misleading empty result.
+        raise click.ClickException(
+            "--model filtering is not available: episode rows record goal, time, "
+            "cost, and tokens, but not a model id. Use per-role cost projection "
+            "for model-level spend.")
 
     if csv_out:
         import csv as _csv

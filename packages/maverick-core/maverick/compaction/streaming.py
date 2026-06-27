@@ -254,6 +254,13 @@ class StreamingCompactor:
         running summary.
         """
         cursor, summary = self.state(conversation_id)
+        # The fingerprint must digest the FULL folded prefix (turns[:cursor]) so
+        # the non-coroutine fold() path can validate it. We only have the full
+        # prefix here when this coroutine folded from the very start; if it took
+        # over an existing conversation (cursor > 0) we never see the prior
+        # turns, so we must NOT write a partial fingerprint that misrepresents
+        # the prefix -- store "" instead (fold() then safely refolds).
+        folded_from_start = cursor == 0
         folded_turns: list[dict] = []
         while True:
             sent = yield summary
@@ -267,7 +274,8 @@ class StreamingCompactor:
                 data[conversation_id] = {
                     "cursor": cursor,
                     "summary": summary,
-                    "fingerprint": _turns_fingerprint(folded_turns),
+                    "fingerprint": (_turns_fingerprint(folded_turns)
+                                    if folded_from_start else ""),
                     "last": self._clock(),
                 }
                 self._save(data)
