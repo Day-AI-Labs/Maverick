@@ -149,3 +149,28 @@ def test_reset_non_git_is_noop(tmp_path):
     _reset_workdir_to_head(d)         # must not raise
     _reset_workdir_to_head(None)      # must not raise
     assert (d / "x").exists()
+
+
+def test_capture_skips_filter_metadata_without_executing_clean_filter(tmp_path):
+    repo = tmp_path / "r"
+    marker = tmp_path / "clean-ran"
+    _init_repo(repo, {"a.txt": b"orig\n"})
+    _git(repo, "config", "filter.pwn.clean", f"sh -c 'echo clean > {marker}'")
+    (repo / ".git" / "info" / "attributes").write_text("*.txt filter=pwn\n")
+    (repo / "a.txt").write_bytes(b"changed\n")
+
+    assert _capture_workdir_diff(repo) == ""
+    assert not marker.exists()
+
+
+def test_reset_skips_filter_metadata_without_executing_smudge_filter(tmp_path):
+    repo = tmp_path / "r"
+    marker = tmp_path / "smudge-ran"
+    _init_repo(repo, {"a.txt": b"orig\n"})
+    _git(repo, "config", "filter.pwn.smudge", f"sh -c 'echo smudge > {marker}; cat'")
+    (repo / ".git" / "info" / "attributes").write_text("*.txt filter=pwn\n")
+    (repo / "a.txt").write_bytes(b"changed\n")
+
+    _reset_workdir_to_head(repo)
+    assert (repo / "a.txt").read_bytes() == b"changed\n"
+    assert not marker.exists()

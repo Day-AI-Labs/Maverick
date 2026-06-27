@@ -1630,20 +1630,60 @@ def _donate_bestofn_candidates(llm, world, budget, goal_id, candidates, best) ->
         log.warning("best-of-N candidate donation skipped: %s", e)
 
 
+def _git_env_without_user_config() -> dict[str, str]:
+    """Return a scrubbed environment for host-side best-of-N git reads.
+
+    Git clean/smudge filters are command hooks.  The sandbox workdir can be
+    attacker-controlled, so never let global/system config or the orchestrator's
+    process environment add more filter definitions to these host-side probes.
+    Local repo config is still checked separately before any git command runs.
+    """
+    env = {
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+        "HOME": os.devnull,
+        "PATH": os.environ.get("PATH", ""),
+    }
+    for key in ("LANG", "LC_ALL", "LC_CTYPE", "TMPDIR"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+    return env
+
+
+def _git_metadata_may_execute_filters(wd) -> bool:
+    """Conservatively detect local git metadata that can make git run commands.
+
+    A coding attempt can write the mounted workdir, including `.gitattributes`,
+    `.git/info/attributes`, and local config. If those mention filters or config
+    includes, host-side `git add`/`reset` may execute attacker-controlled clean
+    or smudge commands. Fail open by skipping capture/reset instead.
+    """
+    try:
+        candidates = [wd / ".git" / "config", wd / ".git" / "info" / "attributes"]
+        candidates.extend(wd.glob("**/.gitattributes"))
+        needles = ("filter", "[include", "include.path", "includeif")
+        for path in candidates:
+            try:
+                if path.is_file():
+                    text = path.read_text(encoding="utf-8", errors="ignore").lower()
+                    if any(needle in text for needle in needles):
+                        return True
+            except OSError:
+                return True
+    except Exception:
+        return True
+    return False
+
+
 def _reset_workdir_to_head(workdir) -> None:
-    """Reset a git workdir's working tree to clean HEAD, if it is a git repo;
-    otherwise no-op. Fail-open: any error is swallowed so a reset failure never
-    crashes a best-of-N attempt.
+    """Reset a git workdir to clean HEAD without trusting filter-capable metadata.
 
-    Uses ``clean -fd`` (NOT ``-fdx``): it removes the agent's untracked source
-    files but PRESERVES git-ignored artifacts -- crucially ``*.egg-info`` from a
-    ``pip install -e .`` and ``__pycache__``, which ``-x`` would delete and break
-    imports between attempts on an editable-installed repo (e.g. SWE-bench).
-
-    Local backend only: ``workdir`` is a host path. Remote/container backends
-    (ssh/k8s/docker) keep the agent's edits inside the container, so this
-    host-side reset is a no-op there (the pre-existing host-side limitation that
-    evaluate_candidate/apply_patch also have)."""
+    Fail-open: if local git config/attributes might define clean/smudge filters
+    or config includes, skip the host-side reset instead of letting Git execute
+    commands configured by a sandboxed attempt.
+    """
     import subprocess as _subprocess
     from pathlib import Path as _Path
     try:
@@ -1652,10 +1692,14 @@ def _reset_workdir_to_head(workdir) -> None:
         wd = _Path(workdir)
         if not (wd / ".git").exists():
             return
+        if _git_metadata_may_execute_filters(wd):
+            log.warning("best-of-N workdir reset skipped: unsafe git filter metadata in %s", wd)
+            return
+        env = _git_env_without_user_config()
         _subprocess.run(["git", "-C", str(wd), "reset", "--hard", "HEAD"],
-                        capture_output=True, timeout=30)
+                        capture_output=True, timeout=30, env=env)
         _subprocess.run(["git", "-C", str(wd), "clean", "-fd"],
-                        capture_output=True, timeout=30)
+                        capture_output=True, timeout=30, env=env)
     except Exception as e:  # pragma: no cover -- fail-open
         log.debug("best-of-N workdir reset skipped: %s", e)
 
@@ -1709,8 +1753,12 @@ def _capture_workdir_diff(workdir) -> str:
         wd = _Path(workdir)
         if not (wd / ".git").exists():
             return ""
+        if _git_metadata_may_execute_filters(wd):
+            log.warning("best-of-N workdir diff capture skipped: unsafe git filter metadata in %s", wd)
+            return ""
+        env = _git_env_without_user_config()
         _subprocess.run(["git", "-C", str(wd), "add", "-A"],
-                        capture_output=True, timeout=30)
+                        capture_output=True, timeout=30, env=env)
         try:
             # Exclude build/test cruft via pathspec: running the candidate's
             # tests during the attempt creates __pycache__/*.pyc etc. With no
@@ -1722,11 +1770,11 @@ def _capture_workdir_diff(workdir) -> str:
                  "--no-ext-diff", "--no-textconv", "--unified=3", "HEAD", "--", ".",
                  ":(exclude)**/__pycache__/**", ":(exclude)*.pyc",
                  ":(exclude)**/*.pyc", ":(exclude)**/.pytest_cache/**"],
-                capture_output=True, timeout=60)
+                capture_output=True, timeout=60, env=env)
         finally:
             # Un-stage so the capture leaves the index as it found it.
             _subprocess.run(["git", "-C", str(wd), "reset", "-q"],
-                            capture_output=True, timeout=30)
+                            capture_output=True, timeout=30, env=env)
         if proc.returncode != 0:
             return ""
         diff = proc.stdout.decode("utf-8", errors="replace")
