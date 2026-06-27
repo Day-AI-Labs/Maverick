@@ -162,12 +162,24 @@ class JobQueue:
             ).fetchone()
         return self._row_to_job(row)
 
-    def complete(self, job_id: int) -> bool:
+    def complete(self, job_id: int, *, expected_attempts: int | None = None) -> bool:
+        """Mark a job 'done'. ``expected_attempts`` fences a stolen lease: a slow
+        worker can have its 'running' job reclaimed (``reclaim_stale``) and
+        re-claimed by a peer, which bumps ``attempts``. Passing the attempt count
+        the worker claimed at makes a stale completion no-op (rowcount 0) instead
+        of clobbering the job the current owner is running."""
         with self._lock, self._conn() as c:
-            cur = c.execute(
-                "UPDATE jobs SET status='done', updated_at=? WHERE id=?",
-                (time.time(), job_id),
-            )
+            if expected_attempts is None:
+                cur = c.execute(
+                    "UPDATE jobs SET status='done', updated_at=? WHERE id=?",
+                    (time.time(), job_id),
+                )
+            else:
+                cur = c.execute(
+                    "UPDATE jobs SET status='done', updated_at=? "
+                    "WHERE id=? AND attempts=?",
+                    (time.time(), job_id, expected_attempts),
+                )
             return cur.rowcount == 1
 
     def set_payload(self, job_id: int, payload: dict) -> bool:
@@ -187,8 +199,13 @@ class JobQueue:
         *,
         retry_after: float | None = 60.0,
         max_attempts: int = 5,
+        expected_attempts: int | None = None,
     ) -> bool:
-        """Either reschedule (retry_after seconds) or mark 'failed' permanently."""
+        """Either reschedule (retry_after seconds) or mark 'failed' permanently.
+
+        ``expected_attempts`` fences a stolen lease the same way ``complete`` does:
+        if a peer re-claimed the job (bumping ``attempts``) this stale failure is
+        a no-op instead of rescheduling/failing the job its new owner is running."""
         now = time.time()
         with self._lock, self._conn() as c:
             row = c.execute(
@@ -197,18 +214,20 @@ class JobQueue:
             if not row:
                 return False
             attempts = int(row[0])
+            if expected_attempts is not None and attempts != expected_attempts:
+                return False  # lease lost to a re-claim; the current owner owns it
             if retry_after is not None and attempts < max_attempts:
                 next_run = now + float(retry_after)
                 cur = c.execute(
                     "UPDATE jobs SET status='pending', run_at=?, "
-                    "last_error=?, updated_at=? WHERE id=?",
-                    (next_run, error[:1000], now, job_id),
+                    "last_error=?, updated_at=? WHERE id=? AND attempts=?",
+                    (next_run, error[:1000], now, job_id, attempts),
                 )
             else:
                 cur = c.execute(
                     "UPDATE jobs SET status='failed', last_error=?, "
-                    "updated_at=? WHERE id=?",
-                    (error[:1000], now, job_id),
+                    "updated_at=? WHERE id=? AND attempts=?",
+                    (error[:1000], now, job_id, attempts),
                 )
             return cur.rowcount == 1
 

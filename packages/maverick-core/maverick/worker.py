@@ -202,12 +202,16 @@ class Worker:
                  job.id, job.kind, job.attempts)
         try:
             self._dispatch(job)
-            self.queue.complete(job.id)
+            # Fence the terminal write with the attempt we claimed at: if our
+            # lease was reclaimed and re-claimed mid-run, this no-ops instead of
+            # clobbering the peer that now owns the job.
+            self.queue.complete(job.id, expected_attempts=job.attempts)
             log.info("worker: job %d done", job.id)
         except UnknownJobKind as e:
             # No retry — terminal.
             self.queue.fail(job.id, f"no handler for kind {e}",
-                            retry_after=None, max_attempts=0)
+                            retry_after=None, max_attempts=0,
+                            expected_attempts=job.attempts)
             log.warning("worker: job %d has no handler (%s)", job.id, e)
         except Exception:
             err = traceback.format_exc(limit=4)
@@ -215,6 +219,7 @@ class Worker:
                 job.id, err,
                 retry_after=self.retry_after,
                 max_attempts=self.max_attempts,
+                expected_attempts=job.attempts,
             )
             log.warning("worker: job %d failed, requeued: %s",
                         job.id, err.splitlines()[-1])

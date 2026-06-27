@@ -155,12 +155,12 @@ class Checkpointer:
         if goal_id is None or not self._ensure():
             return None
         try:
-            row = self._world.conn.execute(
+            row = self._world._read_one(
                 "SELECT episode_id FROM checkpoints "
                 "WHERE goal_id = ? AND agent_id = ? "
                 "ORDER BY created_at DESC, step_seq DESC, id DESC LIMIT 1",
                 (goal_id, agent_id),
-            ).fetchone()
+            )
         except Exception as e:  # pragma: no cover
             log.warning("checkpoint: latest_episode_id() failed: %s", e)
             return None
@@ -173,12 +173,12 @@ class Checkpointer:
         if goal_id is None or not self._ensure():
             return None
         try:
-            row = self._world.conn.execute(
+            row = self._world._read_one(
                 "SELECT goal_id, episode_id, agent_id, step_seq, messages, budget, meta "
                 "FROM checkpoints WHERE goal_id = ? AND episode_id = ? AND agent_id = ? "
                 "ORDER BY step_seq DESC LIMIT 1",
                 (goal_id, episode_id, agent_id),
-            ).fetchone()
+            )
         except Exception as e:  # pragma: no cover
             log.warning("checkpoint: latest() failed: %s", e)
             return None
@@ -233,11 +233,11 @@ class Checkpointer:
         if goal_id is None or not self._ensure():
             return None
         try:
-            row = self._world.conn.execute(
+            row = self._world._read_one(
                 "SELECT agent_id, episode_id FROM checkpoints WHERE goal_id = ? "
                 "ORDER BY created_at DESC, step_seq DESC, id DESC LIMIT 1",
                 (goal_id,),
-            ).fetchone()
+            )
         except Exception as e:  # pragma: no cover
             log.warning("checkpoint: orchestrator_for() failed: %s", e)
             return None
@@ -248,12 +248,12 @@ class Checkpointer:
         if goal_id is None or not self._ensure():
             return []
         try:
-            rows = self._world.conn.execute(
+            rows = self._world._read_all(
                 "SELECT step_seq FROM checkpoints "
                 "WHERE goal_id = ? AND episode_id = ? AND agent_id = ? "
                 "ORDER BY step_seq ASC",
                 (goal_id, episode_id, agent_id),
-            ).fetchall()
+            )
         except Exception as e:  # pragma: no cover
             log.warning("checkpoint: list_steps() failed: %s", e)
             return []
@@ -265,12 +265,12 @@ class Checkpointer:
         if goal_id is None or not self._ensure():
             return None
         try:
-            row = self._world.conn.execute(
+            row = self._world._read_one(
                 "SELECT goal_id, episode_id, agent_id, step_seq, messages, budget, meta "
                 "FROM checkpoints WHERE goal_id = ? AND episode_id = ? AND agent_id = ? "
                 "AND step_seq <= ? ORDER BY step_seq DESC LIMIT 1",
                 (goal_id, episode_id, agent_id, step_seq),
-            ).fetchone()
+            )
         except Exception as e:  # pragma: no cover
             log.warning("checkpoint: at_or_before_step() failed: %s", e)
             return None
