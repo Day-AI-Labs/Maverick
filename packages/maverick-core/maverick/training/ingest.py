@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -30,6 +31,8 @@ from pathlib import Path
 from ..paths import data_dir
 from ..prm import HeuristicPRM, StepContext
 from .schema import TrainingStep, TrainingTrajectory, to_klear_jsonl
+
+log = logging.getLogger(__name__)
 
 
 def load_donations(outbox: Path) -> Iterator[dict]:
@@ -44,18 +47,33 @@ def load_donations(outbox: Path) -> Iterator[dict]:
 
 
 def fetch_steps_for_goal(world, goal_id: int) -> list[dict]:
-    """Pull goal_events for a goal from the world model.
+    """Pull ALL goal_events for a goal from the world model.
 
-    Returns dicts; the world is optional (donations may have been
-    pruned before ingestion).
+    Returns dicts; the world is optional (donations may have been pruned before
+    ingestion). Paginates past ``goal_events``' default limit (200) so a long
+    trajectory isn't silently truncated -- a truncated trajectory is corrupt
+    training data. A real DB error is logged (not silently swallowed as empty).
     """
-    try:
-        return [
-            {"agent": e.agent, "kind": e.kind, "content": e.content, "ts": e.ts}
-            for e in world.goal_events(goal_id)
-        ]
-    except Exception:
+    if world is None:
         return []
+    out: list[dict] = []
+    since = 0
+    try:
+        while True:
+            batch = world.goal_events(goal_id, since_id=since, limit=500)
+            if not batch:
+                break
+            for e in batch:
+                out.append({"agent": e.agent, "kind": e.kind,
+                            "content": e.content, "ts": e.ts})
+            if len(batch) < 500:
+                break
+            since = batch[-1].id  # continue after the last event id
+        return out
+    except Exception as e:
+        log.warning("ingest: goal_events(%s) lookup failed (%s); "
+                    "trajectory may be incomplete", goal_id, e)
+        return out
 
 
 def build_trajectory(

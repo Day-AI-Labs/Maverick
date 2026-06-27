@@ -138,11 +138,18 @@ def _op_history(args: dict) -> str:
     eid = (args.get("entity_id") or "").strip()
     if not _safe_seg(eid):
         return "ERROR: history requires a valid entity_id"
-    # HA's history endpoint defaults to last 24h. ``hours`` is reserved
-    # in the schema for future use once we hand-build the start_time
-    # query — current API takes no explicit window.
-    _ = int(args.get("hours") or 1)
-    code, data = _get(f"/api/history/period?filter_entity_id={eid}")
+    # Honor the advertised ``hours`` window: HA takes the window START as a path
+    # timestamp (it otherwise defaults to the last 24h). Was previously parsed
+    # and ignored, so the documented parameter did nothing.
+    try:
+        hours = max(1, int(args.get("hours") or 24))
+    except (TypeError, ValueError):
+        hours = 24
+    from datetime import datetime, timedelta, timezone
+    from urllib.parse import quote
+    start = quote(
+        (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat())
+    code, data = _get(f"/api/history/period/{start}?filter_entity_id={eid}")
     if code >= 400 or not isinstance(data, list):
         return f"ERROR: history ({code}): {data}"
     series = data[0] if data else []

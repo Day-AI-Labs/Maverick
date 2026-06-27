@@ -12,45 +12,52 @@ ops:
 """
 from __future__ import annotations
 
-from collections import defaultdict, deque
+from collections import defaultdict
 from typing import Any
 
 from . import Tool
 
 
 def _propagate(grants: list[dict], principal: str, capability: str) -> str:
-    # Build the delegation adjacency for THIS capability only: who did each
-    # principal grant the capability to.
-    edges: defaultdict[str, set[str]] = defaultdict(set)
+    # Build the in-edges for THIS capability only: who granted the capability
+    # TO each principal. A principal can hold it via several grantors.
+    in_sources: defaultdict[str, set[str]] = defaultdict(set)
+    nodes: set[str] = set()
     for g in grants:
         if not isinstance(g, dict):
             continue
-        cap = str(g.get("capability", "")).strip()
-        if cap != capability:
+        if str(g.get("capability", "")).strip() != capability:
             continue
         src = str(g.get("from", "")).strip()
         dst = str(g.get("to", "")).strip()
         if not src or not dst:
             continue
-        edges[src].add(dst)
+        in_sources[dst].add(src)
+        nodes.add(src)
+        nodes.add(dst)
 
-    # BFS from the revoked holder's direct grantees. The revoked principal is
-    # the root of the revocation, not itself a "downstream loser".
-    lost: set[str] = set()
-    queue: deque[str] = deque(sorted(edges.get(principal, set())))
-    while queue:
-        node = queue.popleft()
-        if node in lost or node == principal:
-            continue
-        lost.add(node)
-        for nxt in sorted(edges.get(node, set())):
-            if nxt not in lost:
-                queue.append(nxt)
+    # A principal loses the capability ONLY if it holds it solely by delegation
+    # from the revoked holder -- i.e. EVERY grantor that delegated it to them has
+    # also lost it. A principal with a surviving (independent) grant path, or a
+    # native holder with no in-edges, keeps it. This is the fixpoint of
+    # "lose iff all your grantors lost it"; the earlier BFS over-revoked anyone
+    # merely reachable from the revoked holder, ignoring alternative paths.
+    lost: set[str] = {principal}
+    changed = True
+    while changed:
+        changed = False
+        for n in nodes:
+            if n in lost or n == principal:
+                continue
+            srcs = in_sources.get(n)
+            if srcs and srcs <= lost:  # all of n's grantors have lost it
+                lost.add(n)
+                changed = True
 
-    if not lost:
+    affected = sorted(lost - {principal})
+    if not affected:
         return (f"REVOKED {capability!r} from {principal}: "
                 f"no downstream principals affected")
-    affected = sorted(lost)
     return (f"REVOKED {capability!r} from {principal}: "
             f"{len(affected)} principal(s) transitively lose it:\n- "
             + "\n- ".join(affected))

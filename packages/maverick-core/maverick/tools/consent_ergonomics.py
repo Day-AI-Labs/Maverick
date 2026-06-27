@@ -11,23 +11,33 @@ ops:
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import Tool
 
-# Scope tokens (substring match, case-insensitive) -> sensitivity weight.
-_HIGH = ("delete", "admin", "billing", "payment", "transfer", "write_all",
-         "manage_users", "export", "*", "all")
-_MED = ("write", "send", "modify", "update", "create", "share", "contacts",
-        "calendar", "location")
+# Scope keywords (matched on whole atomic TOKENS, not substrings) -> sensitivity.
+# The scope is split on every non-alphanumeric char (``:``, ``.``, ``/``, ``_``,
+# ``-`` ...), so "delete_all" -> {delete, all} and "send_messages" -> {send,
+# messages} match, while a benign "wallet"/"gallery"/"install" does NOT match
+# "all" the way the old substring check did. "manage" covers manage_* and "all"
+# covers write_all / *_all.
+_TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
+_HIGH = frozenset({"delete", "admin", "manage", "billing", "payment",
+                   "transfer", "export", "all"})
+_MED = frozenset({"write", "send", "modify", "update", "create", "share",
+                  "contacts", "calendar", "location"})
 # Anything else (read/list/view/...) is treated as low.
 
 
 def _scope_risk(scope: str) -> str:
     s = scope.lower()
-    if any(tok in s for tok in _HIGH):
+    if "*" in s:
+        return "high"  # a wildcard scope is over-broad by definition
+    tokens = {t for t in _TOKEN_SPLIT.split(s) if t}
+    if tokens & _HIGH:
         return "high"
-    if any(tok in s for tok in _MED):
+    if tokens & _MED:
         return "med"
     return "low"
 
