@@ -636,21 +636,12 @@ def _validate_and_write(
 
 
 def _fetch_skill_source(source: str) -> str:
-    """Fetch SKILL.md content from a gh: or https: source. No local paths."""
-    if source.startswith("gh:"):
-        rest = source[3:]
-        if not _GH_PATTERN.match(rest):
-            raise ValueError(f"invalid gh: source {source!r}")
-        if ":" in rest:
-            repo, path = rest.split(":", 1)
-        else:
-            repo, path = rest, "SKILL.md"
-        return _fetch_url(f"https://raw.githubusercontent.com/{repo}/main/{path}")
-    if source.startswith("https://"):
-        return _fetch_url(source)
-    raise ValueError(
-        f"catalog source must be gh: or https:, got {source!r}"
-    )
+    """Fetch SKILL.md content from a gh: or https: source. No local paths.
+
+    Returns decoded text; for integrity-pin verification fetch the raw bytes
+    with ``_fetch_skill_source_bytes`` instead (errors="replace" here is lossy).
+    """
+    return _fetch_skill_source_bytes(source).decode("utf-8", errors="replace")
 
 
 def install_from_catalog(
@@ -682,12 +673,17 @@ def install_from_catalog(
     entry = _catalog.resolve(name, "skills", indexes=indexes)
     if entry is None:
         raise ValueError(f"no catalog skill named {name!r}")
-    content = _fetch_skill_source(entry.source)
-    if not _catalog.verify_sha256(content, entry.sha256):
+    # Verify the pin over the RAW wire bytes, not a lossily-decoded str: a
+    # curator pins sha256 of the published file's bytes, and decoding with
+    # errors="replace" (U+FFFD substitution) before hashing would reject an
+    # authentic non-UTF-8-clean file. Decode to text only after the check.
+    raw = _fetch_skill_source_bytes(entry.source)
+    if not _catalog.verify_sha256(raw, entry.sha256):
         raise ValueError(
             f"content hash mismatch for {name!r}: the fetched SKILL.md does "
             "not match the catalog's pinned sha256. Refusing to install."
         )
+    content = raw.decode("utf-8", errors="replace")
     cfg = _config.get_skills()
     # Authenticity for catalog installs: when a trust anchor is configured
     # (trusted_pubkeys non-empty), the resolved skill MUST carry a signature
@@ -699,7 +695,7 @@ def install_from_catalog(
     return _validate_and_write(content, skills_dir, require_signature=require_sig)
 
 
-def _fetch_url(url: str) -> str:
+def _fetch_url_bytes(url: str) -> bytes:
     # Route through the shared SSRF guard so a user-supplied https:// skill
     # source can't be pointed at an internal/metadata address.
     from .tools.http_fetch import guarded_urlopen
@@ -719,9 +715,38 @@ def _fetch_url(url: str) -> str:
                         f"skill download too large (> {MAX_SKILL_DOWNLOAD_BYTES} bytes)"
                     )
                 chunks.append(chunk)
-            return b"".join(chunks).decode("utf-8", errors="replace")
+            return b"".join(chunks)
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
         raise ValueError(f"failed to fetch {url}: {e}") from e
+
+
+def _fetch_url(url: str) -> str:
+    # Lossy decode for callers that only need text. The sha256 integrity pin
+    # is verified against the RAW bytes (see install_from_catalog), never this
+    # errors="replace" string, so a non-UTF-8-clean pinned file still installs.
+    return _fetch_url_bytes(url).decode("utf-8", errors="replace")
+
+
+def _fetch_skill_source_bytes(source: str) -> bytes:
+    """Like ``_fetch_skill_source`` but returns the raw fetched bytes.
+
+    The catalog sha256 pin is computed over the published file's wire bytes,
+    so integrity verification must hash these, not a lossily-decoded str.
+    """
+    if source.startswith("gh:"):
+        rest = source[3:]
+        if not _GH_PATTERN.match(rest):
+            raise ValueError(f"invalid gh: source {source!r}")
+        if ":" in rest:
+            repo, path = rest.split(":", 1)
+        else:
+            repo, path = rest, "SKILL.md"
+        return _fetch_url_bytes(f"https://raw.githubusercontent.com/{repo}/main/{path}")
+    if source.startswith("https://"):
+        return _fetch_url_bytes(source)
+    raise ValueError(
+        f"catalog source must be gh: or https:, got {source!r}"
+    )
 
 
 def remove_skill(name: str, skills_dir: Path = SKILLS_DIR) -> bool:

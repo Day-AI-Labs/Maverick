@@ -63,6 +63,30 @@ def test_negative_and_blank_ignored(tmp_path):
     assert b.stats("x")["count"] == 0
 
 
+def test_non_finite_rejected_and_store_stays_valid_json(tmp_path):
+    """inf/nan must not be recorded: they serialize as non-standard JSON
+    tokens (Infinity/NaN) and a NaN sample poisons the quantile."""
+    import json
+
+    p = tmp_path / "bt.json"
+    b = SelfTuningBudget(path=p, rng=Random(0), min_samples=1)
+    b.observe("x", float("inf"))
+    b.observe("x", float("-inf"))
+    b.observe("y", float("nan"))
+    assert b.stats("x")["count"] == 0
+    assert b.stats("y")["count"] == 0
+    # On-disk store stays strict-JSON-parseable (no Infinity/NaN tokens).
+    if p.exists():
+        raw = p.read_text(encoding="utf-8")
+        assert "Infinity" not in raw
+        assert "NaN" not in raw
+        json.loads(raw, parse_constant=_reject_constant)
+
+
+def _reject_constant(token):  # pragma: no cover - only fires on a regression
+    raise AssertionError(f"non-standard JSON token persisted: {token}")
+
+
 def test_suggested_max_dollars_respects_enabled(tmp_path, monkeypatch):
     import maverick.self_tuning_budget as m
     b = _learner(tmp_path, min_samples=2)

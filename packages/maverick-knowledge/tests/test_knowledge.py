@@ -49,6 +49,17 @@ class TestBuildStore:
         from maverick_knowledge.store import _to_pgvector
         assert _to_pgvector([1, 2.5, 0]) == "[1.0,2.5,0.0]"
 
+    def test_pgvector_rejects_non_finite_components(self):
+        # repr(nan)/repr(inf) are bare 'nan'/'inf' tokens pgvector's literal
+        # parser rejects; a non-finite component must fail with a domain message
+        # rather than emitting '[1.0,nan,inf]' and aborting the DB call mid-batch.
+        from maverick_knowledge.store import _to_pgvector
+        for bad in (float("nan"), float("inf"), float("-inf")):
+            with pytest.raises(ValueError, match="non-finite"):
+                _to_pgvector([1.0, bad])
+        # finite vectors still format normally.
+        assert _to_pgvector([1.0, -0.5]) == "[1.0,-0.5]"
+
     def test_pgvector_uses_workspace_namespace(self):
         from maverick_knowledge.store import _namespace_from_cfg
 

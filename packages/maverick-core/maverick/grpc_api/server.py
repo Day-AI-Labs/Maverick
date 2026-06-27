@@ -110,8 +110,10 @@ def _require_authorized(context, bearer_token: str) -> None:
 # --- per-caller request rate limiting (sliding 60s window) -------------------
 _GRPC_RATE_LOCK = threading.Lock()
 _GRPC_RATE_HITS: dict[str, deque] = {}
-# Bound the tracked-caller map; idle buckets are swept when it grows large so a
-# long-running server can't leak one entry per distinct agent/peer forever.
+# Hard-bound the tracked-caller map: idle buckets are swept first, and if every
+# bucket is still fresh the least-recently-active ones are evicted, so a
+# long-running server can't leak one entry per distinct agent/peer forever
+# (even under a flood of short-lived connections from many ephemeral ports).
 _GRPC_RATE_MAX_KEYS = 8192
 
 
@@ -150,6 +152,18 @@ def _grpc_rate_ok(key: str) -> bool:
             for k in [k for k, d in _GRPC_RATE_HITS.items()
                       if k != key and (not d or d[-1] < cutoff)]:
                 del _GRPC_RATE_HITS[k]
+            # Idle sweep alone can't bound the map when every bucket is fresh
+            # (e.g. one client opening many short-lived connections from many
+            # ephemeral ports). Fall back to evicting the least-recently-active
+            # buckets so the map is hard-capped regardless of activity.
+            if len(_GRPC_RATE_HITS) > _GRPC_RATE_MAX_KEYS:
+                victims = sorted(
+                    (k for k in _GRPC_RATE_HITS if k != key),
+                    key=lambda k: (_GRPC_RATE_HITS[k][-1]
+                                   if _GRPC_RATE_HITS[k] else 0.0),
+                )
+                for k in victims[:len(_GRPC_RATE_HITS) - _GRPC_RATE_MAX_KEYS]:
+                    del _GRPC_RATE_HITS[k]
         if len(dq) >= limit:
             return False
         dq.append(now)

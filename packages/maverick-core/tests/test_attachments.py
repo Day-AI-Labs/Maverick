@@ -39,6 +39,37 @@ def test_store_rejects_unknown_mime(tmp_path):
         )
 
 
+def test_store_rejects_elf_under_benign_mime(tmp_path):
+    # An ELF executable smuggled in under a client-supplied text/plain
+    # Content-Type must be rejected by the magic-byte deny, regardless of
+    # the (advisory, client-controlled) claimed mime.
+    elf = b"\x7fELF" + b"\x02\x01\x01\x00" + b"\x00" * 64
+    with pytest.raises(AttachmentRejected, match="executable or archive"):
+        store(
+            goal_id=1, filename="evil.txt",
+            mime="text/plain", data=elf, root=tmp_path,
+        )
+
+
+def test_store_rejects_zip_under_benign_mime(tmp_path):
+    # ZIP/PK bytes under a benign text/csv type must also be denied.
+    zip_bytes = b"PK\x03\x04" + b"\x00" * 32
+    with pytest.raises(AttachmentRejected, match="executable or archive"):
+        store(
+            goal_id=1, filename="data.csv",
+            mime="text/csv", data=zip_bytes, root=tmp_path,
+        )
+
+
+def test_store_allows_legitimate_text(tmp_path):
+    # The deny must not reject ordinary text content.
+    out = store(
+        goal_id=1, filename="ok.txt", mime="text/plain",
+        data=b"a perfectly ordinary note\n", root=tmp_path,
+    )
+    assert out.path.exists()
+
+
 def test_store_rejects_empty(tmp_path):
     with pytest.raises(AttachmentRejected, match="empty file"):
         store(

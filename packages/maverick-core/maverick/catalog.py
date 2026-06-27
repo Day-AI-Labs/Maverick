@@ -253,15 +253,24 @@ def resolve(name: str, kind: str, *, indexes: list[str] | None = None) -> Catalo
     return None
 
 
-def verify_sha256(content: str, expected: str) -> bool:
+def verify_sha256(content: str | bytes, expected: str) -> bool:
     """True iff the SHA-256 of ``content`` matches ``expected`` (hex).
+
+    Pass the raw fetched ``bytes`` whenever they are available: the pin is
+    the digest of the published file's wire bytes, and a curator hashing the
+    raw file (e.g. ``sha256sum``) over content with any non-UTF-8 sequence
+    would otherwise never match a hash recomputed from a lossily-decoded
+    ``str`` (``errors="replace"`` substitutes U+FFFD, changing the bytes).
+    A ``str`` is still accepted and hashed as UTF-8 for callers that only
+    have decoded text.
 
     An empty expected hash returns False: a catalog entry MUST pin a
     hash to be installable without the free-text opt-in gate.
     """
     if not expected:
         return False
-    actual = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    raw = content if isinstance(content, bytes) else content.encode("utf-8")
+    actual = hashlib.sha256(raw).hexdigest()
     return hmac.compare_digest(actual.encode(), expected.lower().encode())
 
 

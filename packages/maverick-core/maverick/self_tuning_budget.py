@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import threading
 from dataclasses import dataclass, field
@@ -97,7 +98,7 @@ class SelfTuningBudget:
 
     def observe(self, task_class: str, final_dollars: float) -> None:
         """Record what a finished run of ``task_class`` actually spent."""
-        if not task_class or final_dollars < 0:
+        if not task_class or not math.isfinite(final_dollars) or final_dollars < 0:
             return
         with self._lock, self._cplock():
             self._reload_locked()

@@ -64,6 +64,44 @@ ALLOWED_IMAGE_MIMES = frozenset({
     "image/jpeg", "image/png", "image/gif", "image/webp",
 })
 
+# Magic-byte deny for executables + archives. The mime allowlist above is
+# advisory only -- the caller-supplied Content-Type is client-controlled, so
+# the allowlist alone lets an ELF/ZIP through under a benign type. This
+# enforces the docstring's "active deny" by sniffing the actual leading bytes,
+# independent of the claimed mime. (PDF, the structured-text families, images
+# and plain text never start with these signatures.)
+_DENY_MAGIC: tuple[bytes, ...] = (
+    b"\x7fELF",            # ELF executable / shared object (Linux)
+    b"MZ",                 # DOS/PE executable (Windows .exe/.dll)
+    b"\xca\xfe\xba\xbe",   # Mach-O fat binary / Java class
+    b"\xfe\xed\xfa\xce",   # Mach-O 32-bit
+    b"\xfe\xed\xfa\xcf",   # Mach-O 64-bit
+    b"\xcf\xfa\xed\xfe",   # Mach-O 64-bit (reverse byte order)
+    b"\xce\xfa\xed\xfe",   # Mach-O 32-bit (reverse byte order)
+    b"PK\x03\x04",         # ZIP (also jar/docx/xlsx/apk)
+    b"PK\x05\x06",         # empty ZIP
+    b"PK\x07\x08",         # spanned ZIP
+    b"Rar!\x1a\x07",       # RAR
+    b"\x1f\x8b",           # gzip
+    b"BZh",                # bzip2
+    b"\xfd7zXZ\x00",       # xz
+    b"7z\xbc\xaf\x27\x1c",  # 7-Zip
+    b"ustar",              # tar (signature at offset 257, handled below)
+)
+
+
+def _looks_executable_or_archive(data: bytes) -> bool:
+    head = data[:8]
+    for sig in _DENY_MAGIC:
+        if sig == b"ustar":
+            continue
+        if head.startswith(sig):
+            return True
+    # tar stores its "ustar" magic at byte offset 257.
+    if len(data) >= 262 and data[257:262] == b"ustar":
+        return True
+    return False
+
 
 class AttachmentRejected(ValueError):
     """Raised when an attachment violates a size / type / quota rule."""
@@ -230,6 +268,13 @@ def store(
         raise AttachmentRejected("mime type is required")
     if not any(mime.startswith(p) for p in ALLOWED_MIME_PREFIXES):
         raise AttachmentRejected(f"mime type not allowed: {mime}")
+    # The claimed mime is client-controlled; sniff the real bytes so an
+    # executable/archive can't be planted under a benign Content-Type
+    # (enforces the "active deny" promised in the module docstring).
+    if _looks_executable_or_archive(data):
+        raise AttachmentRejected(
+            "executable or archive content is not allowed"
+        )
 
     size = len(data)
     if size == 0:

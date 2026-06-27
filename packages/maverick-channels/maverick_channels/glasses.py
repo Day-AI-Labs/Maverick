@@ -77,10 +77,23 @@ class GlassesChannel(Channel):
         self.secondary_channel = secondary_channel
         # Where a finished long-task result is delivered (the secondary channel).
         self._deliver = deliver
-        self._spawn = spawn or asyncio.create_task
+        # Strong refs to in-flight delivery tasks: asyncio only holds a *weak*
+        # ref to a bare create_task() result, so an unreferenced background task
+        # may be garbage-collected mid-flight and the user would silently never
+        # get the long-task result (the whole point of this channel). Keep them.
+        self._background_tasks: set = set()
+        self._spawn = spawn or self._spawn_tracked
         self.allowed_user_ids = normalize_allowlist(allowed_user_ids, "GLASSES_ALLOWED_USER_IDS")
         if not self.allowed_user_ids:
             raise ValueError("Set GLASSES_ALLOWED_USER_IDS to restrict who can drive the agent")
+
+    def _spawn_tracked(self, coro: Awaitable) -> asyncio.Task:
+        """Schedule a background coroutine and retain a strong reference so the
+        event loop cannot garbage-collect it before delivery completes."""
+        task = asyncio.ensure_future(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
 
     async def handle_utterance(self, user_id: str, text: str) -> str:
         """Process one HUD utterance and return the text to show **now**.

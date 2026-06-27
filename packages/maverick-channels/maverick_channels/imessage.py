@@ -94,7 +94,17 @@ class iMessageChannel(Channel):  # noqa: N801 - product spelling
                 except Exception:  # pragma: no cover
                     log.exception("handler error")
                     reply = "⚠ An internal error occurred."
-                await self.send(handle, reply)
+                if not reply:  # action-only goal -> nothing to send
+                    continue
+                try:
+                    await self.send(handle, reply)
+                except Exception:  # pragma: no cover
+                    # osascript can hang (Messages.app wedged -> TimeoutExpired)
+                    # or be missing (OSError); subprocess.run's check=False does
+                    # not suppress those. An unguarded send here propagated out
+                    # of start() and killed the whole poll loop. Other channels
+                    # (signal/email/sms/whatsapp) already guard their send.
+                    log.exception("imessage reply send failed")
             await asyncio.sleep(self.poll_interval)
 
     def _latest_rowid(self) -> int:

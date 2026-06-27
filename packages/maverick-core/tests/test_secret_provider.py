@@ -52,6 +52,32 @@ def test_file_backend_rejects_traversal_name(monkeypatch, tmp_path):
     assert sp.get_secret("../etc/passwd") == "should-not-read"
 
 
+def test_unknown_backend_warns_and_falls_back_to_env(monkeypatch, tmp_path, caplog):
+    # An operator who *meant* the file backend but mistyped it must not
+    # silently get env resolution with no trace: a typo'd backend name still
+    # resolves from env (safe default) but emits a one-time warning so the
+    # disabled file-isolation is visible.
+    sp._warned_backends.clear()
+    (tmp_path / "MY_SECRET").write_text("from-file")
+    monkeypatch.setenv("MAVERICK_SECRETS_BACKEND", "files")  # typo of "file"
+    monkeypatch.setenv("MAVERICK_SECRETS_DIR", str(tmp_path))
+    monkeypatch.setenv("MY_SECRET", "from-env")
+    with caplog.at_level("WARNING"):
+        # The file is never consulted (backend != 'file'); env value is used.
+        assert sp.get_secret("MY_SECRET") == "from-env"
+    assert any("unknown secrets backend" in r.message for r in caplog.records)
+    assert "files" in sp._warned_backends
+
+
+def test_known_backends_do_not_warn(monkeypatch, caplog):
+    sp._warned_backends.clear()
+    monkeypatch.setenv("MAVERICK_SECRETS_BACKEND", "ENV")  # case-insensitive
+    monkeypatch.setenv("MY_SECRET", "from-env")
+    with caplog.at_level("WARNING"):
+        assert sp.get_secret("MY_SECRET") == "from-env"
+    assert not any("unknown secrets backend" in r.message for r in caplog.records)
+
+
 def test_backend_from_config_when_env_absent(monkeypatch, tmp_path):
     (tmp_path / "CFG_SECRET").write_text("cfg")
     monkeypatch.setattr(

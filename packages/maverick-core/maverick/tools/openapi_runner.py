@@ -91,6 +91,40 @@ _OAS_SCHEMA: dict[str, Any] = {
 _spec_lock = threading.Lock()
 _spec_cache: dict[str, dict] = {}
 
+# Hard byte ceilings on model/user-supplied HTTP bodies. ``safe_client`` only
+# validates the host -- it does not bound the response size, so ``r.text``
+# would buffer an unbounded (multi-GB / endless) body into memory before we
+# ever parse or truncate it. Mirror ``http_fetch._stream_fetch``: read at most
+# this many bytes off the wire, then stop. Specs are larger than call replies
+# (the call result is sliced to 3000 chars anyway), so give specs more room.
+# Both are env-overridable for the rare legitimately-huge spec.
+_SPEC_MAX_BYTES = int(os.getenv("MAVERICK_OPENAPI_SPEC_MAX_BYTES") or 10_000_000)
+_CALL_MAX_BYTES = int(os.getenv("MAVERICK_OPENAPI_CALL_MAX_BYTES") or 1_000_000)
+
+
+def _stream_text(client: Any, method: str, url: str, max_bytes: int,
+                 **req_kwargs: Any) -> str:
+    """Stream a response with a hard byte ceiling, returning decoded text.
+
+    ``safe_client`` pins the host but does not cap the body; without this a
+    spec/endpoint URL pointing at an endless body exhausts memory. Read at
+    most ``max_bytes`` off the wire (mirrors ``http_fetch._stream_fetch``),
+    then stop. The buffered bytes are decoded with the response encoding.
+    """
+    with client.stream(method, url, **req_kwargs) as resp:
+        resp.raise_for_status()
+        encoding = resp.encoding
+        buf = bytearray()
+        for chunk in resp.iter_bytes():
+            buf += chunk
+            if len(buf) >= max_bytes:
+                break
+        raw = bytes(buf[:max_bytes])
+    try:
+        return raw.decode(encoding or "utf-8", errors="replace")
+    except (LookupError, UnicodeDecodeError):
+        return raw.decode("utf-8", errors="replace")
+
 
 def _load_spec(source: str, workdir: Path | None = None) -> dict:
     is_url = source.startswith(("http://", "https://"))
@@ -111,9 +145,7 @@ def _load_spec(source: str, workdir: Path | None = None) -> dict:
         # safe_client validates the host and pins the connection to the
         # resolved public IP (closes the DNS-rebinding TOCTOU).
         with safe_client(source, timeout=30.0) as client:
-            r = client.get(source)
-        r.raise_for_status()
-        text = r.text
+            text = _stream_text(client, "GET", source, _SPEC_MAX_BYTES)
     else:
         with open(local_path, encoding="utf-8") as f:
             text = f.read()
@@ -282,10 +314,23 @@ def _op_call(
     # Validate + pin the connection to the resolved public IP so a rebinding
     # resolver can't redirect the call to an internal/metadata address.
     with safe_client(url, timeout=60.0) as client:
-        r = client.request(method, url, **req_kwargs)
-    text = r.text or ""
+        with client.stream(method, url, **req_kwargs) as r:
+            status_code = r.status_code
+            encoding = r.encoding
+            buf = bytearray()
+            for chunk in r.iter_bytes():
+                buf += chunk
+                # Read a little past the 3000-char display slice, then stop --
+                # no point buffering an unbounded body we'll truncate anyway.
+                if len(buf) >= _CALL_MAX_BYTES:
+                    break
+            raw = bytes(buf[:_CALL_MAX_BYTES])
+    try:
+        text = raw.decode(encoding or "utf-8", errors="replace")
+    except (LookupError, UnicodeDecodeError):
+        text = raw.decode("utf-8", errors="replace")
     truncated = text[:3000] + (" ... (truncated)" if len(text) > 3000 else "")
-    return f"HTTP {r.status_code}\n{truncated}"
+    return f"HTTP {status_code}\n{truncated}"
 
 
 def _run(args: dict[str, Any], workdir: Path | None = None) -> str:

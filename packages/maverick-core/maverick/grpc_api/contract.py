@@ -39,53 +39,98 @@ _FIELD = re.compile(
 _PACKAGE = re.compile(r"^\s*package\s+([\w.]+)\s*;")
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
 def parse_inventory(proto_text: str) -> dict:
-    """Parse a .proto into the structural inventory the contract pins."""
+    """Parse a .proto into the structural inventory the contract pins.
+
+    Scope tracking uses an explicit stack rather than a single global depth
+    counter so that nested messages, single-line definitions, and rpc option
+    bodies are attributed to the correct enclosing scope. ``/* */`` block
+    comments are stripped first (line ``//`` comments are stripped per-line)
+    so braces inside comments never desync the stack.
+    """
     inv: dict = {"package": "", "services": {}, "messages": {}}
-    current_service: str | None = None
-    current_message: str | None = None
-    depth = 0
+    # Drop block comments wholesale (a stray brace in one must not move depth).
+    proto_text = _BLOCK_COMMENT.sub("", proto_text)
+    # Strip line comments, then flatten the proto into a stream of single-token
+    # logical lines: every `{` and `}` is its own line so brace scope tracking
+    # is exact, and `;` ends a statement so inline fields on a single-line
+    # `message Req { int64 x = 1; }` are seen individually rather than dropped.
+    statements: list[str] = []
     for raw in proto_text.splitlines():
-        line = raw.split("//", 1)[0]
-        if not line.strip():
+        body = raw.split("//", 1)[0]
+        token = ""
+        for ch in body:
+            if ch in "{};":
+                if token.strip():
+                    statements.append(token.strip())
+                statements.append(ch)
+                token = ""
+            else:
+                token += ch
+        if token.strip():
+            statements.append(token.strip())
+
+    # Stack of (kind, name) for open service/message scopes, innermost last.
+    # ``kind`` is "service" or "message"; a nested message pushes without
+    # clobbering its enclosing scope (the old single-counter approach dropped
+    # the outer message's remaining fields).
+    scope: list[tuple[str | None, str | None]] = []
+    # A declaration token ("service Foo" / "message Bar") is held until its
+    # opening `{` so the scope is keyed to the right name.
+    pending: tuple[str, str] | None = None
+    for stmt in statements:
+        if stmt == "{":
+            if pending is not None:
+                scope.append(pending)
+                pending = None
+            else:
+                # An unkeyed block (e.g. an rpc option body) — push a no-op
+                # scope so its closing `}` doesn't pop a real one.
+                scope.append((None, None))
             continue
-        m = _PACKAGE.match(line)
+        if stmt == "}":
+            if scope:
+                scope.pop()
+            continue
+        if stmt == ";":
+            continue
+
+        m = _PACKAGE.match(stmt + ";")
         if m:
             inv["package"] = m.group(1)
             continue
-        m = _SERVICE.match(line)
+        m = _SERVICE.match(stmt + "{")
         if m:
-            current_service = m.group(1)
-            inv["services"][current_service] = {}
-            depth = 1
+            inv["services"].setdefault(m.group(1), {})
+            pending = ("service", m.group(1))
             continue
-        m = _MESSAGE.match(line)
+        m = _MESSAGE.match(stmt + "{")
         if m:
-            current_message = m.group(1)
-            inv["messages"][current_message] = {}
-            depth = 1
+            inv["messages"].setdefault(m.group(1), {})
+            pending = ("message", m.group(1))
             continue
-        if current_service:
-            m = _RPC.match(line)
+
+        kind, name = scope[-1] if scope else (None, None)
+        if kind == "service":
+            m = _RPC.match(stmt)
             if m:
-                name, req_stream, req, resp_stream, resp = m.groups()
-                inv["services"][current_service][name] = {
+                rname, req_stream, req, resp_stream, resp = m.groups()
+                inv["services"][name][rname] = {
                     "request": req, "request_stream": bool(req_stream),
                     "response": resp, "response_stream": bool(resp_stream),
                 }
-        if current_message:
-            m = _FIELD.match(line)
+        elif kind == "message":
+            m = _FIELD.match(stmt + ";")
             if m:
                 label, ftype, fname, fnum = m.groups()
-                inv["messages"][current_message][fname] = {
+                inv["messages"][name][fname] = {
                     "number": int(fnum),
                     "type": ftype.strip(),
                     "label": (label or "").strip(),
                 }
-        depth += line.count("{") - line.count("}")
-        if depth <= 0:
-            current_service = None
-            current_message = None
     return inv
 
 

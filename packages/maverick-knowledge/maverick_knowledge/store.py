@@ -134,8 +134,21 @@ class SqliteVectorStore:
 def _to_pgvector(vec: list[float]) -> str:
     """A pgvector text literal (``[1,2,3]``) -- passed with a ``::vector`` cast so
     the backend needs only ``psycopg`` + the Postgres ``vector`` extension, not
-    the optional ``pgvector`` Python package."""
-    return "[" + ",".join(repr(float(x)) for x in vec) + "]"
+    the optional ``pgvector`` Python package.
+
+    Reject non-finite components: ``repr(float('nan'))`` is the bare token
+    ``nan`` (likewise ``inf``/``-inf``), which pgvector's literal parser refuses,
+    so an embedding carrying a NaN/Inf (a misbehaving hosted-API response or a
+    downstream numeric bug) would otherwise abort the whole add()/search() with
+    an opaque Postgres parse error mid-batch. Fail with a domain message first.
+    """
+    floats = [float(x) for x in vec]
+    if not all(math.isfinite(x) for x in floats):
+        raise ValueError(
+            "knowledge: refusing to store/query a non-finite embedding component "
+            "(nan/inf); the embedder produced an invalid vector"
+        )
+    return "[" + ",".join(repr(x) for x in floats) + "]"
 
 
 class PgVectorStore:

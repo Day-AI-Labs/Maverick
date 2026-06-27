@@ -67,13 +67,33 @@ def test_slack_real_link_still_renders():
     )
 
 
-def test_slack_escaping_skips_code_fences():
-    # Reserved chars inside a fenced code block stay verbatim.
+def test_slack_escapes_reserved_chars_even_inside_code_fences():
+    # Control chars (& < >) are escaped across the ENTIRE reply, including
+    # inside fences -- Slack honours these escapes in code, and escaping must
+    # not depend on fence balance (see odd-fence regression below). Structural
+    # rewrites (bold) still skip the code body.
     src = "before <!channel>\n```\n<not a ping> & x\n```\nafter <@U1>"
     out = to_slack_mrkdwn(src)
     assert "before &lt;!channel&gt;" in out
     assert "after &lt;@U1&gt;" in out
-    assert "<not a ping> & x" in out
+    assert "&lt;not a ping&gt; &amp; x" in out
+
+
+def test_slack_escapes_broadcast_after_unbalanced_code_fence():
+    # An odd number of ``` fences (e.g. an opened-but-unclosed code block, very
+    # common in real replies and trivially prompt-injectable) must NOT leave the
+    # trailing segment unescaped. Regression: the old split-on-fence logic only
+    # escaped even-indexed segments, so everything after the last fence reached
+    # Slack live and re-enabled <!channel>/<@U..> broadcasts.
+    src = "Here is the code:\n```python\nprint(1)\n... <!channel> please respond"
+    out = to_slack_mrkdwn(src)
+    assert "<!channel>" not in out
+    assert "&lt;!channel&gt;" in out
+
+    # Same for an injected live-link span after a stray fence.
+    out2 = to_slack_mrkdwn("```\n<https://evil.test|click>")
+    assert "<https://evil.test|click>" not in out2
+    assert "&lt;https://evil.test|click&gt;" in out2
 
 
 def test_discord_short_message_single_chunk():
