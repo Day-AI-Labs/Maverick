@@ -1630,6 +1630,80 @@ def _donate_bestofn_candidates(llm, world, budget, goal_id, candidates, best) ->
         log.warning("best-of-N candidate donation skipped: %s", e)
 
 
+def _reset_workdir_to_head(workdir) -> None:
+    """Reset a git workdir's working tree to clean HEAD, if it is a git repo;
+    otherwise no-op. Fail-open: any error is swallowed so a reset failure never
+    crashes a best-of-N attempt.
+
+    Uses ``clean -fd`` (NOT ``-fdx``): it removes the agent's untracked source
+    files but PRESERVES git-ignored artifacts -- crucially ``*.egg-info`` from a
+    ``pip install -e .`` and ``__pycache__``, which ``-x`` would delete and break
+    imports between attempts on an editable-installed repo (e.g. SWE-bench).
+
+    Local backend only: ``workdir`` is a host path. Remote/container backends
+    (ssh/k8s/docker) keep the agent's edits inside the container, so this
+    host-side reset is a no-op there (the pre-existing host-side limitation that
+    evaluate_candidate/apply_patch also have)."""
+    import subprocess as _subprocess
+    from pathlib import Path as _Path
+    try:
+        if workdir is None:
+            return
+        wd = _Path(workdir)
+        if not (wd / ".git").exists():
+            return
+        _subprocess.run(["git", "-C", str(wd), "reset", "--hard", "HEAD"],
+                        capture_output=True, timeout=30)
+        _subprocess.run(["git", "-C", str(wd), "clean", "-fd"],
+                        capture_output=True, timeout=30)
+    except Exception as e:  # pragma: no cover -- fail-open
+        log.debug("best-of-N workdir reset skipped: %s", e)
+
+
+def _capture_workdir_diff(workdir) -> str:
+    """Capture a git workdir's edits as a HEAD-relative unified diff, INCLUDING
+    untracked new files. Returns "" when not a git repo, on error, or when there
+    is nothing to capture (fail-open).
+
+    Fallback for when the agent edited files via tools (apply_patch / ast_edit /
+    write_file -> the working tree) but emitted no diff in its final answer --
+    that real on-disk work was previously dropped. HEAD-relative (``--cached
+    HEAD`` after ``add -A``) so it applies in evaluate_candidate's
+    checked-out-at-HEAD worktree; ``add -A`` makes untracked files appear as
+    proper ``--- /dev/null`` new-file hunks; the trailing ``reset`` un-stages so
+    the staging is a side-effect-free read.
+
+    The diff bytes are returned UN-normalized: a ``git diff`` is internally
+    self-consistent with the file at HEAD and must apply byte-for-byte, so CRLF
+    must NOT be stripped (doing so breaks ``git apply`` on CRLF-content repos)."""
+    import subprocess as _subprocess
+    from pathlib import Path as _Path
+    try:
+        if workdir is None:
+            return ""
+        wd = _Path(workdir)
+        if not (wd / ".git").exists():
+            return ""
+        _subprocess.run(["git", "-C", str(wd), "add", "-A"],
+                        capture_output=True, timeout=30)
+        try:
+            proc = _subprocess.run(
+                ["git", "-C", str(wd), "diff", "--cached", "--no-color",
+                 "--no-ext-diff", "--no-textconv", "--unified=3", "HEAD"],
+                capture_output=True, timeout=60)
+        finally:
+            # Un-stage so the capture leaves the index as it found it.
+            _subprocess.run(["git", "-C", str(wd), "reset", "-q"],
+                            capture_output=True, timeout=30)
+        if proc.returncode != 0:
+            return ""
+        diff = proc.stdout.decode("utf-8", errors="replace")
+        return diff if diff.strip() else ""
+    except Exception as e:  # pragma: no cover -- fail-open
+        log.debug("best-of-N workdir diff capture skipped: %s", e)
+        return ""
+
+
 async def run_goal_best_of_n(
     llm: LLM,
     world: WorldModel,
@@ -1645,8 +1719,12 @@ async def run_goal_best_of_n(
     PASS_TO_PASS tests.
 
     Falls back to single-shot `run_goal` when n<=1 or coding mode is
-    off. Each attempt runs against a fresh clone-of-clone so they
-    don't pollute each other's git state.
+    off. The attempts share one sandbox.workdir, which is reset to clean
+    HEAD before each attempt (``git reset --hard HEAD`` + ``git clean -fd``
+    when it is a local git repo) so they don't pollute each other's git
+    state. Each attempt's patch is the diff in its final answer, or -- when
+    the agent edited files via tools without emitting one -- the captured
+    working-tree diff (see ``_capture_workdir_diff``).
 
     Called from the SWE-bench harness when MAVERICK_BEST_OF_N > 1.
     """
@@ -1706,6 +1784,10 @@ async def run_goal_best_of_n(
     ladder = ladder[:n]
 
     for i, (per_model, per_temp) in enumerate(ladder):
+        # Isolate this attempt: reset the SHARED workdir to clean HEAD so
+        # attempt i's on-disk edits don't leak into i+1 (the loop reuses one
+        # sandbox.workdir). No-op when the workdir isn't a local git repo.
+        _reset_workdir_to_head(getattr(sandbox, "workdir", None))
         # Wave 9 fix (council M12): respect parent dollar cap.
         if budget.dollars >= budget.max_dollars * 0.95:
             log.info("best-of-N early break: parent budget 95%% spent")
@@ -1797,9 +1879,19 @@ async def run_goal_best_of_n(
         except BudgetExceeded:
             cap_reached = True
 
-        patch = extract_unified_diff(answer) or ""
         from pathlib import Path as _Path
         workdir = _Path(getattr(sandbox, "workdir", "."))
+        # Answer-diff is PRIMARY (FINAL: is canonical). When the agent edited
+        # files via tools but emitted no diff in its answer, recover that on-disk
+        # work as the candidate patch (HEAD-relative, incl. untracked new files).
+        patch = extract_unified_diff(answer) or ""
+        if not patch.strip():
+            patch = _capture_workdir_diff(workdir)
+        # Ensure evaluate_candidate applies onto a clean HEAD tree: its normal
+        # path uses a fresh HEAD worktree, but its fallback path (when worktree
+        # creation fails) applies in-place to workdir, which run_goal just
+        # dirtied. The captured patch is already saved, so this is safe.
+        _reset_workdir_to_head(workdir)
         cand = await evaluate_candidate(patch, workdir, cfg, sandbox, i)
         candidates.append(cand)
 
