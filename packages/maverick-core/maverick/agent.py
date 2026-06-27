@@ -145,6 +145,37 @@ def apply_global_overlays(base: str) -> str:
     return base
 
 
+def apply_role_overlays(base: str, *, role: str, domain_persona: str | None) -> str:
+    """Append the per-agent role overlays to ``base``.
+
+    The tenant's per-role client addendum (dashboard roles editor; empty unless
+    customized, fail-open) and the domain-pack persona (factory spawn-from-
+    profile). Both are additive and blank-line separated, matching the original
+    inline assembly. Third PromptBuilder collaborator extracted from
+    ``Agent._build_system``; depends only on the role name and the resolved
+    domain persona, so it is a free function.
+    """
+    # Per-role client addendum (optional, additive): a tenant's custom
+    # instructions for this role, edited via the dashboard roles editor.
+    # Empty for any role the client hasn't customized, so behavior is
+    # unchanged by default. Specialist roles (domain-pack names) never
+    # match a known role, so this is a no-op for them.
+    try:
+        from .role_edit import role_addendum
+        addendum = role_addendum(role)
+        if addendum:
+            base = base + "\n\n" + addendum
+    except Exception:
+        pass
+
+    # Domain-pack persona (factory spawn-from-profile): specialist
+    # instructions for this agent's domain, additive to the base template.
+    if domain_persona:
+        base = base + "\n\n" + domain_persona
+
+    return base
+
+
 # #611: fraction of the budget reserved for the TOP-level goal's synthesis /
 # write step. A deeper worker (depth > 0) stops once cumulative spend crosses
 # (1 - this) of the cap, so a recursive research swarm can't burn the budget
@@ -873,23 +904,10 @@ class Agent:
         # PromptBuilder collaborator.
         base = apply_global_overlays(base)
 
-        # Per-role client addendum (optional, additive): a tenant's custom
-        # instructions for this role, edited via the dashboard roles editor.
-        # Empty for any role the client hasn't customized, so behavior is
-        # unchanged by default. Specialist roles (domain-pack names) never
-        # match a known role, so this is a no-op for them.
-        try:
-            from .role_edit import role_addendum
-            addendum = role_addendum(self.role)
-            if addendum:
-                base = base + "\n\n" + addendum
-        except Exception:
-            pass
-
-        # Domain-pack persona (factory spawn-from-profile): specialist
-        # instructions for this agent's domain, additive to the base template.
-        if self._domain_persona:
-            base = base + "\n\n" + self._domain_persona
+        # Per-agent role overlays (client role-addendum + domain-pack persona).
+        # Third PromptBuilder collaborator.
+        base = apply_role_overlays(
+            base, role=self.role, domain_persona=self._domain_persona)
 
         # Skills from prior runs (existing logic).
         if self.ctx.use_skills:
