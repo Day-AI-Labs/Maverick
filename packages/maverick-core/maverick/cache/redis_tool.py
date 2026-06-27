@@ -30,6 +30,12 @@ Default OFF and never auto-imported by ``tool_cache`` — the caller wires it::
 
 ``enabled()`` answers "did the operator pick the redis backend?";
 ``from_config()`` builds the configured instance (or ``None``).
+
+Status: EXPERIMENTAL — this backend is implemented and unit-tested but **not yet
+wired into the live tool cache** (``maverick.cache.tool`` consults no backend
+selection, and nothing calls :func:`enabled` / :func:`from_config` in a
+production path). Setting ``[tools] output_cache_backend = "redis"`` therefore
+has no effect today; a caller must be added to ``cache.tool`` first.
 """
 from __future__ import annotations
 
