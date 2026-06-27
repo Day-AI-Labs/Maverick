@@ -82,6 +82,26 @@ def test_flags_backend_specific_sandbox_network():
         assert any("sandbox" in v for v in rep["violations"])
 
 
+def test_kubernetes_without_networkpolicy_assertion_is_flagged():
+    # k8s egress is unprovable by static config; a bare kubernetes backend
+    # (allow_network off) must NOT certify clean — a transient pod has full
+    # egress unless an out-of-band deny-all NetworkPolicy is applied.
+    base = {"models": _all_local_models(), "egress": {"deny": ["*"]}}
+    rep = audit(config={**base, "sandbox": {"backend": "kubernetes"}})
+    assert rep["clean"] is False
+    assert any("backend=kubernetes" in v for v in rep["violations"])
+
+
+def test_kubernetes_with_deny_all_networkpolicy_assertion_is_clean():
+    # The only k8s config that actually runs air-gapped (deny-all NetworkPolicy
+    # applied out-of-band + allow_network=true) must pass.
+    base = {"models": _all_local_models(), "egress": {"deny": ["*"]}}
+    rep = audit(config={**base, "sandbox": {
+        "backend": "kubernetes", "allow_network": True,
+        "network_policy": "deny-all"}})
+    assert rep["clean"] is True and rep["violations"] == []
+
+
 def test_cli_airgap_check_fails_when_dirty(monkeypatch):
     monkeypatch.setattr("maverick.air_gap.audit",
                         lambda: {"clean": False, "violations": ["remote model(s) in use: x"]})

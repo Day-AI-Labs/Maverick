@@ -28,6 +28,19 @@ log = logging.getLogger(__name__)
 _MAX_LOAD_ROWS = 100_000
 
 
+def _max_json_bytes() -> int:
+    """Byte cap for whole-file JSON reads (non-lines .json has no row cap).
+
+    Default 256 MiB; override with MAVERICK_PANDAS_MAX_JSON_BYTES. pandas must
+    materialize the entire .json document before we can trim rows, so a size
+    guard is the only pre-read bound available for that format.
+    """
+    try:
+        return int(os.environ.get("MAVERICK_PANDAS_MAX_JSON_BYTES", 256 * 1024 * 1024))
+    except ValueError:
+        return 256 * 1024 * 1024
+
+
 def _safe_path(sandbox, user_path: str) -> Path:
     """Resolve ``user_path`` confined to the sandbox workspace.
 
@@ -84,18 +97,53 @@ def _load(path: Path):
     ext = path.suffix.lower()
     # Read at most _MAX_LOAD_ROWS+1 so a huge file can't exhaust memory; the
     # extra row lets callers detect truncation. csv/jsonl support streaming row
-    # caps natively; parquet/json are read then head-capped (pyarrow/json have
-    # no cheap nrows, but the cap still bounds what we keep in the frame).
+    # caps natively; parquet streams via pyarrow row-group batches and stops at
+    # the cap. Non-lines .json has no streaming row cap, so it is byte-bounded
+    # before read instead.
     cap = _MAX_LOAD_ROWS + 1
     if ext == ".csv":
         return pd.read_csv(path, nrows=cap)
     if ext == ".jsonl":
         return pd.read_json(path, lines=True, nrows=cap)
     if ext == ".parquet":
-        return pd.read_parquet(path).head(cap)
+        return _load_parquet_capped(path, cap, pd)
     if ext == ".json":
+        max_bytes = _max_json_bytes()
+        size = path.stat().st_size
+        if size > max_bytes:
+            raise ValueError(
+                f".json is {size:,} bytes, over the {max_bytes:,}-byte read "
+                "limit (set MAVERICK_PANDAS_MAX_JSON_BYTES to raise it); "
+                "convert to .jsonl for streaming row-capped reads"
+            )
         return pd.read_json(path).head(cap)
     raise ValueError(f"unsupported file extension: {ext}")
+
+
+def _load_parquet_capped(path: Path, cap: int, pd):
+    """Read at most ``cap`` rows from a parquet file without loading it whole.
+
+    Streams row-group batches via pyarrow and stops once ``cap`` rows are
+    collected, so a multi-GB parquet does not materialize fully in memory.
+    Falls back to a full read + head if pyarrow's batch API is unavailable.
+    """
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:
+        return pd.read_parquet(path).head(cap)
+    pf = pq.ParquetFile(path)
+    batches = []
+    collected = 0
+    for batch in pf.iter_batches(batch_size=min(cap, 65_536)):
+        batches.append(batch)
+        collected += batch.num_rows
+        if collected >= cap:
+            break
+    if not batches:
+        return pf.schema_arrow.empty_table().to_pandas()
+    import pyarrow as pa
+    table = pa.Table.from_batches(batches)
+    return table.slice(0, cap).to_pandas()
 
 
 def _apply_where(df, where: str):

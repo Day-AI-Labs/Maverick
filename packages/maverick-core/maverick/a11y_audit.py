@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
+_MISSING = object()
 _JINJA = re.compile(r"\{\{.*?\}\}|\{%.*?%\}", re.DOTALL)
 _FORM_CONTROLS = {"input", "select", "textarea"}
 _NO_LABEL_INPUT_TYPES = {"hidden", "submit", "button", "image", "reset"}
@@ -86,8 +87,14 @@ class _A11yParser(HTMLParser):
             text = _JINJA.sub("x", "".join(chunks)).strip()
             has_label = d.get("aria-label") or d.get("aria-labelledby") or d.get("title")
             # an <a>/<button> wrapping an <img alt> or icon with aria is fine;
-            # we only flag the clearly-empty, unlabeled case.
-            if not text and not has_label and "aria-hidden" not in d:
+            # we only flag the clearly-empty, unlabeled case. aria-hidden only
+            # suppresses when it actually hides: a bare attr is treated as true
+            # (HTML), but aria-hidden="false" leaves the control AT-exposed.
+            ah = d.get("aria-hidden", _MISSING)
+            # bare attr (parsed as None) or "" is treated as true per HTML;
+            # aria-hidden="false" leaves the control AT-exposed (not hidden).
+            hidden = ah is not _MISSING and str(ah or "").strip().lower() != "false"
+            if not text and not has_label and not hidden:
                 self.findings.append(Finding(
                     "empty-control", f"<{otag}> has no text or aria-label", line))
 

@@ -83,3 +83,57 @@ def test_create_posts_when_token_present(monkeypatch):
 
 def test_tool_is_not_parallel_safe():
     assert ghi.github_issues().parallel_safe is False
+
+
+# --- redirect credential-leak regression -----------------------------------
+import http.server  # noqa: E402
+import threading  # noqa: E402
+
+from maverick.tools import github_issues as _ghi_redir  # noqa: E402
+
+
+class _GhiRecordingHandler(http.server.BaseHTTPRequestHandler):
+    received_headers: dict = {}
+
+    def do_GET(self):  # noqa: N802
+        type(self).received_headers = {k.lower(): v for k, v in self.headers.items()}
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def log_message(self, *a):
+        pass
+
+
+def _ghi_make_server(handler):
+    srv = http.server.HTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def test_cross_host_redirect_strips_authorization(monkeypatch):
+    """A 302 to a different host must NOT forward the Bearer GITHUB_TOKEN."""
+    sink = _ghi_make_server(_GhiRecordingHandler)
+    sink_url = f"http://localhost:{sink.server_address[1]}/leaked"
+
+    class _Redir(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", sink_url)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    redir = _ghi_make_server(_Redir)
+    try:
+        monkeypatch.setenv("GITHUB_TOKEN", "SECRET-GH-456")
+        url = f"http://127.0.0.1:{redir.server_address[1]}/start"
+        code, _ = _ghi_redir._http_get_json(url)
+        assert code == 200
+        got = _GhiRecordingHandler.received_headers
+        assert "authorization" not in got, got
+    finally:
+        sink.shutdown()
+        redir.shutdown()

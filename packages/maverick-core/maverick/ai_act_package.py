@@ -44,10 +44,18 @@ def _classification() -> dict:
 def _oversight() -> dict:
     import os
     out: dict[str, Any] = {}
+    # Mirror the real resolver (maverick.safety.consent._resolve_mode) rather
+    # than guessing a posture: the system's actual default is "auto-approve"
+    # (low/medium-risk actions run with no human in the loop). Hardcoding
+    # "ask (default)" here told an auditor human oversight was in place when the
+    # resolver -- and compliance_report() -- say otherwise.
     out["consent_mode"] = os.environ.get("MAVERICK_CONSENT_MODE") or _safe(
         lambda: (__import__("maverick.config", fromlist=["load_config"])
                  .load_config() or {}).get("safety", {}).get("consent_mode"),
-        None) or "ask (default)"
+        None) or _safe(
+        lambda: (__import__("maverick.safety.consent", fromlist=["_resolve_mode"])
+                 ._resolve_mode() + " (default)"),
+        None) or "auto-approve (default)"
     out["capability_enforcement"] = _safe(
         lambda: __import__("maverick.capability", fromlist=["capability_enforced"])
         .capability_enforced(), False)

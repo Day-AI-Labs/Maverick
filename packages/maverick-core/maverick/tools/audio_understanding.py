@@ -36,6 +36,20 @@ _clap = None  # lazy (model, processor) singleton
 _clap_lock = threading.Lock()
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+# Cap raw audio bytes before materializing a Python float-per-sample waveform:
+# a ~2 GB WAV expands to many GB of Python objects (in-process OOM DoS), and the
+# decode runs unconditionally before any CLAP model load. 64 MiB default (a few
+# minutes of 16-bit PCM); tunable for legitimately larger clips.
+MAX_AUDIO_BYTES = _env_int("MAVERICK_AUDIO_MAX_BYTES", 64 * 1024 * 1024)
+
+
 # ---------- pure math (no model, no deps) ----------
 
 def cosine(a: list[float], b: list[float]) -> float:
@@ -79,11 +93,24 @@ def decode_wav(data: bytes) -> tuple[list[float], int]:
     # ``wave`` raises wave.Error / EOFError on malformed or truncated input;
     # normalise those to ValueError so callers (the tool's _run) get the same
     # "bad audio" contract they already handle for the non-16-bit case.
+    if len(data) > MAX_AUDIO_BYTES:
+        raise ValueError(
+            f"audio too large: {len(data)} bytes (limit {MAX_AUDIO_BYTES}); "
+            "raise MAVERICK_AUDIO_MAX_BYTES if this is expected"
+        )
     try:
         with wave.open(io.BytesIO(data)) as w:
             rate = w.getframerate()
             n_ch = w.getnchannels()
             width = w.getsampwidth()
+            # Bound the PCM payload before readframes materializes it and the
+            # per-sample float list below; getnframes/getnchannels are header
+            # values, so reject a lying/huge header without allocating.
+            if w.getnframes() * max(1, n_ch) * max(1, width) > MAX_AUDIO_BYTES:
+                raise ValueError(
+                    f"audio too large: declared PCM exceeds limit {MAX_AUDIO_BYTES}; "
+                    "raise MAVERICK_AUDIO_MAX_BYTES if this is expected"
+                )
             frames = w.readframes(w.getnframes())
     except (wave.Error, EOFError) as e:
         raise ValueError(f"not a valid WAV stream: {e}") from e
@@ -169,6 +196,11 @@ def _read_audio(args: dict[str, Any], sandbox: Any) -> bytes | str:
         return f"ERROR: {e}"
     if not path.exists() or not path.is_file():
         return f"ERROR: audio file not found: {src!r}"
+    if path.stat().st_size > MAX_AUDIO_BYTES:
+        return (
+            f"ERROR: audio file too large: {path.stat().st_size} bytes "
+            f"(limit {MAX_AUDIO_BYTES}); raise MAVERICK_AUDIO_MAX_BYTES if expected"
+        )
     return path.read_bytes()
 
 

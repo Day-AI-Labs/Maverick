@@ -23,11 +23,25 @@ import logging
 import os
 import re
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from . import Tool, as_bool
+from .sql_safety import has_unconfirmed_statement_separator
 
 log = logging.getLogger(__name__)
+
+# Conservative upper bound on rows materialized into memory per call, matching
+# the caps the sibling data tools enforce (sql_query, dynamodb, mongodb).
+# Override with MAVERICK_DATABASE_MAX_ROWS for legitimate large pulls.
+_DEFAULT_MAX_ROWS = 1000
+
+
+def _max_rows() -> int:
+    try:
+        cap = int(os.environ.get("MAVERICK_DATABASE_MAX_ROWS", "") or _DEFAULT_MAX_ROWS)
+    except ValueError:
+        cap = _DEFAULT_MAX_ROWS
+    return max(1, cap)
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -88,26 +102,47 @@ def _is_read_sql(sql: str) -> bool:
     return _leading_keyword(sql) in _READ_KEYWORDS
 
 
-def _host_denial(url: str, allow_hosts: tuple[str, ...]) -> str | None:
-    if not allow_hosts:
-        return None
-    try:
-        host = urlsplit(url).hostname
-    except ValueError:
-        host = None
-    if not host or any(fnmatch.fnmatch(host, pat) for pat in allow_hosts):
-        return None
+def _denial(host: str) -> str:
     return (
         f"⚠ DENIED by capability policy: database URL host {host!r} is not "
         "granted by allow_hosts. The tool was not executed."
     )
 
 
+def _host_denial(url: str, allow_hosts: tuple[str, ...]) -> str | None:
+    if not allow_hosts:
+        return None
+    try:
+        split = urlsplit(url)
+    except ValueError:
+        return _denial("<unparseable>")
+    host = split.hostname
+    # libpq/SQLAlchemy honor a ``host=`` connection parameter passed in the URL
+    # query string (and unix-socket URLs carry no netloc host at all), so an
+    # empty netloc host must NOT fail open — check every host the connection
+    # could actually resolve to and fail closed when none is allowed.
+    candidates = [host] if host else []
+    try:
+        candidates += parse_qs(split.query).get("host", [])
+    except ValueError:
+        pass
+    if not candidates:
+        return _denial("<none>")
+    for cand in candidates:
+        if not any(fnmatch.fnmatch(cand, pat) for pat in allow_hosts):
+            return _denial(cand)
+    return None
+
+
 def _op_query(sql: str, url: str, limit: int, confirm: bool,
               allow_hosts: tuple[str, ...] = ()) -> str:
     if not sql:
         return "ERROR: query requires sql"
-    if not _is_read_sql(sql) and not confirm:
+    # A leading SELECT does not make a ``;``-stacked string a read: the server
+    # executes every statement in one execute(), so confirm is required when a
+    # statement separator could smuggle a write behind the read.
+    needs_confirm = (not _is_read_sql(sql)) or has_unconfirmed_statement_separator(sql)
+    if needs_confirm and not confirm:
         return "DRY RUN: non-read SQL (INSERT/UPDATE/DELETE/DDL). Re-run with confirm=true."
     url = (url or os.environ.get("DATABASE_URL", "")).strip()
     if not url:
@@ -120,13 +155,15 @@ def _op_query(sql: str, url: str, limit: int, confirm: bool,
     except ImportError:
         return ("ERROR: sqlalchemy not installed. Run: pip install sqlalchemy plus the "
                 "driver (psycopg / pymysql / pyodbc / ...).")
+    limit = max(1, min(limit, _max_rows()))
+    engine = None
     try:
         engine = create_engine(url)
         with engine.connect() as conn:
             result = conn.execute(text(sql))
             if result.returns_rows:
                 cols = list(result.keys())
-                rows = result.fetchmany(max(1, limit))
+                rows = result.fetchmany(limit)
                 out = [f"columns: {cols}", f"{len(rows)} row(s):"]
                 out += ["  " + json.dumps(list(r), default=str)[:300] for r in rows]
                 return "\n".join(out)
@@ -134,6 +171,12 @@ def _op_query(sql: str, url: str, limit: int, confirm: bool,
             return f"ok: {result.rowcount} row(s) affected"
     except Exception as e:  # noqa: BLE001
         return f"ERROR: database query failed: {type(e).__name__}: {e}"
+    finally:
+        # The Engine owns a connection pool that closing a single connection
+        # does not release; dispose it so pooled sockets/threads do not
+        # accumulate across tool calls.
+        if engine is not None:
+            engine.dispose()
 
 
 def _run(args: dict[str, Any]) -> str:

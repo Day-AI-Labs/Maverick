@@ -63,9 +63,24 @@ def _audit_sandbox(config: dict) -> list[str]:
     sb = config.get("sandbox") or {}
     backend = str(sb.get("backend") or "local").strip().lower()
     val = sb.get("allow_network")
+    network_policy = str(sb.get("network_policy") or "").strip().lower()
+    if backend == "kubernetes":
+        # A transient `kubectl run` pod has full egress by default and the
+        # backend refuses to run with allow_network=false (it cannot self-
+        # enforce no-egress). The only k8s config that actually runs air-gapped
+        # is allow_network=true behind an operator-applied cluster-level
+        # deny-all NetworkPolicy — invisible to static config inspection. So
+        # the audit can only clear k8s when the operator explicitly asserts
+        # that policy; otherwise egress is unprovable.
+        if _truthy(val) and network_policy in {"deny-all", "deny_all", "deny"}:
+            return []
+        return ["[sandbox] backend=kubernetes egress cannot be proven by config "
+                "inspection — a cluster-level deny-all NetworkPolicy must be "
+                "applied out-of-band; assert it with allow_network = true and "
+                'network_policy = "deny-all"']
     if _truthy(val):
         return ["[sandbox] allow_network is on — the sandbox can reach the network"]
-    if backend in {"docker", "podman", "gvisor", "kubernetes"}:
+    if backend in {"docker", "podman", "gvisor"}:
         return []
     if backend == "devcontainer":
         if val is False or (isinstance(val, str) and val.strip().lower() in

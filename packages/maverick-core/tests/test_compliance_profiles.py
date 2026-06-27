@@ -18,6 +18,19 @@ def test_hipaa_policy_requires_human_on_high_risk():
     assert pol.require_human_min_risk == "high"
 
 
+def test_compile_policy_case_insensitive():
+    # Mixed-case keys must compile the same policy as lowercase (and as the
+    # case-insensitive required_floors/get_profile contract).
+    assert cp.compile_policy(["HIPAA"]).require_human_min_risk == "high"
+    assert cp.compile_policy([" HiPaA "]).require_human_min_risk == "high"
+
+
+def test_profile_posture_case_insensitive():
+    out = cp.profile_posture(["HIPAA"])
+    assert "require-human at/above risk 'high'" in out
+    assert out != "compliance profiles: none active"
+
+
 def test_unknown_profile_ignored():
     assert cp.get_profile("sox") is None
     pol = cp.compile_policy(["nope"])

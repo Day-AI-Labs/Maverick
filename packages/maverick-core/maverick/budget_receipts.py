@@ -42,12 +42,19 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import file_lock
 from .paths import data_dir
+
+# Serializes the read-prev -> hash-link -> append sequence within this process;
+# file_lock.cross_process_lock extends it across the dashboard/serve/cron/webhook
+# processes that share one tenant data dir (see file_lock's docstring).
+_MINT_LOCK = threading.Lock()
 
 VALID = "VALID"
 INVALID = "INVALID"
@@ -129,6 +136,48 @@ def _last_line(path: Path) -> str | None:
     return lines[-1] if lines else None
 
 
+def _line_count(path: Path) -> int:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return 0
+    return sum(1 for ln in raw.splitlines() if ln.strip())
+
+
+def _head_path(chain_path: Path) -> Path:
+    """Out-of-band high-water anchor next to the chain file.
+
+    A backward-linked chain is self-consistent after a *tail* truncation —
+    dropping the last N lines leaves every surviving ``prev_receipt_hash``
+    valid — so the chain alone cannot prove the newest (often the costliest)
+    receipts were not quietly removed. This sidecar persists a signed count
+    that only ever advances on a successful mint; :func:`verify_chain` then
+    requires the chain length to equal it, so a shaved tail is detectable.
+    """
+    return chain_path.parent / (chain_path.name + ".head")
+
+
+def _read_head(chain_path: Path, key: str) -> int | None:
+    """The anchored receipt count, or ``None`` if absent. Tamper/garbage in
+    the head reads as ``-1`` so any real chain length (>=0) trips the check."""
+    try:
+        raw = _head_path(chain_path).read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    try:
+        rec = json.loads(raw)
+        count, sig = int(rec["count"]), str(rec["sig"])
+    except (ValueError, TypeError, KeyError):
+        return -1
+    expected = _sign({"count": count}, key)
+    return count if hmac.compare_digest(expected.encode(), sig.encode()) else -1
+
+
+def _write_head(chain_path: Path, count: int, key: str) -> None:
+    rec = {"count": int(count), "sig": _sign({"count": int(count)}, key)}
+    file_lock.atomic_write_text(_head_path(chain_path), json.dumps(rec))
+
+
 def _budget_caps() -> dict:
     """The deployment's ``[budget]`` caps, for receipt context. Fail-soft."""
     try:
@@ -163,31 +212,42 @@ def mint(
     starts = [e.started_at for e in episodes]
     ends = [e.ended_at for e in episodes if e.ended_at is not None]
     chain_path = Path(path) if path is not None else receipts_path()
-    prev_line = _last_line(chain_path)
-    payload = {
-        "goal_id": int(goal_id),
-        "total_dollars": round(sum(e.cost_dollars for e in episodes), 6),
-        "in_tokens": sum(e.input_tokens for e in episodes),
-        "out_tokens": sum(e.output_tokens for e in episodes),
-        "tool_calls": sum(e.tool_calls for e in episodes),
-        "episodes": len(episodes),
-        "started_at": min(starts) if starts else None,
-        "ended_at": max(ends) if ends else None,
-        "budget_caps": _budget_caps(),
-        "minted_at": float(clock()),
-        "prev_receipt_hash": _receipt_hash(prev_line) if prev_line else None,
-    }
-    receipt = {"alg": _ALG, "payload": payload, "sig": _sign(payload, real_key)}
-    line = json.dumps(receipt, sort_keys=True, separators=(",", ":"),
-                      ensure_ascii=False)
     chain_path.parent.mkdir(parents=True, exist_ok=True)
-    # Append-only, created 0600: the chain is the tamper-evidence, the mode
-    # keeps other local users from reading spend data.
-    fd = os.open(chain_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-    try:
-        os.write(fd, line.encode("utf-8") + b"\n")
-    finally:
-        os.close(fd)
+    # The read-prev -> hash-link -> append -> advance-head sequence must be
+    # atomic: two concurrent minters reading the same last line would both
+    # embed the same prev_receipt_hash, forking the chain (a false tamper
+    # alarm in verify_chain on otherwise valid receipts). Serialize within the
+    # process and across the sibling processes sharing this data dir.
+    with _MINT_LOCK, file_lock.cross_process_lock(chain_path):
+        prev_line = _last_line(chain_path)
+        payload = {
+            "goal_id": int(goal_id),
+            "total_dollars": round(sum(e.cost_dollars for e in episodes), 6),
+            "in_tokens": sum(e.input_tokens for e in episodes),
+            "out_tokens": sum(e.output_tokens for e in episodes),
+            "tool_calls": sum(e.tool_calls for e in episodes),
+            "episodes": len(episodes),
+            "started_at": min(starts) if starts else None,
+            "ended_at": max(ends) if ends else None,
+            "budget_caps": _budget_caps(),
+            "minted_at": float(clock()),
+            "prev_receipt_hash": _receipt_hash(prev_line) if prev_line else None,
+        }
+        receipt = {"alg": _ALG, "payload": payload, "sig": _sign(payload, real_key)}
+        line = json.dumps(receipt, sort_keys=True, separators=(",", ":"),
+                          ensure_ascii=False)
+        prev_count = _read_head(chain_path, real_key)
+        # Append-only, created 0600: the chain is the tamper-evidence, the mode
+        # keeps other local users from reading spend data.
+        fd = os.open(chain_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        try:
+            os.write(fd, line.encode("utf-8") + b"\n")
+        finally:
+            os.close(fd)
+        # Advance the high-water anchor. A pre-existing (legitimately longer)
+        # head is never rewound — only ever advanced — so it stays a floor.
+        floor = prev_count if (prev_count is not None and prev_count >= 0) else 0
+        _write_head(chain_path, max(floor + 1, _line_count(chain_path)), real_key)
     return line
 
 
@@ -212,15 +272,18 @@ def verify_chain(path: str | Path | None = None, key: str | None = None) -> Chai
     ``prev_receipt_hash`` must equal the hash of the line before it.
 
     Returns the first break (signature failure, malformed line, or a hash
-    mismatch — i.e. an edited, deleted, or reordered receipt). An absent
-    file is an intact empty chain.
+    mismatch — i.e. an edited, deleted, or reordered receipt). A backward-
+    linked chain stays self-consistent after a *tail* truncation, so the
+    persisted high-water anchor (see :func:`_head_path`) is also checked: a
+    chain shorter than the anchored count means trailing receipts were
+    dropped. An absent file is an intact empty chain.
     """
     real_key = resolve_key(key)
     chain_path = Path(path) if path is not None else receipts_path()
     try:
         raw = chain_path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        return ChainReport(count=0, broken_at=None)
+        raw = ""
     lines = [ln for ln in raw.splitlines() if ln.strip()]
     prev_hash: str | None = None
     for i, line in enumerate(lines):
@@ -234,6 +297,14 @@ def verify_chain(path: str | Path | None = None, key: str | None = None) -> Chai
                                reason=f"receipt {i} chain link mismatch "
                                       "(deleted/reordered predecessor?)")
         prev_hash = _receipt_hash(line)
+    head = _read_head(chain_path, real_key)
+    if head is not None and len(lines) < head:
+        # The internal links all held, but the anchor recorded more receipts
+        # than survive — the cheapest tamper: shave the newest costly tail.
+        return ChainReport(count=len(lines), broken_at=len(lines),
+                           reason=f"chain truncated: {len(lines)} receipts "
+                                  f"present but high-water anchor is {head} "
+                                  "(deleted trailing receipt?)")
     return ChainReport(count=len(lines), broken_at=None)
 
 

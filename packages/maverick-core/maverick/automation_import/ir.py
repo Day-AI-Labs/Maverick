@@ -16,6 +16,7 @@ the orchestrator runs the work.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -32,6 +33,17 @@ _SENSITIVE_PARAM_RE = re.compile(
 )
 _MAX_TEXT_CHARS = 500
 _MAX_PARAM_CHARS = 200
+# Untrusted import JSON can nest arbitrarily deep; cap recursion so a chain of
+# single-element nested dicts/lists can't exhaust the Python stack (RecursionError
+# DoS) during render(). The [:12] breadth cap does not bound depth.
+_MAX_PARAM_DEPTH = 6
+# Cap the number of rendered steps so a huge imported workflow can't produce a
+# multi-megabyte template body that is re-read into the model prompt every run.
+# Env-overridable for legitimately large imports.
+try:
+    _MAX_RENDER_STEPS = max(1, int(os.environ.get("MAVERICK_IMPORT_MAX_STEPS", "200")))
+except ValueError:
+    _MAX_RENDER_STEPS = 200
 _SECRET_QUERY_RE = re.compile(
     r"(?i)([?&][^=]*(?:token|key|secret|password|credential)[^=]*=)[^&\s]+"
 )
@@ -55,19 +67,21 @@ def _safe_line(text: Any, *, max_chars: int = _MAX_TEXT_CHARS) -> str:
     return safe
 
 
-def _safe_param_value(value: Any) -> Any:
+def _safe_param_value(value: Any, _depth: int = 0) -> Any:
     """Return a compact, redacted representation safe for prompt/template text."""
+    if _depth >= _MAX_PARAM_DEPTH and isinstance(value, (dict, list)):
+        return "[…nested values omitted]"
     if isinstance(value, dict):
         return {
             _safe_line(k, max_chars=80): (
                 "[REDACTED:automation_import_secret]"
                 if _SENSITIVE_PARAM_RE.search(str(k))
-                else _safe_param_value(v)
+                else _safe_param_value(v, _depth + 1)
             )
             for k, v in list(value.items())[:12]
         }
     if isinstance(value, list):
-        return [_safe_param_value(v) for v in value[:12]]
+        return [_safe_param_value(v, _depth + 1) for v in value[:12]]
     if isinstance(value, (str, bytes)):
         raw = value.decode("utf-8", "replace") if isinstance(value, bytes) else value
         return _safe_line(raw, max_chars=_MAX_PARAM_CHARS)
@@ -223,7 +237,11 @@ class ImportedAutomation:
             "",
         ]
         if self.steps:
-            lines += [s.render(i) for i, s in enumerate(self.steps, 1)]
+            shown_steps = self.steps[:_MAX_RENDER_STEPS]
+            lines += [s.render(i) for i, s in enumerate(shown_steps, 1)]
+            omitted = len(self.steps) - len(shown_steps)
+            if omitted > 0:
+                lines.append(f"… ({omitted} additional steps omitted)")
         else:
             lines.append("(the source automation had no extractable actions)")
         lines += ["", "Then respond with FINAL: summarizing what was done."]
