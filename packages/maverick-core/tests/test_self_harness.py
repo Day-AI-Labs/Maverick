@@ -375,3 +375,95 @@ def test_stress_50_rounds_invariants(monkeypatch, tmp_path):
     ck(200, len(final) == sh._MAX_LINES_PER_MODEL, f"cap not reached: {len(final)}")
 
     assert not viol, "invariant violations:\n" + "\n".join(viol)
+
+
+# ---------- improvements: grounded proposer / LLM proposer / delta-merge / provenance ----------
+
+class _FakeLLM:
+    """Sync stand-in for maverick.llm.LLM.complete (the reflective proposer seam)."""
+
+    def __init__(self, text="", raises=False):
+        self._text, self._raises = text, raises
+        self.model = "fake:test"
+        self.calls: list = []
+
+    def complete(self, system, messages, **kw):
+        self.calls.append((system, messages, kw))
+        if self._raises:
+            raise RuntimeError("provider down")
+        return type("R", (), {"text": self._text})()
+
+
+def _sig(fclass="timeout", model="M"):
+    return sh.FailureSignature(model, fclass, f"{fclass}: boom", 3, ("export the ledger",))
+
+
+def test_default_propose_is_failure_class_grounded():
+    line = sh._default_propose(_sig("timeout"))
+    assert "timeout" in line and "timed out before" in line
+    assert "\n" not in line and len(line) <= 280
+    # Known classes do NOT embed the trace-derived signature text into the prompt.
+    assert "boom" not in sh._default_propose(_sig("auth"))
+    # Unknown class falls back to the generic (still grounded) line.
+    g = sh._default_propose(_sig("weird_class"))
+    assert "weird_class" in g and "verify the precondition" in g
+
+
+def test_llm_proposer_returns_clean_single_line():
+    fn = sh.llm_proposer(_FakeLLM(text="Verify the auth token freshness before the call."))
+    assert fn(_sig("auth")) == "Verify the auth token freshness before the call."
+
+
+def test_llm_proposer_strips_markdown_and_extra_lines():
+    fn = sh.llm_proposer(_FakeLLM(text="- **Check the response shape.**\nthen parse it"))
+    line = fn(_sig("parse"))
+    assert line.startswith("Check the response shape") and "\n" not in line
+
+
+def test_llm_proposer_fails_open_to_deterministic():
+    sig = _sig("timeout")
+    assert sh.llm_proposer(_FakeLLM(raises=True))(sig) == sh._default_propose(sig)  # provider error
+    assert sh.llm_proposer(_FakeLLM(text="   "))(sig) == sh._default_propose(sig)   # empty output
+
+
+def test_llm_proposer_output_is_sanitized():
+    secret = "sk-ant-" + "abcdefghij1234567890XYZ"
+    fn = sh.llm_proposer(_FakeLLM(text=f"leak {secret} and ctrl\x00\x1b chars"))
+    p = sh.propose_addendum(_sig("timeout"), propose_fn=fn)
+    assert p is not None
+    assert secret not in p.addendum_line
+    assert "\n" not in p.addendum_line and not any(ord(c) < 32 for c in p.addendum_line)
+
+
+def test_compose_consolidates_normalized_duplicate():
+    # A case/punctuation variant of an existing line refreshes it, not a 2nd slot.
+    existing = "Operating guidance learned for this model:\n- Verify the token."
+    out = sh._compose_addendum("M", existing, "verify the token")
+    assert [ln[2:] for ln in out.splitlines() if ln.startswith("- ")] == ["verify the token"]
+
+
+def test_compose_keeps_distinct_lines():
+    existing = "Operating guidance learned for this model:\n- alpha guidance here"
+    out = sh._compose_addendum("M", existing, "beta guidance here")
+    assert [ln[2:] for ln in out.splitlines() if ln.startswith("- ")] == [
+        "alpha guidance here", "beta guidance here"]
+
+
+def test_promotion_records_provenance_in_audit(monkeypatch, store):
+    # Every applied line is audited WITH the diagnostic that motivated it
+    # (signature/rationale) and the unseen-split evidence (held_out_delta/samples).
+    ctrl = _enable(monkeypatch)
+    captured: list = []
+    import maverick.audit as audit
+    monkeypatch.setattr(audit, "record", lambda kind, **kw: captured.append(kw) or True)
+    refl = [_refl("M", "timeout", "export the nightly ledger") for _ in range(3)]
+    rep = sh.run_self_harness(
+        refl, model_id="M", controller=ctrl, min_support=3, path=store,
+        held_in=["a", "b"], held_out=["c", "d", "e"],
+        score_with=lambda a, c: 0.95, score_without=lambda a, c: 0.4)
+    assert rep.promoted == 1
+    applies = [kw for kw in captured if kw.get("phase") == "apply"]
+    assert applies, "no apply audit row recorded"
+    kw = applies[-1]
+    assert kw.get("signature") and kw.get("rationale")
+    assert "held_out_delta" in kw and "samples" in kw

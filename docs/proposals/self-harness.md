@@ -32,8 +32,14 @@ than adding a new ungoverned optimizer:
    record to enable this; older lines load as `None` (backward compatible).
 2. **PROPOSE** — `propose_addendum(sig, propose_fn=…)` produces a single
    *minimal* operating-guidance line targeting the signature. The LLM proposer
-   is an injected seam; a deterministic fallback templates a line so the loop
-   runs and is testable without a provider.
+   is an injected seam: `llm_proposer(llm)` ships a reflective proposer in the
+   GEPA/RPT shape (arXiv 2507.19457 / 2605.21781) — read the signature + example
+   goals, write one minimal line, **fail open** to the deterministic fallback on
+   any provider error. That fallback is **failure-class-grounded** (specific
+   per-class guidance, not a generic "slow down" line — arXiv 2603.23994 warns
+   the starting artifact bounds what the loop can learn) and runs without a
+   provider, so the loop stays testable offline. Either way the line flows
+   through `_sanitize_line` + the length gate.
 3. **VALIDATE** — `validate_proposal(...)` runs the paper's acceptance test: the
    edit must not regress **either** a held-in split (the mined cases) or a
    **held-out** split (unseen cases — the overfitting guard), and must help at
@@ -76,8 +82,15 @@ safety model as skills and insights.
   rejected.
 - **Reversible + audited:** every applied line has a rollback handle and a signed
   `LEARNING_UPDATE` audit row.
-- **Bounded:** an addendum is capped (`_MAX_LINES_PER_MODEL`, `_MAX_ADDENDUM_CHARS`)
-  so it can't bloat every prompt.
+- **Bounded + non-eroding:** an addendum is capped (`_MAX_LINES_PER_MODEL`,
+  `_MAX_ADDENDUM_CHARS`) so it can't bloat every prompt, and `_compose_addendum`
+  delta-merges a re-promoted line (normalized-exact: case/whitespace/punctuation)
+  rather than spending a second slot on a trivial reword — an ACE-style guard
+  against "context collapse"/"brevity bias" (arXiv 2510.04618).
+- **Auditable provenance:** every applied line's signed `LEARNING_UPDATE` row
+  carries *why* it was learned — the weakness signature + rationale and the
+  unseen-split evidence (`held_out_delta`, `samples`) — not just the text, so a
+  rollback or compliance review can see the diagnostic behind each edit.
 
 ## Operating it
 
