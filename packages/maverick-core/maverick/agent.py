@@ -80,6 +80,28 @@ Available roles for children: researcher, coder, writer, analyst, summarizer, re
 External MCP tools (if any) appear as `mcp_<server>__<tool>`."""
 
 
+def select_base_template(
+    *, role: str, depth: int, max_depth: int, coding_enabled: bool,
+) -> str:
+    """Pick the base system template for an agent. Pure: no env/config reads.
+
+    Coding mode, when enabled, overrides role: the orchestrator emits the FINAL
+    and must speak unified diffs, not prose, or the patch validator and
+    test-driven verifier operate on prose and reject every output (Wave 9). With
+    coding mode off it is the orchestrator template for the planner and the
+    worker template for every other role. First side-effect-free seam extracted
+    from ``Agent._build_system`` (god-module decomposition: PromptBuilder).
+    """
+    if coding_enabled:
+        from .coding_mode import CODER_CODING_MODE_TEMPLATE
+        return CODER_CODING_MODE_TEMPLATE.format(
+            role=role, depth=depth, max_depth=max_depth,
+        )
+    if role == "orchestrator":
+        return ORCHESTRATOR_SYSTEM_TEMPLATE.format(max_depth=max_depth)
+    return WORKER_SYSTEM_TEMPLATE.format(role=role, depth=depth, max_depth=max_depth)
+
+
 # #611: fraction of the budget reserved for the TOP-level goal's synthesis /
 # write step. A deeper worker (depth > 0) stops once cumulative spend crosses
 # (1 - this) of the cap, so a recursive research swarm can't burn the budget
@@ -793,22 +815,15 @@ class Agent:
         # rejects -> Wave 8 contributes negative value. (council code
         # reviewer finding #1)
         try:
-            from .coding_mode import CODER_CODING_MODE_TEMPLATE
             from .coding_mode import from_env as _cm_from_env
             _coding_cfg = _cm_from_env()
         except Exception:
             _coding_cfg = None
 
-        if _coding_cfg is not None and _coding_cfg.enabled:
-            base = CODER_CODING_MODE_TEMPLATE.format(
-                role=self.role, depth=self.depth, max_depth=self.ctx.max_depth,
-            )
-        elif self.role == "orchestrator":
-            base = ORCHESTRATOR_SYSTEM_TEMPLATE.format(max_depth=self.ctx.max_depth)
-        else:
-            base = WORKER_SYSTEM_TEMPLATE.format(
-                role=self.role, depth=self.depth, max_depth=self.ctx.max_depth
-            )
+        base = select_base_template(
+            role=self.role, depth=self.depth, max_depth=self.ctx.max_depth,
+            coding_enabled=bool(_coding_cfg is not None and _coding_cfg.enabled),
+        )
 
         # Persona (optional, additive).
         try:
