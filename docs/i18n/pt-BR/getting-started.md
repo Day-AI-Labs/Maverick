@@ -1,4 +1,4 @@
-<!-- Tradução mantida pela comunidade de docs/getting-started.md (commit de origem: 001740b) — a versão em inglês é a oficial. -->
+<!-- Tradução mantida pela comunidade de docs/getting-started.md (commit de origem: 00d6097) — a versão em inglês é a oficial. -->
 
 # Primeiros passos
 
@@ -85,6 +85,51 @@ maverick resume
 
 Os objetivos sobrevivem a reinicializações. Você pode fechar o notebook e voltar amanhã.
 
+## Crie seu próprio especialista a partir de uma tarefa observada
+
+Você não precisa descrever um trabalho com palavras — você pode demonstrá-lo.
+Capture um registro ordenado de alguém realizando o trabalho (as ações que a
+pessoa executou e qualquer narração do porquê) como JSONL ou texto simples com
+prefixos e, em seguida, entregue o arquivo ao Lightwork:
+
+```
+ACTION[gmail]: send the morning digest -> ops@acme.com
+NOTE: only the top 5 stories, with one-line summaries
+SEE: digest looks right, ops confirmed receipt
+```
+
+```bash
+maverick learn-demo demo.txt
+```
+
+Isso analisa a demonstração, induz um rascunho de especialista, mostra a você o
+fluxo de trabalho derivado e aguarda sua aprovação antes de salvar. Os segredos
+são removidos logo na entrada, e o rascunho herda o mesmo limite de capacidades
+e a mesma varredura de persona que um pacote descrito recebe — nada é ativado
+sem o seu sim. Flags úteis:
+
+```bash
+maverick learn-demo demo.txt --name "Morning Digest" --no-llm --yes
+```
+
+`--no-llm` espelha de forma determinística os passos observados (as ferramentas
+= o que a pessoa usou); omita-o para deixar o modelo propor a partir da
+transcrição.
+
+O mesmo fluxo de fábrica de agentes é executado quando você cria um pacote de
+forma conversacional:
+
+```bash
+maverick onboard
+```
+
+Após a aprovação, o `onboard` agora provisiona o pacote — ele instala as skills
+do catálogo de que o fluxo de trabalho precisa e sintetiza quaisquer ferramentas
+declaradas que não sejam nativas, de modo que um especialista recém-aprovado
+esteja equipado para fazer seu trabalho desde a primeira execução. (Essa etapa
+respeita a configuração `[self_learning]` / `provision_packs` e nunca amplia o
+envelope limitado do pacote.)
+
 ## Trocar de modelos ou provedores
 
 Execute o assistente novamente a qualquer momento:
@@ -104,5 +149,15 @@ Ou edite `~/.maverick/config.toml` diretamente. A seção `[models]` mapeia cada
 | `~/.maverick/world.db` | Modelo de mundo persistente: objetivos, fatos, episódios |
 | `~/.maverick/skills/` | Arquivos SKILL.md destilados automaticamente de execuções bem-sucedidas |
 | `~/maverick-workspace/` | Diretório de trabalho padrão do sandbox |
+| `~/.maverick/learned-skills/` | Skills destiladas pelos loops de aprendizado |
+| `~/.maverick/dreams/` | Insights consolidados, fila de ensaio, snapshots de aprendizado |
 
 Tudo fica local. Nada é enviado para fora, exceto seus prompts para o LLM na nuvem que você escolheu.
+
+Depois de algumas execuções acumuladas, a superfície de aprendizado se resume a
+quatro comandos: `maverick dream` (consolidar a experiência), `maverick hindsight`
+(o aprendizado ajudou ou regrediu?), `maverick proof` (entregas, custo evitado,
+ROI) e `maverick domains-lint` (auditar o catálogo de especialistas de 2,020
+agentes), além de `maverick domains-audit` (postura de governança: o que cada
+agente pode acessar, nega e recusa) e `maverick domains-eval --check` (casos de
+referência comportamentais).
