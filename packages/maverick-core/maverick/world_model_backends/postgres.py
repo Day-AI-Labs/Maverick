@@ -1015,6 +1015,42 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
 
+    def set_goal_title(self, goal_id: int, title: str) -> None:
+        """Rename a goal, sealing the title column like ``create_goal`` does."""
+        now = time.time()
+        frag, fparams = _tenant_scope()
+        sql = "UPDATE goals SET title=%s, updated_at=%s WHERE id=%s"
+        params: list = [_seal(title), now, goal_id]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+
+    def set_goal_parent(self, goal_id: int, parent_id: int | None) -> None:
+        """Move a goal under a new parent (or to the root with ``None``)."""
+        now = time.time()
+        frag, fparams = _tenant_scope()
+        sql = "UPDATE goals SET parent_id=%s, updated_at=%s WHERE id=%s"
+        params: list = [
+            int(parent_id) if parent_id is not None else None, now, goal_id]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+
+    def goal_parent_pairs(self) -> list[tuple[int, int | None]]:
+        """``(id, parent_id)`` for every goal (tenant-scoped) -- the edge list."""
+        frag, params = _tenant_scope()
+        sql = "SELECT id, parent_id FROM goals"
+        if frag:
+            sql += " WHERE " + frag
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        return [(int(r[0]), r[1]) for r in rows]
+
     def search_goals(
         self, query: str, *, owner: str | None = None,
         limit: int = 50, scan: int = 1000,
@@ -2094,10 +2130,39 @@ class PostgresWorldModel:
         return {r[0]: _unseal(r[1]) for r in rows}
 
     def get_facts_with_trust(self) -> dict[str, tuple[str, int]]:
-        # Provenance columns are sqlite-first; treat every Postgres fact as
-        # first-party (3) so the Memory Guard fail-opens (keeps them) rather
-        # than silently dropping memory it can't tier.
-        return {k: (v, 3) for k, v in self.get_facts().items()}
+        """Return each fact with its Memory-Guard recall-trust tier.
+
+        When ``[memory] temporal`` is on, ``upsert_fact`` persists the real
+        provenance trust_tier on the open ``fact_history`` window, so the Memory
+        Guard (orchestrator -> memory_guard.filter_facts) can actually drop
+        poisoned/external memory below ``min_recall_trust`` on this backend.
+        Facts with no provenance row -- and all facts when temporal history is
+        off -- fall back to tier 3 (first-party): the live ``facts`` table has no
+        trust column, so the guard keeps them rather than dropping memory it
+        cannot tier. (Closing that fallback on the non-temporal backend needs a
+        governed schema migration adding a trust_tier column to ``facts``.)
+        """
+        facts = self.get_facts()
+        if not facts:
+            return {}
+        from ..world_model import _temporal_memory_enabled
+        tiers: dict[str, int] = {}
+        if _temporal_memory_enabled():
+            frag, params = _tenant_scope()
+            sql = (
+                "SELECT DISTINCT ON (key) key, trust_tier FROM fact_history "
+                "WHERE valid_to IS NULL"
+            )
+            if frag:
+                sql += " AND " + frag
+            sql += " ORDER BY key, valid_from DESC"
+            try:
+                with self._tx() as cur:
+                    cur.execute(sql, tuple(params))
+                    tiers = {r[0]: int(r[1]) for r in cur.fetchall()}
+            except Exception:  # pragma: no cover -- never block recall on tiering
+                tiers = {}
+        return {k: (v, tiers.get(k, 3)) for k, v in facts.items()}
 
     def facts_matching(self, token: str) -> dict[str, str]:
         """Facts explicitly scoped to ``token`` by ``user:<token>:`` key prefix.

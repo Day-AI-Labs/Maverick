@@ -37,10 +37,24 @@ def _install_fake_weaviate(monkeypatch) -> MagicMock:
 
 def test_weaviate_embedded_init_creates_collection(monkeypatch):
     monkeypatch.delenv("MAVERICK_WEAVIATE_URL", raising=False)
+    monkeypatch.delenv("MAVERICK_WEAVIATE_VECTORIZER", raising=False)
     fake = _install_fake_weaviate(monkeypatch)
     from maverick.vector_store.weaviate_store import WeaviateStore
     WeaviateStore(collection="goals")
-    # Capitalized class name + created because exists()==False
+    # Capitalized class name, created because exists()==False, AND with a
+    # server-side vectorizer configured (without it near_text cannot embed).
+    fake.collections.create.assert_called_once()
+    args, kwargs = fake.collections.create.call_args
+    assert args[0] == "Goals"
+    assert kwargs.get("vectorizer_config") is not None
+
+
+def test_weaviate_vectorizer_none_skips_config(monkeypatch):
+    monkeypatch.delenv("MAVERICK_WEAVIATE_URL", raising=False)
+    fake = _install_fake_weaviate(monkeypatch)
+    from maverick.vector_store.weaviate_store import WeaviateStore
+    WeaviateStore(collection="goals", vectorizer="none")
+    # Explicit opt-out: created with no vectorizer_config.
     fake.collections.create.assert_called_once_with("Goals")
 
 

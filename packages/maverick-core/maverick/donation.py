@@ -40,6 +40,25 @@ from .secrets import scrub
 log = logging.getLogger(__name__)
 
 
+def _redact_text(text: str) -> str:
+    """Secret-scrub AND PII-redact one string before it lands in the outbox.
+
+    The donation contract (see module docstring) promises both passes: the
+    regex secret-scrubber (API keys / tokens / URL credentials) PLUS a
+    PII-redaction step (emails / phone numbers / SSNs / card numbers) via
+    :mod:`maverick.safety.pii_detector`. Run secrets first, then PII; if the
+    PII detector is somehow unavailable, the text is still secret-scrubbed
+    (never weaker than before)."""
+    out = scrub(text)
+    try:
+        from .safety.pii_detector import redact as _redact_pii
+        out, _ = _redact_pii(out)
+    except Exception:  # pragma: no cover -- PII pass must never block a write
+        log.warning("trajectory donation: PII redaction unavailable; "
+                    "text is secret-scrubbed only")
+    return out
+
+
 DEFAULT_OUTBOX = data_dir("outbox")
 
 
@@ -131,14 +150,15 @@ def hash_brief(brief: str) -> str:
 
 
 def _scrub_payload(value):
-    """Recursively scrub every string within a JSON-serializable payload."""
+    """Recursively secret-scrub + PII-redact every string in a JSON payload."""
     if isinstance(value, str):
-        return scrub(value)
+        return _redact_text(value)
     if isinstance(value, list):
         return [_scrub_payload(item) for item in value]
     if isinstance(value, tuple):
         return tuple(_scrub_payload(item) for item in value)
     if isinstance(value, dict):
+        # Keys are field names (no user content), so secret-scrub only.
         return {
             (scrub(key) if isinstance(key, str) else key): _scrub_payload(item)
             for key, item in value.items()

@@ -1464,6 +1464,28 @@ class WorldModel:
                 (domain or "", goal_id),
             )
 
+    def set_goal_title(self, goal_id: int, title: str) -> None:
+        """Rename a goal, sealing the title column like ``create_goal`` does."""
+        with self._writing() as conn:
+            conn.execute(
+                "UPDATE goals SET title = ?, updated_at = ? WHERE id = ?",
+                (_enc_field(title), time.time(), int(goal_id)),
+            )
+
+    def set_goal_parent(self, goal_id: int, parent_id: int | None) -> None:
+        """Move a goal under a new parent (or to the root with ``None``)."""
+        with self._writing() as conn:
+            conn.execute(
+                "UPDATE goals SET parent_id = ?, updated_at = ? WHERE id = ?",
+                (int(parent_id) if parent_id is not None else None,
+                 time.time(), int(goal_id)),
+            )
+
+    def goal_parent_pairs(self) -> list[tuple[int, int | None]]:
+        """``(id, parent_id)`` for every goal -- the edge list for tree/cycle checks."""
+        rows = self._read_all("SELECT id, parent_id FROM goals")
+        return [(int(r["id"]), r["parent_id"]) for r in rows]
+
     def set_goal_status(self, goal_id: int, status: str, result: str | None = None) -> None:
         with self._writing() as conn:
             conn.execute(

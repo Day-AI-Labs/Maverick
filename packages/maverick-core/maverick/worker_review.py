@@ -113,13 +113,42 @@ def _learning(
     }
 
 
+def _governance_note() -> str:
+    """An honest description of the governance posture actually in effect.
+
+    The earlier text asserted unconditionally that every action "passed the
+    shield" and is in the "signed, tamper-evident audit log" -- but the kernel
+    runs WITHOUT the agent-shield SDK (built-in rules only) by default, and
+    audit signing is opt-in, so the claim could be false on a given deployment.
+    Probe the real state instead of asserting it."""
+    try:
+        from .shield_policy import shield_available
+        shielded = shield_available()
+    except Exception:  # pragma: no cover -- never break a review on a probe
+        shielded = False
+    try:
+        from .deployment import _verify_audit_signing
+        signed = bool(_verify_audit_signing().passed)
+    except Exception:  # pragma: no cover
+        signed = False
+
+    log_desc = ("the signed, tamper-evident audit log" if signed
+                else "the append-only audit log (signing not enabled)")
+    if shielded:
+        return ("Every action counted here passed the shield's input/tool/output "
+                f"checks and is recorded in {log_desc}.")
+    return ("Actions counted here are screened by the built-in safety rules "
+            "(the agent-shield SDK is not installed) and recorded in "
+            f"{log_desc}.")
+
+
 def review(world, department_key: str, *, cfg: dict | None = None,
            limit: int = 500, owner: str | None = None) -> dict | None:
     """A governed performance review for one department.
 
     Returns ``None`` if the department has no enabled packs. Composes identity,
-    delivery, authority, and learning, plus a governance note that every action
-    counted here passed the shield and is in the signed audit log."""
+    delivery, authority, and learning, plus a governance note describing the
+    shield/audit posture actually in effect (see :func:`_governance_note`)."""
     dept = departments.get_department(department_key, cfg)
     if dept is None:
         return None
@@ -130,8 +159,5 @@ def review(world, department_key: str, *, cfg: dict | None = None,
         "delivery": _delivery(world, member_set, limit=limit, owner=owner),
         "authority": _authority(profiles),
         "learning": _learning(world, member_set, limit=limit, owner=owner),
-        "governance_note": (
-            "Every action counted here passed the shield's input/tool/output "
-            "checks and is recorded in the signed, tamper-evident audit log."
-        ),
+        "governance_note": _governance_note(),
     }
