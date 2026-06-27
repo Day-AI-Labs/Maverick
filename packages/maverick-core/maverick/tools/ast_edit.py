@@ -1,8 +1,11 @@
-"""AST-aware editor for Python.
+"""Syntax-safe structural editor for Python.
 
-Safe, structural refactors that don't break syntax: rename-symbol,
-add-import, insert-after-symbol, remove-symbol. Each operation rejects
-edits that would leave the file syntactically invalid.
+Refactors that don't break syntax: rename-symbol, add-import,
+insert-after-symbol, remove-symbol. Each operation rejects edits that would
+leave the file syntactically invalid. Note: ``add/insert/remove`` are AST-driven,
+but ``rename-symbol`` is a whole-word *textual* substitution (``\\bname\\b``) —
+it is NOT scope-aware, so it also rewrites matching identifiers in unrelated
+scopes/strings/comments. Use it for unambiguous, file-local renames.
 
 Python only for now. The tool is opt-in (agent picks it for refactor-
 style work); plain ``str_replace_editor`` is still the go-to for
