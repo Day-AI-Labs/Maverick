@@ -179,7 +179,9 @@ class QdrantStore:
         try:
             res = self._client.count(collection_name=self._collection, exact=True)
             return int(getattr(res, "count", 0))
-        except Exception:
+        except Exception as e:
+            # Log so a backend outage isn't silently reported as an empty store.
+            log.warning("qdrant: count failed (%s); reporting 0", e)
             return 0
 
     def reset(self) -> None:

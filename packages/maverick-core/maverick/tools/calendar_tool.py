@@ -202,6 +202,7 @@ def _find_slot(args: dict[str, Any]) -> str:
         return f"ERROR: caldav scan failed: {type(e).__name__}: {e}"
     # Collect [start, end] busy windows.
     busy: list[tuple[datetime, datetime]] = []
+    dropped = 0
     for ev in events:
         try:
             vobj = ev.icalendar_component
@@ -219,9 +220,16 @@ def _find_slot(args: dict[str, Any]) -> str:
             e = (_aware(vobj.get("dtend").dt)
                  if vobj.get("dtend") else s + timedelta(hours=1))
             busy.append((s, e))
-        except Exception:
+        except Exception as ex:
+            # Dropping an unparseable event is the UNSAFE direction: a busy
+            # block silently becomes free time. Count + log it, and warn the
+            # caller in the result so the free/busy view isn't trusted blindly.
+            dropped += 1
+            log.warning("calendar find_slot: skipped an unparseable event (%s)", ex)
             continue
     busy.sort()
+    note = (f"  [warning: {dropped} event(s) could not be parsed and were NOT "
+            f"counted as busy]" if dropped else "")
     # Walk day-by-day; emit the first earliest-hour:latest-hour gap of
     # >= duration_min minutes.
     duration = timedelta(minutes=duration_min)
@@ -245,7 +253,7 @@ def _find_slot(args: dict[str, Any]) -> str:
                 end = cur + duration
                 return (
                     f"free slot: {cur.isoformat()} -> {end.isoformat()} "
-                    f"({duration_min} min)"
+                    f"({duration_min} min)" + note
                 )
             cur = max(cur, e)
         if day_end - cur >= duration:
@@ -258,7 +266,7 @@ def _find_slot(args: dict[str, Any]) -> str:
         cursor = (cursor + timedelta(days=1)).replace(hour=0, minute=0)
         if cursor >= window_end:
             break
-    return f"no {duration_min}-min slot found in next {search_days} days"
+    return f"no {duration_min}-min slot found in next {search_days} days" + note
 
 
 def _run(args: dict[str, Any]) -> str:

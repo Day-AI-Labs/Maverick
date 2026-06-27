@@ -126,7 +126,11 @@ def _save_cache(cache: dict[str, CachedEmbedding]) -> None:
         name: {"text": e.text, "mtime": e.mtime, "vector": e.vector}
         for name, e in cache.items()
     }
-    path.write_text(json.dumps(raw), encoding="utf-8")
+    # Atomic write (temp + os.replace) so a crash mid-write or a concurrent
+    # writer can't leave a truncated/corrupt cache -- the same pattern the
+    # sibling skill.stats module uses.
+    from ..file_lock import atomic_write_text
+    atomic_write_text(path, json.dumps(raw))
 
 
 def _skill_to_embed_text(skill) -> str:

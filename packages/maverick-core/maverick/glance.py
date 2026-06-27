@@ -11,8 +11,11 @@ bounded so the payload stays glance-sized no matter the history.
 """
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime, timezone
+
+log = logging.getLogger(__name__)
 
 
 def _today_bounds(now: float) -> tuple[float, float]:
@@ -59,8 +62,9 @@ def build_glance(world, *, now: float | None = None, owner: str | None = None) -
                         for days in data.values() if isinstance(days, dict))
         else:
             spend = float((data.get(owner) or {}).get(day, {}).get("dollars", 0.0))
-    except Exception:
-        pass
+    except Exception as e:
+        # Don't let a ledger read error read as a real $0.00 spend with no trace.
+        log.debug("glance: spend lookup failed (%s); reporting $0.00", e)
     return {
         "active": active,
         "done_today": done_today,
