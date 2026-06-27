@@ -172,6 +172,23 @@ def test_dry_run_without_scorer_applies_nothing(monkeypatch, store):
     assert not store.exists()
 
 
+def test_count_eligible_matches_mining_filter():
+    # count_eligible must agree with mine_failures' guard: model-tagged AND
+    # unscoped only. Scoped, other-model, and malformed records don't count.
+    recs = (
+        [{"model_id": "m", "failure_class": "t", "goal_text": f"g{i}",
+          "channel": None, "user_id": None} for i in range(3)]
+        + [{"model_id": "m", "failure_class": "t", "goal_text": "s",
+            "channel": "slack:x", "user_id": "u"}]      # scoped -> excluded
+        + [{"model_id": "other", "failure_class": "t", "goal_text": "o"}]  # other model
+        + [None, {"no": "model"}]                        # malformed
+    )
+    assert sh.count_eligible(recs, model_id="m") == 3
+    assert sh.count_eligible([], model_id="m") == 0
+    # Exactly the records mine_failures would consider (min_support=1).
+    assert len(sh.mine_failures(recs, model_id="m", min_support=1)) >= 1
+
+
 # ---------- CLI inspector ----------
 
 def test_cli_requires_enable(monkeypatch):

@@ -41,6 +41,32 @@
     {% endif %}
   </div>
 
+  <h2>self-harness guidance</h2>
+  <div class="panel" id="harness-guidance">
+    <p class="muted">
+      Model-specific operating guidance the self-harness loop learned from
+      recurring failures and recalls into that model's system prompt. Roll any
+      line back with <code>maverick self-harness forget</code>.
+      {% if harness and not harness_enabled %}
+        <strong>Self-harness is OFF</strong> — this guidance is stored but
+        <em>not</em> recalled into prompts until <code>[self_harness]
+        enable</code> is set.
+      {% endif %}
+    </p>
+    {% if harness %}
+      {% for h in harness %}
+        <h3><code>{{ h.model_id }}</code> <span class="muted">({{ h.lines | length }} line{{ '' if h.lines | length == 1 else 's' }})</span></h3>
+        <ul>
+        {% for ln in h.lines %}
+          <li>{{ ln }}</li>
+        {% endfor %}
+        </ul>
+      {% endfor %}
+    {% else %}
+      <p class="muted" id="no-harness">No self-harness guidance learned.</p>
+    {% endif %}
+  </div>
+
   <h2>generated tools</h2>
   <div class="panel" id="generated-tools">
     <p class="muted">

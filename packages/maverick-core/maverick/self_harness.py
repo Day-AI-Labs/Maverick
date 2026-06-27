@@ -201,6 +201,29 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+def _is_minable(r: object, model_id: str) -> bool:
+    """Whether a single reflexion is eligible to be mined for ``model_id``:
+    a dict, tagged with this exact model, and UNSCOPED (no channel/user_id).
+    The single source of truth for the mining-eligibility guard so the CLI's
+    eligible count can never drift from what :func:`mine_failures` actually
+    considers."""
+    return (isinstance(r, dict)
+            and str(r.get("model_id") or "") == str(model_id)
+            and r.get("channel") is None and r.get("user_id") is None)
+
+
+def count_eligible(reflexions: list[dict], *, model_id: str) -> int:
+    """How many of ``reflexions`` are eligible to be mined for ``model_id``.
+
+    A reflexion is eligible only if it is tagged with this model AND unscoped
+    (the trace-poisoning guard drops scoped/remote-user failures). The operator
+    CLI uses this to explain why scanning N reflexions mined nothing: "scanned
+    N" can far exceed the eligible count when failures are scoped or belong to a
+    different model, and a bare "no weaknesses" otherwise reads as "this model
+    never fails" rather than "those failures were excluded by design"."""
+    return sum(1 for r in (reflexions or []) if _is_minable(r, model_id))
+
+
 def mine_failures(
     reflexions: list[dict], *, model_id: str, min_support: int = 3,
     similarity: float = 0.3,
@@ -224,10 +247,7 @@ def mine_failures(
     nothing in the intended single-operator case."""
     if min_support < 1:
         return []
-    mine = [r for r in (reflexions or [])
-            if isinstance(r, dict)
-            and str(r.get("model_id") or "") == str(model_id)
-            and r.get("channel") is None and r.get("user_id") is None]
+    mine = [r for r in (reflexions or []) if _is_minable(r, model_id)]
     # DoS backstop: greedy clustering is O(n*clusters) -- worst case O(n^2) when
     # every trace is a distinct goal. The runner already feeds only the most
     # recent ``limit`` (500) traces, but mine_failures is public; a direct caller
@@ -631,7 +651,7 @@ def _gate_and_apply(proposal: HarnessProposal, vr: ValidationResult, *,
 __all__ = [
     "enabled", "recall_addendum", "load_addenda",
     "list_learned", "forget_addendum",
-    "FailureSignature", "mine_failures",
+    "FailureSignature", "mine_failures", "count_eligible",
     "HarnessProposal", "ProposeFn", "propose_addendum",
     "ValidationResult", "ScoreFn", "validate_proposal",
     "SelfHarnessReport", "run_self_harness",

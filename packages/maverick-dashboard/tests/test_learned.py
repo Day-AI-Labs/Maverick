@@ -49,8 +49,51 @@ def test_learned_page_renders_empty(monkeypatch, tmp_path):
     text = _client().get("/learned").text
     assert "Nothing learned yet" in text
     assert "No generated tools" in text
+    assert "No self-harness guidance learned" in text
     # Nav link present.
     assert 'href="/learned"' in text
+
+
+def _seed_harness(monkeypatch, tmp_path, *, enabled=True):
+    """Point the self-harness store at tmp_path and seed one model's guidance."""
+    from maverick import self_harness as sh
+    store = tmp_path / "addenda.json"
+    monkeypatch.setattr(sh, "_store_path", lambda: store)
+    if enabled:
+        monkeypatch.setenv("MAVERICK_SELF_HARNESS", "1")
+    else:
+        monkeypatch.delenv("MAVERICK_SELF_HARNESS", raising=False)
+        monkeypatch.setattr("maverick.config.load_config", dict)
+    sh._write_addenda(
+        {"claude-x": "Operating guidance learned for this model:\n"
+                     "- verify the export precondition before acting"}, store)
+    return store
+
+
+def test_harness_guidance_renders_on_page_and_api(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _seed_harness(monkeypatch, tmp_path, enabled=True)
+    text = _client().get("/learned").text
+    assert "self-harness guidance" in text.lower()
+    assert "claude-x" in text
+    assert "verify the export precondition before acting" in text
+    # API mirrors the page.
+    body = _client().get("/api/v1/learned").json()
+    assert body["harness_enabled"] is True
+    assert body["harness"][0]["model_id"] == "claude-x"
+    assert "verify the export precondition before acting" in body["harness"][0]["lines"]
+
+
+def test_harness_guidance_shows_off_note_when_disabled(monkeypatch, tmp_path):
+    # Stored-but-paused guidance is still shown, with a clear "not recalled" note
+    # (matches `maverick self-harness show`).
+    _isolate(monkeypatch, tmp_path)
+    _seed_harness(monkeypatch, tmp_path, enabled=False)
+    body = _client().get("/api/v1/learned").json()
+    assert body["harness_enabled"] is False
+    assert body["harness"][0]["model_id"] == "claude-x"
+    text = _client().get("/learned").text
+    assert "Self-harness is OFF" in text
 
 
 def test_generated_tools_list_renders(monkeypatch, tmp_path):

@@ -264,11 +264,21 @@ def self_harness_cmd(model_id: str | None, min_support: int, limit: int) -> None
         from ..llm import model_for_role
         model_id = model_for_role("orchestrator")
     records = [r.to_dict() for r in reflexion.list_recent(limit=limit)]
+    eligible = self_harness.count_eligible(records, model_id=model_id)
     sigs = self_harness.mine_failures(
         records, model_id=model_id, min_support=min_support)
     if not sigs:
         click.echo(f"No recurring weaknesses for {model_id!r} "
-                   f"(scanned {len(records)} reflexions, min-support {min_support}).")
+                   f"(scanned {len(records)} reflexions, {eligible} eligible "
+                   f"for this model, min-support {min_support}).")
+        # Distinguish "nothing recurs" from "everything was excluded": only
+        # unscoped, model-tagged failures are mined, so an operator whose
+        # failures are all scoped/remote (or under another model) would
+        # otherwise read this as "this model never fails".
+        if records and eligible == 0:
+            click.echo("  Note: self-harness mines only UNSCOPED, model-tagged "
+                       "failures; scoped (channel/user) failures are excluded "
+                       "by design.")
         return
     click.echo(f"Weaknesses for {model_id!r} ({len(sigs)} pattern(s)):")
     for sig in sigs:
