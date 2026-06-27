@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 from maverick import dreaming, reflexion
 
-
 # ---------- fakes ----------
 
 @dataclass

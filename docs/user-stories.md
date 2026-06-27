@@ -146,7 +146,7 @@
 
 ## Epic 03 — The Workforce: Agents & Roles
 
-- **US-0101** *(Operator — P1)* — As an Operator, I want to browse the full ~2,020-pack specialist catalog grouped by its 52 suites, so that I can find the right agent for a goal without knowing its exact name.
+- **US-0101** *(Operator — P1)* — As an Operator, I want to browse the full ~2,020-pack specialist catalog grouped by its 53 suites, so that I can find the right agent for a goal without knowing its exact name.
 - **US-0102** *(Operator — P1)* — As an Operator, I want to search the roster by free-text keyword across agent names, personas, and descriptions, so that I can locate a specialist by what it does rather than how it's labeled.
 - **US-0103** *(Team Lead — P2)* — As a Team Lead, I want to filter the catalog by suite, so that my team only sees the specialist packs relevant to our domain.
 - **US-0104** *(Operator — P2)* — As an Operator, I want to filter agents by risk level (low/medium/high), so that I can pick a safe specialist when working in a sensitive environment.
@@ -158,7 +158,7 @@
 - **US-0110** *(Platform Admin — P0)* — As a Platform Admin, I want to set per-role model mapping in the `[models]` config using `provider:model-id` form, so that each role runs on the model tier appropriate to its cost and capability needs.
 - **US-0111** *(FinOps Owner — P1)* — As a FinOps Owner, I want to remap a role to a cheaper `provider:model-id` without editing any agent pack, so that I can cut spend on low-stakes roles centrally.
 - **US-0112** *(Platform Admin — P2)* — As a Platform Admin, I want the `/roles` screen to validate that every `[models]` mapping references a configured provider, so that a typo in a model id is caught before a goal fails at runtime.
-- **US-0113** *(Tenant Admin — P1)* — As a Tenant Admin, I want to enable or disable a whole suite for my tenant in one action, so that I can switch on the 52 suites my organization actually uses.
+- **US-0113** *(Tenant Admin — P1)* — As a Tenant Admin, I want to enable or disable a whole suite for my tenant in one action, so that I can switch on the 53 suites my organization actually uses.
 - **US-0114** *(Tenant Admin — P2)* — As a Tenant Admin, I want disabling a suite to immediately hide all its packs from the roster and block their spawning, so that retired domains can't be invoked accidentally.
 - **US-0115** *(Operator — P0)* — As an Operator, I want to view the merged/resolved view of an agent showing the effective persona, model, and capability envelope after role and tenant overrides, so that I know exactly what will run, not just the pack defaults.
 - **US-0116** *(Agent Author — P1)* — As an Agent Author, I want the resolved view to indicate which layer (pack, role, tenant) set each effective value, so that I can trace where an unexpected setting came from.
@@ -188,7 +188,7 @@
 - **US-0140** *(Operator — P2)* — As an Operator, I want a clear refusal message when I spawn a specialist for a task that exceeds its max_risk or hits a deny rule, so that I understand why it stopped instead of seeing a silent failure.
 - **US-0141** *(Tenant Admin — P1)* — As a Tenant Admin, I want suite enablement and per-role model mappings to be scoped to my tenant, so that my configuration never leaks into or from another tenant.
 - **US-0142** *(Agent Author — P2)* — As an Agent Author, I want to preview an agent's persona rendered as it will appear at spawn time, so that I can confirm the description reads correctly before publishing the pack.
-- **US-0143** *(Knowledge Steward — P2)* — As a Knowledge Steward, I want to browse the 52 suites with a one-line summary of each suite's domain, so that I can map an organizational need to the right family of packs.
+- **US-0143** *(Knowledge Steward — P2)* — As a Knowledge Steward, I want to browse the 53 suites with a one-line summary of each suite's domain, so that I can map an organizational need to the right family of packs.
 - **US-0144** *(Security Engineer — P1)* — As a Security Engineer, I want to define an envelope template (allow_tools/deny_tools/allow_paths/allow_hosts/max_risk) and apply it to many packs at once, so that a security baseline is enforced uniformly across a suite.
 - **US-0145** *(Compliance Officer — P2)* — As a Compliance Officer, I want to flag agents whose effective envelope grants allow_hosts to external networks, so that I can review every specialist that can egress data.
 - **US-0146** *(Executive — P3)* — As an Executive, I want a summary count of enabled suites, active roles, and specialist packs in use, so that I can report the scale of our deployed AI workforce.
@@ -596,7 +596,7 @@
 - **US-0508** *(Knowledge Steward — P1)* — As a Knowledge Steward, I want to add a new behavioral golden case with an input, expected behavior, and rationale, so that newly discovered correct behaviors are locked in against future regressions.
 - **US-0509** *(Knowledge Steward — P2)* — As a Knowledge Steward, I want to mark a golden case as deprecated with a reason and removal date, so that obsolete expectations are retired in a governed way rather than silently deleted.
 - **US-0510** *(Agent Author — P0)* — As an Agent Author, I want to run `domains-lint` over the specialist catalog, so that structural and metadata errors in my pack definition are caught before audit.
-- **US-0511** *(Platform Admin — P0)* — As a Platform Admin, I want `domains-lint` to enforce that every one of the 1,902 specialist packs has a unique id, suite assignment, and required fields, so that the catalog stays internally consistent across all 52 suites.
+- **US-0511** *(Platform Admin — P0)* — As a Platform Admin, I want `domains-lint` to enforce that every one of the 2,020 specialist packs has a unique id, suite assignment, and required fields, so that the catalog stays internally consistent across all 53 suites.
 - **US-0512** *(Compliance Officer — P1)* — As a Compliance Officer, I want `domains-audit` to flag packs that lack a documented owner or governance tag, so that every specialist in the catalog is attributable and accountable.
 - **US-0513** *(Knowledge Steward — P1)* — As a Knowledge Steward, I want `domains-audit` to report packs with overlapping or contradictory scopes across suites, so that I can resolve catalog ambiguity before it confuses routing.
 - **US-0514** *(Agent Author — P2)* — As an Agent Author, I want `domains-lint` to warn when my pack references a tool or capability that is not registered, so that I catch dangling dependencies at lint time.

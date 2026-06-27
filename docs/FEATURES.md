@@ -281,7 +281,7 @@ here.
   a drafting pack could reach a mutator; `--json` exports for a GRC system.
 - **Per-pack behavioral evals** — `maverick domains-eval [--check]`
 - **Roster-wide governance invariant suite** (verified across ALL 2,020 packs,
-  fault-injected at 1,000,000 iterations) — six invariants proven non-vacuously
+  fault-injected with a non-vacuous control) — six invariants proven non-vacuously
   (each carries a fault-injection control that fails when the guarantee is
   removed): (1) **tool-reachability** — no drafting/non-builder agent can reach
   a state-mutating tool; (2) **autonomy dial** — an onboarding agent is never
