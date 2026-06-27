@@ -1333,10 +1333,21 @@ def harness_log(limit: int) -> None:
     if not rows:
         click.echo("no self-harness learning events recorded.")
         return
+    import datetime as _dt
+
+    def _when(ev: dict) -> str:
+        # Audit rows store ts as an epoch float; render it as a calendar
+        # timestamp so "what was learned and when" is actually readable (a raw
+        # 1.78e9 float is not). Leave a non-numeric/absent ts as-is.
+        ts = ev.get("ts") or ev.get("time")
+        if isinstance(ts, (int, float)):
+            return _dt.datetime.fromtimestamp(
+                ts, _dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        return str(ts or "")
+
     for ev in rows:
-        ts = ev.get("ts") or ev.get("time") or ""
-        click.echo(f"{ts}  {ev.get('phase', 'apply'):7} {ev.get('model_id', '?')}  "
-                   f"{ev.get('line', '')}")
+        click.echo(f"{_when(ev):19}  {ev.get('phase', 'apply'):7} "
+                   f"{ev.get('model_id', '?')}  {ev.get('line', '')}")
 
 
 @harness.command("forget")
