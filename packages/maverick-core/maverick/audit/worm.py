@@ -57,6 +57,7 @@ def _worm_cfg() -> dict[str, Any]:
     try:
         from ..config import load_config
         cfg = ((load_config() or {}).get("audit") or {}).get("worm") or {}
+    # failure-policy: best_effort
     except Exception:  # pragma: no cover -- config never blocks a run
         return {}
     return cfg if isinstance(cfg, dict) else {}
@@ -178,6 +179,7 @@ class S3WormSink:
             if not isinstance(data, bytes):
                 return False
             return _sha256(data) == expected_sha256
+        # failure-policy: fail_closed
         except Exception:
             return False
 
@@ -240,6 +242,7 @@ def _locator_verified(
     if sink is not None and hasattr(sink, "verify"):
         try:
             return bool(sink.verify(locator, expected_sha256))
+        # failure-policy: fail_closed
         except Exception:
             return False
     target = locator.get("target")
@@ -264,6 +267,7 @@ def _locator_verified(
             })
             sink = build_sink(cfg)
             return bool(sink.verify(locator, expected_sha256))
+        # failure-policy: fail_closed
         except Exception:
             return False
     return False
@@ -290,6 +294,7 @@ def _at_rest_sealing_active() -> bool:
             return False
         seal(b"")  # cheap probe: raises EncryptionUnavailable if key/crypto absent
         return True
+    # failure-policy: fail_closed
     except Exception:
         return False
 
@@ -364,6 +369,7 @@ def push_closed_dayfiles(
             continue
         try:
             locator = sink.put(p.name, data, retain_until=retain_until)
+        # failure-policy: fail_soft_with_audit
         except Exception as e:  # surface sink failure per-file, keep going
             report[p.name] = f"error ({e})"
             continue

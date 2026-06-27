@@ -380,11 +380,13 @@ def require_offhost_signing() -> bool:
         if val is not None:
             return bool(val) if not isinstance(val, str) else val.strip().lower() in {
                 "1", "true", "yes", "on"}
+    # failure-policy: best_effort
     except Exception:  # pragma: no cover -- config never weakens posture silently
         pass
     try:
         from ..enterprise import enterprise_enabled
         return bool(enterprise_enabled())
+    # failure-policy: best_effort
     except Exception:  # pragma: no cover
         return False
 
@@ -421,6 +423,7 @@ def _kms_wrapped_keypair() -> tuple[bytes, bytes, str] | None:
         provider = str(((load_config() or {}).get("kms") or {}).get("provider") or "").strip()
         kek = build_cloud_kms(provider)
         priv_bytes = kek.unwrap(wrapped, context=b"maverick-audit-signing")
+    # failure-policy: fail_soft_with_audit
     except Exception as e:
         log.warning("audit signing KMS unwrap failed (%s); falling back", e)
         return None
@@ -639,6 +642,7 @@ def verify_chain(path: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
 
     try:
         text = _segment_text(path)
+    # failure-policy: fail_closed
     except Exception as e:
         return [ChainBreak(0, "unreadable_segment", str(e))]
 
@@ -905,6 +909,7 @@ def verify_anchors(audit_dir: Path, pubkey_hex: str | None = None) -> list[Chain
             continue
         try:
             tip, count = _file_tip_and_count(day_file)
+        # failure-policy: fail_closed
         except Exception as e:
             breaks.append(ChainBreak(
                 0, "unreadable_segment", f"{day}: {e}"))

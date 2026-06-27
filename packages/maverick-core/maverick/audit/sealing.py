@@ -49,6 +49,7 @@ def segment_text(path: Path, *, fail_soft: bool = True) -> str:
     if is_sealed(raw):
         try:
             return unseal(raw).decode("utf-8")
+        # failure-policy: fail_closed
         except Exception as e:
             if fail_soft:
                 return ""
@@ -90,6 +91,7 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
+    # failure-policy: fail_closed
     except BaseException:
         try:
             os.unlink(tmp)

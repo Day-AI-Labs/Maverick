@@ -135,6 +135,13 @@ jobs:
         # from regressing on the basics without a browser/Node. Complements
         # the live `a11y` tool (pa11y/axe).
         run: python -m maverick.a11y_audit --ci
+      - name: Failure-policy gate (audit-subsystem broad excepts are classified)
+        # Requires every broad `except` in maverick/audit/* to declare its
+        # failure mode (# failure-policy: fail_closed | fail_soft_with_audit |
+        # best_effort) so a silently-swallowed error in the tamper-evident audit
+        # log can't ship unreviewed. Narrowly scoped to audit integrity (not a
+        # codebase-wide except sweep; bugbear stays off). See failure_policy.py.
+        run: python -m maverick.failure_policy --ci
       - name: Schema-migration gate (no unreviewed/unsafe world-model migrations)
         # Lints world_model.MIGRATIONS: fails if a migration is malformed or an
         # unclassifiable SQL shape, so a new migration can't ship without being

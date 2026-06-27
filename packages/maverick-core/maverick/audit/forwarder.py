@@ -63,6 +63,7 @@ def _siem_token() -> str | None:
     try:
         from ..secret_provider import get_secret
         tok = get_secret("MAVERICK_SIEM_TOKEN")
+    # failure-policy: best_effort
     except Exception:  # pragma: no cover -- never block forwarding on token lookup
         tok = None
     return tok.strip() if tok else None
