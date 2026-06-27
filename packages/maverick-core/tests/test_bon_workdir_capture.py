@@ -10,7 +10,11 @@ from __future__ import annotations
 import subprocess
 import tempfile
 
-from maverick.orchestrator import _capture_workdir_diff, _reset_workdir_to_head
+from maverick.orchestrator import (
+    _capture_workdir_diff,
+    _reset_workdir_to_head,
+    _strip_binary_diff_sections,
+)
 
 
 def _git(d, *args):
@@ -64,6 +68,37 @@ def test_capture_crlf_file_applies(tmp_path):
     diff = _capture_workdir_diff(repo)
     assert diff
     assert _applies_to_head(repo, diff)                       # fails if \r stripped
+
+
+def test_capture_excludes_pycache_and_still_applies(tmp_path):
+    """Regression for the live bug: running the candidate's tests creates
+    __pycache__/*.pyc; without a .gitignore, `git add -A` would stage them and
+    git renders 'Binary files ... differ', which makes `git apply` reject the
+    WHOLE patch. The capture must exclude them and still apply."""
+    repo = tmp_path / "r"
+    _init_repo(repo, {"solution.py": b"def f():\n    raise NotImplementedError\n"})
+    (repo / "solution.py").write_bytes(b"def f():\n    return 7\n")
+    # stray compiled bytecode left by a test run (binary, untracked, not ignored)
+    pyc = repo / "__pycache__"
+    pyc.mkdir()
+    (pyc / "solution.cpython-311.pyc").write_bytes(b"\x00\x01\x02\xfe\xff binary")
+    diff = _capture_workdir_diff(repo)
+    assert "return 7" in diff
+    assert ".pyc" not in diff and "Binary files" not in diff   # noise excluded
+    assert _applies_to_head(repo, diff)                          # patch still valid
+
+
+def test_strip_binary_diff_sections_drops_only_binary():
+    text_section = (
+        "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n"
+    )
+    bin_section = (
+        "diff --git a/y.bin b/y.bin\nindex 1..2 100644\nBinary files a/y.bin and b/y.bin differ\n"
+    )
+    out = _strip_binary_diff_sections(text_section + bin_section)
+    assert "x.py" in out and "y.bin" not in out and "Binary files" not in out
+    # no-op when there's nothing binary
+    assert _strip_binary_diff_sections(text_section) == text_section
 
 
 def test_capture_leaves_index_clean(tmp_path):
