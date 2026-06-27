@@ -117,6 +117,35 @@ def test_log_renders_human_readable_timestamp(_home):
     assert not re.search(r"\b1[0-9]{9}\.\d", r.output), r.output  # no raw epoch float
 
 
+def test_preview_explains_scoped_exclusion(_home):
+    # All-scoped failures are excluded by the trace-poisoning guard, so preview
+    # must say "0 eligible" + explain why, not a bare "no weaknesses" that reads
+    # as "this model never fails".
+    from maverick import reflexion
+    for i in range(4):
+        reflexion.record(goal_text=f"export ledger {i}", failure_class="timeout",
+                         failure_msg="timed out", reflection="x",
+                         model_id="claude-x", channel="slack:x", user_id="u1")
+    r = CliRunner().invoke(main, ["self-harness", "preview", "--model", "claude-x"])
+    assert r.exit_code == 0, r.output
+    assert "0 eligible" in r.output
+    assert "excluded by design" in r.output
+
+
+def test_preview_counts_eligible_unscoped(_home):
+    # Unscoped failures ARE eligible; if they just don't meet min-support, the
+    # count reflects that (and no scoped-exclusion note is shown).
+    from maverick import reflexion
+    for i in range(4):
+        reflexion.record(goal_text=f"export ledger {i}", failure_class="timeout",
+                         failure_msg="timed out", reflection="x", model_id="claude-x")
+    r = CliRunner().invoke(
+        main, ["self-harness", "preview", "--model", "claude-x", "--min-support", "99"])
+    assert r.exit_code == 0, r.output
+    assert "4 eligible" in r.output
+    assert "excluded by design" not in r.output
+
+
 def test_preview_rejects_nonpositive_min_support(_home):
     # min_support < 1 disables mining; the command must say so loudly instead of
     # printing "No recurring weaknesses" (which reads as "your model has none").
