@@ -201,6 +201,28 @@ def apply_skill_overlays(
     return base, []
 
 
+def apply_memory_brief(base: str, *, depth: int) -> str:
+    """Append the cross-session memory presence hint (root agent only).
+
+    Depth-gated to the root agent (``depth == 0``) so deep workers keep lean,
+    focused context (they can still use the ``memory`` tool directly). Surfaces
+    only a safe presence hint — memory filenames/contents are model-writable and
+    re-enter through the tool's scanned, redacted path, never directly here.
+    Empty memory -> no change; fail-open. Fifth PromptBuilder collaborator from
+    ``Agent._build_system``.
+    """
+    if depth != 0:
+        return base
+    try:
+        from .tools.memory import memory_brief
+        brief = memory_brief()
+        if brief:
+            base = base + "\n\n" + brief
+    except Exception:  # pragma: no cover -- never block a run
+        pass
+    return base
+
+
 # #611: fraction of the budget reserved for the TOP-level goal's synthesis /
 # write step. A deeper worker (depth > 0) stops once cumulative spend crosses
 # (1 - this) of the cap, so a recursive research swarm can't burn the budget
@@ -948,20 +970,9 @@ class Agent:
             except Exception:
                 pass
 
-        # Cross-session memory (root agent only): surface only a safe presence
-        # hint so each run knows durable memory exists. Memory filenames and
-        # contents are model-writable/untrusted and must re-enter through the
-        # `memory` tool's normal scanned, redacted, framed output path. Empty
-        # memory -> "" -> no change. Depth-gated so deep workers keep lean,
-        # focused context (they can still use the tool directly).
-        if self.depth == 0:
-            try:
-                from .tools.memory import memory_brief
-                brief = memory_brief()
-                if brief:
-                    base = base + "\n\n" + brief
-            except Exception:  # pragma: no cover -- never block a run
-                pass
+        # Cross-session memory presence hint (fifth PromptBuilder collaborator,
+        # root agent only).
+        base = apply_memory_brief(base, depth=self.depth)
 
         base = self._with_harness_addendum(base)
         return base

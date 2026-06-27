@@ -11,6 +11,7 @@ from maverick.agent import (
     ORCHESTRATOR_SYSTEM_TEMPLATE,
     WORKER_SYSTEM_TEMPLATE,
     apply_global_overlays,
+    apply_memory_brief,
     apply_role_overlays,
     apply_skill_overlays,
     select_base_template,
@@ -159,3 +160,32 @@ def test_skill_overlays_fail_open_on_missing_store(monkeypatch):
     monkeypatch.setattr("maverick.skills.available_skills", boom)
     # FileNotFoundError/ImportError/ValueError are swallowed -> no-op.
     assert apply_skill_overlays("BASE", brief="x", use_skills=True) == ("BASE", [])
+
+
+# ---- apply_memory_brief (fifth PromptBuilder collaborator) ----
+
+def test_memory_brief_appended_for_root_agent(monkeypatch):
+    monkeypatch.setattr("maverick.tools.memory.memory_brief", lambda: "MEM")
+    assert apply_memory_brief("BASE", depth=0) == "BASE\n\nMEM"
+
+
+def test_memory_brief_skipped_for_deep_workers(monkeypatch):
+    # depth > 0 -> the memory tool is not even consulted.
+    monkeypatch.setattr(
+        "maverick.tools.memory.memory_brief",
+        lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
+    )
+    assert apply_memory_brief("BASE", depth=2) == "BASE"
+
+
+def test_memory_brief_empty_is_noop(monkeypatch):
+    monkeypatch.setattr("maverick.tools.memory.memory_brief", lambda: "")
+    assert apply_memory_brief("BASE", depth=0) == "BASE"
+
+
+def test_memory_brief_fails_open(monkeypatch):
+    def boom():
+        raise RuntimeError("memory store down")
+    monkeypatch.setattr("maverick.tools.memory.memory_brief", boom)
+    # Never blocks a run: a memory error leaves base unchanged.
+    assert apply_memory_brief("BASE", depth=0) == "BASE"
