@@ -16,8 +16,11 @@ to none.
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import Protocol, runtime_checkable
+
+log = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -76,6 +79,34 @@ def _configured_name() -> str:
         return _DEFAULT
 
 
+_HYBRID_NOOP_WARNED = False
+
+
+def _warn_hybrid_unwired_once() -> None:
+    """Warn once if ``[compaction] hybrid`` is set but the picker isn't wired.
+
+    The experimental hybrid strategy picker (``compaction.hybrid``) is not
+    connected to this live dispatch path, so enabling the flag would otherwise
+    be a *silent* no-op. Surface that at runtime — not just in the module
+    docstring — so an operator who flips the knob learns it has no effect yet.
+    """
+    global _HYBRID_NOOP_WARNED
+    if _HYBRID_NOOP_WARNED:
+        return
+    try:
+        from .hybrid import enabled as _hybrid_enabled
+        if _hybrid_enabled():
+            _HYBRID_NOOP_WARNED = True
+            log.warning(
+                "[compaction] hybrid is enabled, but the experimental hybrid "
+                "strategy picker is not wired into the live compaction path; "
+                "the configured/default strategy is used instead (no effect on "
+                "compaction). See compaction/hybrid.py for status."
+            )
+    except Exception:  # pragma: no cover -- never block compaction on this check
+        pass
+
+
 def compact_with(messages: list[dict], *, strategy: str | None = None,
                  **kwargs) -> list[dict]:
     """Compact ``messages`` with the named/configured strategy.
@@ -83,6 +114,7 @@ def compact_with(messages: list[dict], *, strategy: str | None = None,
     Fails safe to the built-in ``heuristic`` when the requested strategy is not
     registered — a misconfiguration degrades to working compaction, never none.
     """
+    _warn_hybrid_unwired_once()
     name = strategy or _configured_name()
     strat = _REGISTRY.get(name) or _REGISTRY[_DEFAULT]
     return strat.compact(messages, **kwargs)
