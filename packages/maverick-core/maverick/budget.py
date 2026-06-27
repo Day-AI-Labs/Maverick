@@ -11,21 +11,53 @@ v0.2 cost-correctness fix:
 """
 from __future__ import annotations
 
+import logging
 import math
 import os
 import threading
 import time
 from dataclasses import dataclass, field
 
+log = logging.getLogger(__name__)
+
 
 class BudgetExceeded(Exception):
     pass
+
+
+class UnpricedModelError(BudgetExceeded):
+    """Raised when an unpriced model is billed under strict (billing-grade)
+    pricing. Subclasses ``BudgetExceeded`` so existing ``except BudgetExceeded``
+    handlers still stop the run, while callers that care can catch it by type."""
 
 
 # Fallback price (Sonnet 4.6 list, no cache discount) in $/Mtok.
 # Used only when the model id isn't in maverick.llm.MODEL_PRICES.
 _FALLBACK_PRICE_IN = 3.0
 _FALLBACK_PRICE_OUT = 15.0
+
+# Model ids already warned about (estimate-priced); warn once each, not per call.
+_UNPRICED_WARNED: set[str] = set()
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _billing_strict() -> bool:
+    """Whether an unverified model price should fail closed (billing-grade).
+
+    Off by default: an unknown model bills at the documented fallback estimate
+    and warns once. Enabled via ``MAVERICK_BILLING_STRICT`` (truthy) or
+    ``[budget] strict_pricing = true``, an unpriced model raises
+    :class:`UnpricedModelError` instead of silently accruing estimated (and
+    possibly wrong) spend — the right default when the meter feeds a customer
+    invoice or chargeback rather than a soft internal cap.
+    """
+    if os.environ.get("MAVERICK_BILLING_STRICT", "").strip().lower() in _TRUTHY:
+        return True
+    try:
+        from .config import get_budget_overrides
+        return bool((get_budget_overrides() or {}).get("strict_pricing", False))
+    except Exception:  # pragma: no cover -- config never blocks accounting
+        return False
 
 
 def _coerce_count(v: object) -> int:
@@ -128,6 +160,25 @@ def _lookup_price(model: str | None) -> tuple[float, float]:
         "ollama", "vllm", "tgi",
     ):
         return 0.0, 0.0
+    # Genuinely unknown model: no verified rate exists. Default behaviour bills
+    # at the documented Sonnet fallback estimate, but that was silent — phantom
+    # mispricing with no signal. Make it observable (warn once per id), and let
+    # billing-grade deployments refuse the estimate outright (strict pricing).
+    if _billing_strict():
+        raise UnpricedModelError(
+            f"no verified price for model {model!r}; refusing to bill at an "
+            f"estimate under strict pricing. Add it to maverick.llm.MODEL_PRICES, "
+            f"or unset [budget] strict_pricing / MAVERICK_BILLING_STRICT to bill "
+            f"at the fallback estimate."
+        )
+    if model not in _UNPRICED_WARNED:
+        _UNPRICED_WARNED.add(model)
+        log.warning(
+            "no verified price for model %r; billing at the Sonnet fallback "
+            "estimate ($%.2f/$%.2f per Mtok). Add it to MODEL_PRICES for accurate "
+            "accounting, or set [budget] strict_pricing to fail closed instead.",
+            model, _FALLBACK_PRICE_IN, _FALLBACK_PRICE_OUT,
+        )
     return _FALLBACK_PRICE_IN, _FALLBACK_PRICE_OUT
 
 

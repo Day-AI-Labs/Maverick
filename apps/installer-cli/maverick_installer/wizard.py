@@ -850,10 +850,10 @@ def pick_signed_skills() -> dict[str, Any]:
     }
 
 
-def pick_budget() -> dict[str, float]:
+def pick_budget() -> dict[str, Any]:
     console.print()
     console.print("[dim]Per-run caps. Edit later in ~/.maverick/config.toml.[/dim]")
-    return {
+    budget: dict[str, Any] = {
         "max_dollars": _safe_float(
             _q_text("  Max $ per run", default="5.0"), default=5.0,
         ),
@@ -865,6 +865,16 @@ def pick_budget() -> dict[str, float]:
             _q_text("  Max tool calls per run", default="500"), default=500,
         ),
     }
+    # Billing-grade accounting: refuse to meter a model with no verified price
+    # instead of silently estimating it at the Sonnet fallback rate. Default off
+    # (soft internal caps); enable when the meter feeds an invoice/chargeback.
+    if _q_confirm(
+        "  Strict pricing? Fail closed if a model has no verified price "
+        "(billing-grade; default off estimates instead)",
+        default=False,
+    ):
+        budget["strict_pricing"] = True
+    return budget
 
 
 def pick_capabilities() -> dict[str, bool]:
@@ -2412,7 +2422,7 @@ def _cfg_channels(channels: dict[str, dict[str, Any]]) -> list[str]:
 
 
 def _cfg_core(
-    budget: dict[str, float],
+    budget: dict[str, Any],
     safety: dict[str, Any],
     sandbox: dict[str, Any],
 ) -> list[str]:

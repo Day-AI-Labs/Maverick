@@ -22,6 +22,7 @@ Schema overview::
 
     [budget]
     max_dollars = 5.0
+    strict_pricing = false  # true => refuse to bill an unpriced model (billing-grade)
 
     [safety]
     profile = "balanced"
