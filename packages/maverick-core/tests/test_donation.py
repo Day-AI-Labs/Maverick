@@ -284,6 +284,46 @@ class TestRejectedAttempts:
         assert secret not in payload_text
 
 
+class TestScoredCandidates:
+    """Best-of-N candidates ride along for DPO pairing, scored by objective tests."""
+
+    def _rec(self):
+        return TrajectoryRecord(
+            task_brief_hash="bon", outcome="success",
+            verifier_confidence=1.0, disagreement_entropy=0.7,
+            reward=1.0,
+            scored_candidates=[
+                {"text": "diff --git a pass", "score": 1.0, "all_pass": True},
+                {"text": "diff --git a fail", "score": 0.0, "all_pass": False},
+            ],
+        )
+
+    def test_text_kept_with_double_opt_in(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: True)
+        cands = json.loads(write_record(self._rec(), outbox=tmp_path).read_text())["scored_candidates"]
+        assert cands[0]["text"] == "diff --git a pass"
+        assert cands[0]["score"] == 1.0 and cands[1]["score"] == 0.0
+
+    def test_text_stripped_without_text_opt_in(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: False)
+        cands = json.loads(write_record(self._rec(), outbox=tmp_path).read_text())["scored_candidates"]
+        assert "text" not in cands[0]               # patch dropped
+        assert cands[0]["score"] == 1.0 and cands[0]["all_pass"] is True  # metadata kept
+
+    def test_secret_scrubbed_in_candidate_patch(self, tmp_path, monkeypatch):
+        secret = "sk-ant-api01-secrettokenvaluexyz1234567890abc"
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: True)
+        rec = TrajectoryRecord(
+            task_brief_hash="bon", outcome="success",
+            verifier_confidence=1.0, disagreement_entropy=0.7, reward=1.0,
+            scored_candidates=[{"text": f"patch {secret}", "score": 1.0, "all_pass": True}],
+        )
+        assert secret not in write_record(rec, outbox=tmp_path).read_text()
+
+
 class TestHashBrief:
     def test_same_brief_same_hash(self):
         assert hash_brief("foo") == hash_brief("foo")

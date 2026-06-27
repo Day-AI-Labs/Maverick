@@ -80,6 +80,20 @@ def test_export_texts_skips_rejected_without_text():
     assert set(out) == {"h1-10"}                          # no rejected entry
 
 
+def test_export_texts_emits_candidate_patches():
+    """Best-of-N candidate patches export under ingest's candidate id, so the DPO
+    sidecar carries both halves of a candidate pair."""
+    from maverick.training.ingest import candidate_trajectory_id
+    rec = _record("h1", 10, 1)
+    rec["scored_candidates"] = [
+        {"text": "PASS patch", "score": 1.0, "all_pass": True},
+        {"text": "FAIL patch", "score": 0.0, "all_pass": False},
+    ]
+    out = export_texts.export_texts([rec], lambda r: _events())
+    assert out[candidate_trajectory_id(rec, 0)] == "PASS patch"
+    assert out[candidate_trajectory_id(rec, 1)] == "FAIL patch"
+
+
 # ---------- CLI round-trip into the rlaif sidecar loader ----------
 
 def test_main_writes_sidecar_loadable_by_rlaif(tmp_path, monkeypatch):

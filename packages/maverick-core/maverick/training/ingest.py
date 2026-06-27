@@ -168,6 +168,43 @@ def build_rejected_trajectories(record: dict) -> list[TrainingTrajectory]:
     return out
 
 
+def candidate_trajectory_id(record: dict, i: int) -> str:
+    """Id for the i-th best-of-N candidate of a record. Shares the chosen row's
+    prefix (so export_texts can key the sidecar patch to it) with a ``-cand{i}``
+    suffix, keeping it a distinct row in the same task_family. Mirrors
+    :func:`rejected_trajectory_id`; MUST stay in sync with export_texts."""
+    base = f"{record.get('task_brief_hash', '')}-{int(record.get('ts', 0) or 0)}"
+    return f"{base}-cand{i}"
+
+
+def build_candidate_trajectories(record: dict) -> list[TrainingTrajectory]:
+    """One TrainingTrajectory per best-of-N candidate, rewarded by its OBJECTIVE
+    local-test score (NOT the LLM verifier).
+
+    All candidates share the record's task_family, so a passing candidate
+    (terminal_reward ~1.0) and a failing one (~0.0) pair WITHIN the family with a
+    ~1.0 margin -- the genuine preference gradient. Steps are empty (DPO-only
+    rows). Candidates without text are skipped (no patch for the DPO sidecar).
+    """
+    out: list[TrainingTrajectory] = []
+    for i, c in enumerate(record.get("scored_candidates", []) or []):
+        if not isinstance(c, dict) or not c.get("text"):
+            continue
+        score = float(c.get("score", 0.0) or 0.0)
+        out.append(TrainingTrajectory(
+            trajectory_id=candidate_trajectory_id(record, i),
+            task_brief_hash=record.get("task_brief_hash", ""),
+            task_family=record.get("task_brief_hash") or None,
+            model_id=record.get("model_id", ""),
+            outcome="candidate",
+            terminal_reward=score,
+            verifier_confidence=score,
+            disagreement_entropy=record.get("disagreement_entropy", 0.0),
+            steps=[],
+        ))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -202,6 +239,11 @@ def main() -> int:
             # the same task_family so DPO can pair them against this accepted run.
             for rej in build_rejected_trajectories(record):
                 out.write(json.dumps(to_klear_jsonl(rej)) + "\n")
+                count += 1
+            # Emit best-of-N candidates as rows scored by objective tests, so a
+            # passing vs failing candidate pairs within the task_family.
+            for cnd in build_candidate_trajectories(record):
+                out.write(json.dumps(to_klear_jsonl(cnd)) + "\n")
                 count += 1
     print(f"ingested {count} trajectories -> {args.out_file}", file=sys.stderr)
     return 0

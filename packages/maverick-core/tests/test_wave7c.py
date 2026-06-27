@@ -283,6 +283,46 @@ class TestIngest:
         assert len(pairs) == 1
         assert pairs[0]["chosen_reward"] == 1.0 and pairs[0]["rejected_reward"] == 0.5
 
+    def test_candidate_trajectories_scored_by_objective_tests(self):
+        """Best-of-N candidates ingest as rows rewarded by their OBJECTIVE test
+        score (not the LLM verifier), all in the same task_family. Text-less
+        candidates are skipped."""
+        from maverick.training.ingest import (
+            build_candidate_trajectories,
+            candidate_trajectory_id,
+        )
+        rec = {
+            "task_brief_hash": "fam", "ts": 7, "reward": 1.0,
+            "scored_candidates": [
+                {"text": "diff pass", "score": 1.0, "all_pass": True},
+                {"text": "diff fail", "score": 0.0, "all_pass": False},
+                {"score": 0.5},  # no text -> skipped (no patch for the sidecar)
+            ],
+        }
+        cands = build_candidate_trajectories(rec)
+        assert len(cands) == 2
+        assert [c.terminal_reward for c in cands] == [1.0, 0.0]
+        assert all(c.task_family == "fam" for c in cands)
+        assert cands[0].trajectory_id == candidate_trajectory_id(rec, 0)
+        assert cands[0].outcome == "candidate"
+
+    def test_bestofn_candidates_form_a_dpo_pair_end_to_end(self):
+        from maverick.training.ingest import build_candidate_trajectories
+        from maverick.training.rlaif import build_preference_pairs
+        from maverick.training.schema import to_klear_jsonl
+        rec = {
+            "task_brief_hash": "fam", "ts": 7,
+            "scored_candidates": [
+                {"text": "the patch that passes tests", "score": 1.0, "all_pass": True},
+                {"text": "the patch that fails tests", "score": 0.0, "all_pass": False},
+            ],
+        }
+        rows = [to_klear_jsonl(t) for t in build_candidate_trajectories(rec)]
+        pairs = build_preference_pairs(rows, min_margin=0.5)
+        assert len(pairs) == 1
+        assert pairs[0]["chosen_reward"] == 1.0 and pairs[0]["rejected_reward"] == 0.0
+        assert pairs[0]["margin"] == 1.0
+
     def test_load_donations_empty_dir(self, tmp_path):
         from maverick.training.ingest import load_donations
         out = list(load_donations(tmp_path))

@@ -34,7 +34,12 @@ import sys
 from pathlib import Path
 
 from ..paths import data_dir
-from .ingest import fetch_steps_for_goal, load_donations, rejected_trajectory_id
+from .ingest import (
+    candidate_trajectory_id,
+    fetch_steps_for_goal,
+    load_donations,
+    rejected_trajectory_id,
+)
 
 
 def record_trajectory_id(record: dict) -> str:
@@ -82,6 +87,13 @@ def export_texts(records, fetch_events) -> dict[str, str]:
             rej_text = att.get("text") if isinstance(att, dict) else None
             if rej_text and str(rej_text).strip():
                 out[rejected_trajectory_id(record, i)] = str(rej_text)
+        # Best-of-N candidate patches ride IN the record (not the world DB), so
+        # they export even off the origin machine -- keyed by the same id ingest
+        # assigns, so rlaif resolves both halves of a candidate pair.
+        for i, c in enumerate(record.get("scored_candidates", []) or []):
+            cand_text = c.get("text") if isinstance(c, dict) else None
+            if cand_text and str(cand_text).strip():
+                out[candidate_trajectory_id(record, i)] = str(cand_text)
     return out
 
 

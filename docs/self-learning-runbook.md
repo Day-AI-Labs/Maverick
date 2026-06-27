@@ -47,6 +47,44 @@ maverick donate status             # see what's queued in the outbox
 > pairs**. Use tasks with real constraints (so the verifier sometimes rejects);
 > pure-recall tasks rarely trigger a revision and so rarely produce a pair.
 
+### The reliable way to get DPO pairs: best-of-N + objective tests
+
+The rejected-draft path above depends on the verifier rejecting — but a strong
+proposer + a strong verifier rarely rejects (observed: a verifier-confidence
+spread of only 0.03–0.10 across ~100 real runs), so it produces few pairs. The
+**robust** source of a quality gradient is *objective*, not the verifier:
+
+- **best-of-N** runs N independent attempts at one coding task and scores each by
+  whether your **local tests** pass (`--fail-to-pass`). A passing patch (reward
+  1.0) vs a failing one (~0.0) is a real preference pair with a ~1.0 margin — no
+  verifier rejection needed. This works with only your Anthropic key + `pytest`.
+
+```toml
+# ~/.maverick/config.toml  — for best-of-N candidate mining
+[telemetry]
+donate_trajectories = true
+donate_text = true          # keeps the candidate patch text (DPO needs it)
+donate_min_entropy = 0      # best-of-N runs aren't swarm runs (entropy 0)
+donate_min_confidence = 0   # so a hard task whose best patch still scores low is kept
+```
+
+```bash
+# Run in a GIT CHECKOUT of a real repo, with concrete failing tests.
+# EARLY-EXIT OFF so the ladder keeps going after the first pass and captures a FAIL too:
+MAVERICK_BON_EARLY_EXIT=0 \
+maverick start "Fix <a real bug at the model's ~50% pass-rate frontier>" \
+  --coding-mode --best-of-n 8 \
+  --fail-to-pass 'pkg/tests/test_x.py::test_a||pkg/tests/test_x.py::test_b' \
+  --pass-to-pass 'pkg/tests/test_x.py::test_c'
+```
+
+> **Pairs require divergence — pick frontier tasks.** A pair only forms when the N
+> attempts *differ*: at least one passes and at least one fails. Trivial tasks
+> (all pass) and impossible tasks (all fail) yield no gradient, and the run logs
+> `best-of-N: no DPO pair donated …` instead of writing a useless all-tie record.
+> Aim for tasks the model solves ~half the time. This is inherent to DPO data
+> generation, not a bug — `0 pairs` off-frontier is expected.
+
 The two training inputs are generated from this data (you don't hand-write them):
 
 - `trajectories.jsonl` ← `python -m maverick.training.ingest` (from the outbox + world DB)
