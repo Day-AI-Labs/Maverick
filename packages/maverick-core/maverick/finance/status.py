@@ -11,8 +11,12 @@ file, and certify).
 """
 from __future__ import annotations
 
+import logging
+
 from ..compliance import ControlCheck
 from . import regimes as _regimes
+
+log = logging.getLogger(__name__)
 
 FINANCE_DISCLAIMER = (
     "Finance control-coverage report, not an audit opinion or a certification. "
@@ -63,8 +67,9 @@ def _signing_active() -> tuple[bool, str]:
         from ..audit.writer import _resolve_signing
         if _resolve_signing(None):
             return True, "Ed25519 hash-chain on; verify with 'maverick audit verify'"
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("finance status: audit-signing probe failed: %s", e)
+        return False, f"could not verify audit signing (probe error: {type(e).__name__})"
     return False, "enable [audit] sign = true for the SOX-grade book of record"
 
 
@@ -82,8 +87,9 @@ def _enc_active() -> tuple[bool, str]:
         from ..crypto_at_rest import at_rest_enabled
         if at_rest_enabled():
             return True, "AES-256-GCM seals payroll PII / bank details at rest"
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("finance status: encryption-at-rest probe failed: %s", e)
+        return False, f"could not verify encryption at rest (probe error: {type(e).__name__})"
     return False, "enable [encryption] at_rest = true (payroll/treasury PII)"
 
 
@@ -92,8 +98,9 @@ def _egress_active() -> tuple[bool, str]:
         from ..enterprise import enterprise_enabled
         if enterprise_enabled():
             return True, "enterprise egress lock: LLM calls pinned on-box (GLBA/PCI)"
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("finance status: egress-lock probe failed: %s", e)
+        return False, f"could not verify egress lock (probe error: {type(e).__name__})"
     return False, "enable [enterprise] mode = true to keep financial data on-box"
 
 
