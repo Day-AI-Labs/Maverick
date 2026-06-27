@@ -38,6 +38,31 @@ def test_safe_float_falls_back_on_junk():
     assert _safe_float("3.14", default=0) == 3.14
 
 
+# ---------- wizard sections must be known to config-lint ----------
+
+def test_wizard_written_sections_are_known_to_config_lint():
+    """Every [section] block the wizard writes must be a section the runtime
+    registry (migrate.KNOWN_SECTIONS, which config-lint sources) recognizes --
+    otherwise an operator who enables a documented, wizard-offered feature gets
+    a false "unknown config section" warning. Regression: [self_harness],
+    [self_improvement], [dreaming], [fleet_memory], [rehearsal], [memory_guard],
+    [actions], [domains], [fairness_monitor], [speculative] and [tax] all
+    shipped unrecognized (the section-parity test only checked the two
+    registries against each other, not against what the wizard writes)."""
+    import re
+    from pathlib import Path
+
+    from maverick.migrate import KNOWN_SECTIONS
+    from maverick_installer import wizard
+
+    src = Path(wizard.__file__).read_text(encoding="utf-8")
+    written = set(re.findall(
+        r"""lines\.append\(\s*["']\[([a-z_][a-z0-9_]*)\]["']\s*\)""", src))
+    assert written, "no [section] writes found in the wizard -- regex stale?"
+    missing = sorted(written - set(KNOWN_SECTIONS))
+    assert not missing, f"wizard writes sections config-lint will false-flag: {missing}"
+
+
 # ---------- new CHANNELS entries ----------
 
 def test_new_channels_added():
