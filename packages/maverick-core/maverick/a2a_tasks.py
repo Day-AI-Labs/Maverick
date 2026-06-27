@@ -653,7 +653,14 @@ class TaskEngine:
         except Exception as e:
             log.exception("a2a stream task %s failed", task.id)
             task.set_state("failed")
-            task.add_artifact(f"task failed: {e}", "error")
+            # Scrub before the exception enters the artifact + push webhook
+            # (same reasoning as the non-streaming path above).
+            try:
+                from .secrets import scrub
+                detail = scrub(f"{type(e).__name__}: {e}")
+            except Exception:  # pragma: no cover -- never let reporting raise
+                detail = type(e).__name__
+            task.add_artifact(f"task failed: {detail}", "error")
             yield _status_event(task, final=True)
             await self._fire_push(task)
             return

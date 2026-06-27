@@ -28,7 +28,14 @@ class BedrockClient(OpenAIClient):
         region = os.environ.get("AWS_REGION", "").strip()
         if not region:
             raise RuntimeError("Bedrock requires AWS_REGION (e.g. us-east-1).")
-        key = api_key or os.environ.get("BEDROCK_API_KEY") or "bedrock-no-auth"
+        key = api_key or os.environ.get("BEDROCK_API_KEY")
+        if not key:
+            # Fail fast rather than sending a fake "bedrock-no-auth" bearer that
+            # the endpoint rejects with an opaque error.
+            raise RuntimeError(
+                "Bedrock requires BEDROCK_API_KEY (the bearer for the Bedrock "
+                "OpenAI-compatible endpoint)."
+            )
         url = (
             base_url
             or f"https://bedrock-runtime.{region}.amazonaws.com/openai/v1"
