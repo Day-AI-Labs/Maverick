@@ -1024,7 +1024,32 @@ def _learned_snapshot(limit: int = 50) -> dict:
             )
     except Exception as e:  # pragma: no cover -- never block the page
         log.debug("learned snapshot failed: %s", e)
-    return {"learned": learned, "generated_tools": tools}
+    harness, harness_enabled = _harness_guidance()
+    return {
+        "learned": learned, "generated_tools": tools,
+        "harness": harness, "harness_enabled": harness_enabled,
+    }
+
+
+def _harness_guidance() -> tuple[list[dict], bool]:
+    """The self-harness per-model operating guidance recalled into prompts.
+
+    Returns ``([{model_id, lines}], enabled)``. This is the self-harness loop's
+    most prompt-impacting output, yet the /learned page surfaced only the
+    capability ledger -- an operator could see it ONLY via `maverick
+    self-harness show`. Read-only; ``list_learned`` reads the store regardless
+    of the toggle (so paused guidance is still inspectable), so we return the
+    ``enabled`` flag too -- stored guidance is NOT recalled into prompts until
+    the feature is on. Kept in its own try so a self-harness failure never
+    blanks the capability ledger, and vice versa."""
+    try:
+        from maverick.self_harness import enabled, list_learned
+        rows = [{"model_id": m, "lines": lines}
+                for m, lines in sorted(list_learned().items())]
+        return rows, bool(enabled())
+    except Exception as e:  # pragma: no cover -- never block the page
+        log.debug("harness guidance snapshot failed: %s", e)
+        return [], False
 
 
 def _resolve_generated_tool(name: str):
