@@ -37,7 +37,7 @@ Prefer no terminal? Grab the [**double-click desktop installer**](#install). New
 
 ## Status
 
-Alpha, but **installable today**: all eight packages are on [PyPI](https://pypi.org/project/maverick-agent/), the one-line installers work on Windows/macOS/Linux, and a native double-click installer builds for all three. See [`docs/getting-started.md`](./docs/getting-started.md) for the full flow.
+Alpha, but **installable today**: the one-line installers work on Windows/macOS/Linux, a native double-click installer builds for all three, and you can install from source. (PyPI publishing is wired via OIDC trusted-publishing and ships on the first tagged release — the eight packages are not on the public index yet.) See [`docs/getting-started.md`](./docs/getting-started.md) for the full flow.
 
 ## What works today vs. planned
 
@@ -49,7 +49,7 @@ Alpha, but **installable today**: all eight packages are on [PyPI](https://pypi.
 | AI providers | Anthropic (full), OpenAI, OpenRouter, Ollama, Gemini, DeepSeek, Bedrock, Azure, xAI, Moonshot, TGI, vLLM (per-role routable) | Cohere |
 | Channels | All 17 wired — Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon, Voice, IRC, Threads, RCS, Glasses; WhatsApp (Cloud API + Twilio)/SMS (need Twilio), iMessage (macOS-only) | Push notifications |
 | Safety | Shield wired at 3 chokepoints; agent-shield SDK if installed, else a built-in rule set | Agent-shield full ~115 patterns |
-| Distribution | PyPI (8 packages), GHCR image, PyInstaller binaries, **native installers on Releases** | Code signing; Homebrew tap |
+| Distribution | **Native installers on Releases**, GHCR image, PyInstaller binaries, source installs | PyPI (8 packages; publish wired via OIDC, pending first tag); code signing; Homebrew tap |
 | Tests | 2000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
 
 **Full list of shipped features → [`docs/FEATURES.md`](./docs/FEATURES.md).** The forward backlog (what isn't built yet) lives in [`docs/ROADMAP.md`](./docs/ROADMAP.md).

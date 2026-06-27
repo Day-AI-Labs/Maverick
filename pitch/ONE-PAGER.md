@@ -30,8 +30,10 @@ agent" a non-starter. Gartner sizes AI-governance platforms at ~$492M (2026) →
 repriced to **reward defensible IP and punish thin AI wrappers.**
 
 **What's built (alpha, installable today — every number verifiable):**
-- **~310K LOC** across **8 PyPI packages**; FastAPI dashboard; native installers
-  for Windows / macOS / Linux; an MCP server; a GitHub Action.
+- **~310K LOC** across **8 packages** (installable today via native installers
+  and source; PyPI publish is wired and ships on the first tagged release);
+  FastAPI dashboard; native installers for Windows / macOS / Linux; an MCP
+  server; a GitHub Action.
 - **Self-host or air-gap** — runs in the customer's VPC or fully offline; no required egress.
 - **2,020 least-privilege specialist packs across 53 suites** —
   `maverick domains-lint` → **0 errors, 0 warnings.**

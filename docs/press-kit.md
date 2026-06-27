@@ -61,9 +61,10 @@ append-only audit log.
   channels; 9 sandbox backends; 12 LLM providers, routable per role.
 - **Auditability**: signed, append-only audit log (`maverick audit verify`),
   SIEM export, encryption-at-rest, DSAR, data-retention enforcement.
-- **Distribution**: 8 packages on PyPI, a GHCR Docker image, PyInstaller
-  binaries, and native double-click installers for Windows/macOS/Linux.
-- **Status**: alpha, installable today.
+- **Distribution**: native double-click installers for Windows/macOS/Linux, a
+  GHCR Docker image, PyInstaller binaries, and source installs; PyPI publishing
+  for the 8 packages is wired (OIDC) and ships on the first tagged release.
+- **Status**: alpha, installable today (native installers / source).
 - **Maker**: Day AI Labs (Christopher Day).
 
 ## Naming and trademark usage

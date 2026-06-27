@@ -136,9 +136,14 @@ repeat. One collaborator per PR. Do **not** rewrite a god module in a single pas
 - **STRESS_TEST.md refresh** — re-run the harness and update the scoreboard to numbers that
   reproduce (an independent run showed 14 failures, not 10; 6 cosmetic ruff errors). Pending a
   full local run (heavy; some gates need a provider key / Postgres the audit env lacked).
-- **Deck claims still needing the founder's call** (from Tier 0): "8 packages on PyPI, installable
-  today" (verify live PyPI), the pitch/site egress one-liners (your security voice), the
-  confidential-compute "attestation" wording (it's spoofable indicator-detection).
+- **Deck claims corrected** (from Tier 0): verified live — the eight packages return **404 on PyPI**
+  (zero release tags; `publish.yml` fires only on a `v*` tag), so "8 packages on PyPI, installable
+  today" was false. Reworded across README, pitch (ONE-PAGER / AUDIENCE-B / AUDIENCE-C / SEED-DECK),
+  press-kit, FEATURES, and the example/quickstart `pip install` blocks to "installable today via
+  native installers + source; PyPI publish wired (OIDC), pending first tag." The egress one-liners
+  were scoped to the application layer (pair with a network firewall for raw-shell egress), matching
+  the already-honest README wording. The confidential-compute "attestation" language was left as-is:
+  it is only in roadmap/research docs (labelled future) — no shipped pitch claims "attestation."
 
 ---
 
