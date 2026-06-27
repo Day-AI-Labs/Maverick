@@ -12,7 +12,9 @@ any language an MCP SDK exists in.
 ## Prereqs
 
 ```bash
-pip install maverick-agent maverick-mcp-server   # in any venv on the same machine
+# PyPI publish pending: install from a source clone (pip install -e
+# packages/maverick-core packages/maverick-mcp) or the native installer for now.
+pip install maverick-agent maverick-mcp-server   # any venv on the same machine (post-publish)
 ```
 
 Add the official [Java MCP SDK](https://github.com/modelcontextprotocol/java-sdk)

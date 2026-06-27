@@ -63,8 +63,8 @@
 
 ## Slide 6 — Security & compliance posture
 **On slide:**
-- **Self-host / air-gap** — your data never leaves your environment.
-- **Egress lock** — even a successful prompt injection can't move data out.
+- **Self-host / air-gap** — runs in your environment with no required egress.
+- **Egress lock** — an app-layer lock blocks the agent's LLM/HTTP exfil paths (pair with a network firewall to also cover raw-shell egress).
 - **Capability tokens (attenuate-only)** — least privilege, per action.
 - **Sandbox network-off by default** · **hard budget caps**.
 - **Signed, hash-chained audit** — tamper-evident, offline-verifiable.
@@ -95,8 +95,8 @@
 
 ## Slide 9 — How it deploys in your environment
 **On slide:**
-- **Self-host / VPC / air-gap.** 8 PyPI packages · Docker / K8s / VPS · **MCP server** (drive from Claude Code / Cursor / any MCP client) · GitHub Action.
-- Integrates with your stack (**Salesforce / ServiceNow**). Your security review gets to "yes" faster because **the data never leaves**.
+- **Self-host / VPC / air-gap.** 8 packages (native installers + source today; PyPI publish wired, pending first tag) · Docker / K8s / VPS · **MCP server** (drive from Claude Code / Cursor / any MCP client) · GitHub Action.
+- Integrates with your stack (**Salesforce / ServiceNow**). Your security review gets to "yes" faster because **it runs in your environment with no required egress**.
 - `[FILL: your environment specifics]`
 
 **Visual:** Deployment topology inside your VPC.
@@ -105,7 +105,7 @@
 
 ## Slide 10 — Proof it's real today
 **On slide:**
-- **Built and installable now (alpha):** ~**310K LOC** across **8 PyPI packages**, native installers for Win / macOS / Linux, **2,020 lint-clean packs** (0 errors).
+- **Built and installable now (alpha):** ~**310K LOC** across **8 packages** (native installers + source today; PyPI publish wired, pending first tag), native installers for Win / macOS / Linux, **2,020 lint-clean packs** (0 errors).
 - **Run the Proof Pack yourself.**
 - `[FILL: references / named design partners]`
 

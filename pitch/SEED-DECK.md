@@ -42,7 +42,7 @@
 **On slide:**
 - **Lightwork is a governed agent *runtime* — not a chatbot, not a framework.**
 - A recursive multi-agent swarm where **every single action passes one chokepoint**: capability check → governance policy (allow / deny / require-human) → safety shield → hard budget → tamper-evident audit.
-- **Self-host or air-gap.** Runs on the customer's data, in their environment. No required egress — an egress lock means even a successful prompt injection can't move data out.
+- **Self-host or air-gap.** Runs on the customer's data, in their environment. No required egress — an application-layer egress lock means a prompt-injected agent can't exfiltrate through the LLM/HTTP paths (pair with a network-level egress firewall to also cover raw-shell egress).
 - **A workforce that *provably* improves** — a closed, audited learning loop, not a static model.
 
 **Speaker notes:** "We didn't build a smarter agent — frontier labs do that. We built the layer a regulated buyer needs *around* the agent: governance bound to every action, a signed audit log, self-hosting, and a learning loop you can prove. That's the part Sierra and LangChain don't ship and a bank can't build itself fast enough."
@@ -126,10 +126,10 @@ flowchart LR
 ## Slide 8 — Go-to-market
 
 **On slide:**
-- **Self-host removes the #1 enterprise blocker** — their data never leaves; procurement and security review get to "yes" faster.
+- **Self-host removes the #1 enterprise blocker** — runs in their environment with no required egress (an app-layer egress lock plus their network firewall); procurement and security review get to "yes" faster.
 - **Land via the wedge:** 2–3 design partners in BFSI → a paid pilot → expansion across suites.
 - **An overlay wedge that avoids a rip-and-replace fight:** *"bring your existing Agentforce / Copilot / LangChain agents under Lightwork governance"* — we govern other people's agents (fleet memory + the audit/capability layer already do this). Easiest enterprise entry, and a natural acquisition story for a GRC/ServiceNow buyer.
-- **Distribution surface already built:** 8 PyPI packages, Docker/K8s/VPS, an MCP server (drives from Claude Code / Cursor / any MCP client), GitHub Action.
+- **Distribution surface already built:** 8 packages (native installers + source today; PyPI publish wired, pending first tag), Docker/K8s/VPS, an MCP server (drives from Claude Code / Cursor / any MCP client), GitHub Action.
 
 **Speaker notes:** "Two motions. Direct: land a regulated design partner and go deep. Overlay: we don't have to displace their agent platform — we wrap it in governance, which is a far easier sale and the wedge that makes us strategically valuable to an incumbent."
 
@@ -174,7 +174,7 @@ flowchart LR
 ## Slide 11 — Traction & what's built
 
 **On slide:**
-- **Built and installable today (alpha):** ~310K LOC across 8 packages on PyPI, native installers for Win/macOS/Linux, self-host or air-gap.
+- **Built and installable today (alpha):** ~310K LOC across 8 packages (native installers + source today; PyPI publish wired, pending first tag), native installers for Win/macOS/Linux, self-host or air-gap.
 - **The product proves itself:** signed Proof Pack, the governance guarantees scoreboard, 2,020 lint-clean packs (0 errors).
 - **Design partners / pilots:** `[FILL: e.g. "2 BFSI design partners in conversation; 1 signed LOI"]`
 - **Revenue:** `[FILL: pre-revenue / $X MRR / pilot value]`

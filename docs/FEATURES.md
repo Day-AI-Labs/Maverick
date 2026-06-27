@@ -2274,8 +2274,9 @@ tested without spawning py-spy.
 
 ## Distribution & install
 
-- **Packaging** — 8 packages on PyPI, GHCR Docker image, PyInstaller binaries,
-  native double-click installers (Tauri; `.exe` / `.dmg` / `.AppImage`).
+- **Packaging** — 8 packages (PyPI publish wired via OIDC, pending first tagged
+  release), GHCR Docker image, PyInstaller binaries, native double-click
+  installers (Tauri; `.exe` / `.dmg` / `.AppImage`).
 - **Backwards-compat tooling** — `maverick migrate` (`migrate.py`): walks an
   existing config forward — real migration advisories (Twilio WhatsApp → the
   first-party Cloud API adapter), unknown-section lint with did-you-mean

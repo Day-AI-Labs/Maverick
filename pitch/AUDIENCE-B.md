@@ -57,7 +57,7 @@
 - **Governance substrate** — capability tokens (attenuate-only), policy engine, egress lock, **signed hash-chained audit** (offline-verifiable).
 - **Provable-learning loop** — offline consolidation ("dreaming"), per-department memory, a causal flywheel; **every causal claim survives a placebo test**; snapshot / rollback.
 - **2,020 least-privilege specialist packs across 53 suites** — `maverick domains-lint`: **0 errors, 0 warnings**.
-- **Substance:** ~**310K LOC** across **8 PyPI packages**; **2,020 lint-clean packs** (0 errors).
+- **Substance:** ~**310K LOC** across **8 packages** (PyPI publish wired, pending first tag); **2,020 lint-clean packs** (0 errors).
 
 **Visual:** Three moat bars, each with a one-line proof; a substance stat-strip underneath.
 
@@ -95,7 +95,7 @@
 
 ## Slide 9 — Integration surface
 **On slide:**
-- Low-friction to fold into your stack: **8 PyPI packages · Docker / K8s / VPS · MCP server** (drives from Claude Code / Cursor / any MCP client) **· GitHub Action · plugin SDK**.
+- Low-friction to fold into your stack: **8 packages** (native installers + source today; PyPI publish wired, pending first tag) **· Docker / K8s / VPS · MCP server** (drives from Claude Code / Cursor / any MCP client) **· GitHub Action · plugin SDK**.
 - Deliverables route into **Salesforce / ServiceNow** (signed, audited).
 
 **Visual:** Integration surface — your stack ← Lightwork (MCP / SDK / packages).

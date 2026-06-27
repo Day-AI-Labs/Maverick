@@ -12,7 +12,9 @@ kernel via the official [Rust MCP SDK](https://github.com/modelcontextprotocol/r
 ## Prereqs
 
 ```bash
-pip install maverick-agent maverick-mcp-server
+# PyPI publish pending: install from a source clone (pip install -e
+# packages/maverick-core packages/maverick-mcp) or the native installer for now.
+pip install maverick-agent maverick-mcp-server   # post-publish
 # Official Rust MCP SDK; pin a published version for reproducible builds.
 # The client role and the child-process stdio transport are not on by default.
 cargo add rmcp@1.7.0 --features client,transport-child-process

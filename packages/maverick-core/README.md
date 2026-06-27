@@ -7,10 +7,11 @@ learning.
 See the [top-level README](../../README.md) and
 [`ARCHITECTURE.md`](../../ARCHITECTURE.md) for the full picture.
 
-This package is installable on its own:
+This package installs on its own (PyPI publish is pending the first tagged
+release; install from a source clone for now):
 
 ```bash
-pip install maverick
+pip install -e packages/maverick-core   # `pip install maverick-agent` once published
 export ANTHROPIC_API_KEY=sk-ant-...
 maverick start "your goal"
 ```
