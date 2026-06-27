@@ -38,6 +38,33 @@ def test_no_downstream():
     assert "no downstream" in out
 
 
+def test_independent_path_keeps_capability():
+    """A principal granted the cap by an UN-revoked grantor keeps it — only
+    holders solely-via the revoked holder lose it (the docstring's 'only')."""
+    grants = [
+        {"from": "alice", "to": "carol", "capability": "deploy"},
+        {"from": "bob", "to": "carol", "capability": "deploy"},  # independent grantor
+    ]
+    out = _run(grants=grants, principal="alice", capability="deploy")
+    # carol still holds it via bob, so she is NOT downstream-revoked.
+    assert "no downstream" in out
+    assert "carol" not in out
+
+
+def test_loses_only_when_all_paths_revoked():
+    """A middle node held only via the revoked holder loses it, but a leaf with
+    one surviving (independent) path keeps it."""
+    grants = [
+        {"from": "owner", "to": "mid", "capability": "publish"},
+        {"from": "mid", "to": "leaf", "capability": "publish"},
+        {"from": "side", "to": "leaf", "capability": "publish"},  # surviving path
+    ]
+    out = _run(grants=grants, principal="owner", capability="publish")
+    assert "1 principal(s)" in out
+    assert "- mid" in out        # mid held it only via owner
+    assert "leaf" not in out     # leaf survives via side
+
+
 def test_cycle_terminates():
     grants = [
         {"from": "a", "to": "b", "capability": "x"},

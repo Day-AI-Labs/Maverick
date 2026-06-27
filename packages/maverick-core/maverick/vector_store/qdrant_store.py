@@ -145,23 +145,41 @@ class QdrantStore:
         """
         if not text:
             return []
+        tenant_id = _active_tenant()
+        want = max(1, min(top_k, 100))
+        prefix = f"tenant:{tenant_id}:" if tenant_id is not None else None
+        # The similarity search spans the whole collection, but writes are
+        # namespaced by `_stored_id` (the same isolation boundary delete() uses).
+        # Without scoping the read, query() returned OTHER tenants' vectors.
+        # Over-fetch and drop hits outside this tenant's prefix; strip the prefix
+        # so the caller gets back its original doc id. (Best-effort top_k: a tenant
+        # whose vectors are sparse among many may get < top_k -- a server-side
+        # payload filter would be exact, but this matches the id-namespacing design.)
+        fetch = want if prefix is None else min(100, want * 10)
         results = self._client.query(
             collection_name=self._collection,
             query_text=text,
-            limit=max(1, min(top_k, 100)),
+            limit=fetch,
         )
         out: list[dict] = []
         for r in results:
+            rid = str(getattr(r, "id", ""))
+            if prefix is not None:
+                if not rid.startswith(prefix):
+                    continue
+                rid = rid[len(prefix):]
             score = getattr(r, "score", None)
             score_f = float(score) if isinstance(score, (int, float)) else None
             distance = (1.0 - score_f) if score_f is not None else None
             out.append({
-                "id": str(getattr(r, "id", "")),
+                "id": rid,
                 "document": getattr(r, "document", "") or "",
                 "score": score_f,
                 "distance": distance,
                 "metadata": getattr(r, "metadata", None) or None,
             })
+            if len(out) >= want:
+                break
         return out
 
     def delete(self, ids: list[str]) -> None:

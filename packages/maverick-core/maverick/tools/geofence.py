@@ -5,7 +5,8 @@ allow/deny policy — the building block for "this workload may only run in the
 EU" or "deny these sanctioned jurisdictions". Deterministic and offline: the
 caller supplies the region (an ISO 3166-1 alpha-2 country code, or a named
 group like ``EU``) and the policy; this resolves the decision. Deny always wins
-over allow; an empty allow-list means "any region not denied".
+over allow; with no allow-list, the decision falls through to ``default``,
+which itself defaults to ``deny`` (deny-by-default — safe for a geofence).
 
 ops:
   - check(region, policy)  — ALLOW / DENY with the reason.

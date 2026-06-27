@@ -5,8 +5,10 @@ directly; anything that isn't a plain read (INSERT/UPDATE/DELETE/MERGE/DDL)
 requires confirm=true, matching the rest of Maverick's mutation gating.
 
 Auth (key-pair JWT or OAuth Bearer, pre-acquired):
-  - ``SNOWFLAKE_ACCOUNT``  (account identifier, e.g. xy12345.us-east-1)
-  - ``SNOWFLAKE_TOKEN``    (Bearer access token / JWT)
+  - ``SNOWFLAKE_ACCOUNT``     (account identifier, e.g. xy12345.us-east-1)
+  - ``SNOWFLAKE_TOKEN``       (Bearer access token / JWT)
+  - ``SNOWFLAKE_TOKEN_TYPE``  ``KEYPAIR_JWT`` (default) or ``OAUTH`` — must
+    match the token you supply, or Snowflake rejects it
   - optional defaults: ``SNOWFLAKE_WAREHOUSE`` / ``SNOWFLAKE_DATABASE`` /
     ``SNOWFLAKE_SCHEMA`` / ``SNOWFLAKE_ROLE``
 
@@ -61,6 +63,14 @@ def _op_query(statement: str, ctx: dict, limit: int, confirm: bool) -> str:
         return ("DRY RUN: statement is not a read (SELECT/SHOW/...). "
                 "Re-run with confirm=true to execute a write/DDL.")
     acct, tok = _config()
+    # Token type must match the supplied token: KEYPAIR_JWT for a key-pair JWT,
+    # OAUTH for an OAuth Bearer. This was hardcoded to KEYPAIR_JWT, which broke
+    # the OAuth path the docstring advertises. Default keeps prior behavior.
+    token_type = (os.environ.get("SNOWFLAKE_TOKEN_TYPE", "").strip().upper()
+                  or "KEYPAIR_JWT")
+    if token_type not in ("KEYPAIR_JWT", "OAUTH"):
+        return (f"ERROR: SNOWFLAKE_TOKEN_TYPE must be KEYPAIR_JWT or OAUTH "
+                f"(got {token_type!r})")
     import httpx
     body = {"statement": statement, "timeout": 60}
     for k in ("warehouse", "database", "schema", "role"):
@@ -73,7 +83,7 @@ def _op_query(statement: str, ctx: dict, limit: int, confirm: bool) -> str:
             "Authorization": f"Bearer {tok}",
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "X-Snowflake-Authorization-Token-Type": "KEYPAIR_JWT",
+            "X-Snowflake-Authorization-Token-Type": token_type,
         },
         json=body,
         timeout=90.0,

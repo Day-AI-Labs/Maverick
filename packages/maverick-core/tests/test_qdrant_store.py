@@ -119,6 +119,24 @@ def test_qdrant_query_empty_text(monkeypatch, tmp_path):
     assert store.query("") == []
 
 
+def test_qdrant_query_is_tenant_scoped(monkeypatch, tmp_path):
+    """A query under tenant t1 must NOT return tenant t2's vectors, and must
+    return t1's ids stripped of the namespace prefix."""
+    fake_client = _install_fake_qdrant(monkeypatch)
+    monkeypatch.delenv("MAVERICK_QDRANT_URL", raising=False)
+    import maverick.vector_store.qdrant_store as qs
+    monkeypatch.setattr(qs, "_active_tenant", lambda: "t1")
+    fake_client.query.return_value = [
+        SimpleNamespace(id="tenant:t2:secret", document="OTHER-TENANT", score=0.99, metadata=None),
+        SimpleNamespace(id="tenant:t1:doc1", document="mine", score=0.8, metadata={"k": 1}),
+        SimpleNamespace(id="tenant:t2:secret2", document="OTHER-TENANT-2", score=0.7, metadata=None),
+    ]
+    store = qs.QdrantStore(path=tmp_path / "qd")
+    out = store.query("hello", top_k=5)
+    assert [r["id"] for r in out] == ["doc1"]  # only t1's, prefix stripped
+    assert all("OTHER-TENANT" not in r["document"] for r in out)
+
+
 def test_qdrant_delete(monkeypatch, tmp_path):
     fake_client = _install_fake_qdrant(monkeypatch)
     monkeypatch.delenv("MAVERICK_QDRANT_URL", raising=False)
