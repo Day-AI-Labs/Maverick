@@ -49,6 +49,7 @@ degrades to ``SUGGEST`` (more cautious), never to ``AUTO``.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, replace
 from enum import Enum
 
@@ -420,9 +421,21 @@ class GraduationVerdict:
 
 def _agent_of(record: dict) -> str:
     """The agent a history record belongs to (``requested_by`` principal).
-    Principals look like ``agent:<name>-<depth>``; we keep the raw value and
-    match by membership so ``fin_clerk`` matches ``agent:fin_clerk-0``."""
+    Principals look like ``agent:<name>-<depth>``."""
     return str(record.get("requested_by") or record.get("agent") or record.get("role") or "")
+
+
+# ``agent:<name>-<depth>`` -> ``<name>`` (depth suffix optional). A bare principal
+# with no ``agent:`` prefix is returned unchanged so an exact raw name still
+# matches. Used to match graduation history by EXACT agent identity -- the prior
+# ``name in principal`` substring test graduated e.g. ``analyst`` on
+# ``agent:data_analyst-0``'s record (one agent escalating on another's history).
+_PRINCIPAL_NAME_RE = re.compile(r"^agent:(?P<name>.+?)(?:-\d+)?$")
+
+
+def _principal_name(principal: str) -> str:
+    m = _PRINCIPAL_NAME_RE.match(principal)
+    return m.group("name") if m else principal
 
 
 def graduation_status(
@@ -444,7 +457,7 @@ def graduation_status(
     rows = _coerce_approvals(history)
     approvals = denials = 0
     for rec in rows:
-        if not isinstance(rec, dict) or name not in _agent_of(rec):
+        if not isinstance(rec, dict) or _principal_name(_agent_of(rec)) != name:
             continue
         d = _pa._decided(rec)
         if d is True:
