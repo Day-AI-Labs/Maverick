@@ -52,12 +52,38 @@ def _is_governable_op_tool(tool: Tool) -> bool:
     """Whether ``tool`` speaks an op/confirm schema we can govern.
 
     ``make_rest_tool`` connectors include ``path``; Salesforce and ServiceNow
-    use bespoke record identifiers. In all cases, governance can safely force
-    ``confirm=True`` only after approval because the original tool keeps full
-    responsibility for validating and applying the requested write.
+    use bespoke record identifiers. GraphQL connectors also expose ``op`` plus
+    ``confirm``, but mutations are declared in the ``query`` document instead of
+    the ``op`` value, so the wrapper detects those writes separately. In all
+    cases, governance can safely force ``confirm=True`` only after approval
+    because the original tool keeps full responsibility for validating and
+    applying the requested write.
     """
     props = (tool.input_schema or {}).get("properties", {})
     return isinstance(props, dict) and "op" in props and "confirm" in props
+
+
+def _is_graphql_op_tool(tool: Tool) -> bool:
+    """Whether ``tool`` uses the GraphQL op/query/confirm connector schema."""
+    props = (tool.input_schema or {}).get("properties", {})
+    if not isinstance(props, dict) or "query" not in props or "confirm" not in props:
+        return False
+    op = props.get("op")
+    if not isinstance(op, dict):
+        return False
+    enum = op.get("enum")
+    return isinstance(enum, list) and {str(item).lower() for item in enum} == {"query"}
+
+
+def _is_governed_write(tool: Tool, args: dict) -> bool:
+    """Return whether this connector call is a write requiring governance."""
+    op = str(args.get("op", "")).strip().lower()
+    if op in _WRITE_OPS:
+        return True
+    if not _is_graphql_op_tool(tool):
+        return False
+    from .tools._rest_connector import _graphql_has_mutation
+    return _graphql_has_mutation(str(args.get("query") or ""))
 
 
 def _resource_label(tool_name: str, args: dict) -> str:
@@ -84,7 +110,7 @@ def wrap_connector_tool(tool: Tool) -> Tool:
 
     def _fn(args: dict) -> str:
         op = str(args.get("op", "")).strip().lower()
-        if op not in _WRITE_OPS:
+        if not _is_governed_write(tool, args):
             return tool.fn(args)
         approver = _approver()
         path = _resource_label(tool.name, args)

@@ -33,6 +33,26 @@ def _fake_tool(calls):
     return Tool(name="acme", description="Acme connector", input_schema=_SCHEMA, fn=_fn)
 
 
+
+def _graphql_tool(calls):
+    schema = {
+        "type": "object",
+        "properties": {
+            "op": {"type": "string", "enum": ["query"]},
+            "query": {"type": "string", "description": "GraphQL query or mutation."},
+            "variables": {"type": "object"},
+            "confirm": {"type": "boolean"},
+        },
+        "required": ["op", "query"],
+    }
+
+    def _fn(args):
+        calls.append(dict(args))
+        return f"GQL {args.get('op')} confirm={args.get('confirm')}"
+
+    return Tool(name="monday", description="monday GraphQL", input_schema=schema, fn=_fn)
+
+
 def _salesforce_tool(calls):
     schema = {
         "type": "object",
@@ -88,6 +108,32 @@ class TestWrap:
     def test_description_marks_governed(self):
         wrapped = wrap_connector_tool(_fake_tool([]))
         assert "governed" in wrapped.description
+
+    def test_graphql_query_passes_through(self):
+        calls = []
+        wrapped = wrap_connector_tool(_graphql_tool(calls))
+        out = wrapped.fn({"op": "query", "query": "query { boards { id } }"})
+        assert "GQL query" in out
+        assert calls == [{"op": "query", "query": "query { boards { id } }"}]
+
+    def test_graphql_mutation_without_approver_is_refused(self, monkeypatch):
+        monkeypatch.delenv("MAVERICK_GOVERNED_APPROVER", raising=False)
+        import maverick.config as cfg
+        monkeypatch.setattr(cfg, "get_governed_connectors",
+                            lambda: {"enable": True, "connectors": ["monday"], "approver": ""})
+        calls = []
+        wrapped = wrap_connector_tool(_graphql_tool(calls))
+        out = wrapped.fn({"op": "query", "query": "mutation { create_item { id } }", "confirm": True})
+        assert "REFUSED (governed)" in out
+        assert calls == []
+
+    def test_graphql_mutation_with_approver_commits(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_GOVERNED_APPROVER", "ops@corp")
+        calls = []
+        wrapped = wrap_connector_tool(_graphql_tool(calls))
+        out = wrapped.fn({"op": "query", "query": "mutation { create_item { id } }"})
+        assert "GQL query" in out
+        assert calls and calls[0]["confirm"] is True
 
 
 class TestApply:
