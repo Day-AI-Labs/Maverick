@@ -98,8 +98,12 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
     consolidates recurring failures into dream insights (recalled on future
     similar goals), retires learned skills with a decayed track record, and
     prunes stale near-duplicate reflexions. The consolidation pass is
-    deterministic and LLM-free -- costs no tokens. Requires [dreaming]
-    enable = true or MAVERICK_DREAMING=1; run from cron/systemd nightly.
+    deterministic and LLM-free by default -- costs no tokens. Opt in to
+    [dreaming] llm_consolidation (or MAVERICK_LLM_CONSOLIDATION=1) to have the
+    cheap summarizer model rewrite each lesson into a transferable one, metered
+    by [dreaming] llm_consolidation_budget and fail-open to the deterministic
+    text. Requires [dreaming] enable = true or MAVERICK_DREAMING=1; run from
+    cron/systemd nightly.
 
     With --rehearse (and [dreaming] rehearse = true to queue cases), the
     biggest recurring failure patterns are re-run as budgeted practice goals
@@ -142,8 +146,26 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
         )
         if snap is not None:
             click.echo(f"[snapshot: {snap.name}]")
+    # LLM-in-the-loop consolidation (opt-in, [dreaming] llm_consolidation):
+    # wire the SAME configured LLM the platform runs on (cheap summarizer role)
+    # into insight consolidation, metered by its own small budget and scanned by
+    # the shield. Fail-open: with the knob off this stays the deterministic path.
+    dream_llm = dream_budget = dream_shield = None
+    if dreaming._llm_consolidation_enabled(cfg):
+        from ..budget import Budget
+        from ..llm import LLM, model_for_role
+        dream_llm = LLM(model=model_for_role("summarizer"))
+        dream_budget = Budget(
+            max_dollars=float(cfg.get("llm_consolidation_budget", 1.0)),
+        )
+        try:
+            from maverick_shield import Shield
+            dream_shield = Shield.from_config()
+        except Exception:  # pragma: no cover -- kernel runs without the shield
+            dream_shield = None
     report = dreaming.dream_cycle(
         world, max_goals=max_goals, donations_dir=donations_dir,
+        llm=dream_llm, budget=dream_budget, shield=dream_shield,
     )
     click.echo(report.summary())
     # Cognitive Data Engine: turn the flywheel as part of the nightly cycle --

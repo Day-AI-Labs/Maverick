@@ -9,8 +9,12 @@ Layout:
   __init__.py     (this file)
   schema.py       Klear-AgentForge-compatible trajectory schema
   ingest.py       Read donated trajectories from outbox + dedup + label
+  export_texts.py Export proposer_texts.jsonl (raw transcripts from the
+                  world model) for real-text DPO; keyed to ingest's ids.
   prm_train.py    Train an AgentPRM head from labeled trajectories
-                  (arxiv:2511.08325 protocol).
+                  (arxiv:2511.08325 protocol; torch MLP head).
+  prm_linear.py   Train a torch-free linear AgentPRM head (plain JSON,
+                  CPU-only) loadable by maverick.prm.LinearPRM.
   rlaif.py        RLAIF / DPO loop on the proposer using verifier
                   rewards as the signal.
 
@@ -20,4 +24,6 @@ documents the next step. Real training requires GPU + trajectory volume
 which is operator-side work, not in-kernel.
 """
 
-__all__ = ["schema", "ingest", "prm_train", "rlaif"]
+__all__ = [
+    "schema", "ingest", "export_texts", "prm_train", "prm_linear", "rlaif",
+]

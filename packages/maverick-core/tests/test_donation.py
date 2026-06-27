@@ -14,6 +14,16 @@ from maverick.donation import (
 )
 
 
+def _config(monkeypatch, telemetry: dict) -> None:
+    """Point ``load_config`` at a stub config with the given ``[telemetry]``.
+
+    ``_donation_thresholds`` does ``from .config import load_config`` at call
+    time, so patching the attribute on the config module takes effect.
+    """
+    import maverick.config as cfg
+    monkeypatch.setattr(cfg, "load_config", lambda: {"telemetry": dict(telemetry)})
+
+
 class TestSelectionGate:
     def test_only_success_donated(self):
         assert should_donate("failure", 0.9, 0.9) is False
@@ -146,6 +156,172 @@ class TestWriteRecord:
         )
         path = write_record(rec, outbox=tmp_path)
         assert path is None
+
+    def test_record_persists_goal_id_for_world_join(self, tmp_path, monkeypatch):
+        """training.ingest / export_texts join a record to the world DB by
+        goal_id; it must survive into the written payload. It used to be absent
+        from the dataclass entirely, so the join hit goal_id=0, fetched no
+        goal_events, and every trajectory came back step-less + transcript-less.
+        """
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: False)
+        rec = TrajectoryRecord(
+            task_brief_hash="abc", goal_id=42, outcome="success",
+            verifier_confidence=0.9, disagreement_entropy=0.7,
+        )
+        path = write_record(rec, outbox=tmp_path)
+        assert path is not None
+        payload = json.loads(path.read_text())
+        assert payload["goal_id"] == 42
+
+
+class TestConfigurableThresholds:
+    """The donation bar is configurable via ``[telemetry]``.
+
+    The default (entropy ≥ 0.5) only captures high-disagreement swarm runs --
+    typical single-agent goals have disagreement_entropy=0 and donate nothing,
+    so the learning loop never sees data from normal use. Setting
+    ``donate_min_entropy = 0`` captures every successful, high-confidence run.
+    """
+
+    def test_default_bar_rejects_zero_disagreement(self, monkeypatch):
+        # No config keys -> fall back to the gold-row defaults (0.5 / 0.75).
+        _config(monkeypatch, {})
+        assert should_donate("success", 0.9, 0.0) is False
+
+    def test_zero_min_entropy_captures_single_agent_success(self, monkeypatch):
+        _config(monkeypatch, {"donate_min_entropy": 0})
+        # A clean single-agent run (no swarm disagreement) now donates.
+        assert should_donate("success", 0.9, 0.0) is True
+        # Confidence still gates: the default 0.75 floor stays in force.
+        assert should_donate("success", 0.5, 0.0) is False
+
+    def test_lowered_confidence_floor(self, monkeypatch):
+        _config(monkeypatch, {"donate_min_entropy": 0, "donate_min_confidence": 0.4})
+        assert should_donate("success", 0.5, 0.0) is True
+        assert should_donate("success", 0.3, 0.0) is False
+
+    def test_explicit_kwargs_override_config(self, monkeypatch):
+        # Config says capture-everything, but an explicit call can re-raise the bar.
+        _config(monkeypatch, {"donate_min_entropy": 0, "donate_min_confidence": 0.0})
+        assert should_donate("success", 0.9, 0.0, min_entropy=0.5) is False
+        assert should_donate("success", 0.9, 0.6, min_entropy=0.5) is True
+
+    def test_failure_never_donated_regardless_of_config(self, monkeypatch):
+        _config(monkeypatch, {"donate_min_entropy": 0, "donate_min_confidence": 0.0})
+        assert should_donate("failure", 1.0, 1.0) is False
+
+    def test_thresholds_helper_reads_config(self, monkeypatch):
+        _config(monkeypatch, {"donate_min_entropy": 0.0, "donate_min_confidence": 0.6})
+        assert donation._donation_thresholds() == (0.0, 0.6)
+
+    def test_thresholds_helper_fails_open_to_defaults(self, monkeypatch):
+        import maverick.config as cfg
+
+        def _boom():
+            raise RuntimeError("no config")
+
+        monkeypatch.setattr(cfg, "load_config", _boom)
+        assert donation._donation_thresholds() == (0.5, 0.75)
+
+    def test_write_record_honors_zero_entropy_config(self, tmp_path, monkeypatch):
+        """End-to-end: with donate_min_entropy=0, a zero-disagreement success
+        passes the gate inside write_record and lands in the outbox."""
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: False)
+        _config(monkeypatch, {"donate_min_entropy": 0})
+        rec = TrajectoryRecord(
+            task_brief_hash="single",
+            outcome="success",
+            verifier_confidence=0.9,
+            disagreement_entropy=0.0,  # solo run, no swarm
+        )
+        path = write_record(rec, outbox=tmp_path)
+        assert path is not None and path.exists()
+
+
+class TestRejectedAttempts:
+    """Rejected pre-revision drafts ride along for DPO pairing (chosen=accepted
+    final, rejected=discarded draft)."""
+
+    def _rec(self):
+        return TrajectoryRecord(
+            task_brief_hash="rj", outcome="success",
+            verifier_confidence=0.92, disagreement_entropy=0.7,
+            rejected_attempts=[
+                {"text": "a weak first draft", "confidence": 0.62,
+                 "critique": "missed a constraint"},
+            ],
+        )
+
+    def test_text_kept_with_double_opt_in(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: True)
+        path = write_record(self._rec(), outbox=tmp_path)
+        att = json.loads(path.read_text())["rejected_attempts"][0]
+        assert att["text"] == "a weak first draft"
+        assert att["confidence"] == 0.62
+
+    def test_text_stripped_without_text_opt_in(self, tmp_path, monkeypatch):
+        """Default metadata-only contract: drop the draft TEXT, keep its score."""
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: False)
+        path = write_record(self._rec(), outbox=tmp_path)
+        att = json.loads(path.read_text())["rejected_attempts"][0]
+        assert "text" not in att
+        assert att["confidence"] == 0.62
+
+    def test_secret_scrubbed_in_rejected_text(self, tmp_path, monkeypatch):
+        secret = "sk-ant-api01-secrettokenvaluexyz1234567890abc"
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: True)
+        rec = TrajectoryRecord(
+            task_brief_hash="rj", outcome="success",
+            verifier_confidence=0.92, disagreement_entropy=0.7,
+            rejected_attempts=[{"text": f"draft with {secret}", "confidence": 0.6}],
+        )
+        payload_text = write_record(rec, outbox=tmp_path).read_text()
+        assert secret not in payload_text
+
+
+class TestScoredCandidates:
+    """Best-of-N candidates ride along for DPO pairing, scored by objective tests."""
+
+    def _rec(self):
+        return TrajectoryRecord(
+            task_brief_hash="bon", outcome="success",
+            verifier_confidence=1.0, disagreement_entropy=0.7,
+            reward=1.0,
+            scored_candidates=[
+                {"text": "diff --git a pass", "score": 1.0, "all_pass": True},
+                {"text": "diff --git a fail", "score": 0.0, "all_pass": False},
+            ],
+        )
+
+    def test_text_kept_with_double_opt_in(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: True)
+        cands = json.loads(write_record(self._rec(), outbox=tmp_path).read_text())["scored_candidates"]
+        assert cands[0]["text"] == "diff --git a pass"
+        assert cands[0]["score"] == 1.0 and cands[1]["score"] == 0.0
+
+    def test_text_stripped_without_text_opt_in(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: False)
+        cands = json.loads(write_record(self._rec(), outbox=tmp_path).read_text())["scored_candidates"]
+        assert "text" not in cands[0]               # patch dropped
+        assert cands[0]["score"] == 1.0 and cands[0]["all_pass"] is True  # metadata kept
+
+    def test_secret_scrubbed_in_candidate_patch(self, tmp_path, monkeypatch):
+        secret = "sk-ant-api01-secrettokenvaluexyz1234567890abc"
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: True)
+        rec = TrajectoryRecord(
+            task_brief_hash="bon", outcome="success",
+            verifier_confidence=1.0, disagreement_entropy=0.7, reward=1.0,
+            scored_candidates=[{"text": f"patch {secret}", "score": 1.0, "all_pass": True}],
+        )
+        assert secret not in write_record(rec, outbox=tmp_path).read_text()
 
 
 class TestHashBrief:

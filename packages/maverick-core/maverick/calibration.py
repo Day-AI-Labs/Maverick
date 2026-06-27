@@ -302,7 +302,17 @@ def learning_frozen(*, verdict_path: Path | None = None) -> bool:
 
     The verdict is resolved per-tenant: a freeze raised by one tenant's drifting
     verifier does not freeze learning for other tenants.
+
+    ``MAVERICK_LEARNING_FROZEN`` is a hard override used by the learning-proof
+    A/B harness to force a clean control arm independent of verifier drift:
+    ``1/true/on`` forces frozen (no learning), ``0/false/off`` forces unfrozen,
+    anything else falls through to the calibration logic below.
     """
+    override = os.environ.get("MAVERICK_LEARNING_FROZEN", "").strip().lower()
+    if override in {"1", "true", "yes", "on"}:
+        return True
+    if override in {"0", "false", "no", "off"}:
+        return False
     s = _settings()
     if not s["enforce"]:
         return False

@@ -1289,13 +1289,21 @@ def pick_advanced() -> dict[str, Any]:
             "is configured separately.)",
             default=True,
         ),
+        "dreaming_llm_consolidation": _q_confirm(
+            "  └ LLM-enriched consolidation? Have the cheap summarizer model "
+            "rewrite each consolidated failure into a transferable lesson "
+            "(instead of the deterministic template). Inputs+output are "
+            "shield-scanned and the spend is budgeted; fails open to the "
+            "deterministic text. Costs a few tokens per dream cycle.",
+            default=False,
+        ),
         "dreaming": _q_confirm(
             "Dreaming (offline consolidation)? `maverick dream` replays recent "
             "runs while idle, distills recurring wins into skills per department, "
             "turns repeated failures into recalled insights (promoting patterns "
             "shared across departments), retires skills whose track record "
-            "decayed, and prunes stale lessons. Deterministic, no LLM calls "
-            "(opt-in rehearsal runs are separate and budgeted).",
+            "decayed, and prunes stale lessons. Deterministic by default "
+            "(opt-in LLM enrichment + rehearsal runs are separate and budgeted).",
             default=False,
         ),
         "verify_ensemble": _q_confirm(
@@ -2815,6 +2823,8 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[dreaming]")
         lines.append("enable = true")
+        if advanced.get("dreaming_llm_consolidation"):
+            lines.append("llm_consolidation = true")
         keys = advanced.get("insight_pubkeys") or []
         if keys:
             # Free-text user input: route through _emit_kv so each key is

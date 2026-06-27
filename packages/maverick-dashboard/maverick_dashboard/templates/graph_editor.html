@@ -4,7 +4,17 @@
 <style>
   .ge-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1rem; }
   @media (max-width: 900px) { .ge-wrap { grid-template-columns: 1fr; } }
-  #ge-svg { width: 100%; height: 560px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: grab; touch-action: none; display: block; }
+  /* Obsidian-style canvas: a flat dark field with a faint centre glow so the
+     force-directed constellation reads with depth. */
+  #ge-svg {
+    width: 100%; height: 600px; display: block;
+    background:
+      radial-gradient(ellipse at 50% 42%,
+        color-mix(in srgb, var(--panel) 70%, var(--bg)) 0%,
+        var(--bg) 70%);
+    border: 1px solid var(--border); border-radius: var(--radius-lg);
+    cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+  }
   #ge-svg.panning { cursor: grabbing; }
   .ge-form label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
   .ge-form input, .ge-form select { width: 100%; padding: 0.45rem 0.6rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
@@ -28,7 +38,7 @@
     <span class="live" id="ge-status" role="status" aria-live="polite">loading…</span>
   </div>
   <div class="ge-wrap">
-    <svg id="ge-svg" role="img" aria-label="Goal graph: {{ node_count }} goals. Use the editor panel beside the graph to select and edit nodes without a pointer."></svg>
+    <svg id="ge-svg" role="img" aria-label="Goal graph: {{ node_count }} goals, drawn as a force-directed constellation. Use the editor panel beside the graph to select and edit nodes without a pointer."></svg>
     <div class="ge-form panel" style="margin-bottom: 0;">
       <h3 style="margin: 0; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;">Edit a goal</h3>
 
@@ -51,7 +61,8 @@
       <p class="muted" style="font-size: 0.78rem; margin-bottom: 0;">
         Children created here are <em>pending</em> and not started —
         run them from <a href="/chat">chat</a> when ready.
-        Drag the canvas to pan, scroll to zoom.
+        Drag a node to nudge it, hover to spotlight its links,
+        drag the canvas to pan, scroll to zoom.
       </p>
       <p id="ge-error" role="alert" aria-live="assertive"
          style="display: none; color: var(--danger); font-size: 0.85rem;"></p>
@@ -64,9 +75,10 @@
 </div>
 
 <script>
-// Visual graph editor. The server computes the layered layout
-// (GET /api/v1/goal-tree -> nodes with x/y); this script only draws SVG,
-// pans/zooms the viewBox, and POSTs edits back.
+// Obsidian-style goal graph. The server returns the forest
+// (GET /api/v1/goal-tree -> {nodes, edges}); this script runs a small
+// dependency-free force simulation (charge + link springs + centre gravity),
+// draws circular nodes sized by connection count, and POSTs edits back.
 (function () {
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.getElementById("ge-svg");
@@ -76,21 +88,276 @@
   const parentEl = document.getElementById("ge-parent");
   const titleEl = document.getElementById("ge-title");
   if (!svg) return;
+  const el = (tag) => document.createElementNS(NS, tag);
+  const reducedMotion = window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const css = getComputedStyle(document.body);
   const cssVar = (n, fb) => (css.getPropertyValue(n) || "").trim() || fb;
   function colour(status) {
-    if (status === "active") return cssVar("--accent", "#3fb950");
-    if (status === "done") return cssVar("--accent", "#3fb950");
-    if (status === "failed") return cssVar("--danger", "#f85149");
-    if (status === "blocked") return cssVar("--warn", "#d29922");
-    return cssVar("--muted", "#8b949e");
+    if (status === "active" || status === "done") return cssVar("--accent", "#3ecf8e");
+    if (status === "failed") return cssVar("--danger", "#e5564b");
+    if (status === "blocked") return cssVar("--warn", "#e0a23a");
+    return cssVar("--muted", "#97a1b5");
   }
 
   let state = { nodes: [], edges: [] };
+  let byId = {};
+  let edgeRefs = [];        // {p, c, line}
+  let labelEls = [];
   let selected = null;
-  // viewBox pan/zoom state.
-  let vb = { x: -40, y: -40, w: 1000, h: 600 };
+  let hovered = null;
+  // Pan/zoom of the world via a single <g> transform: translate(x, y) scale(k).
+  let view = { x: 0, y: 0, k: 1 };
+  let viewG = null, linksG = null, nodesG = null;
+  let lastLabelOpacity = -1;
+
+  // ----- viewport geometry (no <viewBox>: 1 user unit == 1 CSS px) -----
+  let W = 820, H = 600, CX = 410, CY = 300;
+  function measure() {
+    W = svg.clientWidth || 820;
+    H = svg.clientHeight || 600;
+    CX = W / 2; CY = H / 2;
+  }
+
+  // ----- force simulation -----
+  let alpha = 0, running = false, firstSettle = true;
+  const ALPHA_MIN = 0.0018, ALPHA_DECAY = 0.0235, VEL_DECAY = 0.62;
+  const REPULSION = 2600;       // many-body charge
+  const LINK_DIST = 72, LINK_STR = 0.08;
+  const GRAVITY = 0.045;        // pull toward canvas centre
+
+  function tick() {
+    alpha += (0 - alpha) * ALPHA_DECAY;
+    const ns = state.nodes, n = ns.length;
+    // Charge: every pair repels (O(n^2), fine for the 300-node API cap).
+    for (let i = 0; i < n; i++) {
+      const a = ns[i];
+      for (let j = i + 1; j < n; j++) {
+        const b = ns[j];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 16) {                       // de-singularise overlaps deterministically
+          dx = dx || ((a.id - b.id) || 1) * 0.5;
+          dy = dy || 0.5;
+          d2 = Math.max(dx * dx + dy * dy, 16);
+        }
+        const d = Math.sqrt(d2);
+        const f = (REPULSION * alpha) / d2;
+        const fx = (dx / d) * f, fy = (dy / d) * f;
+        a.vx += fx; a.vy += fy;
+        b.vx -= fx; b.vy -= fy;
+      }
+    }
+    // Link springs toward an ideal length.
+    for (let e = 0; e < edgeRefs.length; e++) {
+      const a = byId[edgeRefs[e].p], b = byId[edgeRefs[e].c];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const f = (d - LINK_DIST) * LINK_STR * alpha;
+      const fx = (dx / d) * f, fy = (dy / d) * f;
+      a.vx += fx; a.vy += fy;
+      b.vx -= fx; b.vy -= fy;
+    }
+    // Centre gravity + integrate.
+    for (let i = 0; i < n; i++) {
+      const p = ns[i];
+      if (p.fx != null) { p.x = p.fx; p.y = p.fy; p.vx = 0; p.vy = 0; continue; }
+      p.vx += (CX - p.x) * GRAVITY * alpha;
+      p.vy += (CY - p.y) * GRAVITY * alpha;
+      p.vx *= VEL_DECAY; p.vy *= VEL_DECAY;
+      p.x += p.vx; p.y += p.vy;
+    }
+  }
+
+  function settleSync(steps) {
+    for (let i = 0; i < steps && alpha > ALPHA_MIN; i++) tick();
+  }
+  function loop() {
+    running = true;
+    tick(); tick();               // two sub-steps/frame: settles faster, still smooth
+    render();
+    if (alpha > ALPHA_MIN) { requestAnimationFrame(loop); return; }
+    running = false;
+    if (firstSettle) { firstSettle = false; fitView(); }
+  }
+  function reheat() {
+    alpha = Math.max(alpha, 0.3);
+    if (!reducedMotion && !running) requestAnimationFrame(loop);
+  }
+
+  // ----- coordinate helpers -----
+  function toWorld(clientX, clientY) {
+    const r = svg.getBoundingClientRect();
+    return {
+      x: (clientX - r.left - view.x) / view.k,
+      y: (clientY - r.top - view.y) / view.k,
+    };
+  }
+  function applyView() {
+    if (viewG) {
+      viewG.setAttribute("transform",
+        "translate(" + view.x + "," + view.y + ") scale(" + view.k + ")");
+    }
+    // Labels fade in as you zoom in (Obsidian behaviour) and stay out of the
+    // way when surveying the whole graph.
+    const la = view.k < 0.55 ? 0 : Math.min(1, (view.k - 0.55) / 0.45);
+    if (la !== lastLabelOpacity) {
+      lastLabelOpacity = la;
+      for (let i = 0; i < labelEls.length; i++) labelEls[i].style.opacity = la;
+    }
+  }
+  function fitView() {
+    if (!state.nodes.length) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    state.nodes.forEach((p) => {
+      minX = Math.min(minX, p.x - p.r); maxX = Math.max(maxX, p.x + p.r);
+      minY = Math.min(minY, p.y - p.r); maxY = Math.max(maxY, p.y + p.r);
+    });
+    const pad = 48;
+    const gw = Math.max(1, maxX - minX), gh = Math.max(1, maxY - minY);
+    view.k = Math.max(0.2, Math.min((W - 2 * pad) / gw, (H - 2 * pad) / gh, 1.5));
+    view.x = (W - (minX + maxX) * view.k) / 2;
+    view.y = (H - (minY + maxY) * view.k) / 2;
+    applyView();
+  }
+
+  // ----- highlight (hover spotlights a node + its neighbours) -----
+  function neighbourhood(id) {
+    const set = new Set([id]);
+    edgeRefs.forEach((e) => {
+      if (e.p === id) set.add(e.c);
+      if (e.c === id) set.add(e.p);
+    });
+    return set;
+  }
+  function paint() {
+    const hi = hovered != null ? neighbourhood(hovered) : null;
+    const brand = cssVar("--brand", "#4f7bd0");
+    // Links need to read clearly against the dark canvas, so use the
+    // higher-contrast border tone (--border itself is nearly invisible here).
+    const link = cssVar("--border-strong", "#5b6678");
+    const ringSel = cssVar("--text", "#e8ebf2");
+    const cut = cssVar("--bg", "#0e1320");
+    state.nodes.forEach((p) => {
+      const bright = !hi || hi.has(p.id);
+      p._g.style.opacity = bright ? "1" : "0.16";
+      p._c.setAttribute("fill", colour(p.status));
+      const sel = p.id === selected;
+      p._c.setAttribute("stroke", sel ? ringSel : cut);
+      p._c.setAttribute("stroke-width", sel ? "2" : "1.5");
+    });
+    edgeRefs.forEach((e) => {
+      const lit = hi && hi.has(e.p) && hi.has(e.c);
+      const dim = hi && !lit;
+      e.line.setAttribute("stroke", lit ? brand : link);
+      e.line.setAttribute("stroke-opacity", dim ? "0.08" : (lit ? "0.95" : "0.7"));
+      e.line.setAttribute("stroke-width", lit ? "1.8" : "1.3");
+    });
+  }
+
+  // ----- build SVG once per data load; render() only moves things -----
+  function build() {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    viewG = el("g"); viewG.setAttribute("id", "ge-view");
+    linksG = el("g"); nodesG = el("g");
+    viewG.appendChild(linksG); viewG.appendChild(nodesG);
+    svg.appendChild(viewG);
+    lastLabelOpacity = -1;
+
+    byId = {};
+    state.nodes.forEach((p) => { byId[p.id] = p; });
+    edgeRefs = [];
+    state.edges.forEach((pair) => {
+      const p = pair[0], c = pair[1];
+      if (!byId[p] || !byId[c]) return;
+      const line = el("line");
+      line.setAttribute("stroke", cssVar("--border-strong", "#5b6678"));
+      line.setAttribute("stroke-opacity", "0.7");
+      line.setAttribute("stroke-width", "1.3");
+      line.style.pointerEvents = "none";
+      linksG.appendChild(line);
+      edgeRefs.push({ p, c, line });
+    });
+
+    labelEls = [];
+    state.nodes.forEach((p) => {
+      const g = el("g");
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("role", "button");
+      g.setAttribute("aria-label", "Goal " + p.id + " (" + p.status + "): " + (p.title || "(untitled)"));
+      g.style.cursor = "pointer";
+      const c = el("circle");
+      c.setAttribute("r", p.r);
+      g.appendChild(c);
+      const t = el("text");
+      t.setAttribute("text-anchor", "middle");
+      t.setAttribute("font-size", "10");
+      t.setAttribute("fill", cssVar("--muted", "#97a1b5"));
+      t.style.pointerEvents = "none";
+      const s = "#" + p.id + " " + (p.title || "(untitled)");
+      t.textContent = s.length > 26 ? s.slice(0, 25) + "…" : s;
+      g.appendChild(t);
+      const tip = el("title");
+      tip.textContent = "#" + p.id + " [" + p.status + "] " + (p.title || "(untitled)");
+      g.appendChild(tip);
+      p._g = g; p._c = c; p._t = t;
+      labelEls.push(t);
+
+      g.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); select(p.id); }
+      });
+      g.addEventListener("pointerenter", () => { hovered = p.id; paint(); });
+      g.addEventListener("pointerleave", () => {
+        if (hovered === p.id) { hovered = null; paint(); }
+      });
+      attachDrag(p);
+      nodesG.appendChild(g);
+    });
+    paint();
+  }
+
+  function render() {
+    for (let i = 0; i < edgeRefs.length; i++) {
+      const e = edgeRefs[i], a = byId[e.p], b = byId[e.c];
+      e.line.setAttribute("x1", a.x); e.line.setAttribute("y1", a.y);
+      e.line.setAttribute("x2", b.x); e.line.setAttribute("y2", b.y);
+    }
+    for (let i = 0; i < state.nodes.length; i++) {
+      const p = state.nodes[i];
+      p._c.setAttribute("cx", p.x); p._c.setAttribute("cy", p.y);
+      p._t.setAttribute("x", p.x); p._t.setAttribute("y", p.y + p.r + 11);
+    }
+  }
+
+  // Drag a node: pin it under the pointer while held, release on let-go. A
+  // press that doesn't move is a select (keeps the click-to-edit affordance).
+  function attachDrag(p) {
+    let dragging = false, moved = false, sx = 0, sy = 0, pid = 0;
+    p._g.addEventListener("pointerdown", (ev) => {
+      ev.stopPropagation();                 // don't also start a canvas pan
+      dragging = true; moved = false; pid = ev.pointerId;
+      sx = ev.clientX; sy = ev.clientY;
+      try { p._g.setPointerCapture(pid); } catch (e) {}
+    });
+    p._g.addEventListener("pointermove", (ev) => {
+      if (!dragging) return;
+      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+      moved = true;
+      const w = toWorld(ev.clientX, ev.clientY);
+      p.fx = w.x; p.fy = w.y; p.x = w.x; p.y = w.y;
+      if (reducedMotion) render(); else reheat();
+    });
+    p._g.addEventListener("pointerup", () => {
+      if (!dragging) return;
+      dragging = false;
+      try { p._g.releasePointerCapture(pid); } catch (e) {}
+      p.fx = null; p.fy = null;
+      if (!moved) select(p.id);
+      else if (reducedMotion) { settleSync(140); render(); }
+      else reheat();
+    });
+  }
 
   function setStatus(msg) { statusEl.textContent = msg; }
   function showError(msg) {
@@ -99,7 +366,7 @@
 
   function childrenMap() {
     const m = {};
-    state.edges.forEach(([p, c]) => { (m[p] = m[p] || []).push(c); });
+    state.edges.forEach((pair) => { (m[pair[0]] = m[pair[0]] || []).push(pair[1]); });
     return m;
   }
   function descendants(id) {
@@ -110,62 +377,6 @@
       });
     }
     return out;
-  }
-
-  function applyViewBox() {
-    svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
-  }
-
-  function draw() {
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
-    const byId = {};
-    state.nodes.forEach((n) => { byId[n.id] = n; });
-    state.edges.forEach(([p, c]) => {
-      const a = byId[p], b = byId[c];
-      if (!a || !b) return;
-      const line = document.createElementNS(NS, "line");
-      line.setAttribute("x1", a.x + 170); line.setAttribute("y1", a.y + 16);
-      line.setAttribute("x2", b.x); line.setAttribute("y2", b.y + 16);
-      line.setAttribute("stroke", cssVar("--border", "#444"));
-      line.setAttribute("stroke-width", "1.5");
-      svg.appendChild(line);
-    });
-    state.nodes.forEach((n) => {
-      const g = document.createElementNS(NS, "g");
-      g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
-      g.setAttribute("tabindex", "0");
-      g.setAttribute("role", "button");
-      g.setAttribute("aria-label", "Goal " + n.id + " (" + n.status + "): " + n.title);
-      g.style.cursor = "pointer";
-      const rect = document.createElementNS(NS, "rect");
-      rect.setAttribute("width", "170"); rect.setAttribute("height", "32");
-      rect.setAttribute("rx", "6");
-      rect.setAttribute("fill", cssVar("--panel", "#161b22"));
-      rect.setAttribute("stroke", selected === n.id ? cssVar("--accent", "#3fb950") : cssVar("--border", "#444"));
-      rect.setAttribute("stroke-width", selected === n.id ? "2.5" : "1");
-      g.appendChild(rect);
-      const dot = document.createElementNS(NS, "circle");
-      dot.setAttribute("cx", "14"); dot.setAttribute("cy", "16"); dot.setAttribute("r", "5");
-      dot.setAttribute("fill", colour(n.status));
-      g.appendChild(dot);
-      const label = document.createElementNS(NS, "text");
-      label.setAttribute("x", "26"); label.setAttribute("y", "20");
-      label.setAttribute("font-size", "11");
-      label.setAttribute("fill", cssVar("--text", "#ddd"));
-      const t = "#" + n.id + " " + (n.title || "(untitled)");
-      label.textContent = t.length > 24 ? t.slice(0, 23) + "…" : t;
-      g.appendChild(label);
-      const tip = document.createElementNS(NS, "title");
-      tip.textContent = "#" + n.id + " [" + n.status + "] " + (n.title || "(untitled)");
-      g.appendChild(tip);
-      const pick = () => select(n.id);
-      g.addEventListener("click", pick);
-      g.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(); }
-      });
-      svg.appendChild(g);
-    });
-    applyViewBox();
   }
 
   function rebuildSelects() {
@@ -194,11 +405,30 @@
 
   function select(id) {
     selected = id;
-    const n = state.nodes.find((x) => x.id === id);
+    const n = id == null ? null : byId[id];
     titleEl.value = n ? n.title : "";
     rebuildSelects();
-    draw();
+    paint();
     setStatus(n ? ("selected #" + n.id) : (state.nodes.length + " goals"));
+  }
+
+  function seedLayout() {
+    measure();
+    const deg = {};
+    state.edges.forEach((pair) => {
+      deg[pair[0]] = (deg[pair[0]] || 0) + 1;
+      deg[pair[1]] = (deg[pair[1]] || 0) + 1;
+    });
+    // Phyllotaxis spiral seed: even, deterministic spread (no Math.random),
+    // so the simulation never starts from a degenerate clump.
+    state.nodes.forEach((p, i) => {
+      p.deg = deg[p.id] || 0;
+      p.r = 4 + Math.min(11, Math.sqrt(p.deg) * 2.4);   // size by connection count
+      const rad = 16 * Math.sqrt(0.5 + i), ang = i * 2.399963229728653;
+      p.x = CX + rad * Math.cos(ang);
+      p.y = CY + rad * Math.sin(ang);
+      p.vx = 0; p.vy = 0; p.fx = null; p.fy = null;
+    });
   }
 
   async function load() {
@@ -208,21 +438,26 @@
       if (!r.ok) { setStatus("error " + r.status); return; }
       const data = await r.json();
       state = { nodes: data.nodes || [], edges: data.edges || [] };
-      if (!state.nodes.length) {
-        setStatus("no goals yet — create one in chat or the builder");
-      } else {
-        setStatus(state.nodes.length + " goals");
-      }
-      // Fit the viewBox to the layout on first load.
-      if (state.nodes.length) {
-        const xs = state.nodes.map((n) => n.x), ys = state.nodes.map((n) => n.y);
-        vb = { x: Math.min.apply(null, xs) - 40, y: Math.min.apply(null, ys) - 40,
-               w: Math.max(600, Math.max.apply(null, xs) - Math.min.apply(null, xs) + 320),
-               h: Math.max(400, Math.max.apply(null, ys) - Math.min.apply(null, ys) + 160) };
-      }
       if (selected !== null && !state.nodes.some((n) => n.id === selected)) selected = null;
+      if (!state.nodes.length) {
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        edgeRefs = []; labelEls = []; byId = {};
+        setStatus("no goals yet — create one in chat or the builder");
+        rebuildSelects();
+        return;
+      }
+      setStatus(state.nodes.length + " goals");
+      seedLayout();
+      build();
+      view = { x: 0, y: 0, k: 1 };
+      applyView();
+      alpha = 1; firstSettle = true; running = false;
+      if (reducedMotion) {
+        settleSync(520); render(); firstSettle = false; fitView();
+      } else {
+        requestAnimationFrame(loop);
+      }
       rebuildSelects();
-      draw();
     } catch (e) { setStatus("offline"); }
   }
 
@@ -269,34 +504,37 @@
     }
   });
 
-  // Pan (pointer drag on the background) + zoom (wheel).
+  // Pan (pointer drag on the empty canvas) + zoom (wheel, anchored at cursor).
   let panning = null;
   svg.addEventListener("pointerdown", (ev) => {
-    if (ev.target !== svg) return; // node clicks select, not pan
-    panning = { px: ev.clientX, py: ev.clientY, x: vb.x, y: vb.y };
+    if (ev.target !== svg && ev.target !== viewG &&
+        ev.target !== linksG && ev.target !== nodesG) return; // node press handles itself
+    panning = { px: ev.clientX, py: ev.clientY, x: view.x, y: view.y };
     svg.classList.add("panning");
-    svg.setPointerCapture(ev.pointerId);
+    try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
   });
   svg.addEventListener("pointermove", (ev) => {
     if (!panning) return;
-    const scale = vb.w / svg.clientWidth;
-    vb.x = panning.x - (ev.clientX - panning.px) * scale;
-    vb.y = panning.y - (ev.clientY - panning.py) * scale;
-    applyViewBox();
+    view.x = panning.x + (ev.clientX - panning.px);
+    view.y = panning.y + (ev.clientY - panning.py);
+    applyView();
   });
-  svg.addEventListener("pointerup", () => { panning = null; svg.classList.remove("panning"); });
+  function endPan() { panning = null; svg.classList.remove("panning"); }
+  svg.addEventListener("pointerup", endPan);
+  svg.addEventListener("pointercancel", endPan);
   svg.addEventListener("wheel", (ev) => {
     ev.preventDefault();
-    const factor = ev.deltaY > 0 ? 1.15 : 0.87;
-    const rect = svg.getBoundingClientRect();
-    const fx = (ev.clientX - rect.left) / rect.width;
-    const fy = (ev.clientY - rect.top) / rect.height;
-    const nw = Math.min(8000, Math.max(200, vb.w * factor));
-    const nh = nw * (vb.h / vb.w);
-    vb.x += (vb.w - nw) * fx; vb.y += (vb.h - nh) * fy;
-    vb.w = nw; vb.h = nh;
-    applyViewBox();
+    const r = svg.getBoundingClientRect();
+    const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+    const factor = ev.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const k2 = Math.min(6, Math.max(0.15, view.k * factor));
+    view.x = mx - ((mx - view.x) / view.k) * k2;
+    view.y = my - ((my - view.y) / view.k) * k2;
+    view.k = k2;
+    applyView();
   }, { passive: false });
+
+  window.addEventListener("resize", () => { measure(); });
 
   load();
 })();

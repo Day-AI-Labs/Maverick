@@ -327,13 +327,101 @@ class LearnedPRM:
             return self._fallback.score(ctx)
 
 
+class LinearPRM:
+    """Torch-free learned PRM: a linear head over ``step_features``, stored as
+    plain JSON (no torch, no pickle -- safe to load and ship, the same
+    philosophy as ``maverick_shield.probe_model`` and
+    ``training.reward_model``).
+
+    Each head is ``tanh(w . features + b)`` over the shared 12-feature vector;
+    ``promise`` and ``progress`` have independent weights. Trained on CPU by
+    ``python -m maverick.training.prm_linear``. Like :class:`LearnedPRM` it
+    fails OPEN -- a missing, malformed, or vocabulary-mismatched artifact logs
+    a warning ONCE and delegates every score to HeuristicPRM, so the swarm
+    never blocks on model availability.
+    """
+    name = "linear"
+
+    def __init__(self, path: str):
+        self.path = path
+        self._fallback = HeuristicPRM()
+        self._head = None        # cached (promise_w, promise_b, progress_w, progress_b)
+        self._warned = False
+        self._failed = False
+
+    def _warn_once(self, msg: str) -> None:
+        if not self._warned:
+            log.warning("LinearPRM: %s; falling back to heuristic", msg)
+            self._warned = True
+
+    @staticmethod
+    def _head_from_meta(meta: object):
+        """Validate the JSON artifact and return (pw, pb, gw, gb)."""
+        if not isinstance(meta, Mapping):
+            raise ValueError("artifact did not contain an object")
+        if meta.get("feature_names") != FEATURE_NAMES:
+            raise ValueError("feature_names do not match this Maverick build")
+        if meta.get("role_vocab") != ROLE_VOCAB:
+            raise ValueError("role_vocab does not match this Maverick build")
+
+        def _vec(head_name: str):
+            head = meta.get(head_name)
+            if not isinstance(head, Mapping):
+                raise ValueError(f"missing {head_name!r} head")
+            w = head.get("w")
+            if not isinstance(w, list) or len(w) != len(FEATURE_NAMES):
+                raise ValueError(
+                    f"{head_name!r} weights must be length {len(FEATURE_NAMES)}"
+                )
+            return [float(x) for x in w], float(head.get("b", 0.0))
+
+        pw, pb = _vec("promise")
+        gw, gb = _vec("progress")
+        return pw, pb, gw, gb
+
+    def _load(self):
+        if self._head is not None:
+            return self._head
+        if self._failed:
+            return None
+        try:
+            import json
+            from pathlib import Path
+            meta = json.loads(
+                Path(self.path).expanduser().read_text(encoding="utf-8"))
+            self._head = self._head_from_meta(meta)
+            return self._head
+        except Exception as e:
+            self._failed = True
+            self._warn_once(f"could not load artifact from {self.path!r} ({e})")
+            return None
+
+    def score(self, ctx: StepContext) -> StepReward:
+        head = self._load()
+        if head is None:
+            return self._fallback.score(ctx)
+        try:
+            import math
+            pw, pb, gw, gb = head
+            x = step_features(ctx)
+            promise = math.tanh(
+                sum(wi * xi for wi, xi in zip(pw, x, strict=True)) + pb)
+            progress = math.tanh(
+                sum(wi * xi for wi, xi in zip(gw, x, strict=True)) + gb)
+            return StepReward(promise=promise, progress=progress, confidence=0.6)
+        except Exception as e:
+            self._warn_once(f"inference failed ({e})")
+            return self._fallback.score(ctx)
+
+
 def build_from_env() -> ProcessRewardModel:
     """Resolve the PRM backend from env / config.
 
-    MAVERICK_PRM=null|heuristic|remote|learned
+    MAVERICK_PRM=null|heuristic|remote|learned|linear
     MAVERICK_PRM_ENDPOINT=...  (when remote)
     MAVERICK_PRM_API_KEY=...   (when remote)
-    MAVERICK_PRM_PATH=...      (when learned; model dir w/ head.pt + head.json)
+    MAVERICK_PRM_PATH=...      (when learned: model dir w/ head.pt + head.json;
+                                when linear: a prm_linear.json file)
 
     Default: NullPRM (preserves pre-Wave-7c behavior).
     """
@@ -353,4 +441,10 @@ def build_from_env() -> ProcessRewardModel:
             log.warning("PRM=learned but MAVERICK_PRM_PATH unset; falling back to heuristic")
             return HeuristicPRM()
         return LearnedPRM(model_dir=path)
+    if kind == "linear":
+        path = os.environ.get("MAVERICK_PRM_PATH")
+        if not path:
+            log.warning("PRM=linear but MAVERICK_PRM_PATH unset; falling back to heuristic")
+            return HeuristicPRM()
+        return LinearPRM(path=path)
     return NullPRM()

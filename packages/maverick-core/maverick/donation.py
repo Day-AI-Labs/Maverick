@@ -56,6 +56,12 @@ class TrajectoryRecord:
     ts: float = field(default_factory=time.time)
     task_brief_hash: str = ""
     task_brief_text: str | None = None  # only when donate_text=true
+    # Local world-DB row id for this run. NOT meaningful off this machine; it's
+    # the join key `training.ingest` / `training.export_texts` use to pull this
+    # goal's `goal_events` back out of the local world DB (to label PRM steps and
+    # reconstruct the DPO text sidecar). Without it both lookups hit goal_id=0,
+    # fetch nothing, and every trajectory ends up with zero steps / no transcript.
+    goal_id: int = 0
     model_id: str = ""
     tools_used: list[str] = field(default_factory=list)
     action_sequence: list[str] = field(default_factory=list)
@@ -74,6 +80,22 @@ class TrajectoryRecord:
     # Populated from ctx.last_subtrajectories when CSCA ran. Action sequences are
     # tool NAMES only, so this carries no argument/result text.
     sub_trajectories: list = field(default_factory=list)
+    # Rejected pre-revision drafts: each ``{"text", "confidence", "critique"}``.
+    # When the verifier rejects a FINAL and the agent revises, the rejected draft
+    # is the "rejected" half of a DPO preference pair (the accepted final is the
+    # "chosen"). This is the genuine quality gradient the agent produces -- every
+    # shipped answer is driven to "good", so the only clearly-worse examples are
+    # the drafts it discards. The ``text`` is raw transcript content, so it is
+    # stripped unless ``donate_text`` is also set (same rule as task_brief_text).
+    rejected_attempts: list = field(default_factory=list)
+    # Best-of-N scored candidates: each ``{"text": patch, "score": float in [0,1],
+    # "all_pass": bool}``. When coding-mode best-of-N runs N attempts at one task,
+    # each candidate's OBJECTIVE local-test pass-rate is its score -- a passing
+    # patch (1.0) vs a failing one (~0.0) is a real DPO preference pair WITHOUT
+    # any verifier rejection (the verifier accepts ~everything, spread 0.03-0.10).
+    # The ``text`` is the unified-diff patch (the proposer artifact DPO trains on),
+    # stripped unless ``donate_text`` is set -- same rule as task_brief_text.
+    scored_candidates: list = field(default_factory=list)
     wall_seconds: float = 0.0
     cost_dollars: float = 0.0
     tokens_in: int = 0
@@ -124,13 +146,32 @@ def _scrub_payload(value):
     return value
 
 
+def _donation_thresholds() -> tuple[float, float]:
+    """``(min_entropy, min_confidence)`` from ``[telemetry]``.
+
+    Defaults to the "gold trajectory" bar (0.5 / 0.75). Lower
+    ``[telemetry] donate_min_entropy = 0`` to capture EVERY successful,
+    high-confidence run -- not only swarm high-disagreement ones -- so the
+    learning loop actually has data from normal single-agent use (most goals
+    never spawn a disagreeing swarm, so the default bar donates nothing from
+    typical usage). Fail-open to the defaults."""
+    try:
+        from .config import load_config
+        tel = load_config().get("telemetry", {}) or {}
+        ent = float(tel.get("donate_min_entropy", 0.5))
+        conf = float(tel.get("donate_min_confidence", 0.75))
+        return max(0.0, ent), max(0.0, min(1.0, conf))
+    except Exception:
+        return 0.5, 0.75
+
+
 def should_donate(
     outcome: str,
     verifier_confidence: float,
     disagreement_entropy: float,
     *,
-    min_entropy: float = 0.5,
-    min_confidence: float = 0.75,
+    min_entropy: float | None = None,
+    min_confidence: float | None = None,
 ) -> bool:
     """Selection: only the trajectories the model can learn from.
 
@@ -138,7 +179,18 @@ def should_donate(
     multiple branches) AND high verifier confidence on the chosen
     branch (we know the right answer was eventually reached) AND
     outcome=success (the trajectory closed cleanly).
+
+    When ``min_entropy``/``min_confidence`` are not passed, they come from
+    ``[telemetry] donate_min_entropy`` / ``donate_min_confidence`` (see
+    :func:`_donation_thresholds`) -- set ``donate_min_entropy = 0`` to donate
+    every successful high-confidence run, not just swarm-disagreement ones.
     """
+    if min_entropy is None or min_confidence is None:
+        cfg_ent, cfg_conf = _donation_thresholds()
+        if min_entropy is None:
+            min_entropy = cfg_ent
+        if min_confidence is None:
+            min_confidence = cfg_conf
     if outcome != "success":
         return False
     if verifier_confidence < min_confidence:
@@ -185,6 +237,20 @@ def write_record(
     # Strip text fields unless the user opted into that too.
     if not _text_donations_enabled():
         record.task_brief_text = None
+        # Drop the rejected-draft text (keep confidence/critique metadata) so the
+        # default metadata-only contract holds. DPO needs this text, so the
+        # self-learning runbook sets donate_text = true.
+        record.rejected_attempts = [
+            {k: v for k, v in a.items() if k != "text"}
+            for a in (record.rejected_attempts or [])
+            if isinstance(a, dict)
+        ]
+        # Same rule for best-of-N candidate patches: keep score/all_pass, drop text.
+        record.scored_candidates = [
+            {k: v for k, v in c.items() if k != "text"}
+            for c in (record.scored_candidates or [])
+            if isinstance(c, dict)
+        ]
 
     # Scrub every text field that could carry secrets, including strings nested
     # in dictionaries/lists such as sub_trajectories.
