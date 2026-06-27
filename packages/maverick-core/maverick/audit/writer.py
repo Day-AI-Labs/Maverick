@@ -129,6 +129,7 @@ def _resolve_signing(explicit: bool | None) -> bool:
         from ..compliance_profiles import FLOOR_AUDIT_LOG, requires_floor
         if requires_floor(FLOOR_AUDIT_LOG):
             return True
+    # failure-policy: best_effort
     except Exception:
         pass
     if explicit is not None:
@@ -147,6 +148,7 @@ def _resolve_signing(explicit: bool | None) -> bool:
         if sign is not None:
             return bool(sign)
         return secure_by_default()
+    # failure-policy: best_effort
     except Exception:
         return False
 
@@ -234,6 +236,7 @@ class AuditLog:
             try:
                 from .signing import ensure_anchors
                 ensure_anchors(self.audit_dir)
+            # failure-policy: fail_soft_with_audit
             except Exception as e:  # pragma: no cover - defensive
                 log.debug("audit: ensure_anchors failed: %s", e)
         return path
@@ -301,6 +304,7 @@ class AuditLog:
                 try:
                     from ..compliance_profiles import FLOOR_AUDIT_LOG, requires_floor
                     floored = requires_floor(FLOOR_AUDIT_LOG)
+                # failure-policy: best_effort
                 except Exception:  # pragma: no cover - floor lookup never blocks
                     floored = False
                 if floored:
@@ -316,6 +320,7 @@ class AuditLog:
                 )
                 self._signing_enabled = False
                 return None
+            # failure-policy: fail_soft_with_audit
             except Exception as e:  # pragma: no cover - defensive
                 from .signing import OffHostSigningRequiredError
 
@@ -368,6 +373,7 @@ class AuditLog:
                 return 0
             try:
                 from .signing import reanchor_file
+            # failure-policy: best_effort
             except Exception:  # pragma: no cover - crypto missing
                 return 0
             total = 0
@@ -376,6 +382,7 @@ class AuditLog:
             for path in sorted(self.audit_dir.glob("*.ndjson")):
                 try:
                     n = reanchor_file(path)
+                # failure-policy: fail_soft_with_audit
                 except Exception as e:  # pragma: no cover - defensive
                     log.warning("audit: reanchor failed for %s: %s", path, e)
                     continue
@@ -442,6 +449,7 @@ def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         from ..safety.secret_detector import redact
+    # failure-policy: best_effort
     except Exception:
         redact = None
 
@@ -476,6 +484,7 @@ def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
         from ..privacy import anon_enabled, anonymize_dict
         if anon_enabled():
             return anonymize_dict(redacted_payload)
+    # failure-policy: best_effort
     except Exception:
         pass
     return redacted_payload

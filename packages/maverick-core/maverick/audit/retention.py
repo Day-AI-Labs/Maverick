@@ -29,6 +29,7 @@ def _config() -> dict:
     try:
         from ..config import load_config
         return (load_config() or {}).get("retention") or {}
+    # failure-policy: best_effort
     except Exception as e:
         log.debug("retention: cannot load config: %s", e)
         return {}
@@ -237,6 +238,7 @@ def record_retention_marker(report: dict, *, audit_dir: Path | None = None) -> d
             from .writer import record as _audit_record
             ok = _audit_record(EventKind.RETENTION_PURGE, **payload)
         return payload if ok else None
+    # failure-policy: fail_soft_with_audit
     except Exception as e:  # pragma: no cover - marker must never break retention
         log.warning("retention: could not record retention marker: %s", e)
         return None

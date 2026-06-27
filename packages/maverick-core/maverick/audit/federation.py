@@ -128,6 +128,7 @@ def collect_node(node: str, audit_dir: Path, rows: list[dict], *,
             for f in audit_files:
                 breaks.extend(verify_chain(f, pubkey_hex))
             breaks.extend(verify_anchors(d, pubkey_hex))
+    # failure-policy: fail_closed
     except Exception as e:  # pragma: no cover -- verification never crashes the report
         from .signing import ChainBreak
         breaks = [ChainBreak(0, "verify_error", str(e))]

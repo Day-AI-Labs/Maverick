@@ -40,6 +40,7 @@ def _audit_version() -> str:
         from .. import __version__
 
         return str(__version__)
+    # failure-policy: best_effort
     except Exception:
         return "0"
 

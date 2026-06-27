@@ -51,6 +51,7 @@ def _reset_live_signer(audit_dir: Path) -> None:
         from .writer import reset_signer_after_erase
 
         reset_signer_after_erase(audit_dir)
+    # failure-policy: fail_soft_with_audit
     except Exception as e:  # pragma: no cover - defensive
         log.warning("audit erase: could not reset live signer: %s", e)
 
@@ -106,6 +107,7 @@ def _verify_signed_chain(path: Path, rows: list[tuple[str, dict | None]]) -> boo
         from .signing import verify_chain
 
         breaks = verify_chain(path)
+    # failure-policy: fail_closed
     except Exception as e:  # pragma: no cover - defensive/crypto missing
         log.warning("audit erase: could not verify %s before rewrite: %s", path, e)
         return False
@@ -216,6 +218,7 @@ def _process_file(
                 # superseding tip-ledger anchor so verify_anchors matches the
                 # new state (the prior anchor stays, recording the change).
                 reanchor_day_after_erase(path.parent, path)
+            # failure-policy: fail_soft_with_audit
             except Exception as e:  # pragma: no cover - defensive/crypto missing
                 log.warning("audit erase: could not reanchor %s after rewrite: %s", path, e)
     except OSError as e:
