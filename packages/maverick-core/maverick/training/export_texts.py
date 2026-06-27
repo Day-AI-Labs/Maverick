@@ -34,7 +34,7 @@ import sys
 from pathlib import Path
 
 from ..paths import data_dir
-from .ingest import fetch_steps_for_goal, load_donations
+from .ingest import fetch_steps_for_goal, load_donations, rejected_trajectory_id
 
 
 def record_trajectory_id(record: dict) -> str:
@@ -68,12 +68,20 @@ def export_texts(records, fetch_events) -> dict[str, str]:
     testable without a world model. Trajectories with no transcript text are
     omitted (a pair lacking real text is dropped downstream by
     ``rlaif.attach_pair_texts``).
+
+    Also emits the rejected pre-revision drafts (carried IN the record, not the
+    world DB) under the ids ``ingest.build_rejected_trajectories`` assigns, so
+    the DPO sidecar has real text for BOTH halves of a chosen/rejected pair.
     """
     out: dict[str, str] = {}
     for record in records:
         text = events_to_text(fetch_events(record) or [])
         if text:
             out[record_trajectory_id(record)] = text
+        for i, att in enumerate(record.get("rejected_attempts", []) or []):
+            rej_text = att.get("text") if isinstance(att, dict) else None
+            if rej_text and str(rej_text).strip():
+                out[rejected_trajectory_id(record, i)] = str(rej_text)
     return out
 
 

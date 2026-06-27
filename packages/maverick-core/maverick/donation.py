@@ -80,6 +80,14 @@ class TrajectoryRecord:
     # Populated from ctx.last_subtrajectories when CSCA ran. Action sequences are
     # tool NAMES only, so this carries no argument/result text.
     sub_trajectories: list = field(default_factory=list)
+    # Rejected pre-revision drafts: each ``{"text", "confidence", "critique"}``.
+    # When the verifier rejects a FINAL and the agent revises, the rejected draft
+    # is the "rejected" half of a DPO preference pair (the accepted final is the
+    # "chosen"). This is the genuine quality gradient the agent produces -- every
+    # shipped answer is driven to "good", so the only clearly-worse examples are
+    # the drafts it discards. The ``text`` is raw transcript content, so it is
+    # stripped unless ``donate_text`` is also set (same rule as task_brief_text).
+    rejected_attempts: list = field(default_factory=list)
     wall_seconds: float = 0.0
     cost_dollars: float = 0.0
     tokens_in: int = 0
@@ -221,6 +229,14 @@ def write_record(
     # Strip text fields unless the user opted into that too.
     if not _text_donations_enabled():
         record.task_brief_text = None
+        # Drop the rejected-draft text (keep confidence/critique metadata) so the
+        # default metadata-only contract holds. DPO needs this text, so the
+        # self-learning runbook sets donate_text = true.
+        record.rejected_attempts = [
+            {k: v for k, v in a.items() if k != "text"}
+            for a in (record.rejected_attempts or [])
+            if isinstance(a, dict)
+        ]
 
     # Scrub every text field that could carry secrets, including strings nested
     # in dictionaries/lists such as sub_trajectories.

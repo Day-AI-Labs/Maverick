@@ -21,12 +21,13 @@ runs**. Turn on donation, then use Maverick normally:
 [telemetry]
 donate_trajectories = true     # off by default; writes scrubbed records to ~/.maverick/outbox/
 donate_min_entropy = 0         # capture EVERY successful run, not just swarm-disagreement ones
+donate_text = true             # needed for DPO: keeps raw draft text in the records (see below)
 # donate_min_confidence = 0.75 # (default) verifier-confidence floor; lower to capture more
 ```
 
 ```bash
 maverick start "…a real goal…"     # run a bunch; high-confidence runs (verifier ≥ 0.75) get donated
-maverick start --repeat 5 "…task…" # run the SAME task 5×: its attempts become DPO preference pairs
+maverick start --repeat 5 "…task…" # run the SAME task 5×
 maverick donate status             # see what's queued in the outbox
 ```
 
@@ -36,11 +37,15 @@ maverick donate status             # see what's queued in the outbox
 > empty and there's nothing to train on. Set it to `0` to capture every
 > successful, high-confidence run.
 >
-> **Why `--repeat`.** DPO learns from *preference pairs* — a better attempt vs. a
-> worse attempt at the **same task** (same `task_family`, reward margin ≥ 0.5).
-> One run per task yields no pairs. `--repeat N` runs one task N times so its
-> better-vs-worse outcomes pair up. Non-clean runs are kept (not fatal) in repeat
-> mode — the worse attempt is half of a pair.
+> **Where DPO pairs actually come from.** The agent revises until the verifier
+> accepts, so every *shipped* answer scores ~1.0 — there is no better-vs-worse
+> gradient among finished runs (repeating a task just yields N good answers). The
+> real preference signal is the **rejected draft**: when the verifier rejects a
+> FINAL and the agent revises, that rejected draft (low score) pairs against the
+> accepted final (high score) within the same task. This needs the draft *text*,
+> so set `donate_text = true`. With it off you get metadata only and **zero DPO
+> pairs**. Use tasks with real constraints (so the verifier sometimes rejects);
+> pure-recall tasks rarely trigger a revision and so rarely produce a pair.
 
 The two training inputs are generated from this data (you don't hand-write them):
 

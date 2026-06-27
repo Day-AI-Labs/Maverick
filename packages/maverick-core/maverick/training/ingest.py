@@ -132,6 +132,42 @@ def build_trajectory(
     )
 
 
+def rejected_trajectory_id(record: dict, i: int) -> str:
+    """Id for the i-th rejected draft of a record. Shares the chosen row's
+    prefix (so export_texts can key the sidecar text to it) with a ``-rej{i}``
+    suffix to keep it a distinct row in the same task_family."""
+    base = f"{record.get('task_brief_hash', '')}-{int(record.get('ts', 0) or 0)}"
+    return f"{base}-rej{i}"
+
+
+def build_rejected_trajectories(record: dict) -> list[TrainingTrajectory]:
+    """One low-reward TrainingTrajectory per rejected pre-revision draft.
+
+    These pair against the record's chosen (accepted) trajectory WITHIN the same
+    task_family: chosen reward ~1.0 vs the rejected draft's verifier confidence
+    (un-clamped, e.g. 0.62) is the margin DPO trains on. Steps are empty -- the
+    PRM learns from the accepted run; these exist purely to form preference
+    pairs. Drafts without text are skipped (nothing for the DPO sidecar to use).
+    """
+    out: list[TrainingTrajectory] = []
+    for i, att in enumerate(record.get("rejected_attempts", []) or []):
+        if not isinstance(att, dict) or not att.get("text"):
+            continue
+        conf = float(att.get("confidence", 0.0) or 0.0)
+        out.append(TrainingTrajectory(
+            trajectory_id=rejected_trajectory_id(record, i),
+            task_brief_hash=record.get("task_brief_hash", ""),
+            task_family=record.get("task_brief_hash") or None,
+            model_id=record.get("model_id", ""),
+            outcome="rejected",
+            terminal_reward=conf,
+            verifier_confidence=conf,
+            disagreement_entropy=record.get("disagreement_entropy", 0.0),
+            steps=[],
+        ))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -162,6 +198,11 @@ def main() -> int:
             traj = build_trajectory(record, events)
             out.write(json.dumps(to_klear_jsonl(traj)) + "\n")
             count += 1
+            # Emit the rejected pre-revision drafts as extra low-reward rows in
+            # the same task_family so DPO can pair them against this accepted run.
+            for rej in build_rejected_trajectories(record):
+                out.write(json.dumps(to_klear_jsonl(rej)) + "\n")
+                count += 1
     print(f"ingested {count} trajectories -> {args.out_file}", file=sys.stderr)
     return 0
 
