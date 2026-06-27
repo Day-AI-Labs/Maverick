@@ -328,11 +328,13 @@ async def auth_login(request: Request):
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)
     code_challenge = _code_challenge_s256(code_verifier)
+    nonce = secrets.token_urlsafe(32)
     return_to = _safe_return_to(request.query_params.get("return_to"))
 
     tx_payload = {
         "state": state,
         "cv": code_verifier,
+        "nonce": nonce,
         "return_to": return_to,
         "jti": secrets.token_urlsafe(16),
         "exp": _now() + _TX_TTL,
@@ -345,6 +347,7 @@ async def auth_login(request: Request):
         "redirect_uri": cfg.redirect_uri,
         "scope": "openid",
         "state": state,
+        "nonce": nonce,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
@@ -457,6 +460,18 @@ async def auth_callback(request: Request):
         principal = verify_oidc_token(id_token)
     except OIDCError:
         log.warning("OIDC callback: id_token verification failed")
+        await asyncio.get_running_loop().run_in_executor(
+            None, _shared_release_tx, tx_id
+        )
+        return _fail()
+
+    # (4b) bind the ID token to THIS login: its nonce must match the one we
+    # sent on /auth/login (OIDC replay protection — a spec-compliant IdP echoes
+    # the request nonce into the id_token).
+    tx_nonce = str(tx.get("nonce") or "")
+    tok_nonce = str((principal.claims or {}).get("nonce") or "")
+    if tx_nonce and not secrets.compare_digest(tok_nonce.encode(), tx_nonce.encode()):
+        log.warning("OIDC callback: id_token nonce mismatch (possible replay)")
         await asyncio.get_running_loop().run_in_executor(
             None, _shared_release_tx, tx_id
         )

@@ -19,9 +19,10 @@ Layout:
                   rewards as the signal.
 
 Status (June 2026): SCHEMA + INGEST scaffolded; PRM_TRAIN implements the
-AgentPRM head trainer (torch optional extra); RLAIF is a placeholder that
-documents the next step. Real training requires GPU + trajectory volume
-which is operator-side work, not in-kernel.
+AgentPRM head trainer (torch optional extra); RLAIF implements the
+preference-pair / DPO data pipeline (load_klear, build_preference_pairs,
+reward + confidence scoring). Real training still requires GPU + trajectory
+volume, which is operator-side work, not in-kernel.
 """
 
 __all__ = [

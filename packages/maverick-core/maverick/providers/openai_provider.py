@@ -12,7 +12,8 @@ v0.1.1 fixes (per council review):
   - max_completion_tokens for gpt-4o / o1 / o3 (max_tokens deprecated)
   - finish_reason mapped to Anthropic stop_reason vocabulary
   - empty assistant turns emit content="" not None (OpenAI rejects null)
-  - missing tool_call_id matches: stub responses so the API doesn't 400
+  - tool_result turns: the CALLER must supply a result for each tool_call_id;
+    this translator does NOT synthesize stub tool responses
 """
 from __future__ import annotations
 

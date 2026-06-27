@@ -68,6 +68,13 @@ def _siem_token() -> str | None:
     return tok.strip() if tok else None
 
 
+def _insecure_siem_allowed() -> bool:
+    """Opt-in escape hatch for plaintext SIEM transport on a trusted segment."""
+    import os
+    return os.environ.get("MAVERICK_SIEM_ALLOW_INSECURE", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
 def _send_tcp(host: str, port: int, lines: Iterable[str], timeout: float) -> int:
     n = 0
     with socket.create_connection((host, port), timeout=timeout) as sock:
@@ -104,6 +111,13 @@ def _post_http_batch(url: str, body: bytes, timeout: float) -> None:
     req.add_header("Content-Type", "application/json")
     token = _siem_token()
     if token:
+        # Don't send the SIEM bearer in cleartext: a credential over http://
+        # is sniffable. Refuse unless the operator explicitly accepts the risk
+        # (e.g. a TLS-terminating sidecar on a trusted segment).
+        if url.lower().startswith("http://") and not _insecure_siem_allowed():
+            raise RuntimeError(
+                "refusing to send the SIEM bearer token over plaintext http://; "
+                "use https:// or set MAVERICK_SIEM_ALLOW_INSECURE=1 to override")
         req.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - scheme validated
         code = getattr(resp, "status", None) or resp.getcode()
@@ -137,6 +151,10 @@ def forward(lines: Iterable[str], dest: str, *, timeout: float = 10.0) -> int:
     transport error so the caller can surface the gap.
     """
     scheme, host, port, url = parse_dest(dest)
+    if scheme in ("tcp", "udp", "http"):
+        log.warning(
+            "SIEM destination uses plaintext %s://; audit events cross the "
+            "network unencrypted -- prefer https:// or a TLS tunnel.", scheme)
     if scheme == "tcp":
         return _send_tcp(host, port, lines, timeout)
     if scheme == "udp":

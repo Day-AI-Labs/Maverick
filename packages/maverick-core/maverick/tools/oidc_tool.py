@@ -103,7 +103,10 @@ def _summarise_tokens(resp: dict) -> str:
             import jwt
             claims = jwt.decode(resp["id_token"], options={"verify_signature": False})
             who = claims.get("email") or claims.get("sub") or "?"
-            out.append(f"id_token subject: {who}")
+            # The signature is NOT verified here (no issuer JWKS), so this is a
+            # decode-only preview, not an authenticated identity. Label it so a
+            # caller never treats it as a verified principal.
+            out.append(f"id_token subject (UNVERIFIED — signature not checked): {who}")
         except ImportError:
             out.append("(install maverick-agent[oidc] to decode the id_token)")
         except Exception:  # pragma: no cover -- malformed token

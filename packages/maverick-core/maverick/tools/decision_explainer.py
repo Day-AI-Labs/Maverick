@@ -4,8 +4,10 @@ For an automated decision driven by a linear scorecard (score = sum of
 weight x value, plus an intercept), this produces the per-factor contribution
 breakdown a data subject is owed under GDPR Art. 22 / "right to explanation":
 which factors pushed the decision which way, and by how much. Given a decision
-threshold it also reports the outcome and the smallest change that would flip
-it. Pure arithmetic — deterministic and offline; only explains additive models.
+threshold it also reports the outcome and the margin to that threshold. Pure
+arithmetic — deterministic and offline; only explains additive models.
+(It does not yet compute counterfactual recourse — the minimal factor change
+that would flip the outcome.)
 
 ops:
   - explain(factors, [intercept], [threshold])  — ``factors`` is

@@ -14,10 +14,13 @@ setting ``MAVERICK_CASCADE_ROUTING=1``.
 """
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 
 from .llm import MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -60,8 +63,11 @@ def pick(signal: RouteSignal) -> str:
         user_spec = get_role_model(signal.role)
         if user_spec:
             return user_spec
-    except Exception:
-        pass
+    except Exception as e:
+        # Don't silently discard a user's explicit per-role choice: surface the
+        # config error so "user wishes win" doesn't fail quietly to the cascade.
+        log.warning("routing: per-role model lookup failed for role %r (%s); "
+                    "using the default cascade", signal.role, e)
 
     # Cascade escalation paths.
     if signal.prior_attempt >= 1:

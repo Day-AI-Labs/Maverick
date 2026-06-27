@@ -291,9 +291,9 @@ async def verify_proposal_ensemble(
 
     `weighted=True` uses each verdict's `confidence` as a weight in
     the final accept-vote; `weighted=False` is plain majority. The
-    combined verdict's `confidence` is the *minimum* confidence across
-    accepting voters (conservative -- one outlier doesn't pull
-    confidence up).
+    combined verdict's `confidence` is the *mean* confidence across the
+    voters who agree with the winning side (a dissenting outlier is
+    overruled, not averaged in).
     """
     if not proposal or not proposal.strip():
         return VerifierVerdict.reject("proposal is empty")

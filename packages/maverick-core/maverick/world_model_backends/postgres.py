@@ -288,8 +288,8 @@ _GOAL_DOMAIN_MIGRATION: list[str] = [
 
 # --- Projects (migration v15) ------------------------------------------------
 # Parity with the SQLite ``projects`` table + ``goals.project_id``: a goal can be
-# filed under one project (nullable). name/description are plaintext here (the PG
-# backend stores plaintext today, unlike SQLite's at-rest encryption); owner/
+# filed under one project (nullable). name/description are sealed at rest via
+# ``_seal()`` (encrypted when at-rest encryption is on, same as SQLite); owner/
 # domain/status are plaintext for listing + scoping. ``tenant_id`` mirrors the
 # v10 tenancy seam so projects isolate per tenant like goals/facts.
 _PROJECTS_MIGRATION: list[str] = [
@@ -313,9 +313,10 @@ _PROJECTS_MIGRATION: list[str] = [
 
 # --- Artifacts (migration v16) -----------------------------------------------
 # Parity with the SQLite ``artifacts`` table: deliverables a goal produced
-# (markdown/code/table/text), versioned per (goal_id, title). content is
-# plaintext under PG (SQLite encrypts at rest). Scoped through goal_id's tenant
-# like other child tables, so no tenant_id column of its own.
+# (markdown/code/table/text), versioned per (goal_id, title). content is sealed
+# at rest via ``_seal()`` (encrypted when at-rest encryption is on, same as
+# SQLite). Scoped through goal_id's tenant like other child tables, so no
+# tenant_id column of its own.
 _ARTIFACTS_MIGRATION: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS artifacts (
@@ -336,8 +337,8 @@ _ARTIFACTS_MIGRATION: list[str] = [
 # Parity with the SQLite tables: a revocable expiring read-only share link to a
 # goal (only the token's SHA-256 is stored); a human's certify/reject sign-off on
 # a deliverable (one row per goal); and which automation spawned a goal. All are
-# child tables keyed by goal_id, scoped through the goal's tenant. note is
-# plaintext under PG (SQLite encrypts at rest).
+# child tables keyed by goal_id, scoped through the goal's tenant. note is sealed
+# at rest via ``_seal()`` (encrypted when at-rest encryption is on, same as SQLite).
 _SHARE_SIGNOFF_ORIGIN_MIGRATION: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS share_links (

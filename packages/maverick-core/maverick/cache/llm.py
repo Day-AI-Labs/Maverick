@@ -12,7 +12,8 @@ Tradeoffs:
   - Cache misses cost nothing extra (just one SQLite lookup).
   - The cache is opt-in: ``MAVERICK_LLM_CACHE=1`` or programmatic
     enable. The agent kernel doesn't read from cache automatically;
-    callers wire it via ``cached_complete()``.
+    callers wire it via ``cache_key(...)`` to derive the key, then
+    ``get().lookup(key)`` to read and ``get().store(key, ...)`` to write.
 
 Storage: ``~/.maverick/llm_cache.db`` SQLite WAL. TTL evicts on read
 (no background thread).

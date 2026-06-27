@@ -16,9 +16,10 @@ Checks composed (each already exists; this is the certification harness):
 * **plugin reliability drill** (``plugin_reliability.run_drill`` self-drill)
   — crash recovery / isolation / error-rate / leak properties;
 * **WAL contention** — 16 concurrent writers, zero lock errors (inlined
-  probe mirroring the CI audit);
-* **query plans** — hot world-model queries use an index (no full scan),
-  reusing the world model's own EXPLAIN.
+  probe mirroring the CI audit).
+
+(A query-plan / EXPLAIN index check is planned but not yet part of
+``DEFAULT_CHECKS``.)
 
 ``python -m maverick.reliability_cert`` writes
 ``data_dir("reliability_cert.json")`` and exits non-zero when any check

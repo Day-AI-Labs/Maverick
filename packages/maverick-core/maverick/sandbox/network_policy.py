@@ -10,9 +10,11 @@ Declarative egress control so a tool can be restricted to a set of hosts:
 
 ``host_allowed(tool, host, policy)`` is the pure decision (fnmatch globs; deny
 wins over allow; empty/absent policy = allow-all, preserving current behavior).
-This module is the *policy layer*; a backend (Docker/Firecracker) enforces it at
-the packet level on Linux, and falls back to advisory when the backend can't.
-The decision is unit-tested in isolation.
+This module is the *policy layer*. Enforcement today is application-layer: the
+built-in HTTP tools/connectors and ``tenant.egress`` consult this decision
+before dialing a host. There is NO packet-level (iptables/nftables) firewall
+backend yet, so a tool that bypasses the HTTP layer (e.g. raw shell) is not
+constrained by this policy. The decision is unit-tested in isolation.
 """
 from __future__ import annotations
 

@@ -67,7 +67,15 @@ class AzureOpenAIClient(OpenAIClient):
                 "Azure OpenAI requires AZURE_OPENAI_ENDPOINT + "
                 "AZURE_OPENAI_DEPLOYMENT (+ AZURE_OPENAI_API_KEY)."
             )
-        key = api_key or os.environ.get("AZURE_OPENAI_API_KEY") or "azure-no-auth"
+        key = api_key or os.environ.get("AZURE_OPENAI_API_KEY")
+        if not key:
+            # Fail fast instead of sending a fake "azure-no-auth" api-key that
+            # Azure rejects with an opaque 401. If an upstream gateway injects
+            # auth, set AZURE_OPENAI_API_KEY to the value it expects.
+            raise RuntimeError(
+                "Azure OpenAI requires AZURE_OPENAI_API_KEY (set it to the value "
+                "your gateway expects if an upstream proxy injects auth)."
+            )
         # Build the dedicated Azure clients directly — they send the
         # `api-key` header + `api-version` query + route to the
         # deployment. We intentionally do NOT call super().__init__:

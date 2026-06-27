@@ -114,16 +114,16 @@ def test_login_keeps_safe_return_to(login_env, client):
 
 
 def _do_login(client, return_to="/goals"):
-    """Run /auth/login and return the (state, tx_cookie_value)."""
+    """Run /auth/login and return the (state, tx_cookie_value, nonce)."""
     path = "/auth/login" + (f"?return_to={return_to}" if return_to else "")
     resp = client.get(path, follow_redirects=False)
     location = resp.headers["location"]
-    state = parse_qs(urlparse(location).query)["state"][0]
-    return state, client.cookies.get(ol.TX_COOKIE)
+    qs = parse_qs(urlparse(location).query)
+    return qs["state"][0], client.cookies.get(ol.TX_COOKIE), qs["nonce"][0]
 
 
 def test_callback_happy_path_sets_session_and_redirects(login_env, client, monkeypatch):
-    state, _ = _do_login(client, return_to="/goals")
+    state, _, nonce = _do_login(client, return_to="/goals")
 
     posted = {}
 
@@ -144,7 +144,7 @@ def test_callback_happy_path_sets_session_and_redirects(login_env, client, monke
         ol, "verify_oidc_token",
         lambda token: VerifiedPrincipal(
             sub="user-xyz", issuer=ISSUER, audience="maverick",
-            claims={"sub": "user-xyz"},
+            claims={"sub": "user-xyz", "nonce": nonce},
         ),
     )
 
@@ -173,7 +173,7 @@ def test_callback_happy_path_sets_session_and_redirects(login_env, client, monke
 def test_session_cookie_authenticates_gated_route(login_env, client, monkeypatch):
     """After login, the session cookie satisfies require_principal on a gated
     route (here /metrics), with OIDC enabled and no bearer header."""
-    state, _ = _do_login(client)
+    state, _, nonce = _do_login(client)
 
     async def _fake_exchange(*a, **k):
         return {"id_token": "fake.id.token"}
@@ -182,7 +182,8 @@ def test_session_cookie_authenticates_gated_route(login_env, client, monkeypatch
     monkeypatch.setattr(
         ol, "verify_oidc_token",
         lambda token: VerifiedPrincipal(
-            sub="user-xyz", issuer=ISSUER, audience="maverick", claims={},
+            sub="user-xyz", issuer=ISSUER, audience="maverick",
+            claims={"nonce": nonce},
         ),
     )
     client.get(f"/auth/callback?code=c&state={state}", follow_redirects=False)
@@ -213,7 +214,7 @@ def test_callback_state_mismatch_returns_400_no_exchange(login_env, client, monk
 def test_callback_replayed_tx_cookie_is_rejected_before_exchange(
     login_env, client, monkeypatch
 ):
-    state, tx_cookie = _do_login(client)
+    state, tx_cookie, nonce = _do_login(client)
     calls = []
 
     async def _fake_exchange(url, *, cfg, code, code_verifier):
@@ -225,7 +226,8 @@ def test_callback_replayed_tx_cookie_is_rejected_before_exchange(
         ol,
         "verify_oidc_token",
         lambda token: VerifiedPrincipal(
-            sub="user-xyz", issuer=ISSUER, audience="maverick", claims={},
+            sub="user-xyz", issuer=ISSUER, audience="maverick",
+            claims={"nonce": nonce},
         ),
     )
 
@@ -265,7 +267,7 @@ def test_callback_missing_tx_cookie_fails(login_env, client, monkeypatch):
 def test_callback_verify_failure_sets_no_session(login_env, client, monkeypatch):
     from maverick.oidc import OIDCError
 
-    state, _ = _do_login(client)
+    state, _, _ = _do_login(client)
 
     async def _fake_exchange(*a, **k):
         return {"id_token": "bad.token"}
@@ -292,7 +294,7 @@ def test_callback_records_pairwise_sub_in_subject_directory(
 ):
     # Entra-shaped login: pairwise `sub` plus email/oid claims. The callback must
     # record the sub against those identifiers so SCIM deprovision can reach it.
-    state, _ = _do_login(client)
+    state, _, nonce = _do_login(client)
 
     async def _fake_exchange(url, *, cfg, code, code_verifier):
         return {"id_token": "fake.id.token"}
@@ -303,7 +305,7 @@ def test_callback_records_pairwise_sub_in_subject_directory(
         lambda token: VerifiedPrincipal(
             sub="pairwise-zzz", issuer=ISSUER, audience="maverick",
             claims={"sub": "pairwise-zzz", "email": "dana@example.com",
-                    "oid": "aad-oid-7"},
+                    "oid": "aad-oid-7", "nonce": nonce},
         ),
     )
     resp = client.get(
@@ -402,7 +404,7 @@ def test_callback_releases_shared_tx_when_token_exchange_fails(
     monkeypatch.setattr(world_model_backends, "is_postgres_configured", lambda: True)
     fake = _FakeSharedWorld()
     monkeypatch.setattr(shared, "_world", lambda: fake)
-    state, tx_cookie = _do_login(client)
+    state, tx_cookie, _ = _do_login(client)
     tx = verify_session(tx_cookie, SESSION_SECRET)
 
     async def _fail_exchange(*a, **k):
