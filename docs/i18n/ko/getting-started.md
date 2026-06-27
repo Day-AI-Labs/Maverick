@@ -1,4 +1,4 @@
-<!-- docs/getting-started.md(원본 커밋: 001740b)의 커뮤니티가 관리하는 번역본입니다 — 영어 버전이 공식 버전입니다. -->
+<!-- docs/getting-started.md(원본 커밋: 00d6097)의 커뮤니티가 관리하는 번역본입니다 — 영어 버전이 공식 버전입니다. -->
 
 # 시작하기
 
@@ -85,6 +85,45 @@ maverick resume
 
 목표는 재시작 후에도 유지됩니다. 노트북을 덮고 내일 다시 돌아와도 됩니다.
 
+## 지켜본 작업으로 나만의 전문 에이전트 만들기
+
+작업을 말로 설명할 필요는 없습니다. 직접 보여주면 됩니다. 누군가가 그 일을 수행하는
+순서대로 된 기록(그들이 취한 동작과 그 이유에 대한 설명)을 JSONL 또는 간단한 접두사가
+붙은 텍스트로 캡처한 다음, 그 파일을 Lightwork에 건네주세요.
+
+```
+ACTION[gmail]: send the morning digest -> ops@acme.com
+NOTE: only the top 5 stories, with one-line summaries
+SEE: digest looks right, ops confirmed receipt
+```
+
+```bash
+maverick learn-demo demo.txt
+```
+
+이 명령은 시연을 파싱해 초안 전문 에이전트를 유도하고, 도출된 워크플로를 보여준 뒤,
+저장하기 전에 사용자의 승인을 기다립니다. 비밀 정보는 입구에서 마스킹되며, 초안은
+설명으로 만든 팩과 동일한 역량 제한(capability clamp)과 페르소나 스캔을 그대로
+상속받습니다. 사용자가 승인하지 않으면 아무것도 활성화되지 않습니다. 유용한 플래그:
+
+```bash
+maverick learn-demo demo.txt --name "Morning Digest" --no-llm --yes
+```
+
+`--no-llm`은 관찰된 단계를 결정론적으로 그대로 반영합니다(도구 = 사람이 실제로 사용한
+것). 이 플래그를 빼면 모델이 기록을 바탕으로 제안하도록 할 수 있습니다.
+
+대화형으로 팩을 구성할 때도 동일한 에이전트 팩토리 흐름이 실행됩니다.
+
+```bash
+maverick onboard
+```
+
+승인하면 이제 `onboard`가 팩을 프로비저닝합니다. 워크플로에 필요한 카탈로그 스킬을
+설치하고, 기본 제공되지 않는 선언된 도구를 합성하므로, 갓 승인된 전문 에이전트는 첫
+실행부터 자기 일을 할 수 있도록 갖춰집니다. (이 단계는 `[self_learning]` /
+`provision_packs` 설정을 따르며, 팩의 제한된 범위를 결코 넓히지 않습니다.)
+
 ## 모델 또는 공급자 변경
 
 마법사는 언제든지 다시 실행할 수 있습니다.
@@ -104,5 +143,14 @@ maverick init
 | `~/.maverick/world.db` | 영속적인 월드 모델: 목표, 사실, 에피소드 |
 | `~/.maverick/skills/` | 성공한 실행에서 자동으로 증류된 SKILL.md 파일 |
 | `~/maverick-workspace/` | 샌드박스 기본 작업 디렉터리 |
+| `~/.maverick/learned-skills/` | 학습 루프가 증류한 스킬 |
+| `~/.maverick/dreams/` | 통합된 통찰, 리허설 큐, 학습 스냅샷 |
 
 모든 데이터는 로컬에 있습니다. 선택한 클라우드 LLM으로 보내는 프롬프트 외에는 아무것도 업로드되지 않습니다.
+
+실행을 몇 번 쌓고 나면, 학습 영역은 네 가지 명령으로 요약됩니다. `maverick dream`(경험
+통합), `maverick hindsight`(학습이 도움이 되었는가, 아니면 퇴보했는가?),
+`maverick proof`(산출물, 절감한 비용, ROI), 그리고 `maverick domains-lint`(2,020개
+에이전트 전문 카탈로그 감사)이며, 여기에 `maverick domains-audit`(거버넌스 태세: 각
+에이전트가 무엇에 접근하고, 무엇을 거부하며, 무엇을 거절하는지)와
+`maverick domains-eval --check`(행동 골든 케이스)가 더해집니다.
