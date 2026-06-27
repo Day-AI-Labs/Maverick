@@ -77,8 +77,11 @@ fn maverick_bin() -> OsString {
 fn spawn_dashboard() -> Option<Child> {
     // Loopback-only bind and no token: the dashboard serves loopback without
     // auth by design (see maverick_dashboard/app.py bearer_auth).
+    // Use the DASHBOARD_PORT constant (not a literal) so the spawned port, the
+    // URL, and the listening check can never drift apart.
+    let port = DASHBOARD_PORT.to_string();
     match Command::new(maverick_bin())
-        .args(["dashboard", "--host", "127.0.0.1", "--port", "8765"])
+        .args(["dashboard", "--host", "127.0.0.1", "--port", port.as_str()])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
