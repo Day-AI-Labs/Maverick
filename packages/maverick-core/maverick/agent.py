@@ -176,6 +176,31 @@ def apply_role_overlays(base: str, *, role: str, domain_persona: str | None) -> 
     return base
 
 
+def apply_skill_overlays(
+    base: str, *, brief: str, use_skills: bool,
+) -> tuple[str, list]:
+    """Append relevant prior-run skills to ``base``; return ``(base, skills)``.
+
+    Returns the recalled skill objects so the caller can record their use and
+    attribute this run's outcome to them — the stats + ``skills_used``
+    bookkeeping stays in the caller to preserve the original all-or-nothing
+    semantics (names are read inside the caller's fail-safe block). No-op when
+    skills are disabled or none are relevant; fail-open on a missing/invalid
+    skill store. Fourth PromptBuilder collaborator from ``Agent._build_system``.
+    """
+    if not use_skills:
+        return base, []
+    try:
+        from .skills import available_skills, relevant_skills, render_for_prompt
+        skills = relevant_skills(brief, available_skills())
+        if skills:
+            base = base + "\n\n" + render_for_prompt(skills)
+            return base, list(skills)
+    except (ImportError, FileNotFoundError, ValueError):
+        pass
+    return base, []
+
+
 # #611: fraction of the budget reserved for the TOP-level goal's synthesis /
 # write step. A deeper worker (depth > 0) stops once cumulative spend crosses
 # (1 - this) of the cap, so a recursive research swarm can't burn the budget
@@ -909,24 +934,18 @@ class Agent:
         base = apply_role_overlays(
             base, role=self.role, domain_persona=self._domain_persona)
 
-        # Skills from prior runs (existing logic).
-        if self.ctx.use_skills:
+        # Skills from prior runs (fourth PromptBuilder collaborator). The seam
+        # renders + returns the recalled skills; the stats/ctx bookkeeping stays
+        # here, all-or-nothing inside one fail-safe block, exactly as before.
+        base, _skills = apply_skill_overlays(
+            base, brief=self.brief, use_skills=self.ctx.use_skills)
+        if _skills:
             try:
-                from .skills import available_skills, relevant_skills, render_for_prompt
-                skills = relevant_skills(self.brief, available_skills())
-                if skills:
-                    base = base + "\n\n" + render_for_prompt(skills)
-                    # Record the recall and remember the names so the
-                    # orchestrator can attribute this run's outcome to them
-                    # at finalize. Fully fail-safe: stats are an optimization.
-                    try:
-                        from .skill import stats as skill_stats
-                        names = [s.name for s in skills]
-                        skill_stats.record_use(names)
-                        self.ctx.skills_used.update(names)
-                    except Exception:
-                        pass
-            except (ImportError, FileNotFoundError, ValueError):
+                from .skill import stats as skill_stats
+                names = [s.name for s in _skills]
+                skill_stats.record_use(names)
+                self.ctx.skills_used.update(names)
+            except Exception:
                 pass
 
         # Cross-session memory (root agent only): surface only a safe presence

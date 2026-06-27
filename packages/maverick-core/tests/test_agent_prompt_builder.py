@@ -12,8 +12,14 @@ from maverick.agent import (
     WORKER_SYSTEM_TEMPLATE,
     apply_global_overlays,
     apply_role_overlays,
+    apply_skill_overlays,
     select_base_template,
 )
+
+
+class _FakeSkill:
+    def __init__(self, name: str) -> None:
+        self.name = name
 
 
 def test_orchestrator_template_when_not_coding():
@@ -118,3 +124,38 @@ def test_role_overlays_addendum_keyed_on_role(monkeypatch):
     monkeypatch.setattr("maverick.role_edit.role_addendum", _addendum)
     apply_role_overlays("BASE", role="analyst", domain_persona=None)
     assert seen["role"] == "analyst"
+
+
+# ---- apply_skill_overlays (fourth PromptBuilder collaborator) ----
+
+def test_skill_overlays_appends_and_returns_skills(monkeypatch):
+    sk = [_FakeSkill("a"), _FakeSkill("b")]
+    monkeypatch.setattr("maverick.skills.available_skills", lambda: ["all"])
+    monkeypatch.setattr("maverick.skills.relevant_skills", lambda brief, avail: sk)
+    monkeypatch.setattr("maverick.skills.render_for_prompt", lambda skills: "RENDERED")
+    base, skills = apply_skill_overlays("BASE", brief="do x", use_skills=True)
+    assert base == "BASE\n\nRENDERED"
+    assert skills == sk  # caller uses these to record stats + skills_used
+
+
+def test_skill_overlays_disabled_is_noop(monkeypatch):
+    # Skills off -> the store is never consulted, returns (base, []).
+    monkeypatch.setattr(
+        "maverick.skills.relevant_skills",
+        lambda *a: (_ for _ in ()).throw(AssertionError("must not be called")),
+    )
+    assert apply_skill_overlays("BASE", brief="x", use_skills=False) == ("BASE", [])
+
+
+def test_skill_overlays_no_relevant_skills(monkeypatch):
+    monkeypatch.setattr("maverick.skills.available_skills", list)
+    monkeypatch.setattr("maverick.skills.relevant_skills", lambda brief, avail: [])
+    assert apply_skill_overlays("BASE", brief="x", use_skills=True) == ("BASE", [])
+
+
+def test_skill_overlays_fail_open_on_missing_store(monkeypatch):
+    def boom():
+        raise FileNotFoundError("no skills dir")
+    monkeypatch.setattr("maverick.skills.available_skills", boom)
+    # FileNotFoundError/ImportError/ValueError are swallowed -> no-op.
+    assert apply_skill_overlays("BASE", brief="x", use_skills=True) == ("BASE", [])
