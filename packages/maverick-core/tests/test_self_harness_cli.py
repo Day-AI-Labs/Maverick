@@ -188,3 +188,30 @@ def test_retire_cli_aborts_without_confirmation(_home):
         main, ["self-harness", "retire", "--older-than-days", "1"], input="n\n")
     assert "aborted" in r.output
     assert "stale line" in sh.recall_addendum("claude-x", sh._store_path())
+
+
+def test_show_verbose_renders_usage(_home):
+    _seed_with_meta("claude-x", "verify the token first", signature="auth: 401",
+                    held_out_delta=0.2, samples=8, last_recalled_at=1700500000.0)
+    r = CliRunner().invoke(main, ["self-harness", "show", "--verbose"])
+    assert r.exit_code == 0, r.output
+    assert "last recalled" in r.output
+
+
+def test_conflicts_cli_flags_contradictions(_home):
+    block = ("Operating guidance learned for this model:\n"
+             "- Prefer streaming for large exports\n"
+             "- Avoid streaming for large exports")
+    sh._write_addenda({"claude-x": block}, sh._store_path())
+    r = CliRunner().invoke(main, ["self-harness", "conflicts"])
+    assert r.exit_code == 0, r.output
+    assert "possible conflict" in r.output
+    assert "Prefer streaming" in r.output and "Avoid streaming" in r.output
+
+
+def test_conflicts_cli_clean(_home):
+    sh._write_addenda(
+        {"claude-x": "Operating guidance learned for this model:\n- Verify the token first"},
+        sh._store_path())
+    r = CliRunner().invoke(main, ["self-harness", "conflicts"])
+    assert r.exit_code == 0 and "no conflicting guidance" in r.output
