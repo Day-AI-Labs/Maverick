@@ -117,6 +117,12 @@ class ExecResult:
 
 
 class LocalBackend:
+    # Commands run as a host subprocess against the host filesystem, so files
+    # this backend writes ARE visible to the calling (host) process. Container /
+    # remote backends leave this False (no such attribute), so output-path
+    # verification stays disabled for them. See ``sandbox.fs_is_host_visible``.
+    host_visible_fs = True
+
     def __init__(self, workdir: Path | None = None, timeout: float = 60.0):
         self.workdir = workdir or Path.cwd()
         self.timeout = timeout

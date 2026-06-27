@@ -15,8 +15,10 @@ ops:
 
 Known actions: http_fetch, dns_lookup, send_email (network);
 write_file, persist_state (filesystem persistence); read_secret, use_credential
-(credentials); read_file, compute (always-local). Unknown actions ALLOW
-(fail-open) but say so.
+(credentials); read_file, compute (always-local). Unknown actions fail-OPEN
+(ALLOW) at off/network — those levels make only a targeted promise — but
+fail-CLOSED (DENY) at full: the maximal containment level is a comprehensive
+lockdown, so anything it can't classify is denied by default.
 """
 from __future__ import annotations
 
@@ -80,6 +82,13 @@ def _check(action: str, level: str) -> str:
                         "credential access denied (no creds injected)")
     if act in _LOCAL_ACTIONS:
         return f"ALLOW {act} at level={level}: local, no restriction applies"
+    # Unknown action: fail-CLOSED at the maximal containment level (``full``),
+    # whose contract is a comprehensive lockdown — an unclassified action can't
+    # be assumed safe there. Lower levels make only targeted promises (egress at
+    # ``network``, nothing at ``off``), so they fail-open and say so.
+    if level == "full":
+        return (f"DENY {act} at level={level}: unknown action, fail-closed "
+                "(full containment denies unclassified actions)")
     return f"ALLOW {act} at level={level}: unknown action, no policy (fail-open)"
 
 
