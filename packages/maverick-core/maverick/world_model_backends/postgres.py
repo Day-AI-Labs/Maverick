@@ -460,6 +460,18 @@ _PROVIDER_SPEND_MIGRATION = [
     " PRIMARY KEY (period_key, provider))",
 ]
 
+# v24 facts provenance columns: persist source / trust_tier / sensitivity on the
+# live `facts` table (same defaults as fact_history) so memory_guard reads the
+# real recall-trust tier directly from `facts` -- closing the non-temporal
+# fallback that defaulted every fact to tier 3. SQLite already carries these in
+# its base CREATE (backfilled by its own v17); Postgres adds them here. Additive
+# ADD COLUMN IF NOT EXISTS -- passes the migration-governance additive-only gate.
+_FACTS_TRUST_MIGRATION: list[str] = [
+    "ALTER TABLE facts ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT '';",
+    "ALTER TABLE facts ADD COLUMN IF NOT EXISTS trust_tier INTEGER NOT NULL DEFAULT 3;",
+    "ALTER TABLE facts ADD COLUMN IF NOT EXISTS sensitivity TEXT NOT NULL DEFAULT 'internal';",
+]
+
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
@@ -474,6 +486,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (21, _DUAL_CONTROL_MIGRATION),
     (22, _HALT_MIGRATION),
     (23, _PROVIDER_SPEND_MIGRATION),
+    (24, _FACTS_TRUST_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -2110,13 +2123,18 @@ class PostgresWorldModel:
                          int(trust_tier), sensitivity, tenant),
                     )
             cur.execute(
-                "INSERT INTO facts(key, value, source_episode_id, updated_at, tenant_id) "
-                "VALUES(%s, %s, %s, %s, %s) "
+                "INSERT INTO facts(key, value, source_episode_id, updated_at, "
+                "source, trust_tier, sensitivity, tenant_id) "
+                "VALUES(%s, %s, %s, %s, %s, %s, %s, %s) "
                 "ON CONFLICT ((COALESCE(tenant_id, '')), key) DO UPDATE SET "
                 "value = EXCLUDED.value, "
                 "source_episode_id = EXCLUDED.source_episode_id, "
-                "updated_at = EXCLUDED.updated_at",
-                (key, _seal(value), episode_id, now, tenant),
+                "updated_at = EXCLUDED.updated_at, "
+                "source = EXCLUDED.source, "
+                "trust_tier = EXCLUDED.trust_tier, "
+                "sensitivity = EXCLUDED.sensitivity",
+                (key, _seal(value), episode_id, now, source,
+                 int(trust_tier), sensitivity, tenant),
             )
 
     def get_facts(self) -> dict[str, str]:
@@ -2133,36 +2151,29 @@ class PostgresWorldModel:
     def get_facts_with_trust(self) -> dict[str, tuple[str, int]]:
         """Return each fact with its Memory-Guard recall-trust tier.
 
-        When ``[memory] temporal`` is on, ``upsert_fact`` persists the real
-        provenance trust_tier on the open ``fact_history`` window, so the Memory
-        Guard (orchestrator -> memory_guard.filter_facts) can actually drop
-        poisoned/external memory below ``min_recall_trust`` on this backend.
-        Facts with no provenance row -- and all facts when temporal history is
-        off -- fall back to tier 3 (first-party): the live ``facts`` table has no
-        trust column, so the guard keeps them rather than dropping memory it
-        cannot tier. (Closing that fallback on the non-temporal backend needs a
-        governed schema migration adding a trust_tier column to ``facts``.)
+        ``upsert_fact`` persists the provenance trust_tier directly on the
+        ``facts`` table (schema v24), so the Memory Guard (orchestrator ->
+        memory_guard.filter_facts) can drop poisoned/external memory below
+        ``min_recall_trust`` on this backend whether or not temporal history is
+        on -- closing the old non-temporal fallback. A pre-migration row with no
+        explicit tier reads as 3 (first-party) via the column DEFAULT, so the
+        guard keeps rather than drops memory it cannot tier. Read is
+        tenant-scoped identically to ``get_facts``.
         """
         facts = self.get_facts()
         if not facts:
             return {}
-        from ..world_model import _temporal_memory_enabled
+        frag, params = _tenant_scope()
+        sql = "SELECT key, trust_tier FROM facts"
+        if frag:
+            sql += " WHERE " + frag
         tiers: dict[str, int] = {}
-        if _temporal_memory_enabled():
-            frag, params = _tenant_scope()
-            sql = (
-                "SELECT DISTINCT ON (key) key, trust_tier FROM fact_history "
-                "WHERE valid_to IS NULL"
-            )
-            if frag:
-                sql += " AND " + frag
-            sql += " ORDER BY key, valid_from DESC"
-            try:
-                with self._tx() as cur:
-                    cur.execute(sql, tuple(params))
-                    tiers = {r[0]: int(r[1]) for r in cur.fetchall()}
-            except Exception:  # pragma: no cover -- never block recall on tiering
-                tiers = {}
+        try:
+            with self._tx() as cur:
+                cur.execute(sql, tuple(params))
+                tiers = {r[0]: int(r[1]) for r in cur.fetchall()}
+        except Exception:  # pragma: no cover -- never block recall on tiering
+            tiers = {}
         return {k: (v, tiers.get(k, 3)) for k, v in facts.items()}
 
     def facts_matching(self, token: str) -> dict[str, str]:
