@@ -74,12 +74,21 @@ safety model as skills and insights.
   proposer — passes through `_sanitize_line`: control chars stripped, all
   whitespace collapsed to single spaces (no multi-line break-out), secrets
   scrubbed, length bounded. A corrupt/tampered store with non-string values is
-  rejected by `load_addenda` (no literal `"None"` reaching a prompt).
+  rejected by `load_addenda` (no literal `"None"` reaching a prompt). (3) A
+  **semantic policy-erosion screen** (`_erodes_policy`) refuses a proposed line
+  that tells the model to disable/bypass/ignore its own safety machinery
+  (validation, auth, budget, sandbox, audit, ...) — `_sanitize_line` guards
+  syntax and the gate guards capability, but neither reads the MEANING of prose
+  that rides in every future prompt.
 - **Two gates, not one:** self-harness only proposes; promotion needs the
   self-improvement controller. A frozen verifier or a disabled controller leaves
   the store untouched.
 - **No overfitting promotion:** the held-out split is mandatory; a pure trade is
-  rejected.
+  rejected. A live caller can tighten the evidence bar with opt-in floors
+  (default off, back-compatible): `require_held_out` (never promote on only the
+  mined examples), `min_held_out` (an unseen-sample floor — a 1-of-1 "win" is not
+  evidence), and `min_delta` (an effect-size floor — sub-threshold lift on noisy
+  agent eval scores is not a durable improvement).
 - **Reversible + audited:** every applied line has a rollback handle and a signed
   `LEARNING_UPDATE` audit row.
 - **Bounded + non-eroding:** an addendum is capped (`_MAX_LINES_PER_MODEL`,

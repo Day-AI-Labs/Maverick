@@ -143,6 +143,7 @@ def run_self_harness_pass(
     held_in=None, held_out=None,
     score_with=None, score_without=None, propose_fn=None, controller=None,
     min_support: int = 3, limit: int = 500,
+    require_held_out: bool = False, min_delta: float = 0.0, min_held_out: int = 0,
 ):
     """The automatic entry point for the self-harness loop (mine -> propose ->
     validate -> gate), to be called by a scheduler / the self-improvement loop.
@@ -168,7 +169,9 @@ def run_self_harness_pass(
         return self_harness.run_self_harness(
             reflexions, model_id=model_id, held_in=held_in, held_out=held_out,
             score_with=score_with, score_without=score_without,
-            propose_fn=propose_fn, controller=controller, min_support=min_support)
+            propose_fn=propose_fn, controller=controller, min_support=min_support,
+            require_held_out=require_held_out, min_delta=min_delta,
+            min_held_out=min_held_out)
     except Exception:  # pragma: no cover -- learning never perturbs a run
         log.debug("self-harness pass failed", exc_info=True)
         from . import self_harness
