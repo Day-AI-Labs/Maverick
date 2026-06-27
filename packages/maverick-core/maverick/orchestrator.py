@@ -1660,6 +1660,29 @@ def _reset_workdir_to_head(workdir) -> None:
         log.debug("best-of-N workdir reset skipped: %s", e)
 
 
+def _strip_binary_diff_sections(diff: str) -> str:
+    """Drop per-file sections git rendered as 'Binary files ... differ'. Such a
+    section has no patch body and makes `git apply` reject the WHOLE patch, so a
+    single stray binary (e.g. a compiled artifact) must not void a candidate."""
+    if "Binary files" not in diff:
+        return diff
+    sections: list[list[str]] = []
+    cur: list[str] = []
+    for line in diff.split("\n"):
+        if line.startswith("diff --git ") and cur:
+            sections.append(cur)
+            cur = [line]
+        else:
+            cur.append(line)
+    if cur:
+        sections.append(cur)
+    kept = [
+        "\n".join(s) for s in sections
+        if not any(ln.startswith("Binary files ") for ln in s)
+    ]
+    return "\n".join(kept)
+
+
 def _capture_workdir_diff(workdir) -> str:
     """Capture a git workdir's edits as a HEAD-relative unified diff, INCLUDING
     untracked new files. Returns "" when not a git repo, on error, or when there
@@ -1671,7 +1694,9 @@ def _capture_workdir_diff(workdir) -> str:
     HEAD`` after ``add -A``) so it applies in evaluate_candidate's
     checked-out-at-HEAD worktree; ``add -A`` makes untracked files appear as
     proper ``--- /dev/null`` new-file hunks; the trailing ``reset`` un-stages so
-    the staging is a side-effect-free read.
+    the staging is a side-effect-free read. Build/test cruft (__pycache__/*.pyc,
+    .pytest_cache) is excluded and any residual binary section stripped, since
+    binary hunks make `git apply` reject the entire patch.
 
     The diff bytes are returned UN-normalized: a ``git diff`` is internally
     self-consistent with the file at HEAD and must apply byte-for-byte, so CRLF
@@ -1687,9 +1712,16 @@ def _capture_workdir_diff(workdir) -> str:
         _subprocess.run(["git", "-C", str(wd), "add", "-A"],
                         capture_output=True, timeout=30)
         try:
+            # Exclude build/test cruft via pathspec: running the candidate's
+            # tests during the attempt creates __pycache__/*.pyc etc. With no
+            # .gitignore for them, `add -A` stages them and they render as
+            # "Binary files ... differ" hunks that `git apply` CANNOT apply --
+            # which silently invalidated the whole captured patch (observed live).
             proc = _subprocess.run(
                 ["git", "-C", str(wd), "diff", "--cached", "--no-color",
-                 "--no-ext-diff", "--no-textconv", "--unified=3", "HEAD"],
+                 "--no-ext-diff", "--no-textconv", "--unified=3", "HEAD", "--", ".",
+                 ":(exclude)**/__pycache__/**", ":(exclude)*.pyc",
+                 ":(exclude)**/*.pyc", ":(exclude)**/.pytest_cache/**"],
                 capture_output=True, timeout=60)
         finally:
             # Un-stage so the capture leaves the index as it found it.
@@ -1698,6 +1730,9 @@ def _capture_workdir_diff(workdir) -> str:
         if proc.returncode != 0:
             return ""
         diff = proc.stdout.decode("utf-8", errors="replace")
+        # Belt-and-suspenders: drop any remaining binary-file section (no patch
+        # body, breaks `git apply`) so one stray binary never voids the patch.
+        diff = _strip_binary_diff_sections(diff)
         return diff if diff.strip() else ""
     except Exception as e:  # pragma: no cover -- fail-open
         log.debug("best-of-N workdir diff capture skipped: %s", e)
