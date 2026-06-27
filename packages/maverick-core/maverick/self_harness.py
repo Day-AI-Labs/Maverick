@@ -198,7 +198,7 @@ def line_provenance(model_id: str, path: Path | None = None) -> list[dict]:
     block = load_addenda(path).get(str(model_id), "")
     meta = load_line_meta(path)
     fields = ("signature", "rationale", "held_out_delta", "samples",
-              "learned_at", "updated_at")
+              "learned_at", "updated_at", "last_recalled_at", "recall_notes")
     out = []
     for ln in _bullets(block):
         rec = meta.get(_line_id(model_id, ln)) or {}
@@ -220,6 +220,67 @@ def _norm_line(s: str) -> str:
     not fuzzy: templated per-class lines differ by a single token, and a fuzzy
     threshold would wrongly merge distinct failure classes."""
     return " ".join(str(s or "").split()).casefold().rstrip(".,;:!? ")
+
+
+# ---- CONFLICT DETECTION (advisory) ----------------------------------------
+# Addenda are CUMULATIVE: a new line can quietly contradict an existing one
+# ("prefer streaming large exports" vs "avoid streaming exports; batch first"),
+# silently degrading the prompt. This is a cheap DETERMINISTIC heuristic --
+# shared topic + OPPOSITE polarity -- that FLAGS suspected conflicts for an
+# operator; it never auto-blocks (a false positive must not drop real guidance).
+# Stopwords + the loop's own template scaffolding are removed so "topic overlap"
+# reflects the guidance content, not the boilerplate every line shares.
+_STOPWORDS = frozenset(
+    "a an the to of for and or is are be it this that with on in at as your you "
+    "when whenever goal resembles past failures kind has have had before after "
+    "its their them they not no".split())
+_NEG_CUES = ("avoid", "never", "don't", "dont", "do not", "without", "no longer",
+             "stop ", "skip ", "n't", "cannot", "can't", " not ", "refrain")
+
+
+def _content_tokens(line: str) -> set[str]:
+    return _tokens(line) - _STOPWORDS
+
+
+def _is_negative(line: str) -> bool:
+    """Whether a guidance line is phrased as a prohibition (avoid/never/don't...)."""
+    low = " " + (line or "").lower() + " "
+    return any(cue in low for cue in _NEG_CUES)
+
+
+def find_conflicts(new_line: str, existing_lines: list[str], *,
+                   min_overlap: float = 0.5) -> list[str]:
+    """Existing lines that appear to CONTRADICT ``new_line``: high content-token
+    overlap (same topic) but OPPOSITE polarity (one prohibits what the other
+    prefers). Advisory and deliberately conservative (high overlap threshold) --
+    the caller surfaces these for review, never auto-drops on them."""
+    nt, neg = _content_tokens(new_line), _is_negative(new_line)
+    out = []
+    for ex in existing_lines or []:
+        if _norm_line(ex) == _norm_line(new_line):
+            continue
+        if _jaccard(nt, _content_tokens(ex)) >= min_overlap and _is_negative(ex) != neg:
+            out.append(ex)
+    return out
+
+
+def detect_store_conflicts(model_id: str | None = None,
+                           path: Path | None = None) -> list[tuple[str, str, str]]:
+    """Suspected contradictory pairs in the CURRENT store as ``(model, a, b)``,
+    de-duplicated (each unordered pair once). Powers ``self-harness conflicts``."""
+    out: list[tuple[str, str, str]] = []
+    for m, block in load_addenda(path).items():
+        if model_id is not None and m != model_id:
+            continue
+        lines = _bullets(block)
+        seen: set[frozenset] = set()
+        for i, ln in enumerate(lines):
+            for other in find_conflicts(ln, lines[i + 1:]):
+                key = frozenset((_norm_line(ln), _norm_line(other)))
+                if key not in seen:
+                    seen.add(key)
+                    out.append((m, ln, other))
+    return out
 
 
 def list_learned(path: Path | None = None) -> dict[str, list[str]]:
@@ -310,8 +371,13 @@ def retire_stale(*, older_than_days: float, model_id: str | None = None,
                 bullets = _bullets(block)
                 kept = []
                 for ln in bullets:
-                    ts = (meta.get(_line_id(m, ln)) or {}).get("updated_at")
-                    (removed.append((m, ln)) if ts is not None and ts < cutoff
+                    rec = meta.get(_line_id(m, ln)) or {}
+                    # Staleness is by last ACTIVITY: a line refreshed (promoted)
+                    # OR used (recalled) recently is not stale.
+                    active = [t for t in (rec.get("updated_at"), rec.get("last_recalled_at"))
+                              if isinstance(t, (int, float))]
+                    last_active = max(active) if active else None
+                    (removed.append((m, ln)) if last_active is not None and last_active < cutoff
                      else kept.append(ln))
                 if kept == bullets:
                     continue
@@ -837,6 +903,52 @@ def _apply_addendum(proposal: HarnessProposal, path: Path | None = None, *,
             log.debug("self_harness: line-meta update failed", exc_info=True)
 
 
+# ---- RECALL-USAGE TRACKING ------------------------------------------------
+# recall_addendum() rides the agent's per-prompt hot path and stays a PURE READ.
+# Usage ("when was this guidance last actually used?") is tracked separately by
+# the consumer (Agent._with_harness_addendum) via note_recall, which is
+# IN-PROCESS THROTTLED: the common case is a dict lookup with NO I/O, and disk is
+# touched at most once per model per interval. This lets retire_stale keep a line
+# that's still being USED even if it hasn't been re-PROMOTED in a while.
+_recall_note_lock = threading.Lock()
+_recall_noted_monotonic: dict[str, float] = {}
+
+
+def note_recall(model_id: str | None, *, now: float | None = None,
+                path: Path | None = None, min_interval_s: float = 3600.0) -> None:
+    """Best-effort: record that ``model_id``'s guidance was just recalled, so
+    staleness can be judged by USE, not only by promotion. In-process throttled
+    (``min_interval_s``; 0 disables the throttle, for tests) so the hot recall
+    path does at most one cheap write per model per interval. Never raises."""
+    if not model_id:
+        return
+    mid = str(model_id)
+    if min_interval_s:
+        mono = time.monotonic()
+        with _recall_note_lock:
+            last = _recall_noted_monotonic.get(mid)
+            if last is not None and (mono - last) < min_interval_s:
+                return  # throttled -- pure in-memory, no I/O
+            _recall_noted_monotonic[mid] = mono
+    try:
+        p = path if path is not None else _store_path()
+        ts = now if now is not None else time.time()
+        from .file_lock import cross_process_lock
+        with _lock, cross_process_lock(p):
+            meta = load_line_meta(p)
+            changed = False
+            for ln in _bullets(load_addenda(p).get(mid, "")):
+                rec = meta.get(_line_id(mid, ln))
+                if rec is not None:
+                    rec["last_recalled_at"] = ts
+                    rec["recall_notes"] = (rec.get("recall_notes") or 0) + 1
+                    changed = True
+            if changed:
+                _write_line_meta(meta, p)
+    except Exception:  # pragma: no cover -- usage tracking never perturbs a run
+        log.debug("self_harness: note_recall failed", exc_info=True)
+
+
 # ---- DRIVE (mine -> propose -> validate -> gate) --------------------------
 
 @dataclass
@@ -848,6 +960,8 @@ class SelfHarnessReport:
     promoted: int = 0
     skipped: list[str] = field(default_factory=list)
     applied_lines: list[str] = field(default_factory=list)
+    # Advisory: (new_line, existing_line) pairs the promoted line may contradict.
+    conflicts: list[tuple[str, str]] = field(default_factory=list)
 
 
 def run_self_harness(
@@ -917,6 +1031,15 @@ def run_self_harness(
                 continue
             report.promoted += 1
             report.applied_lines.append(proposal.addendum_line)
+            # Advisory conflict check: the new line is now in the block; flag any
+            # EXISTING line it appears to contradict (operator review, not a block).
+            existing = [ln for ln in _bullets(load_addenda(path).get(str(model_id), ""))
+                        if _norm_line(ln) != _norm_line(proposal.addendum_line)]
+            for c in find_conflicts(proposal.addendum_line, existing):
+                report.conflicts.append((proposal.addendum_line, c))
+                log.warning("self_harness: learned line may conflict with existing "
+                            "guidance for %s: %r vs %r", model_id,
+                            proposal.addendum_line, c)
     except Exception as e:  # pragma: no cover -- learning never perturbs a run
         log.warning("self_harness: pass failed (%s)", e)
         report.skipped.append(f"error: {e}")
@@ -975,7 +1098,8 @@ def _gate_and_apply(proposal: HarnessProposal, vr: ValidationResult, *,
 __all__ = [
     "enabled", "recall_addendum", "load_addenda",
     "list_learned", "forget_addendum", "retire_stale",
-    "load_line_meta", "line_provenance",
+    "load_line_meta", "line_provenance", "note_recall",
+    "find_conflicts", "detect_store_conflicts",
     "FailureSignature", "mine_failures", "count_eligible",
     "HarnessProposal", "ProposeFn", "propose_addendum", "llm_proposer",
     "ValidationResult", "ScoreFn", "validate_proposal",

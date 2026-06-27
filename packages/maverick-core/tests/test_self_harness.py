@@ -572,7 +572,8 @@ def test_line_provenance_handles_legacy_line(store):
                       store)
     assert sh.line_provenance("M", store) == [{
         "text": "legacy line", "signature": None, "rationale": None,
-        "held_out_delta": None, "samples": None, "learned_at": None, "updated_at": None}]
+        "held_out_delta": None, "samples": None, "learned_at": None, "updated_at": None,
+        "last_recalled_at": None, "recall_notes": None}]
 
 
 def test_sidecar_reconciles_on_eviction(monkeypatch, store):
@@ -630,3 +631,64 @@ def test_retire_keeps_refreshed_line(monkeypatch, store):
     # nothing older than 1 day yet -> retire is a no-op
     assert sh.retire_stale(older_than_days=1, now=time.time(), path=store) == 0
     assert "kept line" in sh.recall_addendum("M", store)
+
+
+# ---------- conflict detection (advisory) ----------
+
+def test_find_conflicts_flags_opposite_polarity_same_topic():
+    new = "Prefer streaming for large ledger exports."
+    existing = ["Avoid streaming large ledger exports; batch them first.",
+                "Verify credentials before the call."]
+    conf = sh.find_conflicts(new, existing)
+    assert conf == ["Avoid streaming large ledger exports; batch them first."]
+
+
+def test_find_conflicts_ignores_unrelated_and_same_polarity():
+    new = "Validate the response shape before parsing."
+    # unrelated topic, and a same-polarity line on a shared topic
+    existing = ["Avoid redundant tool calls.",
+                "Validate the response schema before parsing it."]
+    assert sh.find_conflicts(new, existing) == []
+
+
+def test_run_reports_conflict_without_blocking(monkeypatch, store):
+    ctrl = _enable(monkeypatch)
+    _promote_line(store, "M", "c0", "Prefer streaming for large exports", ctrl)
+    rep = _promote_line(store, "M", "c1", "Avoid streaming for large exports", ctrl)
+    assert rep.promoted == 1                      # NOT blocked -- advisory only
+    assert rep.conflicts and rep.conflicts[0][0] == "Avoid streaming for large exports"
+    pairs = sh.detect_store_conflicts(path=store)
+    assert len(pairs) == 1 and pairs[0][0] == "M"
+
+
+# ---------- recall-usage tracking ----------
+
+def test_note_recall_records_last_used_and_keeps_line_fresh(monkeypatch, store):
+    import time
+    ctrl = _enable(monkeypatch)
+    _promote_line(store, "M", "c0", "actively used line", ctrl)
+    base = sh.line_provenance("M", store)[0]
+    assert base["last_recalled_at"] is None
+    # record a recall "now" (throttle disabled for the test)
+    t = time.time()
+    sh.note_recall("M", now=t, path=store, min_interval_s=0)
+    rec = sh.line_provenance("M", store)[0]
+    assert rec["last_recalled_at"] == t and rec["recall_notes"] == 1
+    # a line PROMOTED long ago but RECALLED recently is NOT retired (fresh by use)
+    meta = sh.load_line_meta(store)
+    for r in meta.values():
+        r["updated_at"] = t - 100 * 86400      # promoted 100 days ago
+        r["last_recalled_at"] = t              # but used today
+    sh._write_line_meta(meta, store)
+    assert sh.retire_stale(older_than_days=30, now=t + 1, path=store) == 0
+    assert "actively used line" in sh.recall_addendum("M", store)
+
+
+def test_note_recall_throttle_is_in_process(monkeypatch, store):
+    ctrl = _enable(monkeypatch)
+    _promote_line(store, "M", "c0", "throttled line", ctrl)
+    sh._recall_noted_monotonic.pop("M", None)
+    sh.note_recall("M", path=store)            # first note writes
+    first = sh.line_provenance("M", store)[0]["recall_notes"]
+    sh.note_recall("M", path=store)            # throttled -> no second write
+    assert sh.line_provenance("M", store)[0]["recall_notes"] == first

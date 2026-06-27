@@ -105,10 +105,18 @@ safety model as skills and insights.
   stays byte-stable — reconciled to the block under the same lock, restored on
   rollback, and best-effort (a missing sidecar never affects recall).
 - **Retirable (anti-staleness):** prompt guidance goes stale as models, tools,
-  and APIs change. `retire_stale(older_than_days=…)` removes lines not refreshed
-  (re-promoted) within a TTL — a line that keeps proving useful stays; a line
-  with no provenance record (legacy) is never auto-retired since its age is
-  unknown. Audited with phase `retire`.
+  and APIs change. `retire_stale(older_than_days=…)` removes lines not active
+  within a TTL — where "active" means last re-promoted **or** last *recalled*,
+  so a line that keeps getting **used** survives even if it isn't re-promoted.
+  Usage is tracked by `note_recall` (wired into `Agent._build_system`'s consumer,
+  in-process throttled so the per-prompt hot path stays a pure read with at most
+  one cheap write per model per interval). A line with no provenance record
+  (legacy) is never auto-retired since its age is unknown. Audited (`retire`).
+- **Conflict-aware:** addenda are cumulative, so a later lesson can quietly
+  oppose an earlier one. `find_conflicts` / `detect_store_conflicts` flag
+  suspected contradictions (shared topic, opposite polarity) into the
+  `SelfHarnessReport` and `maverick self-harness conflicts` for operator review.
+  Advisory only — a false positive must never silently drop real guidance.
 
 ## Operating it
 
@@ -118,6 +126,7 @@ safety model as skills and insights.
   `--verbose` adds each line's provenance (signature, held-out delta, samples,
   learned/updated dates) so an operator can judge the evidence behind it.
 - `maverick self-harness retire --older-than-days N` — prune stale guidance.
+- `maverick self-harness conflicts` — flag contradictory lines for review.
 - `maverick self-harness log` / `forget` — the audit trail and the undo handle.
 - Automatic operation: an operator/scheduler calls `run_self_harness(...)` with a
   live held-in/held-out scorer (the A/B over the candidate prompt) and the

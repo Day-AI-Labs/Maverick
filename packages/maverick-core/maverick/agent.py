@@ -985,9 +985,12 @@ class Agent:
         Empty (no change) unless [self_harness] is enabled and an addendum
         exists. Fully fail-safe."""
         try:
-            from .self_harness import recall_addendum
+            from .self_harness import note_recall, recall_addendum
             addendum = recall_addendum(self.model)
             if addendum:
+                # Track that this guidance was USED (throttled, best-effort) so
+                # retirement keeps actively-recalled lines and prunes dormant ones.
+                note_recall(self.model)
                 return base + "\n\n" + addendum
         except Exception:  # pragma: no cover -- never block a run
             pass

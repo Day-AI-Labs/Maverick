@@ -1341,6 +1341,9 @@ def harness_show(model: str | None, as_json: bool, verbose: bool) -> None:
             click.echo(f"      why: {sig}")
             click.echo(f"      evidence: {ev} · learned {_date(rec.get('learned_at'))}"
                        f" · updated {_date(rec.get('updated_at'))}")
+            used = rec.get("last_recalled_at")
+            if isinstance(used, (int, float)):
+                click.echo(f"      used: last recalled {_date(used)}")
 
 
 @harness.command("log")
@@ -1421,6 +1424,29 @@ def harness_retire(older_than_days: float, model: str | None, yes: bool) -> None
         return
     n = retire_stale(older_than_days=older_than_days, model_id=model)
     click.echo(f"retired {n} line{'' if n == 1 else 's'}.")
+
+
+@harness.command("conflicts")
+@click.option("--model", default=None, help="Only check this model's guidance.")
+def harness_conflicts(model: str | None) -> None:
+    """Flag learned lines that appear to CONTRADICT each other, per model.
+
+    Addenda are cumulative, so a later lesson can quietly oppose an earlier one
+    ("prefer streaming large exports" vs "avoid streaming; batch first"),
+    degrading the prompt. This is an advisory heuristic (shared topic, opposite
+    polarity) for an operator to review and `forget` the wrong side — it never
+    auto-removes anything. Read-only.
+    """
+    from ..self_harness import detect_store_conflicts
+    pairs = detect_store_conflicts(model_id=model)
+    if not pairs:
+        click.echo("no conflicting guidance detected.")
+        return
+    click.echo(f"{len(pairs)} possible conflict(s):")
+    for m, a, b in pairs:
+        click.echo(f"\n  [{m}]")
+        click.echo(f"    - {a}")
+        click.echo(f"    ⚔ {b}")
 
 
 @main.group()
