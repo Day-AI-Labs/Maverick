@@ -61,6 +61,18 @@ KNOWN_SECTIONS = frozenset({
     "system", "telemetry", "template_registries", "tenancy", "thinking",
     "tools", "tui", "verification", "voice", "webhooks", "workforce",
     "workspace", "world_model",
+    # Registry drift, again: these are all read by real load_config() call sites
+    # AND written by the installer wizard, yet were missing here -- so an operator
+    # who enabled a documented, wizard-offered feature got a false "unknown
+    # config section" warning from config-lint (which sources this set), some
+    # with actively-wrong suggestions ("self_harness -> did you mean
+    # self_learning?", which is a *different* feature). The self-learning
+    # lifecycle (self_harness/self_improvement/dreaming/fleet_memory/rehearsal/
+    # memory_guard) plus actions/domains/fairness_monitor/speculative/tax.
+    # Guarded against future drift by test_wizard_parity's wizard-section check.
+    "actions", "domains", "dreaming", "fairness_monitor", "fleet_memory",
+    "memory_guard", "rehearsal", "self_harness", "self_improvement",
+    "speculative", "tax",
 })
 
 

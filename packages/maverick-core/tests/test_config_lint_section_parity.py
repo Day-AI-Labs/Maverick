@@ -51,6 +51,18 @@ def test_sampling_of_governance_sections_lint_clean():
     assert not unknown, [f.message for f in unknown]
 
 
+def test_self_learning_lifecycle_sections_lint_clean():
+    # The learning lifecycle the wizard offers -- all read by real load_config()
+    # call sites -- must not be flagged "unknown". These shipped as unknown:
+    # config-lint even suggested "self_harness -> did you mean self_learning?",
+    # a *different* feature, which would silently disable self-harness.
+    cfg = {s: {"enable": True} for s in (
+        "self_harness", "self_improvement", "dreaming",
+        "fleet_memory", "rehearsal", "memory_guard")}
+    unknown = [f for f in lint_config(cfg) if "unknown" in f.message.lower()]
+    assert not unknown, [f.message for f in unknown]
+
+
 def test_genuinely_unknown_section_still_flagged():
     findings = lint_config({"totally_made_up_section": {"x": 1}})
     assert any("unknown" in f.message.lower() for f in findings)

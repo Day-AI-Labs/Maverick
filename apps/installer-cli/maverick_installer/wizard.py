@@ -1237,7 +1237,7 @@ def pick_advanced() -> dict[str, Any]:
             "recurring failures -- mined, validated on held-out cases, and gated "
             "through the same promotion ladder as every other learned change -- "
             "then recalled into that model's system prompt. Inspect or roll it "
-            "back any time with `maverick harness`. OFF by default.",
+            "back any time with `maverick self-harness`. OFF by default.",
             default=False,
         ),
         "fleet_memory": _q_confirm(
