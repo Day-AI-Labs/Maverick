@@ -240,6 +240,50 @@ class TestConfigurableThresholds:
         assert path is not None and path.exists()
 
 
+class TestRejectedAttempts:
+    """Rejected pre-revision drafts ride along for DPO pairing (chosen=accepted
+    final, rejected=discarded draft)."""
+
+    def _rec(self):
+        return TrajectoryRecord(
+            task_brief_hash="rj", outcome="success",
+            verifier_confidence=0.92, disagreement_entropy=0.7,
+            rejected_attempts=[
+                {"text": "a weak first draft", "confidence": 0.62,
+                 "critique": "missed a constraint"},
+            ],
+        )
+
+    def test_text_kept_with_double_opt_in(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: True)
+        path = write_record(self._rec(), outbox=tmp_path)
+        att = json.loads(path.read_text())["rejected_attempts"][0]
+        assert att["text"] == "a weak first draft"
+        assert att["confidence"] == 0.62
+
+    def test_text_stripped_without_text_opt_in(self, tmp_path, monkeypatch):
+        """Default metadata-only contract: drop the draft TEXT, keep its score."""
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: False)
+        path = write_record(self._rec(), outbox=tmp_path)
+        att = json.loads(path.read_text())["rejected_attempts"][0]
+        assert "text" not in att
+        assert att["confidence"] == 0.62
+
+    def test_secret_scrubbed_in_rejected_text(self, tmp_path, monkeypatch):
+        secret = "sk-ant-api01-secrettokenvaluexyz1234567890abc"
+        monkeypatch.setattr(donation, "_donations_enabled", lambda: True)
+        monkeypatch.setattr(donation, "_text_donations_enabled", lambda: True)
+        rec = TrajectoryRecord(
+            task_brief_hash="rj", outcome="success",
+            verifier_confidence=0.92, disagreement_entropy=0.7,
+            rejected_attempts=[{"text": f"draft with {secret}", "confidence": 0.6}],
+        )
+        payload_text = write_record(rec, outbox=tmp_path).read_text()
+        assert secret not in payload_text
+
+
 class TestHashBrief:
     def test_same_brief_same_hash(self):
         assert hash_brief("foo") == hash_brief("foo")

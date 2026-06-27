@@ -243,6 +243,46 @@ class TestIngest:
         assert pairs[0]["task_family"] == "fam"
         assert pairs[0]["chosen_reward"] > pairs[0]["rejected_reward"]
 
+    def test_rejected_drafts_become_low_reward_pair_members(self):
+        """A rejected pre-revision draft ingests as a low-reward row in the SAME
+        task_family as the accepted run, so DPO pairs the two (chosen=accepted
+        ~1.0, rejected=draft confidence). Drafts without text are skipped."""
+        from maverick.training.ingest import (
+            build_rejected_trajectories,
+            rejected_trajectory_id,
+        )
+        rec = {
+            "task_brief_hash": "fam", "ts": 7, "reward": 1.0,
+            "rejected_attempts": [
+                {"text": "weak draft", "confidence": 0.6, "critique": "x"},
+                {"confidence": 0.5},  # no text -> skipped (nothing for DPO sidecar)
+            ],
+        }
+        rejects = build_rejected_trajectories(rec)
+        assert len(rejects) == 1
+        r = rejects[0]
+        assert r.task_family == "fam"           # same family as the accepted run
+        assert r.terminal_reward == 0.6          # un-clamped low reward
+        assert r.trajectory_id == rejected_trajectory_id(rec, 0)
+
+    def test_rejected_draft_forms_a_dpo_pair_end_to_end(self):
+        from maverick.training.ingest import (
+            build_rejected_trajectories,
+            build_trajectory,
+        )
+        from maverick.training.rlaif import build_preference_pairs
+        from maverick.training.schema import to_klear_jsonl
+        rec = {
+            "task_brief_hash": "fam", "ts": 7, "outcome": "success", "reward": 1.0,
+            "verifier_confidence": 0.92,
+            "rejected_attempts": [{"text": "weak", "confidence": 0.5}],
+        }
+        rows = [to_klear_jsonl(build_trajectory(rec, []))]
+        rows += [to_klear_jsonl(t) for t in build_rejected_trajectories(rec)]
+        pairs = build_preference_pairs(rows, min_margin=0.25)
+        assert len(pairs) == 1
+        assert pairs[0]["chosen_reward"] == 1.0 and pairs[0]["rejected_reward"] == 0.5
+
     def test_load_donations_empty_dir(self, tmp_path):
         from maverick.training.ingest import load_donations
         out = list(load_donations(tmp_path))

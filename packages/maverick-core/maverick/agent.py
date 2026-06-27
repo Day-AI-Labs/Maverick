@@ -2822,6 +2822,25 @@ class Agent:
                                 f"verifier rejected (conf={verdict.confidence:.2f}): "
                                 f"{verdict.critique}",
                             )
+                            # Capture the rejected draft as the "rejected" half of
+                            # a DPO preference pair: the agent revises until the
+                            # verifier accepts, so the accepted FINAL (high score)
+                            # vs THIS rejected draft (low score) is the genuine
+                            # quality gradient this architecture produces -- the
+                            # only one it produces, since every shipped answer is
+                            # driven to "good". Stashed on ctx (the same channel
+                            # donation reads last_disagreement/credit from); a bug
+                            # here must never break the run loop.
+                            try:
+                                self.ctx.last_rejected_attempts = (
+                                    getattr(self.ctx, "last_rejected_attempts", []) or []
+                                ) + [{
+                                    "text": final,
+                                    "confidence": float(verdict.confidence),
+                                    "critique": verdict.critique or "",
+                                }]
+                            except Exception:  # pragma: no cover -- never block
+                                pass
                             # Hand the critique to the proposer as a
                             # revision brief. One revision pass max --
                             # the second attempt is accepted regardless.

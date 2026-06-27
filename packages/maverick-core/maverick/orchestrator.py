@@ -1405,6 +1405,12 @@ async def run_goal(  # noqa: C901  -- core goal-execution loop
                     disagreement_entropy=float(entropy or 0.0),
                     agent_credit=dict(getattr(ctx, "last_credit", {}) or {}),
                     sub_trajectories=list(getattr(ctx, "last_subtrajectories", []) or []),
+                    # Rejected pre-revision drafts -> the "rejected" half of DPO
+                    # preference pairs (chosen = this accepted final). Same ctx
+                    # channel as last_credit/last_subtrajectories above.
+                    rejected_attempts=list(
+                        getattr(ctx, "last_rejected_attempts", []) or []
+                    ),
                     wall_seconds=budget.elapsed(),
                     cost_dollars=budget.dollars,
                     tokens_in=budget.input_tokens,

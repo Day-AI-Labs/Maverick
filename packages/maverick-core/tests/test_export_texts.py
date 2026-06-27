@@ -60,6 +60,26 @@ def test_export_texts_builds_id_to_transcript_map():
     assert "patch applied" in out["h1-10"]
 
 
+# ---------- rejected-draft text rides in the sidecar ----------
+
+def test_export_texts_emits_rejected_draft_text():
+    """The rejected draft text (carried in the record, not goal_events) is
+    emitted under ingest's rejected id, so the DPO sidecar has BOTH halves."""
+    from maverick.training.ingest import rejected_trajectory_id
+    rec = _record("h1", 10, 1)
+    rec["rejected_attempts"] = [{"text": "the weak first draft", "confidence": 0.6}]
+    out = export_texts.export_texts([rec], lambda r: _events())
+    assert out["h1-10"]                                  # chosen transcript
+    rej_id = rejected_trajectory_id(rec, 0)
+    assert out[rej_id] == "the weak first draft"         # rejected half
+
+def test_export_texts_skips_rejected_without_text():
+    rec = _record("h1", 10, 1)
+    rec["rejected_attempts"] = [{"confidence": 0.6}]     # stripped (no donate_text)
+    out = export_texts.export_texts([rec], lambda r: _events())
+    assert set(out) == {"h1-10"}                          # no rejected entry
+
+
 # ---------- CLI round-trip into the rlaif sidecar loader ----------
 
 def test_main_writes_sidecar_loadable_by_rlaif(tmp_path, monkeypatch):
