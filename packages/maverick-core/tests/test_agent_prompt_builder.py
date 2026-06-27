@@ -11,6 +11,7 @@ from maverick.agent import (
     ORCHESTRATOR_SYSTEM_TEMPLATE,
     WORKER_SYSTEM_TEMPLATE,
     apply_global_overlays,
+    apply_role_overlays,
     select_base_template,
 )
 
@@ -84,3 +85,36 @@ def test_overlays_habits_skipped_when_data_engine_off(monkeypatch):
         lambda: (_ for _ in ()).throw(AssertionError("should not be called")),
     )
     assert apply_global_overlays("BASE") == "BASE"
+
+
+# ---- apply_role_overlays (third PromptBuilder collaborator) ----
+
+def test_role_overlays_append_addendum_then_domain(monkeypatch):
+    monkeypatch.setattr("maverick.role_edit.role_addendum", lambda role: "ADD")
+    out = apply_role_overlays("BASE", role="coder", domain_persona="DOM")
+    # role addendum first, then domain persona, each blank-line separated.
+    assert out == "BASE\n\nADD\n\nDOM"
+
+
+def test_role_overlays_no_addendum_no_domain(monkeypatch):
+    monkeypatch.setattr("maverick.role_edit.role_addendum", lambda role: "")
+    assert apply_role_overlays("BASE", role="coder", domain_persona=None) == "BASE"
+
+
+def test_role_overlays_addendum_fails_open(monkeypatch):
+    def boom(role):
+        raise RuntimeError("role editor down")
+    monkeypatch.setattr("maverick.role_edit.role_addendum", boom)
+    # Addendum raises -> skipped; domain persona still applies; no raise.
+    out = apply_role_overlays("BASE", role="coder", domain_persona="DOM")
+    assert out == "BASE\n\nDOM"
+
+
+def test_role_overlays_addendum_keyed_on_role(monkeypatch):
+    seen = {}
+    def _addendum(role):
+        seen["role"] = role
+        return ""
+    monkeypatch.setattr("maverick.role_edit.role_addendum", _addendum)
+    apply_role_overlays("BASE", role="analyst", domain_persona=None)
+    assert seen["role"] == "analyst"
