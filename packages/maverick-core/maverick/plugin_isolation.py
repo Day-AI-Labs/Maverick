@@ -139,6 +139,11 @@ def run_isolated(entry: str, args: dict, *, mode: str | None = None,
     Returns the call's string result, or an ``ERROR: ...`` string — isolation
     failures degrade to an error result, never an exception into the agent
     loop. ``mode="none"`` (or unset config) imports and calls in-process.
+
+    ``timeout_s`` is enforced by the **subprocess** backend (the call is killed
+    on expiry). The **subinterpreter** backend runs ``run_string`` synchronously
+    and cannot be safely interrupted, so it does NOT enforce ``timeout_s`` — use
+    the subprocess backend when a hard wall-clock bound is required.
     """
     mode = mode if mode in _MODES else isolation_mode()
     try:
@@ -169,6 +174,11 @@ def run_isolated(entry: str, args: dict, *, mode: str | None = None,
                             "this Python; falling back to subprocess")
                 mode = "subprocess"
             else:
+                if timeout_s and timeout_s != _TIMEOUT_S:
+                    log.warning("plugin isolation: subinterpreter mode does not "
+                                "enforce timeout_s=%.0fs (synchronous, no safe "
+                                "interruption) -- use subprocess mode for a hard "
+                                "timeout", timeout_s)
                 import _xxsubinterpreters as si
                 code = _bootstrap_code(entry, args_json, out_path, factory=factory)
                 interp = si.create()

@@ -199,7 +199,12 @@ def _trust_capability(context, agent):
     try:
         from .. import agent_trust
         enforced, registry = agent_trust.load_trust_state()
-    except Exception:  # pragma: no cover - config read never breaks the path
+    except Exception as e:  # pragma: no cover - config read never breaks the path
+        # Fail open (kernel philosophy), but do NOT do it silently: a trust-state
+        # load error means an operator-enabled trust plane has degraded to
+        # unenforced, which is security-relevant and must be visible.
+        log.warning("gRPC trust plane: could not load trust state (%s); "
+                    "proceeding WITHOUT inbound trust enforcement", e)
         return None
     if not enforced:
         return None

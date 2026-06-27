@@ -157,17 +157,29 @@ class MakeImporter:
         except ImportError as e:  # pragma: no cover - optional dep
             raise ImporterError("httpx is required for live Make import") from e
         out: list[dict[str, Any]] = []
+        page_size = 100
         with httpx.Client(timeout=30.0) as client:
-            r = self._get(client, "/api/v2/scenarios", params={"pg[limit]": 100})
-            r.raise_for_status()
-            scenarios = (r.json() or {}).get("scenarios") or []
-            for sc in scenarios:
-                sid = sc.get("id")
-                if sid is None:
-                    continue
-                br = self._get(client, f"/api/v2/scenarios/{sid}/blueprint")
-                br.raise_for_status()
-                out.append(br.json() if br.content else {})
+            offset = 0
+            # Paginate: the API caps a page at pg[limit]; without pg[offset] we
+            # silently imported only the first 100 scenarios. Bound the loop
+            # (100 pages = 10k scenarios) so a misbehaving API can't spin forever.
+            for _ in range(100):
+                r = self._get(client, "/api/v2/scenarios",
+                              params={"pg[limit]": page_size, "pg[offset]": offset})
+                r.raise_for_status()
+                scenarios = (r.json() or {}).get("scenarios") or []
+                if not scenarios:
+                    break
+                for sc in scenarios:
+                    sid = sc.get("id")
+                    if sid is None:
+                        continue
+                    br = self._get(client, f"/api/v2/scenarios/{sid}/blueprint")
+                    br.raise_for_status()
+                    out.append(br.json() if br.content else {})
+                if len(scenarios) < page_size:
+                    break
+                offset += page_size
         return out
 
     def translate(self, raw: dict[str, Any]) -> ImportedAutomation:

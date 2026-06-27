@@ -163,8 +163,11 @@ def _op_create(args: dict) -> str:
     if parent:
         metadata["parents"] = [parent]
     content = args.get("content") or ""
-    # Multipart upload (simple form).
-    boundary = "maverick_upload_boundary"
+    # Multipart upload (simple form). Use a RANDOM per-request boundary: a fixed
+    # one could appear inside user content/metadata and split or inject parts,
+    # corrupting the upload. 128 bits of randomness makes a collision negligible.
+    import uuid
+    boundary = f"maverick_{uuid.uuid4().hex}"
     body = (
         f"--{boundary}\r\n"
         "Content-Type: application/json; charset=UTF-8\r\n\r\n"
