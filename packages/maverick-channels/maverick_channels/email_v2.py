@@ -78,16 +78,21 @@ def build_thread_tree(messages: list[dict]) -> list[ThreadNode]:
 
 
 def flatten_thread(roots: list[ThreadNode]) -> list[tuple[int, ThreadNode]]:
-    """Depth-first ``(depth, node)`` list of a thread tree (for rendering)."""
+    """Depth-first ``(depth, node)`` list of a thread tree (for rendering).
+
+    Iterative (explicit stack) rather than recursive: ``in_reply_to`` /
+    ``references`` headers are untrusted, and a crafted linear reply chain can be
+    thousands deep — a recursive walk would blow Python's recursion limit on
+    attacker-controlled input.
+    """
     out: list[tuple[int, ThreadNode]] = []
-
-    def walk(node: ThreadNode, depth: int) -> None:
+    # Stack of (depth, node); push children reversed so they pop in order.
+    stack: list[tuple[int, ThreadNode]] = [(0, root) for root in reversed(roots)]
+    while stack:
+        depth, node = stack.pop()
         out.append((depth, node))
-        for child in node.children:
-            walk(child, depth + 1)
-
-    for root in roots:
-        walk(root, 0)
+        for child in reversed(node.children):
+            stack.append((depth + 1, child))
     return out
 
 

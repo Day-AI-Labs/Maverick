@@ -98,3 +98,54 @@ def test_field_number_reuse_breaks():
 def test_package_change_breaks():
     v2 = _PROTO.replace("package maverick.v1;", "package maverick.v2;")
     assert any("package changed" in p for p in _mutate(proto=v2))
+
+
+def test_parser_keeps_outer_fields_around_nested_message():
+    """A nested message must not steal the enclosing message's later fields.
+
+    The old single-depth counter reset the current message to ``Inner`` and
+    dropped ``Outer.c``; the stack-based scope tracks both correctly.
+    """
+    proto = """
+message Outer {
+  int64 a = 1;
+  message Inner { int64 b = 1; }
+  int64 c = 2;
+}
+"""
+    msgs = contract.parse_inventory(proto)["messages"]
+    assert msgs["Outer"]["a"]["number"] == 1
+    assert msgs["Outer"]["c"]["number"] == 2
+    assert msgs["Inner"]["b"]["number"] == 1
+
+
+def test_parser_captures_single_line_message_field():
+    inv = contract.parse_inventory("message Req { int64 x = 1; }")
+    assert inv["messages"]["Req"]["x"] == {
+        "number": 1, "type": "int64", "label": ""}
+
+
+def test_parser_ignores_braces_in_block_comments():
+    """A stray ``}`` inside a /* */ comment must not close the message early."""
+    proto = """
+message A {
+  /* a comment with a } brace */
+  int64 x = 1;
+}
+"""
+    assert contract.parse_inventory(proto)["messages"]["A"]["x"]["number"] == 1
+
+
+def test_parser_handles_rpc_option_body():
+    """An rpc with an option body must not desync the service scope, and a
+    following single-line message must still be parsed."""
+    proto = """
+service S {
+  rpc Foo (Req) returns (Resp) { option deadline = 5; }
+  rpc Bar (Req) returns (Resp);
+}
+message Req { int64 x = 1; }
+"""
+    inv = contract.parse_inventory(proto)
+    assert set(inv["services"]["S"]) == {"Foo", "Bar"}
+    assert inv["messages"]["Req"]["x"]["number"] == 1

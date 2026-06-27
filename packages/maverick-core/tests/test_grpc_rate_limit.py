@@ -69,3 +69,19 @@ def test_idle_buckets_are_swept(monkeypatch):
     assert gs._grpc_rate_ok("agent:active") is True
     assert len(gs._GRPC_RATE_HITS) < 50
     assert "agent:active" in gs._GRPC_RATE_HITS
+
+
+def test_fresh_buckets_are_hard_capped(monkeypatch):
+    """The map is bounded even when every bucket is freshly active.
+
+    Idle-only sweeping cannot reclaim continuously-fresh keys (e.g. a single
+    client opening many short-lived connections from many ephemeral ports), so
+    the least-recently-active buckets are evicted to keep the map hard-capped.
+    """
+    monkeypatch.setenv("MAVERICK_GRPC_RATE_LIMIT", "600")
+    monkeypatch.setattr(gs, "_GRPC_RATE_MAX_KEYS", 10)
+    for i in range(100):
+        assert gs._grpc_rate_ok(f"peer:{i}") is True
+    assert len(gs._GRPC_RATE_HITS) <= gs._GRPC_RATE_MAX_KEYS + 1
+    # The most recently added key survives.
+    assert "peer:99" in gs._GRPC_RATE_HITS

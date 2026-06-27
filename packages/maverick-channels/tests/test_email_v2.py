@@ -46,6 +46,19 @@ def test_multiple_threads_and_flatten():
     assert depths["<a>"] == 0 and depths["<b>"] == 1 and depths["<c>"] == 0
 
 
+def test_flatten_deep_chain_no_recursion_error():
+    # Untrusted In-Reply-To headers can craft a single linear chain thousands
+    # deep; flatten_thread must not recurse and blow the recursion limit.
+    n = 5000
+    msgs = [_msg("0")] + [_msg(str(i), irt=str(i - 1)) for i in range(1, n)]
+    roots = build_thread_tree(msgs)
+    assert len(roots) == 1
+    flat = flatten_thread(roots)
+    assert len(flat) == n
+    # Pre-order depth-first: depth increases by one down the chain.
+    assert [depth for depth, _ in flat] == list(range(n))
+
+
 class _FakeTransport:
     def __init__(self, lines):
         self._lines = list(lines)

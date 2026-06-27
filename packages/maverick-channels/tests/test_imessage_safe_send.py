@@ -64,3 +64,91 @@ def test_send_script_does_not_interpolate_text():
     assert "on run argv" in _SEND_SCRIPT
     assert "item 1 of argv" in _SEND_SCRIPT
     assert "item 2 of argv" in _SEND_SCRIPT
+
+
+def _make_channel():
+    """Build an iMessageChannel without hitting the macOS-only __init__ guards."""
+    from maverick_channels.imessage import iMessageChannel
+
+    chan = iMessageChannel.__new__(iMessageChannel)
+    chan.allowed_user_ids = {"+1555"}
+    chan.poll_interval = 0
+    chan._last_rowid = 0
+    chan._stop = False
+    return chan
+
+
+def test_start_survives_send_failure():
+    """A transient send() failure (e.g. osascript TimeoutExpired / OSError)
+    must NOT propagate out of start() and kill the poll loop.
+
+    Regression: line 97 `await self.send(...)` was previously unguarded, so a
+    subprocess.TimeoutExpired (which check=False does not suppress) terminated
+    the whole receive loop permanently.
+    """
+    import asyncio
+    import subprocess
+
+    chan = _make_channel()
+
+    fetched = {"done": False}
+
+    def _fetch_new():
+        if fetched["done"]:
+            chan._stop = True
+            return []
+        fetched["done"] = True
+        return [("+1555", "hi", 1)]
+
+    sent = {"attempts": 0}
+
+    async def _dispatch(_msg):
+        return "reply"
+
+    async def _send(_user, _text):
+        sent["attempts"] += 1
+        raise subprocess.TimeoutExpired(cmd="osascript", timeout=10)
+
+    chan._fetch_new = _fetch_new
+    chan._latest_rowid = lambda: 0
+    chan.dispatch_text = _dispatch
+    chan.send = _send
+
+    # Without the fix this raises TimeoutExpired out of start(); with the fix
+    # the send failure is logged and the loop continues to a clean stop.
+    asyncio.run(asyncio.wait_for(chan.start(), timeout=5))
+
+    assert sent["attempts"] == 1  # the send was attempted (and failed) once
+
+
+def test_start_skips_empty_reply():
+    """An empty reply (action-only goal) should not trigger a send call."""
+    import asyncio
+
+    chan = _make_channel()
+
+    fetched = {"done": False}
+
+    def _fetch_new():
+        if fetched["done"]:
+            chan._stop = True
+            return []
+        fetched["done"] = True
+        return [("+1555", "hi", 1)]
+
+    async def _dispatch(_msg):
+        return ""
+
+    sent = {"attempts": 0}
+
+    async def _send(_user, _text):
+        sent["attempts"] += 1
+
+    chan._fetch_new = _fetch_new
+    chan._latest_rowid = lambda: 0
+    chan.dispatch_text = _dispatch
+    chan.send = _send
+
+    asyncio.run(asyncio.wait_for(chan.start(), timeout=5))
+
+    assert sent["attempts"] == 0

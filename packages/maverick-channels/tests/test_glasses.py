@@ -128,3 +128,42 @@ def test_unauthorized_user_refused():
 def test_requires_allowlist():
     with pytest.raises(ValueError):
         GlassesChannel(lambda m: None, allowed_user_ids=[])
+
+
+def test_default_spawn_retains_strong_reference_to_background_task():
+    """The default spawn must keep a strong ref to in-flight delivery tasks.
+
+    asyncio only holds a weak ref to a bare create_task() result, so an
+    untracked long-task delivery could be GC'd mid-flight and the user would
+    silently never receive the result. Verify the task is tracked and that the
+    reference is released once it finishes.
+    """
+    delivered = []
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def handler(msg):
+        started.set()
+        await release.wait()
+        return "Here is your 2000-word article."
+
+    async def deliver(user_id, text):
+        delivered.append((user_id, text))
+
+    # No spawn= override -> exercise the production default spawn path.
+    ch = _channel(handler, secondary_channel="Telegram", deliver=deliver)
+
+    async def go():
+        ack = await ch.handle_utterance("alice", "write an article about EVs")
+        assert "working on it" in ack.lower()
+        # The background task is in flight and must be strongly referenced.
+        await started.wait()
+        assert len(ch._background_tasks) == 1
+        release.set()
+        # Let the tracked task run to completion.
+        await asyncio.gather(*list(ch._background_tasks))
+
+    asyncio.run(go())
+    assert delivered == [("alice", "Here is your 2000-word article.")]
+    # Done-callback released the reference.
+    assert ch._background_tasks == set()

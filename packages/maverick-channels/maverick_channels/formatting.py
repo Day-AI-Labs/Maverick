@@ -21,12 +21,11 @@ _HEADING_RE = re.compile(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*$")
 
 
 def _convert_slack_segment(seg: str) -> str:
-    # Escape Slack mrkdwn control chars FIRST so literal user/agent text can't
-    # inject <!channel>/<!here>/<@U..> broadcasts or <url|label> links. Slack's
-    # API requires senders to replace & < > before sending mrkdwn=True text.
-    # Only the <...> spans this function itself emits below stay live, matching
-    # the Discord adapter's AllowedMentions.none() no-mention guarantee.
-    seg = seg.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # Structural mrkdwn rewrites only. Control-char escaping (& < >) is done
+    # unconditionally across the whole reply in to_slack_mrkdwn -- NOT here --
+    # so it cannot be skipped on an unbalanced/odd code fence. Only the <...>
+    # spans this function itself emits below stay live, matching the Discord
+    # adapter's AllowedMentions.none() no-mention guarantee.
     seg = _LINK_RE.sub(r"<\2|\1>", seg)          # [text](url) -> <url|text>
     seg = _BOLD_STAR_RE.sub(r"*\1*", seg)        # **bold** -> *bold*
     seg = _BOLD_UNDER_RE.sub(r"*\1*", seg)       # __bold__ -> *bold*
@@ -37,11 +36,19 @@ def _convert_slack_segment(seg: str) -> str:
 def to_slack_mrkdwn(text: str) -> str:
     """Convert common markdown to Slack mrkdwn, preserving fenced code blocks.
 
-    Text inside triple-backtick fences is left verbatim so code is not
-    mangled (Slack renders ``` fences as-is).
+    Slack control chars (``&`` ``<`` ``>``) are escaped across the ENTIRE
+    reply first, independent of code-fence balance, so a prompt-injected
+    ``<!channel>``/``<@U..>``/``<url|label>`` after an unclosed ``` fence can
+    never reach Slack live (Slack honours these escapes even inside code, so
+    the code body is not mangled). Structural rewrites (links/bold/headings)
+    are then applied only to out-of-fence segments so code is left verbatim.
     """
     if not text:
         return text
+    # Escape FIRST and unconditionally -- this is the security-critical step and
+    # must not depend on fence parity. The link rewrite below re-emits its own
+    # <url|text> spans from already-escaped text, which stay live by design.
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     parts = text.split("```")
     # Even-indexed parts are outside code fences; odd-indexed are inside.
     for i in range(0, len(parts), 2):

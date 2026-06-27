@@ -31,7 +31,36 @@ def _entry(**over):
 
 def test_install_from_catalog_happy_path(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(catalog, "resolve", lambda name, kind, indexes=None: _entry())
-    monkeypatch.setattr(skills, "_fetch_skill_source", lambda source: _BODY)
+    monkeypatch.setattr(skills, "_fetch_skill_source_bytes", lambda source: _BODY.encode())
+    s = skills.install_from_catalog("summarize-url", skills_dir=tmp_path)
+    assert s.name == "summarize-url"
+    assert (tmp_path / "summarize-url.md").exists()
+
+
+# Regression: the integrity pin must be verified over the RAW fetched bytes,
+# not a UTF-8-replace-decoded str. A published SKILL.md whose bytes are not
+# UTF-8-clean is pinned by its curator over the real file bytes; hashing the
+# lossily-decoded str (U+FFFD substitution) would reject the authentic file.
+_NON_UTF8_BODY_BYTES = _BODY.encode() + b"\xff trailing non-utf8\n"
+_NON_UTF8_SHA = hashlib.sha256(_NON_UTF8_BODY_BYTES).hexdigest()
+
+
+def test_verify_sha256_hashes_raw_bytes_not_lossy_str():
+    # The bytes pin matches when verifying over bytes...
+    assert catalog.verify_sha256(_NON_UTF8_BODY_BYTES, _NON_UTF8_SHA) is True
+    # ...but NOT when the bytes are first lossily decoded to str (the bug).
+    lossy = _NON_UTF8_BODY_BYTES.decode("utf-8", errors="replace")
+    assert catalog.verify_sha256(lossy, _NON_UTF8_SHA) is False
+
+
+def test_install_from_catalog_accepts_non_utf8_clean_pinned_bytes(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        catalog, "resolve",
+        lambda name, kind, indexes=None: _entry(sha256=_NON_UTF8_SHA))
+    monkeypatch.setattr(
+        skills, "_fetch_skill_source_bytes", lambda source: _NON_UTF8_BODY_BYTES)
+    # Without the fix this raised "content hash mismatch" because the pin was
+    # checked against the UTF-8-replaced str rather than the raw wire bytes.
     s = skills.install_from_catalog("summarize-url", skills_dir=tmp_path)
     assert s.name == "summarize-url"
     assert (tmp_path / "summarize-url.md").exists()
@@ -46,7 +75,7 @@ def test_install_from_catalog_unknown_name(monkeypatch, tmp_path: Path):
 def test_install_from_catalog_rejects_hash_mismatch(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(catalog, "resolve", lambda name, kind, indexes=None: _entry())
     # Source returns tampered content that won't match the pinned sha.
-    monkeypatch.setattr(skills, "_fetch_skill_source", lambda source: "TAMPERED")
+    monkeypatch.setattr(skills, "_fetch_skill_source_bytes", lambda source: b"TAMPERED")
     with pytest.raises(ValueError, match="hash mismatch"):
         skills.install_from_catalog("summarize-url", skills_dir=tmp_path)
     # Nothing written.
@@ -56,7 +85,7 @@ def test_install_from_catalog_rejects_hash_mismatch(monkeypatch, tmp_path: Path)
 def test_install_from_catalog_rejects_unpinned_entry(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(catalog, "resolve",
                         lambda name, kind, indexes=None: _entry(sha256=""))
-    monkeypatch.setattr(skills, "_fetch_skill_source", lambda source: _BODY)
+    monkeypatch.setattr(skills, "_fetch_skill_source_bytes", lambda source: _BODY.encode())
     with pytest.raises(ValueError, match="hash mismatch"):
         skills.install_from_catalog("summarize-url", skills_dir=tmp_path)
 
@@ -145,7 +174,7 @@ def _install_content(monkeypatch, tmp_path, content: str) -> skills.Skill:
     sha = hashlib.sha256(content.encode()).hexdigest()
     monkeypatch.setattr(catalog, "resolve",
                         lambda name, kind, indexes=None: _entry(sha256=sha))
-    monkeypatch.setattr(skills, "_fetch_skill_source", lambda source: content)
+    monkeypatch.setattr(skills, "_fetch_skill_source_bytes", lambda source: content.encode())
     return skills.install_from_catalog("summarize-url", skills_dir=tmp_path / "skills")
 
 

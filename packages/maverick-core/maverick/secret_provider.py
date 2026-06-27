@@ -33,6 +33,13 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+# Backend names we actually implement. An unrecognized value (e.g. a typo
+# like ``vault`` or ``files``) must not silently degrade to ``env`` without a
+# trace -- that would defeat the file backend's whole leak-avoidance purpose
+# for an operator who believes they pinned secrets to mounted files.
+_KNOWN_BACKENDS = frozenset({"env", "file"})
+_warned_backends: set[str] = set()
+
 # Secret file names are validated against this before any path join, so a
 # crafted name can never traverse out of the secrets dir. Matches the env-var
 # shapes we actually look up (UPPER_SNAKE plus a lowercase fallback).
@@ -41,16 +48,37 @@ _SAFE_NAME = frozenset(
 )
 
 
+def _normalize_backend(value: str) -> str:
+    """Lower/strip ``value`` and validate it against the known backends.
+
+    An unrecognized name is treated as ``env`` (the safe default) but warned
+    about once, so a misspelled ``[secrets] backend`` -- which would otherwise
+    silently disable file-based secret isolation -- is visible in the logs.
+    """
+    name = value.strip().lower()
+    if name in _KNOWN_BACKENDS:
+        return name
+    if name not in _warned_backends:
+        _warned_backends.add(name)
+        log.warning(
+            "unknown secrets backend %r; falling back to 'env' "
+            "(known backends: %s)",
+            name,
+            ", ".join(sorted(_KNOWN_BACKENDS)),
+        )
+    return "env"
+
+
 def _backend() -> str:
     env = os.environ.get("MAVERICK_SECRETS_BACKEND")
     if env is not None and env.strip() != "":
-        return env.strip().lower()
+        return _normalize_backend(env)
     try:
         from .config import load_config
         v = (load_config() or {}).get("secrets", {}).get("backend")
     except Exception:  # pragma: no cover -- config never blocks a secret read
         v = None
-    return str(v).strip().lower() if v else "env"
+    return _normalize_backend(str(v)) if v else "env"
 
 
 def _secrets_dir() -> Path | None:
