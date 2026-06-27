@@ -1289,20 +1289,29 @@ def harness() -> None:
 @harness.command("show")
 @click.option("--model", default=None, help="Only show this model's guidance.")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
-def harness_show(model: str | None, as_json: bool) -> None:
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show each line's provenance: why it was learned, the "
+                   "held-out evidence, and when.")
+def harness_show(model: str | None, as_json: bool, verbose: bool) -> None:
     """Show the operating-guidance the self-harness loop has learned, per model.
 
     This is the operator's window into what gets recalled into each model's
-    system prompt. Read-only.
+    system prompt. ``--verbose`` adds per-line provenance (signature, held-out
+    delta, samples, learned date) so an operator can judge whether the evidence
+    behind each line is strong. Read-only.
     """
     import json as _json
 
-    from ..self_harness import enabled, list_learned
+    from ..self_harness import enabled, line_provenance, list_learned
     learned = list_learned()
     if model:
         learned = {k: v for k, v in learned.items() if k == model}
     if as_json:
-        click.echo(_json.dumps(learned, indent=2, sort_keys=True))
+        if verbose:
+            click.echo(_json.dumps({m: line_provenance(m) for m in learned},
+                                   indent=2, sort_keys=True))
+        else:
+            click.echo(_json.dumps(learned, indent=2, sort_keys=True))
         return
     if not enabled():
         click.echo("note: self-harness is OFF ([self_harness] enable=false) — "
@@ -1310,10 +1319,28 @@ def harness_show(model: str | None, as_json: bool) -> None:
     if not learned:
         click.echo("no learned guidance yet.")
         return
+    import datetime as _dt
+
+    def _date(ts):
+        if not isinstance(ts, (int, float)):
+            return "?"
+        return _dt.datetime.fromtimestamp(ts, _dt.timezone.utc).strftime("%Y-%m-%d")
+
     for m, lines in sorted(learned.items()):
         click.echo(f"\n{m}  ({len(lines)} line{'s' if len(lines) != 1 else ''}):")
-        for ln in lines:
-            click.echo(f"  - {ln}")
+        if not verbose:
+            for ln in lines:
+                click.echo(f"  - {ln}")
+            continue
+        for rec in line_provenance(m):
+            click.echo(f"  - {rec['text']}")
+            sig = rec.get("signature") or "(no provenance — learned before tracking)"
+            d, n = rec.get("held_out_delta"), rec.get("samples")
+            ev = (f"held-out {d:+.3g} over {n} samples"
+                  if isinstance(d, (int, float)) and n else "no recorded evidence")
+            click.echo(f"      why: {sig}")
+            click.echo(f"      evidence: {ev} · learned {_date(rec.get('learned_at'))}"
+                       f" · updated {_date(rec.get('updated_at'))}")
 
 
 @harness.command("log")
@@ -1370,6 +1397,30 @@ def harness_forget(model: str, line: str | None, yes: bool) -> None:
         click.echo("removed.")
     else:
         click.echo("nothing to remove.")
+
+
+@harness.command("retire")
+@click.option("--older-than-days", type=float, required=True,
+              help="Retire lines not refreshed (re-promoted) within this many days.")
+@click.option("--model", default=None, help="Only retire this model's lines.")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+def harness_retire(older_than_days: float, model: str | None, yes: bool) -> None:
+    """Retire stale learned guidance — lines not refreshed within --older-than-days.
+
+    Prompt guidance goes stale as models, tools, and APIs change. A line that
+    keeps proving useful is re-promoted (refreshing its age) and survives; one
+    that hasn't been seen in a while is removed. Lines with no provenance record
+    (learned before tracking) are left alone — their age is unknown. Atomic and
+    audited.
+    """
+    from ..self_harness import retire_stale
+    scope = f"{model!r}" if model else "all models"
+    if not yes and not click.confirm(
+            f"Retire guidance older than {older_than_days} days for {scope}?"):
+        click.echo("aborted.")
+        return
+    n = retire_stale(older_than_days=older_than_days, model_id=model)
+    click.echo(f"retired {n} line{'' if n == 1 else 's'}.")
 
 
 @main.group()
