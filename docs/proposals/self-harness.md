@@ -99,12 +99,26 @@ safety model as skills and insights.
 - **Auditable provenance:** every applied line's signed `LEARNING_UPDATE` row
   carries *why* it was learned — the weakness signature + rationale and the
   unseen-split evidence (`held_out_delta`, `samples`) — not just the text, so a
-  rollback or compliance review can see the diagnostic behind each edit.
+  rollback or compliance review can see the diagnostic behind each edit. The
+  same provenance is also kept in a **structured per-line sidecar** (`*.meta.json`,
+  keyed by a content-addressed line id) alongside the prompt-bound store — which
+  stays byte-stable — reconciled to the block under the same lock, restored on
+  rollback, and best-effort (a missing sidecar never affects recall).
+- **Retirable (anti-staleness):** prompt guidance goes stale as models, tools,
+  and APIs change. `retire_stale(older_than_days=…)` removes lines not refreshed
+  (re-promoted) within a TTL — a line that keeps proving useful stays; a line
+  with no provenance record (legacy) is never auto-retired since its age is
+  unknown. Audited with phase `retire`.
 
 ## Operating it
 
-- `maverick self-harness [--model M] [--min-support N]` — read-only dry run:
-  shows the weaknesses and the lines it *would* propose, writes nothing.
+- `maverick self-harness preview [--model M] [--min-support N]` — read-only dry
+  run: shows the weaknesses and the lines it *would* propose, writes nothing.
+- `maverick self-harness show [--verbose]` — what was learned per model;
+  `--verbose` adds each line's provenance (signature, held-out delta, samples,
+  learned/updated dates) so an operator can judge the evidence behind it.
+- `maverick self-harness retire --older-than-days N` — prune stale guidance.
+- `maverick self-harness log` / `forget` — the audit trail and the undo handle.
 - Automatic operation: an operator/scheduler calls `run_self_harness(...)` with a
   live held-in/held-out scorer (the A/B over the candidate prompt) and the
   self-improvement controller engaged.

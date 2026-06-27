@@ -153,3 +153,38 @@ def test_preview_rejects_nonpositive_min_support(_home):
         r = CliRunner().invoke(main, ["self-harness", "preview", "--min-support", bad])
         assert r.exit_code != 0, r.output
         assert "min-support" in r.output.lower(), r.output
+
+
+def _seed_with_meta(model, line, **prov):
+    block = "Operating guidance learned for this model:\n- " + line
+    sh._write_addenda({model: block}, sh._store_path())
+    rec = {"model_id": model, "text": line, "learned_at": 1700000000.0,
+           "updated_at": 1700000000.0, **prov}
+    sh._write_line_meta({sh._line_id(model, line): rec}, sh._store_path())
+
+
+def test_show_verbose_renders_provenance(_home):
+    _seed_with_meta("claude-x", "verify the token first", signature="auth: 401 expired",
+                    rationale="targets 4 'auth' failures", held_out_delta=0.2, samples=8)
+    r = CliRunner().invoke(main, ["self-harness", "show", "--verbose"])
+    assert r.exit_code == 0, r.output
+    assert "auth: 401 expired" in r.output
+    assert "held-out +0.2 over 8 samples" in r.output
+    assert "2023-11" in r.output                         # learned date rendered
+
+
+def test_retire_cli_removes_stale_line(_home):
+    _seed_with_meta("claude-x", "stale line")             # dated 2023 -> stale
+    r = CliRunner().invoke(
+        main, ["self-harness", "retire", "--older-than-days", "1", "--yes"])
+    assert r.exit_code == 0, r.output
+    assert "retired 1 line" in r.output
+    assert sh.recall_addendum("claude-x", sh._store_path()) == ""
+
+
+def test_retire_cli_aborts_without_confirmation(_home):
+    _seed_with_meta("claude-x", "stale line")
+    r = CliRunner().invoke(
+        main, ["self-harness", "retire", "--older-than-days", "1"], input="n\n")
+    assert "aborted" in r.output
+    assert "stale line" in sh.recall_addendum("claude-x", sh._store_path())

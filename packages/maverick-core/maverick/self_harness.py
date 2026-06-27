@@ -30,12 +30,14 @@ constraints. OFF by default (``[self_harness] enable`` / ``MAVERICK_SELF_HARNESS
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
 import os
 import re
 import threading
+import time
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -118,6 +120,92 @@ def recall_addendum(model_id: str | None, path: Path | None = None) -> str:
     return load_addenda(path).get(str(model_id), "")
 
 
+# ---- sidecar: structured per-line provenance ------------------------------
+# The addenda store is the prompt-bound source of truth and is kept byte-stable
+# (its determinism is a proven property). Per-line PROVENANCE (why a line was
+# learned, when, on what evidence) lives in a SIBLING ``*.meta.json`` keyed by a
+# content-addressed line id, reconciled to the block under the same lock. It is
+# strictly auxiliary: a missing/corrupt sidecar never affects recall, and a
+# legacy line with no record simply has no provenance (and is never auto-retired,
+# since its age is unknown). This is the structured-record foundation that
+# unblocks retirement, conflict detection, and post-promotion efficacy.
+
+def _meta_path(addenda_path: Path | None = None) -> Path:
+    p = addenda_path if addenda_path is not None else _store_path()
+    return p.with_suffix(".meta.json")
+
+
+def _line_id(model_id: str, line: str) -> str:
+    """Stable content-addressed id for a (model, line). Normalized so a trivial
+    reword (the delta-merge's notion of "the same line") maps to the same id."""
+    h = hashlib.sha256(f"{model_id}\x00{_norm_line(line)}".encode())
+    return h.hexdigest()[:16]
+
+
+def load_line_meta(path: Path | None = None) -> dict[str, dict]:
+    """The ``{line_id: record}`` provenance sidecar (empty on any error)."""
+    mp = _meta_path(path)
+    try:
+        data = json.loads(mp.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {str(k): v for k, v in data.items() if isinstance(v, dict)}
+    except (FileNotFoundError, ValueError, OSError):
+        pass
+    return {}
+
+
+def _write_line_meta(meta: dict[str, dict], path: Path | None = None) -> None:
+    from .file_lock import atomic_write_text
+    atomic_write_text(_meta_path(path),
+                      json.dumps(meta, indent=2, sort_keys=True), mode=0o600)
+
+
+def _reconcile_meta(meta: dict[str, dict], model_id: str,
+                    current_lines: list[str]) -> dict[str, dict]:
+    """Drop sidecar records for ``model_id`` whose line is no longer in the block
+    (evicted under the cap, merged, or forgotten). Records for OTHER models are
+    untouched. Returns the same dict (mutated) for convenience."""
+    valid = {_line_id(model_id, ln) for ln in current_lines}
+    for lid in [k for k, r in meta.items()
+                if r.get("model_id") == model_id and k not in valid]:
+        del meta[lid]
+    return meta
+
+
+def _upsert_line_meta(meta: dict[str, dict], model_id: str, line: str,
+                      provenance: dict, *, now: float) -> None:
+    """Record/refresh a line's provenance. First-seen ``learned_at`` is kept;
+    ``updated_at`` and the evidence refresh on re-promotion."""
+    lid = _line_id(model_id, line)
+    rec = meta.get(lid) or {}
+    rec.update({
+        "model_id": model_id, "text": line,
+        "signature": provenance.get("signature"),
+        "rationale": provenance.get("rationale"),
+        "held_out_delta": provenance.get("held_out_delta"),
+        "samples": provenance.get("samples"),
+        "learned_at": rec.get("learned_at", now),
+        "updated_at": now,
+    })
+    meta[lid] = rec
+
+
+def line_provenance(model_id: str, path: Path | None = None) -> list[dict]:
+    """Per-line provenance for ``model_id``, ordered to match the recalled block
+    (newest last). Each entry is ``{text, signature, rationale, held_out_delta,
+    samples, learned_at, updated_at}``; fields are ``None`` for a legacy line
+    with no record. Read-only; powers ``self-harness show --verbose``."""
+    block = load_addenda(path).get(str(model_id), "")
+    meta = load_line_meta(path)
+    fields = ("signature", "rationale", "held_out_delta", "samples",
+              "learned_at", "updated_at")
+    out = []
+    for ln in _bullets(block):
+        rec = meta.get(_line_id(model_id, ln)) or {}
+        out.append({"text": ln, **{f: rec.get(f) for f in fields}})
+    return out
+
+
 def _bullets(block: str) -> list[str]:
     return [ln[2:].strip() for ln in (block or "").splitlines()
             if ln.startswith("- ")]
@@ -181,6 +269,12 @@ def forget_addendum(model_id: str, *, line: str | None = None,
             else:
                 del after[model_id]
         _write_addenda(after, p)
+        try:  # keep the provenance sidecar in step (best-effort)
+            meta = load_line_meta(p)
+            _reconcile_meta(meta, model_id, _bullets(after.get(model_id, "")))
+            _write_line_meta(meta, p)
+        except Exception:  # pragma: no cover -- sidecar is best-effort
+            log.debug("self_harness: line-meta prune failed", exc_info=True)
     try:
         from .audit import EventKind, record
         record(EventKind.LEARNING_UPDATE, agent="self_harness", model_id=model_id,
@@ -188,6 +282,62 @@ def forget_addendum(model_id: str, *, line: str | None = None,
     except Exception:  # pragma: no cover -- audit best-effort
         pass
     return removed
+
+
+def retire_stale(*, older_than_days: float, model_id: str | None = None,
+                 now: float | None = None, path: Path | None = None) -> int:
+    """Retire learned lines not refreshed within ``older_than_days``.
+
+    Prompt guidance goes stale as models, tools, and APIs change; a loop that
+    only ever accumulates eventually carries obsolete instructions. Age is a
+    line's ``updated_at`` in the provenance sidecar (re-promotion refreshes it),
+    so a line that keeps proving useful stays. A line with NO record (legacy /
+    pre-sidecar) is NEVER retired -- its age is unknown. Removes from both the
+    addenda block and the sidecar, audits each removal with phase ``retire``, and
+    returns the count. ``now`` is injectable for testing. Never raises."""
+    p = path if path is not None else _store_path()
+    cutoff = (now if now is not None else time.time()) - older_than_days * 86400.0
+    removed: list[tuple[str, str]] = []
+    from .file_lock import cross_process_lock
+    try:
+        with _lock, cross_process_lock(p):
+            add = load_addenda(p)
+            meta = load_line_meta(p)
+            after = dict(add)
+            for m, block in list(add.items()):
+                if model_id is not None and m != model_id:
+                    continue
+                bullets = _bullets(block)
+                kept = []
+                for ln in bullets:
+                    ts = (meta.get(_line_id(m, ln)) or {}).get("updated_at")
+                    (removed.append((m, ln)) if ts is not None and ts < cutoff
+                     else kept.append(ln))
+                if kept == bullets:
+                    continue
+                if kept:
+                    header = "Operating guidance learned for this model:"
+                    after[m] = header + "\n" + "\n".join(f"- {x}" for x in kept)
+                else:
+                    after.pop(m, None)
+                _reconcile_meta(meta, m, kept)
+            if removed:
+                _write_addenda(after, p)
+                try:
+                    _write_line_meta(meta, p)
+                except Exception:  # pragma: no cover -- sidecar best-effort
+                    pass
+    except Exception:  # pragma: no cover -- retirement never perturbs a run
+        log.warning("self_harness: retire_stale failed", exc_info=True)
+        return 0
+    for m, ln in removed:
+        try:
+            from .audit import EventKind, record
+            record(EventKind.LEARNING_UPDATE, agent="self_harness", model_id=m,
+                   rung="prompt", line=ln, phase="retire")
+        except Exception:  # pragma: no cover -- audit best-effort
+            pass
+    return len(removed)
 
 
 # ---- MINE -----------------------------------------------------------------
@@ -636,12 +786,18 @@ def _compose_addendum(model_id: str, existing: str, line: str) -> str:
 def _rollback_handle(path: Path | None = None) -> Callable[[], None]:
     """A thunk restoring the addendum store to its CURRENT state -- the
     reversible handle the gate requires. Captured before any write, so it is a
-    valid undo whether or not the change is ultimately applied."""
+    valid undo whether or not the change is ultimately applied. Restores the
+    provenance sidecar too, so a revert leaves no orphaned metadata."""
     p = path if path is not None else _store_path()
     before = load_addenda(p)
+    before_meta = load_line_meta(p)
 
     def _rollback() -> None:
         _write_addenda(before, p)
+        try:
+            _write_line_meta(before_meta, p)
+        except Exception:  # pragma: no cover -- sidecar is best-effort
+            pass
 
     return _rollback
 
@@ -655,17 +811,30 @@ def _rollback_handle(path: Path | None = None) -> Callable[[], None]:
 _lock = threading.Lock()
 
 
-def _apply_addendum(proposal: HarnessProposal, path: Path | None = None) -> None:
-    """Write the accepted line into the model's addendum block (atomically)."""
+def _apply_addendum(proposal: HarnessProposal, path: Path | None = None, *,
+                    provenance: dict | None = None) -> None:
+    """Write the accepted line into the model's addendum block (atomically), and
+    record its provenance in the sidecar reconciled to the block actually
+    written. The sidecar update is best-effort: a failure there never perturbs
+    the addenda store (the source of truth)."""
     p = path if path is not None else _store_path()
     from .file_lock import cross_process_lock
     with _lock, cross_process_lock(p):
         before = load_addenda(p)
         after = dict(before)
-        after[proposal.model_id] = _compose_addendum(
+        new_block = _compose_addendum(
             proposal.model_id, before.get(proposal.model_id, ""),
             proposal.addendum_line)
+        after[proposal.model_id] = new_block
         _write_addenda(after, p)
+        try:
+            meta = load_line_meta(p)
+            _upsert_line_meta(meta, proposal.model_id, proposal.addendum_line,
+                              provenance or {}, now=time.time())
+            _reconcile_meta(meta, proposal.model_id, _bullets(new_block))
+            _write_line_meta(meta, p)
+        except Exception:  # pragma: no cover -- sidecar is best-effort
+            log.debug("self_harness: line-meta update failed", exc_info=True)
 
 
 # ---- DRIVE (mine -> propose -> validate -> gate) --------------------------
@@ -782,7 +951,9 @@ def _gate_and_apply(proposal: HarnessProposal, vr: ValidationResult, *,
     if not getattr(verdict, "ok", False):
         reason = getattr(verdict, "blocking_reason", "") or "refused"
         return False, reason  # gate refused -> nothing written
-    _apply_addendum(proposal, path=path)
+    _apply_addendum(proposal, path=path, provenance={
+        "signature": proposal.signature, "rationale": proposal.rationale,
+        "held_out_delta": round(vr.held_out_delta, 4), "samples": vr.samples})
     try:
         from .audit import EventKind, record
         # Record the DIAGNOSTIC PROVENANCE alongside the line: which weakness it
@@ -803,7 +974,8 @@ def _gate_and_apply(proposal: HarnessProposal, vr: ValidationResult, *,
 
 __all__ = [
     "enabled", "recall_addendum", "load_addenda",
-    "list_learned", "forget_addendum",
+    "list_learned", "forget_addendum", "retire_stale",
+    "load_line_meta", "line_provenance",
     "FailureSignature", "mine_failures", "count_eligible",
     "HarnessProposal", "ProposeFn", "propose_addendum", "llm_proposer",
     "ValidationResult", "ScoreFn", "validate_proposal",

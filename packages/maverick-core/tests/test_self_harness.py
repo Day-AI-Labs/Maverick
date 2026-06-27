@@ -536,3 +536,97 @@ def test_run_strict_floors_block_weak_evidence(monkeypatch, store):
                                held_out=["c", "d", "e", "f", "g"],
                                require_held_out=True, min_held_out=5, min_delta=0.1, **common)
     assert rep3.promoted == 1
+
+
+# ---------- structured per-line provenance sidecar + retirement ----------
+
+def _promote_line(store, model, fclass, line, controller):
+    return sh.run_self_harness(
+        [{"model_id": model, "failure_class": fclass, "goal_text": f"task {i}",
+          "failure_msg": "x"} for i in range(3)],
+        model_id=model, controller=controller, min_support=3, path=store,
+        held_in=["a", "b"], held_out=["c", "d", "e"],
+        propose_fn=lambda s, _l=line: _l,
+        score_with=lambda a, c: 0.95, score_without=lambda a, c: 0.4)
+
+
+def test_provenance_recorded_on_promote(monkeypatch, store):
+    ctrl = _enable(monkeypatch)
+    refl = [_refl("M", "timeout", "export the nightly ledger") for _ in range(3)]
+    rep = sh.run_self_harness(
+        refl, model_id="M", controller=ctrl, min_support=3, path=store,
+        held_in=["a", "b"], held_out=["c", "d", "e"],
+        score_with=lambda a, c: 0.95, score_without=lambda a, c: 0.4)
+    assert rep.promoted == 1
+    prov = sh.line_provenance("M", store)
+    assert len(prov) == 1
+    rec = prov[0]
+    assert rec["signature"] and rec["rationale"] and rec["samples"] == 5
+    assert isinstance(rec["held_out_delta"], float)
+    assert isinstance(rec["learned_at"], float) and rec["updated_at"] >= rec["learned_at"]
+    assert sh._meta_path(store).exists()  # sidecar lives next to the store
+
+
+def test_line_provenance_handles_legacy_line(store):
+    sh._write_addenda({"M": "Operating guidance learned for this model:\n- legacy line"},
+                      store)
+    assert sh.line_provenance("M", store) == [{
+        "text": "legacy line", "signature": None, "rationale": None,
+        "held_out_delta": None, "samples": None, "learned_at": None, "updated_at": None}]
+
+
+def test_sidecar_reconciles_on_eviction(monkeypatch, store):
+    ctrl = _enable(monkeypatch)
+    for k in range(sh._MAX_LINES_PER_MODEL + 3):
+        _promote_line(store, "M", f"c{k}", f"guidance line {k}", ctrl)
+    bullets = [ln for ln in sh.recall_addendum("M", store).splitlines() if ln.startswith("- ")]
+    mine = [r for r in sh.load_line_meta(store).values() if r["model_id"] == "M"]
+    assert len(bullets) == sh._MAX_LINES_PER_MODEL
+    assert len(mine) == sh._MAX_LINES_PER_MODEL  # no stale records for evicted lines
+
+
+def test_forget_prunes_sidecar(monkeypatch, store):
+    ctrl = _enable(monkeypatch)
+    _promote_line(store, "M", "c0", "line zero", ctrl)
+    _promote_line(store, "M", "c1", "line one", ctrl)
+    assert len(sh.load_line_meta(store)) == 2
+    sh.forget_addendum("M", line="line zero", path=store)
+    texts = [r["text"] for r in sh.load_line_meta(store).values()]
+    assert texts == ["line one"]
+    sh.forget_addendum("M", path=store)        # whole-model forget clears the rest
+    assert sh.load_line_meta(store) == {}
+
+
+def test_rollback_restores_sidecar(monkeypatch, store):
+    ctrl = _enable(monkeypatch)
+    _promote_line(store, "M", "c0", "first line", ctrl)
+    rb = sh._rollback_handle(store)
+    _promote_line(store, "M", "c1", "second line", ctrl)
+    assert len(sh.load_line_meta(store)) == 2
+    rb()
+    assert [r["text"] for r in sh.load_line_meta(store).values()] == ["first line"]
+
+
+def test_retire_stale_removes_old_keeps_undated(monkeypatch, store):
+    import time
+    ctrl = _enable(monkeypatch)
+    _promote_line(store, "M", "c0", "dated line", ctrl)
+    # a legacy line written straight to addenda with NO provenance record
+    add = sh.load_addenda(store)
+    add["M"] = add["M"] + "\n- legacy undated line"
+    sh._write_addenda(add, store)
+    # 10 days in the future, retire anything older than 5 days
+    n = sh.retire_stale(older_than_days=5, now=time.time() + 10 * 86400, path=store)
+    assert n == 1
+    bullets = [ln[2:] for ln in sh.recall_addendum("M", store).splitlines()
+               if ln.startswith("- ")]
+    assert bullets == ["legacy undated line"]   # dated line retired, undated kept
+
+
+def test_retire_keeps_refreshed_line(monkeypatch, store):
+    import time
+    ctrl = _enable(monkeypatch)
+    _promote_line(store, "M", "c0", "kept line", ctrl)
+    # nothing older than 1 day yet -> retire is a no-op
+    assert sh.retire_stale(older_than_days=1, now=time.time(), path=store) == 0
+    assert "kept line" in sh.recall_addendum("M", store)
