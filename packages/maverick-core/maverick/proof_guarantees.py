@@ -191,8 +191,14 @@ def run_all(*, crypto: bool | None = None) -> list[GuaranteeResult]:
     results: list[GuaranteeResult] = []
     for label, fn, needs_crypto in GUARANTEES:
         if needs_crypto and not crypto:
+            # Not proven on THIS host (cryptography absent) -> passed=False +
+            # skipped=True, matching this function's "neither a pass nor a
+            # failure" contract. Consumers must treat `skipped` as a third state
+            # (proof_pack does); the Ed25519 path is exercised in the CI matrix.
             results.append(GuaranteeResult(
-                label, True, "Ed25519 — verified in the CI test matrix",
+                label, False,
+                "SKIPPED on this host: cryptography not installed "
+                "(Ed25519 path verified in the CI test matrix)",
                 needs_crypto=True, skipped=True))
             continue
         try:

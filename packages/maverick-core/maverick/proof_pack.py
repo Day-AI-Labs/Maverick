@@ -66,7 +66,8 @@ class Evidence:
 def collect_governance() -> Evidence:
     from . import proof_guarantees as pg
     results = pg.run_all()
-    failed = [r for r in results if not r.passed]
+    # `skipped` (crypto absent) is a third state -- not proven, not failed.
+    failed = [r for r in results if not r.passed and not r.skipped]
     skipped = [r for r in results if r.skipped]
     proven = [r for r in results if r.passed and not r.skipped]
     parts = [f"{len(proven)} guarantees proven"]

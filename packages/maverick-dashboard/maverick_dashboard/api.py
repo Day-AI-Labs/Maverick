@@ -2456,7 +2456,6 @@ async def oversight_active(request: Request) -> dict:
     fleet work without a full-page reload. Fail-soft per goal: a goal whose
     event tail can't be read still lists with an empty activity.
     """
-    from maverick.world_model import _dec_field
     w = _world()
     goals = w.list_goals(
         status="active", owner=goal_owner_filter(request), limit=50, order="desc",
@@ -2466,17 +2465,15 @@ async def oversight_active(request: Request) -> dict:
         activity = ""
         updated_at = g.updated_at
         try:
-            row = w.conn.execute(
-                "SELECT kind, content, ts FROM goal_events WHERE goal_id = ? "
-                "ORDER BY id DESC LIMIT 1",
-                (g.id,),
-            ).fetchone()
-            if row:
-                # content is sealed at rest -> decode (no-op when encryption off);
-                # kind is stored plain.
-                content = (_dec_field(row[1]) or "")[:120]
-                activity = f"{row[0] or ''}: {content}".strip(": ").strip()
-                updated_at = row[2]
+            # Public method (works on SQLite AND Postgres) instead of a raw
+            # `w.conn` query with `?` placeholders, which silently blanked every
+            # activity under the Postgres backend. content is already decoded.
+            events = w.recent_goal_events(g.id, limit=1)
+            if events:
+                ev = events[-1]  # newest (chronological order)
+                content = (ev.content or "")[:120]
+                activity = f"{ev.kind or ''}: {content}".strip(": ").strip()
+                updated_at = ev.ts
         except Exception:
             activity = ""
             updated_at = g.updated_at

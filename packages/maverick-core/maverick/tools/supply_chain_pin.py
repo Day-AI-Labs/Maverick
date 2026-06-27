@@ -23,7 +23,10 @@ from . import Tool
 # (e.g. '1.x', '1.2.X'), never as an incidental letter inside a real version
 # (e.g. '1.0.0+linux', '2.0.0b1xenial') -- matched separately below as a token
 # so an exact pin that merely contains the letter x isn't a false positive.
-_RANGE_CHARS = ("^", "~", ">", "<", "*", "=", "||", " - ")
+# Bare '=' is intentionally NOT here: pip's exact pin is '==1.0.0' (and '==='),
+# which must read as a PIN, not a range. '>'/'<' already catch '>='/'<=', '~'
+# catches '~='/'~1.0', and '!=' is an explicit exclusion range.
+_RANGE_CHARS = ("^", "~", ">", "<", "*", "!=", "||", " - ")
 # A component that is exactly 'x'/'X' (start-of-string or after a '.'), i.e. the
 # wildcard forms '1.x' / '1.2.x' / 'x'. Avoids flagging 'x' inside a token.
 _WILDCARD_X_RE = re.compile(r"(?:^|\.)[xX](?:\.|$)")
