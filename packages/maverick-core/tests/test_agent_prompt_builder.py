@@ -10,6 +10,7 @@ from __future__ import annotations
 from maverick.agent import (
     ORCHESTRATOR_SYSTEM_TEMPLATE,
     WORKER_SYSTEM_TEMPLATE,
+    apply_global_overlays,
     select_base_template,
 )
 
@@ -43,3 +44,43 @@ def test_coding_mode_worker_is_also_coder():
         role="coder", depth=1, max_depth=3, coding_enabled=True)
     assert out == CODER_CODING_MODE_TEMPLATE.format(
         role="coder", depth=1, max_depth=3)
+
+
+# ---- apply_global_overlays (second PromptBuilder collaborator) ----
+
+def test_overlays_append_persona_style_habits_in_order(monkeypatch):
+    monkeypatch.setattr("maverick.persona.render_persona_prompt", lambda: "P")
+    monkeypatch.setattr("maverick.styles.render_active_style_prompt", lambda: "S")
+    monkeypatch.setattr("maverick.data_engine.enabled", lambda: True)
+    monkeypatch.setattr("maverick.procedural_memory.recall_prompt", lambda: "H")
+    # base + persona + style + habits, in that exact order.
+    assert apply_global_overlays("BASE") == "BASEPSH"
+
+
+def test_overlays_skip_empty_and_disabled(monkeypatch):
+    monkeypatch.setattr("maverick.persona.render_persona_prompt", lambda: "")
+    monkeypatch.setattr("maverick.styles.render_active_style_prompt", lambda: "")
+    monkeypatch.setattr("maverick.data_engine.enabled", lambda: False)
+    assert apply_global_overlays("BASE") == "BASE"
+
+
+def test_overlays_fail_open_on_error(monkeypatch):
+    def boom():
+        raise RuntimeError("overlay source down")
+    monkeypatch.setattr("maverick.persona.render_persona_prompt", boom)
+    monkeypatch.setattr("maverick.styles.render_active_style_prompt", lambda: "S")
+    monkeypatch.setattr("maverick.data_engine.enabled", lambda: False)
+    # Persona raises -> that overlay is skipped; style still applies; no raise.
+    assert apply_global_overlays("BASE") == "BASES"
+
+
+def test_overlays_habits_skipped_when_data_engine_off(monkeypatch):
+    monkeypatch.setattr("maverick.persona.render_persona_prompt", lambda: "")
+    monkeypatch.setattr("maverick.styles.render_active_style_prompt", lambda: "")
+    monkeypatch.setattr("maverick.data_engine.enabled", lambda: False)
+    # recall_prompt must NOT be consulted when the data engine is off.
+    monkeypatch.setattr(
+        "maverick.procedural_memory.recall_prompt",
+        lambda: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+    assert apply_global_overlays("BASE") == "BASE"
