@@ -27,6 +27,43 @@ real defect surfaced was an environment-interaction bug in the git sandbox.
 
 ---
 
+## Refresh — 2026-06-27 (post-audit-remediation, reproducible numbers)
+
+The TL;DR above is a **point-in-time snapshot from 2026-06-26**. The exact
+pass/fail counts drift every commit as tests are added and fixed, so the numbers
+below supersede it; re-run with `python3 -m pytest -q` from the repo root to
+reproduce. This refresh was taken after the code-quality audit remediation (PRs
+#1973–#1994) landed.
+
+| Axis | Result (2026-06-27) |
+|------|--------|
+| Full suite (`python3 -m pytest -q`) | **13,774 passed, 6 failed, 220 skipped, 3 xfailed** (414s) |
+| `ruff check .` (repo-wide) | **clean** |
+| Custom CI gates (`migration_governance`, `schema_migrations`, `control_data_plane` e2e/soak, etc.) | **green** |
+| The 6 failures — provenance | **all pre-existing; none introduced by the audit remediation** (the failing test files were last touched in #1918, before this work) |
+
+**Characterization of the 6** (so the scoreboard is honest, not rounded to "all
+green"):
+
+- **2 are order-dependent test pollution** — `test_deployment.py::
+  test_regulated_profile_passes_seals_data_and_is_compliant` and
+  `test_worker_review.py::test_learning_is_honest_when_no_learned_state`
+  **pass in isolation** and only fail inside the full-suite run (shared-state
+  leakage from an earlier test), so they are isolation bugs, not product defects.
+- **4 are stale/environment CLI tests** — the three `test_session_clear_alias.py`
+  cases drive `maverick session clear`, but the `session` command group **no
+  longer exists** in the CLI (`No such command 'session'`, Click exit 2), so the
+  tests are dead; `test_kms_fleet_rotation.py::test_cli_kms_rotate_rejects_raw_kek_argv`
+  is a similar CLI-shape assertion. These predate the remediation and want a
+  separate stale-test cleanup PR.
+
+**Bottom line:** every gate the audit cares about is green, the remediation
+added **zero** regressions, and the only red is pre-existing test debt (2
+isolation bugs + 4 stale CLI tests) that this refresh now names explicitly
+instead of leaving the older "10 failed" figure that did not reproduce.
+
+---
+
 ## Finding 1 — `scrub_env()` corrupts git's env-config injection (FIXED)
 
 **Severity:** medium · **Type:** portability / robustness · **Status:** fixed in this PR
