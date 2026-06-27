@@ -33,7 +33,7 @@ repriced to **reward defensible IP and punish thin AI wrappers.**
 - **~310K LOC** across **8 PyPI packages**; FastAPI dashboard; native installers
   for Windows / macOS / Linux; an MCP server; a GitHub Action.
 - **Self-host or air-gap** — runs in the customer's VPC or fully offline; no required egress.
-- **1,118 least-privilege specialist packs across 26 suites** —
+- **2,020 least-privilege specialist packs across 53 suites** —
   `maverick domains-lint` → **0 errors, 0 warnings.**
 - **The product proves its own guarantees:** `maverick proof-pack` emits an
   **Ed25519-signed evidence bundle** (governance guarantees + reliability cert +
@@ -50,7 +50,7 @@ repriced to **reward defensible IP and punish thin AI wrappers.**
 every action — attenuate-only capability tokens, policy engine, egress lock, a
 signed hash-chained audit log with offline verification; (2) a snapshot-/
 rollback-able **provable-learning loop** where every causal guardrail must
-survive a **placebo test** before it changes behavior; (3) the **1,118-pack
+survive a **placebo test** before it changes behavior; (3) the **2,020-pack
 governed library.** None of it is a prompt over an API — it's deep
 infrastructure a competitor doesn't replicate in a quarter and an incumbent's
 hosted product can't air-gap into a bank.
@@ -59,7 +59,7 @@ hosted product can't air-gap into a bank.
 (highest regulatory pain, clearest ROI; the finance suite already declares ~29
 governed deliverables across 11 roles). **Second wedge: tax-prep for CPA firms**
 (a deterministic, citation-backed docs → 1040 + state-return pipeline with a
-signed tax-law update channel). 26 suites already built for land-and-expand.
+signed tax-law update channel). 53 suites already built for land-and-expand.
 
 **Go-to-market.** Two motions: **direct** — 2–3 BFSI design partners → paid
 pilot → expand across suites; and an **overlay wedge** — *"bring your existing

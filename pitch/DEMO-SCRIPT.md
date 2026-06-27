@@ -147,9 +147,9 @@ case."
 ```bash
 maverick domains-lint
 ```
-**They see (real):** `1118 pack(s): 0 error(s), 0 warning(s)`
+**They see (real):** `2020 pack(s): 0 error(s), 0 warning(s)`
 
-**Land the point:** "**1,118 least-privilege specialist packs across 26 suites,
+**Land the point:** "**2,020 least-privilege specialist packs across 53 suites,
 zero lint errors.** Plus ~310,000 lines of infrastructure that runs self-hosted
 or air-gapped. This is the part a competitor doesn't reproduce
 in a quarter — and that an incumbent's hosted product can't air-gap into your
@@ -162,7 +162,7 @@ bank."
 "So in six minutes you watched it **refuse a $60k wire and require a human on a
 $6k one**, **sign its own guarantees while refusing to fabricate the ones it
 can't measure**, **prove it learned from failures — reversibly**, and do it
-across a **1,118-pack governed library** you can self-host or air-gap. That's
+across a **2,020-pack governed library** you can self-host or air-gap. That's
 the layer a regulated enterprise needs *around* the agent — and it's the layer
 nobody else ships. `[FILL: We're raising $X to put it in front of 3 design
 partners and turn on the first ARR.]`"
@@ -178,7 +178,7 @@ maverick audit verify --file /tmp/gp/audit.ndjson #         verify offline
 python -m maverick.proof_pack -o /tmp/pp          # Act 2: it signs
 cat /tmp/pp/PROOF.md                              #         the clean view
 maverick demo                                     # Act 3: it improves
-maverick domains-lint                             # Act 4: 1,118 packs, 0 errors
+maverick domains-lint                             # Act 4: 2,020 packs, 0 errors
 ```
 
 ## If something goes sideways

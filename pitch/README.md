@@ -39,7 +39,7 @@ See [`deck/README.md`](./deck/README.md) for how to present and export the decks
 python -m maverick.golden_path -o /tmp/gp     # REFUSES the $60k wire, requires a human on $6k
 python -m maverick.proof_pack  -o /tmp/pp     # SIGNS its guarantees (and refuses to fabricate)
 maverick demo                                 # IMPROVES from failures — reversibly
-maverick domains-lint                         # 1,118 packs, 0 errors
+maverick domains-lint                         # 2,020 packs, 0 errors
 ```
 
 ## What's still yours to fill (the `[FILL]`s)

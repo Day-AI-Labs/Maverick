@@ -71,7 +71,7 @@ open-core line in the commercialization doc.
 **What a "pack" is:** a turnkey department of specialist agents. Each agent has a
 fixed job, a least-privilege tool set, a risk ceiling, and a built-in
 maker-checker discipline — it drafts and recommends; a credentialed human reviews
-and commits. You don't prompt-engineer them; you switch them on. **1,118 agents
+and commits. You don't prompt-engineer them; you switch them on. **2,020 agents
 across 32 packs.**
 
 Packs attach to any platform tier and get more valuable on Gold/Platinum (the
@@ -241,7 +241,7 @@ unit; everything else time-and-materials.
   us").
 - The 32 packs all pass the quality gate (`maverick domains-lint`): every agent
   has a bounded persona, a least-privilege allow-list, an explicit deny-list, and
-  a risk ceiling — **0 errors, 0 warnings across all 1,118.**
+  a risk ceiling — **0 errors, 0 warnings across all 2,020.**
 
 > **Note on the CLI:** `maverick domains-lint` (and the other `maverick …`
 > commands) keep the lowercase `maverick` binary name — the platform *brand* is
