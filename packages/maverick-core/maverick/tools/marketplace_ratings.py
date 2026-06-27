@@ -9,8 +9,10 @@ ops:
   - aggregate(ratings:[1..5]) -> mean, count, star histogram, and a Wilson
     lower-bound score in [0,1] (the "confidence-adjusted" rank used so a 5-star
     item with 1 vote doesn't outrank a 4.8-star item with 1000).
-  - verify_install(declared_sha256, computed_sha256) -> VERIFIED / MISMATCH
-    (constant-time hex compare).
+  - verify_install(declared_sha256, content | computed_sha256) -> VERIFIED /
+    MISMATCH. Pass ``content`` to hash the artifact here (sha256) and check it
+    against the declared digest; or pass a precomputed ``computed_sha256``.
+    Constant-time hex compare.
 """
 from __future__ import annotations
 
@@ -74,11 +76,19 @@ def _aggregate(args: dict[str, Any]) -> str:
 
 def _verify_install(args: dict[str, Any]) -> str:
     declared = args.get("declared_sha256")
-    computed = args.get("computed_sha256")
     if not isinstance(declared, str) or not declared.strip():
         return "ERROR: declared_sha256 is required"
+    # Prefer hashing the actual artifact bytes when provided ("content"), so the
+    # tool genuinely verifies a downloaded artifact rather than trusting a hash
+    # the caller computed. Falls back to a precomputed "computed_sha256".
+    computed = args.get("computed_sha256")
+    content = args.get("content")
+    if isinstance(content, str) and content != "":
+        import hashlib
+        computed = hashlib.sha256(content.encode("utf-8")).hexdigest()
     if not isinstance(computed, str) or not computed.strip():
-        return "ERROR: computed_sha256 is required"
+        return ("ERROR: provide 'content' (the artifact text to hash) or a "
+                "precomputed 'computed_sha256'")
     a = declared.strip().lower()
     b = computed.strip().lower()
     if hmac.compare_digest(a.encode(), b.encode()):
@@ -110,7 +120,13 @@ _SCHEMA: dict[str, Any] = {
         },
         "computed_sha256": {
             "type": "string",
-            "description": "for op=verify_install; the locally computed digest",
+            "description": "for op=verify_install; a precomputed local digest "
+                           "(use 'content' instead to hash the artifact here)",
+        },
+        "content": {
+            "type": "string",
+            "description": "for op=verify_install; the downloaded artifact text "
+                           "to hash (sha256) and check against declared_sha256",
         },
     },
     "required": ["op"],
@@ -124,7 +140,8 @@ def marketplace_ratings() -> Tool:
             "Marketplace ratings + install verification. op=aggregate {ratings: "
             "[1..5]} -> JSON {count, mean, histogram, wilson_lower_bound} (the "
             "Wilson lower bound is the confidence-adjusted rank). op=verify_install "
-            "{declared_sha256, computed_sha256} -> VERIFIED/MISMATCH (constant-time "
+            "{declared_sha256, content | computed_sha256} -> VERIFIED/MISMATCH "
+            "(hashes 'content' here, or compares a precomputed digest; constant-time "
             "compare). Deterministic; offline; stdlib math+hashlib only."
         ),
         input_schema=_SCHEMA,

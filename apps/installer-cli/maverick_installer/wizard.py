@@ -373,6 +373,17 @@ def _validate_gemini_key(key: str) -> tuple[bool, str]:
     )
 
 
+def _validation_marker(ok: bool, msg: str) -> str:
+    """Status marker for a key-validation result. A SKIPPED check (SDK missing /
+    couldn't reach the API) is NOT a confirmed key -- render it distinctly so a
+    green "ok" never appears next to "validation skipped"."""
+    if not ok:
+        return "[red]x[/red]"
+    if "skipped" in msg.lower():
+        return "[yellow]?[/yellow]"
+    return "[green]ok[/green]"
+
+
 _VALIDATORS = {
     "ANTHROPIC_API_KEY": _validate_anthropic_key,
     "OPENAI_API_KEY":    _validate_openai_key,
@@ -2203,12 +2214,10 @@ def collect_api_keys(providers: list[str], channel_envs: set[str]) -> dict[str, 
             cached = _cached_validation(env_name, val)
             if cached is not None:
                 ok, msg = cached
-                marker = "[green]ok[/green]" if ok else "[red]x[/red]"
-                console.print(f"    {marker} {msg} (cached)")
+                console.print(f"    {_validation_marker(ok, msg)} {msg} (cached)")
             else:
                 ok, msg = validator(val)
-                marker = "[green]ok[/green]" if ok else "[red]x[/red]"
-                console.print(f"    {marker} {msg}")
+                console.print(f"    {_validation_marker(ok, msg)} {msg}")
                 _remember_validation(env_name, val, ok, msg)
             if not ok and not _q_confirm("Save anyway?", default=False):
                 continue
@@ -3414,7 +3423,7 @@ def _consumer_api_key() -> dict[str, str]:
         ok, msg = _validate_anthropic_key(val)
         _remember_validation("ANTHROPIC_API_KEY", val, ok, msg)
     if ok:
-        console.print(f"  [green]ok[/green] {msg}")
+        console.print(f"  {_validation_marker(ok, msg)} {msg}")
         return {"ANTHROPIC_API_KEY": val}
     # On failure, surface the branded error and let the user decide.
     show_bad_key_error("ANTHROPIC_API_KEY", msg)

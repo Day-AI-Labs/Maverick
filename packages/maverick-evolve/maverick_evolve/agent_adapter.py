@@ -98,7 +98,8 @@ def subprocess_run_one(
     """Run one goal in a fresh ``maverick start`` subprocess under ``config``.
 
     Writes a temp config overlay, sets ``MAVERICK_CONFIG_OVERLAY`` + env
-    knobs, and returns the run's stdout (the ``DONE.\\n\\n<summary>`` answer). Process
+    knobs, and returns the run's raw stdout (the agent's printed final answer,
+    verbatim -- not parsed into any fixed ``DONE.``/summary shape). Process
     isolation guarantees import-time knobs (fan-out) take effect. Requires a
     configured provider/API key in the environment to actually produce answers.
     """
