@@ -36,10 +36,14 @@ func Handle(c *Config, method, path string, headers map[string]string, body []by
 	}
 	status, respHeaders, respBody, err := Forward(c, method, path, headers, body, up)
 	if err != nil {
+		// Scrub before returning to the (untrusted) client or logging: an
+		// upstream URL/error can embed a credential-shaped string, and this
+		// proxy holds the real provider key. Mirrors model_proxy.handle, which
+		// wraps both error paths in scrub().
 		if hostErr, ok := err.(*HostNotAllowedError); ok { // blocked host / bad request
-			return 403, cloneTextPlain(), []byte(hostErr.Error())
+			return 403, cloneTextPlain(), []byte(scrub(hostErr.Error()))
 		}
-		return 502, cloneTextPlain(), []byte("proxy error: " + err.Error())
+		return 502, cloneTextPlain(), []byte(scrub("proxy error: " + err.Error()))
 	}
 	return status, respHeaders, respBody
 }

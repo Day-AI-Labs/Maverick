@@ -19,9 +19,12 @@ Opt-in::
     # token = "..."        # must match the worker's [grpc] token, if set
     # timeout_s = 0         # 0 = no client deadline (long-horizon runs)
 
-Behind the same ``[grpc]`` extra as the server. Fail-honest: an unreachable
-worker returns ``None`` ("could not start") rather than raising into the
-caller, and logs why.
+Behind the same ``[grpc]`` extra as the server. TLS/mTLS is configured in the
+``[grpc]`` section (``tls``, ``tls_ca``, ``tls_client_cert``/``tls_client_key``)
+and used for the dial when present; with ``[grpc] tls_required = true`` the
+dispatcher refuses to dial in the clear. Fail-honest: an unreachable (or
+TLS-required-but-unconfigured) worker returns ``None`` ("could not start")
+rather than raising into the caller, and logs why.
 """
 from __future__ import annotations
 
@@ -85,8 +88,20 @@ class GrpcDispatcher:
         import grpc
 
         from .grpc_api.server import _load_stubs  # compiled-on-demand stubs
+        from .grpc_tls import channel_credentials, tls_required
         pb2, pb2_grpc = _load_stubs()
-        channel = grpc.insecure_channel(self.target)
+        # Dial the worker's goal API ([grpc] section) over TLS when configured,
+        # mirroring the federation client. The bearer token + goal payloads must
+        # not cross the wire in the clear: fail closed when TLS is required.
+        creds = channel_credentials("grpc")
+        if creds is not None:
+            channel = grpc.secure_channel(self.target, creds)
+        elif tls_required("grpc"):
+            raise RuntimeError(
+                f"refusing to dial gRPC worker {self.target!r} without TLS: "
+                "[grpc] tls is required but not configured")
+        else:
+            channel = grpc.insecure_channel(self.target)  # legacy single-host dev
         return pb2_grpc.MaverickStub(channel), pb2
 
     def _metadata(self) -> list[tuple[str, str]]:

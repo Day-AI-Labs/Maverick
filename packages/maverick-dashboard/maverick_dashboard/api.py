@@ -3017,9 +3017,9 @@ async def goal_tree_api(request: Request, limit: int = 300) -> dict:
 async def retitle_goal(request: Request, goal_id: int, payload: RetitleIn) -> None:
     """Rename a goal (graph editor).
 
-    The world model has no title-update method (``create_goal`` /
-    ``set_goal_status`` only), so this updates the row through the world's
-    write lock, sealing the column the same way ``create_goal`` does.
+    Uses the world model's public ``set_goal_title`` so it works identically on
+    the SQLite and Postgres backends (the earlier raw-SQL path used SQLite-only
+    internals and 500'd under Postgres).
     """
     w = _world()
     g = w.get_goal(goal_id)
@@ -3030,12 +3030,7 @@ async def retitle_goal(request: Request, goal_id: int, payload: RetitleIn) -> No
     title = (payload.title or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
-    from maverick.world_model import _enc_field
-    with w._writing() as conn:
-        conn.execute(
-            "UPDATE goals SET title = ?, updated_at = ? WHERE id = ?",
-            (_enc_field(title[:200]), time.time(), goal_id),
-        )
+    w.set_goal_title(goal_id, title[:200])
 
 
 
@@ -3062,20 +3057,12 @@ async def reparent_goal(request: Request, goal_id: int, payload: ReparentIn) -> 
             raise HTTPException(status_code=404, detail="no such parent goal")
         assert_goal_access(request, p)
         from .goal_tree import descendant_ids
-        pairs = [
-            (r["id"], r["parent_id"])
-            for r in w._read_all("SELECT id, parent_id FROM goals")
-        ]
-        if new_parent in descendant_ids(pairs, goal_id):
+        if new_parent in descendant_ids(w.goal_parent_pairs(), goal_id):
             raise HTTPException(
                 status_code=400,
                 detail="cannot re-parent a goal under its own descendant",
             )
-    with w._writing() as conn:
-        conn.execute(
-            "UPDATE goals SET parent_id = ?, updated_at = ? WHERE id = ?",
-            (new_parent, time.time(), goal_id),
-        )
+    w.set_goal_parent(goal_id, new_parent)
 
 
 
