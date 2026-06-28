@@ -281,7 +281,9 @@ The council's verdict: none of the four bets is a moat on its own; the moat is
 self-modification shippable into a regulated buyer. Step one of that is built:
 
 - **`maverick.self_improvement`** — the Self-Improvement Controller: a governed
-  promotion ladder (`config → prompt → tool → policy → code → weights`). A
+  promotion ladder (`config → prompt → tool → policy → evaluator → code →
+  weights`; the `evaluator` rung swaps the learned judge — see
+  `maverick.evaluator_evolution`). A
   proposed self-change is promoted only if it (a) beats its own baseline by a
   margin with enough evidence, (b) **never widens the capability envelope**
   (declared, or proven via a before/after grant probe), (c) is human-approved at

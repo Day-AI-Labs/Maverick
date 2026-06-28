@@ -44,8 +44,14 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-# Rungs ordered by blast radius. Index == risk rank.
-RUNGS: tuple[str, ...] = ("config", "prompt", "tool", "policy", "code", "weights")
+# Rungs ordered by blast radius. Index == risk rank. ``evaluator`` (swapping the
+# learned judge a whole role is scored by -- see maverick.evaluator_evolution)
+# sits above ``policy``: it reshapes the entire learning signal so it is more
+# consequential than a policy tweak, but an evaluator only *scores* -- it never
+# grants a tool or executes code -- so it is strictly less dangerous than a
+# ``code``/``weights`` edit and carries no capability-escalation surface.
+RUNGS: tuple[str, ...] = (
+    "config", "prompt", "tool", "policy", "evaluator", "code", "weights")
 
 
 def _rung_rank(rung: str) -> int:
@@ -64,6 +70,13 @@ _RUNG_POLICY: dict[str, dict[str, Any]] = {
     "prompt":  {"min_samples": 5,  "require_capability_evidence": False, "require_human": False},
     "tool":    {"min_samples": 5,  "require_capability_evidence": True,  "require_human": False},
     "policy":  {"min_samples": 8,  "require_capability_evidence": True,  "require_human": False},
+    # An evaluator scores; it cannot widen the capability envelope, so no
+    # non-escalation proof is demanded (it would be vacuous). It needs a high
+    # anchor-evidence floor because swapping the judge re-ranks everything it
+    # scores. ``require_human`` is False so an operator can opt into autonomous
+    # co-evolution by raising ``max_auto_rung`` to ``evaluator``; until then it
+    # sits above the default ceiling (``policy``) and a swap needs approval.
+    "evaluator": {"min_samples": 12, "require_capability_evidence": False, "require_human": False},
     "code":    {"min_samples": 10, "require_capability_evidence": True,  "require_human": True},
     "weights": {"min_samples": 20, "require_capability_evidence": True,  "require_human": True},
 }

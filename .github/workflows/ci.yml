@@ -157,6 +157,16 @@ jobs:
         # lock (`python -m maverick.migration_governance --regen`) so the change
         # is reviewed. Pure offline check, no DB. See migration_governance.py.
         run: python -m maverick.migration_governance --ci
+      - name: Evaluator-anchor governance gate (released anchors are immutable)
+        # Pins every evaluator ground-truth anchor's checksum in the committed
+        # evaluator_anchors.lock.json: editing a released anchor's labels or
+        # dropping one fails (it invalidates every evaluator promotion judged
+        # against the old ground truth), and a new anchor must be locked so the
+        # addition is reviewed. The anchor is the guardrail for evaluator
+        # co-evolution -- a weak or mutable anchor launders drift. Add an anchor
+        # -> regenerate the lock (`python -m maverick.evaluator_evolution
+        # --regen`). Pure offline check. See evaluator_evolution.py.
+        run: python -m maverick.evaluator_evolution --ci
       - name: Control/data-plane e2e (goals provably run out-of-process)
         # Drives the real QueueDispatcher -> SQLite JobQueue -> Worker ->
         # shared WorldModel path end-to-end (no Redis/gRPC) and fails if the

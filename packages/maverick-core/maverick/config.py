@@ -951,6 +951,16 @@ def get_self_improvement() -> dict:
         # this same gate. Sub-toggle of the master switch -- on once
         # self-improvement is accepted; set false to keep the generator static.
         "factory_learning": bool(cfg.get("factory_learning", True)),
+        # Evaluator co-evolution (maverick.evaluator_evolution): instead of only
+        # FREEZING learning when the judge drifts, promote a better judge --
+        # a challenger evaluator replaces the incumbent only when its agreement
+        # with a fixed ground-truth ANCHOR (by the epsilon-best-belief lower bound)
+        # beats it, on the dedicated ``evaluator`` rung. Off by default; the
+        # anchor is the guardrail (immutable, checksum-locked) so a weak anchor
+        # cannot launder drift. ``evaluator_eps`` is the confidence level of the
+        # lower bound (lower = more conservative). After arXiv 2606.26294.
+        "evaluator_evolution": bool(cfg.get("evaluator_evolution", False)),
+        "evaluator_eps": _ratio("evaluator_eps", 0.05),
     }
 
 
