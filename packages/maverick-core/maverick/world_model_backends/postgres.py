@@ -1831,12 +1831,25 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sel, tuple(sparams))
             rows = cur.fetchall()
+            from ..crypto_at_rest import EncryptionUnavailable
             for row in rows:
-                prior = _unseal(row[1]) or ""
+                try:
+                    new_result = _seal((_unseal(row[1]) or "") + marker)
+                except EncryptionUnavailable:
+                    # One orphan whose sealed result can't be opened (rotated or
+                    # foreign at-rest key) must not abort crash-recovery for every
+                    # other stuck goal. Reclaim the status; leave the unreadable
+                    # result intact rather than corrupting or dropping it.
+                    cur.execute(
+                        "UPDATE goals SET status = 'blocked', updated_at = %s "
+                        "WHERE id = %s",
+                        (now, row[0]),
+                    )
+                    continue
                 cur.execute(
                     "UPDATE goals SET status = 'blocked', result = %s, "
                     "updated_at = %s WHERE id = %s",
-                    (_seal(prior + marker), now, row[0]),
+                    (new_result, now, row[0]),
                 )
             return len(rows)
 
