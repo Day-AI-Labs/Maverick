@@ -47,6 +47,26 @@ def _isolate_maverick_home(tmp_path, monkeypatch):
     # each control's explicit on/off mechanics; the secure DEFAULT is covered by
     # test_secure_defaults.py (which overrides this). Production ships secure.
     monkeypatch.setenv("MAVERICK_SECURE_DEFAULT", "0")
+    # The reflexion / dreaming-insight / learned-skill stores expose their
+    # no-tenant path as an IMPORT-TIME module constant (the ``legacy`` fallback in
+    # ``reflexion``/``dreaming`` ``_tenant_path``), computed once via ``data_dir()``
+    # at first import. Unlike the ~30 dynamic ``Path.home()`` callers, those
+    # constants do NOT follow the HOME set above, so a learned skill/insight/
+    # reflexion written by one test leaks into a later test's coverage/recall
+    # (observed: worker_review saw a foreign finance lesson). Re-resolve them
+    # under the per-test HOME; monkeypatch restores the originals at teardown.
+    try:
+        import maverick.dreaming as _dream
+        import maverick.reflexion as _refl
+        import maverick.skill.distillation_local as _distill
+        from maverick.paths import data_dir as _dd
+        monkeypatch.setattr(_refl, "DEFAULT_PATH", _dd("reflexions.ndjson"), raising=False)
+        monkeypatch.setattr(_dream, "DEFAULT_DIR", _dd("dreams"), raising=False)
+        monkeypatch.setattr(_dream, "DEFAULT_INSIGHTS", _dd("dreams") / "insights.ndjson",
+                            raising=False)
+        monkeypatch.setattr(_distill, "_STORE", _dd("learned-skills"), raising=False)
+    except Exception:  # pragma: no cover -- isolation refresh never blocks a test
+        pass
     return tmp_path
 
 
@@ -106,6 +126,15 @@ def _reset_client_binding_cache():
         try:
             from maverick import config
             config.reset_config_cache()
+        except Exception:
+            pass
+        try:
+            # The injected audit-signing key is read once per process and cached
+            # (the env var is popped for security), so a test that runs audit
+            # signing without a key caches a miss that shadows a later test which
+            # sets MAVERICK_AUDIT_SIGNING_KEY. Clear it in lockstep.
+            from maverick.audit import signing as _audit_signing
+            _audit_signing._reset_injected_keypair_cache()
         except Exception:
             pass
 

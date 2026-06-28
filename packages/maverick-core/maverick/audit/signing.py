@@ -222,6 +222,20 @@ def _injected_keypair() -> tuple[bytes, bytes, str] | None:
     return _INJECTED_KEYPAIR_CACHE
 
 
+def _reset_injected_keypair_cache() -> None:
+    """Test-only: clear the process-global injected-key cache.
+
+    :func:`_injected_keypair` reads ``MAVERICK_AUDIT_SIGNING_KEY`` exactly once
+    per process and caches the result (a deliberate security choice: the env var
+    is popped so it can't be recovered from ``/proc``). That cache is correct in
+    production but leaks across tests in a shared worker: a test that runs audit
+    signing with no injected key caches a miss, shadowing a later test that DOES
+    set the key. The conftest cache-reset fixture calls this so each test reads
+    the key fresh (mirrors client/config/tenant cache resets)."""
+    global _INJECTED_KEYPAIR_CACHE
+    _INJECTED_KEYPAIR_CACHE = _INJECTED_KEYPAIR_UNREAD
+
+
 def _provision_injected_pubkey(pub: bytes, key_id: str) -> None:
     """Persist the PUBLIC half (+ ``.injected`` marker) of an injected key.
 

@@ -99,6 +99,24 @@ here.
   kernel-template mutation. Reflexions now carry a `model_id` for the per-model
   mining. After *Self-Harness: Harnesses That Improve Themselves* (arXiv
   2606.09498); design in [`docs/proposals/self-harness.md`](./proposals/self-harness.md).
+- **Evaluator co-evolution (promote a better judge, don't just freeze)** —
+  `maverick.evaluator_evolution` (opt-in `[self_improvement] evaluator_evolution`)
+  extends the calibration interlock from *freeze-on-drift* to *promote-on-drift*:
+  a challenger evaluator replaces the incumbent only when its agreement with a
+  fixed ground-truth **anchor**, measured by the conservative epsilon-best-belief
+  lower bound (the eps-quantile of a `Beta(1+S,1+F)` posterior), beats it. Routed
+  through the self-improvement ladder on a dedicated `evaluator` rung, so a swap
+  inherits the evidence floor, the calibration freeze, reversibility, human
+  approval (it sits above the default `max_auto_rung`), and the signed audit; an
+  evaluator only scores, so it carries no capability-escalation surface. Each
+  swap advances the slot's *epoch* and applies **selective erasure** — only the
+  displaced judge's learning records are discarded, keeping the within-epoch
+  signal stationary. The anchor is the guardrail, so released anchors are
+  **immutable**: checksum-pinned in `evaluator_anchors.lock.json` and enforced by
+  `python -m maverick.evaluator_evolution --ci` (a weak or mutable anchor would
+  launder drift). OFF by default. After *The Red Queen Gödel Machine:
+  Co-Evolving Agents and Their Evaluators* (arXiv 2606.26294); design in
+  [`docs/proposals/evaluator-co-evolution.md`](./proposals/evaluator-co-evolution.md).
 - **Shared generic insight promotion** — when explicitly enabled with
   `[dreaming] promote_shared`, only recurring *unscoped* failures can become
   shared insights. Department-scoped failures remain compartment-local and are

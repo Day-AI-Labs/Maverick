@@ -89,13 +89,41 @@ def test_openapi_describe_unknown(tmp_path):
 def _patch_safe_client(monkeypatch, response, captured):
     """Stand in for maverick.tools._ssrf.safe_client (which pins the
     connection to a validated public IP). Captures the request and returns
-    ``response`` so the offline unit tests don't do real DNS / sockets."""
+    ``response`` so the offline unit tests don't do real DNS / sockets.
+
+    The runner streams responses under a byte ceiling (``client.stream(...)`` +
+    ``iter_bytes()``), so the mock exposes that interface; ``request``/``get``
+    are kept for any caller still on the buffered path."""
+    class _StreamResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        status_code = response.status_code
+        encoding = "utf-8"
+
+        def iter_bytes(self):
+            text = response.text if isinstance(response.text, str) else ""
+            yield text.encode("utf-8")
+
     class _Client:
         def __enter__(self):
             return self
 
         def __exit__(self, *a):
             return False
+
+        def stream(self, method, url, **kw):
+            captured["method"] = method
+            captured["url"] = url
+            captured["kw"] = kw
+            captured["body"] = kw.get("json")
+            return _StreamResp()
 
         def request(self, method, url, **kw):
             captured["method"] = method

@@ -127,4 +127,8 @@ def test_cli_kms_rotate_rejects_raw_kek_argv():
     ])
 
     assert res.exit_code != 0
-    assert "No such option: --old-kek" in res.output
+    # The raw KEK option is rejected (only --old-kek-file is accepted, so secrets
+    # never land in argv). Match on the option name, not click's exact phrasing,
+    # which varies by version ("No such option: --old-kek" vs. "No such option
+    # '--old-kek'. Did you mean '--old-kek-file'?").
+    assert "No such option" in res.output and "--old-kek" in res.output

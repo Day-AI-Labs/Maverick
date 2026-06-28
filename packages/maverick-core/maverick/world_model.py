@@ -1040,12 +1040,25 @@ class WorldModel:
                 "WHERE status IN ('active', 'pending') AND updated_at < ?",
                 (cutoff,),
             ).fetchall()
+            from .crypto_at_rest import EncryptionUnavailable
             for row in rows:
-                prior = _dec_field(row["result"]) or ""
+                try:
+                    new_result = _enc_field((_dec_field(row["result"]) or "") + marker)
+                except EncryptionUnavailable:
+                    # One orphan whose sealed result can't be opened (rotated or
+                    # foreign at-rest key) must not abort crash-recovery for every
+                    # other stuck goal. Reclaim the status; leave the unreadable
+                    # result intact rather than corrupting or dropping it.
+                    conn.execute(
+                        "UPDATE goals SET status = 'blocked', updated_at = ? "
+                        "WHERE id = ?",
+                        (now, row["id"]),
+                    )
+                    continue
                 conn.execute(
                     "UPDATE goals SET status = 'blocked', result = ?, "
                     "updated_at = ? WHERE id = ?",
-                    (_enc_field(prior + marker), now, row["id"]),
+                    (new_result, now, row["id"]),
                 )
             return len(rows)
 

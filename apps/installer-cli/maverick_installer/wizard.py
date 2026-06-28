@@ -1418,6 +1418,16 @@ def pick_advanced() -> dict[str, Any]:
             "Requires self-improvement enabled.",
             default=True,
         ),
+        "evaluator_evolution": _q_confirm(
+            "Evaluator co-evolution? When the learned judge stops discriminating, don't "
+            "just FREEZE learning -- promote a better judge: a challenger evaluator "
+            "replaces the incumbent only when its agreement with a fixed, checksum-locked "
+            "ground-truth ANCHOR beats it (on the dedicated 'evaluator' rung). The anchor "
+            "is immutable so a weak judge can't launder drift. Requires self-improvement "
+            "enabled; an evaluator swap needs human approval until you raise max_auto_rung "
+            "to 'evaluator'.",
+            default=False,
+        ),
         "rehearsal": _q_confirm(
             "Pre-execution rehearsal? Before a risky plan runs, simulate it against the "
             "learned world-model of your environment and gate on the prediction: proceed "
@@ -2642,7 +2652,7 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
     # diverges from its default (causal_promotion defaults off, factory_learning
     # defaults on -- so we only write factory_learning when the user opts out).
     declined_factory = "factory_learning" in advanced and not advanced.get("factory_learning")
-    if advanced.get("causal_promotion") or declined_factory:
+    if advanced.get("causal_promotion") or declined_factory or advanced.get("evaluator_evolution"):
         lines.append("")
         lines.append("[self_improvement]")
         if advanced.get("causal_promotion"):
@@ -2654,6 +2664,12 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
             lines.append("# Keep the agent factory's generator static (do not mine")
             lines.append("# pack-generation gaps into proposer corrections).")
             lines.append("factory_learning = false")
+        if advanced.get("evaluator_evolution"):
+            lines.append("# Promote a better judge instead of only freezing when the")
+            lines.append("# evaluator drifts: a challenger replaces the incumbent only when")
+            lines.append("# its agreement with a checksum-locked ground-truth anchor beats")
+            lines.append("# it (maverick.evaluator_evolution, 'evaluator' rung).")
+            lines.append("evaluator_evolution = true")
     if advanced.get("rehearsal"):
         lines.append("")
         lines.append("[rehearsal]")
